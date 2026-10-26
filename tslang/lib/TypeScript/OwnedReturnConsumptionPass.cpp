@@ -82,9 +82,9 @@ class OwnedReturnConsumptionPass
         }
 
         llvm::DenseSet<mlir::StringRef> returnsOwned;
-        // Every method in the module, grouped by the name after the last dot: the candidate set
-        // for a virtual call, see virtualCallReturnsOwned.
-        llvm::StringMap<llvm::SmallVector<mlir::StringRef>> methodsByMemberName;
+        // Every method in the module, grouped by the name after the last dot, with the class it
+        // takes first: the candidate set for a virtual call, see virtualCallReturnsOwned.
+        llvm::StringMap<llvm::SmallVector<std::pair<mlir::StringRef, mlir::Type>>> methodsByMemberName;
         // Is there any function here at all that hands back a heap value without retaining it?
         // See callThroughValueReturnsOwned.
         auto anyUnclassifiedOwningReturn = false;
@@ -121,7 +121,7 @@ class OwnedReturnConsumptionPass
             auto dot = name.rfind('.');
             if (isClassMethod && dot != mlir::StringRef::npos && dot + 1 < name.size())
             {
-                methodsByMemberName[name.substr(dot + 1)].push_back(name);
+                methodsByMemberName[name.substr(dot + 1)].push_back({name, inputs.front()});
             }
         });
 
@@ -2274,7 +2274,7 @@ class OwnedReturnConsumptionPass
     // callee's return had added. See section 9.53.
     static bool virtualCallReturnsOwned(mlir_ts::CallIndirectOp callOp,
                                         const llvm::DenseSet<mlir::StringRef> &returnsOwned,
-                                        const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName)
+                                        const llvm::StringMap<llvm::SmallVector<std::pair<mlir::StringRef, mlir::Type>>> &methodsByMemberName)
     {
         if (callOp.getNumOperands() == 0)
         {
@@ -2293,13 +2293,56 @@ class OwnedReturnConsumptionPass
             return false;
         }
 
-        return everyOverrideReturnsOwned(virtualRefOp.getIdentifier(), returnsOwned, methodsByMemberName);
+        return everyOverrideReturnsOwned(virtualRefOp.getIdentifier(), returnsOwned, methodsByMemberName,
+                                         virtualRefOp.getThisVal().getType());
+    }
+
+    // Is `classType` the class `receiverType` names, or on its chain of bases or derived classes? A
+    // method of another class shares the member name only: no object of the receiver's type has
+    // it in that slot. A base is the first field of a class's storage; a class whose storage this
+    // cannot see may be on the chain.
+    static bool onReceiverChain(mlir::Type classType, mlir::Type receiverType)
+    {
+        auto storageOf = [](mlir::Type type) {
+            if (auto refClass = mlir::dyn_cast<mlir_ts::ClassType>(type))
+            {
+                return mlir::dyn_cast<mlir_ts::ClassStorageType>(refClass.getStorageType());
+            }
+
+            return mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
+        };
+
+        auto candidate = storageOf(classType);
+        auto receiver = storageOf(receiverType);
+        if (!candidate || !receiver)
+        {
+            return true;
+        }
+
+        auto extends = [](mlir_ts::ClassStorageType derived, mlir_ts::ClassStorageType base) {
+            for (auto depth = 0; derived && depth < 64; ++depth)
+            {
+                if (derived.getName() == base.getName())
+                {
+                    return true;
+                }
+
+                auto fields = derived.getFields();
+                derived = fields.empty() ? mlir_ts::ClassStorageType() : mlir::dyn_cast<mlir_ts::ClassStorageType>(fields.front().type);
+            }
+
+            return false;
+        };
+
+        return extends(candidate, receiver) || extends(receiver, candidate);
     }
 
     // Does every method that can be in the slot `identifier` was written against return owned?
+    // With the receiver's type, only methods of classes on its chain can be there.
     static bool everyOverrideReturnsOwned(mlir::StringRef identifier,
                                           const llvm::DenseSet<mlir::StringRef> &returnsOwned,
-                                          const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName)
+                                          const llvm::StringMap<llvm::SmallVector<std::pair<mlir::StringRef, mlir::Type>>> &methodsByMemberName,
+                                          mlir::Type receiverType = mlir::Type())
     {
         auto dot = identifier.rfind('.');
         if (dot == mlir::StringRef::npos || dot + 1 >= identifier.size())
@@ -2313,15 +2356,24 @@ class OwnedReturnConsumptionPass
             return false;
         }
 
-        for (auto candidate : candidates->second)
+        // none on the chain: the method is not one this module has, unclassified
+        auto any = false;
+        for (auto [candidate, classType] : candidates->second)
         {
+            if (receiverType && !onReceiverChain(classType, receiverType))
+            {
+                continue;
+            }
+
             if (!returnsOwned.contains(candidate))
             {
                 return false;
             }
+
+            any = true;
         }
 
-        return true;
+        return any;
     }
 
     // The same question for a call through an interface, where the member name is not enough to
@@ -2426,7 +2478,7 @@ class OwnedReturnConsumptionPass
     // name), or an interface slot (what the vtables put there). A getter given as anything
     // else - `ts.Undef` when there is only a setter - is unclassified.
     static bool getterReturnsOwned(mlir::Operation *op, const llvm::DenseSet<mlir::StringRef> &returnsOwned,
-                                   const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName,
+                                   const llvm::StringMap<llvm::SmallVector<std::pair<mlir::StringRef, mlir::Type>>> &methodsByMemberName,
                                    const llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> &vtableSlots)
     {
         auto named = [&](mlir::FlatSymbolRefAttr getter) {
@@ -2459,7 +2511,7 @@ class OwnedReturnConsumptionPass
             if (auto thisVirtualSymbolRefOp = mlir::dyn_cast<mlir_ts::ThisVirtualSymbolRefOp>(definingOp))
             {
                 return everyOverrideReturnsOwned(thisVirtualSymbolRefOp.getIdentifier(), returnsOwned,
-                                                 methodsByMemberName);
+                                                 methodsByMemberName, thisVirtualSymbolRefOp.getThisVal().getType());
             }
 
             if (auto interfaceRefOp = mlir::dyn_cast<mlir_ts::InterfaceSymbolRefOp>(definingOp))

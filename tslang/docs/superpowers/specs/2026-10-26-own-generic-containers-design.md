@@ -79,7 +79,7 @@ kinds:
 
 ## 4. Not here
 
-- `any` or object keys and values. The constructor from an array (`new Map([[k, v]])`) cannot take
+- `any` or object keys and values (settled in section 6: through `Shared<T>`). The constructor from an array (`new Map([[k, v]])`) cannot take
   the elements out of the caller's array, and moving an object parameter into a tuple
   (`Retain` of a tuple made of kept parameters) is "takes a second reference". This waits on the
   ruling on containers of owned values (two sets sharing an element by `union` is two owners).
@@ -103,3 +103,39 @@ Positive, under own (AOT and JIT): `own_generator_method_this`, `own_string_copy
 `own_length_drops_elements`, `own_tuple_param_kept`; each also prints the same under gc, rc and none.
 Errors: `own_err_generator_method_reassigned`, `own_err_callback_method_overridden`.
 Retired: `own_err_param_kept_some_paths` (rule 5), `own_err_string_call_keeps_twice` (rule 4).
+
+## 6. Objects in `Map` and `Set`: `Shared<T>`
+
+Ruling (2026-10-26): under own an object goes into a `Map` or `Set` as a `Shared<T>` handle; a plain
+object or `any` element is a compile error at the user's code that points at `Shared<T>`. A container
+keeps what it is given and hands out borrows of it (`get`, the iterators), and `union` or two maps
+holding one value would be two owners of a block with one owner. A handle is counted (spec 23.2),
+so it can be in any number of entries; values and strings (copied in, rule 4) need nothing.
+
+- **`@sharedElements`** (`SHARED_ELEMENTS_DECORATOR`), on a generic class: under own each type
+  argument has to be a value (owns no heap memory), a string, or a handle (`isSharedHandleType`, so
+  `Shared<T> | null` too). `checkSharedElements` runs where the class is specialized
+  (`instantiateSpecializedClassType`, both overloads), with the location of the user's `new` or type
+  annotation, before the members are generated, whose errors would point into the library:
+  `-mm=own: 'Map' cannot hold 'Node' (its 'V'): an element has to be a value, a string or a Shared<T>
+  handle; use 'Shared<Node>'`, and for `any` `give it one of those types`. Keys are checked as values
+  are. A `new` whose inferred type arguments were refused does not go on to the defaults
+  (`sharedElementsRefused`), which would report `any` too. The other models ignore it. DefaultLib puts
+  it on `Map` and `Set`; nothing in the compiler names them.
+- **A handle in a tuple entry** (`copyIntoTuple`): a tuple made of a handle beside borrowed strings
+  retains the handle for the tuple, as it copies the strings (`<MapEntry<K, V>>[hash, next, key, value]`).
+- **A handle a yield takes out of the state.** A field read only to be yielded
+  (`OWN_YIELDED_FIELDS_ATTR_NAME`) gives its value to the caller, who owns the record `next` returns
+  and releases it; the state's release of the old value is erased. A handle's counting is rc's and
+  stays (spec 23.2), and that kept this release too: each step released the previous handle twice,
+  once in the state and once in the caller (a `Map` of two handles walked by `for...of` freed the
+  first). The release of a yielded field is now erased for a handle as for anything else.
+- **The owned result of a virtual call** (`OwnedReturnConsumptionPass`): whether every method a
+  vtable call can reach returns its result owned was decided over every method of that name in the
+  module, so with the default library loaded `A.get` stood beside `Headers.get` and the like, the
+  call was not +1, and an rc handle it returned leaked. Now only methods of a class on the receiver's
+  chain (its bases and the classes extending it) count (`onReceiverChain`).
+
+Tests: `own_shared_elements` (a local `@sharedElements` container of numbers, strings and handles,
+under every model), `own_shared_yield_count` (two entries walked, a pair yielded, a `break`; counts
+under rc and own), `own_err_shared_elements_object`, `_any`, `_inferred`.

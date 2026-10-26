@@ -1156,6 +1156,66 @@ namespace mlirgen
         return {mlir::success(), funcProto};
     }
 
+    // A @sharedElements container (Map, Set) keeps what it is given and hands out borrows of it, so
+    // under -mm=own each type argument has to be a value, a string (copied in) or a Shared<T> handle
+    // (counted in). Checked where the user names the type, before its members are generated: their
+    // errors would point into the library.
+    mlir::LogicalResult MLIRGenImpl::checkSharedElements(mlir::Location location,
+                                                         GenericClassInfo::TypePtr genericClassInfo,
+                                                         const GenContext &genericTypeGenContext,
+                                                         const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return mlir::success();
+        }
+
+        auto sharedElements = false;
+        iterateDecorators(genericClassInfo->classDeclaration, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            sharedElements = sharedElements || name == SHARED_ELEMENTS_DECORATOR;
+        });
+        if (!sharedElements)
+        {
+            return mlir::success();
+        }
+
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        auto result = mlir::success();
+        for (auto &typeParam : genericClassInfo->typeParams)
+        {
+            auto found = genericTypeGenContext.typeParamsWithArgs.find(typeParam->getName());
+            if (found == genericTypeGenContext.typeParamsWithArgs.end())
+            {
+                continue;
+            }
+
+            auto type = mth.stripLiteralType(std::get<1>(found->getValue()));
+            if (!type || mlir::isa<mlir_ts::NamedGenericType>(type) || mlir::isa<mlir_ts::StringType>(type) ||
+                MLIRTypeHelper::isSharedHandleType(type) || !mth.ownsHeapMemory(location, type))
+            {
+                continue;
+            }
+
+            auto diag = emitError(location) << "-mm=own: '" << genericClassInfo->name << "' cannot hold '" << to_print(type)
+                                            << "' (its '" << typeParam->getName()
+                                            << "'): an element has to be a value, a string or a Shared<T> handle; ";
+            if (mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
+            {
+                diag << "give it one of those types";
+            }
+            else
+            {
+                diag << "use 'Shared<" << to_print(type) << ">'";
+            }
+
+            result = mlir::failure();
+        }
+
+        sharedElementsRefused = sharedElementsRefused || mlir::failed(result);
+
+        return result;
+    }
+
     std::pair<mlir::LogicalResult, mlir::Type> MLIRGenImpl::instantiateSpecializedClassType(mlir::Location location,
                                                                                mlir_ts::ClassType genericClassType,
                                                                                NodeArray<TypeNode> typeArguments,
@@ -1205,6 +1265,11 @@ namespace mlirgen
             declarationMode = false;
 
             // create new instance of interface with TypeArguments
+            if (mlir::failed(checkSharedElements(location, genericClassInfo, genericTypeGenContext, genContext)))
+            {
+                return {mlir::failure(), mlir::Type()};
+            }
+
             auto ownLayout = suspendValueLayoutFrames();
             if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
@@ -1287,6 +1352,12 @@ namespace mlirgen
             // module's object happening to keep the members it needs.
             MLIRValueGuard<bool> declarationModeGuard(declarationMode);
             declarationMode = false;
+
+            if (mlir::failed(checkSharedElements(location, genericClassInfo, genericTypeGenContext, genContext)))
+            {
+                count--;
+                return {mlir::failure(), mlir::Type()};
+            }
 
             auto ownLayout = suspendValueLayoutFrames();
             auto res = std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext));
