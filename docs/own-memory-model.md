@@ -696,8 +696,11 @@ a reference gives it back on every path out of a function.
 
 `-mm=own` is still in development, and some valid TypeScript does not compile under it yet.
 
-- The default library has an `-mm=own` build, and arrays, strings and their methods work, but
-  `Map` and `Set` do not compile under `-mm=own` yet.
+- The default library has an `-mm=own` build, and arrays, strings and their methods work. `Map`
+  and `Set` work with number, boolean and string keys and values (`new Map<string, number>()`,
+  `new Set<string>(["a", "b"])`): their iterators borrow the container, and strings go in as
+  copies. With `any` or object keys or values they do not compile yet, and neither does a `Map`
+  or `Set` made without type arguments (`new Set([1, 2])` also makes a `Set<any>`).
 - Array methods that keep elements of the source in a new array (`filter` over class instances)
   give each such element a second owner, which is an error by design. Use `Shared<T>` elements,
   or build the result from copies.

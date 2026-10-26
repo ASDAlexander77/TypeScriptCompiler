@@ -131,18 +131,130 @@ namespace own_signature
             }
         }
 
-        auto callsOnly = [&](mlir_ts::FuncOp funcOp) {
+        // A method no other method overrides: a call through its class's vtable, or of it bound to
+        // its object (`b.forEach(f)`), reaches it alone. A family holds every method of a slot's
+        // name, of any class: another member overrides it when its class extends this one (a base is
+        // the first field of a class's storage), or may, when its storage is not known here.
+        auto classOf = [&](llvm::StringRef symbol) { return symbol.drop_back(methodName(symbol).size() + 1); };
+        auto extends = [&](llvm::StringRef derived, llvm::StringRef base) {
+            auto storage = classStorages.lookup(derived);
+            for (auto depth = 0; storage && depth < 64; ++depth)
+            {
+                auto fields = storage.getFields();
+                auto next = fields.empty() ? mlir_ts::ClassStorageType() : mlir::dyn_cast<mlir_ts::ClassStorageType>(fields.front().type);
+                if (!next)
+                {
+                    return false;
+                }
+
+                if (next.getName().getValue() == base)
+                {
+                    return true;
+                }
+
+                storage = next;
+            }
+
+            return true;
+        };
+
+        auto notOverridden = [&](mlir_ts::FuncOp funcOp) {
+            auto symbol = funcOp.getSymNameAttr();
+            auto inVTable = false;
+            for (auto &[key, members] : families)
+            {
+                if (!llvm::is_contained(members, symbol))
+                {
+                    continue;
+                }
+
+                inVTable = true;
+                for (auto member : members)
+                {
+                    if (member != symbol && extends(classOf(member.getValue()), classOf(symbol.getValue())))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return inVTable;
+        };
+
+        // The calls a use of a function's symbol makes: the use itself, a direct call, or those made
+        // through the method it binds. Null when the symbol goes anywhere else.
+        auto callsOf = [&](mlir_ts::FuncOp funcOp, mlir::Operation *user, llvm::SmallVectorImpl<mlir::Operation *> &found) {
+            if (auto callee = directCallee(user))
+            {
+                found.push_back(user);
+                return callee.getValue() == funcOp.getSymName();
+            }
+
+            if (!mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp>(user) || !notOverridden(funcOp) ||
+                !onlyCalled(user->getResult(0)))
+            {
+                return isClassVTableEntry(user) && notOverridden(funcOp);
+            }
+
+            // `ts.CallInternal(ts.GetMethod(m), ts.GetThis(m), ...)`: its arguments are the method's
+            // parameters, `this` first
+            for (auto *boundUser : user->getResult(0).getUsers())
+            {
+                if (mlir::isa<mlir_ts::GetThisOp>(boundUser))
+                {
+                    continue;
+                }
+
+                if (!mlir::isa<mlir_ts::GetMethodOp>(boundUser))
+                {
+                    return false;
+                }
+
+                for (auto *call : boundUser->getResult(0).getUsers())
+                {
+                    auto args = callArgs(call);
+                    if (!mlir::isa<mlir_ts::CallInternalOp>(call) || args.empty() ||
+                        !args.front().getDefiningOp<mlir_ts::GetThisOp>())
+                    {
+                        return false;
+                    }
+
+                    found.push_back(call);
+                }
+            }
+
+            return true;
+        };
+
+        // The function a call made through a method's symbol calls, when it is the only one
+        auto methodCalled = [&](mlir::Operation *call) {
+            auto getMethodOp = calleeValue(call) ? calleeValue(call).getDefiningOp<mlir_ts::GetMethodOp>() : mlir_ts::GetMethodOp();
+            auto *ref = getMethodOp ? getMethodOp.getBoundFunc().getDefiningOp() : nullptr;
+            mlir::FlatSymbolRefAttr identifier;
+            if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(ref))
+            {
+                identifier = refOp.getIdentifierAttr();
+            }
+            else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(ref))
+            {
+                identifier = refOp.getIdentifierAttr();
+            }
+
+            auto funcOp = identifier ? functions.lookup(identifier.getValue()) : mlir_ts::FuncOp();
+            return funcOp && notOverridden(funcOp) ? funcOp : mlir_ts::FuncOp();
+        };
+
+        auto callsOnly = [&](mlir_ts::FuncOp funcOp, llvm::SmallVectorImpl<mlir::Operation *> &calls) {
             auto &users = usersOf[funcOp];
-            return !users.empty() && llvm::all_of(users, [&](mlir::Operation *user) {
-                auto callee = directCallee(user);
-                return callee && callee.getValue() == funcOp.getSymName();
-            });
+            return !users.empty() &&
+                   llvm::all_of(users, [&](mlir::Operation *user) { return callsOf(funcOp, user, calls); });
         };
 
         for (auto &entry : functions)
         {
             auto funcOp = entry.second;
-            if (funcOp.isDeclaration() || callableFromOutside(funcOp) || declaresFacts(funcOp) || !callsOnly(funcOp))
+            llvm::SmallVector<mlir::Operation *> calls;
+            if (funcOp.isDeclaration() || callableFromOutside(funcOp) || declaresFacts(funcOp) || !callsOnly(funcOp, calls))
             {
                 continue;
             }
@@ -156,7 +268,7 @@ namespace own_signature
 
                 auto index = static_cast<int32_t>(argument.getArgNumber());
                 CallbackFamily family;
-                for (auto *user : usersOf[funcOp])
+                for (auto *user : calls)
                 {
                     auto args = callArgs(user);
                     auto shift = 0;
@@ -195,7 +307,7 @@ namespace own_signature
         auto passesToClosed = [&](mlir::OpOperand &use) {
             auto *call = use.getOwner();
             auto callee = directCallee(call);
-            auto calleeOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp();
+            auto calleeOp = callee ? functions.lookup(callee.getValue()) : (isCall(call) ? methodCalled(call) : mlir_ts::FuncOp());
             if (!calleeOp)
             {
                 return false;
@@ -267,8 +379,10 @@ namespace own_signature
             return;
         }
 
+        // a closed family with no members: a method no one calls but through its vtable, never - the
+        // call frees nothing
         auto found = callbackFamilies.find({funcOp.getOperation(), index});
-        if (found == callbackFamilies.end() || !found->second.closed || found->second.members.empty())
+        if (found == callbackFamilies.end() || !found->second.closed)
         {
             return;
         }

@@ -692,6 +692,14 @@ namespace own_inference
         });
     }
 
+    bool OwnershipInferencePass::copiesInto(mlir::Operation *call, mlir::Value value)
+    {
+        // given once: a copy given twice would have two owners. Not an invoke, whose release after
+        // it would go on the normal path only.
+        return isCopyableString(value.getType()) && !mlir::isa<mlir_ts::InvokeOp>(call) &&
+               llvm::count(call->getOperands(), value) == 1;
+    }
+
     bool OwnershipInferencePass::checkPlaceRead(mlir::Operation *read, llvm::SetVector<mlir::Operation *> &toErase)
     {
         auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
@@ -736,6 +744,12 @@ namespace own_inference
 
         if (kept || letKept)
         {
+            // a string given to a call that keeps it: the call takes a copy (spec 22)
+            if (dryRun && kept && isCall(kept) && copiesInto(kept, result))
+            {
+                callCopies.push_back({read, kept});
+            }
+
             if (!kept && isAssignmentOf(letKept, letKeeps))
             {
                 reportPlaceBorrowerAssigned(letKept, varName(letKeeps), place);
@@ -757,6 +771,20 @@ namespace own_inference
             {
                 if ((use.op != drop || !use.callee) && reachableAfter(drop, use.op, use.kills))
                 {
+                    // a string given to the very call that may release it, when the call keeps it, or
+                    // is a callback - a function value, which nothing can say `@nodrops` of: the call
+                    // gets a copy
+                    auto callee = calleeValue(drop);
+                    auto args = callArgs(drop);
+                    auto keepsIt = llvm::any_of(ownedParams(drop), [&](int32_t index) {
+                        return static_cast<size_t>(index) < args.size() && args[index] == result;
+                    });
+                    if (dryRun && use.op == drop && (keepsIt || (callee && callee.getDefiningOp<mlir_ts::LoadOp>())) &&
+                        copiesInto(drop, result))
+                    {
+                        callCopies.push_back({read, drop});
+                    }
+
                     reportPlaceBorrowOutlives(use.op, drop, name, place);
                     return true;
                 }

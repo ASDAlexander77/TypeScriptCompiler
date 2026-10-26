@@ -84,6 +84,9 @@ constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
 // result is the caller's to own, but no use of it may come after any of these arguments is given
 // back, and it may not be kept anywhere that outlives them.
 #define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
+// A generator method's store of `this` into its box (`.this`), when the state borrows it: the store
+// keeps nothing, so the method does not keep `this` (OwnershipSignaturePass::keeps).
+#define OWN_STATE_BORROW_ATTR_NAME "__own_state_borrow"
 // The globals a call may give a new value, by name: a store to one, or its release, in a callee or
 // in a call it makes. A call that may drop and whose callees are not known may assign any of them
 // (OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME). A read of a global ends at such a call (checkGlobalRead).
@@ -747,13 +750,15 @@ inline mlir::Operation *findBetween(mlir::Operation *read, mlir::Operation *call
         scan(op);
     }
 
-    // the blocks on a path: reached from the read's, and reaching the call's
+    // the blocks on a path: reached from the read's, and reaching the call's. Not through the read's
+    // block again: a path back into it reads again (a loop's `continue`), and the call is given that
+    // read
     llvm::SmallPtrSet<mlir::Block *, 16> after;
     llvm::SmallVector<mlir::Block *> work(fromBlock->getSuccessors().begin(), fromBlock->getSuccessors().end());
     while (!work.empty())
     {
         auto *block = work.pop_back_val();
-        if (after.insert(block).second)
+        if (block != fromBlock && after.insert(block).second)
         {
             work.append(block->getSuccessors().begin(), block->getSuccessors().end());
         }
@@ -764,7 +769,7 @@ inline mlir::Operation *findBetween(mlir::Operation *read, mlir::Operation *call
     while (!work.empty())
     {
         auto *block = work.pop_back_val();
-        if (before.insert(block).second)
+        if (block != fromBlock && before.insert(block).second)
         {
             work.append(block->getPredecessors().begin(), block->getPredecessors().end());
         }

@@ -6,6 +6,7 @@
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
@@ -473,6 +474,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // an owning local it assigns (localOwnedParams). A kept parameter that is not one of them is
     // released on the paths that do not move it (OWN_PARAMS_RELEASED_ATTR_NAME, spec 33).
     llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> takenParams;
+    // Of a function's kept parameters, those taken on every path to a return: a move dominates
+    // each (`if (found) { e.value = v; return true; } return false;` takes `v` on one path only).
+    llvm::SmallVector<int32_t> takenOnEveryPath(mlir_ts::FuncOp funcOp, llvm::ArrayRef<int32_t> kept);
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> everyPathCache;
 
     // ---- Facts a signature says (`@keeps`, `@borrows`, `@lends`) ----
     //
@@ -548,6 +553,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // `ts.Store(value, ts.PropertyRef(record, i))`, where `record` is a local a `ts.Constant`
     // initializes: a field of a record built to be returned, a yield's.
     static bool isRecordFieldStore(mlir::Operation *user, mlir::Value value);
+
+    // Does `value` go only into such a record's field: as it is, or as a field of a tuple that
+    // does (`yield [k, v]`, also cast to a named tuple)?
+    static bool onlyIntoYield(mlir::Value value);
 
     void findYieldedFields(mlir::ModuleOp module);
 
@@ -967,6 +976,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         int32_t captured = -1;
         llvm::SmallVector<int32_t> bounded;
         llvm::SetVector<int32_t> fields;
+        // the stores of `this` into the box, which keep nothing once the state borrows
+        llvm::SmallVector<mlir::Operation *> thisStores;
     };
 
     static int32_t fieldIndex(mlir_ts::TupleType tupleType, llvm::StringRef name);

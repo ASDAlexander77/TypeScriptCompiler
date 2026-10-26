@@ -74,11 +74,12 @@ namespace own_signature
         // before the facts: a value kept for good is immortal, which keeps nothing of its owner
         findKeepers(module);
         decideKeptForGood(module);
+        // before the facts: a generator method whose state borrows `this` does not keep it
+        findBorrowingStates(module);
         computeFacts();
         computeDrops();
         pinAssignedGlobals();
         rejectGlobalArgumentsDropped();
-        findBorrowingStates(module);
         findBoundedForwarders();
         findYieldedFields(module);
         findImportedStates(module);
@@ -388,6 +389,12 @@ namespace own_signature
     int32_t OwnershipSignaturePass::parameterOf(mlir::Value value, mlir_ts::FuncOp funcOp)
     {
         auto root = rootOf(value);
+        // the object a method is called on (`this.iter()` of a class that is not `@final`)
+        if (auto object = boundThis(root))
+        {
+            return parameterOf(object, funcOp);
+        }
+
         if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
         {
             if (auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
@@ -751,8 +758,9 @@ namespace own_signature
 
         if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
         {
-            // a field a borrowing record borrows (spec 32): the record keeps nothing
-            if (isBorrowedRecordFieldStore(user))
+            // a field a borrowing record borrows (spec 32), or `this` in the box of a generator whose
+            // state borrows it: the record keeps nothing
+            if (isBorrowedRecordFieldStore(user) || user->hasAttr(OWN_STATE_BORROW_ATTR_NAME))
             {
                 return false;
             }
@@ -849,6 +857,65 @@ namespace own_signature
         return owned;
     }
 
+    llvm::SmallVector<int32_t> OwnershipSignaturePass::takenOnEveryPath(mlir_ts::FuncOp funcOp, llvm::ArrayRef<int32_t> kept)
+    {
+        if (kept.empty())
+        {
+            return {};
+        }
+
+        if (auto found = everyPathCache.find(funcOp); found != everyPathCache.end())
+        {
+            return found->second;
+        }
+
+        auto &body = funcOp.getBody();
+        mlir::DominanceInfo dominance(funcOp);
+        llvm::SmallVector<mlir::Operation *> exits;
+        funcOp.walk([&](mlir_ts::ReturnInternalOp returnOp) { exits.push_back(body.findAncestorOpInRegion(*returnOp)); });
+
+        llvm::SmallVector<int32_t> taken;
+        for (auto index : kept)
+        {
+            // the statements that keep the parameter, as decideParam sees a move
+            llvm::SmallVector<mlir::Operation *> takers;
+            for (auto *user : body.front().getArgument(index).getUsers())
+            {
+                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                auto position = -1;
+                if (!varOp || !isParameterSlot(varOp, position))
+                {
+                    continue;
+                }
+
+                for (auto *slotUser : varOp.getResult().getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                    {
+                        forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
+                            if (keeps(use, used))
+                            {
+                                takers.push_back(body.findAncestorOpInRegion(*use));
+                            }
+                        });
+                    }
+                }
+            }
+
+            // a parameter kept only through what this pass cannot see (a mixed return): as before
+            auto everyPath = takers.empty() || llvm::all_of(exits, [&](mlir::Operation *exit) {
+                return exit && llvm::any_of(takers, [&](mlir::Operation *taker) { return taker && dominance.dominates(taker, exit); });
+            });
+            if (everyPath)
+            {
+                taken.push_back(index);
+            }
+        }
+
+        everyPathCache[funcOp] = taken;
+        return taken;
+    }
+
     void OwnershipSignaturePass::computeFacts()
     {
         llvm::DenseMap<mlir::Operation *, Facts> pinned;
@@ -870,7 +937,7 @@ namespace own_signature
                     facts.owned = localOwnedParams(entry.second);
                     // what the body takes into something on every path; a parameter it returns on
                     // some paths only is kept too, and released on the others (spec 33)
-                    takenParams[entry.second] = facts.owned;
+                    takenParams[entry.second] = takenOnEveryPath(entry.second, facts.owned);
                     if (auto mixed = mixedReturnParam(entry.second); mixed >= 0 && !llvm::is_contained(facts.owned, mixed))
                     {
                         facts.owned.insert(llvm::upper_bound(facts.owned, mixed), mixed);
@@ -1301,7 +1368,20 @@ namespace own_signature
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {
-                drops.any |= reachesOutside(op->getOperand(0), funcOp);
+                if (reachesOutside(op->getOperand(0), funcOp))
+                {
+                    // the elements of an array of its element type, as a store into one drops them
+                    auto refType = mlir::dyn_cast<mlir_ts::RefType>(op->getOperand(0).getType());
+                    auto arrayType = refType ? mlir::dyn_cast<mlir_ts::ArrayType>(refType.getElementType()) : mlir_ts::ArrayType();
+                    if (arrayType)
+                    {
+                        drops.add({-1, mlir_ts::RefType::get(arrayType.getElementType())});
+                    }
+                    else
+                    {
+                        drops.any = true;
+                    }
+                }
             }
             else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
             {

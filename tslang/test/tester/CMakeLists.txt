@@ -3904,7 +3904,9 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
                  own_tuple_record_values own_value_record own_value_loop own_value_temporaries
-                 own_call_field_drops own_immortal_keepers)
+                 own_call_field_drops own_immortal_keepers
+                 own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
+                 own_loop_read_again own_length_drops_elements own_tuple_param_kept)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4385,7 +4387,6 @@ set(own_error_cases
     "own_err_borrowed_result_family|an override in its class family disagrees"
     "own_err_param_kept_used|:19:11: error: '[^']*' is used here after its value was moved"
     "own_err_any_unboxed_outlives|:11:11: error: '[^']*' borrows the result of '___unbox<!ts[.]class<C, !ts[.]class_storage<C>>>' but is used here after it may be released or overwritten"
-    "own_err_param_kept_some_paths|:13:9: error: '[^']*' is moved here on some paths only"
     "own_err_param_kept_loop|:19:9: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_delete|'delete' is not supported by -mm=own yet"
@@ -4508,7 +4509,8 @@ set(own_error_cases
     "own_err_lends_index_64|'@lends' of 'K[.]pick' names 'p63', but a method's '@lends' can name only its first 64 arguments, the receiver among them"
     "own_err_lends_outlives|:20:11: error: '[^']*' borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
-    "own_err_string_call_keeps_twice|:19:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_generator_method_reassigned|:17:5: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
+    "own_err_callback_method_overridden|:12:53: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_string_pushed_twice|:9:5: error: '[^']*' is used here after its value was moved"
     "own_err_shared_borrow_write|:12:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_borrow_call|:19:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
