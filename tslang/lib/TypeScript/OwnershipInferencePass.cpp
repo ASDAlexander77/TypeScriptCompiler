@@ -490,7 +490,7 @@ namespace own_inference
                                OWN_NO_DROPS_ATTR_NAME, OWN_DROP_FIELDS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME,
                                OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
-                               OWN_RESULT_BOUNDED_ATTR_NAME,
+                               OWN_RESULT_BOUNDED_ATTR_NAME, OWN_STATE_BORROW_ATTR_NAME,
                                OWN_CAPTURE_BORROW_ATTR_NAME})
             {
                 op->removeAttr(name);
@@ -569,6 +569,11 @@ namespace own_inference
 
         auto retainOp = mlir::cast<mlir_ts::RetainOp>(retain);
         auto value = retainOp.getReference();
+        if (copyIntoTuple(retainOp))
+        {
+            return true;
+        }
+
         if (!isCopyableString(value.getType()) || borrowsKnownParam(value))
         {
             return false;
@@ -625,6 +630,50 @@ namespace own_inference
         auto copy = builder.create<mlir_ts::StringCopyOp>(retain->getLoc(), taking->get().getType(), taking->get());
         taking->set(copy);
         retain->erase();
+        return true;
+    }
+
+    bool OwnershipInferencePass::copyIntoTuple(mlir_ts::RetainOp retainOp)
+    {
+        // `[s, n]` of a borrowed string: rc retains the tuple, which retains the string in it. The
+        // tuple starts from a copy instead, which is its own (spec 22). Only when strings are all it
+        // holds blocks of: a borrowed object in it cannot be copied.
+        auto createTupleOp = retainOp.getReference().getDefiningOp<mlir_ts::CreateTupleOp>();
+        if (!createTupleOp || createTupleOp->getBlock() != retainOp->getBlock() ||
+            !createTupleOp->isBeforeInBlock(retainOp))
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::OpOperand *> borrowed;
+        for (auto &operand : createTupleOp->getOpOperands())
+        {
+            auto field = operand.get();
+            if (holdsNoBlock(field) || isConstantData(field) || isFresh(rootOf(field)))
+            {
+                continue;
+            }
+
+            if (!isCopyableString(field.getType()) || borrowsKnownParam(field))
+            {
+                return false;
+            }
+
+            borrowed.push_back(&operand);
+        }
+
+        if (borrowed.empty())
+        {
+            return false;
+        }
+
+        mlir::OpBuilder builder(createTupleOp);
+        for (auto *operand : borrowed)
+        {
+            operand->set(builder.create<mlir_ts::StringCopyOp>(retainOp->getLoc(), operand->get().getType(), operand->get()));
+        }
+
+        retainOp->erase();
         return true;
     }
 

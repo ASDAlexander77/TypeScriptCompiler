@@ -207,6 +207,58 @@ namespace own_signature
         return recordOp && recordOp.getInitializer() && recordOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>();
     }
 
+    bool OwnershipSignaturePass::onlyIntoYield(mlir::Value value)
+    {
+        for (auto depth = 0; depth < 8; depth++)
+        {
+            auto users = llvm::make_filter_range(value.getUsers(), [](mlir::Operation *user) {
+                return !mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user);
+            });
+            if (llvm::hasSingleElement(users))
+            {
+                auto *user = *users.begin();
+                if (isRecordFieldStore(user, value))
+                {
+                    return true;
+                }
+
+                // a field of a tuple that is
+                if (auto createTupleOp = mlir::dyn_cast<mlir_ts::CreateTupleOp>(user))
+                {
+                    value = createTupleOp.getResult();
+                    continue;
+                }
+
+                return false;
+            }
+
+            // a tuple cast to another of its shape (`<[key: K, value: V]>[k, v]`): its fields read
+            // out, each into the one tuple made again of them
+            mlir_ts::CreateTupleOp remade;
+            for (auto *user : users)
+            {
+                auto extractOp = mlir::dyn_cast<mlir_ts::ExtractPropertyOp>(user);
+                auto *fieldUser = extractOp && extractOp->hasOneUse() ? *extractOp->getUsers().begin() : nullptr;
+                auto createTupleOp = mlir::dyn_cast_or_null<mlir_ts::CreateTupleOp>(fieldUser);
+                if (!createTupleOp || (remade && remade != createTupleOp))
+                {
+                    return false;
+                }
+
+                remade = createTupleOp;
+            }
+
+            if (!remade)
+            {
+                return false;
+            }
+
+            value = remade.getResult();
+        }
+
+        return false;
+    }
+
     void OwnershipSignaturePass::findYieldedFields(mlir::ModuleOp module)
     {
         // (state type, field) -> its reads and its stores
@@ -267,13 +319,8 @@ namespace own_signature
                 continue;
             }
 
-            // read only to be put into a yield's record
-            auto onlyYielded = llvm::all_of(uses.reads, [](mlir_ts::LoadOp loadOp) {
-                auto users = llvm::make_filter_range(loadOp->getUsers(), [](mlir::Operation *user) {
-                    return !mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user);
-                });
-                return llvm::hasSingleElement(users) && isRecordFieldStore(*users.begin(), loadOp.getResult());
-            });
+            // read only to be put into a yield's record, or into a tuple that is (`yield [k, v]`)
+            auto onlyYielded = llvm::all_of(uses.reads, [](mlir_ts::LoadOp loadOp) { return onlyIntoYield(loadOp.getResult()); });
 
             // each value stored is yielded later in its block: nothing between stops the generator
             auto eachYielded = llvm::all_of(uses.stores, [&](mlir_ts::StoreOp storeOp) {
@@ -619,6 +666,7 @@ namespace own_signature
                             state.bounded.push_back(index);
                         }
 
+                        state.thisStores.push_back(storeOp);
                         continue;
                     }
 
@@ -647,6 +695,10 @@ namespace own_signature
             auto bounded = state.bounded;
             llvm::sort(bounded);
             borrowsFound[state.maker] = bounded;
+            for (auto *store : state.thisStores)
+            {
+                store->setAttr(OWN_STATE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
         }
         if (states.empty())
         {

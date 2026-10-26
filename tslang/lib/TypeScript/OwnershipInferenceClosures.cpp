@@ -292,6 +292,12 @@ namespace own_inference
                 // a closure's box (`.map(f)` calls its maker with it): it lives while the closures on
                 // it do, and what it holds while their owners do. A reference to storage, so first.
                 auto root = rootOf(args[index]);
+                // the object a method is called on (`w.iter()` of a class that is not `@final`)
+                if (auto object = boundThis(root))
+                {
+                    root = rootOf(object);
+                }
+
                 if (auto boxOp = root.getDefiningOp<mlir_ts::VariableOp>(); boxOp && boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
                 {
                     if (!checkBoundedByBox(call, root, uses, name))

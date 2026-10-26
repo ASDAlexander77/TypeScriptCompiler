@@ -549,6 +549,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // initializes: a field of a record built to be returned, a yield's.
     static bool isRecordFieldStore(mlir::Operation *user, mlir::Value value);
 
+    // Does `value` go only into such a record's field: as it is, or as a field of a tuple that
+    // does (`yield [k, v]`, also cast to a named tuple)?
+    static bool onlyIntoYield(mlir::Value value);
+
     void findYieldedFields(mlir::ModuleOp module);
 
     // A function that says `@borrows` and makes no state itself, but returns what a call that has
@@ -967,6 +971,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         int32_t captured = -1;
         llvm::SmallVector<int32_t> bounded;
         llvm::SetVector<int32_t> fields;
+        // the stores of `this` into the box, which keep nothing once the state borrows
+        llvm::SmallVector<mlir::Operation *> thisStores;
     };
 
     static int32_t fieldIndex(mlir_ts::TupleType tupleType, llvm::StringRef name);

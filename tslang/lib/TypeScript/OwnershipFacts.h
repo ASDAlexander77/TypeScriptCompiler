@@ -84,6 +84,9 @@ constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
 // result is the caller's to own, but no use of it may come after any of these arguments is given
 // back, and it may not be kept anywhere that outlives them.
 #define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
+// A generator method's store of `this` into its box (`.this`), when the state borrows it: the store
+// keeps nothing, so the method does not keep `this` (OwnershipSignaturePass::keeps).
+#define OWN_STATE_BORROW_ATTR_NAME "__own_state_borrow"
 // The globals a call may give a new value, by name: a store to one, or its release, in a callee or
 // in a call it makes. A call that may drop and whose callees are not known may assign any of them
 // (OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME). A read of a global ends at such a call (checkGlobalRead).

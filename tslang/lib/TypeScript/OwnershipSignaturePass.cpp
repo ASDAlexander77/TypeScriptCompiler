@@ -74,11 +74,12 @@ namespace own_signature
         // before the facts: a value kept for good is immortal, which keeps nothing of its owner
         findKeepers(module);
         decideKeptForGood(module);
+        // before the facts: a generator method whose state borrows `this` does not keep it
+        findBorrowingStates(module);
         computeFacts();
         computeDrops();
         pinAssignedGlobals();
         rejectGlobalArgumentsDropped();
-        findBorrowingStates(module);
         findBoundedForwarders();
         findYieldedFields(module);
         findImportedStates(module);
@@ -388,6 +389,12 @@ namespace own_signature
     int32_t OwnershipSignaturePass::parameterOf(mlir::Value value, mlir_ts::FuncOp funcOp)
     {
         auto root = rootOf(value);
+        // the object a method is called on (`this.iter()` of a class that is not `@final`)
+        if (auto object = boundThis(root))
+        {
+            return parameterOf(object, funcOp);
+        }
+
         if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
         {
             if (auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
@@ -751,8 +758,9 @@ namespace own_signature
 
         if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
         {
-            // a field a borrowing record borrows (spec 32): the record keeps nothing
-            if (isBorrowedRecordFieldStore(user))
+            // a field a borrowing record borrows (spec 32), or `this` in the box of a generator whose
+            // state borrows it: the record keeps nothing
+            if (isBorrowedRecordFieldStore(user) || user->hasAttr(OWN_STATE_BORROW_ATTR_NAME))
             {
                 return false;
             }
