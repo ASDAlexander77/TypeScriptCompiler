@@ -750,13 +750,15 @@ inline mlir::Operation *findBetween(mlir::Operation *read, mlir::Operation *call
         scan(op);
     }
 
-    // the blocks on a path: reached from the read's, and reaching the call's
+    // the blocks on a path: reached from the read's, and reaching the call's. Not through the read's
+    // block again: a path back into it reads again (a loop's `continue`), and the call is given that
+    // read
     llvm::SmallPtrSet<mlir::Block *, 16> after;
     llvm::SmallVector<mlir::Block *> work(fromBlock->getSuccessors().begin(), fromBlock->getSuccessors().end());
     while (!work.empty())
     {
         auto *block = work.pop_back_val();
-        if (after.insert(block).second)
+        if (block != fromBlock && after.insert(block).second)
         {
             work.append(block->getSuccessors().begin(), block->getSuccessors().end());
         }
@@ -767,7 +769,7 @@ inline mlir::Operation *findBetween(mlir::Operation *read, mlir::Operation *call
     while (!work.empty())
     {
         auto *block = work.pop_back_val();
-        if (before.insert(block).second)
+        if (block != fromBlock && before.insert(block).second)
         {
             work.append(block->getPredecessors().begin(), block->getPredecessors().end());
         }

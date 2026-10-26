@@ -225,6 +225,9 @@ class OwnershipInferencePass
     llvm::DenseMap<mlir::Operation *, Closure *> captureStores;
     // rc's references for boxes, which the closures decide
     llvm::DenseSet<mlir::Operation *> captureRetains;
+    // A string read out of a place, given to a call that may release it (the dry run's): the call
+    // gets a copy instead, released after it (spec 22), read -> call
+    llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
     // each closure over a cell, by its `ts.CreateBoundFunction`
     llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
     // each generator's capture box, which escapes with its state object (classifyStateBoxes)
@@ -788,6 +791,8 @@ class OwnershipInferencePass
     // Reports and returns false when the read is kept, or used after something that may destroy
     // it.
     bool checkPlaceRead(mlir::Operation *read, llvm::SetVector<mlir::Operation *> &toErase);
+    // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
+    static bool copiesInto(mlir::Operation *call, mlir::Value value);
 
     // A local that holds a borrow through `user`, and the field path under it that holds it (empty:
     // the local's value itself): a store of it into the local, or into a field of the local's value

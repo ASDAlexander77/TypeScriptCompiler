@@ -143,6 +143,7 @@ namespace own_inference
         mergeBorrowRetains.clear();
         captureStores.clear();
         captureRetains.clear();
+        callCopies.clear();
         returnedParams.clear();
         returnsBorrowOf = resultBorrows(f);
         returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
@@ -539,6 +540,37 @@ namespace own_inference
         for (auto *retain : retains)
         {
             copyForRetain(retain);
+        }
+
+        for (auto [read, call] : callCopies)
+        {
+            auto value = read->getResult(0);
+            if (!llvm::is_contained(call->getOperands(), value))
+            {
+                continue;
+            }
+
+            // a callee that keeps it takes the copy; else it is released after the call
+            auto args = callArgs(call);
+            auto kept = llvm::any_of(ownedParams(call), [&](int32_t index) {
+                return static_cast<size_t>(index) < args.size() && args[index] == value;
+            });
+
+            mlir::OpBuilder builder(call);
+            auto copy = builder.create<mlir_ts::StringCopyOp>(call->getLoc(), value.getType(), value);
+            for (auto &operand : call->getOpOperands())
+            {
+                if (operand.get() == value)
+                {
+                    operand.set(copy);
+                }
+            }
+
+            if (!kept)
+            {
+                builder.setInsertionPointAfter(call);
+                builder.create<mlir_ts::ReleaseOp>(call->getLoc(), copy);
+            }
         }
     }
 

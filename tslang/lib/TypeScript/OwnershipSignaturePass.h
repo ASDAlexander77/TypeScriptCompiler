@@ -6,6 +6,7 @@
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
@@ -473,6 +474,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // an owning local it assigns (localOwnedParams). A kept parameter that is not one of them is
     // released on the paths that do not move it (OWN_PARAMS_RELEASED_ATTR_NAME, spec 33).
     llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> takenParams;
+    // Of a function's kept parameters, those taken on every path to a return: a move dominates
+    // each (`if (found) { e.value = v; return true; } return false;` takes `v` on one path only).
+    llvm::SmallVector<int32_t> takenOnEveryPath(mlir_ts::FuncOp funcOp, llvm::ArrayRef<int32_t> kept);
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> everyPathCache;
 
     // ---- Facts a signature says (`@keeps`, `@borrows`, `@lends`) ----
     //
