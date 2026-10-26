@@ -165,16 +165,14 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
         return value;
     }
-    /*
+    // an enum is its element type once lowered: compared as that type. Without it two enum values
+    // (`a == b`, `held == other` with `held: E | undefined`) fell to the "not applicable" warning
+    // at the bottom and were constant false; only a member (a literal) compared, as an integer
     else if (auto leftEnumType = dyn_cast<mlir_ts::EnumType>(leftType))
     {
-        auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), left);
-        auto castRight = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), right);
-        auto res = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
-        builder.create<mlir_ts::CastOp>(binOp, leftEnumType, res);
-        return value;
+        auto rightElementType = isa<mlir_ts::EnumType>(rightType) ? cast<mlir_ts::EnumType>(rightType).getElementType() : rightType;
+        return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, leftEnumType.getElementType(), right, rightElementType, builder, typeConverter, compileOptions);
     }
-    */
     else if (isa<mlir_ts::StringType>(leftType))
     {
         if (left.getType() != right.getType())
