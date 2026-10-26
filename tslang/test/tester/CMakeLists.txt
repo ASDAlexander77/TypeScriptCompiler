@@ -554,6 +554,14 @@ tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-switch-char-string-cases COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
 tslang_add_test(NAME test-compile-00-switch-default-fallthrough COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_default_fallthrough.ts")
 tslang_add_test(NAME test-compile-00-generic-class-constructor-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
+# A class inferred from its constructor's arguments is not also made with its defaults:
+# `new Pairs([["one", 1]])` made all of Pairs<any, any> beside Pairs<string, si32>.
+add_test(NAME test-generic-class-inference-no-default-specialization
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
+set_tests_properties(test-generic-class-inference-no-default-specialization
+                     PROPERTIES PASS_REGULAR_EXPRESSION "Pairs<!ts[.]string,si32>[.]constructor"
+                                FAIL_REGULAR_EXPRESSION "Pairs<!ts[.]any|error:|Stack dump")
 tslang_add_test(NAME test-compile-00-generic-ref-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-compile-00-generator-done-value-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
 tslang_add_test(NAME test-compile-00-generator-yield-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_value.ts")

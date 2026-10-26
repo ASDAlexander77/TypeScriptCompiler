@@ -87,8 +87,10 @@ kinds:
   counted as kept. It made `set` and `add` keeping calls, and a string given to two of them
   (`m1.set(k, 1); m2.set(k, 2)`) has no retain to copy (spec 22.4): an error that the copy into the
   tuple (rule 4) avoids, while no object case compiled with it either.
-- `new Set([1, 2])` instantiates `Set<any>` beside `Set<si32>` (MLIRGen tries the default type
-  argument first, in every model), so an untyped container fails under own for the `any` case.
+- `new Set([1, 2])` instantiated `Set<any>` beside `Set<si32>` (MLIRGen specialized by the default
+  type arguments before inferring them, in every model), so an untyped container failed under own
+  for the `any` case. Fixed after: the defaults are taken only when neither the constructor's
+  arguments nor the receiver give the type arguments.
 - A callback that assigns a captured variable (`(s) => { r += s.n; }`) has no family, for a function
   as much as a method: what it lends is still an error.
 - A module-level `Date` with a method that changes it (`event.setDate(24)`) is "a value read out of
