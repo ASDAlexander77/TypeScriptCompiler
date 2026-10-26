@@ -184,19 +184,35 @@ void readOwnFacts(CompileOptions &compileOptions)
 
     // and the default library's: its own build is the one every own program links (statically: its
     // DLL, which a program may load another copy of, is never read), so `Math.abs` is a call of a
-    // function whose facts are known
+    // function whose facts are known. Under the JIT, the DLL the JIT loads is the code that runs:
+    // its facts are read from its file, as its borrow facts are (readBorrowFacts). Without them
+    // every call into the library may destroy anything.
     std::vector<std::string> files(ownFacts.begin(), ownFacts.end());
-    if (!compileOptions.noDefaultLib && emitAction != Action::RunJIT)
+    std::string jitDefaultLib;
+    if (!compileOptions.noDefaultLib)
     {
-        files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+        if (emitAction == Action::RunJIT)
+        {
+            // the JIT is host-only, and loads this file (jit.cpp, prepareJitProcess)
+            jitDefaultLib = getDefaultLibBinary(/*shared=*/true, compileOptions,
+                                                llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple())));
+            files.push_back(jitDefaultLib);
+        }
+        else
+        {
+            files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+        }
     }
 
     for (auto &file : files)
     {
-        if (!llvm::sys::fs::is_regular_file(file) || !isStaticLinkInput(file))
+        if (!llvm::sys::fs::is_regular_file(file) || (!isStaticLinkInput(file) && file != jitDefaultLib))
         {
             continue;
         }
+
+        // a JIT cache entry depends on what they said
+        compileOptions.importedOwnFactsFiles.push_back(file);
 
         for (auto &[symbol, text] : Dump::readCStringSymbols(file, SHARED_LIB_OWN_OBJECT_FACTS))
         {

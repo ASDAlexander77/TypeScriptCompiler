@@ -581,6 +581,12 @@ class JitUnitBuilder
             addDep(library, fileHash(library));
         }
 
+        // ...and those whose own facts decided what -mm=own accepted and erased (borrowfacts.cpp)
+        for (auto &library : options.importedOwnFactsFiles)
+        {
+            addDep(library, fileHash(library));
+        }
+
         registerMLIRDialects(*module);
 
         llvm::LLVMContext llvmContext;
