@@ -285,6 +285,7 @@ tslang_add_test(NAME test-compile-00-int64-mul-literal COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-int-literal-above-s32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00int_literal_above_s32.ts")
 tslang_add_test(NAME test-compile-00-literal-union-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_arith.ts")
 tslang_add_test(NAME test-compile-00-literal-union-cast COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_cast.ts")
+tslang_add_test(NAME test-compile-00-narrowing-and-or COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowing_and_or.ts")
 tslang_add_test(NAME test-compile-00-enum-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00enum_compare.ts")
 tslang_add_test(NAME test-compile-00-bool-const-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-compile-00-mixed-type-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
@@ -888,6 +889,7 @@ tslang_add_test(NAME test-jit-00-int64-mul-literal COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-int-literal-above-s32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00int_literal_above_s32.ts")
 tslang_add_test(NAME test-jit-00-literal-union-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_arith.ts")
 tslang_add_test(NAME test-jit-00-literal-union-cast COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_cast.ts")
+tslang_add_test(NAME test-jit-00-narrowing-and-or COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowing_and_or.ts")
 tslang_add_test(NAME test-jit-00-enum-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00enum_compare.ts")
 tslang_add_test(NAME test-jit-00-bool-const-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-jit-00-mixed-type-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
@@ -2119,6 +2121,7 @@ set(TSLANG_CORPUS
     00int_literal_above_s32.ts
     00literal_union_arith.ts
     00literal_union_cast.ts
+    00narrowing_and_or.ts
     00enum_compare.ts
     00bool_const_array.ts
     00break_continue_scope_exit.ts

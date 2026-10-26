@@ -4144,6 +4144,18 @@ class MLIRGenImpl
         mlir::Type safeType;
     };
 
+    // what a false condition narrows: one test gives one case, `a || b` (false when both are) gives
+    // the cases of both
+    using ElseSafeCases = SmallVector<ElseSafeCase, 2>;
+
+    void addElseSafeCastStatements(const ElseSafeCases &elseSafeCases, const GenContext &genContext)
+    {
+        for (auto &elseSafeCase : elseSafeCases)
+        {
+            addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+        }
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto safeType = getType(typeToken, genContext);
@@ -4750,7 +4762,9 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, typePredicateType.getElementType(), inverse, elseSafeCase, genContext);
     }
 
-    mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    // Narrows the then branch of a condition here, and gathers into elseSafeCases what narrows its
+    // else branch (the caller adds those there).
+    mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCases *elseSafeCases, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
 
@@ -4760,25 +4774,51 @@ class MLIRGenImpl
             auto op = (SyntaxKind)binExpr->operatorToken;
             if (op == SyntaxKind::AmpersandAmpersandToken)
             {
-                auto left = binExpr->left;
-                auto leftResult = checkSafeCast(left, conditionValue, elseSafeCase, genContext);
-                if (mlir::failed(leftResult))
-                {
-                    return leftResult;
-                }
+                // `a && b` is true when both are: each side narrows the then branch, also when the other
+                // is no test (`k && x !== undefined` stopped at `k`). It is false when either is, so
+                // neither narrows the else branch: in the else of `x === undefined && k`, x was read as
+                // defined
+                auto leftResult = checkSafeCast(binExpr->left, conditionValue, nullptr, genContext);
+                auto rightResult = checkSafeCast(binExpr->right, conditionValue, nullptr, genContext);
+                return mlir::success(mlir::succeeded(leftResult) || mlir::succeeded(rightResult));
+            }
 
-                auto right = binExpr->right;                
-                auto rightResult = checkSafeCast(right, conditionValue, elseSafeCase, genContext);
-                if (mlir::failed(rightResult))
+            if (op == SyntaxKind::BarBarToken)
+            {
+                // `a || b` is true when either is: neither narrows the then branch. It is false when both
+                // are, so the else branch has what each side's being false gives
+                if (elseSafeCases)
                 {
-                    return rightResult;
+                    collectElseSafeCases(binExpr->left, conditionValue, *elseSafeCases, genContext);
+                    collectElseSafeCases(binExpr->right, conditionValue, *elseSafeCases, genContext);
                 }
 
                 return mlir::success();
             }
         }
 
-        return checkSafeCastOne(exprIn, conditionValue, elseSafeCase, genContext);
+        ElseSafeCase elseSafeCase{};
+        auto result = checkSafeCastOne(exprIn, conditionValue, elseSafeCases ? &elseSafeCase : nullptr, genContext);
+        if (elseSafeCases && elseSafeCase.safeType)
+        {
+            elseSafeCases->push_back(elseSafeCase);
+        }
+
+        return result;
+    }
+
+    // What a condition's being false narrows, without narrowing anything where it is true: the casts
+    // checkSafeCast emits for that go to a temporary module, thrown away
+    void collectElseSafeCases(Expression expr, mlir::Value conditionValue, ElseSafeCases &elseSafeCases, const GenContext &genContext)
+    {
+        TempModuleScope tempModuleScope(*this);
+        SymbolTableScopeT varScope(symbolTable);
+        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        evalGenContext.funcOp = tempFuncOp;
+        checkSafeCast(expr, conditionValue, &elseSafeCases, evalGenContext);
     }
 
     mlir::LogicalResult checkSafeCastOne(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
@@ -5604,7 +5644,6 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
-        ElseSafeCase elseSafeCase;
         mlir::Value resultTrue;
         {
             if (rightSkipped)
@@ -5617,7 +5656,7 @@ class MLIRGenImpl
                 // check if we do safe-cast here
                 SymbolTableScopeT varScope(symbolTable);
                 SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-                checkSafeCast(leftExpression, V(result), &elseSafeCase, genContext);
+                checkSafeCast(leftExpression, V(result), nullptr, genContext);
 
                 auto result = mlirGen(rightExpression, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -5658,10 +5697,12 @@ class MLIRGenImpl
             {
                 SymbolTableScopeT varScope(symbolTable);
                 SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-                if (elseSafeCase.safeType)
-                {
-                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-                }   
+
+                // the right side of `||` runs when the left is false: `x === undefined || x > 1`
+                // compares a defined x. Never gathered before, as only `&&` checked its left side
+                ElseSafeCases elseSafeCases;
+                collectElseSafeCases(leftExpression, leftExpressionValue, elseSafeCases, genContext);
+                addElseSafeCastStatements(elseSafeCases, genContext);
 
                 auto result = mlirGen(rightExpression, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)

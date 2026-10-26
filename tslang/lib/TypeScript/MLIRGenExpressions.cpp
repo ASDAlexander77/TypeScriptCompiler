@@ -704,14 +704,14 @@ namespace mlirgen
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
 
-        ElseSafeCase elseSafeCase;
+        ElseSafeCases elseSafeCases;
         mlir::Value resultTrue;
         if (staticCondition.value_or(true))
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-            checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
+            checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCases, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
             if (!genContext.allowPartialResolve)
             {
@@ -735,10 +735,7 @@ namespace mlirgen
         {
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-            if (elseSafeCase.safeType)
-            {
-                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-            }
+            addElseSafeCastStatements(elseSafeCases, genContext);
 
             auto result2 = mlirGen(whenFalseExpression, genContext);
             if (!genContext.allowPartialResolve)
@@ -751,10 +748,7 @@ namespace mlirgen
         else
         {
             resultFalse = mlirGenSkippedBranch(location, whenFalseExpression, [&](const GenContext &evalGenContext) {
-                if (elseSafeCase.safeType)
-                {
-                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, evalGenContext);
-                }
+                addElseSafeCastStatements(elseSafeCases, evalGenContext);
             }, genContext);
         }
 
