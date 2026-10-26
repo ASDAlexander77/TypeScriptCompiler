@@ -1280,7 +1280,13 @@ namespace mlirgen
         mlir::Type type;
         auto typeExpression = newExpression->expression;
         ////auto isNewArray = typeExpression == SyntaxKind::ElementAccessExpression && newExpression->arguments.isTextRangeEmpty();
-        auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+        // Without type arguments, the type may come from the constructor's arguments or the receiver
+        // (below): the generic is specialized by its defaults only when neither gives one. Done
+        // first, `new Set([1, 2])` made all of Set<any> beside the Set<si32> it is.
+        auto deferDefaults = newExpression->typeArguments.size() == 0 &&
+                             (newExpression->arguments.size() > 0 || genContext.receiverType);
+        auto result = deferDefaults ? mlirGen(typeExpression, genContext)
+                                    : mlirGen(typeExpression, newExpression->typeArguments, genContext);
         if (result.failed())
         {
             if (typeExpression == SyntaxKind::Identifier)
@@ -1302,6 +1308,7 @@ namespace mlirgen
 
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+        auto unspecialized = deferDefaults ? value : mlir::Value();
 
         // `new Set([2, 4, 6, 8])`: a generic class written without type arguments takes them from
         // its constructor's arguments (see inferClassTypeFromConstructorArguments). Ahead of the
@@ -1365,6 +1372,15 @@ namespace mlirgen
                     }
                 }
             }
+        }
+
+        // neither gave the type: the defaults, as without the deferral
+        if (unspecialized && value == unspecialized)
+        {
+            SmallVector<mlir::Value, 4> emptyOperands;
+            auto specialized = mlirGenSpecialized(location, value, newExpression->typeArguments, emptyOperands, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(specialized)
+            value = V(specialized);
         }
 
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(value.getType()))
