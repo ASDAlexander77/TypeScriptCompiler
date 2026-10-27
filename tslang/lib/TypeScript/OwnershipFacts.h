@@ -684,6 +684,19 @@ inline bool sameSlot(mlir::Operation *a, mlir::Operation *b)
     return globalA && globalB && globalA.getGlobalName() == globalB.getGlobalName();
 }
 
+// A place a `ts.Swap` exchanges, as an overwrite of it names it: a field's position, or -1 for an
+// element (spec 42).
+inline int64_t swappedPosition(mlir::Value place)
+{
+    int64_t position = -1;
+    if (auto propertyRefOp = place.getDefiningOp<mlir_ts::PropertyRefOp>())
+    {
+        position = propertyRefOp.getPosition();
+    }
+
+    return position;
+}
+
 // The storage an op gives a new value to or releases: a store, `ts.ReleaseSlot`.
 inline mlir::Operation *slotWritten(mlir::Operation *op)
 {

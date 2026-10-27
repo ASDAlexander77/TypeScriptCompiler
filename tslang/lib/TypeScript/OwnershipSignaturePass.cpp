@@ -1379,6 +1379,17 @@ namespace own_signature
                     drops.add({position, slot.getType()});
                 }
             }
+            else if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(op))
+            {
+                // an exchange drops a borrow of either place as an overwrite of it would (spec 42)
+                for (auto place : swapOp->getOperands())
+                {
+                    if (reachesOutside(place, funcOp))
+                    {
+                        drops.add({swappedPosition(place), place.getType()});
+                    }
+                }
+            }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {
                 if (reachesOutside(op->getOperand(0), funcOp))
@@ -1578,6 +1589,11 @@ namespace own_signature
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {
                 drops = reachesOutside(op->getOperand(0), funcOp);
+            }
+            else if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(op))
+            {
+                // the caller's borrow of a place it exchanges reads another place's value (spec 42)
+                drops = reachesOutside(swapOp.getFirst(), funcOp) || reachesOutside(swapOp.getSecond(), funcOp);
             }
             else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
             {

@@ -4675,3 +4675,45 @@ needs an exchange of two slots the analysis sees as moving nothing.
 return `this`, and a read returned directly and through a local, over strings built at run time,
 churning between steps, under own, rc, gc and none; AOT under own, 1000, 200000 and 400000
 iterations peak at 4.0, 4.0 and 4.4 MB (a returned read copied would leak).
+
+## 42. An exchange of two places (`[p, q] = [q, p]`), 2026-10-27
+
+`sort` and `reverse` over class instances (§41, not there). A swap through a local, `let v = a[i];
+a[i] = a[j]; a[j] = v`, holds one element in `v` while its slot is overwritten: for a string `v` is
+a copy, for an object a second owner, and the reads stored back were "borrows an element and cannot
+be stored". Recognising the three stores in the inference would mean proving, after the affine
+lowering and CSE, that nothing between them reads, writes or releases either place. JavaScript has
+a statement for the exchange, and MLIRGen now gives it an op of its own.
+
+- **`ts.Swap %first, %second`.** Two references of one type; each place takes the other's value.
+  Every value keeps exactly one place, so it is emitted with no `ts.Retain`, `ts.ReleaseSlot` or
+  drop in any model, and rc's counts are what they were. Both operands read and write memory, so
+  nothing folds or hoists it. The LLVM lowering loads both values before it stores either: a
+  place swapped with itself (`i == j`) keeps its value.
+- **MLIRGen.** An expression statement `[p, q] = [q, p]` (`discardedAssignments`: the array the
+  assignment would give as its value is never built) whose two sides name the same two places
+  (`isSamePlaceExpression`: names, `this`, numbers, members and elements of those, `+ - *` and
+  unary `-` of those - nothing that runs code, so evaluating each target once is evaluating it
+  twice) and whose targets are each an element or a field of one type (`swappablePlace`: a
+  `ts.Load` through a `ts.ElementRef` or a `ts.PropertyRef`) is a `ts.Swap`. Anything else - a
+  local, a global, a captured variable, an accessor, an interface's optional field, places of two
+  types, the assignment's value used - takes the path it took before.
+- **The inference.** A swap is one of the function's drops: it frees nothing, but a borrow read
+  out of either place reads a block the other place holds now, under another root perhaps, which
+  may end first (`[a[0], b[0]] = [b[0], a[0]]`, then `b` released). `dropsChain` drops a chain
+  through either place as an overwrite of it would (`overwritesChain`, an element by its type,
+  a field by its position).
+- **The signature pass.** A swap through a place that reaches outside the function is an
+  overwrite of both places for its callers: `dropsInBody`, and `fieldDropsInBody` names the two.
+  Without it a function that only swaps would be `__own_no_drops`, and a caller's borrow of an
+  element would outlive the call that moved it.
+
+`own_swap_elements` reverses and sorts a `C[]` with generic functions written as the default
+library's, swaps an element with itself, two fields, and elements of two arrays, and reverses and
+sorts strings built at run time, churning between steps, under own, rc, gc and none; own emits no
+counting. Negatives: `own_err_swap_borrow_used_after` (an element read before a swap, used after
+it) and `own_err_swap_call_borrow_used_after` (the same across a call that swaps).
+
+DefaultLib: `reverse` and `selectionSort` exchange elements with `[a[i], a[j]] = [a[j], a[i]]`;
+under own a string element is no longer copied out and back. Not here: `copyWithin` over class
+instances, which would leave one object in two elements - an error by design.

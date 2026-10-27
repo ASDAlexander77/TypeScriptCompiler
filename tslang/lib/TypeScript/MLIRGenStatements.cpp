@@ -448,6 +448,7 @@ namespace mlirgen
             expression = expression.as<ParenthesizedExpression>()->expression;
         }
 
+        const void *discarded = nullptr;
         if (expression == SyntaxKind::BinaryExpression)
         {
             auto binaryExpression = expression.as<BinaryExpression>();
@@ -456,9 +457,21 @@ namespace mlirgen
             {
                 supportedYieldScope.mark(binaryExpression->right, true);
             }
+
+            if (binaryExpression->operatorToken == SyntaxKind::EqualsToken
+                && binaryExpression->left == SyntaxKind::ArrayLiteralExpression)
+            {
+                discarded = expression.operator->();
+                discardedAssignments.insert(discarded);
+            }
         }
 
         auto result = mlirGen(expressionStatementAST->expression, genContext);
+        if (discarded)
+        {
+            discardedAssignments.erase(discarded);
+        }
+
         EXIT_IF_FAILED(result)
         return mlir::success();
     }

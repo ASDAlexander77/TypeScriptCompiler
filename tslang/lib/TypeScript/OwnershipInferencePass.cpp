@@ -250,6 +250,11 @@ namespace own_inference
                     drops.push_back(op);
                 }
             }
+            else if (mlir::isa<mlir_ts::SwapOp>(op))
+            {
+                // an exchange of two places, which moves their values (spec 42)
+                drops.push_back(op);
+            }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp,
                                mlir_ts::SetLengthOfOp>(op) ||
                      isCall(op))

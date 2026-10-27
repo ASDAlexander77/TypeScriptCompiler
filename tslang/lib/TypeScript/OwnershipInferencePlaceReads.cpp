@@ -604,6 +604,15 @@ namespace own_inference
             return true;
         }
 
+        // An exchange frees nothing, but what a borrow of either place reads is the other place's
+        // now, under another root perhaps, which may end first (spec 42)
+        if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(drop))
+        {
+            return llvm::any_of(swapOp->getOperands(), [&](mlir::Value place) {
+                return overwritesChain(swappedPosition(place), place.getType(), chain);
+            });
+        }
+
         if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop))
         {
             // An assignment to a captured variable destroys its old value, which is reached only
