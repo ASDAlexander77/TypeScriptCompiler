@@ -585,6 +585,56 @@ namespace own_inference
         return param >= 0 && (llvm::is_contained(ownedParams(getFunction()), param) || param == returnsBorrowOf);
     }
 
+    bool OwnershipInferencePass::mayBeReturned(mlir_ts::VariableOp varOp)
+    {
+        llvm::SmallVector<mlir::Value> slots{varOp.getResult()};
+        llvm::SmallPtrSet<mlir::Value, 4> seen{varOp.getResult()};
+        while (!slots.empty())
+        {
+            auto slot = slots.pop_back_val();
+            for (auto *user : slot.getUsers())
+            {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (!loadOp)
+                {
+                    continue;
+                }
+
+                auto returned = false;
+                forEachUse(loadOp.getResult(), [&](mlir::Operation *loadUser, mlir::Value used) {
+                    if (mlir::isa<mlir_ts::ReturnInternalOp>(loadUser))
+                    {
+                        returned = true;
+                        return;
+                    }
+
+                    mlir::Value other;
+                    if (auto otherVar = mlir::dyn_cast<mlir_ts::VariableOp>(loadUser))
+                    {
+                        other = otherVar.getResult();
+                    }
+                    else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(loadUser);
+                             storeOp && storeOp.getValue() == used && storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>())
+                    {
+                        other = storeOp.getReference();
+                    }
+
+                    if (other && seen.insert(other).second)
+                    {
+                        slots.push_back(other);
+                    }
+                });
+
+                if (returned)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     bool OwnershipInferencePass::copyForRetain(mlir::Operation *retain)
     {
         // `let x = v`: the local starts from a copy
@@ -592,7 +642,16 @@ namespace own_inference
         {
             auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
             auto init = varOp ? varOp.getInitializer() : mlir::Value();
-            if (!init || !isCopyableString(init.getType()) || borrowsKnownParam(init) || isCellVariable(varOp.getResult()))
+            if (!init || !isCopyableString(init.getType()) || isCellVariable(varOp.getResult()))
+            {
+                return false;
+            }
+
+            // a read of the parameter the result borrows, into a local that is not returned (a swap's
+            // `let v = this[i]` in a function that returns `this`): a copy, as any read is
+            if (borrowsKnownParam(init) &&
+                !(borrowedParam(init) == returnsBorrowOf &&
+                  !llvm::is_contained(ownedParams(getFunction()), returnsBorrowOf) && !mayBeReturned(varOp)))
             {
                 return false;
             }
@@ -611,7 +670,7 @@ namespace own_inference
             return true;
         }
 
-        if (!isCopyableString(value.getType()) || borrowsKnownParam(value))
+        if (!isCopyableString(value.getType()))
         {
             return false;
         }
@@ -636,6 +695,20 @@ namespace own_inference
         });
 
         if (!taking || several || !isCopyableString(taking->get().getType()))
+        {
+            return false;
+        }
+
+        // A read of a parameter this function owns, or of the one its result borrows, stays what it
+        // is: the borrow it returns, or the parameter's own. Stored into an element or a field
+        // (`this[t] = this[s]` in a function that returns `this`) it is a copy, as any read is; not
+        // into a local, which may be what is returned.
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(taking->getOwner());
+        auto intoPlace = storeOp && storeOp.getValue() == taking->get() &&
+                         mlir::isa_and_nonnull<mlir_ts::ElementRefOp, mlir_ts::PropertyRefOp>(storeOp.getReference().getDefiningOp());
+        if (borrowsKnownParam(value) &&
+            !(intoPlace && borrowedParam(value) == returnsBorrowOf &&
+              !llvm::is_contained(ownedParams(getFunction()), returnsBorrowOf)))
         {
             return false;
         }

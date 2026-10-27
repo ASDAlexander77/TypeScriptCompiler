@@ -172,6 +172,9 @@ class OwnershipInferencePass
     // without the twinReadAfter fallback: a retain whose value has no use of its own is not copied,
     // so its error stays.
     bool copyForRetain(mlir::Operation *retain);
+    // May what this local holds be what the function returns - read and returned, or handed to
+    // another local that may be?
+    bool mayBeReturned(mlir_ts::VariableOp varOp);
     // A retain of a tuple `ts.CreateTuple` made from borrowed strings and handles (`[s, shared]`): the
     // strings are copied into it instead, each handle is retained alone, and the retain goes.
     bool copyIntoTuple(mlir_ts::RetainOp retainOp);

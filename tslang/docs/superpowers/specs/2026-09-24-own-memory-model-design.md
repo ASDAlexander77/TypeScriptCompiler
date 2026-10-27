@@ -1808,6 +1808,9 @@ The error stays where a copy would be wrong:
   pass told this function's callers it keeps (`__own_params`) or returns a borrow of
   (`__own_result_borrows`). Facts lost (§15, an exported function) are not such facts. There the
   callers keep their own, so a copy is right.
+  A read of the parameter the result borrows that is stored into an element or a field, or that
+  starts a local which is not returned, is copied all the same (§41): the fact is about what is
+  returned.
 - **Not a string** in the sense of §22.1.
 
 ### 22.5 What it should accept
@@ -4641,3 +4644,34 @@ the statement that made it, churning between steps, under own, rc, gc and none (
 DefaultLib: `array_keys`, `array_values` and `array_iterator` pass under own; `iterator<T>(this: T[])`
 (`[Symbol.iterator]`), which returns `this.values()`, says `@borrows("this")`. Not here: `entries()`,
 whose `yield [i, this[i]]` puts a borrowed element in a tuple the caller owns.
+
+## 41. Copies inside a function whose result borrows a parameter, 2026-10-27
+
+DefaultLib `array_copyWithin`, `owning_copies`, `array_reverse` and `array_sort`, all over strings or
+numbers.
+
+**`copyWithin` and `reverse`.** Both return `this`, so the signature pass records that the result
+borrows `this` (`__own_result_borrows`), and §22.4 kept every string read out of `this` from being
+copied: "a fact the callers rely on". A read stored back into an element (`this[t] = this[s]`) then had
+no copy, and was "borrows an element and cannot be stored". The fact is about what is returned. So
+`copyForRetain` now copies such a read when it goes into an element or a field (a `ts.Store` through
+a `ts.ElementRef` or a `ts.PropertyRef`), and starts a `let` from a copy when that local cannot be
+what the function returns (`mayBeReturned`: no load of it, nor of a local it is stored into, reaches a
+`ts.ReturnInternal`). A read returned - directly, or through a local - stays the borrow. A parameter
+the function keeps (`__own_params`) is unchanged. DefaultLib's `reverse` reads the element into a
+`let`, as `sort`'s `temp` already did: a `const` borrows the slot the next line overwrites.
+
+**`sort`.** It assigned its optional `callbackfn` a default comparator. A callback parameter's facts -
+what a call of it may release - come from the functions given for it (closed world), and a parameter
+that is assigned is one nothing knows: `callbackfn(this[i], this[j])` was a use of the two elements
+after a call that may release them. DefaultLib's `sort` now gives a `selectionSort` helper either the
+comparator it was given or the default, and never assigns a parameter. No compiler change.
+
+Not here: `sort` and `reverse` over class instances. A swap holds one element in a local while its
+slot is overwritten; for a string the local is a copy, for an object it would be a second owner. That
+needs an exchange of two slots the analysis sees as moving nothing.
+
+`own_copy_within_returned_param`: `this[t] = this[s]` and a swap through a `let` in functions that
+return `this`, and a read returned directly and through a local, over strings built at run time,
+churning between steps, under own, rc, gc and none; AOT under own, 1000, 200000 and 400000
+iterations peak at 4.0, 4.0 and 4.4 MB (a returned read copied would leak).
