@@ -3936,7 +3936,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_tuple_record_values own_value_record own_value_loop own_value_temporaries
                  own_call_field_drops own_immortal_keepers
                  own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
-                 own_loop_read_again own_length_drops_elements own_tuple_param_kept)
+                 own_loop_read_again own_length_drops_elements own_tuple_param_kept
+                 own_for_of_borrowed_iterator)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3954,6 +3955,13 @@ foreach(immortal_mm rc gc none)
         tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
         tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
     endforeach()
+endforeach()
+
+# A for...of over an iterator read out of a place borrows it under own; the same program under every
+# other model, where its cursor stays a counted `let`.
+foreach(for_of_mm rc gc none)
+    tslang_add_test(NAME test-jit-${for_of_mm}-own_for_of_borrowed_iterator COMMAND test-runner -jit -mm=${for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_for_of_borrowed_iterator.ts")
+    tslang_add_test(NAME test-compile-${for_of_mm}-own_for_of_borrowed_iterator COMMAND test-runner -mm=${for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_for_of_borrowed_iterator.ts")
 endforeach()
 
 # A value read out of an assigned global, lent to a call that assigns only other globals, outlives the

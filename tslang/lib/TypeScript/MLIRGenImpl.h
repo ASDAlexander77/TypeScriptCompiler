@@ -5154,7 +5154,25 @@ class MLIRGenImpl
         auto _b = nf.createIdentifier(S(".b"));
         auto _next = nf.createIdentifier(S(ITERATOR_NEXT));
         auto _bVar = nf.createVariableDeclaration(_b, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
-        declarations.push_back(_bVar);
+        // -mm=own: an iterator read out of a place - a parameter, a variable, a field - is lent to the
+        // loop, which never assigns `.b`. As a `let` it was a second owner: `for (const v of iter)`
+        // kept the parameter `iter`. A `const` names the same value, a borrow the inference checks.
+        // Under the other models the `let`'s count keeps the iterator alive should the loop assign the
+        // variable it came from.
+        if (compileOptions.memoryModel == MemoryModelOwn && exprValue.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            NodeArray<VariableDeclaration> borrowed;
+            borrowed.push_back(_bVar);
+            if (mlir::failed(mlirGen(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(borrowed, NodeFlags::Const)),
+                                     genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+        else
+        {
+            declarations.push_back(_bVar);
+        }
 
         NodeArray<Expression> nextArgs;
 
