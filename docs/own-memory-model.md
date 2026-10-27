@@ -376,6 +376,11 @@ function main() {
 30
 ```
 
+Given an iterator that borrows its container (`s.values()` of a `Set`, a generator over a
+parameter), such a generator owns that iterator but is bounded by the container in turn: it can be
+walked in place while the container lives (`for (const v of s.values().take(2))`), but not stored,
+returned or captured past it.
+
 ### `@lends`
 
 `@lends("p")`: the result is a borrow of parameter `p` (or of `"this"`): the caller owns
@@ -734,10 +739,10 @@ a reference gives it back on every path out of a function.
   give each such element a second owner, which is an error by design. Use `Shared<T>` elements,
   or build the result from copies.
 - Iterator helpers work, the lazy ones (`map`, `filter`, `take`, `drop`) taking their source over
-  as in JavaScript: `const seq = fibonacci().map(f)`. An iterator that borrows its container
-  (`s.values()` of a `Map` or a `Set`) cannot be taken over by one, so `s.values().take(2)` is an
-  error: walk it with `for...of` instead. A closure that captures, given to two of them, is moved
-  into the first.
+  as in JavaScript: `const seq = fibonacci().map(f)`. Over an iterator that borrows its container
+  (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:
+  `for (const v of s.values().take(2))` works, but the result cannot be returned or kept past `s`.
+  A closure that captures, given to two of them, is moved into the first.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.
