@@ -57,6 +57,13 @@ namespace own_inference
                     continue;
                 }
 
+                // the count a call was given, given back right after it (spec 50)
+                if (auto *call = mlir::isa<mlir_ts::ReleaseOp>(user) ? user->getPrevNode() : nullptr;
+                    call && isCall(call) && isCountedHandleReceiver(call, current))
+                {
+                    continue;
+                }
+
                 // a return and an `any` box take the value, though passesOn would hand them on
                 if (isHandOff(user, current))
                 {
@@ -124,6 +131,20 @@ namespace own_inference
         if (auto unshiftOp = mlir::dyn_cast<mlir_ts::ArrayUnshiftOp>(user))
         {
             return retainedRightBefore(user, unshiftOp.getItems(), value);
+        }
+
+        if (auto spliceOp = mlir::dyn_cast<mlir_ts::ArraySpliceOp>(user))
+        {
+            return retainedRightBefore(user, spliceOp.getItems(), value);
+        }
+
+        // a call given a count of its own (callCopies, spec 50): retained right before it, and
+        // given back right after it unless the callee keeps it
+        if (isCall(user) && !mlir::isa<mlir_ts::InvokeOp>(user) && retainedRightBefore(user, user->getOperands(), value))
+        {
+            auto *next = user->getNextNode();
+            auto releaseOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseOp>(next);
+            return isKeptArgument(user, value) || (releaseOp && releaseOp.getReference() == value);
         }
 
         if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
@@ -680,12 +701,28 @@ namespace own_inference
 
             // Callees that destroy only the old values of places they overwrite drop the chain as
             // those stores would here. Not a chain whose places are not all known (a borrowing
-            // call's result is somewhere under its arguments).
-            if (mayDrop && !givenClosure && !chain.anyPlace)
+            // call's result is somewhere under its arguments). A closure the call runs and does not
+            // keep is one of its callback parameter's family, whose bodies its places count (spec 52)
+            auto keepsClosure = givenClosure && llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
+                                    return holdsCaptures(operand) && isKeptArgument(drop, operand);
+                                });
+            if (mayDrop && !keepsClosure && !chain.anyPlace)
             {
                 if (auto places = callDropFields(drop))
                 {
-                    mayDrop = llvm::any_of(*places, [&](auto &place) { return overwritesChain(place.first, place.second, chain); });
+                    // a captured string assigned frees that string only: a borrow of anything else
+                    // is not it, nor under it (spec 52)
+                    auto value = borrowed ? borrowed : (read ? read->getResult(0) : mlir::Value());
+                    auto notString = value && mlir::isa<mlir_ts::ArrayType, mlir_ts::ClassType, mlir_ts::TupleType,
+                                                        mlir_ts::ObjectType, mlir_ts::InterfaceType>(value.getType());
+                    mayDrop = llvm::any_of(*places, [&](auto &place) {
+                        if (place.first == OWN_CAPTURED_STRING_POSITION)
+                        {
+                            return !notString;
+                        }
+
+                        return overwritesChain(place.first, place.second, chain);
+                    });
                 }
             }
 
@@ -710,8 +747,21 @@ namespace own_inference
     {
         // given once: a copy given twice would have two owners. Not an invoke, whose release after
         // it would go on the normal path only.
-        return isCopyableString(value.getType()) && !mlir::isa<mlir_ts::InvokeOp>(call) &&
+        return (isCopyableString(value.getType()) || isHandle(value)) && !mlir::isa<mlir_ts::InvokeOp>(call) &&
                llvm::count(call->getOperands(), value) == 1;
+    }
+
+    bool OwnershipInferencePass::storesCopyOf(mlir::Operation *store, mlir::Value value)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(store);
+        if (!storeOp || storeOp.getValue() != value || !(isCopyableString(value.getType()) || isHandle(value)) ||
+            !isPlace(storeOp.getReference()))
+        {
+            return false;
+        }
+
+        // a retained one is copyForRetain's: the retain becomes the copy
+        return llvm::none_of(value.getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainOp>(user); });
     }
 
     bool OwnershipInferencePass::checkPlaceRead(mlir::Operation *read, llvm::SetVector<mlir::Operation *> &toErase)
@@ -789,6 +839,14 @@ namespace own_inference
         {
             // a string given to a call that keeps it: the call takes a copy (spec 22)
             if (dryRun && kept && isCall(kept) && copiesInto(kept, result))
+            {
+                callCopies.push_back({read, kept});
+            }
+
+            // ...and one stored into a place rc does not retain it for, as a yield's record field
+            // (`if (c) yield v` of a string `v` the generator's state holds): the place takes a copy,
+            // or a handle a count (spec 50)
+            if (dryRun && kept && storesCopyOf(kept, result))
             {
                 callCopies.push_back({read, kept});
             }

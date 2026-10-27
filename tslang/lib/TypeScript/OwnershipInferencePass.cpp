@@ -562,6 +562,21 @@ namespace own_inference
                 continue;
             }
 
+            // the place owns the copy, or a count of a handle's of its own (spec 23.2)
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(call))
+            {
+                mlir::OpBuilder builder(storeOp);
+                if (isHandle(value))
+                {
+                    builder.create<mlir_ts::RetainOp>(storeOp->getLoc(), value);
+                    continue;
+                }
+
+                auto copy = builder.create<mlir_ts::StringCopyOp>(storeOp->getLoc(), value.getType(), value);
+                storeOp.getValueMutable().assign(copy);
+                continue;
+            }
+
             // a callee that keeps it takes the copy; else it is released after the call
             auto args = callArgs(call);
             auto kept = llvm::any_of(ownedParams(call), [&](int32_t index) {
@@ -569,6 +584,19 @@ namespace own_inference
             });
 
             mlir::OpBuilder builder(call);
+            // a handle: a count of its own for the call, given back after it (spec 50)
+            if (isHandle(value))
+            {
+                builder.create<mlir_ts::RetainOp>(call->getLoc(), value);
+                if (!kept)
+                {
+                    builder.setInsertionPointAfter(call);
+                    builder.create<mlir_ts::ReleaseOp>(call->getLoc(), value);
+                }
+
+                continue;
+            }
+
             auto copy = builder.create<mlir_ts::StringCopyOp>(call->getLoc(), value.getType(), value);
             for (auto &operand : call->getOpOperands())
             {

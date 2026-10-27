@@ -1090,6 +1090,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // or `delete`? A local's own releases are not drops, nor is the constructor's filling of the
     // object it is building.
     bool dropsInBody(mlir_ts::FuncOp funcOp);
+    // Is `slot` a local declared from a read rc counts, and never assigned, so that its release is
+    // never the last of a handle (spec 51)?
+    static bool isCountedReadSlot(mlir::Value slot);
 
     // Can the block this reference points into be one the function's caller can reach? Walks up
     // from a place to what holds it. Not when every way up ends in a block the function made (an

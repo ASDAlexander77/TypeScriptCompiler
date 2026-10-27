@@ -765,6 +765,13 @@ namespace own_signature
                 return false;
             }
 
+            // a string stored by a statement that may run again (`a[i] = value` in `fill`'s loop) is
+            // no one move: each store takes a copy, and the parameter stays a borrow (spec 50)
+            if (isCopyableString(used.getType()) && mayRunAgain(user))
+            {
+                return false;
+            }
+
             auto ref = storeOp.getReference();
             return storeOp.getValue() == used && (isPlace(ref) || ref.getDefiningOp<mlir_ts::AddressOfOp>());
         }
@@ -1339,7 +1346,14 @@ namespace own_signature
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
                 auto slot = releaseSlotOp.getSlot();
-                if (slot.getDefiningOp<mlir_ts::AddressOfOp>() || isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op)))
+                auto slotType = mlir::dyn_cast<mlir_ts::RefType>(slot.getType());
+                if (isLoadedCell(slot) && slotType && isCopyableString(slotType.getElementType()))
+                {
+                    // a captured string assigned (`each += v` in a callback): it frees that string only
+                    drops.add({OWN_CAPTURED_STRING_POSITION, slot.getType()});
+                }
+                else if (slot.getDefiningOp<mlir_ts::AddressOfOp>() || isLoadedCell(slot) ||
+                    (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot)))
                 {
                     drops.any = true;
                 }
@@ -1547,6 +1561,35 @@ namespace own_signature
         });
     }
 
+    bool OwnershipSignaturePass::isCountedReadSlot(mlir::Value slot)
+    {
+        // `for (const v of this)` over handles: the local is declared from a read, which rc counts
+        // (`ts.RetainSlot`), and is never assigned. Where the read came from still holds a count of
+        // its own while the local lives - a store into it, a pop, a call that does either is a
+        // drop of its own - so the local's release is never the last (spec 51).
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        if (!varOp || varOp.getCaptured().value_or(false) || !varOp.getInitializer() ||
+            !varOp.getInitializer().getDefiningOp<mlir_ts::LoadOp>())
+        {
+            return false;
+        }
+
+        auto counted = false;
+        for (auto *user : slot.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+            {
+                counted = true;
+            }
+            else if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user))
+            {
+                return false;
+            }
+        }
+
+        return counted;
+    }
+
     bool OwnershipSignaturePass::dropsInBody(mlir_ts::FuncOp funcOp)
     {
         auto drops = false;
@@ -1570,7 +1613,7 @@ namespace own_signature
                 // is its declaring function's
                 auto slot = releaseSlotOp.getSlot();
                 drops = slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
-                        isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op));
+                        isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot));
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {

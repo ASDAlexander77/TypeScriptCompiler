@@ -67,6 +67,9 @@ namespace mlir_ts = mlir::typescript;
 // The position a place reached through an interface is given: its position in the object is not
 // known (spec 28)
 constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
+// The position of a captured variable's cell holding a string, assigned: the old string goes, and a
+// string owns nothing else, so only a borrow that is a string may be it (spec 52)
+constexpr int64_t OWN_CAPTURED_STRING_POSITION = -4;
 // On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
 // result that borrows): why, for the error the body gets instead.
 #define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"
