@@ -239,7 +239,8 @@ namespace own_inference
                 // an overwrite of a field or an element, or an assignment to a captured variable or
                 // a global (spec 29: the global may hold what `this` or a parameter is)
                 auto slot = releaseSlotOp.getSlot();
-                if (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot) || slot.getDefiningOp<mlir_ts::AddressOfOp>())
+                if (!releasesNothing(releaseSlotOp) &&
+                    (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot) || slot.getDefiningOp<mlir_ts::AddressOfOp>()))
                 {
                     drops.push_back(op);
                 }

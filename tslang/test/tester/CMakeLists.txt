@@ -3941,7 +3941,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_this_param own_copy_within_returned_param own_swap_elements
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
                  own_generator_take own_rest_array_borrows own_string_copies
-                 own_captured_string_callback)
+                 own_captured_string_callback own_callback_and_call own_callback_captured)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3977,7 +3977,7 @@ foreach(keeps_mm rc gc none)
                        own_copy_within_returned_param own_swap_elements own_callback_forwarded
                        own_optional_record_read own_param_default_kept own_literal_into_array
                        own_generator_take own_rest_array_borrows own_string_copies
-                       own_captured_string_callback)
+                       own_captured_string_callback own_callback_and_call own_callback_captured)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4674,7 +4674,8 @@ set(own_error_cases
     "own_err_callback_forwarded_keeps|:32:18: error: '[^']*' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value"
     "own_err_optional_record_field_kept|:15:12: error: '[^']*' borrows the result of 'findIn' and cannot be stored, returned or captured"
     "own_err_generator_take_used_after|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
-    "own_err_captured_string_drops|:20:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten")
+    "own_err_captured_string_drops|:20:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_callback_captured_drops|:14:9: error: '[^']*' borrows an element but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

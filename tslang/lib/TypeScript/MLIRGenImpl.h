@@ -5713,7 +5713,11 @@ class MLIRGenImpl
                 resultFalse = leftExpressionValue;
                 if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
                 {
-                    resultFalse = builder.create<mlir_ts::CastOp>(location, optType.getElementType(), resultFalse);
+                    // a function is never falsy: an optional one is false only when it is not there, so
+                    // `compare && compare(a, b)` is `undefined | number`, as in TypeScript
+                    resultFalse = mth.isAnyFunctionType(optType.getElementType())
+                                      ? builder.create<mlir_ts::UndefOp>(location, getUndefinedType()).getResult()
+                                      : builder.create<mlir_ts::CastOp>(location, optType.getElementType(), resultFalse).getResult();
                 }
             }
             else

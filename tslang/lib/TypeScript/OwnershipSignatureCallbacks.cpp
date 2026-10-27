@@ -119,29 +119,168 @@ namespace own_signature
         return {};
     }
 
-    bool OwnershipSignaturePass::onlyCalledParam(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards)
+    mlir_ts::FuncOp OwnershipSignaturePass::closureFunctionOf(mlir::Value box, mlir::Value cell, int32_t position)
+    {
+        auto boundOp = closureOfBox(box);
+        auto refOp = boundOp ? boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+        auto funcOp = refOp ? functions.lookup(refOp.getIdentifier()) : mlir_ts::FuncOp();
+        if (!funcOp || funcOp.isDeclaration() || funcOp.getBody().front().getNumArguments() == 0)
+        {
+            return {};
+        }
+
+        // every box that comes in as its first argument is one of these
+        auto uses =mlir::SymbolTable::getSymbolUses(funcOp, funcOp->getParentOfType<mlir::ModuleOp>());
+        if (!uses)
+        {
+            return {};
+        }
+
+        // each box it is bound to holds the same cell in the same field
+        auto holdsCell = [&](mlir::Value other) {
+            if (!closureOfBox(other))
+            {
+                return false;
+            }
+
+            auto stored = false;
+            for (auto *boxUser : other.getUsers())
+            {
+                auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(boxUser);
+                if (!fieldOp || static_cast<int32_t>(fieldOp.getPosition()) != position)
+                {
+                    continue;
+                }
+
+                for (auto *fieldUser : fieldOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    if (!storeOp || storeOp.getValue() != cell)
+                    {
+                        return false;
+                    }
+
+                    stored = true;
+                }
+            }
+
+            return stored;
+        };
+
+        for (auto &use : *uses)
+        {
+            // called by name with the box (the built-in `forEach`, inlined, calls the closure so)
+            if (directCallee(use.getUser()))
+            {
+                auto args = callArgs(use.getUser());
+                if (args.empty() || !holdsCell(args.front()))
+                {
+                    return {};
+                }
+
+                continue;
+            }
+
+            auto useRef = mlir::dyn_cast<mlir_ts::SymbolRefOp>(use.getUser());
+            if (!useRef || llvm::any_of(useRef->getUsers(), [&](mlir::Operation *refUser) {
+                    auto bound = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(refUser);
+                    return !bound || !holdsCell(bound.getThisVal());
+                }))
+            {
+                return {};
+            }
+        }
+
+        return funcOp;
+    }
+
+    bool OwnershipSignaturePass::onlyCalledParam(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards,
+                                                 llvm::SmallVectorImpl<std::pair<mlir::Operation *, int32_t>> &captured)
     {
         for (auto *user : argument.getUsers())
         {
             auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
             auto index = -1;
-            if (!varOp || !isParameterSlot(varOp, index))
+            // a captured one: its cell, never assigned, read here or by the closures it is given to
+            auto cell = varOp && varOp.getCaptured().value_or(false) && !isOwningVariable(varOp) &&
+                        varOp.getInitializer() == argument;
+            if (!varOp || (!cell && !isParameterSlot(varOp, index)))
             {
                 return false;
             }
 
-            for (auto *slotUser : varOp->getUsers())
+            for (auto &slotUse : varOp->getUses())
             {
-                if (mlir::isa<mlir_ts::DebugVariableOp>(slotUser))
+                auto *slotUser = slotUse.getOwner();
+                if (mlir::isa<mlir_ts::DebugVariableOp>(slotUser) ||
+                    (cell && mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(slotUser)))
                 {
                     continue;
                 }
 
-                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser);
-                if (!loadOp || !onlyCalledValue(loadOp.getResult(), forwards))
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                {
+                    if (!onlyCalledValue(loadOp.getResult(), forwards))
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                // the cell into a field of a closure's capture box: the closure's body reads it out of
+                // its box (`ts.Load(ts.Load(ts.PropertyRef(box, i)))`) only to call it
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(slotUser);
+                auto fieldOp = storeOp && cell && storeOp.getValue() == varOp.getResult()
+                                   ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                   : mlir_ts::PropertyRefOp();
+                auto position = fieldOp ? static_cast<int32_t>(fieldOp.getPosition()) : -1;
+                auto closure = fieldOp ? closureFunctionOf(fieldOp->getOperand(0), varOp.getResult(), position) : mlir_ts::FuncOp();
+                if (!closure)
                 {
                     return false;
                 }
+
+                // the same closure met again through its other box
+                if (llvm::is_contained(captured, std::make_pair(closure.getOperation(), position)))
+                {
+                    continue;
+                }
+
+                auto box = closure.getBody().front().getArgument(0);
+                for (auto *boxUser : box.getUsers())
+                {
+                    auto readField = mlir::dyn_cast<mlir_ts::PropertyRefOp>(boxUser);
+                    if (!readField)
+                    {
+                        return false;
+                    }
+
+                    if (readField.getPosition() != static_cast<uint32_t>(position))
+                    {
+                        continue;
+                    }
+
+                    for (auto *fieldUser : readField->getUsers())
+                    {
+                        auto cellRead = mlir::dyn_cast<mlir_ts::LoadOp>(fieldUser);
+                        if (!cellRead)
+                        {
+                            return false;
+                        }
+
+                        for (auto *cellUser : cellRead->getUsers())
+                        {
+                            auto valueRead = mlir::dyn_cast<mlir_ts::LoadOp>(cellUser);
+                            if (!valueRead || !onlyCalledValue(valueRead.getResult(), forwards))
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+
+                captured.push_back({closure.getOperation(), position});
             }
         }
 
@@ -223,6 +362,7 @@ namespace own_signature
 
     void OwnershipSignaturePass::collectCallbackFamilies(mlir::ModuleOp module)
     {
+        capturedCallbacks.clear();
         auto uses = mlir::SymbolTable::getSymbolUses(&module.getBodyRegion());
         if (!uses)
         {
@@ -390,12 +530,18 @@ namespace own_signature
             for (auto argument : funcOp.getBody().front().getArguments())
             {
                 llvm::SmallVector<mlir::OpOperand *> forwards;
-                if (!isCallbackType(argument.getType()) || !onlyCalledParam(argument, forwards))
+                llvm::SmallVector<std::pair<mlir::Operation *, int32_t>> captured;
+                if (!isCallbackType(argument.getType()) || !onlyCalledParam(argument, forwards, captured))
                 {
                     continue;
                 }
 
                 auto index = static_cast<int32_t>(argument.getArgNumber());
+                for (auto field : captured)
+                {
+                    capturedCallbacks[field] = {funcOp.getOperation(), index};
+                }
+
                 CallbackFamily family;
                 for (auto *use : forwards)
                 {
@@ -575,14 +721,42 @@ namespace own_signature
         auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
         auto funcOp = loadOp->getParentOfType<mlir_ts::FuncOp>();
         auto index = -1;
-        if (!varOp || !funcOp || !isParameterSlot(varOp, index))
+        std::pair<mlir::Operation *, int32_t> key{funcOp.getOperation(), -1};
+        if (varOp && funcOp && isParameterSlot(varOp, index))
+        {
+            key.second = index;
+        }
+        else if (auto argument = varOp && varOp.getCaptured().value_or(false) && varOp.getInitializer()
+                                     ? mlir::dyn_cast<mlir::BlockArgument>(varOp.getInitializer())
+                                     : mlir::BlockArgument();
+                 argument && argument.getOwner()->isEntryBlock() && argument.getOwner()->getParentOp() == funcOp.getOperation())
+        {
+            // the captured parameter's cell, read where it is declared (spec 54)
+            key.second = static_cast<int32_t>(argument.getArgNumber());
+        }
+        else if (auto cellRead = loadOp.getReference().getDefiningOp<mlir_ts::LoadOp>())
+        {
+            // read out of a closure's capture box: the parameter that field holds the cell of
+            auto fieldOp = cellRead.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto box = fieldOp ? mlir::dyn_cast<mlir::BlockArgument>(fieldOp->getOperand(0)) : mlir::BlockArgument();
+            auto found = box && box.getArgNumber() == 0 && box.getOwner()->isEntryBlock()
+                             ? capturedCallbacks.find({funcOp.getOperation(), static_cast<int32_t>(fieldOp.getPosition())})
+                             : capturedCallbacks.end();
+            if (found == capturedCallbacks.end())
+            {
+                return;
+            }
+
+            key = found->second;
+        }
+        else
         {
             return;
         }
 
         // a closed family with no members: a method no one calls but through its vtable, never - the
         // call frees nothing
-        auto found = callbackFamilies.find({funcOp.getOperation(), index});
+        auto found = callbackFamilies.find(key);
         if (found == callbackFamilies.end() || !found->second.closed)
         {
             return;

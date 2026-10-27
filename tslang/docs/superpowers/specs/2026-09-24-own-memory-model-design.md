@@ -4907,3 +4907,105 @@ Not here: `array_reduceRight` over an array of arrays, which may start from an e
 it as it is, a second owner, is marked "not own". `Array<string>` (`fill` keeps a defaulted string
 parameter in a loop) and `Array<Shared<T>>` (the class's methods hand callbacks on through a vtable,
 whose families stay open) still do not compile.
+
+## 50. Strings copied where a store runs again, or where nothing retains them, 2026-10-27
+
+`Array<string>` (the class) did not compile: `fill` stores its `value` parameter into each element in
+a loop. A store into a place kept the parameter (`keeps`), the callers moved it in, and the second
+store was `'value' is moved inside a loop but was made outside it`. And a generator that yields on
+some paths only (`for (const v of this) if (func(v)) yield v` in `filter2`) reads `v` out of its
+state's field into the record `next()` returns; the field is read for the test too, so it is no
+field that only yields (§48), and the store into the record was `borrows a field and cannot be
+stored`.
+
+- **A store that may run again** (`mayRunAgain`: in a loop) of a string parameter is no keep: the
+  parameter stays a borrow, and each store takes a copy, as `copyForRetain` makes of rc's retain
+  for it.
+- **A store into a place rc retains nothing for** (a field of the record a yield builds) of a
+  string or a handle read out of a place (`storesCopyOf`): the place takes a `ts.StringCopy`, or a
+  handle a count of its own (`ts.Retain`), made in the dry run's `callCopies` list.
+- **A handle given to a call that may release it** (a callback, through `copiesInto`): the call gets
+  a count of its own, `ts.Retain` right before and `ts.Release` right after, unless it keeps it.
+  `isCountedHandleReceiver` takes such a call, and `handleReadUses` the release after it, for a
+  counted use of the read (§23.3).
+
+`own_string_copies` fills arrays with a string parameter, directly and through a class, and keeps
+the strings a generator yields on some paths, churning between steps, under own, rc, gc and none.
+
+## 51. A walk over handles drops nothing, 2026-10-27
+
+`Array<Shared<T>>` did not compile: every method that hands `this.data` to a function that walks it
+(`join`, `every`, `some`, `find`, ...) was `borrows a field but is used here after it may be
+released or overwritten`. A `for (const v of this)` over handles makes `v` a counted copy, and its
+`ts.ReleaseSlot` touches a handle: `dropsInBody` took the walk for one that may destroy the last
+reference to a payload, and with it anything.
+
+- **A counted read local** (`isCountedReadSlot`): declared from a read (`ts.Load`), retained by rc
+  (`ts.RetainSlot`), never assigned. Where the read came from holds a count of its own while the
+  local lives - a store into it, a pop, a call that does either is a drop of its own - so the
+  local's release is never the last. Neither `dropsInBody` nor `fieldDropsInBody` counts it.
+- **`ts.ArraySplice`'s items** are counted receivers of a handle read (`isCountedHandleReceiver`), as
+  `push`'s and `unshift`'s are.
+
+`own_shared_counted_reads` walks an array of handles a class holds, by a function given a callback,
+by a `for...of`, by a generator that yields some, and splices one in, churning between steps, under
+own, rc, gc and none. DefaultLib: `array_class_shared` and `array_class_string` compile and run under
+own.
+
+## 52. A callback that assigns a captured number or string, 2026-10-27
+
+`names.forEach((v) => { each += v; })`, with `forEach` handing the array a field holds on, was
+`borrows a field but is used here after it may be released or overwritten`: an assignment through a
+captured variable's cell, in the closure's body, was a drop of anything (`fieldDropsInBody`), and a
+call given a closure was judged by none of its callees' place drops.
+
+- **A cell that owns no block** (`t += v.n`, a number): its `ts.ReleaseSlot` destroys nothing
+  (`releasesNothing`). Not a drop in `dropsInBody`, `fieldDropsInBody`, or the inference pass's.
+- **A cell that holds a string** (`each += v`): its assignment frees that string only, and a string
+  owns nothing else. A place drop of its own (`OWN_CAPTURED_STRING_POSITION`): it drops a borrow that
+  may be a string, and no other - not an array, a class instance, a tuple, an object or an interface.
+- **A call given a closure it does not keep** is judged by its callees' place drops too: the closure
+  is a member of the callback parameter's family, whose bodies those drops count (§33, §43). A call
+  that keeps the closure is not.
+
+`own_captured_string_callback` builds strings and counts through callbacks a class's methods give
+on with the array a field holds, churning between steps, under own, rc, gc and none; own emits no
+counting. Negative: `own_err_captured_string_drops`, a string read out of a field and borrowed
+across a call that runs a callback assigning a captured string.
+
+## 53. `f && f(x)` of an optional function is `undefined | T`, 2026-10-27
+
+`compare && compare(a, b)` with `compare?: (x, y) => number` failed in every model: the `&&` was the
+union of the right side and the left one's type without its optional (`invalid cast from (p0, p1) =>
+s32 to s32`), and under own a `boolean | function` union holds the callback (§43). A function is
+never falsy: an optional one is false only when it is not there, so the false branch is `undefined`,
+as in TypeScript (`mlirGenAndOrLogic`).
+
+`own_callback_and_call` sorts class instances through `compare && compare(a[j], a[j + 1])`, with a
+comparison given and with none, churning between steps, under own, rc, gc and none; own emits no
+counting.
+
+## 54. A callback parameter captured by a closure that calls it, 2026-10-27
+
+`a.forEach((v) => f(v))` captured `f`, which kept its family open (§43): a call through it was one
+that may destroy anything, and so was every call that gave the closure on.
+
+- **The parameter's cell** (`onlyCalledParam`): a captured parameter has a cell declared from it,
+  never assigned. Each of its uses is a read that is only called or given on (as a slot's is), the
+  cell's own `ts.RetainCell` and `ts.ReleaseCell`, or a store of it into a field of a closure's
+  capture box. The closure (`closureFunctionOf`) is bound only to boxes holding that cell in that
+  field, or called by name with one (the built-in `forEach`, inlined, calls it so), and its body
+  reads the field only to call what the cell holds, or give it on.
+- **The calls in the closure** (`resolveCallback`): a read of the cell out of the closure's box
+  (`ts.Load(ts.Load(ts.PropertyRef(box, i)))`) is the parameter's (`capturedCallbacks`), and so is a
+  read of the cell where it is declared. Both resolve through the parameter's family.
+- With §52, `const g = f; g(v)` resolves as well: the local is a view of the parameter's slot.
+
+`own_callback_captured` sums, finds the largest and walks through callbacks given to a closure that
+calls them and to a local that names them, from a class's methods over the array a field holds,
+churning between steps, under own, rc, gc and none; own emits no counting. Negative:
+`own_err_callback_captured_drops`, whose callback replaces a global array that the walk's element
+may be part of.
+
+Not here: a closure held in a local and called (`const call = (v) => f(v); call(v)`), and a
+callback stored into a field or returned, keep their families open.

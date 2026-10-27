@@ -1347,6 +1347,11 @@ namespace own_signature
             {
                 auto slot = releaseSlotOp.getSlot();
                 auto slotType = mlir::dyn_cast<mlir_ts::RefType>(slot.getType());
+                if (releasesNothing(releaseSlotOp))
+                {
+                    return;
+                }
+
                 if (isLoadedCell(slot) && slotType && isCopyableString(slotType.getElementType()))
                 {
                     // a captured string assigned (`each += v` in a callback): it frees that string only
@@ -1612,7 +1617,7 @@ namespace own_signature
                 // a captured variable assigned through its cell, by a closure's body: the variable
                 // is its declaring function's
                 auto slot = releaseSlotOp.getSlot();
-                drops = slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
+                drops = !releasesNothing(releaseSlotOp) &&slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
                         isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot));
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))

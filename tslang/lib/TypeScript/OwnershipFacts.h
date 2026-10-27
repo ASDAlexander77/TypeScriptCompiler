@@ -959,6 +959,14 @@ inline bool ownsHeap(mlir::Value value)
     return ownsHeap(value.getLoc(), value.getType());
 }
 
+// The release of a slot whose type owns no block - a captured number assigned (`t += v.n` in a
+// callback) - destroys nothing (spec 52)
+inline bool releasesNothing(mlir_ts::ReleaseSlotOp releaseSlotOp)
+{
+    auto refType = mlir::dyn_cast<mlir_ts::RefType>(releaseSlotOp.getSlot().getType());
+    return refType && !ownsHeap(releaseSlotOp.getLoc(), refType.getElementType());
+}
+
 // Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.
 // Also a view of a value whose type owns none: a union's number payload made into another union
 // (`GetValueFromUnion`, then `CreateUnionInstance`) is a number all the way. A `value_ref` is not
