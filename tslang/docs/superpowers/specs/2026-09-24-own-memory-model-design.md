@@ -4607,7 +4607,7 @@ walked in place, is accepted) and `own_err_generator_keeps_bounded_outlives` (us
 is overwritten).
 
 DefaultLib: `iterator_take` and `iterator_drop` pass under own. Their `limit` is now a number, as in
-JavaScript: `take(Infinity)` converted `Infinity` to an `index`, which is no particular count (0 under
-rc, anything under own), so it took nothing in every model. `reduce`'s string accumulator, listed in
+JavaScript: `take(Infinity)` converted `Infinity` to an `index`, which is no particular count: the same
+line took all three under rc and none under own. `reduce`'s string accumulator, listed in
 §38 as open, is DefaultLib #45 (its accumulator typed `V`, not the `any` that `?? iter.next().value`
 gives).
