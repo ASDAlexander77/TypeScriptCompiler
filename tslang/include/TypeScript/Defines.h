@@ -363,6 +363,11 @@
 // `@value class C` / `@value interface R`: a type whose values are copied, not shared - no identity,
 // no vtable, no base (docs/superpowers/specs/2026-10-24-value-types-design.md)
 #define VALUE_DECORATOR "value"
+// `@sharedElements class Map<K, V>`: a container that keeps what it is given and hands out
+// borrows of it. Under -mm=own each of its type arguments has to be a value, a string (copied) or
+// a Shared<T> handle (counted): an object, whose block has one owner, goes through Shared<T>.
+// The other memory models ignore it.
+#define SHARED_ELEMENTS_DECORATOR "sharedElements"
 // On a `ts.ThisVirtualSymbolRef` (a method's) or a `ts.VirtualSymbolRef` (an accessor's): the
 // receiver's class is @final, but defined in another module, so the call still goes through the
 // vtable. The slot holds the method the reference names, which

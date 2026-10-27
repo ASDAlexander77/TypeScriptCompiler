@@ -115,8 +115,13 @@ namespace own_inference
             return failures == 0;
         }
 
-        // a handle's retains and releases are rc's, and stay (spec 23.2)
-        toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
+        // a handle's retains and releases are rc's, and stay (spec 23.2); but not the release of a
+        // yielded field's old value: the yield gave the state's count to the caller, who owns the
+        // record `next` returns and releases it
+        toErase.remove_if([&](mlir::Operation *op) {
+            auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
+            return touchesHandle(op) && !(releaseSlotOp && isYieldedField(releaseSlotOp.getSlot()));
+        });
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
         dropUnboxedRecordCounts(toErase);
@@ -668,8 +673,9 @@ namespace own_inference
     bool OwnershipInferencePass::copyIntoTuple(mlir_ts::RetainOp retainOp)
     {
         // `[s, n]` of a borrowed string: rc retains the tuple, which retains the string in it. The
-        // tuple starts from a copy instead, which is its own (spec 22). Only when strings are all it
-        // holds blocks of: a borrowed object in it cannot be copied.
+        // tuple starts from a copy instead, which is its own (spec 22). A handle in it takes a count
+        // of its own, which own leaves to rc (spec 23.2): `[key, shared]`. Only when strings and
+        // handles are all it holds blocks of: a borrowed object in it cannot be copied.
         auto createTupleOp = retainOp.getReference().getDefiningOp<mlir_ts::CreateTupleOp>();
         if (!createTupleOp || createTupleOp->getBlock() != retainOp->getBlock() ||
             !createTupleOp->isBeforeInBlock(retainOp))
@@ -678,11 +684,18 @@ namespace own_inference
         }
 
         llvm::SmallVector<mlir::OpOperand *> borrowed;
+        llvm::SmallVector<mlir::Value> handles;
         for (auto &operand : createTupleOp->getOpOperands())
         {
             auto field = operand.get();
             if (holdsNoBlock(field) || isConstantData(field) || isFresh(rootOf(field)))
             {
+                continue;
+            }
+
+            if (isHandle(field))
+            {
+                handles.push_back(field);
                 continue;
             }
 
@@ -694,7 +707,7 @@ namespace own_inference
             borrowed.push_back(&operand);
         }
 
-        if (borrowed.empty())
+        if (borrowed.empty() && handles.empty())
         {
             return false;
         }
@@ -703,6 +716,12 @@ namespace own_inference
         for (auto *operand : borrowed)
         {
             operand->set(builder.create<mlir_ts::StringCopyOp>(retainOp->getLoc(), operand->get().getType(), operand->get()));
+        }
+
+        builder.setInsertionPoint(retainOp);
+        for (auto handle : handles)
+        {
+            builder.create<mlir_ts::RetainOp>(retainOp->getLoc(), handle);
         }
 
         retainOp->erase();

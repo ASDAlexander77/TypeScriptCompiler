@@ -1652,6 +1652,9 @@ class MLIRGenImpl
                                                                                const GenContext &genContext,
                                                                                bool allowNamedGenerics = false);
 
+    mlir::LogicalResult checkSharedElements(mlir::Location location, GenericClassInfo::TypePtr genericClassInfo,
+                                            const GenContext &genericTypeGenContext, const GenContext &genContext);
+
     mlir_ts::ClassType inferClassTypeFromConstructorArguments(mlir::Location location,
                                                               GenericClassInfo::TypePtr genericClassInfo,
                                                               NodeArray<Expression> arguments,
@@ -15866,6 +15869,10 @@ class MLIRGenImpl
     // the object of a `?.` its optional chain has read and tested, while the rest of the chain is made
     // on it (mlirGenOptionalChain)
     llvm::DenseMap<const void *, mlir::Value> optionalChainObjects;
+
+    // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
+    // were refused does not go on to the defaults (`any`), which would only be refused again
+    bool sharedElementsRefused = false;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the

@@ -1309,6 +1309,8 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
         auto unspecialized = deferDefaults ? value : mlir::Value();
+        MLIRValueGuard<bool> sharedElementsRefusedGuard(sharedElementsRefused);
+        sharedElementsRefused = false;
 
         // `new Set([2, 4, 6, 8])`: a generic class written without type arguments takes them from
         // its constructor's arguments (see inferClassTypeFromConstructorArguments). Ahead of the
@@ -1339,6 +1341,12 @@ namespace mlirgen
                     }
                 }
             }
+        }
+
+        // the inferred type arguments were refused (checkSharedElements): already reported
+        if (sharedElementsRefused)
+        {
+            return mlir::failure();
         }
 
         // `const m: Map<string, number[]> = new Map()`: a generic class written without type
