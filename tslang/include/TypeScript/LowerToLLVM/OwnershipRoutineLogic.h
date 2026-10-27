@@ -281,6 +281,21 @@ class OwnershipRoutineLogic
                                       FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
     }
 
+    // An array given back without what it holds (-mm=own, OWN_SHALLOW_RELEASE_ATTR_NAME): its data
+    // block and its header are freed, its elements are not, since it only borrowed them - the array a
+    // rest parameter is given. A null or static header is skipped as for any release.
+    void emitReleaseArrayShallow(mlir_ts::ArrayType arrayType, mlir::Value header)
+    {
+        TypeHelper th(rewriter);
+        ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
+        emitIfLastReference(header, [&]() {
+            auto dataSlot = layout.dataAddress(arrayType, header);
+            auto dataValue = rewriter.create<LLVM::LoadOp>(op->getLoc(), th.getPtrType(), dataSlot);
+            emitFreeBlock(dataValue);
+            emitFreeBlock(header);
+        });
+    }
+
     // What destroying a block of `storageType` at `payloadPtr` releases, without freeing the block:
     // a promoted object's fields when its frame is done with it (ts.ReleaseContents). Each field
     // given back is nulled, so that the block never holds a reference it no longer owns: a second

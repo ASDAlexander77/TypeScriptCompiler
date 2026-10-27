@@ -67,6 +67,8 @@ namespace own_inference
         classifyBorrowingFields();
         // ...and whether an object literal borrows what its fields hold (spec 32)
         classifyRecords();
+        // ...and whether an array given to a rest parameter takes its elements (spec 49)
+        classifyArgumentArrays();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {
@@ -502,7 +504,7 @@ namespace own_inference
                                OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME, OWN_STATE_BORROW_ATTR_NAME,
-                               OWN_CAPTURE_BORROW_ATTR_NAME})
+                               OWN_CAPTURE_BORROW_ATTR_NAME, OWN_BORROWING_ARRAY_ATTR_NAME})
             {
                 op->removeAttr(name);
             }

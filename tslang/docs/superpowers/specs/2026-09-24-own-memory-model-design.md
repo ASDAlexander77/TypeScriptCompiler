@@ -4849,3 +4849,61 @@ not a read for a keep: `'.a' borrows an element and cannot be stored`. It now sk
 `isBorrow` already skips a `ts.DebugVariable` of a value. `own_for_of_nested_di` (debug build, JIT)
 sums the lengths of the strings of a `string[][]`. DefaultLib: `array_concat` and `owning_copies`,
 which failed under own in the debug pass only, compile and run.
+
+## 48. What a generator yields is taken out of the record `next()` returns, 2026-10-27
+
+`for (const c of g()) kept.push(c)` and `[...g()]` (a spread lowers to the same loop and push) were
+`borrows a field and cannot be stored`: the loop's variable borrows the `value` field of the local
+the record `next()` returns is kept in, which is released and given the next record every turn.
+
+- **The take** (`fieldTakeOf`, `fieldTakeHolds`, checkPlaceRead). A read of a field of a local that
+  holds a record (a tuple), kept by one move - rc's retain and a push, a store into a place or a
+  global, a kept argument, or a store into an owning local declared without a value - is a move out
+  of the field when the taker runs once for each value read, nothing uses the borrow after it, and
+  nothing reads the field or the record before the local is released or given another value. The
+  walk is made again with the retain and the taker taken for uses, not keeps (`takenOps`); rc's
+  retain goes, and after the taker a `ts.Default` of the field's type is stored into the field, so
+  the local's release frees nothing of what moved. A value not taken (a push on some paths only)
+  stays in the field and goes with the record. Not a string, which is copied where it is kept.
+- **The local** owns what it holds, or holds only results of calls that do not borrow: MLIRGen makes
+  no owner of a local at a script's top level or in a `try`, and nothing releases it there.
+- **A local declared in a `try`** is declared without a value, where the cleanup can release it, and
+  given its value by a store right before rc's `ts.RetainSlot`. That store is now its declaration
+  (`slotDeclarationStore`, `declarationRetainOf`): the retained value is the stored one, the store
+  takes it as a declaration would (`takerAcquires`, `acquirePoint`), and a built array read
+  (`isBuiltArrayRead`) may be given that way. `try { const r = mk(); }` was `takes a second
+  reference`.
+- **A global given its value once in the program's `main`** that nothing calls (a script's top
+  level) is a candidate immortal as one a static constructor gives it, and a class's `..new` (a
+  regular expression literal) makes its value as `ts.New` does. `const regexp = /a/g` at the top
+  level is immortal, so a call that may assign any global is no end of a borrow of it.
+- **A built array stored into a global** (`const all = [...g()]` at the top level) moves in, as one
+  stored into a field (`isBuiltArrayReturned`).
+
+`own_generator_take` keeps what generators yield by push and by spread, on all paths and on some, in
+and out of a `try`, churning between steps, under own, rc, gc and none; own emits no counting.
+Negative: `own_err_generator_take_used_after` reads the value after pushing it. DefaultLib:
+`string_matchAll` and `string_match_lastIndex` compile and run under own.
+
+## 49. The array a rest parameter is given borrows its elements, 2026-10-27
+
+`a.concat(b)` moved `b` into the array `...other` is given (`b` was `used here after its value was
+moved` after the call), and a callback's parameter given on that way (`(acc, cur) =>
+acc.concat(cur)`) was `a parameter, kept here, but -mm=own cannot make the callers ... give it up`.
+MLIRGen releases no such array under own, so the elements moved into it leaked with it.
+
+`classifyArgumentArrays` takes a `ts.CreateArray` whose one use is an argument of a call that does
+not keep it, and whose elements are each not fresh, or fresh and released by their owner: rc's
+references for the elements go (`fieldBorrowRetains`), the array reads its elements without taking
+them (`isBorrow`, `OWN_BORROWING_ARRAY_ATTR_NAME`), and a `ts.Release` marked
+`OWN_SHALLOW_RELEASE_ATTR_NAME` after the call frees the array's data block and header and not the
+elements (`emitReleaseArrayShallow`). Not after an invoke, a terminator.
+
+`own_rest_array_borrows` gives locals, the same one twice, and a callback's parameter to rest
+parameters and uses them after, churning between steps, under own, rc, gc and none; own emits no
+counting. DefaultLib: `a.concat(b, c)` and then `b` compile under own.
+
+Not here: `array_reduceRight` over an array of arrays, which may start from an element and return
+it as it is, a second owner, is marked "not own". `Array<string>` (`fill` keeps a defaulted string
+parameter in a loop) and `Array<Shared<T>>` (the class's methods hand callbacks on through a vtable,
+whose families stay open) still do not compile.

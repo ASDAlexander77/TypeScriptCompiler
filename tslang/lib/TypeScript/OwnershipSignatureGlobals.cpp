@@ -195,12 +195,14 @@ namespace own_signature
                         continue;
                     }
 
-                    // the one store, in a static constructor, run once
+                    // the one store, in a static constructor or the program's `main` that nothing
+                    // calls (a script's top level), run once
                     auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(addressUser);
                     auto funcOp = storeOp ? storeOp->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp();
+                    auto runsOnce = funcOp && (constructors.contains(funcOp.getSymName()) ||
+                                               (funcOp.getSymName() == MAIN_ENTRY_NAME && usesOf.lookup(MAIN_ENTRY_NAME).empty()));
                     if (initStore || !storeOp || storeOp.getReference() != addressOfOp.getResult() ||
-                        storeOp.getValue() == addressOfOp.getResult() || !funcOp || !constructors.contains(funcOp.getSymName()) ||
-                        mayRunAgain(storeOp))
+                        storeOp.getValue() == addressOfOp.getResult() || !runsOnce || mayRunAgain(storeOp))
                     {
                         return;
                     }
@@ -229,7 +231,13 @@ namespace own_signature
         llvm::StringSet<> immortal;
         auto madeHere = [&](mlir::Value value) {
             auto root = rootOf(value);
-            if (!root.getDefiningOp() || isCall(root.getDefiningOp()) || !isFresh(root))
+            // a class's `..new` (a regular expression literal is `RegExp..new`) makes the object as
+            // `ts.New` does: a library's is a declaration, which runOnOperation marks fresh only after
+            // this runs
+            auto *def = root.getDefiningOp();
+            auto callee = def ? directCallee(def) : mlir::FlatSymbolRefAttr();
+            auto constructs = callee && callee.getValue().ends_with("." NEW_METHOD_NAME);
+            if (!def || (isCall(def) ? !constructs : !isFresh(root)))
             {
                 return false;
             }

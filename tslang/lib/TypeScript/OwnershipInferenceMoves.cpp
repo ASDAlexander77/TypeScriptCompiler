@@ -41,7 +41,37 @@ namespace own_inference
         }
 
         auto varOp = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot().getDefiningOp<mlir_ts::VariableOp>();
-        return varOp && varOp.getInitializer() ? rootOf(varOp.getInitializer()) : mlir::Value();
+        if (varOp && varOp.getInitializer())
+        {
+            return rootOf(varOp.getInitializer());
+        }
+
+        // a local declared in a `try` is declared without a value where the cleanup can release it,
+        // and given its value by a store right before rc's `ts.RetainSlot`
+        auto storeOp = varOp ? slotDeclarationStore(op) : mlir_ts::StoreOp();
+        return storeOp ? rootOf(storeOp.getValue()) : mlir::Value();
+    }
+
+    mlir::Operation *OwnershipInferencePass::declarationRetainOf(mlir::Operation *store)
+    {
+        auto *next = mlir::isa<mlir_ts::StoreOp>(store) ? store->getNextNode() : nullptr;
+        return mlir::isa_and_nonnull<mlir_ts::RetainSlotOp>(next) && slotDeclarationStore(next).getOperation() == store
+                   ? next
+                   : nullptr;
+    }
+
+    mlir_ts::StoreOp OwnershipInferencePass::slotDeclarationStore(mlir::Operation *retainSlot)
+    {
+        auto slot = mlir::cast<mlir_ts::RetainSlotOp>(retainSlot).getSlot();
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        auto storeOp = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(retainSlot->getPrevNode());
+        if (!varOp || varOp.getInitializer() || !isOwningVariable(varOp) || !storeOp || storeOp.getReference() != slot)
+        {
+            return {};
+        }
+
+        // the local's one acquisition: an assignment after it is rc's retain, release and store
+        return onlyRetainSlotOf(varOp) == retainSlot ? storeOp : mlir_ts::StoreOp();
     }
 
     bool OwnershipInferencePass::ownsHeap(mlir::Value value)
@@ -200,9 +230,13 @@ namespace own_inference
         auto read = value.getDefiningOp<mlir_ts::LoadOp>();
         auto builder = read ? read.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
         auto owner = mlir::cast<mlir_ts::RetainSlotOp>(retain).getSlot().getDefiningOp<mlir_ts::VariableOp>();
+        // the owner declared with the read, or (in a `try`) given it by the store before the retain
+        auto declarationStore = slotDeclarationStore(retain);
+        auto ownerGets = read && owner && (owner.getInitializer() == read.getResult() ||
+                                   (declarationStore && declarationStore.getValue() == read.getResult()));
         if (!builder || isOwningVariable(builder) || builder.getCaptured().value_or(false) || !builder.getInitializer() ||
             !mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp>(builder.getInitializer().getDefiningOp()) ||
-            !owner || owner.getInitializer() != read.getResult() || !read->hasOneUse() || onlyRetainSlotOf(owner) != retain)
+            !ownerGets || !read->hasOneUse() || onlyRetainSlotOf(owner) != retain)
         {
             return false;
         }
@@ -243,8 +277,10 @@ namespace own_inference
             auto resultSlot = storeOp && storeOp.getValue() == read.getResult()
                                   ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                   : mlir_ts::VariableOp();
+            // ...or a field, or a global (`const all = [...g()]` at a script's top level)
             auto intoField = storeOp && storeOp.getValue() == read.getResult() &&
-                             storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                             (storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() ||
+                              storeOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>());
             if (!((resultSlot && isResultSlot(resultSlot)) || intoField) || returned)
             {
                 return false;
@@ -362,6 +398,12 @@ namespace own_inference
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
                       mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp, mlir_ts::StringConcatOp,
                       mlir_ts::StringResizeOp, mlir_ts::StringLengthOp, mlir_ts::StringCopyOp>(user))
+        {
+            return true;
+        }
+
+        // an array a rest parameter is given that borrows its elements (classifyArgumentArrays)
+        if (mlir::isa<mlir_ts::CreateArrayOp>(user) && user->hasAttr(OWN_BORROWING_ARRAY_ATTR_NAME))
         {
             return true;
         }

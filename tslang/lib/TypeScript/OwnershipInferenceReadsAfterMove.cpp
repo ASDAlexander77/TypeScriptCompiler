@@ -178,6 +178,12 @@ namespace own_inference
             return retain;
         }
 
+        // a store that declares a local in a `try`: the local acquires it at rc's `ts.RetainSlot`
+        if (auto *retainSlot = declarationRetainOf(taker))
+        {
+            return retainSlot;
+        }
+
         mlir::Operation *first = taker;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
             if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
@@ -207,6 +213,12 @@ namespace own_inference
         {
             return llvm::any_of(varOp.getResult().getUsers(),
                                 [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainSlotOp>(user); });
+        }
+
+        // the store that declares a local in a `try`, rc's `ts.RetainSlot` right after it
+        if (declarationRetainOf(taker))
+        {
+            return true;
         }
 
         auto acquires = false;

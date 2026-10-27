@@ -228,6 +228,74 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::classifyArgumentArrays()
+    {
+        getFunction().walk([&](mlir_ts::CreateArrayOp arrayOp) {
+            // the array a rest parameter is given (`a.concat(b)`), made of values that are not its
+            // own to take, and given to one call that borrows it (spec 49)
+            auto result = arrayOp.getResult();
+            if (arrayOp->getNumOperands() == 0 || !result.hasOneUse())
+            {
+                return;
+            }
+
+            auto *call = *result.getUsers().begin();
+            if (!isCall(call) || call->hasTrait<mlir::OpTrait::IsTerminator>() || isKeptArgument(call, result) ||
+                !llvm::is_contained(callArgs(call), result))
+            {
+                return;
+            }
+
+            llvm::SmallVector<mlir::Operation *> retains;
+            for (auto element : arrayOp->getOperands())
+            {
+                if (holdsNoBlock(element))
+                {
+                    continue;
+                }
+
+                // a fresh value nothing else releases would be the array's alone, which a release of
+                // the array alone leaks; a named one (`const a = new C()`) has its own release
+                auto root = rootOf(element);
+                auto releasedElsewhere = false;
+                forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+                    releasedElsewhere = releasedElsewhere || mlir::isa<mlir_ts::ReleaseOp>(user);
+                });
+                auto *retain = isFresh(root) && !releasedElsewhere ? nullptr : retainBefore(element, arrayOp);
+                if (!retain)
+                {
+                    return;
+                }
+
+                retains.push_back(retain);
+            }
+
+            // nothing borrowed (an array of numbers), or a result that borrows the array and outlives
+            // the call: the array stays the plain value it is
+            auto args = callArgs(call);
+            auto resultBorrowsArray = llvm::any_of(resultBorrowsAll(call), [&](int index) {
+                return static_cast<size_t>(index) < args.size() && args[index] == result;
+            });
+            if (retains.empty() || resultBorrowsArray || (call->getNumResults() == 1 && borrowingCall(call->getResult(0))))
+            {
+                return;
+            }
+
+            // rc's references for the elements go: the array borrows them, for as long as the call
+            setAttrTracked(arrayOp, OWN_BORROWING_ARRAY_ATTR_NAME);
+            fieldBorrowRetains.insert(retains.begin(), retains.end());
+
+            // and the array itself is given back after the call, without what it holds
+            if (!dryRun)
+            {
+                mlir::OpBuilder builder(call->getContext());
+                builder.setInsertionPointAfter(call);
+                auto releaseOp = builder.create<mlir_ts::ReleaseOp>(call->getLoc(), result);
+                releaseOp->setAttr(OWN_SHALLOW_RELEASE_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+        });
+    }
+
     bool OwnershipInferencePass::isBorrowingCell(mlir::Value ref)
     {
         auto cellLoad = ref.getDefiningOp<mlir_ts::LoadOp>();
