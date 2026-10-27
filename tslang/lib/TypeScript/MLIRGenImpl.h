@@ -2156,8 +2156,10 @@ class MLIRGenImpl
             if (!isConst || varClass == VariableType::ConstRef || needsIdentityStorage)
             {
                 varDecl->setReadWriteAccess();
-                // TODO: HACK: to mark var as local and ignore when capturing
-                if (varClass == VariableType::ConstRef)
+                // TODO: HACK: to mark var as local and ignore when capturing. Not a generator's alias
+                // of its `this` parameter (buildGeneratorWrapperDeclaration), which its `next`
+                // captures: it captures the parameter's storage
+                if (varClass == VariableType::ConstRef && fullName != THIS_ALIAS)
                 {
                     varDecl->setIgnoreCapturing();
                 }
