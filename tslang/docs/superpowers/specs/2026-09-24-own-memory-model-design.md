@@ -4574,8 +4574,40 @@ own, 200000 iterations peak at 4.4 MB, as 1000 do (4.3 MB). Negatives: `own_err_
 DefaultLib under own: `iterator_map`, `iterator_filter` and `iterator_toArray` pass with `@keeps` on
 `map`, `filter` and `take`, and `drop` made a generator.
 
-Not here: a generator that borrows its container given to a keeper (`s.values().take(2)`, and
-`new Set([1, 2, 3]).values().take(2)` in `iterator_take` and `iterator_drop`), whether the container is
-a temporary or a named local: the keeper would outlive the borrow. A `for...of` at a script's top level over a
+Not here: a generator that borrows its container given to a keeper (`s.values().take(2)`) - §39. A
+`for...of` at a script's top level over a
 module-level generator whose `next` calls a callback: the call may assign the global, so the loop's
 borrow of it ends. `reduce` with a string accumulator, as before.
+
+## 39. A keeper given a bounded generator is bounded in turn, 2026-10-27
+
+`new Set([1, 2, 3]).values().take(2)` (DefaultLib `iterator_take`, `iterator_drop`): `values()` is a
+generator whose state borrows the set (§19, bounded by it), and `take` says `@keeps` (§38), so its
+state owns the iterator it is given. Moving a bounded result into a kept argument was "borrows its
+generator's arguments and cannot be stored, returned or captured" - the keeper might outlive the set.
+
+It need not: the keeper's state owns the bounded state, and so is bounded by the same arguments. When
+`boundedUses` meets the bounded result as a kept argument of a call whose result is a keeper's state
+(`ownsKeptState`: -1 in place of the box in `ts.own_borrowing_fields`), it follows that result as it
+follows a local holding the bounded one: its uses - a `for...of` over it, a `next()` in the
+statement, a local holding it, another keeper given it (`.drop(1).take(2)`) - are the bounded
+result's, checked against the ends of its arguments as before, and returning, storing or capturing
+it is still refused. The release needs nothing new: the keeper's state frees the bounded state, whose
+release gives back nothing it borrows, so the order against the container's release does not matter.
+
+Only a bounded *result* is followed so: what `boundedUses` walks is the call's result and the locals
+holding it, each this function's to move. A keeper given a borrow of something else (an element, a
+parameter) is the argument move's business, unchanged.
+
+`own_generator_keeps_bounded` walks keepers over a generator that borrows a temporary, two keepers
+deep, one step in the statement that made it, and a chain over a named source held in a local, churning
+between steps, under own, rc, gc and none; AOT under own, 200000 iterations peak at 4.4 MB, as 1000
+do. Negatives: `own_err_generator_keeps_bounded` (now: returned past its source - the §38 shape,
+walked in place, is accepted) and `own_err_generator_keeps_bounded_outlives` (used after the source
+is overwritten).
+
+DefaultLib: `iterator_take` and `iterator_drop` pass under own. Their `limit` is now a number, as in
+JavaScript: `take(Infinity)` converted `Infinity` to an `index`, which is no particular count (0 under
+rc, anything under own), so it took nothing in every model. `reduce`'s string accumulator, listed in
+§38 as open, is DefaultLib #45 (its accumulator typed `V`, not the `any` that `?? iter.next().value`
+gives).

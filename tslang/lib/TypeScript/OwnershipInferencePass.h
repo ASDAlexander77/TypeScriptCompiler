@@ -245,6 +245,10 @@ class OwnershipInferencePass
     // (OWN_BORROWING_FIELDS_ATTR_NAME, the signature pass's), the `.captured` box's first.
     llvm::SmallVector<int32_t> borrowingFieldsOf(mlir::Type recordType);
 
+    // Is this the state object of a generator that says `@keeps` - one that owns its arguments
+    // (spec 38; -1 in place of the box in borrowingFieldsOf)?
+    bool ownsKeptState(mlir::Type recordType);
+
     // Is `ref` a field of a generator's state object that only yields (OWN_YIELDED_FIELDS_ATTR_NAME)?
     bool isYieldedField(mlir::Value ref);
 

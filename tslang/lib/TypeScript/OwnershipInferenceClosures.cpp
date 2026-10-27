@@ -151,6 +151,12 @@ namespace own_inference
         return fields;
     }
 
+    bool OwnershipInferencePass::ownsKeptState(mlir::Type recordType)
+    {
+        auto fields = borrowingFieldsOf(recordType);
+        return !fields.empty() && fields.front() < 0;
+    }
+
     bool OwnershipInferencePass::isYieldedField(mlir::Value ref)
     {
         auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
@@ -503,6 +509,15 @@ namespace own_inference
                 {
                     if (isKeptArgument(user, used))
                     {
+                        // given to a generator that says `@keeps` (`s.values().take(2)`): its state
+                        // owns the result, so is bounded by the same arguments - its uses are this
+                        // result's (spec 38)
+                        if (user->getNumResults() == 1 && ownsKeptState(user->getResult(0).getType()))
+                        {
+                            values.push_back(user->getResult(0));
+                            return;
+                        }
+
                         kept = user;
                     }
 

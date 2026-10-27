@@ -1,5 +1,5 @@
-// -mm=own rejects: a generator that borrows its argument cannot be given to one whose state keeps
-// what it is given - it would outlive what it borrows.
+// -mm=own rejects: a generator that says `@keeps`, given one that borrows its argument, is bounded
+// by that argument too, so it cannot be returned past it.
 type It = { next(): { value: any, done: boolean } };
 
 function* each(a: number[]) {
@@ -11,7 +11,12 @@ function* plusOne<TIter extends It>(iter: TIter) {
     for (const v of iter) yield v + 1;
 }
 
+function make() {
+    const a: number[] = [];
+    a.push(1);
+    return plusOne(each(a));
+}
+
 function main() {
-    const a = [1, 2, 3];
-    for (const v of plusOne(each(a))) print(v);
+    for (const v of make()) print(v);
 }
