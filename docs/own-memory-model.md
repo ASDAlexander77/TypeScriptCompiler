@@ -742,6 +742,9 @@ a reference gives it back on every path out of a function.
 - Array methods that keep elements of the source in a new array (`filter` over class instances)
   give each such element a second owner, which is an error by design. Use `Shared<T>` elements,
   or build the result from copies.
+- `sort`, `reverse` and `copyWithin` work on arrays of numbers and strings (a string is copied
+  where it moves). Over class instances they are an error: a swap reads an element into a local
+  while its slot is overwritten, which -mm=own cannot follow yet; use `Shared<T>` elements.
 - Iterator helpers work, the lazy ones (`map`, `filter`, `take`, `drop`) taking their source over
   as in JavaScript: `const seq = fibonacci().map(f)`. Over an iterator that borrows its container
   (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:
