@@ -3937,7 +3937,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_call_field_drops own_immortal_keepers
                  own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
                  own_loop_read_again own_length_drops_elements own_tuple_param_kept
-                 own_for_of_borrowed_iterator)
+                 own_for_of_borrowed_iterator own_generator_keeps)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3962,6 +3962,13 @@ endforeach()
 foreach(for_of_mm rc gc none)
     tslang_add_test(NAME test-jit-${for_of_mm}-own_for_of_borrowed_iterator COMMAND test-runner -jit -mm=${for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_for_of_borrowed_iterator.ts")
     tslang_add_test(NAME test-compile-${for_of_mm}-own_for_of_borrowed_iterator COMMAND test-runner -mm=${for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_for_of_borrowed_iterator.ts")
+endforeach()
+
+# A generator whose `@keeps` makes its state own its arguments (spec 38); the same program under every
+# other model.
+foreach(keeps_mm rc gc none)
+    tslang_add_test(NAME test-jit-${keeps_mm}-own_generator_keeps COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_keeps.ts")
+    tslang_add_test(NAME test-compile-${keeps_mm}-own_generator_keeps COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_keeps.ts")
 endforeach()
 
 # A value read out of an assigned global, lent to a call that assigns only other globals, outlives the
@@ -4628,7 +4635,10 @@ set(own_error_cases
     "own_err_shared_elements_object|:13:21: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]: an element has to be a value, a string or a Shared<T> handle. use 'Shared<Node>'"
     "own_err_shared_elements_any|:8:21: error: -mm=own: 'Bag' cannot hold 'any' [(]its 'T'[)]: an element has to be a value, a string or a Shared<T> handle. give it one of those types"
     "own_err_shared_elements_inferred|:12:17: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]"
-    "own_err_keeper_popped|:14:9: error: argument '[^']*' is given to 'Registry[.]register', which keeps it, but -mm=own cannot move it here")
+    "own_err_keeper_popped|:14:9: error: argument '[^']*' is given to 'Registry[.]register', which keeps it, but -mm=own cannot move it here"
+    "own_err_generator_keeps_missing|:9:1: error: '@keeps' of 'mapped<[^']*' names 'iter', but its body keeps 'iter', 'f'"
+    "own_err_generator_keeps_used_after|:15:11: error: '[^']*' is used here after its value was moved"
+    "own_err_generator_keeps_bounded|:16:21: error: '[^']*' borrows its generator's arguments and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

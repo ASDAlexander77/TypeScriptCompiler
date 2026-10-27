@@ -538,6 +538,16 @@ inline bool isFresh(mlir::Value value)
         return callee && !callee.isDeclaration();
     }
 
+    // the same call made through the function's symbol: a generator called at the top level of a
+    // script, an extension call (`g().take(2)`)
+    if (auto callIndirectOp = mlir::dyn_cast<mlir_ts::CallIndirectOp>(def))
+    {
+        auto symbolRefOp = callIndirectOp.getCallee().getDefiningOp<mlir_ts::SymbolRefOp>();
+        auto callee = symbolRefOp ? mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, symbolRefOp.getIdentifierAttr())
+                                  : mlir_ts::FuncOp();
+        return callee && !callee.isDeclaration();
+    }
+
     if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp,
                   mlir_ts::InvokeOp, mlir_ts::InvokeHybridOp>(def))
     {
@@ -945,6 +955,13 @@ inline bool holdsNoBlock(mlir::Value value)
     for (auto *def = value.getDefiningOp(); def; def = def->getOperand(0).getDefiningOp())
     {
         if (isLiteral(def))
+        {
+            return true;
+        }
+
+        // a function made a hybrid one (`f(double)`, `f((x) => x * 2)`): its `this` is null
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def);
+            castOp && castOp.getIn().getDefiningOp<mlir_ts::SymbolRefOp>() && mlir::isa<mlir_ts::FunctionType>(castOp.getIn().getType()))
         {
             return true;
         }

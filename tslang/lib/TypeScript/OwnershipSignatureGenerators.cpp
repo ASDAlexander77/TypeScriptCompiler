@@ -550,6 +550,53 @@ namespace own_signature
         return true;
     }
 
+    llvm::SmallVector<int32_t> OwnershipSignaturePass::paramsCapturedIntoState(mlir_ts::FuncOp maker)
+    {
+        llvm::SmallVector<int32_t> captured;
+        maker.walk([&](mlir_ts::NewOp newOp) {
+            auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(newOp.getType());
+            auto tupleType = valueRefType ? mlir::dyn_cast<mlir_ts::TupleType>(valueRefType.getElementType())
+                                          : mlir_ts::TupleType();
+            auto position = tupleType ? fieldIndex(tupleType, CAPTURED_NAME) : -1;
+            auto box = position >= 0 ? boxStoredIntoState(newOp, position) : mlir::Value();
+            if (!box)
+            {
+                return;
+            }
+
+            for (auto *user : box.getUsers())
+            {
+                auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                if (!propertyRefOp)
+                {
+                    continue;
+                }
+
+                for (auto *fieldUser : propertyRefOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    auto cellOp = storeOp ? storeOp.getValue().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                    auto index = -1;
+                    if (!cellOp || !isParameterCell(cellOp, maker, index))
+                    {
+                        continue;
+                    }
+
+                    // a handle's cell holds a count of its own (spec 23.2): its caller gives nothing up
+                    auto elementType = mlir::cast<mlir_ts::RefType>(cellOp.getType()).getElementType();
+                    if (own_facts::ownsHeap(cellOp.getLoc(), elementType) && !MLIRTypeHelper::isSharedHandleType(elementType) &&
+                        !llvm::is_contained(captured, index))
+                    {
+                        captured.push_back(index);
+                    }
+                }
+            }
+        });
+
+        llvm::sort(captured);
+        return captured;
+    }
+
     bool OwnershipSignaturePass::readsParameterSlot(mlir::Value value, mlir_ts::FuncOp maker, int32_t &index)
     {
         auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
@@ -609,6 +656,15 @@ namespace own_signature
             }
 
             BorrowingState state{maker, captured};
+            // a maker that says `@keeps`: its callers move the arguments in, and the box owns them
+            // like any escaping closure's; the result is bounded by nothing (spec 38)
+            if (maker->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+            {
+                state.owns = true;
+                states[tupleType] = state;
+                return;
+            }
+
             for (auto *user : box.getUsers())
             {
                 auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
@@ -692,6 +748,11 @@ namespace own_signature
         states.remove_if([&](auto &entry) { return made[entry.first] != 1; });
         for (auto &[type, state] : states)
         {
+            if (state.owns)
+            {
+                continue;
+            }
+
             auto bounded = state.bounded;
             llvm::sort(bounded);
             borrowsFound[state.maker] = bounded;
@@ -747,11 +808,15 @@ namespace own_signature
         llvm::SmallVector<mlir::Attribute> entries;
         for (auto &[type, state] : states)
         {
-            llvm::SmallVector<int32_t> fields{state.captured};
+            // the box first, -1 for one that owns: its readers compare the box's position with it
+            llvm::SmallVector<int32_t> fields{state.owns ? -1 : state.captured};
             fields.append(state.fields.begin(), state.fields.end());
             entries.push_back(mlir::ArrayAttr::get(
                 context, {mlir::TypeAttr::get(type), mlir::DenseI32ArrayAttr::get(context, fields)}));
-            state.maker->setAttr(OWN_RESULT_BOUNDED_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, state.bounded));
+            if (!state.owns)
+            {
+                state.maker->setAttr(OWN_RESULT_BOUNDED_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, state.bounded));
+            }
         }
 
         module->setAttr(OWN_BORROWING_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));

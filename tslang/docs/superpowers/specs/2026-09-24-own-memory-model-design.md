@@ -4536,3 +4536,46 @@ Not here: the lazy helpers `map`, `filter`, `take` (generators whose state borro
 `drop` (which returns it) still give a result that borrows a temporary, so `const seq =
 fibonacci().map(f)` is an error; that needs a generator state that owns a parameter. `reduce` with a
 string accumulator starts its `let` from the `initial` parameter.
+## 38. A generator that keeps its arguments (`@keeps` on a generator), 2026-10-27
+
+A generator over a parameter that holds a block borrows it (§19): the caller owns the state, which may
+not be stored, returned or captured past the argument. The default library's lazy iterator helpers
+(`map`, `filter`, `take`, `drop`) are generators over their source, so `const seq =
+fibonacci().map(f)` was "borrows its generator's arguments and cannot be stored" - in JavaScript a
+helper takes its source over. `@keeps("p")` on a generator now says that: the state owns `p`.
+
+- **The signature pass.** `findBorrowingStates` still takes a `@keeps` maker's state, marked `owns`:
+  no bound (`__own_result_bounded`), nothing in `borrowsFound`, and in `ts.own_borrowing_fields` the
+  box's position is written as -1, so the release routine frees the box like any escaping closure's -
+  its cells and what they hold - while the fields that hold only what is read out of it (a `for...of`
+  cursor over `iter`, §37) still borrow, from the box, which the state frees with it.
+  `localOwnedParams` counts, for a function that says `@keeps`, each parameter owning a block whose
+  cell the maker stores into the state's `.captured` box (`paramsCapturedIntoState`), so the callers
+  move the arguments in and `checkDeclared` holds the body to the decorator. A box owns every cell it
+  holds: `@keeps` on `map` has to name the callback too ("names 'iter', but its body keeps 'iter',
+  'f'"), and a capturing closure given to two helpers is used after its move (a plain function
+  holds no block, and is not moved).
+- **The inference.** `decideEscaping` lets the cell of a parameter the function keeps move into an
+  escaping box, as an owning local's does (it was "a closure that escapes owns what it captures, but
+  -mm=own cannot move this variable into it: its value is the caller's").
+- **The callers.** An argument a callee keeps moves in only when it is fresh or this function's to
+  give. Two shapes the helpers meet were neither: `isFresh` now takes a `ts.CallIndirect` of a
+  `ts.SymbolRef` to a function defined here (a generator called at a script's top level, an
+  extension call such as `g().take(2)`), as it took a direct call; and `holdsNoBlock` a plain function
+  cast to a hybrid one (`f(double)`, `f((x) => x * 2)`), whose `this` is null.
+
+`own_generator_keeps` runs a class argument, chained iterator generators, a lambda and a named
+callback, a generator returned past its argument's expression, one given up after a step, and a
+module-level one, churning between steps, under own, rc, gc and none; own emits no counting. AOT under
+own, 200000 iterations peak at 4.4 MB, as 1000 do (4.3 MB). Negatives: `own_err_generator_keeps_missing`
+(the callback left out), `own_err_generator_keeps_used_after` (the argument read after it moved),
+`own_err_generator_keeps_bounded` (a generator that borrows its argument given to one that keeps it).
+
+DefaultLib under own: `iterator_map`, `iterator_filter` and `iterator_toArray` pass with `@keeps` on
+`map`, `filter` and `take`, and `drop` made a generator.
+
+Not here: a generator that borrows its container given to a keeper (`s.values().take(2)`, and
+`new Set([1, 2, 3]).values().take(2)` in `iterator_take` and `iterator_drop`), whether the container is
+a temporary or a named local: the keeper would outlive the borrow. A `for...of` at a script's top level over a
+module-level generator whose `next` calls a callback: the call may assign the global, so the loop's
+borrow of it ends. `reduce` with a string accumulator, as before.
