@@ -1041,8 +1041,15 @@ namespace own_inference
 
             auto name = varName(varOp);
             auto elementType = mlir::cast<mlir_ts::RefType>(value.getType()).getElementType();
+            // the cell of a parameter this function keeps: its callers gave the value up, so it moves
+            // in like an owning local's (a `@keeps` generator's state, spec 38)
+            auto init = varOp.getInitializer();
+            auto argument = init ? mlir::dyn_cast<mlir::BlockArgument>(init) : mlir::BlockArgument();
+            auto keptParam = argument && argument.getOwner()->isEntryBlock() &&
+                             argument.getOwner()->getParentOp() == getFunction().getOperation() &&
+                             llvm::is_contained(ownedParams(getFunction()), static_cast<int32_t>(argument.getArgNumber()));
             // a handle's cell holds a count of its own, whoever's the value was (spec 23.2)
-            if (!isOwningVariable(varOp) && !closure.borrowsValues && ownsHeap(varOp.getLoc(), elementType) &&
+            if (!isOwningVariable(varOp) && !keptParam && !closure.borrowsValues && ownsHeap(varOp.getLoc(), elementType) &&
                 !MLIRTypeHelper::isSharedHandleType(elementType))
             {
                 reportEscapingCellNotOwned(move, closure.escape, "its value is the caller's");

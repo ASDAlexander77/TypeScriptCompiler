@@ -936,8 +936,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     static bool keeps(mlir::Operation *user, mlir::Value used);
 
     // The parameters the body keeps (spec 2.4, owned-by-callee): a read of the parameter's slot -
-    // never assigned - that something keeps.
+    // never assigned - that something keeps. A generator that says `@keeps` keeps too each parameter
+    // whose cell its state's box holds (paramsCapturedIntoState, spec 38).
     static llvm::SmallVector<int32_t> localOwnedParams(mlir_ts::FuncOp funcOp);
+
+    // The parameters, owning a block, whose cell `maker` stores into the `.captured` box of the state
+    // object it makes: what a generator's state holds of its arguments (spec 38).
+    static llvm::SmallVector<int32_t> paramsCapturedIntoState(mlir_ts::FuncOp maker);
 
     // ---- The facts callers must know ----
 
@@ -978,6 +983,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SetVector<int32_t> fields;
         // the stores of `this` into the box, which keep nothing once the state borrows
         llvm::SmallVector<mlir::Operation *> thisStores;
+        // a `@keeps` maker's (spec 38): the box owns its arguments, and only the fields that hold
+        // what is read out of it borrow - from the box, which the state frees last
+        bool owns = false;
     };
 
     static int32_t fieldIndex(mlir_ts::TupleType tupleType, llvm::StringRef name);

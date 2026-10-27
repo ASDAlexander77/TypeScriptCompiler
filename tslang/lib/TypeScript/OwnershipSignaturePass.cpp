@@ -854,6 +854,19 @@ namespace own_signature
             }
         }
 
+        // a generator whose state owns what it holds of its arguments, as its `@keeps` says: the
+        // callers move them in, and the state's release frees them (spec 38)
+        if (funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+        {
+            for (auto index : paramsCapturedIntoState(funcOp))
+            {
+                if (!llvm::is_contained(owned, index))
+                {
+                    owned.insert(llvm::upper_bound(owned, index), index);
+                }
+            }
+        }
+
         return owned;
     }
 
