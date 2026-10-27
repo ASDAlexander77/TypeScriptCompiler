@@ -705,6 +705,11 @@ a reference gives it back on every path out of a function.
 - Array methods that keep elements of the source in a new array (`filter` over class instances)
   give each such element a second owner, which is an error by design. Use `Shared<T>` elements,
   or build the result from copies.
+- Iterator helpers that walk their source (`forEach`, `every`, `some`, `find`, `toArray`) work.
+  The lazy ones (`map`, `filter`, `take`, `drop`) give an iterator that borrows its source, so
+  `const seq = fibonacci().map(f)` is an error: use it in place (`for (const v of
+  fibonacci().map(f))`), or, in a function, name the source first (`const src = fibonacci();
+  const seq = src.map(f);`). A module-level `const` is a global, and a global cannot hold a borrow.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.

@@ -4508,3 +4508,31 @@ Not here:
 - `const ts: Th[] = [new A(), new B()]; const h = ts[1].hit(ray); print(h.dist)` outside a loop is
   `borrows an element but is used here after it may be released or overwritten` for a record with a
   box (section 32) as much as for one without; the same call inside a loop over `ts` compiles.
+
+## 37. A `for...of` over an iterator read out of a place borrows it, 2026-10-27
+
+MLIRGen desugars `for (const v of e)` over an iterator to `for (let .b = e, .c = .b.next(); !.c.done;
+.c = .b.next())`. Under own a `let` initialized from a parameter is a second owner of it, so
+`function forEach(iter: TIter, f) { for (const v of iter) f(v); }` was "'iter' is a parameter, kept
+here", and so was every iterator helper of the default library that walks its source (`forEach`,
+`every`, `some`, `find`, `toArray`). `.b` is never assigned. Under own, when `e` is a `ts.Load` - a
+parameter, a variable, a field, a global - `.b` is now a `const` declared just before the loop, in the
+same scope: it names the value, a borrow the inference checks like `const it = iter`. A fresh `e`
+(`for (const v of gen())`) keeps the `let`, which owns it. The other models keep the `let` in every
+case: its count keeps the iterator alive should the body assign the variable it came from.
+
+A body that assigns the variable is safe under own: a parameter's slot releases nothing when assigned
+(the frame never owned it), and a local `let`'s loop compiles to the same IR as before (`.b` gets a
+slot, and the inference moves the value into it as it did the `let`). A labelled loop keeps its label:
+the `const` statement is emitted before the `ts.For`, not wrapped around it.
+
+`own_for_of_borrowed_iterator` runs a parameter, a labelled loop with `continue outer` and `break
+outer`, a parameter the body assigns, a field and a global, churning between steps, under own, rc,
+gc and none; own emits no counting. Before the change own rejected it with four errors. DefaultLib
+under own: `iterator_every`, `iterator_find`, `iterator_forEach`, `iterator_some` and
+`iterator_toArray` compile and pass.
+
+Not here: the lazy helpers `map`, `filter`, `take` (generators whose state borrows the source) and
+`drop` (which returns it) still give a result that borrows a temporary, so `const seq =
+fibonacci().map(f)` is an error; that needs a generator state that owns a parameter. `reduce` with a
+string accumulator starts its `let` from the `initial` parameter.
