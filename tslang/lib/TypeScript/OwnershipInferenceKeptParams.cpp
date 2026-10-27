@@ -16,17 +16,8 @@ namespace own_inference
             return {};
         }
 
-        for (auto *user : body.front().getArgument(index).getUsers())
-        {
-            auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
-            auto position = -1;
-            if (varOp && isParameterSlot(varOp, position) && position == index)
-            {
-                return varOp;
-            }
-        }
-
-        return {};
+        auto slots = parameterSlotsOf(body.front().getArgument(index));
+        return slots.empty() ? mlir_ts::VariableOp() : slots.front();
     }
 
     bool OwnershipInferencePass::isReleasedParam(mlir::Value slot)

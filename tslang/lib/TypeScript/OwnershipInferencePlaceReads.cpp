@@ -662,7 +662,12 @@ namespace own_inference
             // a call given a closure may run it, and its box may hold anything
             auto givenClosure = llvm::any_of(drop->getOperands(), holdsCaptures);
             auto mayDrop = true;
-            if (chain.owned() && !givenClosure)
+            // A caught value is the exception's until the catch ends: a throw takes what it throws
+            // (a borrow cannot be thrown), so nothing a call reaches holds it but what it is given
+            auto caught = llvm::all_of(chain.roots, [&](auto &root) {
+                return root.second != Chain::NotOwned || isCaughtValue(root.first);
+            });
+            if (caught && !givenClosure)
             {
                 auto &fromRead = derivedFrom(borrowed ? borrowed : read->getResult(0));
                 auto sources = rootSources(chain);
