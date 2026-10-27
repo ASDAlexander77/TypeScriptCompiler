@@ -496,7 +496,16 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
         if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+            // an array that only borrowed its elements (-mm=own's classifyArgumentArrays)
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getReference().getType());
+            if (arrayType && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
+            {
+                orl.emitReleaseArrayShallow(arrayType, transformed.getReference());
+            }
+            else
+            {
+                orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+            }
         }
 
         rewriter.eraseOp(op);

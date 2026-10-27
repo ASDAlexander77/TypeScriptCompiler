@@ -755,9 +755,13 @@ a reference gives it back on every path out of a function.
   (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:
   `for (const v of s.values().take(2))` works, but the result cannot be returned or kept past `s`.
   An array's `values()`, `keys()`, `entries()` and `[Symbol.iterator]()` borrow it in the same
-  way. A closure that captures, given to two of them, is moved into the first. A `for...of` over a
-  generator, or a spread of one (`[...s.matchAll(re)]`), only borrows what each step yields: keeping
-  a yielded object or array (pushing it into another array) is an error for now.
+  way. A closure that captures, given to two of them, is moved into the first. What a generator
+  yields is the caller's: `for (const v of g()) a.push(v)` and `[...s.matchAll(re)]` take each value
+  over, as long as nothing reads it after it is pushed.
+- Arguments given to a rest parameter (`a.concat(b)`) are borrowed for the call, so `b` is still
+  yours after it.
+- `reduce` and `reduceRight` over an array of arrays or objects are errors: with no initial value
+  they start from an element, and may return it as it is, a second owner of it.
 - The `Array<T>` class holds values, strings or `Shared<T>` handles, as `Map` does: `new
   Array<number>()` works, and `new Array<Node>()` is a compile error that points at `Shared<T>`.
   `Array<string>` and `Array<Shared<T>>` do not compile yet.

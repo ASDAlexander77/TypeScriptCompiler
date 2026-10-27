@@ -39,6 +39,11 @@
 // retain nobody performed and free live memory.
 #define OWNED_RESULT_ATTR_NAME "__owned_result"
 
+// -mm=own only, set by OwnershipInferencePass for the lowering. On a `ts.Release` of an array: the
+// array borrowed its elements (the array a rest parameter is given), so its release frees the
+// array and not them.
+#define OWN_SHALLOW_RELEASE_ATTR_NAME "__own_shallow_release"
+
 // Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
 // instead of by retaining. The slot still releases at every scope exit - that release is what
 // gives the consumed reference back - so the pair is still balanced, but there is no

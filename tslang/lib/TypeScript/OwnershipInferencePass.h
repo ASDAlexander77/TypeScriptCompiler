@@ -43,6 +43,9 @@ using namespace own_facts;
 // This pass's own mark, for its own reading: a store of a value into the capture box of a closure
 // that borrows what it captures (phase 5). The store is a read, not a taker.
 #define OWN_CAPTURE_BORROW_ATTR_NAME "__own_capture_borrow"
+// -mm=own only, on a `ts.CreateArray` given to one call that borrows it: it borrows its elements
+// for the call (classifyArgumentArrays)
+#define OWN_BORROWING_ARRAY_ATTR_NAME "__own_borrowing_array"
 
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
@@ -231,6 +234,9 @@ class OwnershipInferencePass
     // A string read out of a place, given to a call that may release it (the dry run's): the call
     // gets a copy instead, released after it (spec 22), read -> call
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
+    // A move out of a field of an owning record local, being checked (spec 48): its retain and its
+    // taker, which walkBorrowed takes for uses of the borrow and not for keeps
+    llvm::SmallPtrSet<mlir::Operation *, 2> takenOps;
     // each closure over a cell, by its `ts.CreateBoundFunction`
     llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
     // each generator's capture box, which escapes with its state object (classifyStateBoxes)
@@ -262,6 +268,9 @@ class OwnershipInferencePass
     // copy does (OWN_CAPTURE_BORROW_ATTR_NAME), and rc's retain for it goes; its release, when the
     // field is overwritten, gives nothing back.
     void classifyBorrowingFields();
+    // The arrays a rest parameter is given that only borrow their elements for the call (spec 49):
+    // rc's references for the elements go, and the array is released after the call without them.
+    void classifyArgumentArrays();
 
     // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
     // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
@@ -798,6 +807,24 @@ class OwnershipInferencePass
     // Reports and returns false when the read is kept, or used after something that may destroy
     // it.
     bool checkPlaceRead(mlir::Operation *read, llvm::SetVector<mlir::Operation *> &toErase);
+
+    // A move out of a field of an owning local that holds a record (spec 48): rc's retain of what
+    // is read, the one taker that keeps it, and the field, which the move leaves empty.
+    struct FieldTake
+    {
+        mlir::Operation *retain = nullptr;
+        mlir::Operation *taker = nullptr;
+        mlir::Value field;
+        mlir_ts::VariableOp slot;
+    };
+
+    // Is `kept`, what keeps the borrow `read` (a read of a field of an owning record local), one
+    // move of it into a container: rc's retain and a push, a store into a place or a kept argument?
+    bool fieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take);
+
+    // ...made once for each value read, with nothing using the borrow after it, and nothing reading
+    // the field or the record before the local ends?
+    bool fieldTakeHolds(mlir::Operation *read, const FieldTake &take, llvm::ArrayRef<BorrowUse> uses);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
 
@@ -895,6 +922,11 @@ class OwnershipInferencePass
     // seen through its views. None for a variable with no initializer - its storage was hoisted
     // in front of a try and its value arrives by a store this phase does not follow.
     static mlir::Value retainedValue(mlir::Operation *op);
+    // The store that gives a local declared without a value (one in a `try`) its value, right
+    // before rc's `retainSlot` of it, when that is the local's one store; null otherwise.
+    static mlir_ts::StoreOp slotDeclarationStore(mlir::Operation *retainSlot);
+    // ...and the other way round: rc's `ts.RetainSlot` right after such a store, or null.
+    static mlir::Operation *declarationRetainOf(mlir::Operation *store);
 
     // Does a value of this type own a block that a release would destroy?
     bool ownsHeap(mlir::Value value);

@@ -364,6 +364,13 @@ namespace own_inference
                 }
 
                 uses.push_back({user, pending.kills, isCall(user) && isCalleeOperand(use)});
+                // a move out of a record's field, its retain and its taker, which checkPlaceRead
+                // decides (spec 48): a use of the borrow until it is taken
+                if (takenOps.contains(user))
+                {
+                    continue;
+                }
+
                 // copied into a borrowing box: whatever runs the closure reads it
                 if (auto found = captureStores.find(user); found != captureStores.end())
                 {
