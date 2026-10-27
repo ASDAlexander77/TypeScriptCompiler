@@ -867,6 +867,7 @@ namespace mlirgen
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location)
     {
         auto fixThisReference = functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration;
+        auto thisIsParameter = false;
         if (functionLikeDeclarationBaseAST->parameters.size() > 0)
         {
             auto nameNode = functionLikeDeclarationBaseAST->parameters.front()->name;
@@ -876,6 +877,7 @@ namespace mlirgen
                 if (ident->escapedText == S(THIS_NAME))
                 {
                     fixThisReference = true;
+                    thisIsParameter = true;
                 }
             }
         }
@@ -989,7 +991,16 @@ namespace mlirgen
             // TODO: this is temp hack, add this alias as thisArg, 
             NodeArray<VariableDeclaration> _thisArgDeclarations;
             auto _thisArg = nf.createIdentifier(S(THIS_ALIAS));
-            _thisArgDeclarations.push_back(nf.createVariableDeclaration(_thisArg, undefined, undefined, nf.createToken(SyntaxKind::ThisKeyword)));
+            auto _thisArgDeclaration = nf.createVariableDeclaration(_thisArg, undefined, undefined, nf.createToken(SyntaxKind::ThisKeyword));
+            // a `this` parameter (`function* keys<T>(this: T[])`): the alias is the parameter's own
+            // storage, so the generator captures the parameter, as it does any other - under
+            // -mm=own its state borrows it (spec 19) rather than owning a copy of it
+            if (thisIsParameter)
+            {
+                _thisArgDeclaration->internalFlags |= InternalFlags::ForceConstRef;
+            }
+
+            _thisArgDeclarations.push_back(_thisArgDeclaration);
             auto _thisArgList = nf.createVariableDeclarationList(_thisArgDeclarations, NodeFlags::Const);
 
             generatorStatements.push_back(nf.createVariableStatement(undefined, _thisArgList));

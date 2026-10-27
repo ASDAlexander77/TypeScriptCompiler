@@ -4611,3 +4611,33 @@ JavaScript: `take(Infinity)` converted `Infinity` to an `index`, which is no par
 line took all three under rc and none under own. `reduce`'s string accumulator, listed in
 §38 as open, is DefaultLib #45 (its accumulator typed `V`, not the `any` that `?? iter.next().value`
 gives).
+
+## 40. A generator over its `this` parameter, 2026-10-27
+
+`a.keys()` and `a.values()` of an array (DefaultLib `array_keys`, `array_values`, `array_iterator`)
+were "'this' is a parameter, kept here, but -mm=own cannot make the callers of '___Array.keys' give it
+up". Both are generators whose first parameter is `this` (`function* keys<T>(this: T[])`). The
+generator lowering (`buildGeneratorWrapperDeclaration`) gives `next` the body's `this` through an
+alias, `const .this = this`, because `next` has its own. For a method that is the class's `this`,
+which the state holds by value (`readsParameterSlot`, §19). For a `this` parameter the alias was a
+local of its own, initialised from the parameter, captured into the state's box as a cell: not the
+parameter's cell (`isParameterCell` wants the cell to be the parameter), so the state owned a copy
+of the caller's array, and the caller could not give it up.
+
+The alias is now a `ConstRef` (`InternalFlags::ForceConstRef`) when `this` is a parameter: the name is
+the parameter's storage, as for-in's `.a` is its array's. A `ConstRef` is otherwise never captured
+(`setIgnoreCapturing`, for `.a`); `.this` is, so the closure captures the parameter itself - its
+`ts.Param` marked captured, as any parameter a generator reads - and the state borrows it like one:
+bounded by `this` (`__own_result_bounded`), walked while the array lives, returned only by a function
+that says `@borrows("this")`. Under the other models the alias was a second reference to the same
+array; now it is the parameter's cell, so nothing else changes.
+
+`own_generator_this_param` walks an extension generator over a `this: C[]` in a `for...of`, a generic
+one held in a local, one returned by a `@borrows("this")` function, and one over a temporary array in
+the statement that made it, churning between steps, under own, rc, gc and none (without the change,
+`@borrows("this")` on the function is refused: nothing it returns borrows). Negative:
+`own_err_generator_this_param_returned`, returned by a function that does not say it.
+
+DefaultLib: `array_keys`, `array_values` and `array_iterator` pass under own; `iterator<T>(this: T[])`
+(`[Symbol.iterator]`), which returns `this.values()`, says `@borrows("this")`. Not here: `entries()`,
+whose `yield [i, this[i]]` puts a borrowed element in a tuple the caller owns.

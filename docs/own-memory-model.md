@@ -488,6 +488,10 @@ m4_record_err.ts:8:1: error: 'pairOf' returns a record that borrows 'a', 'b', wh
 the generator, but it may not outlive `p`. It also goes on a function that returns such a
 generator. On anything else it is an error.
 
+A generator borrows its parameters without saying so, `this` among them: an extension
+generator such as `function* keys<T>(this: T[])`, called `a.keys()`, may not outlive `a`. A function
+that returns one says `@borrows("this")`, as `[Symbol.iterator]` of an array does.
+
 ```typescript
 @final
 export class Word {
@@ -742,6 +746,8 @@ a reference gives it back on every path out of a function.
   as in JavaScript: `const seq = fibonacci().map(f)`. Over an iterator that borrows its container
   (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:
   `for (const v of s.values().take(2))` works, but the result cannot be returned or kept past `s`.
+  An array's `values()`, `keys()` and `[Symbol.iterator]()` borrow it in the same way;
+  `entries()` does not compile yet, its `[i, a[i]]` holding a borrowed element.
   A closure that captures, given to two of them, is moved into the first.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
