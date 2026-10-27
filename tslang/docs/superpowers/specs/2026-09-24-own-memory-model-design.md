@@ -4777,3 +4777,75 @@ which sorts numbers with a comparison `sort` gives on.
 Not here: a callback stored, captured or returned is not given on, and keeps its family open. So
 is one in `compare && compare(a, b)`: the `&&` is a `boolean | function` union that holds the
 callback on the path that does not call it.
+
+## 44. A field read out of a borrowed tuple value, and a caught value, 2026-10-27
+
+Two borrows that own refused although nothing could free what they read.
+
+- **A field of a tuple value.** A function returning `T | undefined` of a record (`find`) gives
+  the caller an optional whose payload is the tuple itself, and printing it reads each field with
+  `ts.ExtractProperty` out of the `ts.Value` (an in-place read goes through `ts.PropertyRef`
+  instead). `walkBorrowed` took the extraction for a keep. A field read this way borrows what the
+  tuple borrows: a number or a boolean keeps nothing, and a field that may point into a block is
+  walked on as a borrow of the same chain, so storing it is still refused.
+- **A caught value.** A catch clause's variable is filled by `ts.SaveCatchVar` with what was thrown
+  and assigned nowhere else (`isCaughtValue`). A throw takes what it throws, since a borrow cannot
+  be thrown, so the value is the exception's until the catch ends: no global and no other local
+  holds it. A chain rooted at a read of it is treated as one this function owns when `dropsChain`
+  asks whether a call may free it, so only a call given something derived from it may. Before,
+  `const r = <RangeError>e; r instanceof Error` was refused: the virtual `instanceOf` call, whose
+  facts own cannot know, was taken to free the exception.
+
+`own_optional_record_read` prints records `find` returns (found and not), and calls a method and
+`instanceof` on a caught value cast to its class, under own, rc, gc and none; own emits no
+counting. `own_caught_value_call` (compiled only) gives the cast caught value to a declared
+function, which has no facts, and reads it after the call. Negative: `own_err_optional_record_field_kept` pushes a class-typed field of a found
+record into another array. A throw of an element, a field or a reassigned global stays refused, so
+nothing but the exception holds what a catch reads. DefaultLib: `array_find2`, `array_find3` and `catch_library_error` compile and run under
+own.
+
+## 45. A parameter with a default is kept as any parameter is, 2026-10-27
+
+`constructor(private data: T[] = [])` (DefaultLib's `class Array<T>`) was `takes a second
+reference`: MLIRGen makes a parameter with a default `HasValue(p) ? Value(p) : <default>`, merged
+into the local the body reads, not a local made of the argument itself, so the signature pass found
+no slot of the parameter and the store into the field kept a merge it could not follow.
+
+- **Its slot.** `isParameterSlot` now also takes a local whose initializer is a merge of the
+  parameter itself (seen through `ts.Value`) and values that are fresh or hold no block - the
+  default made here. `parameterSlotsOf` finds such a local from the parameter (through the
+  `ts.Value`'s branch), and `localOwnedParams`, `takenOnEveryPath` and the inference's
+  `parameterSlot` use it. Everything §33 does for a kept parameter then holds: the callers move the
+  argument in, a path that stores the slot's value moves it out, and a path that does not releases
+  the slot, which holds the argument given or the default, both this function's.
+- **The argument left out** is a `ts.Undef` of the optional type: `isLiteral` takes it as the empty
+  optional `ts.OptionalUndef` is, so a caller "moves" nothing.
+
+`own_param_default_kept` constructs with and without the argument, keeping it on some paths only,
+and a defaulted string beside a defaulted array, churning between steps, under own, rc, gc and none;
+own emits no counting. A defaulted parameter that is not kept is unchanged: its default is made and
+not released, as before.
+
+## 46. An object literal moved into an array, 2026-10-27
+
+`[{ regex: /a/, order: [1, 2, 3] }, ...]` and `a.push({ name: "f" + i, quantity: i })` were `an
+object literal that holds a value it owns is moved only into a local or returned as it is`: §27
+lets `recordRetainOf` take the literal's read into the result, an owning local or a box. An element
+of an array literal (`ts.CreateArray`) and an item pushed (`ts.ArrayPush`) now take it too: the
+array owns the tuple and what it holds, and rc's retain of the read is where the fresh values stored
+into its fields move in, each value's own check erasing its release. The read still goes to one
+place only.
+
+`own_literal_into_array` builds arrays of literals holding a fresh string, a new object and an array
+literal, by an array literal and by push, churning between steps, under own, rc, gc and none; own
+emits no counting, and the array's release is the only one of what the literals hold. DefaultLib:
+`regexp_parse_examples` compiles and runs under own.
+
+## 47. A local's record for the debugger keeps nothing, 2026-10-27
+
+Under `--di`, a borrowing local (the array an inner `for...of` walks, read out of the outer one's
+element) has a `ts.DebugVariable` of its slot. `collectBorrowerUses` took any use of the slot that is
+not a read for a keep: `'.a' borrows an element and cannot be stored`. It now skips it, as
+`isBorrow` already skips a `ts.DebugVariable` of a value. `own_for_of_nested_di` (debug build, JIT)
+sums the lengths of the strings of a `string[][]`. DefaultLib: `array_concat` and `owning_copies`,
+which failed under own in the debug pass only, compile and run.

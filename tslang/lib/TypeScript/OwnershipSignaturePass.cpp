@@ -828,15 +828,8 @@ namespace own_signature
             }
 
             auto kept = false;
-            for (auto *user : argument.getUsers())
+            for (auto varOp : parameterSlotsOf(argument))
             {
-                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
-                auto index = -1;
-                if (!varOp || !isParameterSlot(varOp, index))
-                {
-                    continue;
-                }
-
                 for (auto *slotUser : varOp.getResult().getUsers())
                 {
                     if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
@@ -892,15 +885,8 @@ namespace own_signature
         {
             // the statements that keep the parameter, as decideParam sees a move
             llvm::SmallVector<mlir::Operation *> takers;
-            for (auto *user : body.front().getArgument(index).getUsers())
+            for (auto varOp : parameterSlotsOf(body.front().getArgument(index)))
             {
-                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
-                auto position = -1;
-                if (!varOp || !isParameterSlot(varOp, position))
-                {
-                    continue;
-                }
-
                 for (auto *slotUser : varOp.getResult().getUsers())
                 {
                     if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))

@@ -754,9 +754,15 @@ a reference gives it back on every path out of a function.
   as in JavaScript: `const seq = fibonacci().map(f)`. Over an iterator that borrows its container
   (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:
   `for (const v of s.values().take(2))` works, but the result cannot be returned or kept past `s`.
-  An array's `values()`, `keys()` and `[Symbol.iterator]()` borrow it in the same way;
-  `entries()` does not compile yet, its `[i, a[i]]` holding a borrowed element.
-  A closure that captures, given to two of them, is moved into the first.
+  An array's `values()`, `keys()`, `entries()` and `[Symbol.iterator]()` borrow it in the same
+  way. A closure that captures, given to two of them, is moved into the first. A `for...of` over a
+  generator, or a spread of one (`[...s.matchAll(re)]`), only borrows what each step yields: keeping
+  a yielded object or array (pushing it into another array) is an error for now.
+- The `Array<T>` class holds values, strings or `Shared<T>` handles, as `Map` does: `new
+  Array<number>()` works, and `new Array<Node>()` is a compile error that points at `Shared<T>`.
+  `Array<string>` and `Array<Shared<T>>` do not compile yet.
+- A parameter with a default (`constructor(private items: T[] = [])`) is kept like any other
+  parameter, whether the caller passes it or not.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.

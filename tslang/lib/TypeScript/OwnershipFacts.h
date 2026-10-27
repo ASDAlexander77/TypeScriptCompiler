@@ -476,7 +476,9 @@ inline bool isOwningVariable(mlir_ts::VariableOp varOp)
 // (`u: C | undefined = undefined`), hold no block at all.
 inline bool isLiteral(mlir::Operation *def)
 {
-    if (mlir::isa<mlir_ts::OptionalUndefOp>(def))
+    // ...and so does `ts.Undef` of an optional: the argument left out for a parameter with a default
+    if (mlir::isa<mlir_ts::OptionalUndefOp>(def) ||
+        (mlir::isa<mlir_ts::UndefOp>(def) && mlir::isa<mlir_ts::OptionalType>(def->getResult(0).getType())))
     {
         return true;
     }
@@ -1275,6 +1277,33 @@ inline bool isLoadedCell(mlir::Value value)
     return loadOp && mlir::isa<mlir_ts::RefType>(loadOp.getType());
 }
 
+// A read of a catch clause's variable, which ts.SaveCatchVar fills with what was thrown and
+// nothing else assigns: the exception's value, not this function's nor any global's.
+inline bool isCaughtValue(mlir::Value value)
+{
+    auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+    auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    if (!varOp || varOp.getInitializer() || varOp.getCaptured().value_or(false))
+    {
+        return false;
+    }
+
+    auto saved = false;
+    for (auto *user : varOp->getUsers())
+    {
+        if (mlir::isa<mlir_ts::SaveCatchVarOp>(user))
+        {
+            saved = true;
+        }
+        else if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::DebugVariableOp>(user))
+        {
+            return false;
+        }
+    }
+
+    return saved;
+}
+
 // A captured variable's cell, in the function that declared it.
 inline bool isCellVariable(mlir::Value value)
 {
@@ -1309,6 +1338,35 @@ inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index)
 {
     auto init = varOp.getInitializer();
     auto argument = init ? mlir::dyn_cast<mlir::BlockArgument>(init) : mlir::BlockArgument();
+    // a parameter with a default (`d: T[] = []`): its slot holds the argument given, or the default
+    // made here when none was - fresh, or holding no block - so it is the parameter's as an
+    // undefaulted one's is
+    if (argument && !argument.getOwner()->isEntryBlock())
+    {
+        llvm::SmallVector<mlir::Value> merged;
+        mlir::BlockArgument given;
+        if (!mergedInto(argument, merged))
+        {
+            return false;
+        }
+
+        // each seen through its views: the argument given is the optional parameter itself
+        for (auto incoming : merged)
+        {
+            auto passed = mlir::dyn_cast<mlir::BlockArgument>(incoming);
+            if (passed && passed.getOwner()->isEntryBlock() && (!given || given == passed))
+            {
+                given = passed;
+            }
+            else if (!isFresh(incoming) && !holdsNoBlock(incoming))
+            {
+                return false;
+            }
+        }
+
+        argument = given;
+    }
+
     if (!argument || !argument.getOwner()->isEntryBlock() ||
         !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) || isOwningVariable(varOp) ||
         varOp.getCaptured().value_or(false))
@@ -1327,6 +1385,48 @@ inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index)
 
     index = argument.getArgNumber();
     return true;
+}
+
+// The slots of a function's parameter (isParameterSlot): the local made of it, or, for a parameter
+// with a default, the local made of the argument given or the default.
+inline llvm::SmallVector<mlir_ts::VariableOp, 1> parameterSlotsOf(mlir::BlockArgument argument)
+{
+    llvm::SmallVector<mlir_ts::VariableOp, 1> slots;
+    auto add = [&](mlir::Operation *user) {
+        auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+        auto index = -1;
+        if (varOp && isParameterSlot(varOp, index) && index == static_cast<int>(argument.getArgNumber()) &&
+            !llvm::is_contained(slots, varOp))
+        {
+            slots.push_back(varOp);
+        }
+    };
+
+    for (auto *user : argument.getUsers())
+    {
+        add(user);
+        if (!mlir::isa<mlir_ts::ValueOp>(user))
+        {
+            continue;
+        }
+
+        for (auto &use : user->getResult(0).getUses())
+        {
+            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(use.getOwner());
+            auto merged = branchOp ? branchOp.getSuccessorBlockArgument(use.getOperandNumber()) : std::nullopt;
+            if (!merged)
+            {
+                continue;
+            }
+
+            for (auto *mergedUser : merged->getUsers())
+            {
+                add(mergedUser);
+            }
+        }
+    }
+
+    return slots;
 }
 
 // The object a method call is made on: `ts.GetThis` of a method bound to it - by its class, or by an

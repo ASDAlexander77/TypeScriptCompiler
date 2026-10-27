@@ -235,6 +235,12 @@ namespace own_inference
                 continue;
             }
 
+            // `--di`'s record of the local for the debugger names it and keeps nothing
+            if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+            {
+                continue;
+            }
+
             auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
             if (!readOp)
             {
@@ -388,6 +394,19 @@ namespace own_inference
                     // retained for is a counted copy of its own; passesOn would hand them on
                     if (countedHandle && isCountedHandOff(user, pending.value))
                     {
+                        continue;
+                    }
+
+                    // a field read out of a tuple value (`console.log(found)` of an optional record):
+                    // a number keeps nothing, and a field that holds a block borrows it as the tuple does
+                    if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
+                    {
+                        auto field = user->getResult(0);
+                        if (mayPointInto(field) && seen.insert(field).second)
+                        {
+                            values.push_back({field, true, pending.kills});
+                        }
+
                         continue;
                     }
 

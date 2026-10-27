@@ -156,6 +156,14 @@ namespace own_inference
                 return;
             }
 
+            // an element of an array literal (`[{ re: /a/, order: [1, 2] }]`), or an item pushed: the
+            // array owns what the record held, and rc's retain of the read is where its values move in
+            auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user);
+            if (mlir::isa<mlir_ts::CreateArrayOp>(user) || (pushOp && llvm::is_contained(pushOp.getItems(), used)))
+            {
+                return;
+            }
+
             // `let a = { item: new C() }`: the read is what an owning local starts with, and rc's
             // `ts.RetainSlot` of that local is the record's retain
             if (auto ownerOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
