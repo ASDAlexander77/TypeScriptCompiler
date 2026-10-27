@@ -1349,7 +1349,21 @@ def TypeScript_StoreOp : TypeScript_Op<"Store", []> {
   }];
 
   let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to store to", [MemWrite]>:$reference);
-  
+
+}
+
+def TypeScript_SwapOp : TypeScript_Op<"Swap", [AllTypesMatch<["first", "second"]>]> {
+  let summary = "exchanges the values of two places";
+  let description = [{
+    `[p, q] = [q, p]` of two elements or fields: each place takes the other's value. Every value
+    keeps exactly one place, so nothing is retained, released or dropped, in any memory model
+    (own spec 42).
+  }];
+
+  let arguments = (ins
+    Arg<TypeScript_Ref, "the first place", [MemRead, MemWrite]>:$first,
+    Arg<TypeScript_Ref, "the second place", [MemRead, MemWrite]>:$second
+  );
 }
 
 def TypeScript_LoadOp : TypeScript_Op<"Load", []> {

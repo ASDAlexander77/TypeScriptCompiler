@@ -742,9 +742,14 @@ a reference gives it back on every path out of a function.
 - Array methods that keep elements of the source in a new array (`filter` over class instances)
   give each such element a second owner, which is an error by design. Use `Shared<T>` elements,
   or build the result from copies.
-- `sort`, `reverse` and `copyWithin` work on arrays of numbers and strings (a string is copied
-  where it moves). Over class instances they are an error: a swap reads an element into a local
-  while its slot is overwritten, which -mm=own cannot follow yet; use `Shared<T>` elements.
+- `reverse` and `sort` work on arrays of numbers, strings and class instances. They exchange
+  elements with `[a[i], a[j]] = [a[j], a[i]]`, which moves nothing; swap two elements or two fields
+  the same way in your own code. A swap through a local (`let t = a[i]; a[i] = a[j]; a[j] = t`)
+  gives an object in `t` a second owner, which is an error. A callback your function only calls,
+  tests or hands on to another function (as `sort` hands its comparison to a helper) is known by
+  the functions its callers pass; one stored, captured or returned is not. `copyWithin` works on
+  numbers and strings (a string is copied where it moves); over class instances it would leave one
+  object in two elements, an error by design.
 - Iterator helpers work, the lazy ones (`map`, `filter`, `take`, `drop`) taking their source over
   as in JavaScript: `const seq = fibonacci().map(f)`. Over an iterator that borrows its container
   (`s.values()` of a `Map` or a `Set`) a helper is bounded by the container too:

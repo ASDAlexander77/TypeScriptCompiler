@@ -5139,6 +5139,26 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
     }
 };
 
+// Both values are read before either place is written, so a place swapped with itself keeps its
+// value. The loads and stores are the dialect's own, lowered as any other.
+struct SwapOpLowering : public TsLlvmPattern<mlir_ts::SwapOp>
+{
+    using TsLlvmPattern<mlir_ts::SwapOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SwapOp swapOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = swapOp->getLoc();
+        auto valueType = cast<mlir_ts::RefType>(swapOp.getFirst().getType()).getElementType();
+        auto first = rewriter.create<mlir_ts::LoadOp>(loc, valueType, swapOp.getFirst());
+        auto second = rewriter.create<mlir_ts::LoadOp>(loc, valueType, swapOp.getSecond());
+        rewriter.create<mlir_ts::StoreOp>(loc, second, swapOp.getFirst());
+        rewriter.create<mlir_ts::StoreOp>(loc, first, swapOp.getSecond());
+        rewriter.eraseOp(swapOp);
+        return success();
+    }
+};
+
 struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
 {
     using TsLlvmPattern<mlir_ts::ElementRefOp>::TsLlvmPattern;
@@ -9151,7 +9171,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering,
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SwapOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 

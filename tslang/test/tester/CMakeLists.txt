@@ -3938,7 +3938,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
                  own_loop_read_again own_length_drops_elements own_tuple_param_kept
                  own_for_of_borrowed_iterator own_generator_keeps own_generator_keeps_bounded
-                 own_generator_this_param own_copy_within_returned_param)
+                 own_generator_this_param own_copy_within_returned_param own_swap_elements
+                 own_callback_forwarded)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3967,10 +3968,11 @@ endforeach()
 
 # A generator whose `@keeps` makes its state own its arguments (spec 38), and one given a generator
 # that borrows, and one over its `this` parameter; strings copied within a parameter the result borrows;
-# the same programs under every other model.
+# elements and fields swapped; a callback given on through a parameter; the same programs under every
+# other model.
 foreach(keeps_mm rc gc none)
     foreach(keeps_test own_generator_keeps own_generator_keeps_bounded own_generator_this_param
-                       own_copy_within_returned_param)
+                       own_copy_within_returned_param own_swap_elements own_callback_forwarded)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4645,7 +4647,11 @@ set(own_error_cases
     "own_err_generator_keeps_used_after|:15:11: error: '[^']*' is used here after its value was moved"
     "own_err_generator_keeps_bounded|:14:17: error: '[^']*' borrows its generator's arguments and cannot be stored, returned or captured"
     "own_err_generator_keeps_bounded_outlives|:20:11: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
-    "own_err_generator_this_param_returned|:11:26: error: '[^']*' borrows its generator's arguments and cannot be stored, returned or captured")
+    "own_err_generator_this_param_returned|:11:26: error: '[^']*' borrows its generator's arguments and cannot be stored, returned or captured"
+    "own_err_swap_borrow_used_after|:11:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_swap_call_borrow_used_after|:15:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_callback_forwarded_drops|:15:17: error: 'this value' borrows an element but is used here after it may be released or overwritten"
+    "own_err_callback_forwarded_keeps|:32:18: error: '[^']*' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

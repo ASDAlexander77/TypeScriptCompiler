@@ -7019,6 +7019,21 @@ class MLIRGenImpl
 
         if (leftExpression == SyntaxKind::ArrayLiteralExpression)
         {
+            if (discardedAssignments.contains(binaryExpressionAST.operator->()))
+            {
+                auto swapped = false;
+                if (mlir::failed(mlirGenSwap(location, leftExpression.as<ArrayLiteralExpression>(), rightExpression,
+                                             swapped, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                if (swapped)
+                {
+                    return mlir::success();
+                }
+            }
+
             return mlirGenSaveLogicArray(location, leftExpression.as<ArrayLiteralExpression>(), rightExpression,
                                          genContext);
         }
@@ -7059,6 +7074,163 @@ class MLIRGenImpl
         auto rightExpressionValue = V(result2);
 
         return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+    }
+
+    // The same place named twice: each part is a name, `this`, a number, a member or an element of
+    // one, or arithmetic of those - nothing that runs code or changes anything, so evaluating it once
+    // is evaluating it twice.
+    bool isSamePlaceExpression(Expression left, Expression right)
+    {
+        while (left == SyntaxKind::ParenthesizedExpression)
+        {
+            left = left.as<ParenthesizedExpression>()->expression;
+        }
+
+        while (right == SyntaxKind::ParenthesizedExpression)
+        {
+            right = right.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (left == SyntaxKind::Identifier)
+        {
+            return right == SyntaxKind::Identifier &&
+                   left.as<Identifier>()->escapedText == right.as<Identifier>()->escapedText;
+        }
+
+        if (left == SyntaxKind::ThisKeyword)
+        {
+            return right == SyntaxKind::ThisKeyword;
+        }
+
+        if (left == SyntaxKind::NumericLiteral)
+        {
+            return right == SyntaxKind::NumericLiteral && left.as<NumericLiteral>()->text == right.as<NumericLiteral>()->text;
+        }
+
+        if (left == SyntaxKind::PropertyAccessExpression)
+        {
+            if (right != SyntaxKind::PropertyAccessExpression)
+            {
+                return false;
+            }
+
+            auto leftAccess = left.as<PropertyAccessExpression>();
+            auto rightAccess = right.as<PropertyAccessExpression>();
+            return !leftAccess->questionDotToken && !rightAccess->questionDotToken &&
+                   leftAccess->name == SyntaxKind::Identifier && rightAccess->name == SyntaxKind::Identifier &&
+                   leftAccess->name.as<Identifier>()->escapedText == rightAccess->name.as<Identifier>()->escapedText &&
+                   isSamePlaceExpression(leftAccess->expression, rightAccess->expression);
+        }
+
+        if (left == SyntaxKind::ElementAccessExpression)
+        {
+            if (right != SyntaxKind::ElementAccessExpression)
+            {
+                return false;
+            }
+
+            auto leftAccess = left.as<ElementAccessExpression>();
+            auto rightAccess = right.as<ElementAccessExpression>();
+            return !leftAccess->questionDotToken && !rightAccess->questionDotToken &&
+                   isSamePlaceExpression(leftAccess->expression, rightAccess->expression) &&
+                   isSamePlaceExpression(leftAccess->argumentExpression, rightAccess->argumentExpression);
+        }
+
+        if (left == SyntaxKind::BinaryExpression)
+        {
+            if (right != SyntaxKind::BinaryExpression)
+            {
+                return false;
+            }
+
+            auto leftBinary = left.as<BinaryExpression>();
+            auto rightBinary = right.as<BinaryExpression>();
+            auto op = (SyntaxKind)leftBinary->operatorToken;
+            return (op == SyntaxKind::PlusToken || op == SyntaxKind::MinusToken || op == SyntaxKind::AsteriskToken) &&
+                   op == (SyntaxKind)rightBinary->operatorToken &&
+                   isSamePlaceExpression(leftBinary->left, rightBinary->left) &&
+                   isSamePlaceExpression(leftBinary->right, rightBinary->right);
+        }
+
+        if (left == SyntaxKind::PrefixUnaryExpression)
+        {
+            if (right != SyntaxKind::PrefixUnaryExpression)
+            {
+                return false;
+            }
+
+            auto leftUnary = left.as<PrefixUnaryExpression>();
+            auto rightUnary = right.as<PrefixUnaryExpression>();
+            return leftUnary->_operator == SyntaxKind::MinusToken && rightUnary->_operator == SyntaxKind::MinusToken &&
+                   isSamePlaceExpression(leftUnary->operand, rightUnary->operand);
+        }
+
+        return false;
+    }
+
+    // The element or field a target names, when it is one a store writes as is: not a local, a
+    // global or a captured variable, whose slot the ownership inference follows by its stores, nor
+    // an interface's optional field, whose store sets a flag.
+    mlir::Value swappablePlace(mlir::Value targetValue)
+    {
+        auto loadOp = targetValue.getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || loadOp->hasAttr(ATOMIC_ATTR_NAME) || loadOp->hasAttr(VOLATILE_ATTR_NAME))
+        {
+            return mlir::Value();
+        }
+
+        auto reference = loadOp.getReference();
+        if (!isa<mlir_ts::RefType>(reference.getType()) ||
+            !isa_and_nonnull<mlir_ts::ElementRefOp, mlir_ts::PropertyRefOp>(reference.getDefiningOp()))
+        {
+            return mlir::Value();
+        }
+
+        return reference;
+    }
+
+    // `[p, q] = [q, p]` of two elements or fields: an exchange, which moves nothing. Built through
+    // an array literal, each value would be read out of its place (under -mm=own a borrow, which
+    // may not be stored) and the literal would own a second reference to it. Only a statement's,
+    // whose value nothing reads: the swap builds no array to give. `swapped` stays false when the
+    // assignment is not such a swap.
+    mlir::LogicalResult mlirGenSwap(mlir::Location location, ArrayLiteralExpression arrayLiteralExpression,
+                                    Expression rightExpression, bool &swapped, const GenContext &genContext)
+    {
+        while (rightExpression == SyntaxKind::ParenthesizedExpression)
+        {
+            rightExpression = rightExpression.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (rightExpression != SyntaxKind::ArrayLiteralExpression)
+        {
+            return mlir::success();
+        }
+
+        auto &targets = arrayLiteralExpression->elements;
+        auto &sources = rightExpression.as<ArrayLiteralExpression>()->elements;
+        if (targets.size() != 2 || sources.size() != 2 || !isSamePlaceExpression(targets[0], sources[1]) ||
+            !isSamePlaceExpression(targets[1], sources[0]))
+        {
+            return mlir::success();
+        }
+
+        auto first = mlirGen(targets[0], genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(first)
+        auto second = mlirGen(targets[1], genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(second)
+
+        auto firstPlace = swappablePlace(V(first));
+        auto secondPlace = swappablePlace(V(second));
+        if (!firstPlace || !secondPlace || firstPlace.getType() != secondPlace.getType())
+        {
+            // the reads are dead: the assignment reads the places again
+            return mlir::success();
+        }
+
+        builder.create<mlir_ts::SwapOp>(location, firstPlace, secondPlace);
+        swapped = true;
+        return mlir::success();
     }
 
     ValueOrLogicalResult mlirGenSaveLogicArray(mlir::Location location, ArrayLiteralExpression arrayLiteralExpression,
@@ -16036,6 +16208,10 @@ class MLIRGenImpl
     // them (the AST has no parent links to look up): yield node -> its value is used. See
     // SupportedYieldScope.
     llvm::DenseMap<const void *, bool> supportedYields;
+
+    // The destructuring assignments a statement is made of, whose value nothing reads: such a
+    // `[p, q] = [q, p]` may be a swap (mlirGenSwap), which builds no array to give as its value.
+    llvm::DenseSet<const void *> discardedAssignments;
 
 private:
     std::string label;

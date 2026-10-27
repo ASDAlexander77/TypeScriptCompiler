@@ -319,6 +319,13 @@ namespace own_signature
             resolveCallback(loadOp, callees);
             return;
         }
+        else if (auto valueOp = mlir::dyn_cast_or_null<mlir_ts::ValueOp>(def);
+                 valueOp && valueOp.getIn().getDefiningOp<mlir_ts::LoadOp>())
+        {
+            // an optional callback, called once tested
+            resolveCallback(valueOp.getIn().getDefiningOp<mlir_ts::LoadOp>(), callees);
+            return;
+        }
         else if (auto boundOp = mlir::dyn_cast_or_null<mlir_ts::CreateBoundFunctionOp>(def))
         {
             // a function-typed field of an interface, called: `ts.CreateBoundFunction(
