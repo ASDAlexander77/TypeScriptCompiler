@@ -4678,12 +4678,13 @@ iterations peak at 4.0, 4.0 and 4.4 MB (a returned read copied would leak).
 
 ## 42. An exchange of two places (`[p, q] = [q, p]`), 2026-10-27
 
-`sort` and `reverse` over class instances (§41, not there). A swap through a local, `let v = a[i];
-a[i] = a[j]; a[j] = v`, holds one element in `v` while its slot is overwritten: for a string `v` is
-a copy, for an object a second owner, and the reads stored back were "borrows an element and cannot
-be stored". Recognising the three stores in the inference would mean proving, after the affine
-lowering and CSE, that nothing between them reads, writes or releases either place. JavaScript has
-a statement for the exchange, and MLIRGen now gives it an op of its own.
+The swap that `sort` and `reverse` over class instances need (§41, not there). A swap through a
+local, `let v = a[i]; a[i] = a[j]; a[j] = v`, holds one element in `v` while its slot is
+overwritten: for a string `v` is a copy, for an object a second owner, and the reads stored back
+were "borrows an element and cannot be stored". Recognising the three stores in the inference
+would mean proving, after the affine lowering and CSE, that nothing between them reads, writes or
+releases either place. JavaScript has a statement for the exchange, and MLIRGen now gives it an op
+of its own.
 
 - **`ts.Swap %first, %second`.** Two references of one type; each place takes the other's value.
   Every value keeps exactly one place, so it is emitted with no `ts.Retain`, `ts.ReleaseSlot` or
@@ -4715,5 +4716,13 @@ counting. Negatives: `own_err_swap_borrow_used_after` (an element read before a 
 it) and `own_err_swap_call_borrow_used_after` (the same across a call that swaps).
 
 DefaultLib: `reverse` and `selectionSort` exchange elements with `[a[i], a[j]] = [a[j], a[i]]`;
-under own a string element is no longer copied out and back. Not here: `copyWithin` over class
-instances, which would leave one object in two elements - an error by design.
+under own a string element is no longer copied out and back, and `reverse` over class instances
+compiles and runs (`array_reverse_class`).
+
+Not here: `sort` over class instances. It gives its optional `callbackfn` on to `selectionSort`,
+and a callback given on through a parameter is in no closed family (`collectCallbackFamilies` takes
+only a function passed by name; `onlyCalledParam` refuses a parameter that is tested or passed on),
+so `compare(a[i], a[j])` is a call that may release the two elements it is given - an error the
+swap does not reach (`array_sort_class`, `// not own`). The same helper called with a function by
+name compiles. And `copyWithin` over class instances, which would leave one object in two
+elements - an error by design.
