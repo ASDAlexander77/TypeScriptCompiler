@@ -812,6 +812,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<CallbackMember, 2> members;
         // the ops that name a member's symbol to pass it here
         llvm::SmallVector<mlir::Operation *, 2> passing;
+        // the parameters of its callers they give on here (their members are this one's too), and the
+        // parameters of the calls it gives its own on to: each must be closed for this one to be
+        llvm::SmallVector<std::pair<mlir::Operation *, int32_t>, 1> sources;
+        llvm::SmallVector<std::pair<mlir::Operation *, int32_t>, 1> forwards;
         bool closed = true;
     };
 
@@ -825,15 +829,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     static bool isFunctionValueType(mlir::Type type);
 
     // Is every use of this parameter - through its slot, never assigned or captured - the function
-    // a call goes through?
-    static bool onlyCalledParam(mlir::BlockArgument argument);
+    // a call goes through, a test of whether an optional one is given, or an argument of a call
+    // (`forwards`: it gives the parameter on to that call's)?
+    static bool onlyCalledParam(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards);
 
     // The function a caller passes as `value`: its symbol, seen as a function value through casts
-    // between function types, or a closure over a capture box built of it. Null for anything else.
+    // between function types and made optional, or a closure over a capture box built of it. Null
+    // for anything else.
     static mlir_ts::SymbolRefOp passedFunction(mlir::Value value, int32_t &shift);
 
     // Does the function value `value` go only where `passes` allows - as an argument of a call - and
-    // through casts between function types, a closure built of it, and that closure's own retains
+    // through casts between function types, made optional, a closure built of it, and that closure's own retains
     // and releases?
     static bool passedOnly(mlir::Value value, llvm::function_ref<bool(mlir::OpOperand &)> passes, int depth = 0);
 

@@ -4724,5 +4724,56 @@ and a callback given on through a parameter is in no closed family (`collectCall
 only a function passed by name; `onlyCalledParam` refuses a parameter that is tested or passed on),
 so `compare(a[i], a[j])` is a call that may release the two elements it is given - an error the
 swap does not reach (`array_sort_class`, `// not own`). The same helper called with a function by
-name compiles. And `copyWithin` over class instances, which would leave one object in two
-elements - an error by design.
+name compiles. §43 adds it. And `copyWithin` over class instances, which would leave one object in
+two elements - an error by design.
+
+## 43. A callback given on through a parameter, 2026-10-27
+
+`sort` over class instances (§42, not there). DefaultLib's `sort(this: T[], callbackfn?)` tests its
+optional comparison and gives it on to `selectionSort(a, compare)`, which calls `compare(a[i],
+a[j])`. A call through a parameter knows its callee's facts only from the family of functions its
+callers pass (§33), and `collectCallbackFamilies` took a member only from a function passed by
+name: `selectionSort`'s `compare` was given `sort`'s parameter, its family was open, and the call
+was one that may release the two elements it is given. `sort`'s own `callbackfn` had no family
+either, since `onlyCalledParam` refused a parameter that is tested or passed on, and an optional
+function was not a function type.
+
+- **A parameter given on.** A callback parameter's type is a function value or an optional one.
+  Each read of its slot may be the callee of a call, tested (`ts.HasValue`, a `ts.Cast` to
+  boolean), unwrapped (`ts.Value`, a cast between function types) and then any of these, or one
+  argument of a call (`forwards`; never the callee and an argument of one call, never two
+  arguments). A forward names the parameter of the one function its call reaches (`parameterOf`:
+  a direct callee, or a method no other overrides, as `passesToClosed` resolved it).
+- **Its family.** For each call of the function, the argument for the parameter is a function by
+  name (`passedFunction`, now through `ts.OptionalValue` as well), nothing (`ts.Undef` or
+  `ts.OptionalUndef` of an optional type: an optional callback not given, which passes no function),
+  or the caller's own callback parameter given on (`givenParam`: its slot's read, unwrapped, made
+  optional or cast) - a source: the functions passed for that parameter are passed for this one.
+  Anything else opens the family, as before.
+- **The fixpoint.** The loop that opens a family whose member escapes now also opens one with a
+  source or a forward that is not a closed family, and merges a closed source's members (with
+  their shifts; a member at two shifts opens it) and its passing symbols into it, until nothing
+  changes. A family given on is so closed only when every family it is given from and to is: the
+  calls it gives its members to must resolve to the same functions. A function given to itself
+  (`eachDown(a, i - 1, f)`) is its own source. `passedOnly` follows a member's symbol through
+  `ts.OptionalValue`, so the function passed to `sort` does not escape where it is made optional.
+- **An optional callback called.** A call whose callee is a `ts.Value` of a read of a callback
+  parameter's slot (`if (compare) { if (compare(a, b) > 0) ... }`) is resolved through the
+  parameter's family, as one through the read itself (`resolveCallback`).
+- The families then meet facts as §33's do: `selectionSort`'s `compare` reaches `sort`'s default
+  comparison and every function passed to `sort`, and a call through it knows what each releases.
+
+`own_callback_forwarded` sorts an `Item[]` through an optional comparison given on (and with none
+given), gives a callback on twice (`eachTwice` to `each`) and to the function itself, and calls
+an optional comparison once tested, churning between steps, under own, rc, gc and none; own emits no counting. Negatives:
+`own_err_callback_forwarded_drops` (the function passed to `sortIt` replaces a global array, so
+`selectionSort`'s call with two elements is a use of them after they may be released) and
+`own_err_callback_forwarded_keeps` (it keeps its argument in a global array, for good, which a call
+through a value cannot make immortal).
+
+DefaultLib: `array_sort_class` compiles and runs under own, and so does `const_array_mutation`,
+which sorts numbers with a comparison `sort` gives on.
+
+Not here: a callback stored, captured or returned is not given on, and keeps its family open. So
+is one in `compare && compare(a, b)`: the `&&` is a `boolean | function` union that holds the
+callback on the path that does not call it.
