@@ -597,6 +597,7 @@ tslang_add_test(NAME test-compile-00-try-cleanup-then-catch COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-try-empty-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_empty_catch.ts")
 tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
+tslang_add_test(NAME test-compile-00-capture-in-new-untyped-arrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_untyped_arrow.ts")
 tslang_add_test(NAME test-compile-01-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 tslang_add_test(NAME test-compile-00-class-stack COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 tslang_add_test(NAME test-compile-00-class-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -1202,6 +1203,7 @@ tslang_add_test(NAME test-jit-00-try-cleanup-then-catch COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-try-empty-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_empty_catch.ts")
 tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
+tslang_add_test(NAME test-jit-00-capture-in-new-untyped-arrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_untyped_arrow.ts")
 tslang_add_test(NAME test-jit-01-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 tslang_add_test(NAME test-jit-00-class-stack COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 tslang_add_test(NAME test-jit-00-class-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -2146,6 +2148,7 @@ set(TSLANG_CORPUS
     00try_scope_exit_through_finally.ts
     00try_jump_from_catch.ts
     00capture_in_new_arguments.ts
+    00capture_in_new_untyped_arrow.ts
     00cast_to_f32.ts
     00catch_untyped_value.ts
     00catch_value.ts

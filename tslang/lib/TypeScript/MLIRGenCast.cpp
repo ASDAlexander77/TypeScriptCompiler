@@ -2044,7 +2044,7 @@ namespace mlirgen
         }
     }
 
-    mlir::LogicalResult MLIRGenImpl::verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    mlir::LogicalResult MLIRGenImpl::verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value &value, mlir::Type &valueType, const GenContext &genContext)
     {
         if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
 
@@ -2053,6 +2053,17 @@ namespace mlirgen
                 // need to instantiate generic method
                 auto result = instantiateSpecializedFunction(location, value, type, genContext);
                 EXIT_IF_FAILED(result);
+
+                // An arrow that captures comes back as a new value, the closure bound over its
+                // captured variables; the old reference is the bare function and calling it reads
+                // the captures through a null pointer (`new W((v) => { seen += 1; })`). Without
+                // captures the reference was retyped in place.
+                if (auto resultValue = V(result))
+                {
+                    value = resultValue;
+                }
+
+                valueType = value.getType();
             }
 
             // A C variadic function is called with C's variadic convention and a TypeScript

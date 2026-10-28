@@ -14253,7 +14253,7 @@ class MLIRGenImpl
     // union or optional or any or opaque source type
     std::optional<ValueOrLogicalResult> castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
-    mlir::LogicalResult verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+    mlir::LogicalResult verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value &value, mlir::Type &valueType, const GenContext &genContext);
 
     // cast ext method to bound method
     std::optional<ValueOrLogicalResult> castExtensionFunctionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType);
