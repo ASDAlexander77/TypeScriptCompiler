@@ -750,9 +750,11 @@ a reference gives it back on every path out of a function.
   to a helper), names again (`const g = f`) or captures in a closure that calls it (`a.forEach((v)
   => f(v))`, also kept in a local) is known by the functions its callers pass. So is one stored in
   a class's field (`constructor(private f: ...)`, `this.f = f`, also from a class extending it)
-  and one a function returns. Not when one of the class's objects, or of a class extending it,
-  becomes an interface or `any`, or another module may build or extend it: then its fields'
-  callbacks may be any function. A callback may assign the numbers and strings it
+  and one a function returns, also when the class's objects are seen through an interface. Not
+  when one of the class's objects, or of a class extending it, becomes `any` or a union, or another
+  module may build or extend it: then its fields' callbacks may be any function. Nor is a callback
+  parameter of a method an interface reaches: a call through the interface may pass any function,
+  from any module. A callback may assign the numbers and strings it
   captures (`total += v.n`); one stored in an object may not capture locals, which would escape
   with it. `copyWithin` works on
   numbers and strings (a string is copied where it moves); over class instances it would leave one

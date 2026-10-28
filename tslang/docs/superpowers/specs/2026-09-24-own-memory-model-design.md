@@ -5079,5 +5079,36 @@ a `!ts.ref<!ts.class_storage<@Walker>>`), where the family saw no access of its 
 down, under own, rc, gc and none; own emits no counting. Negative: `own_err_callback_extended_drops`,
 whose derived class stores a function that replaces a global array the walk's element may be part of.
 
-Not here: a class whose object, or a derived class's, becomes an interface or `any` keeps its fields'
-families open.
+Not here: a class whose object, or a derived class's, becomes `any` keeps its fields' families open;
+an interface: §58.
+
+## 58. A class seen through an interface, 2026-10-28
+
+`const r: Runner = new Walker(show); r.walk(a)` kept `Walker`'s field families open (§55): a class
+whose object became an interface was taken to have its fields reached in ways this pass can't see.
+
+- **An interface reaches a class's fields only through a vtable built from the class**
+  (`<Class>.<Interface>..vtbl`), where the class is known: here, or in a module that names it
+  (`callableFromOutside` of its constructor, which opens the family). A field's slot is a
+  `ts.PropertyRef` of the class there (a use the family takes as reaching it otherwise, so it opens);
+  a function field's is a thunk (`..vtbl.<field>.thunk`) that loads it and calls it (a read only
+  called); storing through it is refused in every model ("saving to constant object"). A cast to
+  another interface (`castInterfaceToInterface`) remaps those slots. So a cast to an interface no
+  longer opens the class's fields' families; `any`, a union, `unknown` and `object`, from which
+  another module may cast an object back, still do.
+- **A method in an interface's vtable** (`inInterfaceVTable`: a `..vtbl` global whose class's
+  `..instanceOf` names another `..vtbl`) is called through `ts.InterfaceSymbolRef` with arguments
+  its parameter families can't see, from any module the interface reaches: its use there no longer
+  counts as a call the family has seen (`callsOf`), so its callback parameters' families are open.
+  This was unsound before: `r.each(pool, drain)` through an interface compiled with `each`'s `f`
+  family closed and empty, so `f(v)` was taken to release nothing while `drain` replaced `pool`.
+
+`own_callback_interface` walks through a class seen as two interfaces, its field's callback stored by
+the constructor and by a method called on the class, under own, rc, gc and none; own emits no
+counting. Negatives: `own_err_callback_interface_param` (the unsound case above) and
+`own_err_callback_interface_field` (a callback given through an interface's method and stored into
+the field).
+
+Not here: a class whose object becomes `any`, a union, `unknown` or `object` keeps its fields'
+families open; a callback parameter of a method in an interface's vtable is open even where the
+method is called on its class.
