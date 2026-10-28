@@ -220,6 +220,12 @@
 // closure) is filled the same way, with a thunk calling the field; its cell is always present and
 // is not written through.
 #define INTERFACE_METHOD_CELL_TAG 1
+// A field (not optional, not function-typed) a class fills with accessors (`get prop()`, `set prop(v)`) has no
+// storage in the object: its slot is instead the address of a global cell {getter, setter}, either null where
+// the class has none, plus this bit - the sign bit, which an offset never has (a symbol plus a constant, so it
+// is relocated as any address). A load through it calls the getter with `this`, and a store the setter
+// (LoadOpLowering, StoreOpLowering). On a 32-bit target this holds for a cell below 2 GB.
+#define INTERFACE_ACCESSOR_CELL_TAG(sizeBits) (1ULL << ((sizeBits) - 1))
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it
 #define INTERFACE_OPTIONAL_WRITE_ATTR "__optional_write"
