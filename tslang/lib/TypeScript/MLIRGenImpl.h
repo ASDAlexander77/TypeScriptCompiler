@@ -14486,6 +14486,11 @@ class MLIRGenImpl
                                             InterfaceInfo::TypePtr interfaceInfo, mlir::Value value,
                                             const GenContext &genContext);
 
+    bool inAnyToTupleUnbox();
+
+    ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
+                                        const GenContext &genContext);
+
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
 

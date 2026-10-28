@@ -2008,6 +2008,11 @@ namespace mlirgen
             {
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
+
+            if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve && !inAnyToTupleUnbox())
+            {
+                return castAnyToTuple(location, type, value, genContext);
+            }
         }
 
         // opaque to hybrid func
@@ -2710,6 +2715,71 @@ namespace mlirgen
         funcCallGenContext.typeAliasMap.insert(
             {"TYPE_ANY_INTERFACE_ALIAS",
              mlir_ts::InterfaceType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), ".any_interface"))});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(value);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        return mlirGenCallExpression(
+            location,
+            funcResult,
+            {
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()),
+            },
+            operands,
+            funcCallGenContext);
+    }
+
+    // Whether the code made now is the body of `___unbox_tuple`, whose own cast out of the box is the
+    // raw read (castAnyToTuple)
+    bool MLIRGenImpl::inAnyToTupleUnbox()
+    {
+        auto *block = builder.getInsertionBlock();
+        auto *parent = block ? block->getParentOp() : nullptr;
+        auto funcOp = parent ? (isa<mlir_ts::FuncOp>(parent) ? mlir::cast<mlir_ts::FuncOp>(parent) : parent->getParentOfType<mlir_ts::FuncOp>())
+                             : mlir_ts::FuncOp();
+        return funcOp && funcOp.getName().starts_with("___unbox_tuple");
+    }
+
+    // `any` to a tuple (an object type, `<{ n: number }>x`). The box holds its value's kind: a tuple is
+    // read out of it, and anything else - a class object, a number - throws. It was read as the tuple's
+    // layout whatever it held (`(<{ f: F }>x).f = g` with a class object in `x` wrote over its vtable).
+    // A tuple of another layout passes the check: the box names no tuple's fields (`{ n: 5 }` holds an
+    // s32, read as a number).
+    ValueOrLogicalResult MLIRGenImpl::castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                     const GenContext &genContext)
+    {
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___unbox_tuple";
+
+        removeGenericFunctionMap(funcName);
+
+        // `a` narrowed by `typeof` is the first word of the box; `b` is the box
+        stringstream ss;
+        ss << S("function __unbox_tuple<T>(a: any) : T {\nconst b = a;\n");
+        ss << S("if (typeof a == 'tuple') return <T>b;\n");
+        ss << S("throw \"Can't cast from any: the value is not an object of type '") << stows(to_print(type))
+           << S("'\";\n}\n");
+
+        auto src = ss.str();
+
+        // see castPrimitiveTypeFromAny: the call site is the location until the call below instantiates
+        // the function
+        MLIRLocationGuard vgLoc(overwriteLoc);
+        overwriteLoc = location;
+
+        if (mlir::failed(parsePartialStatements(src)))
+        {
+            assert(false);
+            return mlir::failure();
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+        assert(funcResult);
+
+        GenContext funcCallGenContext(genContext);
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", type});
 
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
