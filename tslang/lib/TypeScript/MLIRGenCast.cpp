@@ -1166,6 +1166,17 @@ namespace mlirgen
                 return castInterfaceToInterface(location, value, srcInterfaceType, interfaceType, genContext);
             }
 
+            // An `any` holds no interface's name, only its kind: what it holds was read as the
+            // interface's (this, vtable) pair, and a class object, or an interface value made for
+            // another interface (`<Holder><any>runner`), was called through garbage.
+            if (isa<mlir_ts::AnyType>(valueType) && !genContext.allowPartialResolve)
+            {
+                if (auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
+                {
+                    return castAnyToInterface(location, interfaceType, interfaceInfo, value, genContext);
+                }
+            }
+
             // `J | null` or `C | null` (a `J | undefined` given to `I | undefined` gets here too) is stored
             // as its one member, null a null pointer in it: this is the cast of that member. A plain cast
             // kept J's vtable for I, and lowering could not make a class pointer an interface.
@@ -1224,6 +1235,9 @@ namespace mlirgen
         // create interface vtable from current class
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
         assert(interfaceInfo);
+
+        // known from the discovery pass on, wherever in the module the cast is (castAnyToInterface)
+        classInterfaceVTablesCast.insert(interfaceVTableNameForClass(classInfo, interfaceInfo));
 
         if (auto createdInterfaceVTableForClass =
                 mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
@@ -2530,6 +2544,153 @@ namespace mlirgen
         // Any interface type will do to read an interface value back out of the box: they all
         // lower to one layout, and nothing but the vtable and `this` is read from it. A private
         // name of its own keeps it from being looked up as a declared interface.
+        funcCallGenContext.typeAliasMap.insert(
+            {"TYPE_ANY_INTERFACE_ALIAS",
+             mlir_ts::InterfaceType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), ".any_interface"))});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(value);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        return mlirGenCallExpression(
+            location,
+            funcResult,
+            {
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()),
+            },
+            operands,
+            funcCallGenContext);
+    }
+
+    // `any` to an interface. The box knows the kind of what it holds, not which interface an interface
+    // value was made for, so the object behind it is asked what class it is (`instanceof`):
+    // - a class with a vtable for the interface - it declares it, or a cast somewhere in the module
+    //   makes one (classInterfaceVTablesCast, filled from the discovery pass on, so a cast later in
+    //   the module counts) - gives the interface through that vtable, from a class object or an
+    //   interface value alike;
+    // - any other class of this module can't: no vtable for the interface was made for it, and none
+    //   is made here (one made here would be a way to the class's fields that nothing else in the
+    //   module shows), so the cast throws. A class object no class answers for throws too;
+    // - anything else - an interface value over an object literal or a class of another module, a
+    //   number used as a token - is read as the interface's pair, as before: an `any` holding the
+    //   interface it is cast to round-trips.
+    ValueOrLogicalResult MLIRGenImpl::castAnyToInterface(mlir::Location location, mlir_ts::InterfaceType interfaceType,
+                                                         InterfaceInfo::TypePtr interfaceInfo, mlir::Value value,
+                                                         const GenContext &genContext)
+    {
+        SmallVector<ClassInfo::TypePtr> implementers;
+        SmallVector<ClassInfo::TypePtr> others;
+        llvm::SmallPtrSet<ClassInfo *, 16> seenClasses;
+        llvm::SmallPtrSet<NamespaceInfo *, 16> seenNamespaces;
+        std::function<void(NamespaceInfo::TypePtr)> collectClasses = [&](NamespaceInfo::TypePtr namespaceInfo) {
+            if (!seenNamespaces.insert(namespaceInfo.get()).second)
+            {
+                return;
+            }
+
+            for (auto &classEntry : namespaceInfo->classesMap)
+            {
+                auto classInfo = classEntry.getValue();
+                // `instanceof` asks the class's `.instanceOf`, which a @value or @cpp class has none of
+                if (!classInfo || !classInfo->classType || !classInfo->hasRTTI || classInfo->isValue
+                    || classInfo->isCppVTable || !seenClasses.insert(classInfo.get()).second)
+                {
+                    continue;
+                }
+
+                if (classInfo->getImplementIndex(interfaceInfo->fullName) >= 0
+                    || classInterfaceVTablesCast.contains(interfaceVTableNameForClass(classInfo, interfaceInfo)))
+                {
+                    implementers.push_back(classInfo);
+                }
+                else if (!classInfo->isDeclaration)
+                {
+                    others.push_back(classInfo);
+                }
+            }
+
+            for (auto &namespaceEntry : namespaceInfo->namespacesMap)
+            {
+                collectClasses(namespaceEntry.getValue());
+            }
+        };
+
+        collectClasses(rootNamespace);
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___unbox_interface";
+
+        // the classes asked differ from one interface to another
+        removeGenericFunctionMap(funcName);
+
+        auto throwNotImplemented = [&](stringstream &ss, StringRef className) {
+            ss << S("throw \"Can't cast from any: class '") << stows(className.str())
+               << S("' does not implement interface '") << stows(interfaceInfo->fullName.str()) << S("'\";\n");
+        };
+
+        // `a` narrowed by `typeof` is the first word of the box; `b` is the box
+        stringstream ss;
+        ss << S("function __unbox_interface<T>(a: any) : T {\nconst b = a;\n");
+        ss << S("if (typeof a == 'class') {\n");
+        for (auto [index, _] : enumerate(implementers))
+        {
+            ss << S("if (a instanceof TYPE_INST_ALIAS") << index << S(") return a;\n");
+        }
+
+        for (auto [index, other] : enumerate(others))
+        {
+            ss << S("if (a instanceof TYPE_OTHER_ALIAS") << index << S(") ");
+            throwNotImplemented(ss, other->fullName);
+        }
+
+        ss << S("throw \"Can't cast from any: the class object has no vtable for interface '")
+           << stows(interfaceInfo->fullName.str()) << S("'\";\n}\n");
+
+        ss << S("if (typeof a == 'interface') {\nconst i = <TYPE_ANY_INTERFACE_ALIAS>b;\n");
+        for (auto [index, _] : enumerate(implementers))
+        {
+            ss << S("if (i instanceof TYPE_INST_ALIAS") << index << S(") return <TYPE_INST_ALIAS") << index << S(">i;\n");
+        }
+
+        for (auto [index, other] : enumerate(others))
+        {
+            ss << S("if (i instanceof TYPE_OTHER_ALIAS") << index << S(") ");
+            throwNotImplemented(ss, other->fullName);
+        }
+
+        ss << S("}\n");
+        ss << S("return <T><TYPE_ANY_INTERFACE_ALIAS>a;\n}\n");
+
+        auto src = ss.str();
+
+        // see castPrimitiveTypeFromAny: the call site is the location until the call below instantiates
+        // the function
+        MLIRLocationGuard vgLoc(overwriteLoc);
+        overwriteLoc = location;
+
+        if (mlir::failed(parsePartialStatements(src)))
+        {
+            assert(false);
+            return mlir::failure();
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+        assert(funcResult);
+
+        GenContext funcCallGenContext(genContext);
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", interfaceType});
+        for (auto [index, classInfo] : enumerate(implementers))
+        {
+            funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), classInfo->classType});
+        }
+
+        for (auto [index, classInfo] : enumerate(others))
+        {
+            funcCallGenContext.typeAliasMap.insert({"TYPE_OTHER_ALIAS" + std::to_string(index), classInfo->classType});
+        }
+
+        // see castPrimitiveTypeFromAny: any interface type reads an interface value out of the box
         funcCallGenContext.typeAliasMap.insert(
             {"TYPE_ANY_INTERFACE_ALIAS",
              mlir_ts::InterfaceType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), ".any_interface"))});
