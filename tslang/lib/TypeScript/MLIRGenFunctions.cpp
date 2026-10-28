@@ -509,7 +509,23 @@ namespace mlirgen
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver 
+                    auto ownReturnType = funcProto->getReturnType();
+                    if (ownReturnType
+                        && !isa<mlir_ts::VoidType>(ownReturnType)
+                        && mth.isAnyFunctionType(argTypeDestFuncType)
+                        // a declared `void` only: a receiver with no result, or a null one, is one whose
+                        // result is not known yet (`(i: T) => R` while R is inferred from this arrow,
+                        // a builtin array method's callback)
+                        && isa_and_nonnull<mlir_ts::VoidType>(retTypeFromReceiver)
+                        && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                            || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression))
+                    {
+                        // `(x: string) => void` given `n => n`: TS lets a callback whose result is
+                        // ignored return one. Generated as returning nothing, its returns drop the value.
+                        funcProto->setReturnType(mlir::Type());
+                        funcProto->setDiscardsReturnValue(true);
+                    }
+                    else if (retTypeFromReceiver 
                         && !mth.isNoneType(retTypeFromReceiver) 
                         && !mth.isGenericType(retTypeFromReceiver))
                     {
@@ -518,6 +534,8 @@ namespace mlirgen
                                        << "\n!! set return type from receiver: " << retTypeFromReceiver << "\n";);
                     }
                 }
+
+                getFunctionsDiscardingReturnValue()[fullName] = funcProto->getDiscardsReturnValue();
 
                 // create funcType
                 if (funcProto->getReturnType())
@@ -539,6 +557,11 @@ namespace mlirgen
         else if (functionDiscovered)
         {
             funcType = functionDiscovered;
+        }
+
+        if (!detectReturnType && getFunctionsDiscardingReturnValue().lookup(fullName))
+        {
+            funcProto->setDiscardsReturnValue(true);
         }
 
         // we need it, when we run rediscovery second time
@@ -1807,6 +1830,7 @@ namespace mlirgen
 
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
+        funcGenContext.discardReturnValue = funcProto->getDiscardsReturnValue();
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
@@ -2015,6 +2039,7 @@ namespace mlirgen
 
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
+        funcGenContext.discardReturnValue = false;
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;

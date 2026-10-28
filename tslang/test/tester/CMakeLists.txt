@@ -613,6 +613,9 @@ tslang_add_test(NAME test-compile-00-class-super-static COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-class-default-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
 tslang_add_test(NAME test-compile-00-class-constructor-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_constr_fields.ts")
 tslang_add_test(NAME test-compile-00-class-constructor-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_constructor_overloads.ts")
+tslang_add_test(NAME test-compile-00-callback-result-ignored COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00callback_result_ignored.ts")
+tslang_add_test(NAME test-compile-00-generic-default-no-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_default_no_inference.ts")
+tslang_add_test(NAME test-compile-00-promise-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00promise_type.ts")
 tslang_add_test(NAME test-compile-00-class-static-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
 tslang_add_test(NAME test-compile-00-class-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
 tslang_add_test(NAME test-compile-00-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_iface.ts")
@@ -1224,6 +1227,9 @@ tslang_add_test(NAME test-jit-00-class-default-constructor COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-class-static-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
 tslang_add_test(NAME test-jit-00-class-constructor-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_constr_fields.ts")
 tslang_add_test(NAME test-jit-00-class-constructor-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_constructor_overloads.ts")
+tslang_add_test(NAME test-jit-00-callback-result-ignored COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00callback_result_ignored.ts")
+tslang_add_test(NAME test-jit-00-generic-default-no-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_default_no_inference.ts")
+tslang_add_test(NAME test-jit-00-promise-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00promise_type.ts")
 tslang_add_test(NAME test-jit-00-class-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
 tslang_add_test(NAME test-jit-00-class-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_iface.ts")
 tslang_add_test(NAME test-jit-00-class-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic.ts")
@@ -2170,6 +2176,9 @@ set(TSLANG_CORPUS
     00class_accessor2.ts
     00class_constr_fields.ts
     00class_constructor_overloads.ts
+    00callback_result_ignored.ts
+    00generic_default_no_inference.ts
+    00promise_type.ts
     00class_deconst.ts
     00class_def_constr.ts
     00class_discover_types.ts

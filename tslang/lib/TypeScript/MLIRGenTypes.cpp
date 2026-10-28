@@ -938,6 +938,9 @@ namespace mlirgen
             {"Partial", true },
             {"Required", true },
             {"ThisType", true },
+            {"Promise", true }, // an async function returns its value, see getEmbeddedTypeWithParam
+            {"PromiseLike", true },
+            {"Awaited", true },
             {"NonNullable", true },
             //{"Array", true },
             //{"ReadonlyArray", true },
@@ -1026,6 +1029,9 @@ namespace mlirgen
             {"Shared", true }, // a counted handle, own spec 23
             {"CVarArgs", true }, // a C variadic function type, see getCVarArgsType
             {"ThisType", true },
+            {"Promise", true }, // an async function returns its value, see getEmbeddedTypeWithParam
+            {"PromiseLike", true },
+            {"Awaited", true },
             //{"Array", true }
         };
 
@@ -1187,6 +1193,9 @@ namespace mlirgen
             .Case("Shared", EmbeddedType::Shared)
             .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
+            // an async function runs to completion and returns its value (an `await` waits for
+            // the expression it awaits), so a promise of T is T
+            .Cases("Promise", "PromiseLike", "Awaited", EmbeddedType::FirstTypeArgument)
             .Case("NonNullable", EmbeddedType::NonNullable)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
@@ -1291,6 +1300,8 @@ namespace mlirgen
             .Case("Shared", EmbeddedType::Shared)
             .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Case("ThisType", EmbeddedType::ThisType)
+            // a promise of T is T, see getEmbeddedTypeWithParamBuiltins
+            .Cases("Promise", "PromiseLike", "Awaited", EmbeddedType::ThisType)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
 #endif
