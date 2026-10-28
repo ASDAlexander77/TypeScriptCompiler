@@ -665,6 +665,8 @@ tslang_add_test(NAME test-compile-00-interface-optional-cast-order COMMAND test-
 tslang_add_test(NAME test-compile-00-interface-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
+tslang_add_test(NAME test-compile-00-interface-function-field-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_field_write.ts")
+tslang_add_test(NAME test-compile-own-00-interface-function-field-write COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_field_write.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-object-closure COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_object_closure.ts")
 tslang_add_test(NAME test-compile-00-class-function-typed-field-inferred COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_function_typed_field_inferred.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
@@ -1273,6 +1275,8 @@ tslang_add_test(NAME test-jit-00-interface-optional-cast-order COMMAND test-runn
 tslang_add_test(NAME test-jit-00-interface-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
+tslang_add_test(NAME test-jit-00-interface-function-field-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_field_write.ts")
+tslang_add_test(NAME test-jit-own-00-interface-function-field-write COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_field_write.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-object-closure COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_object_closure.ts")
 tslang_add_test(NAME test-jit-00-class-function-typed-field-inferred COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_function_typed_field_inferred.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
@@ -2290,6 +2294,7 @@ set(TSLANG_CORPUS
     00interface_function_typed_field.ts
     00interface_function_typed_field_class.ts
     00interface_function_typed_field_class_field.ts
+    00interface_function_field_write.ts
     00interface_function_typed_field_object_closure.ts
     00class_function_typed_field_inferred.ts
     00interface_generic.ts
@@ -3059,14 +3064,14 @@ set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
                      PROPERTIES PASS_REGULAR_EXPRESSION "rest_parameter_type\\.ts:6:12: error: A rest parameter must be of an array type, not 's32'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
 
-# A function-typed interface field cannot be written: for a class its slot points at a method cell
-# shared by every instance, so a write would change the function for all of them.
+# An optional function-typed interface field cannot be written through the interface: the write would
+# have to set the instance's presence flag as well.
 add_test(NAME test-compile-interface-function-field-write
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
                  "${PROJECT_SOURCE_DIR}/test/tester/interface-errors/function_field_write.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/interface-function-field-write.obj")
 set_tests_properties(test-compile-interface-function-field-write
-                     PROPERTIES PASS_REGULAR_EXPRESSION "function_field_write\\.ts:9:5: error: saving to constant object"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "function_field_write\\.ts:9:5: error: an optional function-typed interface field can't be assigned through the interface"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
@@ -5030,6 +5035,21 @@ foreach(array_length_name negative huge fraction negative_integer new_negative)
         set_tests_properties(test-jit-${array_length_model}-array-length-${array_length_name}
                              PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: Invalid array length"
                                         FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|length: ")
+    endforeach()
+endforeach()
+
+# A write through an interface to its function-typed field stops the program with a message when
+# the object behind it fills the field with a method or is an object literal: only a class field
+# holding the function has storage to write. Which object it is is known only at run time.
+foreach(function_field_write_name method literal)
+    foreach(function_field_write_model gc rc none own)
+        add_test(NAME test-jit-${function_field_write_model}-interface-function-field-write-${function_field_write_name}
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${function_field_write_model}
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                         "${PROJECT_SOURCE_DIR}/test/tester/interface-function-field-write/${function_field_write_name}.ts")
+        set_tests_properties(test-jit-${function_field_write_model}-interface-function-field-write-${function_field_write_name}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: an interface's function field can't be assigned when the object fills it with a method or is an object literal"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|not reached")
     endforeach()
 endforeach()
 

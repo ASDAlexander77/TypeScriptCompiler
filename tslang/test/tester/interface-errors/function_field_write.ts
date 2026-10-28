@@ -1,7 +1,7 @@
-// A function-typed interface field is read-only: a read binds the interface's `this`, and a
-// write could not be checked against the object behind the interface. For a class the slot
-// points at a method cell shared by every instance (INTERFACE_METHOD_CELL_TAG), which a write
-// must not reach.
+// An optional function-typed interface field is not written through the interface: a write would
+// have to set the instance's presence flag too, which the class's cell names only for a read
+// (INTERFACE_METHOD_CELL_TAG). A non-optional one filled by a class field is written
+// (00interface_function_field_write.ts).
 interface MaybeFn { fn?: () => int; }
 class O { fn?: () => int; }
 function main() {
