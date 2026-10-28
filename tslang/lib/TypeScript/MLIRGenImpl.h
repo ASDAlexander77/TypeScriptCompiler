@@ -13185,7 +13185,7 @@ class MLIRGenImpl
                 NodeFactory nf(NodeFactoryFlags::None);
 
                 NodeArray<Expression> argumentsArray;
-                for (auto index = 1; index < funcType.getNumInputs(); index++)
+                for (unsigned index = 1; index < funcType.getNumInputs(); index++)
                 {
                     std::string paramName("p");
                     paramName += std::to_string(index - 1);

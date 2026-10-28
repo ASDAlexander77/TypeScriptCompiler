@@ -426,7 +426,7 @@ namespace mlirgen
             return;
         }
 
-        for (auto paramIndex = 0; paramIndex < tempfuncType.size(); paramIndex++)
+        for (size_t paramIndex = 0; paramIndex < tempfuncType.size(); paramIndex++)
         {
             auto currentTemplateType = tempfuncType[paramIndex];
             auto currentType = funcType[paramIndex];
