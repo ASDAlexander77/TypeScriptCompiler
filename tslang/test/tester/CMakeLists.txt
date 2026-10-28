@@ -752,6 +752,7 @@ tslang_add_test(NAME test-compile-01-spread-assignment COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread.ts")
 tslang_add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
+tslang_add_test(NAME test-compile-00-unknown-round-trip COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-compile-01-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
@@ -1373,6 +1374,7 @@ tslang_add_test(NAME test-jit-01-spread-assignment COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread.ts")
 tslang_add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
+tslang_add_test(NAME test-jit-00-unknown-round-trip COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-jit-01-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
@@ -2472,6 +2474,7 @@ set(TSLANG_CORPUS
     00types_templateliteraltype.ts
     00template_literal_escapes.ts
     00types_unknown1.ts
+    00unknown_round_trip.ts
     00types_utility.ts
     00types.ts
     00uint_compare_bug.ts

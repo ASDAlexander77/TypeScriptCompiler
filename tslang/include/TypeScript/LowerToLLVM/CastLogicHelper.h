@@ -110,6 +110,13 @@ class CastLogicHelper
             return in;
         }
 
+        // `unknown` is the box `any` is (MLIRGenImpl::cast boxes into it and unboxes out of it)
+        if ((isa<mlir_ts::AnyType>(inType) && isa<mlir_ts::UnknownType>(resType))
+            || (isa<mlir_ts::UnknownType>(inType) && isa<mlir_ts::AnyType>(resType)))
+        {
+            return in;
+        }
+
         // a @value type is its storage tuple: the cast to or from that exact tuple changes nothing
         // (MLIRGenImpl::valueStorage, and the cast that makes a tuple a value)
         if (auto inValueType = dyn_cast<mlir_ts::ValueType>(inType); inValueType && inValueType.getStorageType() == resType)
