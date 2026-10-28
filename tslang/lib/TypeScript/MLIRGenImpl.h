@@ -11618,14 +11618,18 @@ class MLIRGenImpl
     // not the literal's) is a value in a field like any other, made as a closure, not a method bound to the
     // literal object: a method read out of the literal into a function-typed field (`{ w: x => x + 1 }`
     // given for `{ w: (x: number) => number }`) hands out the literal, which nothing owns then. Only a literal
-    // made for an object type is one: a literal with no receiver may become an interface, whose vtable is
-    // built from the literal's methods, and so may one made for an interface. An arrow whose untyped
-    // parameters have no function type to take theirs from stays a method too.
+    // made for an object type is one, or the value of a variable declared with no type (`const o = { w: ... }`,
+    // given later to `apply(o)`), which a cast to an interface copies field by field. A literal returned or
+    // given with no receiver may be built for an interface, whose vtable takes the literal's methods, and so
+    // may one made for an interface. An arrow whose untyped parameters have no function type to take theirs
+    // from stays a method too.
     void markClosureMembers(ObjectLiteralInfo &oli, const GenContext &genContext)
     {
         oli.closureMembers.clear();
         auto receiverType = oli.receiverType ? oli.receiverType : oli.memberReceiverType;
-        auto objectTypeReceiver = receiverType && isa<mlir_ts::TupleType>(MLIRTypeHelper::stripValueType(receiverType));
+        auto untypedVariable = !receiverType && !!(oli.objectLiteral->internalFlags & InternalFlags::UntypedVariableInitializer);
+        auto objectTypeReceiver = receiverType ? isa<mlir_ts::TupleType>(MLIRTypeHelper::stripValueType(receiverType))
+                                               : untypedVariable;
         for (auto &item : oli.objectLiteral->properties)
         {
             auto closure = false;
@@ -11635,16 +11639,26 @@ class MLIRGenImpl
                 Node initializer = propertyAssignment->initializer;
                 if (initializer == SyntaxKind::ArrowFunction)
                 {
-                    auto saysThis = false;
-                    FilterVisitorAST<Node> thisVisitor(SyntaxKind::ThisKeyword, [&](auto) { saysThis = true; });
-                    FilterVisitorAST<Node> superVisitor(SyntaxKind::SuperKeyword, [&](auto) { saysThis = true; });
+                    auto bound = false;
+                    FilterVisitorAST<Node> thisVisitor(SyntaxKind::ThisKeyword, [&](auto) { bound = true; });
+                    FilterVisitorAST<Node> superVisitor(SyntaxKind::SuperKeyword, [&](auto) { bound = true; });
                     thisVisitor.visit(initializer);
                     superVisitor.visit(initializer);
+
+                    // ...nor, in a variable's literal, a local around it: a closure that captures one
+                    // is copied out of the literal by a cast to an interface, its captures still the literal's
+                    if (untypedVariable)
+                    {
+                        FilterVisitorAST<Node> localVisitor(SyntaxKind::Identifier, [&](auto identifier) {
+                            bound = bound || symbolTable.count(MLIRHelper::getName(identifier.template as<Identifier>()));
+                        });
+                        localVisitor.visit(initializer);
+                    }
 
                     auto arrow = initializer.as<ArrowFunction>();
                     auto typed = llvm::all_of(arrow->parameters, [](ParameterDeclaration parameter) { return !!parameter->type; })
                         || getObjectLiteralMemberReceiverFuncType(oli, TupleFieldName(propertyAssignment->name, genContext));
-                    closure = !saysThis && typed;
+                    closure = !bound && typed;
                 }
             }
 

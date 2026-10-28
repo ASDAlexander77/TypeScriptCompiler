@@ -841,6 +841,11 @@ namespace mlirgen
         }
 #endif
 
+        if (!item->type && item->initializer == SyntaxKind::ObjectLiteralExpression)
+        {
+            item->initializer->internalFlags |= InternalFlags::UntypedVariableInitializer;
+        }
+
         auto initFunc = [&](mlir::Location location, const GenContext &genContext) {
             // A module imported as source only declares what it defines, so a module-level
             // variable gets its type and no initializer code. Not a local: a function body is only

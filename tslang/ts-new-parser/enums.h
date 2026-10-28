@@ -567,7 +567,10 @@ enum class InternalFlags : number
     GeneratorNext = 1 << 13,
     // the `undefined` of a finished generator's {value: undefined, done: true}: a `value` type that cannot hold
     // undefined takes its zero (mlirGenObjectLiteralFields)
-    GeneratorDoneValue = 1 << 14
+    GeneratorDoneValue = 1 << 14,
+    // an object literal a variable declared with no type is given (`const o = { w: ... }`): its this-free arrows
+    // are closures (markClosureMembers)
+    UntypedVariableInitializer = 1 << 15
 };
 
 ENUM_OPS(InternalFlags)
