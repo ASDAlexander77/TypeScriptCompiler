@@ -676,39 +676,23 @@ namespace own_signature
     }
 
     void OwnershipSignaturePass::collectFieldFamilies(
-        mlir::ModuleOp module, llvm::function_ref<std::pair<mlir::Operation *, int32_t>(mlir::OpOperand &)> parameterOf)
+        mlir::ModuleOp module, llvm::function_ref<FamilyTargets(mlir::OpOperand &)> parameterOf)
     {
-        // the fields of a callback type, by class and position
+        // the fields of a callback type, by class and position. An object cast to `any`, a union,
+        // `unknown` or `object` is cast back to its class to reach them (`ts.GetValueFromUnion`, an
+        // unbox): a `ts.PropertyRef` of the class again, here, or in a module that names the class,
+        // which builds it too (`callableFromOutside` of its constructor). An interface reaches them
+        // only through a vtable built from the class (`<Class>.<Interface>..vtbl`), here or in a
+        // module that names it: a field's slot is a `ts.PropertyRef` here, a function field's a thunk
+        // that loads it and calls it, and another interface's cast remaps those slots; a cast from
+        // `any` to an interface uses only those vtables (castAnyToInterface).
         std::map<std::pair<mlir::Operation *, int32_t>, llvm::SmallVector<mlir_ts::PropertyRefOp>> fields;
-        // the classes whose objects go where their fields may be reached otherwise: cast to `any`,
-        // a union, `unknown` or `object`, from which another module may cast them back. An interface
-        // reaches them only through a vtable built from the class (`<Class>.<Interface>..vtbl`), here
-        // or in a module that names it: a field's slot is a `ts.PropertyRef` here, a function
-        // field's a thunk that loads it and calls it, and another interface's cast remaps those slots.
-        llvm::StringSet<> escaping;
-        module.walk([&](mlir::Operation *op) {
-            if (auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
+        module.walk([&](mlir_ts::PropertyRefOp fieldOp) {
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(fieldOp.getType());
+            auto key = fieldFamilyKey(fieldOp.getResult());
+            if (key.first && refType && isCallbackType(refType.getElementType()))
             {
-                auto refType = mlir::dyn_cast<mlir_ts::RefType>(fieldOp.getType());
-                auto key = fieldFamilyKey(fieldOp.getResult());
-                if (key.first && refType && isCallbackType(refType.getElementType()))
-                {
-                    fields[key].push_back(fieldOp);
-                }
-
-                return;
-            }
-
-            auto reachedOtherwise = llvm::any_of(op->getResultTypes(), [](mlir::Type type) {
-                return mlir::isa<mlir_ts::AnyType, mlir_ts::UnionType, mlir_ts::UnknownType,
-                                 mlir_ts::ObjectType>(type);
-            });
-            for (auto operand : op->getOperands())
-            {
-                if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(operand.getType()); reachedOtherwise && classType)
-                {
-                    escaping.insert(classType.getName().getValue());
-                }
+                fields[key].push_back(fieldOp);
             }
         });
 
@@ -719,11 +703,10 @@ namespace own_signature
             CallbackFamily family;
 
             // neither the class nor one extending it (whose object holds the field in its base's
-            // storage, reached there by the same key) is built by another module, nor goes where its
-            // fields are reached otherwise
+            // storage, reached there by the same key) is built by another module
             auto closedClass = [&](llvm::StringRef name) {
                 auto classConstructor = functions.lookup((name + ".constructor").str());
-                return classConstructor && !callableFromOutside(classConstructor) && !escaping.contains(name);
+                return classConstructor && !callableFromOutside(classConstructor);
             };
             family.closed = closedClass(className) && llvm::all_of(classStorages, [&](auto &entry) {
                                 return !extendsClass(classStorages, entry.first(), className) || closedClass(entry.first());
@@ -751,9 +734,9 @@ namespace own_signature
                         family.closed = onlyCalledValue(loadOp.getResult(), forwards);
                         for (auto *forward : forwards)
                         {
-                            auto target = parameterOf(*forward);
-                            family.closed = family.closed && target.first;
-                            family.forwards.push_back(target);
+                            auto targets = parameterOf(*forward);
+                            family.closed = family.closed && !targets.empty();
+                            family.forwards.append(targets.begin(), targets.end());
                         }
 
                         continue;
@@ -824,26 +807,11 @@ namespace own_signature
             return inVTable;
         };
 
-        // The calls a use of a function's symbol makes: the use itself, a direct call, or those made
-        // through the method it binds. Null when the symbol goes anywhere else.
-        auto callsOf = [&](mlir_ts::FuncOp funcOp, mlir::Operation *user, llvm::SmallVectorImpl<mlir::Operation *> &found) {
-            if (auto callee = directCallee(user))
-            {
-                found.push_back(user);
-                return callee.getValue() == funcOp.getSymName();
-            }
-
-            if (!mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp>(user) || !notOverridden(funcOp) ||
-                !onlyCalled(user->getResult(0)))
-            {
-                // a call through an interface (`ts.InterfaceSymbolRef`) passes what this family can't
-                // see, from any module the interface reaches
-                return isClassVTableEntry(user) && !inInterfaceVTable(user) && notOverridden(funcOp);
-            }
-
-            // `ts.CallInternal(ts.GetMethod(m), ts.GetThis(m), ...)`: its arguments are the method's
-            // parameters, `this` first
-            for (auto *boundUser : user->getResult(0).getUsers())
+        // `ts.CallInternal(ts.GetMethod(m), ts.GetThis(m), ...)` of a method bound to its object, or
+        // read out of an interface value (`ts.InterfaceSymbolRef`): its arguments are the method's
+        // parameters, `this` first
+        auto boundCalls = [&](mlir::Value bound, bool throughInterface, llvm::SmallVectorImpl<mlir::Operation *> &found) {
+            for (auto *boundUser : bound.getUsers())
             {
                 if (mlir::isa<mlir_ts::GetThisOp>(boundUser))
                 {
@@ -859,20 +827,98 @@ namespace own_signature
                 {
                     auto args = callArgs(call);
                     if (!mlir::isa<mlir_ts::CallInternalOp>(call) || args.empty() ||
-                        !args.front().getDefiningOp<mlir_ts::GetThisOp>())
+                        !args.front().getDefiningOp<mlir_ts::GetThisOp>() ||
+                        (throughInterface && calleeValue(call) != boundUser->getResult(0)))
                     {
                         return false;
                     }
 
-                    found.push_back(call);
+                    if (!llvm::is_contained(found, call))
+                    {
+                        found.push_back(call);
+                    }
                 }
             }
 
             return true;
         };
 
-        // The function a call made through a method's symbol calls, when it is the only one
-        auto methodCalled = [&](mlir::Operation *call) {
+        // the calls through each interface's slot, by (interface, vtable position)
+        std::map<std::pair<std::string, int64_t>, llvm::SmallVector<mlir_ts::InterfaceSymbolRefOp>> interfaceCalls;
+        module.walk([&](mlir_ts::InterfaceSymbolRefOp refOp) {
+            if (auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType()))
+            {
+                auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
+                interfaceCalls[{interfaceType.getName().getValue().str(), position}].push_back(refOp);
+            }
+        });
+
+        // A method in an interface's vtable is called through the interface's slot: by every call
+        // through each closed slot that holds it (interfaceFamilies), which no other module makes
+        // (spec 59). One an open slot, or a vtable no interface value is made with, holds is reached
+        // by calls this can't see (interfaceReached).
+        auto interfaceCallsOf = [&](mlir_ts::FuncOp funcOp, llvm::SmallVectorImpl<mlir::Operation *> &found) {
+            if (interfaceReached.contains(funcOp))
+            {
+                return false;
+            }
+
+            auto held = false;
+            for (auto &[key, family] : interfaceFamilies)
+            {
+                if (!llvm::is_contained(family.members, funcOp.getSymNameAttr()))
+                {
+                    continue;
+                }
+
+                held = true;
+                if (!family.closed)
+                {
+                    return false;
+                }
+
+                for (auto refOp : interfaceCalls[key])
+                {
+                    if (refOp.getOptional().value_or(false) || refOp.getIdentifier() != family.field ||
+                        !boundCalls(refOp.getResult(), /*throughInterface=*/true, found))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return held;
+        };
+
+        // The calls a use of a function's symbol makes: the use itself, a direct call, those made
+        // through the method it binds, or through the interfaces whose vtables hold it. Null when the
+        // symbol goes anywhere else.
+        auto callsOf = [&](mlir_ts::FuncOp funcOp, mlir::Operation *user, llvm::SmallVectorImpl<mlir::Operation *> &found) {
+            if (auto callee = directCallee(user))
+            {
+                found.push_back(user);
+                return callee.getValue() == funcOp.getSymName();
+            }
+
+            if (isClassVTableEntry(user) && inInterfaceVTable(user))
+            {
+                return interfaceCallsOf(funcOp, found);
+            }
+
+            if (!mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp>(user) || !notOverridden(funcOp) ||
+                !onlyCalled(user->getResult(0)))
+            {
+                return isClassVTableEntry(user) && notOverridden(funcOp);
+            }
+
+            return boundCalls(user->getResult(0), /*throughInterface=*/false, found);
+        };
+
+        // The functions a call made through a method's symbol calls: the one method no other
+        // overrides, or every member of a closed interface slot (spec 59). None when it may reach
+        // another.
+        auto methodsCalled = [&](mlir::Operation *call) {
+            llvm::SmallVector<mlir_ts::FuncOp, 1> called;
             auto getMethodOp = calleeValue(call) ? calleeValue(call).getDefiningOp<mlir_ts::GetMethodOp>() : mlir_ts::GetMethodOp();
             auto *ref = getMethodOp ? getMethodOp.getBoundFunc().getDefiningOp() : nullptr;
             mlir::FlatSymbolRefAttr identifier;
@@ -884,9 +930,38 @@ namespace own_signature
             {
                 identifier = refOp.getIdentifierAttr();
             }
+            else if (auto slotOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(ref); slotOp && !slotOp.getOptional().value_or(false))
+            {
+                auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(slotOp.getInterfaceVal().getType());
+                auto found = interfaceType ? interfaceFamilies.find({interfaceType.getName().getValue().str(),
+                                                                     static_cast<int64_t>(slotOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS})
+                                           : interfaceFamilies.end();
+                if (found == interfaceFamilies.end() || !found->second.closed || slotOp.getIdentifier() != found->second.field)
+                {
+                    return called;
+                }
+
+                for (auto member : found->second.members)
+                {
+                    auto funcOp = functions.lookup(member.getValue());
+                    if (!funcOp || interfaceReached.contains(funcOp))
+                    {
+                        return llvm::SmallVector<mlir_ts::FuncOp, 1>();
+                    }
+
+                    called.push_back(funcOp);
+                }
+
+                return called;
+            }
 
             auto funcOp = identifier ? functions.lookup(identifier.getValue()) : mlir_ts::FuncOp();
-            return funcOp && notOverridden(funcOp) ? funcOp : mlir_ts::FuncOp();
+            if (funcOp && notOverridden(funcOp))
+            {
+                called.push_back(funcOp);
+            }
+
+            return called;
         };
 
         auto callsOnly = [&](mlir_ts::FuncOp funcOp, llvm::SmallVectorImpl<mlir::Operation *> &calls) {
@@ -895,38 +970,51 @@ namespace own_signature
                    llvm::all_of(users, [&](mlir::Operation *user) { return callsOf(funcOp, user, calls); });
         };
 
-        // The parameter of the one function a call reaches that `use` is the argument for, by its
-        // operand's position; null when the call reaches no one function or `use` is not an argument.
-        auto parameterOf = [&](mlir::OpOperand &use) -> std::pair<mlir::Operation *, int32_t> {
+        // The parameters of the functions a call reaches that `use` is the argument for, by its
+        // operand's position: one, or each member of an interface's slot; none when the call may
+        // reach a function this can't name or `use` is not an argument.
+        auto parameterOf = [&](mlir::OpOperand &use) -> FamilyTargets {
             auto *call = use.getOwner();
             // ...or the result of the function it is returned from (spec 56)
             if (flowsToReturn(use))
             {
                 auto funcOp = call->getParentOfType<mlir_ts::FuncOp>();
-                return {funcOp ? funcOp.getOperation() : nullptr, RESULT_FAMILY};
+                return funcOp ? FamilyTargets{{funcOp.getOperation(), RESULT_FAMILY}} : FamilyTargets();
             }
 
             // ...or the field of a class it is stored into (spec 55)
             if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(call))
             {
-                return fieldFamilyKey(storeOp.getReference());
+                auto key = fieldFamilyKey(storeOp.getReference());
+                return key.first ? FamilyTargets{key} : FamilyTargets();
             }
 
             if (!isCall(call))
             {
-                return {nullptr, -1};
+                return {};
             }
 
             auto callee = directCallee(call);
-            auto calleeOp = callee ? functions.lookup(callee.getValue()) : methodCalled(call);
-            auto args = callArgs(call);
-            if (!calleeOp || args.empty() || use.getOperandNumber() < args.getBeginOperandIndex() ||
-                use.getOperandNumber() >= args.getBeginOperandIndex() + args.size())
+            auto calleeOps = callee ? llvm::SmallVector<mlir_ts::FuncOp, 1>() : methodsCalled(call);
+            if (auto calleeOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp())
             {
-                return {nullptr, -1};
+                calleeOps.push_back(calleeOp);
             }
 
-            return {calleeOp, static_cast<int32_t>(use.getOperandNumber() - args.getBeginOperandIndex())};
+            auto args = callArgs(call);
+            if (calleeOps.empty() || args.empty() || use.getOperandNumber() < args.getBeginOperandIndex() ||
+                use.getOperandNumber() >= args.getBeginOperandIndex() + args.size())
+            {
+                return {};
+            }
+
+            FamilyTargets targets;
+            for (auto calleeOp : calleeOps)
+            {
+                targets.push_back({calleeOp, static_cast<int32_t>(use.getOperandNumber() - args.getBeginOperandIndex())});
+            }
+
+            return targets;
         };
 
         for (auto &entry : functions)
@@ -956,9 +1044,9 @@ namespace own_signature
                 CallbackFamily family;
                 for (auto *use : forwards)
                 {
-                    auto target = parameterOf(*use);
-                    family.closed = family.closed && target.first;
-                    family.forwards.push_back(target);
+                    auto targets = parameterOf(*use);
+                    family.closed = family.closed && !targets.empty();
+                    family.forwards.append(targets.begin(), targets.end());
                 }
 
                 for (auto *user : calls)
@@ -993,8 +1081,8 @@ namespace own_signature
         };
 
         auto passesToClosed = [&](mlir::OpOperand &use) {
-            auto key = parameterOf(use);
-            return key.first && closedFamily(key);
+            auto targets = parameterOf(use);
+            return !targets.empty() && llvm::all_of(targets, [&](auto key) { return closedFamily(key) != nullptr; });
         };
 
         // Takes in the members of the parameters given here: false when one is not closed, or gives

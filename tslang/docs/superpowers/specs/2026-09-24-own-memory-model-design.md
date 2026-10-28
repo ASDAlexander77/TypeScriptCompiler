@@ -5068,6 +5068,7 @@ part of.
 
 Not here: a class whose object becomes an interface or `any` keeps its fields' families open; so
 does a field given a callback any other way than those above. A class another class extends: §57.
+An interface: §58; `any` and a union: §59.
 
 ## 57. A callback field of a class others extend, 2026-10-28
 
@@ -5089,7 +5090,7 @@ down, under own, rc, gc and none; own emits no counting. Negative: `own_err_call
 whose derived class stores a function that replaces a global array the walk's element may be part of.
 
 Not here: a class whose object, or a derived class's, becomes `any` keeps its fields' families open;
-an interface: §58.
+an interface: §58; `any`: §59.
 
 ## 58. A class seen through an interface, 2026-10-28
 
@@ -5120,4 +5121,45 @@ the field).
 
 Not here: a class whose object becomes `any`, a union, `unknown` or `object` keeps its fields'
 families open; a callback parameter of a method in an interface's vtable is open even where the
-method is called on its class.
+method is called on its class. Both: §59.
+
+## 59. Casts to `any` and calls through an interface, 2026-10-28
+
+Two families stayed open that need not: a class's callback field once an object of the class became
+`any`, a union, `unknown` or `object` (§55-§58), and a callback parameter of a method an interface's
+vtable holds (§58).
+
+- **A class's fields after a cast to `any`, a union, `unknown` or `object`.** Every way back to the
+  fields is a cast to the class: `<Walker>x` unboxes, `u instanceof Walker` narrows
+  (`ts.GetValueFromUnion`), and the field is a `ts.PropertyRef` of the class again, which the family
+  sees here. Another module can cast back only to a class it names, and a module that names the class
+  can build it too (`callableFromOutside` of its constructor, which opens the family already). `any`
+  to an interface uses only the vtables this module made for the class (`castAnyToInterface`, §58);
+  `any` to a tuple or an object type reads no field of a class (a class object read as one crashes
+  in every model), and `object` cannot be cast back to a class at all. So the cast no longer opens
+  the family (`collectFieldFamilies` drops `escaping`).
+- **A method an interface's vtable holds** (`<Class>.<Interface>..vtbl`) is called through the
+  interface's slot. When every slot that holds it is closed (`interfaceFamilies`, spec 31: no other
+  module sees the interface, every value of it is made from a vtable this module reads) and it is not
+  `interfaceReached`, its callers are every call through those slots (`interfaceCallsOf`): a
+  `ts.InterfaceSymbolRef` of the slot, not optional, bound and called with its `this` first, as a
+  method bound to its object is (`boundCalls`). Their arguments join its parameters' families with
+  those of its direct calls. Any other use of the slot's value opens the family, as before.
+- **A value given on through an interface's slot** reaches each member of the slot: `parameterOf`
+  returns the parameter of each (`FamilyTargets`), and the value is given to a closed family only
+  when all of them are. A callback parameter given on (`e.each(a, f)` in a function taking `f`) is
+  forwarded to each, and a function given by name passes to each.
+
+`own_callback_cast` walks through a class cast to `any` and back, and to a union and narrowed back,
+its callback field stored by the constructor and by a method, under own, rc, gc and none; own emits no
+counting. `own_callback_interface_slot` calls two classes' methods through an interface, directly, and
+with a caller's callback parameter given on through the interface. Negatives:
+`own_err_callback_cast_field_drops` (a draining callback stored into a field of a class cast to `any`
+and back), `own_err_callback_interface_slot_drops` (a callback given only through the interface still
+counts for a direct call that lends the global array it replaces) and
+`own_err_callback_interface_slot_targets` (a callback parameter given on through the slot reaches
+both classes).
+
+Not here: a function-typed field of an object literal typed by its receiver (`{ w: x => x + 1 }` given
+for `{ w: (x: number) => number }`) is a method bound to the literal object, which nothing owns; own
+rejects the call that receives it.
