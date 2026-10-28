@@ -11605,7 +11605,52 @@ class MLIRGenImpl
         SmallVector<size_t> methodInfos;
         SmallVector<std::pair<std::string, size_t>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
+        // by property: an arrow function made as a closure in a field, not a method (isClosureMember)
+        SmallVector<bool> closureMembers;
     };
+
+    bool isClosureMember(const ObjectLiteralInfo &oli, size_t index)
+    {
+        return index < oli.closureMembers.size() && oli.closureMembers[index];
+    }
+
+    // An arrow function member that never says `this` or `super` (an arrow's `this` is its surroundings',
+    // not the literal's) is a value in a field like any other, made as a closure, not a method bound to the
+    // literal object: a method read out of the literal into a function-typed field (`{ w: x => x + 1 }`
+    // given for `{ w: (x: number) => number }`) hands out the literal, which nothing owns then. Only a literal
+    // made for an object type is one: a literal with no receiver may become an interface, whose vtable is
+    // built from the literal's methods, and so may one made for an interface. An arrow whose untyped
+    // parameters have no function type to take theirs from stays a method too.
+    void markClosureMembers(ObjectLiteralInfo &oli, const GenContext &genContext)
+    {
+        oli.closureMembers.clear();
+        auto receiverType = oli.receiverType ? oli.receiverType : oli.memberReceiverType;
+        auto objectTypeReceiver = receiverType && isa<mlir_ts::TupleType>(MLIRTypeHelper::stripValueType(receiverType));
+        for (auto &item : oli.objectLiteral->properties)
+        {
+            auto closure = false;
+            if (item == SyntaxKind::PropertyAssignment && objectTypeReceiver)
+            {
+                auto propertyAssignment = item.as<PropertyAssignment>();
+                Node initializer = propertyAssignment->initializer;
+                if (initializer == SyntaxKind::ArrowFunction)
+                {
+                    auto saysThis = false;
+                    FilterVisitorAST<Node> thisVisitor(SyntaxKind::ThisKeyword, [&](auto) { saysThis = true; });
+                    FilterVisitorAST<Node> superVisitor(SyntaxKind::SuperKeyword, [&](auto) { saysThis = true; });
+                    thisVisitor.visit(initializer);
+                    superVisitor.visit(initializer);
+
+                    auto arrow = initializer.as<ArrowFunction>();
+                    auto typed = llvm::all_of(arrow->parameters, [](ParameterDeclaration parameter) { return !!parameter->type; })
+                        || getObjectLiteralMemberReceiverFuncType(oli, TupleFieldName(propertyAssignment->name, genContext));
+                    closure = !saysThis && typed;
+                }
+            }
+
+            oli.closureMembers.push_back(closure);
+        }
+    }
 
     mlir::LogicalResult addObjectFuncFieldInfo(ObjectLiteralInfo &oli, mlir::Attribute fieldId, const std::string &funcName,
                                                mlir_ts::FunctionType funcType)
@@ -11837,16 +11882,18 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralFields(mlir::Location location, ObjectLiteralInfo &oli,
                                                                    const GenContext &genContext)
     {
+        auto propertyIndex = 0;
         for (auto &item : oli.objectLiteral->properties)
         {
+            auto closureMember = isClosureMember(oli, propertyIndex++);
             mlir::Value itemValue;
             mlir::Attribute fieldId;
             mlir::Type receiverElementType;
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer == SyntaxKind::FunctionExpression ||
-                    propertyAssignment->initializer == SyntaxKind::ArrowFunction)
+                if ((propertyAssignment->initializer == SyntaxKind::FunctionExpression ||
+                    propertyAssignment->initializer == SyntaxKind::ArrowFunction) && !closureMember)
                 {
                     continue;
                 }
@@ -11864,6 +11911,12 @@ class MLIRGenImpl
                 if (receiverElementType)
                 {
                     receiverTypeGenContext.receiverType = receiverElementType;
+                }
+
+                if (closureMember)
+                {
+                    // its untyped parameters take their types from the receiver's member, as a method's do
+                    receiverTypeGenContext.receiverFuncType = getObjectLiteralMemberReceiverFuncType(oli, fieldId);
                 }
 
                 auto result = mlirGen(propertyAssignment->initializer, receiverTypeGenContext);
@@ -12093,14 +12146,16 @@ class MLIRGenImpl
     // pass 2: register method prototypes as fields
     mlir::LogicalResult mlirGenObjectLiteralMethodPrototypes(ObjectLiteralInfo &oli, const GenContext &genContext)
     {
+        auto propertyIndex = 0;
         for (auto &item : oli.objectLiteral->properties)
         {
+            auto closureMember = isClosureMember(oli, propertyIndex++);
             mlir::Attribute fieldId;
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
-                    propertyAssignment->initializer != SyntaxKind::ArrowFunction)
+                if ((propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    propertyAssignment->initializer != SyntaxKind::ArrowFunction) || closureMember)
                 {
                     continue;
                 }
@@ -12219,13 +12274,15 @@ class MLIRGenImpl
     // pass 3: generate method bodies
     mlir::LogicalResult mlirGenObjectLiteralMethodBodies(ObjectLiteralInfo &oli, const GenContext &genContext)
     {
+        auto propertyIndex = 0;
         for (auto &item : oli.objectLiteral->properties)
         {
+            auto closureMember = isClosureMember(oli, propertyIndex++);
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
-                    propertyAssignment->initializer != SyntaxKind::ArrowFunction)
+                if ((propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    propertyAssignment->initializer != SyntaxKind::ArrowFunction) || closureMember)
                 {
                     continue;
                 }

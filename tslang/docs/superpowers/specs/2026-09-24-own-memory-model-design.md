@@ -5121,3 +5121,38 @@ the field).
 Not here: a class whose object becomes `any`, a union, `unknown` or `object` keeps its fields'
 families open; a callback parameter of a method in an interface's vtable is open even where the
 method is called on its class.
+
+## 60. An object literal's arrow functions as closures, 2026-10-28
+
+`apply({ w: x => x + 1 })` for `apply(o: { w: (x: number) => number })`, and
+`const o: { w: (x: number) => number } = { w: x => x * 2 }`, were `'this value' borrows a field and
+cannot be stored, returned or captured`, in every call that took such a literal. Every function member of
+an object literal was a method taking the literal object as its `this`; read into the receiver's
+function-typed field, it became a `hybrid_func` bound to that object, made by `ts.New` and owned by
+nothing (no model released it, and several members shared it).
+
+- **An arrow function member that never says `this` or `super`** (anywhere in it, nested functions
+  included: an arrow's `this` is its surroundings', and `00object_func3` relies on an arrow member's
+  nested function reaching the literal through `this`) is a value in a field like any other
+  (`markClosureMembers`, MLIRGen): made in the literal's first pass as a closure, its captures in its own
+  box, not in the literal's `.captured`. It is not a method: the passes that make methods skip it.
+- **Its untyped parameters** take their types from the receiver's member, as a method's do
+  (`getObjectLiteralMemberReceiverFuncType`, set as the closure's `receiverFuncType`); an arrow with an
+  untyped parameter and no such member stays a method.
+- **Only a literal made for an object type** (its receiver, or a generic call's parameter, is a tuple
+  type): a literal made for an interface, or with no receiver (`return { area: () => box.w }` for a
+  `Shape` result), may become an interface value, whose vtable is built from the literal's methods, so
+  its members stay methods.
+- **Generic inference** (`tryInferInterfaceFromObject`) already tells a closure's type from a method's by
+  its arity.
+
+So a literal of closures read into a function-typed field hands out closures that own their boxes,
+which own handles as it does any closure (§5); none borrows the literal.
+
+`own_literal_closures` gives such literals for a typed local, a parameter, a generic call's parameter
+(`f1<T, U>`), with and without captures, several members in one literal, under own, rc, gc and none; own
+emits no counting.
+
+Not here: a function expression member, an arrow that says `this`, and any member of a literal with no
+object-type receiver (`const o = { w: (x: number) => x }; apply(o)`) is a method bound to the literal as
+before, and such a literal read into a function-typed field is still rejected under own.

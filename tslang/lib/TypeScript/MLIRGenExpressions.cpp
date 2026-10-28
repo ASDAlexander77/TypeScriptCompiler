@@ -2404,6 +2404,7 @@ namespace mlirgen
         auto objectNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
         auto objectStorageType = getObjectStorageType(objectNameSymbol);
         oli.objThis = getObjectType(objectStorageType);
+        markClosureMembers(oli, genContext);
 
         // add all fields
         if (auto earlyResult = mlirGenObjectLiteralFields(location, oli, genContext))
