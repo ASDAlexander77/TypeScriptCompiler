@@ -12837,6 +12837,14 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenClassDataFieldAccessor(mlir::Location location, ClassInfo::TypePtr newClassPtr, 
             PropertyDeclaration propertyDeclaration, MemberName name, mlir::Type typeIfNotProvided, const GenContext &genContext);
 
+    void mlirGenClassSynthAccessors(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration,
+            mlir::Type type, bool getter, bool setter, bool isAbstract);
+
+    mlir::LogicalResult mlirGenClassAbstractFieldAccessors(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+            PropertyDeclaration propertyDeclaration, const GenContext &genContext);
+
+    void mlirGenClassFieldAccessorsForBase(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration);
+
     mlir_ts::AccessLevel getAccessLevel(Node node) {
         return hasModifier(node, SyntaxKind::PrivateKeyword) 
                 ? mlir_ts::AccessLevel::Private 

@@ -558,6 +558,66 @@ class ReleaseContentsOpLowering : public TsLlvmPattern<mlir_ts::ReleaseContentsO
     }
 };
 
+// A load or a store through an interface's field (not optional, not function-typed): the slot may name a cell
+// of accessors instead of an offset (INTERFACE_ACCESSOR_CELL_TAG). Read the slot again, and tell which.
+struct InterfaceAccessorCell
+{
+    mlir::Value isCell;
+    mlir::Value thisVal;
+    mlir::Value slotValue;
+    mlir::Type intPtrType;
+    unsigned sizeBits;
+
+    static std::optional<InterfaceAccessorCell> of(mlir::Value reference, ConversionPatternRewriter &rewriter,
+                                                   const CompileOptions &compileOptions)
+    {
+        auto interfaceSymbolRefOp = reference.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        if (!interfaceSymbolRefOp || interfaceSymbolRefOp.getOptional().value_or(false)
+            || interfaceSymbolRefOp->hasAttr(INTERFACE_FUNCTION_FIELD_WRITE_ATTR)
+            || interfaceSymbolRefOp->hasAttr(INTERFACE_OPTIONAL_WRITE_ATTR))
+        {
+            return std::nullopt;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
+        if (!refType || isa<mlir_ts::FunctionType>(refType.getElementType()))
+        {
+            return std::nullopt;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = interfaceSymbolRefOp.getLoc();
+        auto interfaceVal = rewriter.getRemappedValue(interfaceSymbolRefOp.getInterfaceVal());
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), interfaceVal,
+                                                            MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), interfaceVal,
+                                                             MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
+        auto slotPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
+            loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
+
+        auto sizeBits = compileOptions.sizeBits();
+        auto intPtrType = rewriter.getIntegerType(sizeBits);
+        auto slotValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, slotPtr);
+        auto zero = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, 0));
+        auto isCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, slotValue, zero);
+        return InterfaceAccessorCell{isCell, thisVal, slotValue, intPtrType, static_cast<unsigned>(sizeBits)};
+    }
+
+    // the getter (index 0) or the setter (1) out of the cell
+    mlir::Value accessor(mlir::Location loc, ConversionPatternRewriter &rewriter, int index)
+    {
+        TypeHelper th(rewriter);
+        auto tag = rewriter.create<LLVM::ConstantOp>(
+            loc, intPtrType, rewriter.getIntegerAttr(intPtrType, llvm::APInt::getSignMask(sizeBits)));
+        auto cellInt = rewriter.create<LLVM::SubOp>(loc, intPtrType, slotValue, tag);
+        auto cellAddr = rewriter.create<LLVM::IntToPtrOp>(loc, th.getPtrType(), cellInt.getResult());
+        auto cellLLVMType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getPtrType(), th.getPtrType()}, false);
+        auto accessorPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), cellLLVMType, cellAddr,
+                                                        ArrayRef<LLVM::GEPArg>{0, index});
+        return rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), accessorPtr);
+    }
+};
+
 // The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
 // access with it - there is no load to leave behind in a collected build.
 class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
@@ -583,7 +643,22 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
         if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+            auto retainSlot = [&]() {
+                orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+            };
+
+            // an interface's field filled by a getter has no slot: the getter gives its result owned
+            if (auto accessorCell = InterfaceAccessorCell::of(op.getSlot(), rewriter, tsLlvmContext->compileOptions))
+            {
+                CodeLogicHelper clh(op, rewriter);
+                clh.conditionalBlocksLowering(
+                    accessorCell->isCell, [&](OpBuilder &, Location) -> ValueRange { return ValueRange{}; },
+                    [&](OpBuilder &, Location) -> ValueRange { retainSlot(); return ValueRange{}; });
+            }
+            else
+            {
+                retainSlot();
+            }
         }
 
         rewriter.eraseOp(op);
@@ -602,7 +677,22 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
         if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+            auto releaseSlot = [&]() {
+                orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+            };
+
+            // an interface's field filled by a setter has no slot: the setter lets go of what it held
+            if (auto accessorCell = InterfaceAccessorCell::of(op.getSlot(), rewriter, tsLlvmContext->compileOptions))
+            {
+                CodeLogicHelper clh(op, rewriter);
+                clh.conditionalBlocksLowering(
+                    accessorCell->isCell, [&](OpBuilder &, Location) -> ValueRange { return ValueRange{}; },
+                    [&](OpBuilder &, Location) -> ValueRange { releaseSlot(); return ValueRange{}; });
+            }
+            else
+            {
+                releaseSlot();
+            }
         }
 
         rewriter.eraseOp(op);
@@ -5018,6 +5108,20 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             loadedValue =
                 clh.conditionalExpressionLowering(loc, resultTypeLlvm, ptrCmpResult1, createOptionalFunc, undefOptionalFunc);
         }
+        else if (auto accessorCell = elementType ? InterfaceAccessorCell::of(loadOp.getReference(), rewriter, tsLlvmContext->compileOptions)
+                                                 : std::nullopt)
+        {
+            // the field filled by a getter: call it
+            auto getterCallFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                TypeHelper th(rewriter);
+                auto getter = accessorCell->accessor(loc, rewriter, 0);
+                auto getterType = LLVM::LLVMFunctionType::get(elementTypeConverted, {th.getPtrType()});
+                return rewriter.create<LLVM::CallOp>(loc, getterType, ValueRange{getter, accessorCell->thisVal}).getResult();
+            };
+
+            loadedValue = clh.conditionalExpressionLowering(loc, elementTypeConverted, accessorCell->isCell, getterCallFunc,
+                                                            loadedValueFunc);
+        }
         else
         {
             loadedValue = loadedValueFunc(rewriter, loc);
@@ -5133,6 +5237,48 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         }
 
         const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
+
+        // the field filled by a setter: call it; a class with a getter only has nothing to write
+        if (auto accessorCell = InterfaceAccessorCell::of(storeOp.getReference(), rewriter, tsLlvmContext->compileOptions))
+        {
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(storeOp, rewriter);
+            auto loc = storeOp.getLoc();
+            clh.conditionalBlocksLowering(
+                accessorCell->isCell,
+                [&](OpBuilder &builder, Location location) -> ValueRange {
+                    auto setter = accessorCell->accessor(loc, rewriter, 1);
+                    auto hasSetter = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, setter,
+                                                                   rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+                    clh.conditionalBlocksLowering(
+                        hasSetter,
+                        [&](OpBuilder &builder, Location location) -> ValueRange {
+                            auto setterType = LLVM::LLVMFunctionType::get(
+                                th.getVoidType(), {th.getPtrType(), transformed.getValue().getType()});
+                            rewriter.create<LLVM::CallOp>(loc, setterType,
+                                                          ValueRange{setter, accessorCell->thisVal, transformed.getValue()});
+                            return ValueRange{};
+                        },
+                        [&](OpBuilder &builder, Location location) -> ValueRange { return ValueRange{}; });
+
+                    // the value stored is owned by the slot it would have gone to; the setter keeps its own
+                    if (tsLlvmContext->compileOptions.tracksOwnership())
+                    {
+                        OwnershipRoutineLogic orl(storeOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+                        orl.emitReleaseValue(storeOp.getValue().getType(), transformed.getValue());
+                    }
+
+                    return ValueRange{};
+                },
+                [&](OpBuilder &builder, Location location) -> ValueRange {
+                    rewriter.create<LLVM::StoreOp>(loc, transformed.getValue(), transformed.getReference(), alignment,
+                                                   isVolatile, isNonTemporal, isInvariantGroup, ordering, syncscope);
+                    return ValueRange{};
+                });
+            rewriter.eraseOp(storeOp);
+            return success();
+        }
+
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariantGroup, ordering, syncscope);
 #ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->compileOptions.generateDebugInfo)

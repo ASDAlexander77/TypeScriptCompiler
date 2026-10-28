@@ -1513,7 +1513,144 @@ namespace mlirgen
         }        
 
         return mlir::success();
-    }    
+    }
+
+    // Accessors made for a field's name (mlirGenClassAbstractFieldAccessors, mlirGenClassFieldAccessorsForBase):
+    // abstract ones with no body, or ones reading and writing the class's field of that name - a member
+    // access finds a field before an accessor, so `this.prop` in their bodies is the field. A class is
+    // processed more than once; they are added once.
+    void MLIRGenImpl::mlirGenClassSynthAccessors(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration,
+                                                 mlir::Type type, bool getter, bool setter, bool isAbstract)
+    {
+        auto name = propertyDeclaration->name;
+        auto nameStr = MLIRHelper::getName(name);
+        if (llvm::any_of(newClassPtr->extraMembersPost, [&](ClassElement member) {
+                return (member == SyntaxKind::GetAccessor || member == SyntaxKind::SetAccessor)
+                    && MLIRHelper::getName(member.as<AccessorDeclaration>()->name) == nameStr;
+            }))
+        {
+            return;
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto modifiers = [&]() {
+            NodeArray<ModifierLike> modifiers;
+            for (auto modifier : propertyDeclaration->modifiers)
+            {
+                if (modifier == SyntaxKind::PublicKeyword || modifier == SyntaxKind::ProtectedKeyword
+                    || modifier == SyntaxKind::PrivateKeyword)
+                {
+                    modifiers.push_back(modifier);
+                }
+            }
+
+            if (isAbstract)
+            {
+                modifiers.push_back(nf.createToken(SyntaxKind::AbstractKeyword));
+            }
+
+            return modifiers;
+        };
+
+        // the type is known as an mlir type only: named by an alias, as mlirGenClassDataFieldAccessor does
+        auto typeAlias = StringRef("." + newClassPtr->fullName.str() + "." + nameStr + ".accessor").copy(stringAllocator);
+        getTypeAliasMap()[typeAlias] = { type, undefined };
+        auto typeNode = [&]() { return nf.createTypeReferenceNode(nf.createIdentifier(stows(typeAlias.str())), undefined); };
+
+        auto thisField = [&]() { return nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), name); };
+
+        if (getter)
+        {
+            ts::Block body;
+            if (!isAbstract)
+            {
+                NodeArray<Statement> statements;
+                statements.push_back(nf.createReturnStatement(thisField()));
+                body = nf.createBlock(statements, /*multiLine*/ false);
+            }
+
+            newClassPtr->extraMembersPost.push_back(nf.createGetAccessorDeclaration(modifiers(), name, {}, typeNode(), body));
+        }
+
+        if (setter)
+        {
+            ts::Block body;
+            if (!isAbstract)
+            {
+                NodeArray<Statement> statements;
+                statements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+                    thisField(), nf.createToken(SyntaxKind::EqualsToken), nf.createIdentifier(S("value")))));
+                body = nf.createBlock(statements, /*multiLine*/ false);
+            }
+
+            newClassPtr->extraMembersPost.push_back(nf.createSetAccessorDeclaration(
+                modifiers(), name,
+                {nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined, typeNode())},
+                body));
+        }
+    }
+
+    // `abstract prop: T` has no storage: it is `abstract get prop(): T` and `abstract set prop(value: T)` (no
+    // setter when readonly), virtual as accessors are, so a read or write through the base reaches whatever a
+    // subclass implements it with - accessors of its own, or a field (mlirGenClassFieldAccessorsForBase).
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassAbstractFieldAccessors(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                        PropertyDeclaration propertyDeclaration,
+                                                                        const GenContext &genContext)
+    {
+        auto [type, init] = mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
+        if (mth.isNoneType(type))
+        {
+            if (genContext.allowPartialResolve)
+            {
+                return mlir::success();
+            }
+
+            emitError(location) << "type for abstract field '" << MLIRHelper::getName(propertyDeclaration->name)
+                                << "' must be provided";
+            return mlir::failure();
+        }
+
+        mlirGenClassSynthAccessors(newClassPtr, propertyDeclaration, type, true,
+                                   !hasModifier(propertyDeclaration, SyntaxKind::ReadonlyKeyword), true);
+        return mlir::success();
+    }
+
+    // A field implementing an abstract accessor of a base class (`abstract prop: T` there, or
+    // `abstract get prop(): T`): the class gets accessors over the field, which fill the base's slots, so a
+    // read through the base reads the field. Through the class itself the field is read, found first.
+    void MLIRGenImpl::mlirGenClassFieldAccessorsForBase(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration)
+    {
+        auto nameStr = MLIRHelper::getName(propertyDeclaration->name);
+
+        // the nearest base class's accessor of the name: one implemented on the way is not abstract
+        std::function<AccessorInfo *(ClassInfo::TypePtr)> nearestAccessor = [&](ClassInfo::TypePtr classInfo) -> AccessorInfo * {
+            for (auto &base : classInfo->baseClasses)
+            {
+                auto index = base->getAccessorIndex(nameStr);
+                if (index >= 0)
+                {
+                    return &base->accessors[index];
+                }
+
+                if (auto *found = nearestAccessor(base))
+                {
+                    return found;
+                }
+            }
+
+            return nullptr;
+        };
+
+        auto *accessor = nearestAccessor(newClassPtr);
+        if (!accessor || accessor->isStatic || !accessor->isAbstract)
+        {
+            return;
+        }
+
+        auto type = accessor->get ? accessor->get.funcType.getResult(0) : accessor->set.funcType.getInput(1);
+        mlirGenClassSynthAccessors(newClassPtr, propertyDeclaration, type, !!accessor->get, !!accessor->set, false);
+    }
 
     std::pair<mlir::Type, bool> MLIRGenImpl::mlirGenClassDataFieldType(mlir::Location location, PropertyDeclaration propertyDeclaration,
                                                                      const GenContext &genContext)
@@ -1583,13 +1720,18 @@ namespace mlirgen
     {
         auto accessLevel = getAccessLevel(propertyDeclaration);
 
+        if (hasModifier(propertyDeclaration, SyntaxKind::AbstractKeyword))
+        {
+            return mlirGenClassAbstractFieldAccessors(location, newClassPtr, propertyDeclaration, genContext);
+        }
+
         auto name = propertyDeclaration->name;
         auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
         if (isAccessor)
         {
             name = getFieldNameForAccessor(name);
         }
-        
+
         auto fieldId = TupleFieldName(name, genContext);
         if (!fieldId)
         {
@@ -1654,7 +1796,11 @@ namespace mlirgen
         {            
             auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name, type, genContext);
             EXIT_IF_FAILED(res)
-        }        
+        }
+        else
+        {
+            mlirGenClassFieldAccessorsForBase(newClassPtr, propertyDeclaration);
+        }
 
         return mlir::success();
     }
@@ -2581,11 +2727,78 @@ genContext);
         // and the ones filled by a class field stored as the interface field's function made a hybrid: their
         // cells carry the field's offset, so a write through the interface (`h.f = g`) stores to the instance
         llvm::SmallVector<mlir::Attribute> writableFieldsForCells;
+        // the interface's fields (not function-typed) the class implements with accessors (`get prop()`): their
+        // slots name a cell holding the getter and the setter (see INTERFACE_ACCESSOR_CELL_TAG)
+        struct AccessorsForField
+        {
+            mlir::Attribute id;
+            MethodInfo get;
+            MethodInfo set;
+        };
+        llvm::SmallVector<AccessorsForField, 1> accessorsForFields;
+        // the class's accessor of a name, or its nearest base class's
+        std::function<AccessorInfo *(ClassInfo::TypePtr, mlir::StringRef)> findAccessor =
+            [&](ClassInfo::TypePtr classInfo, mlir::StringRef name) -> AccessorInfo * {
+            auto index = classInfo->getAccessorIndex(name);
+            if (index >= 0)
+            {
+                return classInfo->accessors[index].isStatic ? nullptr : &classInfo->accessors[index];
+            }
+
+            for (auto &base : classInfo->baseClasses)
+            {
+                if (auto *found = findAccessor(base, name))
+                {
+                    return found;
+                }
+            }
+
+            return nullptr;
+        };
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
+                auto accessorName = dyn_cast<mlir::StringAttr>(id);
+                auto *foundAccessor = !found && accessorName && !isa<mlir_ts::FunctionType>(fieldType)
+                    ? findAccessor(newClassPtr, accessorName.getValue()) : nullptr;
+                if (foundAccessor)
+                {
+                    auto getType = foundAccessor->get ? foundAccessor->get.funcType.getResult(0) : mlir::Type();
+                    auto setType = foundAccessor->set ? foundAccessor->set.funcType.getInput(1) : mlir::Type();
+                    if (isConditional || (getType && getType != fieldType) || (setType && setType != fieldType))
+                    {
+                        emitError(location) << "accessor type not matching for " << id << ":" << to_print(fieldType)
+                                            << " for interface '" << newInterfacePtr->fullName << "' in class '"
+                                            << newClassPtr->fullName << "'"
+                                            << (isConditional ? " (an optional field can't be filled by an accessor)" : "");
+                        return {emptyFieldInfo, mlir::failure()};
+                    }
+
+                    if (llvm::none_of(accessorsForFields, [&](auto &accessorsForField) { return accessorsForField.id == id; }))
+                    {
+                        auto methodInfoOf = [&](FunctionEntry funcEntry) {
+                            MethodInfo methodInfo{};
+                            if (funcEntry)
+                            {
+                                methodInfo.name = funcEntry.name;
+                                methodInfo.funcName = funcEntry.name;
+                                methodInfo.dllName = funcEntry.dllName;
+                                methodInfo.funcType = funcEntry.funcType;
+                                methodInfo.virtualIndex = -1;
+                                methodInfo.accessLevel = mlir_ts::AccessLevel::Public;
+                            }
+
+                            return methodInfo;
+                        };
+
+                        accessorsForFields.push_back({id, methodInfoOf(foundAccessor->get), methodInfoOf(foundAccessor->set)});
+                    }
+
+                    return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
+                }
+
                 if (!found && isa<mlir_ts::FunctionType>(fieldType))
                 {
                     auto fieldName = dyn_cast<mlir::StringAttr>(id);
@@ -2944,6 +3157,63 @@ genContext);
             }
         }
 
+        // one cell per field filled by accessors: {getter, setter}, either null when the class has none
+        auto accessorCellName = [&](mlir::Attribute id) {
+            return concat(fullClassInterfaceVTableFieldName, mlir::cast<mlir::StringAttr>(id).getValue(), "accessor");
+        };
+
+        for (auto &accessorsForField : accessorsForFields)
+        {
+            auto cellType = registerVariable(
+                location, accessorCellName(accessorsForField.id), true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    auto isOwnedByDynamicImport = [&](MethodInfo &methodInfo) {
+                        auto owner = methodInfo.funcType ? findMethodOwner(newClassPtr, methodInfo.funcName) : ClassInfo::TypePtr();
+                        return owner && owner->isDynamicImport;
+                    };
+                    if (isOwnedByDynamicImport(accessorsForField.get) || isOwnedByDynamicImport(accessorsForField.set))
+                    {
+                        location = mlir::UnknownLoc::get(builder.getContext());
+                    }
+
+                    auto accessorValue = [&](MethodInfo &methodInfo) -> mlir::Value {
+                        if (!methodInfo.funcType)
+                        {
+                            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                            return cast(location, getOpaqueType(), nullValue, genContext, true);
+                        }
+
+                        auto methodValue = methodSymbolValue(location, methodInfo, genContext);
+                        return methodValue ? builder.create<mlir_ts::CastOp>(location, getOpaqueType(), methodValue) : mlir::Value();
+                    };
+
+                    auto getterValue = accessorValue(accessorsForField.get);
+                    auto setterValue = accessorValue(accessorsForField.set);
+                    if (!getterValue || !setterValue)
+                    {
+                        return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                    }
+
+                    mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
+                        {MLIRHelper::TupleFieldName("get", builder.getContext()), getOpaqueType(), false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("set", builder.getContext()), getOpaqueType(), false,
+                         mlir_ts::AccessLevel::Public}};
+                    auto cellTupleType = getTupleType(cellFields);
+                    mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, getterValue, cellValue,
+                                                                          MLIRHelper::getStructIndex(builder, 0));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, setterValue, cellValue,
+                                                                          MLIRHelper::getStructIndex(builder, 1));
+                    return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
+                },
+                genContext);
+            if (!cellType)
+            {
+                return mlir::failure();
+            }
+        }
+
         auto registeredType = registerVariable(
             location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
@@ -3022,6 +3292,32 @@ genContext);
                         auto taggedValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
                             location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), cellAddress,
                             tagValue);
+                        auto slotValue = builder.create<mlir_ts::CastOp>(
+                            location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), taggedValue);
+
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, slotValue, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
+                    else if (methodOrField.isField && llvm::any_of(accessorsForFields, [&](auto &accessorsForField) {
+                                 return accessorsForField.id == methodOrField.fieldInfo.id;
+                             }))
+                    {
+                        // a field filled by accessors: the slot is the address of their cell plus
+                        // INTERFACE_ACCESSOR_CELL_TAG, so a load or a store through it calls them
+                        auto cellRef = resolveFullNameIdentifier(location, accessorCellName(methodOrField.fieldInfo.id), true, genContext);
+                        if (!cellRef)
+                        {
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                        }
+
+                        auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                        auto cellAddress = builder.create<mlir_ts::CastOp>(location, ptrIntType, cellRef);
+                        auto tagValue = builder.create<mlir_ts::ConstantOp>(
+                            location, ptrIntType,
+                            builder.getIntegerAttr(ptrIntType, llvm::APInt::getSignMask(compileOptions.sizeBits())));
+                        auto taggedValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                            location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), cellAddress, tagValue);
                         auto slotValue = builder.create<mlir_ts::CastOp>(
                             location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), taggedValue);
 
