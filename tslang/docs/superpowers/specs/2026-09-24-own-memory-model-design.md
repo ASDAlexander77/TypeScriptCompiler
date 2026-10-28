@@ -5242,8 +5242,10 @@ function-typed field and reads the object after, churning between steps, under o
 `00interface_type_tag_in_vtable` keeps its directly returned capturing literal.
 
 Not here: a literal whose arrows capture a local (`const o = { w: (x: number) => x * k }; apply(o)`)
-is still rejected under own. Found, not fixed (every model): `<Adder>x` of an `any` that holds an object
-literal crashes in the cast.
+is still rejected under own. Found and fixed (every model): `<Adder>x` of an `any` that holds an object
+literal read its block as the interface's pair and crashed; it now throws, since the box does not say which
+fields the literal has (`00any_literal_to_interface`). A boxed null cast so was not null under rc, none and
+own; it is the null interface now.
 
 ## 63. A field taken out of a temporary in a branch, 2026-10-28
 
