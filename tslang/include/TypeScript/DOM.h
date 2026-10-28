@@ -249,12 +249,15 @@ class FunctionPrototypeDOM
     bool hasExtraFields;
     bool isGenericFunction;
     bool noBody;
+    // an arrow or function expression with no return type of its own, given to a function type
+    // that returns nothing: what its `return` statements return is evaluated and dropped
+    bool discardsReturnValue;
 
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> params)
-        : name(name.str()), params(params), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), isGenericFunction(false), noBody(false)
+        : name(name.str()), params(params), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), isGenericFunction(false), noBody(false), discardsReturnValue(false)
     {
     }
 
@@ -308,6 +311,15 @@ class FunctionPrototypeDOM
     void setDiscovered(bool discovered_)
     {
         discovered = discovered_;
+    }
+
+    bool getDiscardsReturnValue() const
+    {
+        return discardsReturnValue;
+    }
+    void setDiscardsReturnValue(bool discardsReturnValue_)
+    {
+        discardsReturnValue = discardsReturnValue_;
     }
 
     bool getHasCapturedVars() const

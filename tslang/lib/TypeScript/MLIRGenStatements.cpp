@@ -39,7 +39,7 @@ namespace mlirgen
             auto result = mlirGen(body.as<Expression>(), genContext);
             EXIT_IF_FAILED(result)
             auto resultValue = V(result);
-            if (resultValue)
+            if (resultValue && !genContext.discardReturnValue)
             {
                 // A concise arrow body (`() => expr`) returns without going through the return
                 // statement, so it did not get the retain that makes every function hand back
@@ -522,6 +522,19 @@ namespace mlirgen
             finishedReturn->_end = returnStatementAST->_end;
             return mlirGen(finishedReturn, genContext);
         }
+        if (auto expression = returnStatementAST->expression; expression && genContext.discardReturnValue)
+        {
+            // a callback given to a function type that returns nothing: the value is evaluated as
+            // a statement's is, and dropped
+            auto result = mlirGen(expression, genContext);
+            EXIT_IF_FAILED(result)
+
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
+
+            builder.create<mlir_ts::ReturnOp>(location);
+            return mlir::success();
+        }
+
         if (auto expression = returnStatementAST->expression)
         {
             GenContext receiverTypeGenContext(genContext);

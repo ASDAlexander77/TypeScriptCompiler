@@ -3032,6 +3032,12 @@ class MLIRGenImpl
             if (type)
             {
                 genContextWithTypeReceiver.receiverType = type;
+                // as an assignment does: an arrow takes its return type from the function type
+                if (mth.isAnyFunctionType(type))
+                {
+                    genContextWithTypeReceiver.receiverFuncType = type;
+                }
+
                 LLVM_DEBUG(dbgs() << "\n!! variable receiverType " << type << "\n");
             }
 
@@ -15537,6 +15543,11 @@ class MLIRGenImpl
     auto getFunctionTypeMap() -> llvm::StringMap<mlir_ts::FunctionType> &
     {
         return currentNamespace->functionTypeMap;
+    }
+
+    auto getFunctionsDiscardingReturnValue() -> llvm::StringMap<bool> &
+    {
+        return currentNamespace->functionsDiscardingReturnValue;
     }
 
     auto lookupFunctionTypeMap(StringRef name) -> mlir_ts::FunctionType

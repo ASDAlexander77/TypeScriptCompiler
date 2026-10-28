@@ -1264,6 +1264,10 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir_ts::FunctionType> functionTypeMap;
 
+    // arrows and function expressions generated as returning nothing whose returns drop the value,
+    // see FunctionPrototypeDOM::discardsReturnValue: a later prototype of one keeps it
+    llvm::StringMap<bool> functionsDiscardingReturnValue;
+
     llvm::StringMap<FunctionEntry> functionMap;
 
     llvm::StringMap<GenericFunctionInfo::TypePtr> genericFunctionMap;

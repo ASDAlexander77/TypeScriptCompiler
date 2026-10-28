@@ -173,6 +173,9 @@ struct GenContext
     bool insertIntoParentScope = false;
     mlir::Operation *currentOperation = nullptr;
     mlir_ts::FuncOp funcOp;
+    // funcOp's `return` statements evaluate their value and drop it (an arrow given to a function
+    // type that returns nothing, see FunctionPrototypeDOM::discardsReturnValue)
+    bool discardReturnValue = false;
     // The function a root's own statements are generated in when they are held back from the
     // module level (generateGlobalEntryCode): its variables are still the module's, and an
     // exported one is exported (#448). A function nested in them has a funcOp of its own.

@@ -1174,8 +1174,29 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // `f<number>(() => undefined)`: with every type argument given, specialise first, so that an
+        // argument meets the parameter types it is passed as (`() => number`), not `() => T` - an
+        // arrow takes its return type from the parameter it is given to
+        if (mth.isGenericType(funcType) && callExpression->typeArguments.size() > 0)
+        {
+            if (auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>();
+                symbolOp && symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+            {
+                auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.getIdentifierAttr().getValue());
+                if (functionGenericTypeInfo
+                    && functionGenericTypeInfo->typeParams.size() == callExpression->typeArguments.size())
+                {
+                    SmallVector<mlir::Value, 4> emptyOperands;
+                    auto specialized = mlirGenSpecialized(location, funcResult, callExpression->typeArguments, emptyOperands, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(specialized)
+                    funcResult = V(specialized);
+                    funcType = funcResult.getType();
+                }
+            }
+        }
+
         // so if method is generic and you need to infer types you can cast to generic types
-        auto noReceiverTypesForGenericCall = 
+        auto noReceiverTypesForGenericCall =
             mth.isGenericType(funcResult.getType()) 
             && callExpression->typeArguments.size() == 0;
 
