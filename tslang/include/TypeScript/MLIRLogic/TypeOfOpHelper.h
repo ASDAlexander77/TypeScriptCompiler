@@ -283,7 +283,8 @@ class TypeOfOpHelper
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType, CompileOptions& compileOptions)
     {
-        if (isa<mlir_ts::AnyType>(origType))
+        // `unknown` holds the box `any` does
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(origType))
         {
             // AnyLogic al(op, rewriter, tch, loc);
             // return al.getTypeOfAny(value);

@@ -785,6 +785,22 @@ namespace mlirgen
             return mlirGenBinaryValues(location, SyntaxKind::ExclamationEqualsToken, value, nullValue, genContext);
         }
 
+        // `unknown` holds what `any` does, the same box: a value is boxed into it as into `any`, and
+        // read out of it as out of `any`. A value put into `unknown` was the address of a copy of it,
+        // which the way back read as the value itself (`(<C>u).n` read the stack slot holding the
+        // object pointer as the object).
+        if (isa<mlir_ts::UnknownType>(type) && !isa<mlir_ts::AnyType>(valueType))
+        {
+            CAST_A(boxed, location, getAnyType(), value, genContext);
+            return V(builder.create<mlir_ts::CastOp>(location, type, boxed));
+        }
+
+        if (isa<mlir_ts::UnknownType>(valueType) && !isa<mlir_ts::AnyType>(type))
+        {
+            auto boxed = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+            return cast(location, type, boxed, genContext, disableStrictNullCheck);
+        }
+
         // see isCppVTableClass: `any` is unboxed and an interface made by asking the object
         if ((isa<mlir_ts::AnyType>(valueType) && isCppVTableClass(type))
             || ((isa<mlir_ts::AnyType>(type) || isa<mlir_ts::InterfaceType>(type)) && isCppVTableClass(valueType)))
@@ -1992,6 +2008,11 @@ namespace mlirgen
             {
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
+
+            if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
+            {
+                return castAnyToTuple(location, type, value, genContext);
+            }
         }
 
         // opaque to hybrid func
@@ -2707,6 +2728,63 @@ namespace mlirgen
             },
             operands,
             funcCallGenContext);
+    }
+
+    // `any` to a tuple (an object type, `<{ n: number }>x`). The box holds its value's kind: a tuple is
+    // read out of it, and anything else - a class object, a number - throws. It was read as the tuple's
+    // layout whatever it held (`(<{ f: F }>x).f = g` with a class object in `x` wrote over its vtable).
+    // `___check_tuple` only asks the box (it keeps nothing of it); the read after it is the raw one it
+    // was. A tuple of another layout passes the check: the box names no tuple's fields (`{ n: 5 }`
+    // holds an s32, read as a number).
+    ValueOrLogicalResult MLIRGenImpl::castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                     const GenContext &genContext)
+    {
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___check_tuple";
+
+        // the message names the type
+        removeGenericFunctionMap(funcName);
+
+        stringstream ss;
+        ss << S("function __check_tuple<T>(a: any) {\n");
+        ss << S("if (typeof a != 'tuple') throw \"Can't cast from any: the value is not an object of type '")
+           << stows(to_print(type)) << S("'\";\n}\n");
+
+        auto src = ss.str();
+
+        // see castPrimitiveTypeFromAny: the call site is the location until the call below instantiates
+        // the function
+        MLIRLocationGuard vgLoc(overwriteLoc);
+        overwriteLoc = location;
+
+        if (mlir::failed(parsePartialStatements(src)))
+        {
+            assert(false);
+            return mlir::failure();
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+        assert(funcResult);
+
+        GenContext funcCallGenContext(genContext);
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", type});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(value);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto checked = mlirGenCallExpression(
+            location,
+            funcResult,
+            {
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()),
+            },
+            operands,
+            funcCallGenContext);
+        EXIT_IF_FAILED(checked)
+
+        return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
     ValueOrLogicalResult MLIRGenImpl::castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
