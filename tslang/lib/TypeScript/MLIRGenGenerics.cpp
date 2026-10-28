@@ -974,12 +974,28 @@ namespace mlirgen
             }
             else
             {
-                // e.g. `function foo<T>(): T { ... }` called as `foo()` - no explicit type
-                // argument and no parameters/call operands to infer `T` from. Confirmed via
-                // repro. Real TS rejects this too ("type argument cannot be inferred from
-                // usage"); fail cleanly here instead of crashing.
-                emitError(location) << "generic type arguments for '" << name << "' cannot be inferred";
-                return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                // e.g. `function foo<T = string>()` or `function foo<T extends {}>()` called as
+                // `foo()` - no explicit type argument and no parameters/call operands to infer
+                // `T` from: TS takes the default, then the constraint
+                auto [resultDefArg, hasNamedGenericType] = zipTypeParametersWithDefaultArguments(
+                    location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, instantiateGenContext);
+                if (mlir::failed(resultDefArg))
+                {
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                }
+
+                if (hasNamedGenericType == IsGeneric::True)
+                {
+                    anyNamedGenericType = hasNamedGenericType;
+                }
+
+                if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
+                {
+                    // neither a default nor a constraint: TS infers `unknown`, which a native
+                    // function can't be specialised for
+                    emitError(location) << "generic type arguments for '" << name << "' cannot be inferred";
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                }
             }
 
             // we need to wide all types when initializing function
