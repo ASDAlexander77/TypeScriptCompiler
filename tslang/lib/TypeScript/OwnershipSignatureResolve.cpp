@@ -21,13 +21,44 @@ namespace own_signature
             }
         });
 
+        // each slot's members by the root of the vtable's class; a slot one of whose members has an
+        // unknown root is one family, as every slot was before
+        std::map<std::pair<int64_t, std::string>, llvm::SmallVector<std::pair<std::string, mlir::StringAttr>>> slots;
         for (auto &[name, entries] : vtables)
         {
+            auto root = familyRoot(name.drop_back(llvm::StringRef("..vtbl").size()));
             for (auto [position, symbol] : entries)
             {
-                families[{position, methodName(symbol.getValue())}].push_back(symbol);
+                slots[{position, methodName(symbol.getValue())}].push_back({root, symbol});
             }
         }
+
+        for (auto &[slot, members] : slots)
+        {
+            auto unknownRoot = llvm::any_of(members, [](auto &member) { return member.first.empty(); });
+            for (auto &[root, symbol] : members)
+            {
+                families[{slot.first, slot.second, unknownRoot ? std::string() : root}].push_back(symbol);
+            }
+        }
+    }
+
+    std::string OwnershipSignaturePass::familyRoot(llvm::StringRef className)
+    {
+        auto storage = classStorages.lookup(className);
+        for (auto depth = 0; storage && depth < 64; ++depth)
+        {
+            auto fields = storage.getFields();
+            auto base = fields.empty() ? mlir_ts::ClassStorageType() : mlir::dyn_cast<mlir_ts::ClassStorageType>(fields.front().type);
+            if (!base)
+            {
+                return storage.getName().getValue().str();
+            }
+
+            storage = base;
+        }
+
+        return std::string();
     }
 
     mlir_ts::TupleType OwnershipSignaturePass::storageTupleOf(mlir::Type type)
@@ -88,8 +119,18 @@ namespace own_signature
 
     llvm::SmallVector<mlir::StringAttr, 2> OwnershipSignaturePass::familyOf(int64_t index, mlir::StringAttr identifier)
     {
+        // the family of the identifier's class's root, or the slot's one family of an unknown root
         llvm::SmallVector<mlir::StringAttr, 2> members;
-        if (auto found = families.find({index, methodName(identifier.getValue())}); found != families.end())
+        auto name = methodName(identifier.getValue());
+        auto className =
+            name.size() < identifier.getValue().size() ? identifier.getValue().drop_back(name.size() + 1) : llvm::StringRef();
+        auto found = families.find({index, name, familyRoot(className)});
+        if (found == families.end())
+        {
+            found = families.find({index, name, std::string()});
+        }
+
+        if (found != families.end())
         {
             members = found->second;
         }

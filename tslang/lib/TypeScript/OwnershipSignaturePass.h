@@ -217,9 +217,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // Class names, from their vtables, to split a method's symbol into class and method name.
     llvm::StringSet<> classNames;
-    // (vtable position, method name) -> the functions at that position under that name, in every
-    // class vtable of the module: what a virtual call through that slot may reach.
-    std::map<std::pair<int64_t, std::string>, llvm::SmallVector<mlir::StringAttr, 2>> families;
+    // (vtable position, method name, root class) -> the functions at that position under that name,
+    // in every class vtable of the module whose class has that root (familyRoot): what a virtual
+    // call through that slot may reach. A slot with a member of an unknown root has one family, root "".
+    std::map<std::tuple<int64_t, std::string, std::string>, llvm::SmallVector<mlir::StringAttr, 2>> families;
 
     // Functions whose callers are not all known - a caller outside the module, or a reference to
     // the symbol that is not a call this pass resolves - and why, for the error in their body.
@@ -629,6 +630,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // `B.get` -> `get`: the symbol with the longest class name that prefixes it taken off. An
     // override keeps its base's method name, which is what puts both in one family.
     std::string methodName(llvm::StringRef symbol);
+
+    // The class a class's chain of bases ends in (a base is the first field of a class's storage),
+    // or "" when its storage is not known here or the chain is too deep to follow. A virtual call
+    // reaches only overrides in its class's hierarchy: `Array<string>.find` and `Array<int>.find`,
+    // one generic's specializations, are not one family (they disagreed, and both lost their facts).
+    std::string familyRoot(llvm::StringRef className);
 
     llvm::SmallVector<mlir::StringAttr, 2> familyOf(int64_t index, mlir::StringAttr identifier);
 
