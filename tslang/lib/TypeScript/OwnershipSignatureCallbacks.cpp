@@ -83,8 +83,10 @@ namespace own_signature
             if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
             {
                 auto fieldOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                auto refType = fieldOp ? mlir::dyn_cast<mlir_ts::RefType>(fieldOp->getOperand(0).getType()) : mlir_ts::RefType();
                 if (storeOp.getValue() != use.get() || !fieldOp ||
-                    !mlir::isa<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()))
+                    !(mlir::isa<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()) ||
+                      (refType && mlir::isa<mlir_ts::ClassStorageType>(refType.getElementType()))))
                 {
                     return false;
                 }
@@ -111,6 +113,32 @@ namespace own_signature
 
     // The index a function's result family is kept under: no parameter's, nor a field's (spec 56)
     static constexpr int32_t RESULT_FAMILY = std::numeric_limits<int32_t>::min();
+
+    // Whether a class extends another: a base is the first field of a class's storage. One whose
+    // storage is not known here, or whose chain is too deep to follow, may.
+    static bool extendsClass(const llvm::StringMap<mlir_ts::ClassStorageType> &classStorages, llvm::StringRef derived,
+                             llvm::StringRef base)
+    {
+        auto storage = classStorages.lookup(derived);
+        for (auto depth = 0; storage && depth < 64; ++depth)
+        {
+            auto fields = storage.getFields();
+            auto next = fields.empty() ? mlir_ts::ClassStorageType() : mlir::dyn_cast<mlir_ts::ClassStorageType>(fields.front().type);
+            if (!next)
+            {
+                return false;
+            }
+
+            if (next.getName().getValue() == base)
+            {
+                return true;
+            }
+
+            storage = next;
+        }
+
+        return true;
+    }
 
     // Through what unwraps or makes optional a function value, or casts it between function types
     static mlir::Value unwrapFunction(mlir::Value value)
@@ -600,9 +628,22 @@ namespace own_signature
 
     std::pair<mlir::Operation *, int32_t> OwnershipSignaturePass::fieldFamilyKey(mlir::Value ref)
     {
+        // of an object of the class, or of its storage where a derived class's object holds it
         auto fieldOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
-        auto classType = fieldOp ? mlir::dyn_cast<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()) : mlir_ts::ClassType();
-        auto constructor = classType ? functions.lookup((classType.getName().getValue() + ".constructor").str()) : mlir_ts::FuncOp();
+        auto className = mlir::StringAttr();
+        if (auto classType = fieldOp ? mlir::dyn_cast<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()) : mlir_ts::ClassType())
+        {
+            className = classType.getName().getAttr();
+        }
+        else if (auto refType = fieldOp ? mlir::dyn_cast<mlir_ts::RefType>(fieldOp->getOperand(0).getType()) : mlir_ts::RefType())
+        {
+            if (auto storageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(refType.getElementType()))
+            {
+                className = storageType.getName().getAttr();
+            }
+        }
+
+        auto constructor = className ? functions.lookup((className.getValue() + ".constructor").str()) : mlir_ts::FuncOp();
         if (!constructor)
         {
             return {nullptr, -1};
@@ -618,7 +659,7 @@ namespace own_signature
         std::map<std::pair<mlir::Operation *, int32_t>, llvm::SmallVector<mlir_ts::PropertyRefOp>> fields;
         // the classes whose objects go where their fields may be reached otherwise: cast to an
         // interface, `any` or a union
-        llvm::DenseSet<mlir::Type> escaping;
+        llvm::StringSet<> escaping;
         module.walk([&](mlir::Operation *op) {
             if (auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
             {
@@ -638,9 +679,9 @@ namespace own_signature
             });
             for (auto operand : op->getOperands())
             {
-                if (reachedOtherwise && mlir::isa<mlir_ts::ClassType>(operand.getType()))
+                if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(operand.getType()); reachedOtherwise && classType)
                 {
-                    escaping.insert(operand.getType());
+                    escaping.insert(classType.getName().getValue());
                 }
             }
         });
@@ -648,15 +689,18 @@ namespace own_signature
         for (auto &[key, refs] : fields)
         {
             auto constructor = mlir::cast<mlir_ts::FuncOp>(key.first);
-            auto classType = mlir::cast<mlir_ts::ClassType>(refs.front()->getOperand(0).getType());
+            auto className = constructor.getSymName().drop_back(llvm::StringRef(".constructor").size());
             CallbackFamily family;
 
-            // a class another module may build, or another class extends (its storage's first field
-            // is this one's: the field is reached at another position there)
-            family.closed = !callableFromOutside(constructor) && !escaping.contains(classType) &&
-                            llvm::none_of(classStorages, [&](auto &entry) {
-                                auto storageFields = entry.second.getFields();
-                                return !storageFields.empty() && storageFields.front().type == classType.getStorageType();
+            // neither the class nor one extending it (whose object holds the field in its base's
+            // storage, reached there by the same key) is built by another module, nor goes where its
+            // fields are reached otherwise
+            auto closedClass = [&](llvm::StringRef name) {
+                auto classConstructor = functions.lookup((name + ".constructor").str());
+                return classConstructor && !callableFromOutside(classConstructor) && !escaping.contains(name);
+            };
+            family.closed = closedClass(className) && llvm::all_of(classStorages, [&](auto &entry) {
+                                return !extendsClass(classStorages, entry.first(), className) || closedClass(entry.first());
                             });
 
             for (auto fieldOp : refs)
@@ -729,27 +773,7 @@ namespace own_signature
         // name, of any class: another member overrides it when its class extends this one (a base is
         // the first field of a class's storage), or may, when its storage is not known here.
         auto classOf = [&](llvm::StringRef symbol) { return symbol.drop_back(methodName(symbol).size() + 1); };
-        auto extends = [&](llvm::StringRef derived, llvm::StringRef base) {
-            auto storage = classStorages.lookup(derived);
-            for (auto depth = 0; storage && depth < 64; ++depth)
-            {
-                auto fields = storage.getFields();
-                auto next = fields.empty() ? mlir_ts::ClassStorageType() : mlir::dyn_cast<mlir_ts::ClassStorageType>(fields.front().type);
-                if (!next)
-                {
-                    return false;
-                }
-
-                if (next.getName().getValue() == base)
-                {
-                    return true;
-                }
-
-                storage = next;
-            }
-
-            return true;
-        };
+        auto extends = [&](llvm::StringRef derived, llvm::StringRef base) { return extendsClass(classStorages, derived, base); };
 
         auto notOverridden = [&](mlir_ts::FuncOp funcOp) {
             auto symbol = funcOp.getSymNameAttr();

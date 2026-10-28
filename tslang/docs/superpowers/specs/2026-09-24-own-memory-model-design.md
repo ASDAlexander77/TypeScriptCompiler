@@ -5057,5 +5057,27 @@ own, rc, gc and none; own emits no counting. Negatives: `own_err_callback_field_
 `own_err_callback_returned_drops`, whose callbacks replace a global array the walk's element may be
 part of.
 
-Not here: a class whose object becomes an interface or `any`, or that another class extends, keeps
-its fields' families open; so does a field given a callback any other way than those above.
+Not here: a class whose object becomes an interface or `any` keeps its fields' families open; so
+does a field given a callback any other way than those above. A class another class extends: §57.
+
+## 57. A callback field of a class others extend, 2026-10-28
+
+`class Sub extends Walker { ... }` kept `Walker`'s field families open (§55): a derived class's
+object holds its base's storage as its first field, and reaches the field there (`ts.PropertyRef` of
+a `!ts.ref<!ts.class_storage<@Walker>>`), where the family saw no access of its own.
+
+- **The key** (`fieldFamilyKey`) is the same for the field reached in an object of the class and in
+  the base's storage of a derived class's object: the class's constructor and `-1 -` the position.
+  So a derived class's reads and stores of the field (`this.f(v)`, `this.f = drain`) are the
+  family's, and a parameter stored there gives it on (`onlyCalledValue` takes a store into a
+  storage's field as a forward).
+- **Closed** while neither the class nor any class extending it (`extendsClass`, the chain of first
+  fields; one too deep to follow may) is built by another module, nor has an object become an
+  interface, `any`, `object`, `unknown` or a union. A class-to-class cast (`Sub` to `Walker`) keeps it.
+
+`own_callback_extended` stores and calls the base's field from a derived class and one two levels
+down, under own, rc, gc and none; own emits no counting. Negative: `own_err_callback_extended_drops`,
+whose derived class stores a function that replaces a global array the walk's element may be part of.
+
+Not here: a class whose object, or a derived class's, becomes an interface or `any` keeps its fields'
+families open.
