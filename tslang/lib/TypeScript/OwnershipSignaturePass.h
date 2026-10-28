@@ -828,10 +828,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     static bool isFunctionValueType(mlir::Type type);
 
-    // Is every use of this parameter - through its slot, never assigned or captured - the function
-    // a call goes through, a test of whether an optional one is given, or an argument of a call
-    // (`forwards`: it gives the parameter on to that call's)?
-    static bool onlyCalledParam(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards);
+    // Is every use of this parameter - through its slot, never assigned - the function a call goes
+    // through, a test of whether an optional one is given, or an argument of a call (`forwards`: it
+    // gives the parameter on to that call's)? A captured one may also be in one closure's capture
+    // box, whose body uses it as such (`a.forEach((v) => f(v))`, spec 54): `captured` takes the
+    // closure's (function, box position) for each.
+    bool onlyCalledParam(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards,
+                         llvm::SmallVectorImpl<std::pair<mlir::Operation *, int32_t>> &captured);
+
+    // (closure function, capture box position) -> the (function, parameter index) whose callback
+    // parameter that field holds the cell of (spec 54)
+    llvm::DenseMap<std::pair<mlir::Operation *, int32_t>, std::pair<mlir::Operation *, int32_t>> capturedCallbacks;
+
+    // The closure function a capture box is bound to, when every box it is bound to holds `cell` in
+    // field `position`.
+    mlir_ts::FuncOp closureFunctionOf(mlir::Value box, mlir::Value cell, int32_t position);
 
     // The function a caller passes as `value`: its symbol, seen as a function value through casts
     // between function types and made optional, or a closure over a capture box built of it. Null
@@ -1090,6 +1101,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // or `delete`? A local's own releases are not drops, nor is the constructor's filling of the
     // object it is building.
     bool dropsInBody(mlir_ts::FuncOp funcOp);
+    // Is `slot` a local declared from a read rc counts, and never assigned, so that its release is
+    // never the last of a handle (spec 51)?
+    static bool isCountedReadSlot(mlir::Value slot);
 
     // Can the block this reference points into be one the function's caller can reach? Walks up
     // from a place to what holds it. Not when every way up ends in a block the function made (an

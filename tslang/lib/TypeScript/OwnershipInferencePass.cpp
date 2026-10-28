@@ -239,7 +239,8 @@ namespace own_inference
                 // an overwrite of a field or an element, or an assignment to a captured variable or
                 // a global (spec 29: the global may hold what `this` or a parameter is)
                 auto slot = releaseSlotOp.getSlot();
-                if (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot) || slot.getDefiningOp<mlir_ts::AddressOfOp>())
+                if (!releasesNothing(releaseSlotOp) &&
+                    (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot) || slot.getDefiningOp<mlir_ts::AddressOfOp>()))
                 {
                     drops.push_back(op);
                 }
@@ -562,6 +563,21 @@ namespace own_inference
                 continue;
             }
 
+            // the place owns the copy, or a count of a handle's of its own (spec 23.2)
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(call))
+            {
+                mlir::OpBuilder builder(storeOp);
+                if (isHandle(value))
+                {
+                    builder.create<mlir_ts::RetainOp>(storeOp->getLoc(), value);
+                    continue;
+                }
+
+                auto copy = builder.create<mlir_ts::StringCopyOp>(storeOp->getLoc(), value.getType(), value);
+                storeOp.getValueMutable().assign(copy);
+                continue;
+            }
+
             // a callee that keeps it takes the copy; else it is released after the call
             auto args = callArgs(call);
             auto kept = llvm::any_of(ownedParams(call), [&](int32_t index) {
@@ -569,6 +585,19 @@ namespace own_inference
             });
 
             mlir::OpBuilder builder(call);
+            // a handle: a count of its own for the call, given back after it (spec 50)
+            if (isHandle(value))
+            {
+                builder.create<mlir_ts::RetainOp>(call->getLoc(), value);
+                if (!kept)
+                {
+                    builder.setInsertionPointAfter(call);
+                    builder.create<mlir_ts::ReleaseOp>(call->getLoc(), value);
+                }
+
+                continue;
+            }
+
             auto copy = builder.create<mlir_ts::StringCopyOp>(call->getLoc(), value.getType(), value);
             for (auto &operand : call->getOpOperands())
             {

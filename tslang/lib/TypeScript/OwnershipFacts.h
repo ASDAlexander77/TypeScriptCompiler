@@ -67,6 +67,9 @@ namespace mlir_ts = mlir::typescript;
 // The position a place reached through an interface is given: its position in the object is not
 // known (spec 28)
 constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
+// The position of a captured variable's cell holding a string, assigned: the old string goes, and a
+// string owns nothing else, so only a borrow that is a string may be it (spec 52)
+constexpr int64_t OWN_CAPTURED_STRING_POSITION = -4;
 // On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
 // result that borrows): why, for the error the body gets instead.
 #define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"
@@ -954,6 +957,14 @@ inline bool ownsHeap(mlir::Location location, mlir::Type type)
 inline bool ownsHeap(mlir::Value value)
 {
     return ownsHeap(value.getLoc(), value.getType());
+}
+
+// The release of a slot whose type owns no block - a captured number assigned (`t += v.n` in a
+// callback) - destroys nothing (spec 52)
+inline bool releasesNothing(mlir_ts::ReleaseSlotOp releaseSlotOp)
+{
+    auto refType = mlir::dyn_cast<mlir_ts::RefType>(releaseSlotOp.getSlot().getType());
+    return refType && !ownsHeap(releaseSlotOp.getLoc(), refType.getElementType());
 }
 
 // Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.

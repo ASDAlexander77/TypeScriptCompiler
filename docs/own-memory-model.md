@@ -746,8 +746,11 @@ a reference gives it back on every path out of a function.
   elements with `[a[i], a[j]] = [a[j], a[i]]`, which moves nothing; swap two elements or two fields
   the same way in your own code. A swap through a local (`let t = a[i]; a[i] = a[j]; a[j] = t`)
   gives an object in `t` a second owner, which is an error. A callback your function only calls,
-  tests or hands on to another function (as `sort` hands its comparison to a helper) is known by
-  the functions its callers pass; one stored, captured or returned is not. `copyWithin` works on
+  tests (`compare && compare(a, b)`), hands on to another function (as `sort` hands its comparison
+  to a helper), names again (`const g = f`) or captures in a closure that calls it (`a.forEach((v)
+  => f(v))`) is known by the functions its callers pass; one stored in a field, returned, or
+  captured in a closure that is itself kept in a local is not. A callback may assign the numbers
+  and strings it captures (`total += v.n`). `copyWithin` works on
   numbers and strings (a string is copied where it moves); over class instances it would leave one
   object in two elements, an error by design.
 - Iterator helpers work, the lazy ones (`map`, `filter`, `take`, `drop`) taking their source over
@@ -763,8 +766,9 @@ a reference gives it back on every path out of a function.
 - `reduce` and `reduceRight` over an array of arrays or objects are errors: with no initial value
   they start from an element, and may return it as it is, a second owner of it.
 - The `Array<T>` class holds values, strings or `Shared<T>` handles, as `Map` does: `new
-  Array<number>()` works, and `new Array<Node>()` is a compile error that points at `Shared<T>`.
-  `Array<string>` and `Array<Shared<T>>` do not compile yet.
+  Array<number>()`, `new Array<string>()` and `new Array<Shared<Node>>()` work, and `new
+  Array<Node>()` is a compile error that points at `Shared<T>`. A string stored again and again
+  (`fill`) is copied each time.
 - A parameter with a default (`constructor(private items: T[] = [])`) is kept like any other
   parameter, whether the caller passes it or not.
 - `Shared<T>` cycles are never freed.

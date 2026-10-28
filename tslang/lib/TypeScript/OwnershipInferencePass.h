@@ -232,7 +232,8 @@ class OwnershipInferencePass
     // rc's references for boxes, which the closures decide
     llvm::DenseSet<mlir::Operation *> captureRetains;
     // A string read out of a place, given to a call that may release it (the dry run's): the call
-    // gets a copy instead, released after it (spec 22), read -> call
+    // gets a copy instead, released after it (spec 22), read -> call; or stored into a place, which
+    // owns the copy (spec 50), read -> store
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
     // A move out of a field of an owning record local, being checked (spec 48): its retain and its
     // taker, which walkBorrowed takes for uses of the borrow and not for keeps
@@ -827,6 +828,9 @@ class OwnershipInferencePass
     bool fieldTakeHolds(mlir::Operation *read, const FieldTake &take, llvm::ArrayRef<BorrowUse> uses);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
+    // Does `store` put `value`, a string read out of a place, into another place with no retain of
+    // rc's for it, so that the place can take a copy instead (callCopies)?
+    bool storesCopyOf(mlir::Operation *store, mlir::Value value);
 
     // A local that holds a borrow through `user`, and the field path under it that holds it (empty:
     // the local's value itself): a store of it into the local, or into a field of the local's value
