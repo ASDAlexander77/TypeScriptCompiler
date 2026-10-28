@@ -14,11 +14,16 @@ function label(i: number) {
     return "s" + i;
 }
 
+// a function of its own, not the built-in `forEach`, which is inlined without the default library
+function forAll(a: string[], func: (v: string) => void) {
+    for (let i = 0; i < a.length; i++) func(a[i]);
+}
+
 class Names {
     constructor(private data: string[] = []) {}
 
     forEach(func: (v: string) => void) {
-        this.data.forEach(func);
+        forAll(this.data, func);
     }
 
     count(func: (v: string) => boolean) {
