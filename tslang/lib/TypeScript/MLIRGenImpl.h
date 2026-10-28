@@ -3276,6 +3276,9 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext);
 
+    std::tuple<mlir::LogicalResult, mlir::Type> getPairedGetAccessorType(SignatureDeclarationBase setAccessorAST,
+                                                                        const GenContext &genContext);
+
     std::tuple<std::string, std::string> getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
                                                            const GenContext &genContext);
 
@@ -6781,6 +6784,30 @@ class MLIRGenImpl
             }
         };
 
+        // a set accessor takes the value as its last parameter, whose type need not be the one its get
+        // accessor returns (the accessor's type)
+        auto setAccessorValueType = [&](mlir::Type setAccessorType, mlir::Type accessorType) -> mlir::Type {
+            if (!mth.isAnyFunctionType(setAccessorType))
+            {
+                return accessorType;
+            }
+
+            auto params = mth.getParamsFromFuncRef(setAccessorType);
+            return params.empty() ? accessorType : params.back();
+        };
+
+        auto setAccessorSymbolValueType = [&](mlir::FlatSymbolRefAttr setAccessor, mlir::Type accessorType) -> mlir::Type {
+            if (setAccessor)
+            {
+                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(setAccessor))
+                {
+                    return setAccessorValueType(funcOp.getFunctionType(), accessorType);
+                }
+            }
+
+            return accessorType;
+        };
+
         // TODO: logic to support safe cast
         if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
         {
@@ -6898,7 +6925,7 @@ class MLIRGenImpl
         }
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
-            syncSavingValue(accessorOp.getType(0));
+            syncSavingValue(setAccessorSymbolValueType(accessorOp.getSetAccessorAttr(), accessorOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6913,7 +6940,7 @@ class MLIRGenImpl
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
-            syncSavingValue(thisAccessorOp.getType(0));
+            syncSavingValue(setAccessorSymbolValueType(thisAccessorOp.getSetAccessorAttr(), thisAccessorOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6928,7 +6955,7 @@ class MLIRGenImpl
         }
         else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
         {
-            syncSavingValue(thisAccessorIndirectOp.getType(0));
+            syncSavingValue(setAccessorValueType(thisAccessorIndirectOp.getSetAccessor().getType(), thisAccessorIndirectOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6945,7 +6972,7 @@ class MLIRGenImpl
         } 
         else if (auto thisIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
         {
-            syncSavingValue(thisIndexAccessorOp.getType(0));
+            syncSavingValue(setAccessorSymbolValueType(thisIndexAccessorOp.getSetAccessorAttr(), thisIndexAccessorOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6960,7 +6987,7 @@ class MLIRGenImpl
         }         
         else if (auto thisIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
         {
-            syncSavingValue(thisIndirectIndexAccessorOp.getType(0));
+            syncSavingValue(setAccessorValueType(thisIndirectIndexAccessorOp.getSetAccessor().getType(), thisIndirectIndexAccessorOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6975,7 +7002,7 @@ class MLIRGenImpl
         }                
         else if (auto boundAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
         {
-            syncSavingValue(boundAccessorIndirectOp.getType(0));
+            syncSavingValue(setAccessorValueType(boundAccessorIndirectOp.getSetAccessor().getType(), boundAccessorIndirectOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -6991,7 +7018,7 @@ class MLIRGenImpl
         }         
         else if (auto boundIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
         {
-            syncSavingValue(boundIndirectIndexAccessorOp.getType(0));
+            syncSavingValue(setAccessorValueType(boundIndirectIndexAccessorOp.getSetAccessor().getType(), boundIndirectIndexAccessorOp.getType(0)));
             if (!savingValue)
             {
                 return mlir::failure();

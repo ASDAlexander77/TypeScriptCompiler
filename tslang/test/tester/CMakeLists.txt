@@ -609,6 +609,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-compile-00-class-implicit-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
 tslang_add_test(NAME test-compile-00-class-super-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
@@ -1224,6 +1225,7 @@ tslang_add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-jit-00-class-implicit-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
 tslang_add_test(NAME test-jit-00-class-super-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
@@ -2178,6 +2180,7 @@ set(TSLANG_CORPUS
     00class_accessor_virtual.ts
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
+    00class_accessor_untyped_setter.ts
     00class_accessor.ts
     00class_accessor2.ts
     00class_constr_fields.ts
