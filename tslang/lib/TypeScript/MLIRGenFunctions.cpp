@@ -307,6 +307,22 @@ namespace mlirgen
                 LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "\n");
             }
 
+            // a set accessor's value without a type is of the type its get accessor returns
+            if (mth.isNoneType(type) && kind == SyntaxKind::SetAccessor && !typeParameter && !initializer)
+            {
+                auto [result, getAccessorType] = getPairedGetAccessorType(parametersContextAST, genContext);
+                if (mlir::failed(result))
+                {
+                    return {mlir::failure(), isGenericTypes, params};
+                }
+
+                if (getAccessorType)
+                {
+                    type = getAccessorType;
+                    isGenericTypes |= mth.isGenericType(type);
+                }
+            }
+
             if (mth.isNoneType(type))
             {
                 if (!typeParameter && !initializer)
@@ -371,6 +387,75 @@ namespace mlirgen
         }
 
         return {mlir::success(), isGenericTypes, params};
+    }
+
+    // the type a class's set accessor takes when its parameter has none: what the get accessor of the
+    // same name returns. No type when the class has no such get accessor; a failure while the get
+    // accessor, declared after the set accessor, is not resolved yet (mlirGenClassMembers retries it).
+    std::tuple<mlir::LogicalResult, mlir::Type> MLIRGenImpl::getPairedGetAccessorType(
+        SignatureDeclarationBase setAccessorAST, const GenContext &genContext)
+    {
+        auto parent = setAccessorAST->parent;
+        if (parent != SyntaxKind::ClassDeclaration && parent != SyntaxKind::ClassExpression)
+        {
+            return {mlir::success(), mlir::Type()};
+        }
+
+        auto [name, nameResult] = getNameForMethod(setAccessorAST, genContext);
+        if (!nameResult || name.empty())
+        {
+            return {mlir::success(), mlir::Type()};
+        }
+
+        auto isStatic = hasModifier(setAccessorAST, SyntaxKind::StaticKeyword);
+        FunctionLikeDeclarationBase getAccessorAST;
+        for (auto &classMember : parent.as<ClassLikeDeclaration>()->members)
+        {
+            if (classMember != SyntaxKind::GetAccessor || hasModifier(classMember, SyntaxKind::StaticKeyword) != isStatic)
+            {
+                continue;
+            }
+
+            auto getAccessor = classMember.as<FunctionLikeDeclarationBase>();
+            auto [getName, getNameResult] = getNameForMethod(getAccessor, genContext);
+            if (getNameResult && getName == name)
+            {
+                getAccessorAST = getAccessor;
+                break;
+            }
+        }
+
+        if (!getAccessorAST)
+        {
+            return {mlir::success(), mlir::Type()};
+        }
+
+        if (getAccessorAST->type)
+        {
+            auto type = getType(getAccessorAST->type, genContext);
+            return {type ? mlir::success() : mlir::failure(), type};
+        }
+
+        // the type the get accessor's body gives it, once the get accessor is registered
+        if (genContext.thisClassType)
+        {
+            if (auto classInfo = getClassInfoByFullName(genContext.thisClassType.getName().getValue()))
+            {
+                auto accessorIndex = classInfo->getAccessorIndex(name);
+                if (accessorIndex >= 0)
+                {
+                    auto &getFunc = classInfo->accessors[accessorIndex].get;
+                    if (getFunc)
+                    {
+                        return {mlir::success(), getFunc.funcType.getNumResults() > 0
+                                                     ? getFunc.funcType.getResult(0)
+                                                     : mlir::Type()};
+                    }
+                }
+            }
+        }
+
+        return {mlir::failure(), mlir::Type()};
     }
 
     std::tuple<std::string, std::string> MLIRGenImpl::getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
