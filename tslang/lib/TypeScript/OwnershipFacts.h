@@ -388,8 +388,12 @@ inline bool isView(mlir::Operation *op)
         return valueType && valueType.getStorageType() == tuple;
     };
 
+    // a class object seen as the opaque pointer it is: `instanceof` hands one to the class's
+    // `.instanceOf` as its `this`
+    auto isOpaqueObject = mlir::isa<mlir_ts::ClassType>(in) && mlir::isa<mlir_ts::OpaqueType>(out);
+
     return (keeps(in) && keeps(out)) || (isClosure(in) && isClosure(out)) || isMadeObject() || isNullableView ||
-           isValueStorage(in, out) || isValueStorage(out, in);
+           isValueStorage(in, out) || isValueStorage(out, in) || isOpaqueObject;
 }
 
 // The block a value is a view of.

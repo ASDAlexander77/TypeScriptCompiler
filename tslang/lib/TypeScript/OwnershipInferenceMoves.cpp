@@ -426,9 +426,10 @@ namespace own_inference
             return true;
         }
 
-        // a test - `if (d)`, `d?.x`, `typeof u` - asks about the value, and keeps nothing
+        // a test - `if (d)`, `d?.x`, `typeof u`, `u instanceof A` (which reads the object's vtable
+        // for its `.instanceOf`) - asks about the value, and keeps nothing
         if (mlir::isa<mlir_ts::HasValueOp, mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::TypeOfOp,
-                      mlir_ts::TypeOfAnyOp>(user))
+                      mlir_ts::TypeOfAnyOp, mlir_ts::VTableOffsetRefOp>(user))
         {
             return true;
         }

@@ -5200,3 +5200,20 @@ emits no counting.
 Not here: a function expression member, an arrow that says `this`, and any member of a literal with no
 object-type receiver (`const o = { w: (x: number) => x }; apply(o)`) is a method bound to the literal as
 before, and such a literal read into a function-typed field is still rejected under own.
+
+## 61. A union value narrowed by `instanceof`, 2026-10-28
+
+`const u = pick(i); if (u instanceof A) { u.walk(a); u.walk(a); }` was `'this value' is used here
+after its value was moved` at the second call, the move put at the test. `instanceof` on a union reads
+the object out of it (`ts.GetValueFromUnion`), casts it to an opaque pointer, and calls its class's
+`.instanceOf` through its vtable (`ts.VTableOffsetRef`) with that pointer as `this`. The cast to
+`!ts.opaque` was no view, so it was a second owner of the object, and with that seen through, the
+vtable read was a taker.
+
+- **A class object cast to `!ts.opaque`** is the same block (`isView`): the pointer, reinterpreted.
+- **`ts.VTableOffsetRef`** reads the object's vtable and keeps nothing (`isBorrow`), as the other tests
+  of a value do (`typeof`, `if (d)`).
+
+`own_union_narrowed_calls` calls the narrowed name twice with a churn between, under own, rc, gc and
+none; own emits no counting. Negative: `own_err_union_narrowed_moved`, which stores the narrowed value
+into a global and then calls through it.
