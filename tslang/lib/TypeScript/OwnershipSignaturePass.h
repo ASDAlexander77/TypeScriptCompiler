@@ -840,6 +840,24 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // parameter that field holds the cell of (spec 54)
     llvm::DenseMap<std::pair<mlir::Operation *, int32_t>, std::pair<mlir::Operation *, int32_t>> capturedCallbacks;
 
+    // Takes `value`, given to `family` at `at`, in: a function by name (a member), an optional one not
+    // given, a callback parameter of the function `at` is in (a source), or what a function returning
+    // a function value returned (its result family, a source, spec 56). False for anything else.
+    bool takeFamilyValue(CallbackFamily &family, mlir::Value value, mlir::Operation *at);
+
+    // The families of what each function returning a function value returns (spec 56)
+    void collectResultFamilies();
+
+    // The family key of a class's field `ref` points at: its class's constructor, and -1 - the
+    // field's position, which no parameter has (spec 55). Null when the class has no constructor.
+    std::pair<mlir::Operation *, int32_t> fieldFamilyKey(mlir::Value ref);
+
+    // The families of the class fields of a callback type: the functions stored into each by name,
+    // and the callback parameters given on into it, when every read of it is only called or given on
+    // and no object of the class is reached but as itself (spec 55)
+    void collectFieldFamilies(mlir::ModuleOp module,
+                              llvm::function_ref<std::pair<mlir::Operation *, int32_t>(mlir::OpOperand &)> parameterOf);
+
     // The closure function a capture box is bound to, when every box it is bound to holds `cell` in
     // field `position`.
     mlir_ts::FuncOp closureFunctionOf(mlir::Value box, mlir::Value cell, int32_t position);
@@ -856,8 +874,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     void collectCallbackFamilies(mlir::ModuleOp module);
 
-    // A call through a parameter whose family is closed: its members.
-    void resolveCallback(mlir_ts::LoadOp loadOp, Callees &callees);
+    // A call through a callback - a parameter, a captured one, a class's field, or what a function
+    // returned (spec 56) - whose family is closed: its members.
+    void resolveCallback(mlir::Value callee, Callees &callees);
 
     // A member's facts as a call through its family sees them: each parameter k as argument
     // k - shift. False when a fact is about the capture box itself, which the call does not pass.

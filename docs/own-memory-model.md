@@ -748,9 +748,12 @@ a reference gives it back on every path out of a function.
   gives an object in `t` a second owner, which is an error. A callback your function only calls,
   tests (`compare && compare(a, b)`), hands on to another function (as `sort` hands its comparison
   to a helper), names again (`const g = f`) or captures in a closure that calls it (`a.forEach((v)
-  => f(v))`) is known by the functions its callers pass; one stored in a field, returned, or
-  captured in a closure that is itself kept in a local is not. A callback may assign the numbers
-  and strings it captures (`total += v.n`). `copyWithin` works on
+  => f(v))`, also kept in a local) is known by the functions its callers pass. So is one stored in
+  a class's field (`constructor(private f: ...)`, `this.f = f`) and one a function returns. Not
+  when the class is extended, or one of its objects becomes an interface or `any`: then its
+  fields' callbacks may be any function. A callback may assign the numbers and strings it
+  captures (`total += v.n`); one stored in an object may not capture locals, which would escape
+  with it. `copyWithin` works on
   numbers and strings (a string is copied where it moves); over class instances it would leave one
   object in two elements, an error by design.
 - Iterator helpers work, the lazy ones (`map`, `filter`, `take`, `drop`) taking their source over
