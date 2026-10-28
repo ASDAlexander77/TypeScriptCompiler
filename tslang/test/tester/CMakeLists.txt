@@ -3974,7 +3974,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_take own_rest_array_borrows own_string_copies
                  own_captured_string_callback own_callback_and_call own_callback_captured
                  own_callback_shapes own_callback_extended own_callback_interface
-                 own_generic_specializations)
+                 own_generic_specializations own_callback_cast own_callback_interface_slot)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4012,7 +4012,7 @@ foreach(keeps_mm rc gc none)
                        own_generator_take own_rest_array_borrows own_string_copies
                        own_captured_string_callback own_callback_and_call own_callback_captured
                        own_callback_shapes own_callback_extended own_callback_interface
-                       own_generic_specializations)
+                       own_generic_specializations own_callback_cast own_callback_interface_slot)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4715,7 +4715,10 @@ set(own_error_cases
     "own_err_callback_returned_drops|:21:9: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_callback_extended_drops|:16:13: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_callback_interface_param|:34:11: error: a value read out of the global 'pool' is lent to a call that may release or overwrite it"
-    "own_err_callback_interface_field|:46:11: error: a value read out of the global 'pool' is lent to a call that may release or overwrite it")
+    "own_err_callback_interface_field|:46:11: error: a value read out of the global 'pool' is lent to a call that may release or overwrite it"
+    "own_err_callback_cast_field_drops|:16:13: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_callback_interface_slot_drops|:41:11: error: a value read out of the global 'pool' is lent to a call that may release or overwrite it"
+    "own_err_callback_interface_slot_targets|:47:12: error: a value read out of the global 'pool' is lent to a call that may release or overwrite it")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

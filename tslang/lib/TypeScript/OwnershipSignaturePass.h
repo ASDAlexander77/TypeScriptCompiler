@@ -828,6 +828,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // (function, parameter index) -> the functions its callers pass there
     std::map<std::pair<mlir::Operation *, int32_t>, CallbackFamily> callbackFamilies;
+
+    // the families a value given on reaches: one, or one per member of an interface's slot (spec 59)
+    using FamilyTargets = llvm::SmallVector<std::pair<mlir::Operation *, int32_t>, 1>;
     // the members whose families disagreed (meetFacts), for the error in their bodies
     llvm::DenseSet<mlir::Operation *> demotedCallbacks;
     // uses of a member's symbol that only pass it to a closed family: no escape (findOpen)
@@ -861,9 +864,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // The families of the class fields of a callback type: the functions stored into each by name,
     // and the callback parameters given on into it, when every read of it is only called or given on
-    // and no object of the class is reached but as itself (spec 55)
+    // and no other module builds the class (spec 55, 59)
     void collectFieldFamilies(mlir::ModuleOp module,
-                              llvm::function_ref<std::pair<mlir::Operation *, int32_t>(mlir::OpOperand &)> parameterOf);
+                              llvm::function_ref<FamilyTargets(mlir::OpOperand &)> parameterOf);
 
     // The closure function a capture box is bound to, when every box it is bound to holds `cell` in
     // field `position`.
