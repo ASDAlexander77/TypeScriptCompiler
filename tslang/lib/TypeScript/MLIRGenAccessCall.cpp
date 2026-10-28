@@ -1892,6 +1892,11 @@ namespace mlirgen
             return 3;
         }
 
+        // an optional parameter (`count: int = 0`) takes what it holds as well as that: scored as
+        // optional<si32>, an int fitted only by conversion, and `new Array<int>(10)` went to
+        // `(...args: T[])` declared after `(count: int)`
+        paramType = mth.stripOptionalType(paramType);
+
         auto literalType = dyn_cast<mlir_ts::LiteralType>(argType);
         auto baseType = literalType ? literalType.getElementType() : argType;
         // `number` is a C `double`, as f64 is
