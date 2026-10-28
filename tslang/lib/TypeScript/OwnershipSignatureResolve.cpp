@@ -314,16 +314,17 @@ namespace own_signature
             resolveInterfaceSlot(interfaceRefOp, interfaceFamilies, callees);
             return;
         }
-        else if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
+        else if (mlir::isa_and_nonnull<mlir_ts::LoadOp>(def) || (def && isCall(def)))
         {
-            resolveCallback(loadOp, callees);
+            // a callback parameter, field or local; or what a call returned (spec 56)
+            resolveCallback(callee, callees);
             return;
         }
         else if (auto valueOp = mlir::dyn_cast_or_null<mlir_ts::ValueOp>(def);
                  valueOp && valueOp.getIn().getDefiningOp<mlir_ts::LoadOp>())
         {
             // an optional callback, called once tested
-            resolveCallback(valueOp.getIn().getDefiningOp<mlir_ts::LoadOp>(), callees);
+            resolveCallback(valueOp.getIn(), callees);
             return;
         }
         else if (auto boundOp = mlir::dyn_cast_or_null<mlir_ts::CreateBoundFunctionOp>(def))

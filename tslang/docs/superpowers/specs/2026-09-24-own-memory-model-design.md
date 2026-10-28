@@ -5007,5 +5007,55 @@ churning between steps, under own, rc, gc and none; own emits no counting. Negat
 `own_err_callback_captured_drops`, whose callback replaces a global array that the walk's element
 may be part of.
 
-Not here: a closure held in a local and called (`const call = (v) => f(v); call(v)`), and a
-callback stored into a field or returned, keep their families open.
+Not here, then: a closure held in a local and called, and a callback stored into a field or
+returned (§55, §56).
+
+## 55. A callback stored into a class's field, 2026-10-28
+
+`class Walker { constructor(private f: (v: Item) => void) {} walk(a) { ... this.f(a[i]) ... } }`
+was `borrows an element but is used here after it may be released or overwritten`: a call through a
+field reached any function, and the constructor's parameter, stored, had no family (§43).
+
+- **A field's family** (`collectFieldFamilies`) is kept under its class's constructor and `-1 -` the
+  field's position (`fieldFamilyKey`), which no parameter has. Its members are the functions stored
+  into the field by name; its sources, the callback parameters given on into it (`this.f = f` in a
+  constructor or a method) and what functions returning one returned (§56) (`takeFamilyValue`).
+  Each read of the field is only called, tested, or given on (`onlyCalledValue`), and the field's
+  own `ts.ReleaseSlot` and `ts.RetainSlot` are its overwrites.
+- **The class** is closed: no other module builds it (`callableFromOutside` of its constructor), no
+  class extends it (another class's storage would hold the field at another position), and no
+  object of it becomes an interface, `any`, `object`, `unknown` or a union, through which its fields
+  are reached by no `ts.PropertyRef` of its own.
+- **A parameter stored into the field** gives it on (`onlyCalledValue` takes the store, and rc's
+  retain for it, as a forward; `parameterOf` names the field's family), so the constructor's
+  parameter is closed while the field's family is.
+- **A call through the field** (`resolveCallback`) resolves through its family.
+
+## 56. A callback a function returns, 2026-10-28
+
+`function above(n) { return n > 1 ? (v) => v.n > 1 : (v) => v.n > 0; }`, called through what it
+returned or given on (`count(items, above(0))`), reached any function.
+
+- **A result family** (`collectResultFamilies`) of each function whose one result is a function value
+  is kept under the function and `RESULT_FAMILY`. What it returns - through the result slot and the
+  block arguments branches merge - is each a function by name, a callback parameter given on, or
+  what another such function returned; anything else opens it. A member's symbol that only flows to
+  the return (`flowsToReturn`) is passed to the family, not escaped.
+- **A value given to a family** (`takeFamilyValue`, shared by parameter, field and result families)
+  may be a call of such a function, or a local declared from one and never assigned
+  (`givenResult`): the result family is its source.
+- **A call through it** - the call's result itself, or such a local - resolves through the result
+  family (`resolveCallback` now takes the callee value).
+
+With §54, a closure held in a local and called (`const call = (v) => f(v); call(v)`) compiles: the
+local is a view of the closure, called by name with its box.
+
+`own_callback_shapes` walks an array a class holds through a closure in a local, a callback stored
+into a field by a constructor and by a method, and callbacks a function returns, called through a
+local and given on, reading each element again after the call and churning between steps, under
+own, rc, gc and none; own emits no counting. Negatives: `own_err_callback_field_drops` and
+`own_err_callback_returned_drops`, whose callbacks replace a global array the walk's element may be
+part of.
+
+Not here: a class whose object becomes an interface or `any`, or that another class extends, keeps
+its fields' families open; so does a field given a callback any other way than those above.

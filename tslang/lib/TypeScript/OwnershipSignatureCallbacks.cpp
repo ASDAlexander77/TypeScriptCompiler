@@ -30,7 +30,8 @@ namespace own_signature
     }
 
     // A read of a callback parameter: the function a call goes through, tested for being given
-    // (`if (f)`), unwrapped, or an argument of a call that gives it on (`forwards`)
+    // (`if (f)`), unwrapped, or an argument of a call or stored into a class's field, either of
+    // which gives it on (`forwards`)
     static bool onlyCalledValue(mlir::Value value, llvm::SmallVectorImpl<mlir::OpOperand *> &forwards, int depth = 0)
     {
         if (depth > 8)
@@ -72,6 +73,26 @@ namespace own_signature
                 continue;
             }
 
+            // rc's count for a store of it
+            if (mlir::isa<mlir_ts::RetainOp>(user))
+            {
+                continue;
+            }
+
+            // stored into a class's field: given on to the field's family (spec 55)
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+            {
+                auto fieldOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (storeOp.getValue() != use.get() || !fieldOp ||
+                    !mlir::isa<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()))
+                {
+                    return false;
+                }
+
+                forwards.push_back(&use);
+                continue;
+            }
+
             // the callee, or one argument: never both, never twice
             auto called = calleeValue(user) == use.get();
             if (!isCall(user) || llvm::count(callArgs(user), use.get()) + (called ? 1 : 0) != 1)
@@ -86,6 +107,62 @@ namespace own_signature
         }
 
         return true;
+    }
+
+    // The index a function's result family is kept under: no parameter's, nor a field's (spec 56)
+    static constexpr int32_t RESULT_FAMILY = std::numeric_limits<int32_t>::min();
+
+    // Through what unwraps or makes optional a function value, or casts it between function types
+    static mlir::Value unwrapFunction(mlir::Value value)
+    {
+        for (auto depth = 0; value && depth < 8; ++depth)
+        {
+            auto *def = value.getDefiningOp();
+            if (auto valueOp = mlir::dyn_cast_or_null<mlir_ts::ValueOp>(def))
+            {
+                value = valueOp.getIn();
+            }
+            else if (auto optionalOp = mlir::dyn_cast_or_null<mlir_ts::OptionalValueOp>(def))
+            {
+                value = optionalOp.getIn();
+            }
+            else if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def); castOp && isFunctionValue(castOp.getType()))
+            {
+                value = castOp.getIn();
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return value;
+    }
+
+    // A local declared from `value` and never assigned nor captured: each read of it is `value`
+    static mlir::Value initializerOf(mlir_ts::VariableOp varOp)
+    {
+        if (!varOp || !varOp.getInitializer() || varOp.getCaptured().value_or(false) ||
+            llvm::any_of(varOp->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::StoreOp>(user); }))
+        {
+            return {};
+        }
+
+        return varOp.getInitializer();
+    }
+
+    // The function whose call made `value` - directly, or read out of a local declared from it - when
+    // it returns a function value: its result family is the value's (spec 56)
+    static mlir::FlatSymbolRefAttr givenResult(mlir::Value value)
+    {
+        value = unwrapFunction(value);
+        if (auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp())
+        {
+            value = unwrapFunction(initializerOf(loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>()));
+        }
+
+        auto *call = value ? value.getDefiningOp() : nullptr;
+        return call && isCall(call) && call->getNumResults() == 1 ? directCallee(call) : mlir::FlatSymbolRefAttr();
     }
 
     // The caller's parameter `value` gives on: a read of its slot, unwrapped, made optional or cast
@@ -360,6 +437,275 @@ namespace own_signature
         return true;
     }
 
+    // Is `use` a way of a value to its function's return only: the return, a store into the slot
+    // only returned, a cast between function types or a branch to a block argument that is?
+    static bool flowsToReturn(mlir::OpOperand &use, int depth = 0)
+    {
+        if (depth > 8)
+        {
+            return false;
+        }
+
+        auto *user = use.getOwner();
+        if (mlir::isa<mlir_ts::ReturnInternalOp>(user))
+        {
+            return true;
+        }
+
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+        {
+            auto slot = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            return storeOp.getValue() == use.get() && slot && !slot.getInitializer() && !slot.getCaptured().value_or(false) &&
+                   llvm::all_of(slot->getUsers(), [&](mlir::Operation *slotUser) {
+                       if (auto otherStore = mlir::dyn_cast<mlir_ts::StoreOp>(slotUser))
+                       {
+                           return otherStore.getReference() == slot.getResult();
+                       }
+
+                       auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser);
+                       return loadOp && llvm::all_of(loadOp->getUsers(), [](mlir::Operation *loadUser) {
+                                  return mlir::isa<mlir_ts::ReturnInternalOp>(loadUser);
+                              });
+                   });
+        }
+
+        auto flowsOn = [&](mlir::Value next) {
+            return llvm::all_of(next.getUses(), [&](mlir::OpOperand &nextUse) { return flowsToReturn(nextUse, depth + 1); });
+        };
+
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user); castOp && isFunctionValue(castOp.getType()))
+        {
+            return flowsOn(castOp.getResult());
+        }
+
+        if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+        {
+            auto passed = false;
+            for (auto [index, successor] : llvm::enumerate(user->getSuccessors()))
+            {
+                auto operands = branchOp.getSuccessorOperands(index);
+                for (auto [position, operand] : llvm::enumerate(operands.getForwardedOperands()))
+                {
+                    if (operand != use.get())
+                    {
+                        continue;
+                    }
+
+                    passed = true;
+                    if (!flowsOn(successor->getArgument(operands.getProducedOperandCount() + position)))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return passed;
+        }
+
+        return false;
+    }
+
+    bool OwnershipSignaturePass::takeFamilyValue(CallbackFamily &family, mlir::Value value, mlir::Operation *at)
+    {
+        auto shift = 0;
+        if (auto refOp = passedFunction(value, shift))
+        {
+            auto member = functions.lookup(refOp.getIdentifier());
+            if (!member || member.isDeclaration() || callableFromOutside(member) || declaresFacts(member))
+            {
+                return false;
+            }
+
+            auto symbol = member.getSymNameAttr();
+            auto same = llvm::find_if(family.members, [&](const CallbackMember &known) { return known.symbol == symbol; });
+            if (same != family.members.end() && same->shift != shift)
+            {
+                return false;
+            }
+
+            if (same == family.members.end())
+            {
+                family.members.push_back({symbol, shift});
+            }
+
+            family.passing.push_back(refOp);
+            return true;
+        }
+
+        // an optional callback not given: no function
+        if (mlir::isa_and_nonnull<mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(value.getDefiningOp()) &&
+            mlir::isa<mlir_ts::OptionalType>(value.getType()))
+        {
+            return true;
+        }
+
+        // a callback parameter of the function `at` is in, given on: the functions passed for it
+        auto position = -1;
+        if (auto source = givenParam(value, position); source && source->isAncestor(at))
+        {
+            family.sources.push_back({source, position});
+            return true;
+        }
+
+        // what a function that returns a function value returned (spec 56)
+        if (auto callee = givenResult(value))
+        {
+            if (auto producer = functions.lookup(callee.getValue()))
+            {
+                family.sources.push_back({producer.getOperation(), RESULT_FAMILY});
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void OwnershipSignaturePass::collectResultFamilies()
+    {
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            auto results = funcOp.getFunctionType().getResults();
+            if (funcOp.isDeclaration() || results.size() != 1 || !isCallbackType(results.front()))
+            {
+                continue;
+            }
+
+            CallbackFamily family;
+            llvm::SmallVector<mlir::Value> work(returnedValues(funcOp));
+            llvm::DenseSet<mlir::Value> seen;
+            while (family.closed && !work.empty())
+            {
+                auto value = work.pop_back_val();
+                if (!seen.insert(value).second)
+                {
+                    continue;
+                }
+
+                // merged from branches: each value passed for the block's argument
+                if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value); argument && !argument.getOwner()->isEntryBlock())
+                {
+                    llvm::SmallVector<mlir::Value> merged;
+                    family.closed = mergedInto(argument, merged);
+                    work.append(merged.begin(), merged.end());
+                    continue;
+                }
+
+                family.closed = takeFamilyValue(family, value, funcOp);
+            }
+
+            callbackFamilies[{funcOp.getOperation(), RESULT_FAMILY}] = std::move(family);
+        }
+    }
+
+    std::pair<mlir::Operation *, int32_t> OwnershipSignaturePass::fieldFamilyKey(mlir::Value ref)
+    {
+        auto fieldOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto classType = fieldOp ? mlir::dyn_cast<mlir_ts::ClassType>(fieldOp->getOperand(0).getType()) : mlir_ts::ClassType();
+        auto constructor = classType ? functions.lookup((classType.getName().getValue() + ".constructor").str()) : mlir_ts::FuncOp();
+        if (!constructor)
+        {
+            return {nullptr, -1};
+        }
+
+        return {constructor.getOperation(), -1 - static_cast<int32_t>(fieldOp.getPosition())};
+    }
+
+    void OwnershipSignaturePass::collectFieldFamilies(
+        mlir::ModuleOp module, llvm::function_ref<std::pair<mlir::Operation *, int32_t>(mlir::OpOperand &)> parameterOf)
+    {
+        // the fields of a callback type, by class and position
+        std::map<std::pair<mlir::Operation *, int32_t>, llvm::SmallVector<mlir_ts::PropertyRefOp>> fields;
+        // the classes whose objects go where their fields may be reached otherwise: cast to an
+        // interface, `any` or a union
+        llvm::DenseSet<mlir::Type> escaping;
+        module.walk([&](mlir::Operation *op) {
+            if (auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
+            {
+                auto refType = mlir::dyn_cast<mlir_ts::RefType>(fieldOp.getType());
+                auto key = fieldFamilyKey(fieldOp.getResult());
+                if (key.first && refType && isCallbackType(refType.getElementType()))
+                {
+                    fields[key].push_back(fieldOp);
+                }
+
+                return;
+            }
+
+            auto reachedOtherwise = llvm::any_of(op->getResultTypes(), [](mlir::Type type) {
+                return mlir::isa<mlir_ts::InterfaceType, mlir_ts::AnyType, mlir_ts::UnionType, mlir_ts::UnknownType,
+                                 mlir_ts::ObjectType>(type);
+            });
+            for (auto operand : op->getOperands())
+            {
+                if (reachedOtherwise && mlir::isa<mlir_ts::ClassType>(operand.getType()))
+                {
+                    escaping.insert(operand.getType());
+                }
+            }
+        });
+
+        for (auto &[key, refs] : fields)
+        {
+            auto constructor = mlir::cast<mlir_ts::FuncOp>(key.first);
+            auto classType = mlir::cast<mlir_ts::ClassType>(refs.front()->getOperand(0).getType());
+            CallbackFamily family;
+
+            // a class another module may build, or another class extends (its storage's first field
+            // is this one's: the field is reached at another position there)
+            family.closed = !callableFromOutside(constructor) && !escaping.contains(classType) &&
+                            llvm::none_of(classStorages, [&](auto &entry) {
+                                auto storageFields = entry.second.getFields();
+                                return !storageFields.empty() && storageFields.front().type == classType.getStorageType();
+                            });
+
+            for (auto fieldOp : refs)
+            {
+                for (auto &use : fieldOp->getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (!family.closed)
+                    {
+                        break;
+                    }
+
+                    if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::RetainSlotOp>(user))
+                    {
+                        continue;
+                    }
+
+                    // read only to be called, or given on
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        llvm::SmallVector<mlir::OpOperand *> forwards;
+                        family.closed = onlyCalledValue(loadOp.getResult(), forwards);
+                        for (auto *forward : forwards)
+                        {
+                            auto target = parameterOf(*forward);
+                            family.closed = family.closed && target.first;
+                            family.forwards.push_back(target);
+                        }
+
+                        continue;
+                    }
+
+                    // given a function by name, a callback parameter of the function that stores it, or
+                    // what a function returning one returned
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (!storeOp || storeOp.getReference() != fieldOp.getResult())
+                    {
+                        family.closed = false;
+                        break;
+                    }
+
+                    family.closed = takeFamilyValue(family, storeOp.getValue(), storeOp);
+                }
+            }
+
+            callbackFamilies[key] = std::move(family);
+        }
+    }
+
     void OwnershipSignaturePass::collectCallbackFamilies(mlir::ModuleOp module)
     {
         capturedCallbacks.clear();
@@ -501,6 +847,19 @@ namespace own_signature
         // operand's position; null when the call reaches no one function or `use` is not an argument.
         auto parameterOf = [&](mlir::OpOperand &use) -> std::pair<mlir::Operation *, int32_t> {
             auto *call = use.getOwner();
+            // ...or the result of the function it is returned from (spec 56)
+            if (flowsToReturn(use))
+            {
+                auto funcOp = call->getParentOfType<mlir_ts::FuncOp>();
+                return {funcOp ? funcOp.getOperation() : nullptr, RESULT_FAMILY};
+            }
+
+            // ...or the field of a class it is stored into (spec 55)
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(call))
+            {
+                return fieldFamilyKey(storeOp.getReference());
+            }
+
             if (!isCall(call))
             {
                 return {nullptr, -1};
@@ -557,54 +916,19 @@ namespace own_signature
                         break;
                     }
 
+                    // a function by name, an optional one not given, the caller's own callback
+                    // parameter given on, or what a function returning one returned
                     auto args = callArgs(user);
                     auto arg = static_cast<size_t>(index) < args.size() ? args[index] : mlir::Value();
-                    auto shift = 0;
-                    auto refOp = arg ? passedFunction(arg, shift) : mlir_ts::SymbolRefOp();
-                    if (!refOp && arg)
-                    {
-                        // an optional callback not given: no function
-                        if (mlir::isa_and_nonnull<mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(arg.getDefiningOp()) &&
-                            mlir::isa<mlir_ts::OptionalType>(arg.getType()))
-                        {
-                            continue;
-                        }
-
-                        // the caller's own callback parameter, given on: the functions passed for it
-                        auto position = -1;
-                        if (auto source = givenParam(arg, position); source && source->isAncestor(user))
-                        {
-                            family.sources.push_back({source, position});
-                            continue;
-                        }
-                    }
-
-                    auto member = refOp ? functions.lookup(refOp.getIdentifier()) : mlir_ts::FuncOp();
-                    if (!member || member.isDeclaration() || callableFromOutside(member) || declaresFacts(member))
-                    {
-                        family.closed = false;
-                        break;
-                    }
-
-                    auto symbol = member.getSymNameAttr();
-                    auto same = llvm::find_if(family.members, [&](const CallbackMember &known) { return known.symbol == symbol; });
-                    if (same != family.members.end() && same->shift != shift)
-                    {
-                        family.closed = false;
-                        break;
-                    }
-
-                    if (same == family.members.end())
-                    {
-                        family.members.push_back({symbol, shift});
-                    }
-
-                    family.passing.push_back(refOp);
+                    family.closed = arg && takeFamilyValue(family, arg, user);
                 }
 
                 callbackFamilies[{funcOp, index}] = std::move(family);
             }
         }
+
+        collectFieldFamilies(module, parameterOf);
+        collectResultFamilies();
 
         // A member's symbol used anywhere else - a call through another value, a field, a vtable, a
         // global - reaches callers this cannot see; so does one passed to a family that is not closed.
@@ -716,13 +1040,30 @@ namespace own_signature
         }
     }
 
-    void OwnershipSignaturePass::resolveCallback(mlir_ts::LoadOp loadOp, Callees &callees)
+    void OwnershipSignaturePass::resolveCallback(mlir::Value callee, Callees &callees)
     {
-        auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
-        auto funcOp = loadOp->getParentOfType<mlir_ts::FuncOp>();
+        auto loadOp = callee.getDefiningOp<mlir_ts::LoadOp>();
+        auto producer = givenResult(callee);
+        if (!loadOp && !producer)
+        {
+            return;
+        }
+
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto funcOp = callee.getParentRegion()->getParentOfType<mlir_ts::FuncOp>();
         auto index = -1;
         std::pair<mlir::Operation *, int32_t> key{funcOp.getOperation(), -1};
-        if (varOp && funcOp && isParameterSlot(varOp, index))
+        if (producer && functions.lookup(producer.getValue()))
+        {
+            // what a function that returns a function value returned, called as it is or through a
+            // local declared from it (spec 56)
+            key = {functions.lookup(producer.getValue()).getOperation(), RESULT_FAMILY};
+        }
+        else if (!loadOp)
+        {
+            return;
+        }
+        else if (varOp && funcOp && isParameterSlot(varOp, index))
         {
             key.second = index;
         }
@@ -733,6 +1074,11 @@ namespace own_signature
         {
             // the captured parameter's cell, read where it is declared (spec 54)
             key.second = static_cast<int32_t>(argument.getArgNumber());
+        }
+        else if (auto fieldKey = fieldFamilyKey(loadOp.getReference()); fieldKey.first)
+        {
+            // a class's field of a callback type (spec 55)
+            key = fieldKey;
         }
         else if (auto cellRead = loadOp.getReference().getDefiningOp<mlir_ts::LoadOp>())
         {
