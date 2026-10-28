@@ -114,6 +114,29 @@ namespace own_signature
     // The index a function's result family is kept under: no parameter's, nor a field's (spec 56)
     static constexpr int32_t RESULT_FAMILY = std::numeric_limits<int32_t>::min();
 
+    // Whether an op is in the vtable a class's object is seen through as an interface
+    // (`<Class>.<Interface>..vtbl`), not its class's own (`<Class>..vtbl`): both start with the
+    // class's `..instanceOf`.
+    static bool inInterfaceVTable(mlir::Operation *op)
+    {
+        auto globalOp = op->getParentOfType<mlir_ts::GlobalOp>();
+        if (!globalOp)
+        {
+            return false;
+        }
+
+        auto inInterface = false;
+        globalOp.getInitializerRegion().walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
+            auto symbol = symbolRefOp.getIdentifier();
+            if (symbol.ends_with("..instanceOf"))
+            {
+                inInterface = globalOp.getSymName() != (symbol.drop_back(llvm::StringRef("..instanceOf").size()) + "..vtbl").str();
+            }
+        });
+
+        return inInterface;
+    }
+
     // Whether a class extends another: a base is the first field of a class's storage. One whose
     // storage is not known here, or whose chain is too deep to follow, may.
     static bool extendsClass(const llvm::StringMap<mlir_ts::ClassStorageType> &classStorages, llvm::StringRef derived,
@@ -657,8 +680,11 @@ namespace own_signature
     {
         // the fields of a callback type, by class and position
         std::map<std::pair<mlir::Operation *, int32_t>, llvm::SmallVector<mlir_ts::PropertyRefOp>> fields;
-        // the classes whose objects go where their fields may be reached otherwise: cast to an
-        // interface, `any` or a union
+        // the classes whose objects go where their fields may be reached otherwise: cast to `any`,
+        // a union, `unknown` or `object`, from which another module may cast them back. An interface
+        // reaches them only through a vtable built from the class (`<Class>.<Interface>..vtbl`), here
+        // or in a module that names it: a field's slot is a `ts.PropertyRef` here, a function
+        // field's a thunk that loads it and calls it, and another interface's cast remaps those slots.
         llvm::StringSet<> escaping;
         module.walk([&](mlir::Operation *op) {
             if (auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
@@ -674,7 +700,7 @@ namespace own_signature
             }
 
             auto reachedOtherwise = llvm::any_of(op->getResultTypes(), [](mlir::Type type) {
-                return mlir::isa<mlir_ts::InterfaceType, mlir_ts::AnyType, mlir_ts::UnionType, mlir_ts::UnknownType,
+                return mlir::isa<mlir_ts::AnyType, mlir_ts::UnionType, mlir_ts::UnknownType,
                                  mlir_ts::ObjectType>(type);
             });
             for (auto operand : op->getOperands())
@@ -810,7 +836,9 @@ namespace own_signature
             if (!mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp>(user) || !notOverridden(funcOp) ||
                 !onlyCalled(user->getResult(0)))
             {
-                return isClassVTableEntry(user) && notOverridden(funcOp);
+                // a call through an interface (`ts.InterfaceSymbolRef`) passes what this family can't
+                // see, from any module the interface reaches
+                return isClassVTableEntry(user) && !inInterfaceVTable(user) && notOverridden(funcOp);
             }
 
             // `ts.CallInternal(ts.GetMethod(m), ts.GetThis(m), ...)`: its arguments are the method's
