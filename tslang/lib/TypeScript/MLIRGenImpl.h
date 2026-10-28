@@ -10269,7 +10269,7 @@ class MLIRGenImpl
         {
             // we need to calculate VTable type
             /*
-            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> virtualTable;
             classInfo->getVirtualTable(virtualTable);
             auto virtTuple = getVirtualTableType(virtualTable);
 
@@ -13031,7 +13031,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
-                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
+                                                          SmallVector<VirtualMethodOrFieldInfo, 1> &virtualTable,
                                                           bool suppressErrors = false)
     {
         return mth.getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
@@ -13228,7 +13228,7 @@ class MLIRGenImpl
                                                              HeritageClause heritageClause,
                                                              const GenContext &genContext);
 
-    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrFieldInfo> &virtualTable)
+    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrFieldInfo, 1> &virtualTable)
     {
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)
@@ -13261,7 +13261,7 @@ class MLIRGenImpl
         return virtTuple;
     }
 
-    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &virtualTable)
+    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> &virtualTable)
     {
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)

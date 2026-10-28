@@ -249,7 +249,7 @@ namespace mlirgen
         setProcessingState(newClassPtr, ProcessingStages::ProcessingBody, genContext);
 
         // prepare VTable
-        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
         // a @cpp class is never constructed, typed or allocated here: its objects come from C++;
@@ -314,7 +314,7 @@ namespace mlirgen
         // an error (getVirtualTable finds it, here it's reported)
         if (newClassPtr->isCppVTable)
         {
-            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> cppVirtualTable;
+            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> cppVirtualTable;
             newClassPtr->cppSlotConflict.clear();
             newClassPtr->getVirtualTable(cppVirtualTable);
             if (!newClassPtr->cppSlotConflict.empty())
@@ -2569,12 +2569,12 @@ genContext);
         // TODO: ...
         auto classStorageType = mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType());
 
-        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrFieldInfo, 1> virtualTable;
         // the fields stored as optional<T> for an interface's `v?: T`: their slots are tagged
         llvm::SmallVector<mlir::Attribute> optionalStorageFields;
         // the interface's function-typed fields (`fn: () => int`) the class implements with a method
         // (`fn(): int`): their slots point at a cell holding the method (see INTERFACE_METHOD_CELL_TAG)
-        llvm::SmallVector<std::pair<mlir::Attribute, MethodInfo>> methodsForFields;
+        llvm::SmallVector<std::pair<mlir::Attribute, MethodInfo>, 1> methodsForFields;
         // of those, the ones filled by an optional class field (`fn?: () => int`): their cells carry the
         // offset of the field's flag, so an access reads the instance's presence
         llvm::SmallVector<mlir::Attribute> optionalFieldsForCells;
@@ -3181,7 +3181,7 @@ genContext);
         }
        
         // TODO: ...
-        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
         // TODO: this is pure hack, add ability to clean up created globals while "dummyRun = true"

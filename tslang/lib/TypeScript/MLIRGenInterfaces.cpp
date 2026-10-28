@@ -584,7 +584,7 @@ namespace mlirgen
         mlir_ts::FieldInfo emptyFieldInfo;
         // the slots' MethodInfo are handed out by reference (getVirtualTable)
         std::deque<MethodInfo> stubs;
-        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrFieldInfo, 1> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
@@ -743,7 +743,7 @@ namespace mlirgen
 
         auto tupleStorageType = mlir::cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(storeType));
 
-        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        SmallVector<VirtualMethodOrFieldInfo, 1> virtualTable;
         auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);
         if (mlir::failed(result))
         {
