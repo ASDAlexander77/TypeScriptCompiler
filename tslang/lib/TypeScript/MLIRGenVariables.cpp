@@ -416,7 +416,7 @@ namespace mlirgen
                     }
 
                     // past the end: the default of the element type, null for a reference (see below)
-                    if (index >= constArrayType.getSize())
+                    if (static_cast<unsigned>(index) >= constArrayType.getSize())
                     {
                         return V(builder.create<mlir_ts::DefaultOp>(location, constArrayType.getElementType()));
                     }
