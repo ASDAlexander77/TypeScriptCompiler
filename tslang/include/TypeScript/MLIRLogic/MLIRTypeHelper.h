@@ -1529,7 +1529,7 @@ class MLIRTypeHelper
     mlir::LogicalResult canCastTupleToInterface(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                 InterfaceInfo::TypePtr newInterfacePtr, bool suppressErrors = false)
     {
-        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        SmallVector<VirtualMethodOrFieldInfo, 1> virtualTable;
         return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
     }
 
@@ -1545,7 +1545,7 @@ class MLIRTypeHelper
 
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
-                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
+                                                          SmallVector<VirtualMethodOrFieldInfo, 1> &virtualTable,
                                                           bool suppressErrors = false)
     {
 

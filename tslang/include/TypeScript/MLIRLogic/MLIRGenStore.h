@@ -165,16 +165,13 @@ struct MethodInfo
     bool isCppSlotGap = false;
     // `@keeps`, `@borrows`, `@lends` (OWN_DECLARED_KEEPS_ATTR_NAME): argument indices, `this` 0, for
     // the declaration an importer re-parses; `@lends` names one, or several for a borrowing record
-    // (own spec 32), as a mask of argument indices (a vector would push the vtable's SmallVector
-    // past its inline-size limit)
+    // (own spec 32), as a mask of argument indices
     std::vector<int32_t> ownKeeps;
     std::vector<int32_t> ownBorrows;
     uint64_t ownLendsMask = 0;
     // `@record` (OWN_DECLARED_RECORD_ATTR_NAME): what `@lends` names, the result is a record of
     bool ownRecord = false;
-    // `@immortalizes` (OWN_DECLARED_IMMORTALIZES_ATTR_NAME), as a mask like `@lends`'s, of 32 bits:
-    // it fits beside `ownRecord`, where a 64-bit one would grow the vtable's SmallVector past its
-    // inline-size limit
+    // `@immortalizes` (OWN_DECLARED_IMMORTALIZES_ATTR_NAME), as a mask like `@lends`'s, of 32 bits
     uint32_t ownImmortalizesMask = 0;
 };
 
@@ -406,7 +403,7 @@ struct InterfaceInfo
     // yet-to-compile field/method access sites whenever presence of an optional member
     // differed between casts (§5) - do not reintroduce that.
     mlir::LogicalResult getVirtualTable(
-        llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
+        llvm::SmallVector<VirtualMethodOrFieldInfo, 1> &vtable,
         std::function<std::pair<mlir_ts::FieldInfo, mlir::LogicalResult>(mlir::Attribute, mlir::Type, bool)> resolveField,
         std::function<std::pair<MethodInfo &, mlir::LogicalResult>(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
         bool methodsAsFields = false)
@@ -925,7 +922,7 @@ struct ClassInfo
         return false;
     }
 
-    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable)
+    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> &vtable)
     {
         // name -> slot indices built alongside the vtable: override resolution is O(1)
         // per method instead of a linear scan of the accumulated table, and keeping
@@ -937,7 +934,7 @@ struct ClassInfo
         getVirtualTable(vtable, methodSlots, interfaceSlots);
     }
 
-    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable,
+    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> &vtable,
                          llvm::StringMap<size_t> &methodSlots, llvm::StringMap<size_t> &interfaceSlots)
     {
         // in static class I don't want to have virtual table
