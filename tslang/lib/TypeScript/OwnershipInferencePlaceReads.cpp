@@ -831,6 +831,39 @@ namespace own_inference
             }
         }
 
+        // ...or out of a field of a call's own result, released as a temporary right after the read
+        // (spec 63): `init ?? next(xs, 0).value`. The temporary frees nothing of it then, so nothing
+        // after the move can see the release.
+        if (!take.taker && kept && !countedHandle && temporaryFieldTakeOf(read, kept, take))
+        {
+            takenOps.insert(take.retain);
+            takenOps.insert(take.taker);
+            kept = walk();
+            takenOps.clear();
+            auto usedAfter = llvm::any_of(uses, [&](auto &use) {
+                return use.op != take.taker && use.op != take.retain && reachableAfter(take.taker, use.op, use.kills);
+            });
+            if (kept || letKept || usedAfter)
+            {
+                take = {};
+                kept = walk();
+            }
+            else
+            {
+                if (!dryRun)
+                {
+                    mlir::OpBuilder builder(take.release);
+                    auto fieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
+                    auto empty = builder.create<mlir_ts::DefaultOp>(take.release->getLoc(), fieldType);
+                    builder.create<mlir_ts::StoreOp>(take.release->getLoc(), empty, take.field);
+                }
+
+                bookkeeping.push_back(take.retain);
+                toErase.insert(bookkeeping.begin(), bookkeeping.end());
+                return true;
+            }
+        }
+
         if (take.taker)
         {
             bookkeeping.push_back(take.retain);
@@ -1103,6 +1136,66 @@ namespace own_inference
             }
         }
 
+        return true;
+    }
+
+    bool OwnershipInferencePass::temporaryFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take)
+    {
+        // rc's retain of the read itself, right after it: nothing runs between the read and the move. The
+        // walk may meet the taker first (`r = next(xs, 0).value`). A string too: it moves, as nothing
+        // else holds it.
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+        auto retainOp = loadOp ? mlir::dyn_cast_or_null<mlir_ts::RetainOp>(read->getNextNode()) : mlir_ts::RetainOp();
+        if (!retainOp || retainOp.getReference() != loadOp.getResult() ||
+            (kept != retainOp && takerOf(retainOp, loadOp.getResult()) != kept))
+        {
+            return false;
+        }
+
+        kept = retainOp;
+
+        // a field read in place out of a call's own result, not a borrow of what the call was given
+        auto field = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto temporary = field ? field.getObjectRef() : mlir::Value();
+        auto *call = temporary ? temporary.getDefiningOp() : nullptr;
+        if (!call || !callResultIsOwn(call) || !field->hasOneUse())
+        {
+            return false;
+        }
+
+        // released once, as a temporary, after the move: the release is the only end of what the field
+        // holds, and no other read of the result reaches that field
+        mlir::Operation *release = nullptr;
+        for (auto *user : temporary.getUsers())
+        {
+            if (mlir::isa<mlir_ts::ReleaseOp>(user) && !release)
+            {
+                release = user;
+                continue;
+            }
+
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp || (propertyRefOp != field && propertyRefOp.getPosition() == field.getPosition()))
+            {
+                return false;
+            }
+        }
+
+        if (!release || release->getBlock() != kept->getBlock() || !kept->isBeforeInBlock(release))
+        {
+            return false;
+        }
+
+        auto *taker = takerOf(kept, loadOp.getResult());
+        if (!taker)
+        {
+            return false;
+        }
+
+        take.retain = kept;
+        take.taker = taker;
+        take.field = field.getResult();
+        take.release = release;
         return true;
     }
 

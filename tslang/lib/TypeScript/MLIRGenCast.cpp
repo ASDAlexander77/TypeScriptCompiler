@@ -2592,6 +2592,9 @@ namespace mlirgen
     // - any other class of this module can't: no vtable for the interface was made for it, and none
     //   is made here (one made here would be a way to the class's fields that nothing else in the
     //   module shows), so the cast throws. A class object no class answers for throws too;
+    // - an object literal boxed as it is (`typeof` 'object' or 'tuple') throws: the box does not say
+    //   which fields it has, so nothing can lay out a vtable for it;
+    // - null and undefined give the null interface;
     // - anything else - an interface value over an object literal or a class of another module, a
     //   number used as a token - is read as the interface's pair, as before: an `any` holding the
     //   interface it is cast to round-trips.
@@ -2680,6 +2683,13 @@ namespace mlirgen
         }
 
         ss << S("}\n");
+
+        // an object literal, boxed as it is: the box says only that it is one, not what fields it has, so
+        // no vtable can be found for it here, and its block read as the interface's pair called garbage
+        ss << S("if (typeof a == 'object' || typeof a == 'tuple') throw \"Can't cast from any: an object literal has no vtable for interface '")
+           << stows(interfaceInfo->fullName.str()) << S("'\";\n");
+        // null and undefined have a box of their own under the counting models, not the null pair
+        ss << S("if (typeof a == 'null' || typeof a == 'undefined') {\nconst n: TYPE_ANY_INTERFACE_ALIAS | null = null;\nreturn <T>n;\n}\n");
         ss << S("return <T><TYPE_ANY_INTERFACE_ALIAS>a;\n}\n");
 
         auto src = ss.str();

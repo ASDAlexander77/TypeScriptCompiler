@@ -753,6 +753,7 @@ tslang_add_test(NAME test-compile-00-spread COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-compile-00-any-to-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
+tslang_add_test(NAME test-compile-00-any-literal-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-compile-00-unknown-round-trip COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -1376,6 +1377,7 @@ tslang_add_test(NAME test-jit-00-spread COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-jit-00-any-to-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
+tslang_add_test(NAME test-jit-00-any-literal-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-jit-00-unknown-round-trip COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -2477,6 +2479,7 @@ set(TSLANG_CORPUS
     00template_literal_escapes.ts
     00types_unknown1.ts
     00any_to_tuple.ts
+    00any_literal_to_interface.ts
     00unknown_round_trip.ts
     00types_utility.ts
     00types.ts
@@ -3978,7 +3981,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_this_param own_copy_within_returned_param own_swap_elements
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
                  own_generator_take own_rest_array_borrows own_string_copies
-                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_union_narrowed_calls
+                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
@@ -4016,7 +4019,7 @@ foreach(keeps_mm rc gc none)
                        own_copy_within_returned_param own_swap_elements own_callback_forwarded
                        own_optional_record_read own_param_default_kept own_literal_into_array
                        own_generator_take own_rest_array_borrows own_string_copies
-                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_union_narrowed_calls
+                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")

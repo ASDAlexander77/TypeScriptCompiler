@@ -1563,7 +1563,32 @@ class OwnedReturnConsumptionPass
                        definingOp->getParentRegion() == resultOp->getParentRegion();
             };
 
-            if (llvm::none_of(yields, carriesOwned))
+            // ...or some branch yields a field read out of a temporary it made (`given ?? pair(n).item`):
+            // the temporary is given back before the branch ends, and with it what the field holds,
+            // so the receiver's retain after the `ts.If` comes too late. The branch retains it first.
+            auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
+                auto value = producerOf(resultOp->getOperand(0));
+                while (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+                {
+                    auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                    if (!propertyRefOp)
+                    {
+                        return false;
+                    }
+
+                    value = propertyRefOp.getObjectRef();
+                    auto *definingOp = value.getDefiningOp();
+                    if (definingOp && ::typescript::mayTakeOverReference(value) &&
+                        definingOp->getParentRegion() == resultOp->getParentRegion())
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
+            if (llvm::none_of(yields, carriesOwned) && llvm::none_of(yields, borrowsBranchTemporary))
             {
                 return;
             }

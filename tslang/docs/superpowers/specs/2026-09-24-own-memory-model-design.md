@@ -5217,3 +5217,63 @@ the object out of it (`ts.GetValueFromUnion`), casts it to an opaque pointer, an
 `own_union_narrowed_calls` calls the narrowed name twice with a churn between, under own, rc, gc and
 none; own emits no counting. Negative: `own_err_union_narrowed_moved`, which stores the narrowed value
 into a global and then calls through it.
+
+## 62. An object literal given to a variable with no type, 2026-10-28
+
+`const o = { w: (x: number) => x * 2 }; apply(o); o.w(1)` was `'this value' borrows a field and cannot
+be stored, returned or captured` at `apply(o)`, and the read after it a use after a move: §60 left the
+members of a literal with no receiver methods bound to the literal.
+
+- **A literal a variable declared with no type is given** (MLIRGen marks it
+  `InternalFlags::UntypedVariableInitializer`) is one more whose this-free arrows are closures
+  (`markClosureMembers`), as one made for an object type is. A cast of it to an interface copies the
+  closure into the interface's object field by field (`const a: Adder = o`), as it copies any field.
+- **Not an arrow that names a local around it** (any identifier the enclosing scopes' symbol table
+  holds, its own parameters included when they shadow one): copied out of the literal by such a cast,
+  a closure's captures would still be the literal's, freed with it (`const o = { area: () => box.w };
+  return o;` for a `Shape` result). It stays a method, as before.
+- **Not a literal returned or given with no receiver** (`return { id, area: () => box.w }`): MLIRGen
+  builds it for no type and casts it to the interface, which takes the literal's methods for its
+  vtable; a closure field of a capture's type does not fit that slot.
+
+`own_literal_variable_closures` gives such literals to a function-typed field and calls them after, casts
+one to an interface after reading its number field, and gives one holding a class object to a
+function-typed field and reads the object after, churning between steps, under own, rc, gc and none.
+`00interface_type_tag_in_vtable` keeps its directly returned capturing literal.
+
+Not here: a literal whose arrows capture a local (`const o = { w: (x: number) => x * k }; apply(o)`)
+is still rejected under own. Found and fixed (every model): `<Adder>x` of an `any` that holds an object
+literal read its block as the interface's pair and crashed; it now throws, since the box does not say which
+fields the literal has (`00any_literal_to_interface`). A boxed null cast so was not null under rc, none and
+own; it is the null interface now.
+
+## 63. A field taken out of a temporary in a branch, 2026-10-28
+
+`let result = initial ?? next(xs, 0).value` (DefaultLib's `reduce` shape, `value: any`) was `'this
+value' borrows a field and cannot be stored, returned or captured`. The `??` builds a `ts.If`: the
+branch that calls `next` reads the field, rc retains the read, the temporary is released at the end of
+the branch, and the merge goes to the local.
+
+- **The take** (`temporaryFieldTakeOf`, checkPlaceRead). A read of a field of a call's own result
+  (`callResultIsOwn`), with rc's retain of it right after the read, the result released once after
+  that retain in the same block, and no other read of that field, is a move out of the field: the walk
+  is made again with the retain and its taker (a local, a store) taken for uses, and nothing may use the
+  borrow after the taker. rc's retain goes, and right before the release a `ts.Default` of the field's
+  type is stored into the field, so the release frees the object and nothing of what moved. A string is
+  moved the same way.
+- **rc, every branch retains** (`consumeConditionalResults`, OwnedReturnConsumptionPass). A branch that
+  yields a field read out of a temporary made in it gave the temporary back before the `ts.If` ended,
+  and with it what the field held; the receiver's retain after the merge came too late. rc then read
+  freed memory for a class or a string field (`const item = given ?? pair(n).item` read 0, and with
+  `let` the program died): only an `any` field, whose other branch boxed a fresh value, was retained in
+  the branch. Such a branch now retains what it yields, as a branch beside one that carries a fresh
+  value always did, and the `ts.If` carries the reference.
+
+`own_temporary_field_take` reduces strings through `initial ?? next(xs, 0).value`, picks with a `?:`,
+and gives class objects read out of temporaries in both branches of a `?:` to a `const` and a `let`,
+churning between steps, under own, rc, gc and none. Teeth: without the store of the empty value, the
+own build fails its count (exit 3).
+
+Not here: the field of a named local of a class type (`const r = next(xs, 0); let v = initial ??
+r.value`) is still a borrow that cannot be stored, and a parameter on the other branch (`given ??
+pair(n).item`) is kept, which callers cannot give up.
