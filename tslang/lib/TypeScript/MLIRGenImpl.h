@@ -14265,6 +14265,9 @@ class MLIRGenImpl
     bool areIncompatibleUnrelatedClasses(mlir::Location location, mlir::Type type, mlir::Type valueType, std::string &mismatch);
 
     ValueOrLogicalResult castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
+    ValueOrLogicalResult castAnyToInterface(mlir::Location location, mlir_ts::InterfaceType interfaceType,
+                                            InterfaceInfo::TypePtr interfaceInfo, mlir::Value value,
+                                            const GenContext &genContext);
 
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
@@ -16115,6 +16118,10 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, EnumInfo::TypePtr> fullNameEnumsMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
+
+    // the vtables of classes for interfaces they don't declare that casts ask for
+    // (interfaceVTableNameForClass), from the discovery pass on: see castAnyToInterface
+    llvm::StringSet<> classInterfaceVTablesCast;
 
     // the @cpp methods returning a C++ record (by function name): the record's type
     llvm::StringMap<mlir::Type> cppVTableHiddenReturns;

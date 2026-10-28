@@ -685,6 +685,8 @@ tslang_add_test(NAME test-compile-00-interface-indexer COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-class-or-interface-to-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_or_interface_to_tuple.ts")
 tslang_add_test(NAME test-compile-00-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any.ts")
 tslang_add_test(NAME test-compile-00-any-unbox-interface-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_unbox_interface_class.ts")
+tslang_add_test(NAME test-compile-00-any-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_interface.ts")
+tslang_add_test(NAME test-compile-own-00-any-to-interface COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_interface.ts")
 tslang_add_test(NAME test-compile-00-interface-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_instanceof.ts")
 tslang_add_test(NAME test-compile-01-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01any.ts")
 tslang_add_test(NAME test-compile-00-any-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
@@ -1291,6 +1293,8 @@ tslang_add_test(NAME test-jit-00-interface-indexer COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-class-or-interface-to-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_or_interface_to_tuple.ts")
 tslang_add_test(NAME test-jit-00-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any.ts")
 tslang_add_test(NAME test-jit-00-any-unbox-interface-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_unbox_interface_class.ts")
+tslang_add_test(NAME test-jit-00-any-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_interface.ts")
+tslang_add_test(NAME test-jit-own-00-any-to-interface COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_interface.ts")
 tslang_add_test(NAME test-jit-00-interface-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_instanceof.ts")
 tslang_add_test(NAME test-jit-01-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01any.ts")
 tslang_add_test(NAME test-jit-00-any-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
@@ -2040,6 +2044,7 @@ set(TSLANG_CORPUS
     00any_compare.ts
     00any_generic_equals.ts
     00any_types.ts
+    00any_to_interface.ts
     00any.ts
     00any_equality_undefined.ts
     00array_assignment5.ts
