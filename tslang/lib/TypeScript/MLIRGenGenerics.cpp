@@ -92,6 +92,11 @@ namespace mlirgen
                            StringMap<mlir::Type> &results, const GenContext &genContext)
     {
         auto tempInterface = dyn_cast<mlir_ts::InterfaceType>(templateType);
+        if (tempInterface && !isa<mlir_ts::InterfaceType>(concreteType))
+        {
+            return tryInferInterfaceFromObject(location, tempInterface, concreteType, results, genContext);
+        }
+
         auto typeInterface = dyn_cast<mlir_ts::InterfaceType>(concreteType);
         if (!tempInterface || !typeInterface)
         {
@@ -132,6 +137,66 @@ namespace mlirgen
         }
 
         return false;
+    }
+
+    // `Computed<T>` from an object literal (`{ read: () => s, write: (v: string) => ... }`): each member of
+    // the object infers from the interface's member of that name - a field from its type, a method from
+    // its function type, the `this` both take aside.
+    bool MLIRGenImpl::tryInferInterfaceFromObject(mlir::Location location, mlir_ts::InterfaceType tempInterface,
+                                                  mlir::Type concreteType, StringMap<mlir::Type> &results,
+                                                  const GenContext &genContext)
+    {
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(concreteType))
+        {
+            concreteType = objectType.getStorageType();
+        }
+
+        concreteType = MLIRTypeHelper::stripValueType(concreteType);
+        if (!isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectStorageType>(concreteType))
+        {
+            return false;
+        }
+
+        auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue());
+        llvm::SmallVector<mlir_ts::FieldInfo> concreteFields;
+        if (!tempInterfaceInfo || mlir::failed(mth.getFields(concreteType, concreteFields)))
+        {
+            return false;
+        }
+
+        // the function type without its `this` (the first input), so an interface's method and an object's match
+        auto withoutThis = [&](mlir::Type type) -> mlir::Type {
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(type);
+            if (!funcType || funcType.getNumInputs() == 0)
+            {
+                return type;
+            }
+
+            return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+        };
+
+        for (auto &concreteField : concreteFields)
+        {
+            int vtableOffset = 0;
+            if (auto *fieldInfo = tempInterfaceInfo->findField(concreteField.id, vtableOffset))
+            {
+                inferType(location, fieldInfo->type, concreteField.type, results, genContext);
+                continue;
+            }
+
+            auto name = dyn_cast<mlir::StringAttr>(concreteField.id);
+            auto *methodInfo = name ? tempInterfaceInfo->findMethod(name.getValue(), vtableOffset) : nullptr;
+            if (methodInfo && methodInfo->funcType)
+            {
+                // an object's method takes the object as its `this`, a closure (an arrow function) does not
+                auto concreteFuncType = dyn_cast<mlir_ts::FunctionType>(concreteField.type);
+                auto concreteType = concreteFuncType && concreteFuncType.getNumInputs() == methodInfo->funcType.getNumInputs()
+                    ? withoutThis(concreteField.type) : concreteField.type;
+                inferType(location, withoutThis(methodInfo->funcType), concreteType, results, genContext);
+            }
+        }
+
+        return true;
     }
 
     bool MLIRGenImpl::tryInferArray(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
@@ -236,11 +301,12 @@ namespace mlirgen
             return false;
         }
 
+        // `() => T` from `() => string` too: a function with no parameters infers from its result
         auto tempfuncType = mth.getParamsFromFuncRef(templateType);
-        if (tempfuncType.size() > 0)
+        if (tempfuncType.size() > 0 || mth.getReturnsFromFuncRef(templateType).size() > 0)
         {
             auto funcType = mth.getParamsFromFuncRef(concreteType);
-            if (funcType.size() > 0)
+            if (funcType.size() > 0 || tempfuncType.size() == 0)
             {
                 inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
 

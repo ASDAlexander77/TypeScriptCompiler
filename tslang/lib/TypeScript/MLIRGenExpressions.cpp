@@ -1253,7 +1253,14 @@ namespace mlirgen
             }
         }
 
-        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, operandsFuncType, genContext, offsetArgs, noReceiverTypesForGenericCall)))
+        SmallVector<mlir::Type> argumentReceivers;
+        if (noReceiverTypesForGenericCall)
+        {
+            inferObjectLiteralArgumentReceivers(location, funcResult, callExpression->arguments, argumentReceivers, genContext);
+        }
+
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, operandsFuncType, genContext, offsetArgs,
+                                         noReceiverTypesForGenericCall, argumentReceivers)))
         {
             return mlir::failure();
         }
@@ -1264,6 +1271,189 @@ namespace mlirgen
                    llvm::dbgs() << "\n";);
 
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
+    }
+
+    // An object literal with a function member whose parameters are not all typed (`{ write: value => s = value }`):
+    // they take their types from the literal's receiver
+    static bool isContextSensitiveObjectLiteral(Expression expression)
+    {
+        if (expression != SyntaxKind::ObjectLiteralExpression)
+        {
+            return false;
+        }
+
+        return llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, [](ObjectLiteralElementLike item) {
+            Node member = item;
+            if (item == SyntaxKind::PropertyAssignment)
+            {
+                member = item.as<PropertyAssignment>()->initializer;
+            }
+
+            if (member != SyntaxKind::ArrowFunction && member != SyntaxKind::FunctionExpression
+                && member != SyntaxKind::MethodDeclaration)
+            {
+                return false;
+            }
+
+            return llvm::any_of(member.as<FunctionLikeDeclarationBase>()->parameters,
+                                [](ParameterDeclaration parameter) { return !parameter->type && !parameter->initializer; });
+        });
+    }
+
+    // A generic call with such a literal for an argument: `foo({ read: () => s, write: value => s = value })` for
+    // `foo<T>(x: Computed<T>)`. The members' parameters are of T, which the rest of the call gives - the other
+    // arguments, and the literal's other members. Inferred from their types first (no code is made), the
+    // parameter's type with T known is the literal's receiver, which types the members' parameters
+    // (getObjectLiteralMemberReceiverFuncType). A receiver that can't be known is left out; one with type parameters
+    // still unknown types the members' parameters only (mlirGenOperand).
+    void MLIRGenImpl::inferObjectLiteralArgumentReceivers(mlir::Location location, mlir::Value funcResult,
+                                                          NodeArray<Expression> arguments, SmallVector<mlir::Type> &receivers,
+                                                          const GenContext &genContext)
+    {
+        auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolOp || !symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME)
+            || llvm::none_of(arguments, isContextSensitiveObjectLiteral) || !genContext.postponedMessages)
+        {
+            return;
+        }
+
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.getIdentifierAttr().getValue());
+        if (!functionGenericTypeInfo || !functionGenericTypeInfo->funcOp || !functionGenericTypeInfo->functionDeclaration)
+        {
+            return;
+        }
+
+        auto params = functionGenericTypeInfo->funcOp->getParams();
+        auto declarationParams = functionGenericTypeInfo->functionDeclaration->parameters;
+        if (params.size() < declarationParams.size())
+        {
+            return;
+        }
+
+        // `this` ahead of the declared parameters
+        auto offset = params.size() - declarationParams.size();
+
+        // what is tried here and fails is the call's to report
+        auto savedErrorMessagesCount = genContext.postponedMessages->size();
+
+        StringMap<mlir::Type> inferredTypes;
+        for (auto [index, argument] : enumerate(arguments))
+        {
+            if (index >= declarationParams.size() || declarationParams[index]->dotDotDotToken)
+            {
+                break;
+            }
+
+            auto paramType = params[index + offset]->getType();
+            if (argument == SyntaxKind::ArrowFunction || argument == SyntaxKind::FunctionExpression)
+            {
+                // a lambda's own types are inferred with the call
+                continue;
+            }
+
+            if (!isContextSensitiveObjectLiteral(argument))
+            {
+                // widened, as an inference from a literal is (`5` gives s32, not the literal type 5)
+                if (auto type = evaluate(argument, genContext))
+                {
+                    inferType(location, paramType, mth.wideStorageType(type), inferredTypes, genContext);
+                }
+                continue;
+            }
+
+            // the literal's members whose types don't wait for T
+            SmallVector<mlir_ts::FieldInfo> fields;
+            for (auto &item : argument.as<ObjectLiteralExpression>()->properties)
+            {
+                if (item != SyntaxKind::PropertyAssignment || isContextSensitiveObjectLiteral(item.as<PropertyAssignment>()->initializer))
+                {
+                    continue;
+                }
+
+                auto propertyAssignment = item.as<PropertyAssignment>();
+                auto initializer = propertyAssignment->initializer;
+                mlir::Type type;
+                if (initializer == SyntaxKind::ArrowFunction || initializer == SyntaxKind::FunctionExpression)
+                {
+                    // a function made now would be made again with the literal: its type is its parameters' and,
+                    // for `() => s`, its expression's
+                    auto funcLikeDeclaration = initializer.as<FunctionLikeDeclarationBase>();
+                    if (!funcLikeDeclaration->body || funcLikeDeclaration->body == SyntaxKind::Block
+                        || llvm::any_of(funcLikeDeclaration->parameters, [](ParameterDeclaration parameter) { return !parameter->type; }))
+                    {
+                        continue;
+                    }
+
+                    SmallVector<mlir::Type> inputs;
+                    for (auto parameter : funcLikeDeclaration->parameters)
+                    {
+                        inputs.push_back(getType(parameter->type, genContext));
+                    }
+
+                    auto resultType = evaluate(funcLikeDeclaration->body.as<Expression>(), genContext);
+                    if (!resultType || mth.isNoneType(resultType) || llvm::any_of(inputs, [](mlir::Type input) { return !input; }))
+                    {
+                        continue;
+                    }
+
+                    type = getFunctionType(inputs, {mth.wideStorageType(resultType)}, false);
+                }
+                else
+                {
+                    type = evaluate(initializer, genContext);
+                    type = type ? mth.wideStorageType(type) : type;
+                }
+
+                auto fieldId = TupleFieldName(propertyAssignment->name, genContext);
+                if (fieldId && type && !mth.isNoneType(type))
+                {
+                    fields.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+                }
+            }
+
+            if (!fields.empty())
+            {
+                inferType(location, paramType, getTupleType(fields), inferredTypes, genContext);
+            }
+        }
+
+        GenContext typeGenContext(genContext);
+        typeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
+        auto anyNamedGenericType = IsGeneric::False;
+        if (mlir::succeeded(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes,
+                                                anyNamedGenericType, typeGenContext, false, true)))
+        {
+            // a type parameter not known yet (`U` of `w: (x: T) => U`, given by `w` itself) stays one
+            for (auto &typeParam : functionGenericTypeInfo->typeParams)
+            {
+                if (!typeGenContext.typeParamsWithArgs.count(typeParam->getName()))
+                {
+                    typeGenContext.typeParamsWithArgs[typeParam->getName()] = {typeParam, getNamedGenericType(typeParam->getName())};
+                }
+            }
+
+            MLIRNamespaceGuard ng(currentNamespace);
+            currentNamespace = functionGenericTypeInfo->elementNamespace;
+            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+
+            receivers.resize(arguments.size());
+            for (auto [index, argument] : enumerate(arguments))
+            {
+                if (index >= declarationParams.size() || !declarationParams[index]->type
+                    || !isContextSensitiveObjectLiteral(argument))
+                {
+                    continue;
+                }
+
+                auto type = getType(declarationParams[index]->type, typeGenContext);
+                if (type && !mth.isNoneType(type))
+                {
+                    receivers[index] = type;
+                }
+            }
+        }
+
+        rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
     }
 
     // `Shared.count(s)` (own spec 23.1): the number of handles under rc and own, -1 under gc and none.
@@ -2169,6 +2359,11 @@ namespace mlirgen
         oli.objectLiteral = objectLiteral;
 
         oli.receiverType = genContext.receiverType;
+        if (!oli.receiverType && genContext.receiverFuncType && !mth.isAnyFunctionType(genContext.receiverFuncType))
+        {
+            oli.memberReceiverType = mth.stripOptionalType(genContext.receiverFuncType);
+        }
+
         if (oli.receiverType)
         {
             oli.receiverType = mth.stripOptionalType(oli.receiverType);

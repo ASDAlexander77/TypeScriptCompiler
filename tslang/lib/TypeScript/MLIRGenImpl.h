@@ -1552,6 +1552,8 @@ class MLIRGenImpl
 
     bool tryInferInterface(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
                            StringMap<mlir::Type> &results, const GenContext &genContext);
+    bool tryInferInterfaceFromObject(mlir::Location location, mlir_ts::InterfaceType tempInterface, mlir::Type concreteType,
+                                     StringMap<mlir::Type> &results, const GenContext &genContext);
 
     bool tryInferArray(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
                        StringMap<mlir::Type> &results, const GenContext &genContext);
@@ -9284,6 +9286,8 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(CallExpression callExpression, const GenContext &genContext);
+    void inferObjectLiteralArgumentReceivers(mlir::Location location, mlir::Value funcResult, NodeArray<Expression> arguments,
+                                             SmallVector<mlir::Type> &receivers, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenArrayForEach(mlir::Location location, ArrayRef<mlir::Value> operands,
                                             const GenContext &outerContext)
@@ -10100,11 +10104,19 @@ class MLIRGenImpl
 
     mlir::LogicalResult processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext);
 
-    mlir::LogicalResult mlirGenOperand(Expression expression, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    mlir::LogicalResult mlirGenOperand(Expression expression, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext,
+                                       mlir::Type receiverType = mlir::Type())
     {
         GenContext argGenContext(genContext);
         argGenContext.clearReceiverTypes();
         operandsProcessingInfo.setReceiverTo(argGenContext);
+        // a receiver inferred ahead of the call (inferObjectLiteralArgumentReceivers); one still of a type parameter
+        // types an object literal's function members only (ObjectLiteralInfo::memberReceiverType)
+        if (receiverType)
+        {
+            argGenContext.receiverType = mth.isGenericType(receiverType) ? mlir::Type() : receiverType;
+            argGenContext.receiverFuncType = receiverType;
+        }
 
         auto result = mlirGen(expression, argGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -10163,7 +10175,8 @@ class MLIRGenImpl
 
     // TODO: rewrite code (do as clean as ArrayLiteral)
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
-                                        mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
+                                        mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false,
+                                        ArrayRef<mlir::Type> argumentReceivers = {})
     {
         OperandsProcessingInfo operandsProcessingInfo(funcType, operands, offsetArgs, noReceiverTypesForGenericCall, mth, genContext.disableSpreadParams);
 
@@ -10175,7 +10188,9 @@ class MLIRGenImpl
                 return mlirGenOperandVarArgs(loc(arguments), proccessedArgs, arguments, operandsProcessingInfo, genContext);
             }            
 
-            if (mlir::failed(mlirGenOperand(*it, operandsProcessingInfo, genContext)))
+            auto index = static_cast<size_t>(std::distance(arguments.begin(), it));
+            if (mlir::failed(mlirGenOperand(*it, operandsProcessingInfo, genContext,
+                                            index < argumentReceivers.size() ? argumentReceivers[index] : mlir::Type())))
             {
                 return mlir::failure();
             }
@@ -11555,6 +11570,9 @@ class MLIRGenImpl
         ts::ObjectLiteralExpression objectLiteral;
         mlir_ts::ObjectType objThis;
         mlir::Type receiverType;
+        // what the untyped parameters of its function members take their types from when it has no receiver: one
+        // still of a type parameter (`{ w: (x: T) => U }` of a generic call)
+        mlir::Type memberReceiverType;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
         SmallVector<size_t> methodInfos;
@@ -11679,12 +11697,48 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // The function type an object literal's function member takes the types of its untyped parameters from
+    // (`{ w: x => x + 1 }`): the receiver's field of that name (`w: (x: number) => number`), or its interface's
+    // method (`w(x: number): number`, less its `this`). None when the receiver has no such member.
+    mlir::Type getObjectLiteralMemberReceiverFuncType(ObjectLiteralInfo &oli, mlir::Attribute fieldId)
+    {
+        auto receiverType = oli.receiverType ? oli.receiverType : oli.memberReceiverType;
+        if (!receiverType || !fieldId)
+        {
+            return mlir::Type();
+        }
+
+        auto fieldType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
+        if (fieldType && mth.isAnyFunctionType(mth.stripOptionalType(fieldType)))
+        {
+            return mth.stripOptionalType(fieldType);
+        }
+
+        auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(receiverType);
+        auto name = dyn_cast<mlir::StringAttr>(fieldId);
+        if (!interfaceType || !name)
+        {
+            return mlir::Type();
+        }
+
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        auto *methodInfo = interfaceInfo ? interfaceInfo->findMethod(name.getValue()) : nullptr;
+        if (!methodInfo || !methodInfo->funcType || methodInfo->funcType.getNumInputs() == 0)
+        {
+            return mlir::Type();
+        }
+
+        auto funcType = methodInfo->funcType;
+        return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+    }
+
     mlir::LogicalResult processObjectFunctionLikeProto(ObjectLiteralInfo &oli, mlir::Attribute fieldId,
                                                        FunctionLikeDeclarationBase funcLikeDecl, const GenContext &genContext)
     {
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.clearReceiverTypes();
+        funcGenContext.receiverFuncType = getObjectLiteralMemberReceiverFuncType(oli, fieldId);
         funcGenContext.thisType = oli.objThis;
 
         funcLikeDecl->parent = oli.objectLiteral;
@@ -11725,12 +11779,13 @@ class MLIRGenImpl
         return addObjectFuncFieldInfo(oli, fieldId, funcName, funcType);
     }
 
-    mlir::LogicalResult processObjectFunctionLike(ObjectLiteralInfo &oli, FunctionLikeDeclarationBase funcLikeDecl,
-                                                  const GenContext &genContext)
+    mlir::LogicalResult processObjectFunctionLike(ObjectLiteralInfo &oli, mlir::Attribute fieldId,
+                                                  FunctionLikeDeclarationBase funcLikeDecl, const GenContext &genContext)
     {
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.clearReceiverTypes();
+        funcGenContext.receiverFuncType = getObjectLiteralMemberReceiverFuncType(oli, fieldId);
         funcGenContext.thisType = oli.objThis;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << oli.objThis << "\n";);
@@ -12149,7 +12204,7 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
+                if (mlir::failed(processObjectFunctionLike(oli, TupleFieldName(propertyAssignment->name, genContext), funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
@@ -12163,14 +12218,15 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
+                if (mlir::failed(processObjectFunctionLike(oli, TupleFieldName(shorthandPropertyAssignment->name, genContext), funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
+                auto fieldId = item == SyntaxKind::MethodDeclaration ? TupleFieldName(funcLikeDecl->name, genContext) : mlir::Attribute();
+                if (mlir::failed(processObjectFunctionLike(oli, fieldId, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
