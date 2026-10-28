@@ -1183,14 +1183,34 @@ namespace mlirgen
                 symbolOp && symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
             {
                 auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.getIdentifierAttr().getValue());
+                // a type argument that is itself not known yet (`__is<V, T>(...)` in a generic body
+                // being discovered) leaves it to the call, as before
+                auto allTypeArgumentsKnown = llvm::all_of(callExpression->typeArguments, [&](TypeNode typeArgument) {
+                    auto type = getType(typeArgument, genContext);
+                    return type && !mth.isGenericType(type);
+                });
                 if (functionGenericTypeInfo
-                    && functionGenericTypeInfo->typeParams.size() == callExpression->typeArguments.size())
+                    && functionGenericTypeInfo->typeParams.size() == callExpression->typeArguments.size()
+                    && allTypeArgumentsKnown
+                    && genContext.postponedMessages)
                 {
+                    // it is only a head start: what fails here fails the same way in the call below,
+                    // which reports it
+                    auto savedErrorMessagesCount = genContext.postponedMessages->size();
+                    // the operands of a call this one is an argument of are not this call's
+                    GenContext specGenContext(genContext);
+                    specGenContext.callOperands = {};
                     SmallVector<mlir::Value, 4> emptyOperands;
-                    auto specialized = mlirGenSpecialized(location, funcResult, callExpression->typeArguments, emptyOperands, genContext);
-                    EXIT_IF_FAILED_OR_NO_VALUE(specialized)
-                    funcResult = V(specialized);
-                    funcType = funcResult.getType();
+                    auto specialized = mlirGenSpecialized(location, funcResult, callExpression->typeArguments, emptyOperands, specGenContext);
+                    if (mlir::succeeded(specialized.result) && V(specialized))
+                    {
+                        funcResult = V(specialized);
+                        funcType = funcResult.getType();
+                    }
+                    else
+                    {
+                        rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+                    }
                 }
             }
         }
