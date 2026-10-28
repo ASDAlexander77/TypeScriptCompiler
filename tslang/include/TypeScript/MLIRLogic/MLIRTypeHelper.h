@@ -695,6 +695,16 @@ class MLIRTypeHelper
         return getFunctionTypeWithThisType(funcType, mlir_ts::OpaqueType::get(context), replace);
     }
 
+    // an interface's function-typed field (`f: (v: T) => void`, a function taking the object as an opaque
+    // `this`) as a class field of that type stores it: a hybrid of the function without the `this`
+    mlir_ts::HybridFunctionType getInterfaceFieldFunctionAsHybrid(mlir_ts::FunctionType fieldType)
+    {
+        auto offset = fieldType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(fieldType.getInput(0)) ? 1 : 0;
+        auto funcType = mlir_ts::FunctionType::get(context, fieldType.getInputs().slice(offset), fieldType.getResults(),
+                                                   fieldType.isVarArg());
+        return mlir_ts::HybridFunctionType::get(context, funcType);
+    }
+
     mlir_ts::FunctionType getFunctionTypeAddingFirstArgType(mlir_ts::FunctionType funcType, mlir::Type firstArgType)
     {
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());

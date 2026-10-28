@@ -2578,6 +2578,9 @@ genContext);
         // of those, the ones filled by an optional class field (`fn?: () => int`): their cells carry the
         // offset of the field's flag, so an access reads the instance's presence
         llvm::SmallVector<mlir::Attribute> optionalFieldsForCells;
+        // and the ones filled by a class field stored as the interface field's function made a hybrid: their
+        // cells carry the field's offset, so a write through the interface (`h.f = g`) stores to the instance
+        llvm::SmallVector<mlir::Attribute> writableFieldsForCells;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
@@ -2655,6 +2658,10 @@ genContext);
                         if (optionalField)
                         {
                             optionalFieldsForCells.push_back(id);
+                        }
+                        else if (foundField.type == mth.getInterfaceFieldFunctionAsHybrid(funcType))
+                        {
+                            writableFieldsForCells.push_back(id);
                         }
                     }
 
@@ -2846,14 +2853,17 @@ genContext);
                         return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                     }
 
-                    // the cell is {method, flag offset}, the method first so the slot is a ref to it. The offset
-                    // is of the flag of an optional class field (`fn?: () => int`), from `this`; -1 is always
-                    // present (a method, or a field that is not optional)
+                    // the cell is {method, flag offset, field offset}, the method first so the slot is a ref to it.
+                    // The flag offset is of the flag of an optional class field (`fn?: () => int`), from `this`; -1
+                    // is always present (a method, or a field that is not optional). The field offset is of the
+                    // class field a write through the interface stores to; -1 is not written.
                     auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
-                    mlir::Value flagOffsetValue;
-                    if (llvm::is_contained(optionalFieldsForCells, id))
-                    {
-                        // &(null)->field, stored as optional<T> - {T, flag}, the flag right after T
+                    auto negative1 = [&]() -> mlir::Value {
+                        return builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+                    };
+
+                    // &(null)->field
+                    auto fieldRefOf = [&]() -> mlir::Value {
                         MLIRCodeLogic mcl(builder, compileOptions);
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
@@ -2864,6 +2874,18 @@ genContext);
                             emitError(location) << "can't find reference for field: " << id
                                                 << " in interface: " << newInterfacePtr->fullName
                                                 << " for class: " << newClassPtr->fullName;
+                        }
+
+                        return fieldRef;
+                    };
+
+                    mlir::Value flagOffsetValue;
+                    if (llvm::is_contained(optionalFieldsForCells, id))
+                    {
+                        // stored as optional<T> - {T, flag}, the flag right after T
+                        auto fieldRef = fieldRefOf();
+                        if (!fieldRef)
+                        {
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
@@ -2879,14 +2901,31 @@ genContext);
                     }
                     else
                     {
-                        flagOffsetValue =
-                            builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+                        flagOffsetValue = negative1();
+                    }
+
+                    mlir::Value fieldOffsetValue;
+                    if (llvm::is_contained(writableFieldsForCells, id))
+                    {
+                        auto fieldRef = fieldRefOf();
+                        if (!fieldRef)
+                        {
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                        }
+
+                        fieldOffsetValue = builder.create<mlir_ts::CastOp>(location, ptrIntType, fieldRef);
+                    }
+                    else
+                    {
+                        fieldOffsetValue = negative1();
                     }
 
                     mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
                         {MLIRHelper::TupleFieldName("method", builder.getContext()), methodInfo.funcType, false,
                          mlir_ts::AccessLevel::Public},
                         {MLIRHelper::TupleFieldName("flagOffset", builder.getContext()), ptrIntType, false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("fieldOffset", builder.getContext()), ptrIntType, false,
                          mlir_ts::AccessLevel::Public}};
                     auto cellTupleType = getTupleType(cellFields);
                     mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
@@ -2894,6 +2933,8 @@ genContext);
                                                                           MLIRHelper::getStructIndex(builder, 0));
                     cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, flagOffsetValue,
                                                                           cellValue, MLIRHelper::getStructIndex(builder, 1));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, fieldOffsetValue,
+                                                                          cellValue, MLIRHelper::getStructIndex(builder, 2));
                     return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
                 },
                 genContext);

@@ -3527,9 +3527,18 @@ of a private virtual family.
   other than to be read or stored, an object of the literal's type made other than by the literal,
   a function-typed store through an open interface, or a class implementer (its slot is a thunk's
   cell) keeps the call open. In the language as it is, a function stored into such a field is
-  always the literal's: `s.f = fn` through the interface is `saving to constant object`, and a
-  function without `this` (a parameter, a named function) is held through a thunk, which is open
-  (`own_err_interface_fn_field_unknown`).
+  always the literal's: `s.f = fn` through the interface stops the program when a literal is behind
+  it, and a function without `this` (a parameter, a named function) is held through a thunk, which
+  is open (`own_err_interface_fn_field_unknown`). Through the interface such a store is taken as
+  unknown (its ref is also tested for null), so it opens every interface field's facts.
+- **A class field written through an interface** (`h.f = show`, `h: Holder`, `Walker.f` filling
+  `Holder.f`): the class's cell names the field's offset (INTERFACE_FUNCTION_FIELD_WRITE_ATTR) and
+  the store goes to the instance. `collectFieldFamilies` sees no `ts.PropertyRef` at the store; the
+  family is kept sound by the cell's initializer, whose `ts.PropertyRef` of the field (its offset) is
+  neither a load nor a store, so the field's family is open whenever such a cell exists - also when
+  nothing stores through the interface. (Under §58 a class seen through an interface may keep its
+  field families; that cell then has to count as a store only when a write-marked
+  `ts.InterfaceSymbolRef` of the field's name exists in the module.)
 
 `own_interface_facts` runs the plan's loop over `sc.ts` (prints 9), a field borrowed across a call
 through two class members and an object-literal member, the closed forms of the five §27 negatives

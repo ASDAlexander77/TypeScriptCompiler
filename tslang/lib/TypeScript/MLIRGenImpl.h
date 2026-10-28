@@ -6676,6 +6676,72 @@ class MLIRGenImpl
         // }
     }
 
+    // `h.f` of an interface's function-typed field, read as the interface binds it to its object: the
+    // field's InterfaceSymbolRefOp, or null. An optional field (`fn?: () => int`) is bound only when present:
+    // `ts.If(ts.HasValue(v)) { ts.OptionalValue(ts.CreateBoundFunction(this, ts.Value(v))) }`.
+    mlir_ts::InterfaceSymbolRefOp interfaceFunctionFieldOf(mlir::Value value)
+    {
+        if (auto ifOp = value.getDefiningOp<mlir_ts::IfOp>(); ifOp && !ifOp.getThenRegion().empty())
+        {
+            auto resultOp = dyn_cast<mlir_ts::ResultOp>(ifOp.getThenRegion().front().getTerminator());
+            auto index = mlir::cast<mlir::OpResult>(value).getResultNumber();
+            auto optionalValueOp = resultOp && index < resultOp->getNumOperands()
+                ? resultOp->getOperand(index).getDefiningOp<mlir_ts::OptionalValueOp>()
+                : mlir_ts::OptionalValueOp();
+            value = optionalValueOp ? optionalValueOp.getIn() : mlir::Value();
+        }
+
+        auto boundOp = value ? value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>() : mlir_ts::CreateBoundFunctionOp();
+        auto func = boundOp ? boundOp.getFunc() : mlir::Value();
+        if (auto valueOp = func ? func.getDefiningOp<mlir_ts::ValueOp>() : mlir_ts::ValueOp())
+        {
+            func = valueOp.getIn();
+        }
+
+        auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto symbolRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>()
+                                  : mlir_ts::InterfaceSymbolRefOp();
+        auto refType = symbolRefOp ? dyn_cast<mlir_ts::RefType>(symbolRefOp.getType()) : mlir_ts::RefType();
+        return refType && isa<mlir_ts::FunctionType>(refType.getElementType()) ? symbolRefOp
+                                                                               : mlir_ts::InterfaceSymbolRefOp();
+    }
+
+    // `h.f = g` of an interface's function-typed field stores to the class field filling it, held there as
+    // the field's function made a hybrid (INTERFACE_FUNCTION_FIELD_WRITE_ATTR). Which object is behind the
+    // interface is known only at run time: one filling the field with a method, or an object literal,
+    // has nothing to store to, and the write stops the program.
+    ValueOrLogicalResult mlirGenSaveInterfaceFunctionField(mlir::Location location,
+                                                           mlir_ts::InterfaceSymbolRefOp interfaceSymbolRefOp,
+                                                           mlir::Value savingValue, const GenContext &genContext)
+    {
+        if (interfaceSymbolRefOp.getOptional().value_or(false))
+        {
+            emitError(location, "an optional function-typed interface field can't be assigned through the "
+                                "interface; assign it on the object");
+            return mlir::failure();
+        }
+
+        auto fieldType = mlir::cast<mlir_ts::FunctionType>(
+            mlir::cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType()).getElementType());
+        auto hybridType = mth.getInterfaceFieldFunctionAsHybrid(fieldType);
+        auto writeOp = mlir::cast<mlir_ts::InterfaceSymbolRefOp>(builder.clone(*interfaceSymbolRefOp));
+        writeOp.getResult().setType(mlir_ts::RefType::get(hybridType));
+        writeOp->setAttr(INTERFACE_FUNCTION_FIELD_WRITE_ATTR, builder.getUnitAttr());
+
+        auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+        auto address = builder.create<mlir_ts::CastOp>(location, ptrIntType, writeOp.getResult());
+        auto zero = builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, 0));
+        auto writable = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsToken), address, zero);
+        builder.create<mlir_ts::AssertOp>(
+            location, writable, mlir::Value(),
+            builder.getStringAttr("an interface's function field can't be assigned when the object fills it with a "
+                                  "method or is an object literal; only a class field holding the function can be"));
+
+        auto fieldValue = builder.create<mlir_ts::LoadOp>(location, hybridType, writeOp.getResult());
+        return mlirGenSaveLogicOneItem(location, fieldValue, savingValue, genContext);
+    }
+
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
@@ -6930,13 +6996,10 @@ class MLIRGenImpl
                 boundIndirectIndexAccessorOp.getSetAccessor(), 
                 savingValue);
         }           
-        /*
-        else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        else if (auto interfaceSymbolRefOp = interfaceFunctionFieldOf(leftExpressionValueBeforeCast))
         {
-            // TODO: i should not allow to change interface
-            return mlirGenSaveLogicOneItem(location, createBoundFunction.getFunc(), rightExpressionValue, genContext);
+            return mlirGenSaveInterfaceFunctionField(location, interfaceSymbolRefOp, savingValue, genContext);
         }
-        */
         else if (auto lengthOf = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LengthOfOp>())
         {
             MLIRCodeLogic mcl(builder, compileOptions);

@@ -821,22 +821,26 @@ namespace mlirgen
                     auto thunkValue = builder.create<mlir_ts::SymbolRefOp>(
                         location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
 
-                    // the cell is {method, flag offset}, as a class's: the field holds a function, so the flag
-                    // offset is -1, always present
+                    // the cell is {method, flag offset, field offset}, as a class's: the field holds a function,
+                    // so the flag offset is -1, always present, and the field offset is -1, not written through
                     auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
-                    auto flagOffsetValue =
+                    auto negative1 =
                         builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
                     mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
                         {MLIRHelper::TupleFieldName("method", builder.getContext()), funcType, false,
                          mlir_ts::AccessLevel::Public},
                         {MLIRHelper::TupleFieldName("flagOffset", builder.getContext()), ptrIntType, false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("fieldOffset", builder.getContext()), ptrIntType, false,
                          mlir_ts::AccessLevel::Public}};
                     auto cellTupleType = getTupleType(cellFields);
                     mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
                     cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, thunkValue, cellValue,
                                                                           MLIRHelper::getStructIndex(builder, 0));
-                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, flagOffsetValue,
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, negative1,
                                                                           cellValue, MLIRHelper::getStructIndex(builder, 1));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, negative1,
+                                                                          cellValue, MLIRHelper::getStructIndex(builder, 2));
                     return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
                 },
                 genContext);
