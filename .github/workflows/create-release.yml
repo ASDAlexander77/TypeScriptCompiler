@@ -188,6 +188,8 @@ jobs:
         run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
         shell: pwsh
 
+      # Every memory model the library is built for, each in its own pwsh: tests.ps1 reads the
+      # library paths once, at its start. All of them run before a failure fails the step.
       - name: Test Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
@@ -197,8 +199,13 @@ jobs:
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
         run: |
-          .\tests.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $failed = @()
+          foreach ($model in "gc", "rc", "none", "own") {
+            Write-Host "=== -mm=$model ==="
+            pwsh -NoProfile -File .\tests.ps1 -Model $model
+            if ($LASTEXITCODE -ne 0) { $failed += $model }
+          }
+          if ($failed.Count -gt 0) { Write-Host "Failed models: $($failed -join ', ')"; exit 1 }
         shell: pwsh
 
       # Android (API 29, arm64-v8a, armeabi-v7a and x86_64): the collector, the async runtime and the default
@@ -424,6 +431,7 @@ jobs:
           TSLANG_REQUIRE_DEFAULT_LIB: 1
         run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
 
+      # Every memory model, as on Windows: all of them run before a failure fails the step.
       - name: Test Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
@@ -433,7 +441,14 @@ jobs:
           GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
-        run: chmod +x ./tests.sh; ./tests.sh
+        run: |
+          chmod +x ./tests.sh
+          failed=""
+          for model in gc rc none own; do
+            echo "=== -mm=$model ==="
+            ./tests.sh "$model" || failed="$failed $model"
+          done
+          if [ -n "$failed" ]; then echo "Failed models:$failed"; exit 1; fi
 
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build

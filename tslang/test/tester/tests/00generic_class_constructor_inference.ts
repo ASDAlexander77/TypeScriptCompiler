@@ -40,6 +40,19 @@ class Applied<T> {
     }
 }
 
+// overloads: the first constructor that can take the arguments and gives T answers; a rest
+// parameter takes T from every argument it collects (any overload made it "missing type arguments")
+class List<T> {
+    items: T[];
+    constructor(data: T[]) {
+        this.items = data;
+    }
+
+    constructor(...args: T[]) {
+        this.items = args;
+    }
+}
+
 function boxOf<T>(items: T[]) {
     return new Box(items);
 }
@@ -91,6 +104,15 @@ function main() {
     assert(boxed.first * 2 == 3);
 
     assert(firstValue([["one", 1], ["two", 2]]) * 10 == 10);
+
+    const fromArray = new List([1, 2, 3]);
+    assert(fromArray.items.length == 3 && fromArray.items[2] + 1 == 4);
+
+    const fromRest = new List(10, 20, 30);
+    assert(fromRest.items.length == 3 && fromRest.items[1] + 1 == 21);
+
+    const fromStrings = new List("a", "b");
+    assert(fromStrings.items[1] + "!" == "b!");
 
     print("done.");
 }
