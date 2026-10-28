@@ -5207,12 +5207,12 @@ before, and such a literal read into a function-typed field is still rejected un
 after its value was moved` at the second call, the move put at the test. `instanceof` on a union reads
 the object out of it (`ts.GetValueFromUnion`), casts it to an opaque pointer, and calls its class's
 `.instanceOf` through its vtable (`ts.VTableOffsetRef`) with that pointer as `this`. The cast to
-`!ts.opaque` was no view, so it was a second owner of the object, and with that seen through, the
-vtable read was a taker.
+`!ts.opaque` was taken for a taker of the object.
 
-- **A class object cast to `!ts.opaque`** is the same block (`isView`): the pointer, reinterpreted.
-- **`ts.VTableOffsetRef`** reads the object's vtable and keeps nothing (`isBorrow`), as the other tests
-  of a value do (`typeof`, `if (d)`).
+- **That cast is a read** (`isBorrow`) when the pointer is used only so: read for its vtable, and
+  handed as the first argument to a call whose callee is read out of that vtable. A class object cast
+  to `!ts.opaque` for anything else (a vtable call into another module's class gives it on) stays what
+  it was; making every such cast a view moved imported classes' objects into those calls.
 
 `own_union_narrowed_calls` calls the narrowed name twice with a churn between, under own, rc, gc and
 none; own emits no counting. Negative: `own_err_union_narrowed_moved`, which stores the narrowed value

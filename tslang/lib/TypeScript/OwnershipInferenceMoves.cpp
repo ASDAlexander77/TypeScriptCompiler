@@ -426,12 +426,59 @@ namespace own_inference
             return true;
         }
 
-        // a test - `if (d)`, `d?.x`, `typeof u`, `u instanceof A` (which reads the object's vtable
-        // for its `.instanceOf`) - asks about the value, and keeps nothing
+        // a test - `if (d)`, `d?.x`, `typeof u` - asks about the value, and keeps nothing
         if (mlir::isa<mlir_ts::HasValueOp, mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::TypeOfOp,
-                      mlir_ts::TypeOfAnyOp, mlir_ts::VTableOffsetRefOp>(user))
+                      mlir_ts::TypeOfAnyOp>(user))
         {
             return true;
+        }
+
+        // ...and so does `u instanceof A` (spec 61): the object as an opaque pointer, whose vtable is
+        // read for its class's `.instanceOf`, which is called with the pointer as its `this`
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+            castOp && mlir::isa<mlir_ts::ClassType>(castOp.getIn().getType()) && mlir::isa<mlir_ts::OpaqueType>(castOp.getType()))
+        {
+            auto pointer = castOp.getResult();
+            auto readsVTable = [&](mlir::Value callee) {
+                while (callee)
+                {
+                    auto *def = callee.getDefiningOp();
+                    if (auto offsetOp = mlir::dyn_cast_or_null<mlir_ts::VTableOffsetRefOp>(def))
+                    {
+                        callee = offsetOp->getOperand(0);
+                        if (callee == pointer)
+                        {
+                            return true;
+                        }
+
+                        continue;
+                    }
+
+                    callee = mlir::isa_and_nonnull<mlir_ts::CastOp>(def) ? def->getOperand(0) : mlir::Value();
+                }
+
+                return false;
+            };
+
+            auto onlyTested = !pointer.use_empty() && llvm::all_of(pointer.getUsers(), [&](mlir::Operation *pointerUser) {
+                if (mlir::isa<mlir_ts::VTableOffsetRefOp>(pointerUser))
+                {
+                    return true;
+                }
+
+                if (!isCall(pointerUser))
+                {
+                    return false;
+                }
+
+                auto args = callArgs(pointerUser);
+                return !args.empty() && args.front() == pointer && readsVTable(calleeValue(pointerUser));
+            });
+
+            if (onlyTested)
+            {
+                return true;
+            }
         }
 
         // ...and so does a cast to `null` or `undefined`, which holds no block: `--di` records the

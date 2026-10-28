@@ -14486,8 +14486,6 @@ class MLIRGenImpl
                                             InterfaceInfo::TypePtr interfaceInfo, mlir::Value value,
                                             const GenContext &genContext);
 
-    bool inAnyToTupleUnbox();
-
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
 

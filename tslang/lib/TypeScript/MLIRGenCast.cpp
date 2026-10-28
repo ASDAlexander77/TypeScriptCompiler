@@ -2009,7 +2009,7 @@ namespace mlirgen
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
 
-            if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve && !inAnyToTupleUnbox())
+            if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
             {
                 return castAnyToTuple(location, type, value, genContext);
             }
@@ -2730,36 +2730,25 @@ namespace mlirgen
             funcCallGenContext);
     }
 
-    // Whether the code made now is the body of `___unbox_tuple`, whose own cast out of the box is the
-    // raw read (castAnyToTuple)
-    bool MLIRGenImpl::inAnyToTupleUnbox()
-    {
-        auto *block = builder.getInsertionBlock();
-        auto *parent = block ? block->getParentOp() : nullptr;
-        auto funcOp = parent ? (isa<mlir_ts::FuncOp>(parent) ? mlir::cast<mlir_ts::FuncOp>(parent) : parent->getParentOfType<mlir_ts::FuncOp>())
-                             : mlir_ts::FuncOp();
-        return funcOp && funcOp.getName().starts_with("___unbox_tuple");
-    }
-
     // `any` to a tuple (an object type, `<{ n: number }>x`). The box holds its value's kind: a tuple is
     // read out of it, and anything else - a class object, a number - throws. It was read as the tuple's
     // layout whatever it held (`(<{ f: F }>x).f = g` with a class object in `x` wrote over its vtable).
-    // A tuple of another layout passes the check: the box names no tuple's fields (`{ n: 5 }` holds an
-    // s32, read as a number).
+    // `___check_tuple` only asks the box (it keeps nothing of it); the read after it is the raw one it
+    // was. A tuple of another layout passes the check: the box names no tuple's fields (`{ n: 5 }`
+    // holds an s32, read as a number).
     ValueOrLogicalResult MLIRGenImpl::castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                                      const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___unbox_tuple";
+        auto funcName = "___check_tuple";
 
+        // the message names the type
         removeGenericFunctionMap(funcName);
 
-        // `a` narrowed by `typeof` is the first word of the box; `b` is the box
         stringstream ss;
-        ss << S("function __unbox_tuple<T>(a: any) : T {\nconst b = a;\n");
-        ss << S("if (typeof a == 'tuple') return <T>b;\n");
-        ss << S("throw \"Can't cast from any: the value is not an object of type '") << stows(to_print(type))
-           << S("'\";\n}\n");
+        ss << S("function __check_tuple<T>(a: any) {\n");
+        ss << S("if (typeof a != 'tuple') throw \"Can't cast from any: the value is not an object of type '")
+           << stows(to_print(type)) << S("'\";\n}\n");
 
         auto src = ss.str();
 
@@ -2785,7 +2774,7 @@ namespace mlirgen
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
-        return mlirGenCallExpression(
+        auto checked = mlirGenCallExpression(
             location,
             funcResult,
             {
@@ -2793,6 +2782,9 @@ namespace mlirgen
             },
             operands,
             funcCallGenContext);
+        EXIT_IF_FAILED(checked)
+
+        return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
     ValueOrLogicalResult MLIRGenImpl::castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
