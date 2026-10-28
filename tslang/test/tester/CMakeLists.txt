@@ -3955,7 +3955,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
                  own_generator_take own_rest_array_borrows own_string_copies
                  own_captured_string_callback own_callback_and_call own_callback_captured
-                 own_callback_shapes own_callback_extended own_callback_interface)
+                 own_callback_shapes own_callback_extended own_callback_interface
+                 own_generic_specializations)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3992,7 +3993,8 @@ foreach(keeps_mm rc gc none)
                        own_optional_record_read own_param_default_kept own_literal_into_array
                        own_generator_take own_rest_array_borrows own_string_copies
                        own_captured_string_callback own_callback_and_call own_callback_captured
-                       own_callback_shapes own_callback_extended own_callback_interface)
+                       own_callback_shapes own_callback_extended own_callback_interface
+                       own_generic_specializations)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()

@@ -53,8 +53,9 @@ namespace own_signature
         findImmortalGlobals(module);
         moveIntoGlobals(module);
         rejectBorrowedGlobalInitializers(module);
-        collectClassVTables(module);
+        // the storages first: a vtable's family is that of its class's root (familyRoot)
         collectClassStorages(module);
+        collectClassVTables(module);
         collectInterfaceFamilies(module);
         fieldFunctions.collect(module);
         // after the class storages (`@cpp`) and the families (holdsFunction reads the interface vtables)
