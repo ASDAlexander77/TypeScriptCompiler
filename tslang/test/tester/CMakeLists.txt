@@ -5073,7 +5073,7 @@ set_tests_properties(test-jit-assert-message-failing
                                 FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
 
 # An invalid array length stops the program with a message, after the output printed before it,
-# under every model (#483). The JIT reports it itself on every platform, as for a failing assert.
+# under every model (#483), when there is no default library: with one it throws a RangeError. The JIT reports it itself on every platform, as for a failing assert.
 foreach(array_length_name negative huge fraction negative_integer new_negative)
     foreach(array_length_model gc rc none own)
         add_test(NAME test-jit-${array_length_model}-array-length-${array_length_name}
@@ -5087,7 +5087,8 @@ foreach(array_length_name negative huge fraction negative_integer new_negative)
 endforeach()
 
 # A bigint divided by 0n or raised to a negative power stops the program with a message, after the
-# output printed before it, under every model: TypeScript throws a RangeError.
+# output printed before it, under every model, when there is no default library: with one it throws a
+# RangeError a `catch` takes (DefaultLib's range_error_caught).
 foreach(bigint_range_name division remainder power)
     if(bigint_range_name STREQUAL "power")
         set(bigint_range_message "Exponent must be non-negative")

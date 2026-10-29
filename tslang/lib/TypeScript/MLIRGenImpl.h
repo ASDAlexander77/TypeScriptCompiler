@@ -7046,36 +7046,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            // A length is an integer in [0, 2^32 - 1] (TypeScript throws a RangeError). A number is
-            // checked here, before its conversion to an index drops a fraction and makes a negative
-            // or a NaN a huge size; an integer is checked against the upper bound where it is
-            // lowered (SetLengthOfOpLowering), which a negative one exceeds once sign-extended. A
-            // failed check stops the program as a failing assert does (#483).
-            if (isa<mlir_ts::NumberType>(savingValue.getType()))
-            {
-                auto numberConstant = [&](double value) -> mlir::Value {
-#ifdef NUMBER_F64
-                    return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(value));
-#else
-                    return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(value));
-#endif
-                };
-
-                auto checkLength = [&](SyntaxKind opCode, mlir::Value left, mlir::Value right) {
-                    auto holds = builder.create<mlir_ts::LogicalBinaryOp>(
-                        location, getBooleanType(), builder.getI32IntegerAttr((int)opCode), left, right);
-                    builder.create<mlir_ts::AssertOp>(location, holds, mlir::Value(),
-                                                      builder.getStringAttr("Invalid array length"));
-                };
-
-                checkLength(SyntaxKind::GreaterThanEqualsToken, savingValue, numberConstant(0));
-                checkLength(SyntaxKind::LessThanEqualsToken, savingValue, numberConstant(4294967295.0));
-
-                // an integer survives the round trip through an index
-                CAST_A(asIndex, location, builder.getIndexType(), savingValue, genContext);
-                CAST_A(backToNumber, location, getNumberType(), asIndex, genContext);
-                checkLength(SyntaxKind::EqualsEqualsToken, backToNumber, savingValue);
-            }
+            EXIT_IF_FAILED(mlirGenArrayLengthCheck(location, savingValue, genContext));
 
             // special case to resize array
             syncSavingValue(lengthOf.getResult().getType());
@@ -7813,6 +7784,101 @@ class MLIRGenImpl
         return (leftIsBoolean != rightIsBoolean) || (leftIsString != rightIsString) || (leftIsNumeric != rightIsNumeric);
     }
 
+    // A check TypeScript answers with a RangeError: `holds` false throws `new RangeError(message)`, which a
+    // `catch` can take, through `__range_check`, generated once from source so that the error object is
+    // made and given up as any `throw` makes it under every model. Without the default library there is
+    // no RangeError: a failed check stops the program as a failing assert does (#483).
+    mlir::LogicalResult mlirGenRangeCheck(mlir::Location location, mlir::Value holds, StringRef message,
+                                          const GenContext &genContext)
+    {
+        if (!getClassInfoByFullName("RangeError"))
+        {
+            builder.create<mlir_ts::AssertOp>(location, holds, mlir::Value(), builder.getStringAttr(message));
+            return mlir::success();
+        }
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___range_check";
+        if (!theModule.lookupSymbol(funcName))
+        {
+            // see castPrimitiveTypeFromAny: the call site is the location until the call instantiates it
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+
+            if (mlir::failed(parsePartialStatements(
+                    S("function __range_check(holds: boolean, message: string) {\n"
+                      "if (!holds) throw new RangeError(message);\n}\n"))))
+            {
+                return mlir::failure();
+            }
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+        if (!funcResult)
+        {
+            return mlir::failure();
+        }
+
+        auto messageValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(message.str()));
+        SmallVector<mlir::Value, 4> operands{holds, messageValue};
+        auto result = mlirGenCallExpression(location, funcResult, {}, operands, genContext);
+        EXIT_IF_FAILED(result)
+        return mlir::success();
+    }
+
+    // A length - `a.length = n`, `new Array(n)` - is an integer in [0, 2^32 - 1]; any other is a RangeError
+    // (mlirGenRangeCheck). A number is checked before its conversion to an index drops a fraction and makes
+    // a negative or a NaN a huge size; a signed integer is checked for a negative, one wider than 32 bits
+    // for the upper bound too. The lowering checks what reaches it again (ArrayLayout), as a failing
+    // assert: an `index` count made by the compiler itself is not checked here.
+    mlir::LogicalResult mlirGenArrayLengthCheck(mlir::Location location, mlir::Value length, const GenContext &genContext)
+    {
+        auto checkLength = [&](SyntaxKind opCode, mlir::Value left, mlir::Value right) {
+            auto holds = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)opCode), left, right);
+            return mlirGenRangeCheck(location, holds, "Invalid array length", genContext);
+        };
+
+        auto type = length.getType();
+        if (isa<mlir_ts::NumberType>(type))
+        {
+            auto numberConstant = [&](double value) -> mlir::Value {
+#ifdef NUMBER_F64
+                return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(value));
+#else
+                return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(value));
+#endif
+            };
+
+            EXIT_IF_FAILED(checkLength(SyntaxKind::GreaterThanEqualsToken, length, numberConstant(0)));
+            EXIT_IF_FAILED(checkLength(SyntaxKind::LessThanEqualsToken, length, numberConstant(4294967295.0)));
+
+            // an integer survives the round trip through an index
+            CAST_A(asIndex, location, builder.getIndexType(), length, genContext);
+            CAST_A(backToNumber, location, getNumberType(), asIndex, genContext);
+            return checkLength(SyntaxKind::EqualsEqualsToken, backToNumber, length);
+        }
+
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            auto intConstant = [&](int64_t value) -> mlir::Value {
+                return builder.create<mlir_ts::ConstantOp>(location, intType, builder.getIntegerAttr(intType, value));
+            };
+
+            if (!intType.isUnsigned())
+            {
+                EXIT_IF_FAILED(checkLength(SyntaxKind::GreaterThanEqualsToken, length, intConstant(0)));
+            }
+
+            if (intType.getWidth() > 32)
+            {
+                EXIT_IF_FAILED(checkLength(SyntaxKind::LessThanEqualsToken, length, intConstant(4294967295ll)));
+            }
+        }
+
+        return mlir::success();
+    }
+
     // TODO: review it, seems like big hack
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
@@ -7887,23 +7953,22 @@ class MLIRGenImpl
                 CAST(rightExpressionValue, location, getBigIntType(), rightExpressionValue, genContext);
             }
 
-            // TypeScript throws a RangeError for a bigint divided by 0n or raised to a negative power;
-            // a failed check stops the program as a failing assert does (#483), where the division
-            // was a hardware fault and a negative power was 1n.
+            // TypeScript throws a RangeError for a bigint divided by 0n or raised to a negative power
+            // (mlirGenRangeCheck), where the division was a hardware fault and a negative power was 1n.
             auto checkRight = [&](SyntaxKind checkCode, StringRef message) {
                 auto zero = builder.create<mlir_ts::ConstantOp>(location, getBigIntType(), builder.getI64IntegerAttr(0));
                 auto holds = builder.create<mlir_ts::LogicalBinaryOp>(
                     location, getBooleanType(), builder.getI32IntegerAttr((int)checkCode), rightExpressionValue, zero);
-                builder.create<mlir_ts::AssertOp>(location, holds, mlir::Value(), builder.getStringAttr(message));
+                return mlirGenRangeCheck(location, holds, message, genContext);
             };
 
             if (opCode == SyntaxKind::SlashToken || opCode == SyntaxKind::PercentToken)
             {
-                checkRight(SyntaxKind::ExclamationEqualsToken, "Division by zero");
+                EXIT_IF_FAILED(checkRight(SyntaxKind::ExclamationEqualsToken, "Division by zero"));
             }
             else if (opCode == SyntaxKind::AsteriskAsteriskToken)
             {
-                checkRight(SyntaxKind::GreaterThanEqualsToken, "Exponent must be non-negative");
+                EXIT_IF_FAILED(checkRight(SyntaxKind::GreaterThanEqualsToken, "Exponent must be non-negative"));
             }
         }
 
@@ -10437,7 +10502,8 @@ class MLIRGenImpl
         {
             auto result = mlirGen(arguments.front(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
-            count = V(result);           
+            count = V(result);
+            EXIT_IF_FAILED(mlirGenArrayLengthCheck(location, count, genContext));
         }
         else
         {
