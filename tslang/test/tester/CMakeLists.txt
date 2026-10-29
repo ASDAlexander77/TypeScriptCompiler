@@ -740,6 +740,7 @@ tslang_add_test(NAME test-compile-00-try-finally COMMAND test-runner "${PROJECT_
 tslang_add_test(NAME test-compile-00-try-finally-throws COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_throws.ts")
 tslang_add_test(NAME test-compile-00-function-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_fewer_parameters.ts")
 tslang_add_test(NAME test-compile-00-closure-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_fewer_parameters.ts")
+tslang_add_test(NAME test-compile-00-in-interface-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
 tslang_add_test(NAME test-compile-01-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
@@ -1368,6 +1369,7 @@ tslang_add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT
 tslang_add_test(NAME test-jit-00-try-finally-throws COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_throws.ts")
 tslang_add_test(NAME test-jit-00-function-fewer-parameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_fewer_parameters.ts")
 tslang_add_test(NAME test-jit-00-closure-fewer-parameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_fewer_parameters.ts")
+tslang_add_test(NAME test-jit-00-in-interface-union COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
 tslang_add_test(NAME test-jit-01-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
@@ -2490,6 +2492,7 @@ set(TSLANG_CORPUS
     00try_finally_throws.ts
     00function_fewer_parameters.ts
     00closure_fewer_parameters.ts
+    00in_interface_union.ts
     00try_using_catch.ts
     00tuple_named.ts
     00tuple_with_array.ts
