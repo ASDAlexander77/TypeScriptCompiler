@@ -270,7 +270,9 @@ namespace own_signature
                 }
 
                 auto value = fillOp.getValue();
-                if (mlir::isa<mlir_ts::RefType>(value.getType()) || (!holdsNoBlock(value) && !hasOwnerOfItsOwn(value)))
+                // a cell of a `let` of this frame, which frees it (spec 69), or a copy
+                if (mlir::isa<mlir_ts::RefType>(value.getType()) ? !isCellVariable(value)
+                                                                  : !holdsNoBlock(value) && !hasOwnerOfItsOwn(value))
                 {
                     return false;
                 }

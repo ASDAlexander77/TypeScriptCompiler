@@ -130,6 +130,7 @@ namespace own_inference
             // filled field by field, and stored once into a literal's `.captured`: `{ w: (x) => x * b.n }`
             // builds the literal in a local, then copies it into the object `ts.New` made
             llvm::SmallVector<mlir_ts::StoreOp> fills;
+            llvm::SmallVector<mlir::Operation *> boxRetains;
             mlir_ts::VariableOp literalOp;
             int32_t capturedPosition = -1;
             for (auto &use : boxOp->getUses())
@@ -154,6 +155,11 @@ namespace own_inference
                 // rc's count of the box, for the literal's reference
                 if (mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(user))
                 {
+                    if (mlir::isa<mlir_ts::RetainCellOp>(user))
+                    {
+                        boxRetains.push_back(user);
+                    }
+
                     continue;
                 }
 
@@ -214,6 +220,7 @@ namespace own_inference
 
             // the literal stays here: nothing stores, returns, captures or keeps it
             auto box = std::make_shared<Closure>();
+            box->box = boxOp.getResult();
             llvm::SmallVector<BorrowUse> uses;
             auto newOp = objects.front().getDefiningOp<mlir_ts::NewOp>();
             if (llvm::is_contained(recordBorrowedFields(newOp), capturedPosition))
@@ -263,7 +270,26 @@ namespace own_inference
             for (auto storeOp : fills)
             {
                 auto value = storeOp.getValue();
-                if (mlir::isa<mlir_ts::RefType>(value.getType()) || holdsNoBlock(value))
+                // a cell of a `let` of this frame (spec 69): borrowed as a closure that does not escape
+                // borrows it, the cell's own releases bounding the literal's uses (decideClosures)
+                if (mlir::isa<mlir_ts::RefType>(value.getType()))
+                {
+                    if (!isCellVariable(value))
+                    {
+                        return;
+                    }
+
+                    if (auto *retain = retainBefore(value, storeOp))
+                    {
+                        box->retains.push_back(retain);
+                    }
+
+                    box->fills.push_back({0, storeOp});
+                    box->hasCells = true;
+                    continue;
+                }
+
+                if (holdsNoBlock(value))
                 {
                     continue;
                 }
@@ -281,6 +307,9 @@ namespace own_inference
 
                 borrowed.push_back(storeOp);
             }
+
+            // ...and the box's own: no state's (classifyStateBoxes)
+            box->retains.append(boxRetains.begin(), boxRetains.end());
 
             captureRetains.insert(box->retains.begin(), box->retains.end());
             for (auto storeOp : borrowed)
@@ -798,6 +827,12 @@ namespace own_inference
                 return;
             }
 
+            // an object literal's box that borrows (classifyLiteralCaptures): no state's
+            if (llvm::any_of(literalBoxes, [&](auto &literalBox) { return literalBox->box == box; }))
+            {
+                return;
+            }
+
             auto closure = std::make_shared<Closure>();
             closure->box = box;
             llvm::SmallVector<mlir::Operation *> boxRetains;
@@ -990,6 +1025,44 @@ namespace own_inference
                 }
             }
         };
+        // the closure's field of an unboxed record: the record's reads, and that field's
+        llvm::SmallVector<std::pair<mlir::Value, int64_t>> records;
+        auto followUnboxedRecord = [&](mlir_ts::VariableOp recordOp, int64_t position) {
+            for (auto *recordUser : recordOp->getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(recordUser))
+                {
+                    records.push_back({loadOp.getResult(), position});
+                    values.push_back(loadOp.getResult());
+                }
+                else if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(recordUser))
+                {
+                    // its fields, filled and read in place
+                    for (auto *fieldUser : propertyRefOp->getUsers())
+                    {
+                        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(fieldUser);
+                            loadOp && propertyRefOp.getPosition() != position)
+                        {
+                            continue;
+                        }
+
+                        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(fieldUser))
+                        {
+                            values.push_back(loadOp.getResult());
+                        }
+                        else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                                 !storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                        {
+                            escape = escape ? escape : fieldUser;
+                        }
+                    }
+                }
+                else if (!mlir::isa<mlir_ts::DebugVariableOp>(recordUser))
+                {
+                    escape = escape ? escape : recordUser;
+                }
+            }
+        };
 
         while (!values.empty() && !escape)
         {
@@ -1072,6 +1145,34 @@ namespace own_inference
                     return;
                 }
 
+                // a field of an unboxed record (spec 36), which owns nothing: `apply({ w: (x) => x + d.n })`
+                // - whatever the record is given to, and whatever is read out of it, may run the closure
+                if (auto fieldOp = slot ? slot.getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp())
+                {
+                    auto recordOp = fieldOp.getObjectRef().getDefiningOp<mlir_ts::VariableOp>();
+                    if (recordOp && !recordOp.getCaptured().value_or(false) && !unboxedRecordFields(recordOp).empty())
+                    {
+                        followUnboxedRecord(recordOp, fieldOp.getPosition());
+                        return;
+                    }
+                }
+
+                // ...and a record read out of one: the closure's field read, not the others
+                if (auto extractOp = mlir::dyn_cast<mlir_ts::ExtractPropertyOp>(user))
+                {
+                    auto record = llvm::find_if(records, [&](auto &entry) { return entry.first == used; });
+                    if (record != records.end())
+                    {
+                        auto position = extractOp.getPosition();
+                        if (position.size() == 1 && position.front() == record->second)
+                        {
+                            values.push_back(extractOp.getResult());
+                        }
+
+                        return;
+                    }
+                }
+
                 escape = user;
             });
         }
@@ -1102,6 +1203,30 @@ namespace own_inference
         for (auto &box : literalBoxes)
         {
             toErase.insert(box->retains.begin(), box->retains.end());
+
+            // the cells a literal borrows (spec 69): nothing that uses it after one is given back
+            auto ok = true;
+            for (auto &fill : box->fills)
+            {
+                auto cell = fill.second.getValue();
+                auto name = varName(cell.getDefiningOp<mlir_ts::VariableOp>());
+                for (auto *end : cell.getUsers())
+                {
+                    if (!mlir::isa<mlir_ts::ReleaseCellOp>(end) && !movesCellAway(end))
+                    {
+                        continue;
+                    }
+
+                    for (auto *use : box->uses)
+                    {
+                        if (ok && reachableAfter(end, use, box->box.getDefiningOp()))
+                        {
+                            reportClosureOutlives(use, end, "the object literal", name);
+                            ok = false;
+                        }
+                    }
+                }
+            }
         }
 
         for (auto &closure : closures)
