@@ -480,7 +480,8 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
-                                                               releaseRoutineName, retainRoutineName, variant));
+                                                               releaseRoutineName, retainRoutineName, variant,
+                                                               TypeOfOpHelper::layoutIdOf(descriptorType)));
 
         return success();
     }
@@ -7829,6 +7830,28 @@ struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
     }
 };
 
+struct IsTupleOfLayoutOpLowering : public TsLlvmPattern<mlir_ts::IsTupleOfLayoutOp>
+{
+    using TsLlvmPattern<mlir_ts::IsTupleOfLayoutOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::IsTupleOfLayoutOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op.getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto layout = tdl.getLayoutFromTag(al.getTypeOfAny(transformed.getValue()));
+        auto expected = rewriter.create<LLVM::ConstantOp>(
+            loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)TypeOfOpHelper::layoutIdOf(op.getLayoutType())));
+        rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq, layout, expected);
+        return success();
+    }
+};
+
 struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 {
     using TsLlvmPattern<mlir_ts::TypeOfAnyOp>::TsLlvmPattern;
@@ -9494,7 +9517,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
-        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,

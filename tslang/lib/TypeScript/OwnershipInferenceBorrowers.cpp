@@ -273,6 +273,15 @@ namespace own_inference
             return true;
         }
 
+        // a tuple made of it only to be given to calls that keep none of it (isBorrow): the calls have
+        // it (an object literal's method, bound to the literal, read into the object type a parameter
+        // is - `applyT(p)` of a literal whose arrows capture, spec 66). Any other tuple keeps it.
+        if (mlir::isa<mlir_ts::CreateTupleOp>(user) && isBorrow(user, use.get()))
+        {
+            values.push_back(user->getResult(0));
+            return true;
+        }
+
         // one of the values a select chooses between, not its condition
         if (auto selectOp = mlir::dyn_cast<mlir::arith::SelectOp>(user); selectOp && use.get() != selectOp.getCondition())
         {

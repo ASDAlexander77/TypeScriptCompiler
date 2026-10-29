@@ -428,7 +428,7 @@ namespace own_inference
 
         // a test - `if (d)`, `d?.x`, `typeof u` - asks about the value, and keeps nothing
         if (mlir::isa<mlir_ts::HasValueOp, mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::TypeOfOp,
-                      mlir_ts::TypeOfAnyOp>(user))
+                      mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp>(user))
         {
             return true;
         }
@@ -481,6 +481,18 @@ namespace own_inference
             }
         }
 
+        // ...and so does an object seen as the storage it points at, when only its fields are reached
+        // through it: each read of one is a place read (checkPlaceRead), as `o.w` straight off the
+        // object is. A cast to an object type reads an object literal's fields so (spec 66).
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+            castOp && mlir::isa<mlir_ts::ObjectType>(castOp.getIn().getType()) && mlir::isa<mlir_ts::RefType>(castOp.getType()))
+        {
+            auto storage = castOp.getResult();
+            return !storage.use_empty() && llvm::all_of(storage.getUsers(), [](mlir::Operation *storageUser) {
+                return mlir::isa<mlir_ts::PropertyRefOp>(storageUser);
+            });
+        }
+
         // ...and so does a cast to `null` or `undefined`, which holds no block: `--di` records the
         // `r` that `if (r == null)` narrows as one
         if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
@@ -499,6 +511,17 @@ namespace own_inference
         if (isCall(user))
         {
             return !isKeptArgument(user, value);
+        }
+
+        // ...and so is a tuple made of it only to be given to calls that keep none of it, and that
+        // nothing releases: an object literal's method bound to it, read into the object type a
+        // parameter is (`applyT(p)`, spec 66)
+        if (auto createTupleOp = mlir::dyn_cast<mlir_ts::CreateTupleOp>(user))
+        {
+            auto tuple = createTupleOp.getResult();
+            return !tuple.use_empty() && llvm::all_of(tuple.getUses(), [&](mlir::OpOperand &use) {
+                return isCall(use.getOwner()) && !isCalleeOperand(use) && !isKeptArgument(use.getOwner(), tuple);
+            });
         }
 
         // the array being pushed onto is written, not taken; what is inserted is taken

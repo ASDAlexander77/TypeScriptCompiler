@@ -33,5 +33,35 @@ function main() {
 
     assert(thrown);
 
+    // a tuple of other fields throws too: `{ n: 5 }` holds an s32, which was read as a number, and
+    // `{ m: 1.5 }` was read as if its field were `n`
+    thrown = false;
+    try {
+        const s: any = { n: 5 };
+        asTuple(s);
+    } catch (e) {
+        thrown = true;
+    }
+
+    assert(thrown);
+
+    thrown = false;
+    try {
+        const m: any = { m: 1.5 };
+        asTuple(m);
+    } catch (e) {
+        thrown = true;
+    }
+
+    assert(thrown);
+
+    // the same fields, from a literal of numbers and nested in another object
+    const f: any = { n: 2.5 };
+    assert(asTuple(f).n == 2.5);
+
+    const o: any = { p: { n: n }, s: "x" };
+    const q = <{ p: { n: number }; s: string }>o;
+    assert(q.p.n == 5 && q.s == "x");
+
     print("done.");
 }

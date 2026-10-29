@@ -2824,8 +2824,8 @@ namespace mlirgen
     // read out of it, and anything else - a class object, a number - throws. It was read as the tuple's
     // layout whatever it held (`(<{ f: F }>x).f = g` with a class object in `x` wrote over its vtable).
     // `___check_tuple` only asks the box (it keeps nothing of it); the read after it is the raw one it
-    // was. A tuple of another layout passes the check: the box names no tuple's fields (`{ n: 5 }`
-    // holds an s32, read as a number).
+    // was. A tuple of other fields throws too: its descriptor's layout id is not the type's
+    // (ts.IsTupleOfLayout) - `{ n: 5 }` holds an s32, which was read as a number.
     ValueOrLogicalResult MLIRGenImpl::castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                                      const GenContext &genContext)
     {
@@ -2836,8 +2836,10 @@ namespace mlirgen
         removeGenericFunctionMap(funcName);
 
         stringstream ss;
-        ss << S("function __check_tuple<T>(a: any) {\n");
+        ss << S("function __check_tuple<T>(a: any, sameLayout: boolean) {\n");
         ss << S("if (typeof a != 'tuple') throw \"Can't cast from any: the value is not an object of type '")
+           << stows(to_print(type)) << S("'\";\n");
+        ss << S("if (!sameLayout) throw \"Can't cast from any: the object's fields are not those of type '")
            << stows(to_print(type)) << S("'\";\n}\n");
 
         auto src = ss.str();
@@ -2860,8 +2862,10 @@ namespace mlirgen
         GenContext funcCallGenContext(genContext);
         funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", type});
 
+        // asked before the call: every box's tag has a descriptor, a tuple's or not
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
+        operands.push_back(builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), value, mlir::TypeAttr::get(type)));
 
         NodeFactory nf(NodeFactoryFlags::None);
         auto checked = mlirGenCallExpression(

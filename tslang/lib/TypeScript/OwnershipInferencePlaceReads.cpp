@@ -389,6 +389,17 @@ namespace own_inference
                     continue;
                 }
 
+                // an object seen as the storage it points at, its fields read through it: the object
+                // (an object literal this function made is its own, `applyT(p)` of one whose arrows
+                // capture reads a method bound to it into the parameter's object type)
+                if (auto castOp = base.getDefiningOp<mlir_ts::CastOp>();
+                    castOp && mlir::isa<mlir_ts::ObjectType>(castOp.getIn().getType()) &&
+                    mlir::isa<mlir_ts::RefType>(castOp.getType()))
+                {
+                    bases.push_back(rootOf(castOp.getIn()));
+                    continue;
+                }
+
                 // a result that borrows an argument is somewhere under the argument
                 if (auto *call = borrowingCall(base))
                 {
