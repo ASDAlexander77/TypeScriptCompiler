@@ -3650,11 +3650,22 @@ genContext);
     mlir::LogicalResult MLIRGenImpl::mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
-        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
+        // an abstract class has one too, though no instance carries it: a value of the class
+        // (`const k: typeof A = A`) reads its static members through it. Its abstract methods'
+        // and its interfaces' slots are null, as only a static is read through it.
+        if (!newClassPtr->getHasVirtualTable())
         {
             return mlir::success();
         }
-       
+
+        auto nullSlot = [&](mlir::Location location, mlir::Type slotType) -> mlir::Value {
+            // through Opaque: a null function is no TypeScript value
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            auto nullOpaque = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), nullValue);
+            auto castResult = cast(location, slotType, nullOpaque, genContext);
+            return castResult.failed_or_no_value() ? mlir::Value() : V(castResult);
+        };
+
         // TODO: ...
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
@@ -3688,7 +3699,13 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
                 {
-                    if (vtRecord.isInterfaceVTable)
+                    if (vtRecord.isInterfaceVTable && newClassPtr->isAbstract)
+                    {
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, nullSlot(location, getOpaqueType()), vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex++));
+                    }
+                    else if (vtRecord.isInterfaceVTable)
                     {
                         // TODO: write correct full name for vtable
                         auto fullClassInterfaceVTableFieldName =
@@ -3751,7 +3768,7 @@ genContext);
                         mlir::Type slotType;
                         if (!vtRecord.isStaticField)
                         {
-                            if (vtRecord.methodInfo.isAbstract)
+                            if (vtRecord.methodInfo.isAbstract && !newClassPtr->isAbstract)
                             {
                                 emitError(location) << "Abstract method '" << vtRecord.methodInfo.name <<  "' is not implemented in '" << newClassPtr->name << "'";
                                 return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
@@ -3808,18 +3825,13 @@ genContext);
                             return owner && owner->isCppVTable && !owner->isCppVTableImplementation;
                         };
 
-                        if (isUnimplementedCppMethod())
+                        if (isUnimplementedCppMethod() || (!vtRecord.isStaticField && vtRecord.methodInfo.isAbstract))
                         {
-                            // through Opaque: a null function is no TypeScript value
-                            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
-                            auto nullOpaque = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), nullValue);
-                            auto castResult = cast(location, slotType, nullOpaque, genContext);
-                            if (castResult.failed_or_no_value())
+                            methodOrFieldNameRef = nullSlot(location, slotType);
+                            if (!methodOrFieldNameRef)
                             {
                                 return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                             }
-
-                            methodOrFieldNameRef = V(castResult);
                         }
                         else if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
                         {
@@ -4341,9 +4353,9 @@ genContext);
             return builder.create<mlir_ts::CastOp>(location, opaqueType, symbolRefOp);
         };
 
-        // the vtable, for a static read through the value; an abstract class has none
+        // the vtable, for a static read through the value (an abstract class has one for that)
         mlir::Value vtable;
-        if (classInfo->getHasVirtualTable() && !classInfo->isAbstract)
+        if (classInfo->getHasVirtualTable())
         {
             // as an instance gets it (mlirGenSetVTableToInstance)
             auto vtableName = concat(classInfo->fullName, VTABLE_NAME);

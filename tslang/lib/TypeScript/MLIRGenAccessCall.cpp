@@ -403,8 +403,17 @@ namespace mlirgen
                                                       detectAccessLevel(classType, genContext), genContext);
                     }
 
+                    // a static method has a vtable slot, which a subclass's static of that name takes
+                    // over: through the value it is the static of the class the value holds
+                    auto methodIndex = classInfo->getMethodIndex(name);
+                    if (methodIndex >= 0 && classInfo->methods[methodIndex].isStatic)
+                    {
+                        return ClassMethodAccess(classInfo, location, objectValue, methodIndex, false,
+                                                 detectAccessLevel(classType, genContext), genContext);
+                    }
+
                     emitError(location) << "'" << name << "' through a value of '" << to_print(classValueType)
-                                        << "': only a static field can be reached through a class value yet";
+                                        << "': only a static member can be reached through a class value";
                     return mlir::Value();
                 })
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {

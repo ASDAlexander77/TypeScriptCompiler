@@ -44,6 +44,54 @@ class Counter {
     static count = 7;
 }
 
+// statics through a value: a subclass's static of the same name is the one called
+class Unit {
+    static label() {
+        return "unit";
+    }
+
+    static scaled(k: number) {
+        return k;
+    }
+}
+
+class Double extends Unit {
+    static label() {
+        return "double";
+    }
+
+    static scaled(k: number) {
+        return 2 * k;
+    }
+}
+
+class Inherits extends Unit {}
+
+interface Named {
+    title(): string;
+}
+
+// an abstract class's own value: its vtable has its statics, its abstract and interface slots null
+abstract class Kind implements Named {
+    static n = 4;
+
+    static id() {
+        return 1;
+    }
+
+    abstract title(): string;
+}
+
+class Concrete extends Kind {
+    static id() {
+        return 2;
+    }
+
+    title() {
+        return "concrete";
+    }
+}
+
 function make(c: typeof Shape, s: number) {
     return new c(s);
 }
@@ -56,6 +104,10 @@ function pick(i: number): typeof Shape {
 
 function countOf(k: typeof Counter) {
     return k.count;
+}
+
+function labelOf(u: typeof Unit) {
+    return u.label();
 }
 
 function main() {
@@ -96,6 +148,20 @@ function main() {
     assert(typeof a == "function", "typeof");
 
     assert(countOf(Counter) == 7, "static through the value");
+
+    assert(labelOf(Double) == "double" && labelOf(Unit) == "unit" && labelOf(Inherits) == "unit", "static methods");
+    const units: (typeof Unit)[] = [Double, Inherits];
+    let scaled: number = 0;
+    for (const u of units) {
+        scaled += u.scaled(3);
+    }
+
+    assert(scaled == 9, "static method with arguments");
+
+    const kind: typeof Kind = Kind;
+    const concrete: typeof Kind = Concrete;
+    assert(kind.id() == 1 && kind.n == 4 && concrete.id() == 2 && concrete.n == 4, "statics of an abstract class's value");
+    assert(new Concrete().title() == "concrete", "abstract slot filled");
 
     print("done.");
 }

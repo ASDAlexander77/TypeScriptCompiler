@@ -102,7 +102,8 @@ A local class used as a value (`return Counter`) carries its captures. Its value
 **The value.** `ClassValueType<A>` (`class_value<...>`, printed `typeof A`) is what `typeof A` of a class
 gives (`typeOfQueried`). It is laid out as a tuple of four opaque pointers
 (`MLIRTypeHelper::getClassValueStorageType`), not as a vtable pointer alone:
-- **`.vtable`:** the class's vtable, or null for an abstract class, which has none.
+- **`.vtable`:** the class's vtable. An abstract class has one too, though no instance carries it: its
+  statics are read through it, and its abstract methods' and interfaces' slots are null.
 - **`.new`:** the class's `.new`, which allocates an instance and sets its vtable; null for an abstract class.
 - **`.constructor`:** the class's constructor, or null for none.
 - **`.rtti`:** the class's rtti, which every class has and no two share.
@@ -120,13 +121,15 @@ between the value and that tuple, or to the value of a base class, lowers to not
 **Using one:**
 - **`new c(args)`** (`NewClassInstanceFromClassValue`): the arguments are cast to `A`'s constructor's
   parameters, and `.new` is called through the value, its result marked owned and fresh. Then the
-  constructor is called with the instance first, when there is one. Too many arguments is an error, and
-  so is a value of an abstract class's type.
+  constructor is called with the instance first, when there is one, as any call is made (spread
+  arguments, a rest parameter, optional parameters). A value of an abstract class's type is an error.
 - **`==` / `!=`:** compare the rtti; a class named beside a value is its value.
 - **`typeof`** of a class value is `"function"`.
-- **A static field** is read through the value's vtable (ADD_STATIC_MEMBERS_TO_VTABLE). A static that a
-  subclass declares again has a slot of its own, so the base's slot still reads the base's, as through
-  an instance. Any other member through a value (a static method) is an error.
+- **A static method** is called through the value's vtable (ADD_STATIC_MEMBERS_TO_VTABLE). A subclass's
+  static method of the same name takes over the slot, so `c.label()` is the label of the class `c` holds.
+- **A static field** is read through the vtable too. A static field that a subclass declares again has a
+  slot of its own, so the base's slot still reads the base's, as through an instance.
+- Any other member through a value is an error.
 
 **Ownership:** the value owns nothing (its parts are static data and functions). The instance `new` makes
 through it is a fresh owned result.
@@ -138,6 +141,7 @@ region"): the initializers reach the implicit constructor after captures are fou
 
 **Tests:**
 - **`00class_values`:** a factory, an array, a return, a field, a class without a constructor, a subclass
-  without its own constructor, equality, abstract classes, `typeof`, a static through the value; under
+  without its own constructor, equality, abstract classes, `typeof`, static fields and methods through
+  the value (a subclass's, an inherited one, an abstract class's own); under
   gc, rc, none and own.
 - **`class_value_constructor_error`** and **`class_local_capture_error`:** the errors.
