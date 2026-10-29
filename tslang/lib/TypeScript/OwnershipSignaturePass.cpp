@@ -30,6 +30,27 @@ namespace own_signature
             }
         }
 
+        // the fields back-references are stored into (spec 70): what they hold borrows the object they
+        // are in, so inference takes nothing out of them
+        llvm::SetVector<mlir::Attribute> backReferenceFields;
+        module.walk([&](mlir_ts::StoreOp storeOp) {
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto storage = propertyRefOp ? fieldOwnerStorage(propertyRefOp) : mlir_ts::ClassStorageType();
+            if (!storage || !isBackReferenceStore(storeOp))
+            {
+                return;
+            }
+
+            backReferenceFields.insert(mlir::ArrayAttr::get(
+                &getContext(), {mlir::TypeAttr::get(storage),
+                                mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), propertyRefOp.getPosition())}));
+        });
+        if (!backReferenceFields.empty())
+        {
+            module->setAttr(OWN_BACK_REFERENCE_FIELDS_ATTR_NAME,
+                            mlir::ArrayAttr::get(&getContext(), backReferenceFields.getArrayRef()));
+        }
+
         if (auto functionsDropping = module->getAttrOfType<mlir::DictionaryAttr>(SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME))
         {
             for (auto entry : functionsDropping)
@@ -762,6 +783,21 @@ namespace own_signature
             // a field a borrowing record borrows (spec 32), or `this` in the box of a generator whose
             // state borrows it: the record keeps nothing
             if (isBorrowedRecordFieldStore(user) || user->hasAttr(OWN_STATE_BORROW_ATTR_NAME))
+            {
+                return false;
+            }
+
+            // `this` in a closure's box (captured by copy, spec 70): the object is the caller's, which
+            // no box can own. A closure that does not escape borrows it, as it did the cell; one stored
+            // into a field of `this` is a back-reference; any other one is inference's error
+            if (auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                propertyRefOp && isMemberThis(used) && closureOfBox(propertyRefOp->getOperand(0)))
+            {
+                return false;
+            }
+
+            // ...or a bound method of `this` stored into a field of `this`: it borrows the object
+            if (isBoundMethodOfMemberThis(storeOp.getValue()) && isFieldOfMemberThis(storeOp.getReference()))
             {
                 return false;
             }

@@ -8,8 +8,26 @@
 namespace own_inference
 {
 
+    // A closure stored into a field of the object it captures (spec 70; isBackReferenceBox)
+    bool OwnershipInferencePass::isBackReference(Closure &closure)
+    {
+        return !closure.hasCells && isBackReferenceBox(closure.box);
+    }
+
     void OwnershipInferencePass::classifyClosures()
     {
+        // a bound method of `this` stored into a field of `this` (spec 70): it borrows the object, so
+        // rc's reference for it goes, as a borrowing field's does
+        getFunction().walk([&](mlir_ts::StoreOp storeOp) {
+            if (isFieldOfMemberThis(storeOp.getReference()) && isBoundMethodOfMemberThis(storeOp.getValue()))
+            {
+                if (auto *retain = retainBefore(storeOp.getValue(), storeOp))
+                {
+                    fieldBorrowRetains.insert(retain);
+                }
+            }
+        });
+
         getFunction().walk([&](mlir_ts::CreateBoundFunctionOp boundOp) {
             if (!boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME) || closureOfBox(boundOp.getThisVal()) != boundOp)
             {
@@ -60,6 +78,25 @@ namespace own_inference
                 closure->escape = escape;
             }
 
+            // a back-reference (spec 70): the field owns the closure, and its box borrows the object -
+            // its routine frees the box alone (`__own_borrows_captures`), and rc's reference for the
+            // copy goes, as a borrowing field's does
+            if (isBackReference(*closure))
+            {
+                for (auto &fill : closure->fills)
+                {
+                    if (auto *retain = retainBefore(fill.second.getValue(), fill.second))
+                    {
+                        fieldBorrowRetains.insert(retain);
+                    }
+
+                    setAttrTracked(fill.second, OWN_CAPTURE_BORROW_ATTR_NAME);
+                }
+
+                setAttrTracked(boundOp, OWN_BORROWS_CAPTURES_ATTR_NAME);
+                return;
+            }
+
             // copies only: the box owns them (phase 4); only an alias needs deciding - unless the box
             // is given to a generator's maker whose result borrows from it
             if (!closure->hasCells)
@@ -67,14 +104,18 @@ namespace own_inference
                 // ...and only when every copy has an owner of its own: the box frees itself alone, so a
                 // value made for it (a callback that captures, `a.filter((x) => x > n)`) would be
                 // nobody's
+                // ...or when it holds the member's `this` (a copy, spec 70), the caller's, as a closure
+                // that does not escape borrowed the cell it held before
+                auto noneFresh = llvm::none_of(closure->fills, [&](auto &fill) {
+                    auto value = fill.second.getValue();
+                    return !holdsNoBlock(value) && isFresh(rootOf(value));
+                });
+                auto holdsThis = llvm::any_of(closure->fills, [&](auto &fill) { return isMemberThis(fill.second.getValue()); });
                 closure->borrowsCopies =
-                    !closure->escape &&
-                    llvm::any_of(closure->boxUses,
-                                 [](mlir::Operation *use) { return use->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME); }) &&
-                    llvm::none_of(closure->fills, [&](auto &fill) {
-                        auto value = fill.second.getValue();
-                        return !holdsNoBlock(value) && isFresh(rootOf(value));
-                    });
+                    !closure->escape && noneFresh &&
+                    (holdsThis || llvm::any_of(closure->boxUses, [](mlir::Operation *use) {
+                         return use->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME);
+                     }));
                 if (!closure->borrowsCopies)
                 {
                     if (!closure->escape && closure->aliased)

@@ -1343,6 +1343,206 @@ inline mlir_ts::CreateBoundFunctionOp closureOfBox(mlir::Value box)
     return {};
 }
 
+// `this` of the class member a function is: its first parameter, of a class type, or a read of the
+// parameter's slot, seen through views (spec 70)
+inline bool isMemberThis(mlir::Value value)
+{
+    value = rootOf(value);
+    // the parameter's slot: `ts.Param` in MLIRGen, `ts.Variable` initialized from it by the time the
+    // own passes run
+    if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+    {
+        auto *slot = loadOp.getReference().getDefiningOp();
+        if (auto varOp = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(slot); varOp && varOp.getInitializer())
+        {
+            value = varOp.getInitializer();
+        }
+        else if (auto paramOp = mlir::dyn_cast_or_null<mlir_ts::ParamOp>(slot))
+        {
+            value = paramOp->getOperand(0);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+    return argument && argument.getArgNumber() == 0 && argument.getOwner()->isEntryBlock() &&
+           mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) &&
+           mlir::isa<mlir_ts::ClassType>(argument.getType());
+}
+
+// A field of the member's `this`: of its object, or of a base class's storage in it (spec 57)
+inline bool isFieldOfMemberThis(mlir::Value ref)
+{
+    auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+    if (!propertyRefOp)
+    {
+        return false;
+    }
+
+    auto object = propertyRefOp->getOperand(0);
+    while (auto baseRefOp = object.getDefiningOp<mlir_ts::PropertyRefOp>())
+    {
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(baseRefOp.getType());
+        if (!refType || !mlir::isa<mlir_ts::ClassStorageType>(refType.getElementType()))
+        {
+            return false;
+        }
+
+        object = baseRefOp->getOperand(0);
+    }
+
+    return isMemberThis(object);
+}
+
+// A back-reference's box (spec 70): it holds the member's `this` and nothing else that owns a block,
+// and the closure over it is stored once, into a field of that `this`; anything else done with the
+// closure is a call through it, a view of it, or a count of it. The box borrows the object: the
+// field owns the closure, and the object bounds it.
+inline bool isBackReferenceBox(mlir::Value box)
+{
+    auto boundOp = closureOfBox(box);
+    if (!boundOp)
+    {
+        return false;
+    }
+
+    auto holdsThis = false;
+    for (auto *user : box.getUsers())
+    {
+        if (user == boundOp.getOperation() || mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(user))
+        {
+            continue;
+        }
+
+        auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        for (auto *fieldUser : propertyRefOp->getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+            if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+            {
+                return false;
+            }
+
+            if (isMemberThis(storeOp.getValue()))
+            {
+                holdsThis = true;
+            }
+            else if (!holdsNoBlock(storeOp.getValue()))
+            {
+                return false;
+            }
+        }
+    }
+
+    if (!holdsThis)
+    {
+        return false;
+    }
+
+    auto stores = 0;
+    llvm::SmallVector<mlir::Value> pending{boundOp.getResult()};
+    while (!pending.empty())
+    {
+        auto value = pending.pop_back_val();
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp>(user))
+            {
+                continue;
+            }
+
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                storeOp && storeOp.getValue() == value && isFieldOfMemberThis(storeOp.getReference()))
+            {
+                ++stores;
+                continue;
+            }
+
+            if (isView(user))
+            {
+                pending.push_back(user->getResult(0));
+                continue;
+            }
+
+            return false;
+        }
+    }
+
+    return stores == 1;
+}
+
+// The class storage a field is in: of a class object, or of a base class's storage in one; null for
+// any other field
+inline mlir_ts::ClassStorageType fieldOwnerStorage(mlir_ts::PropertyRefOp propertyRefOp)
+{
+    auto type = propertyRefOp->getOperand(0).getType();
+    if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+    {
+        type = refType.getElementType();
+    }
+
+    if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
+    {
+        return mlir::dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType());
+    }
+
+    return mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
+}
+
+// Is `ref` a field some back-reference is stored into (OWN_BACK_REFERENCE_FIELDS_ATTR_NAME, the
+// signature pass's)? What it holds may borrow the object it is in, so it is never taken out of it
+inline bool isBackReferenceField(mlir::Value ref)
+{
+    auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+    auto storage = propertyRefOp ? fieldOwnerStorage(propertyRefOp) : mlir_ts::ClassStorageType();
+    auto module = propertyRefOp ? propertyRefOp->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp();
+    auto entries = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_BACK_REFERENCE_FIELDS_ATTR_NAME) : mlir::ArrayAttr();
+    if (!storage || !entries)
+    {
+        return false;
+    }
+
+    return llvm::any_of(entries.getAsRange<mlir::ArrayAttr>(), [&](mlir::ArrayAttr entry) {
+        return mlir::cast<mlir::TypeAttr>(entry[0]).getValue() == storage &&
+               mlir::cast<mlir::IntegerAttr>(entry[1]).getInt() == propertyRefOp.getPosition();
+    });
+}
+
+// A method of the member's `this` bound to it (`this.m`), seen through views (spec 70). Its release
+// frees nothing of the object (the closure's tag is null for a bound method): it borrows it
+inline bool isBoundMethodOfMemberThis(mlir::Value value)
+{
+    auto *def = rootOf(value).getDefiningOp();
+    return def && mlir::isa<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(def) &&
+           isMemberThis(def->getOperand(0));
+}
+
+// A store of a back-reference into a field of the member's `this` (spec 70): a closure over a
+// back-reference's box, or a bound method of that `this`
+inline bool isBackReferenceStore(mlir_ts::StoreOp storeOp)
+{
+    if (!isFieldOfMemberThis(storeOp.getReference()))
+    {
+        return false;
+    }
+
+    if (isBoundMethodOfMemberThis(storeOp.getValue()))
+    {
+        return true;
+    }
+
+    auto boundOp = rootOf(storeOp.getValue()).getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
+    return boundOp && isBackReferenceBox(boundOp.getThisVal());
+}
+
 // Is this the slot of parameter `argument` - a local declared from it that owns nothing, is not
 // captured, and is never assigned, so every read of it is the argument?
 inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index)
