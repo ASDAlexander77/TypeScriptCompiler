@@ -2480,6 +2480,7 @@ namespace mlirgen
 
         // final type, update
         objectStorageType.setFields(oli.fieldInfos);
+        recordObjectLiteralThisFields(oli, getTupleType(oli.fieldInfos));
 
         if (mlir::failed(mlirGenObjectLiteralMethodBodies(oli, genContext)))
         {

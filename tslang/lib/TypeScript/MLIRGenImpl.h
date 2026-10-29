@@ -11623,6 +11623,32 @@ class MLIRGenImpl
     // given with no receiver may be built for an interface, whose vtable takes the literal's methods, and so
     // may one made for an interface. An arrow whose untyped parameters have no function type to take theirs
     // from stays a method too.
+    // The fields an object literal's members name through `this` (`this.count`), and "" when one uses
+    // `this` otherwise (whole, or `this[k]`), by the literal's storage: a cast to an interface that widens
+    // such a field gives the members a clone they would read and write in the narrow type
+    // (castObjectToInterface)
+    void recordObjectLiteralThisFields(ObjectLiteralInfo &oli, mlir::Type storageType)
+    {
+        auto &names = objectLiteralThisFields[storageType];
+        size_t thisCount = 0;
+        size_t fieldCount = 0;
+        FilterVisitorAST<Node> thisVisitor(SyntaxKind::ThisKeyword, [&](auto) { thisCount++; });
+        FilterVisitorAST<Node> accessVisitor(SyntaxKind::PropertyAccessExpression, [&](auto node) {
+            auto access = node.template as<PropertyAccessExpression>();
+            if (access->expression == SyntaxKind::ThisKeyword)
+            {
+                fieldCount++;
+                names.insert(MLIRHelper::getName(access->name));
+            }
+        });
+        thisVisitor.visit(oli.objectLiteral);
+        accessVisitor.visit(oli.objectLiteral);
+        if (thisCount > fieldCount)
+        {
+            names.insert("");
+        }
+    }
+
     void markClosureMembers(ObjectLiteralInfo &oli, const GenContext &genContext)
     {
         oli.closureMembers.clear();
@@ -16361,6 +16387,9 @@ class MLIRGenImpl
     // the vtables of classes for interfaces they don't declare that casts ask for
     // (interfaceVTableNameForClass), from the discovery pass on: see castAnyToInterface
     llvm::StringSet<> classInterfaceVTablesCast;
+
+    // the fields object literals' members name through `this`, by storage (recordObjectLiteralThisFields)
+    llvm::DenseMap<mlir::Type, llvm::StringSet<>> objectLiteralThisFields;
 
     // the @cpp methods returning a C++ record (by function name): the record's type
     llvm::StringMap<mlir::Type> cppVTableHiddenReturns;

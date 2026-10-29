@@ -15,5 +15,6 @@ assert(A.counterObj.count == 2);
 var c: A.Counter = <A.Counter>A.counterObj;
 c.inc();
 print(c.count);
+assert(c.count == 3);
 
 print("done.");

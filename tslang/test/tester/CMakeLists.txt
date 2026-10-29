@@ -754,6 +754,7 @@ tslang_add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-compile-00-any-to-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
 tslang_add_test(NAME test-compile-00-any-literal-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
+tslang_add_test(NAME test-compile-00-interface-method-object-field-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_object_field_type.ts")
 tslang_add_test(NAME test-compile-00-unknown-round-trip COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -1378,6 +1379,7 @@ tslang_add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-jit-00-any-to-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
 tslang_add_test(NAME test-jit-00-any-literal-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
+tslang_add_test(NAME test-jit-00-interface-method-object-field-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_object_field_type.ts")
 tslang_add_test(NAME test-jit-00-unknown-round-trip COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 tslang_add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -2480,6 +2482,7 @@ set(TSLANG_CORPUS
     00types_unknown1.ts
     00any_to_tuple.ts
     00any_literal_to_interface.ts
+    00interface_method_object_field_type.ts
     00unknown_round_trip.ts
     00types_utility.ts
     00types.ts
@@ -3478,7 +3481,8 @@ set_tests_properties(test-compile-interface-cast-empty
 # field of another type, has no slot to copy.
 set(interface_cast_error_cases
     "method_field|interface 'F' can't be cast to interface 'M': member 'g' is a method of one and a field of the other"
-    "field_type|interface 'S1' can't be cast to interface 'T1': member 'b' has another type")
+    "field_type|interface 'S1' can't be cast to interface 'T1': member 'b' has another type"
+    "method_object_narrow_field|field 'count' of the object is 's32' but interface 'Counter' declares 'number'")
 foreach(interface_cast_error_case ${interface_cast_error_cases})
     string(FIND "${interface_cast_error_case}" "|" interface_cast_error_sep)
     string(SUBSTRING "${interface_cast_error_case}" 0 ${interface_cast_error_sep} interface_cast_error_name)

@@ -3202,6 +3202,51 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
+                // An object literal's members take this very block for `this`, laid out as it is: given the
+                // clone through the interface, a member writing a field the clone widened (`count: 0`, an
+                // s32, for `count: number`) writes it as the narrow type into the wider slot, and the
+                // interface reads garbage. Such an object cannot be cast; its field has to be the
+                // interface's type. One whose members never name that field through `this` can. An object
+                // made in another module has no record here: any method of it may.
+                auto isMethod = [](mlir::Type type) {
+                    return isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type);
+                };
+                auto thisFields = objectLiteralThisFields.find(storageTuple);
+                auto recorded = thisFields != objectLiteralThisFields.end();
+                auto namedThroughThis = [&](mlir::Attribute id) {
+                    auto name = dyn_cast<mlir::StringAttr>(id);
+                    return !recorded || !name || thisFields->second.contains(name.getValue()) || thisFields->second.contains("");
+                };
+                if (recorded || llvm::any_of(storageTuple.getFields(), [&](auto &field) { return isMethod(field.type); }))
+                {
+                    for (auto &field : storageTuple.getFields())
+                    {
+                        auto found = llvm::find_if(fields, [&](auto &cloneField) { return cloneField.id == field.id; });
+                        if (found == fields.end() || found->type == field.type || isMethod(field.type) ||
+                            !namedThroughThis(field.id))
+                        {
+                            continue;
+                        }
+
+                        auto diag = emitError(location) << "field '";
+                        if (auto name = dyn_cast<mlir::StringAttr>(field.id))
+                        {
+                            diag << name.getValue();
+                        }
+                        else
+                        {
+                            diag << field.id;
+                        }
+
+                        diag << "' of the object is '" << to_print(field.type)
+                                            << "' but interface '" << interfaceInfo->fullName << "' declares '"
+                                            << to_print(found->type)
+                                            << "': the object's methods would not see the converted field. Give the field "
+                                               "the interface's type (for a number, a literal such as `0.0`, or `<number>0`)";
+                        return mlir::failure();
+                    }
+                }
+
                 auto newInterfaceTupleType = getTupleType(fields);
 
                 CAST_A(unboxed, location, newInterfaceTupleType, in, genContext);

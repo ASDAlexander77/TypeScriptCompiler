@@ -11,5 +11,7 @@ namespace A {
     // boxing fix: the importer's @dllimport reconstruction must box this
     // back to match, both for casting to an interface AND for reading the
     // global's fields directly (no cast at all).
-    export var counterObj = { count: 0, inc() { this.count = this.count + 1; } };
+    // `count: 0.0`: an integer literal is an s32, which the interface's `number` field would widen,
+    // and a cast of an object whose method writes that field is an error (castObjectToInterface)
+    export var counterObj = { count: 0.0, inc() { this.count = this.count + 1; } };
 }
