@@ -1138,6 +1138,16 @@ SuccessorOperands mlir_ts::InvokeOp::getSuccessorOperands(unsigned index)
 }
 
 //===----------------------------------------------------------------------===//
+// AccessorUnwindEdgeOp
+//===----------------------------------------------------------------------===//
+
+SuccessorOperands mlir_ts::AccessorUnwindEdgeOp::getSuccessorOperands(unsigned index)
+{
+    assert(index <= 1 && "invalid successor index");
+    return SuccessorOperands(MutableOperandRange(getOperation(), 0, 0));
+}
+
+//===----------------------------------------------------------------------===//
 // InvokeHybridOp
 //===----------------------------------------------------------------------===//
 

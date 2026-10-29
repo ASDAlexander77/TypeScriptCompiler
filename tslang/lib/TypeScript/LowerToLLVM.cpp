@@ -162,6 +162,27 @@ static mlir::Value nullStringAsText(mlir::Location loc, mlir::Value text, Conver
     return rewriter.create<LLVM::SelectOp>(loc, isNull, nullText, text);
 }
 
+static bool isInsidePresplitCoroutine(mlir::Operation *op);
+
+// A function with Windows exception funclets: a variable-size alloca in it moves the stack, and an exception
+// thrown by a call in a catch and caught by a typed catch of the same function then has the CRT write its catch
+// object at the wrong address (a crash, or the wrong value).
+static bool isInsideFunctionWithFunclets(mlir::Operation *op, const CompileOptions &compileOptions)
+{
+    if (!compileOptions.isWindows)
+    {
+        return false;
+    }
+
+    if (auto llvmFuncOp = op->getParentOfType<LLVM::LLVMFuncOp>())
+    {
+        return llvmFuncOp.getPersonality().has_value();
+    }
+
+    auto funcOp = op->getParentOfType<mlir_ts::FuncOp>();
+    return funcOp && funcOp.getPersonality().value_or(false);
+}
+
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 {
   public:
@@ -207,7 +228,20 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         }
 
         auto size = values.size();
-        if (size > 1)
+        if (size > 1 && (isInsidePresplitCoroutine(op) || isInsideFunctionWithFunclets(op, tsLlvmContext->compileOptions)))
+        {
+            // the line on the heap, let go once written: no variable-size alloca where one breaks (see above)
+            mlir::Value result =
+                rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(false));
+
+            mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(strType), result);
+            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, valueAsLLVMType);
+
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
+
+            ch.MemoryFree(valueAsPtr);
+        }
+        else if (size > 1)
         {
             // TODO: review, why we need stack recovery here
             auto stack = rewriter.create<LLVM::StackSaveOp>(loc, i8PtrType);
@@ -571,20 +605,12 @@ struct InterfaceAccessorCell
     static std::optional<InterfaceAccessorCell> of(mlir::Value reference, ConversionPatternRewriter &rewriter,
                                                    const CompileOptions &compileOptions)
     {
+        if (!isInterfaceAccessorCellRef(reference))
+        {
+            return std::nullopt;
+        }
+
         auto interfaceSymbolRefOp = reference.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
-        if (!interfaceSymbolRefOp || interfaceSymbolRefOp.getOptional().value_or(false)
-            || interfaceSymbolRefOp->hasAttr(INTERFACE_FUNCTION_FIELD_WRITE_ATTR)
-            || interfaceSymbolRefOp->hasAttr(INTERFACE_OPTIONAL_WRITE_ATTR))
-        {
-            return std::nullopt;
-        }
-
-        auto refType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
-        if (!refType || isa<mlir_ts::FunctionType>(refType.getElementType()))
-        {
-            return std::nullopt;
-        }
-
         TypeHelper th(rewriter);
         auto loc = interfaceSymbolRefOp.getLoc();
         auto interfaceVal = rewriter.getRemappedValue(interfaceSymbolRefOp.getInterfaceVal());
@@ -601,6 +627,41 @@ struct InterfaceAccessorCell
         auto zero = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, 0));
         auto isCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, slotValue, zero);
         return InterfaceAccessorCell{isCell, thisVal, slotValue, intPtrType, static_cast<unsigned>(sizeBits)};
+    }
+
+    // the block a load or a store in a `try` unwinds to: the AccessorUnwindEdgeOp after it says
+    static mlir::Block *unwindBlockOf(mlir::Operation *op)
+    {
+        auto edgeOp = dyn_cast_or_null<mlir_ts::AccessorUnwindEdgeOp>(op->getNextNode());
+        return edgeOp ? edgeOp.getUnwindDest() : nullptr;
+    }
+
+    // a call of the getter or the setter, as an invoke unwinding to `unwindBlock` in a `try`
+    static mlir::Value call(mlir::Location loc, ConversionPatternRewriter &rewriter, mlir::Type resultType,
+                            ValueRange operands, mlir::Block *unwindBlock)
+    {
+        TypeHelper th(rewriter);
+        auto isVoid = isa<LLVM::LLVMVoidType>(resultType);
+        if (!unwindBlock)
+        {
+            SmallVector<mlir::Type> argTypes;
+            for (auto operand : operands.drop_front())
+            {
+                argTypes.push_back(operand.getType());
+            }
+
+            auto callOp = rewriter.create<LLVM::CallOp>(loc, LLVM::LLVMFunctionType::get(resultType, argTypes), operands);
+            return isVoid ? mlir::Value() : callOp.getResult();
+        }
+
+        auto *block = rewriter.getInsertionBlock();
+        auto *normalBlock = rewriter.splitBlock(block, rewriter.getInsertionPoint());
+        rewriter.setInsertionPointToEnd(block);
+        auto invokeOp = rewriter.create<LLVM::InvokeOp>(loc, isVoid ? TypeRange{} : TypeRange{resultType},
+                                                        mlir::FlatSymbolRefAttr(), operands, normalBlock, ValueRange{},
+                                                        unwindBlock, ValueRange{});
+        rewriter.setInsertionPointToStart(normalBlock);
+        return isVoid ? mlir::Value() : invokeOp.getResult();
     }
 
     // the getter (index 0) or the setter (1) out of the cell
@@ -2829,6 +2890,19 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
             rewriter.eraseOp(op);
         }
 
+        return success();
+    }
+};
+
+struct AccessorUnwindEdgeOpLowering : public TsLlvmPattern<mlir_ts::AccessorUnwindEdgeOp>
+{
+    using TsLlvmPattern<mlir_ts::AccessorUnwindEdgeOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AccessorUnwindEdgeOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // the access before it unwinds there by an invoke of its own, when the slot is a cell
+        rewriter.replaceOpWithNewOp<LLVM::BrOp>(op, ValueRange{}, op.getNormalDest());
         return success();
     }
 };
@@ -5163,10 +5237,9 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         {
             // the field filled by a getter: call it
             auto getterCallFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-                TypeHelper th(rewriter);
                 auto getter = accessorCell->accessor(loc, rewriter, 0);
-                auto getterType = LLVM::LLVMFunctionType::get(elementTypeConverted, {th.getPtrType()});
-                return rewriter.create<LLVM::CallOp>(loc, getterType, ValueRange{getter, accessorCell->thisVal}).getResult();
+                return InterfaceAccessorCell::call(loc, rewriter, elementTypeConverted, ValueRange{getter, accessorCell->thisVal},
+                                                   InterfaceAccessorCell::unwindBlockOf(loadOp));
             };
 
             loadedValue = clh.conditionalExpressionLowering(loc, elementTypeConverted, accessorCell->isCell, getterCallFunc,
@@ -5303,10 +5376,9 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
                     clh.conditionalBlocksLowering(
                         hasSetter,
                         [&](OpBuilder &builder, Location location) -> ValueRange {
-                            auto setterType = LLVM::LLVMFunctionType::get(
-                                th.getVoidType(), {th.getPtrType(), transformed.getValue().getType()});
-                            rewriter.create<LLVM::CallOp>(loc, setterType,
-                                                          ValueRange{setter, accessorCell->thisVal, transformed.getValue()});
+                            InterfaceAccessorCell::call(loc, rewriter, th.getVoidType(),
+                                                        ValueRange{setter, accessorCell->thisVal, transformed.getValue()},
+                                                        InterfaceAccessorCell::unwindBlockOf(storeOp));
                             return ValueRange{};
                         },
                         [&](OpBuilder &builder, Location location) -> ValueRange { return ValueRange{}; });
@@ -9419,7 +9491,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,

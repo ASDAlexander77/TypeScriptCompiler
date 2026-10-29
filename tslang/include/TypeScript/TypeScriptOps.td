@@ -942,6 +942,18 @@ def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
   let hasVerifier = 1;
 }
 
+// Ends the block of a load or a store through an interface's field inside a `try` (mayCallInterfaceAccessor):
+// the slot may name a cell, whose getter or setter the access calls once lowered to LLVM, where it is an invoke
+// unwinding to `unwindDest`. Until then this edge keeps the landing block, which may have no other predecessor,
+// and shows the analyses that the access may leave for it. Lowered to a branch to `normalDest`.
+def TypeScript_AccessorUnwindEdgeOp : TypeScript_Op<"AccessorUnwindEdge", [
+                      DeclareOpInterfaceMethods<BranchOpInterface>,
+                      Terminator
+                      ]> {
+  let successors = (successor AnySuccessor:$normalDest,
+                              AnySuccessor:$unwindDest);
+}
+
 def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
                       AttrSizedOperandSegments,
                       DeclareOpInterfaceMethods<BranchOpInterface>,

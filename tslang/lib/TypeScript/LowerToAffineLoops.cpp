@@ -1889,6 +1889,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto exitBlock = finallyHasOps ? exitBlockLast : continuation;
         auto landingBlock = cleanupHasOps ? cleanupBlock : catchHasOps ? catchesBlock : finallyBlock;
         tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
+
         if (landingBlock)
         {
             // TODO: check for nested ops for example in if block
@@ -1901,6 +1902,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 if (unwindsToHandler(op))
                 {
                     tsContext->unwind[op] = landingBlock;
+                }
+                else if (mayCallInterfaceAccessor(op))
+                {
+                    tsFuncContext->accessorUnwinds.push_back({op, landingBlock});
                 }
             };
             auto it = bodyBlock;
@@ -2100,6 +2105,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 if (unwindsToHandler(op))
                 {
                     tsContext->unwind[op] = finallyBlock;
+                }
+                else if (mayCallInterfaceAccessor(op))
+                {
+                    tsFuncContext->accessorUnwinds.push_back({op, finallyBlock});
                 }
             };
 
@@ -2929,7 +2938,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
         mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, 
         mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::DebugVariableOp, mlir_ts::AllocaOp, 
-        mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
+        mlir_ts::InvokeOp, mlir_ts::AccessorUnwindEdgeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
         mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, 
         mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::ArrayViewOp, 
         mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
@@ -2967,6 +2976,8 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
                     StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
+
+static void addAccessorUnwindEdges(TSFunctionContext &tsFuncContext);
 
 void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
 {
@@ -3034,6 +3045,8 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
         signalPassFailure();
     }
 
+    addAccessorUnwindEdges(tsFuncContext);
+
     LLVM_DEBUG(llvm::dbgs() << "\n!! Processing function: \n" << function.getName() << "\n";);
 
     cleanupEmptyBlocksWithoutPredecessors(function);
@@ -3041,6 +3054,32 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER FUNC DUMP: \n" << function << "\n";);
 
     LLVM_DEBUG(verifyFunction(function););
+}
+
+// Each load or store through an interface's field inside a `try` ends its block with an AccessorUnwindEdgeOp to the
+// block its getter or setter call unwinds to - now that the function is one CFG, the try and every region around
+// the access lowered into it.
+static void addAccessorUnwindEdges(TSFunctionContext &tsFuncContext)
+{
+    llvm::MapVector<Operation *, mlir::Block *> unwindOf;
+    for (auto [op, unwindBlock] : tsFuncContext.accessorUnwinds)
+    {
+        unwindOf[op] = unwindBlock;
+    }
+
+    for (auto [op, unwindBlock] : unwindOf)
+    {
+        if (!unwindBlock || !unwindBlock->getParent() || op->getParentRegion() != unwindBlock->getParent())
+        {
+            continue;
+        }
+
+        auto *block = op->getBlock();
+        auto *continuation = block->splitBlock(std::next(op->getIterator()));
+        OpBuilder builder(op->getContext());
+        builder.setInsertionPointToEnd(block);
+        builder.create<mlir_ts::AccessorUnwindEdgeOp>(op->getLoc(), continuation, unwindBlock);
+    }
 }
 
 void TypeScriptToAffineLoweringFuncPass::runOnOperation()
