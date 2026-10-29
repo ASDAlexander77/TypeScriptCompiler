@@ -306,6 +306,14 @@ namespace mlirgen
         if (tempfuncType.size() > 0 || mth.getReturnsFromFuncRef(templateType).size() > 0)
         {
             auto funcType = mth.getParamsFromFuncRef(concreteType);
+            // a closure is its function bound over its captures, which its first parameter takes: not one
+            // the callback type has (`each(xs, (v) => { s += v; })` for `f: (v: T, i: number) => void`
+            // paired `T` with the captures)
+            if (isa<mlir_ts::BoundFunctionType>(concreteType) && !funcType.empty())
+            {
+                funcType = funcType.drop_front();
+            }
+
             if (funcType.size() > 0 || tempfuncType.size() == 0)
             {
                 inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
@@ -790,6 +798,14 @@ namespace mlirgen
             if (!newArrowFuncType)
             {
                 return {mlir::failure(), true};
+            }
+
+            // ...and so does the arrow's type built again here
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(newArrowFuncType);
+                funcType && argOp.getDefiningOp<mlir_ts::CreateBoundFunctionOp>() && funcType.getNumInputs() > 0)
+            {
+                newArrowFuncType = mlir_ts::FunctionType::get(builder.getContext(), funcType.getInputs().drop_front(),
+                                                              funcType.getResults(), funcType.isVarArg());
             }
 
             // infer second type when ArrowType is fully built

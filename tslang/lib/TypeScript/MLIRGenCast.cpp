@@ -2211,6 +2211,14 @@ namespace mlirgen
                                                                   entryBlock.getArguments().take_front(inInputs.size()));
             if (hasResult)
             {
+                // the callee's result is the thunk's, handed on as `return f(x)` hands it: owned, and
+                // taken over by the return (a string `map` builds came back as a second reference)
+                if (mth.ownsHeapMemory(noLocation, results.front()))
+                {
+                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
             }
 
