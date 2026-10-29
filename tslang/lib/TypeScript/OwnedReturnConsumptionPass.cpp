@@ -1588,7 +1588,21 @@ class OwnedReturnConsumptionPass
                 return false;
             };
 
-            if (llvm::none_of(yields, carriesOwned) && llvm::none_of(yields, borrowsBranchTemporary))
+            // ...or, under -mm=own, a field read out of an object a `const` names (`c ? init : r.value`),
+            // the merge kept by a receiver: a retain in the branch, right after the read, is what own
+            // takes out of the field (spec 64). A merge only read stays a borrow, as it was. Under rc a
+            // retain after the `ts.If` does the same, and is left so.
+            auto mergeKept = !findReceiverRetains(result, /*claim=*/false).empty();
+            auto readsNamedObjectField = [&](mlir_ts::ResultOp resultOp) {
+                auto loadOp = producerOf(resultOp->getOperand(0)).getDefiningOp<mlir_ts::LoadOp>();
+                auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+                auto *definingOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp() : nullptr;
+                return compileOptions.memoryModel == MemoryModelOwn && mergeKept && definingOp &&
+                       definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME);
+            };
+
+            if (llvm::none_of(yields, carriesOwned) && llvm::none_of(yields, borrowsBranchTemporary) &&
+                llvm::none_of(yields, readsNamedObjectField))
             {
                 return;
             }
@@ -2731,7 +2745,8 @@ class OwnedReturnConsumptionPass
     // back as a temporary like any other nobody took. Every `return` of it takes it over, since
     // each is on a path of its own - `if (x) return r; return r;` - and one left retaining would
     // hand its caller two references.
-    static llvm::SmallVector<mlir::Operation *> findReceiverRetains(mlir::Value result)
+    // (`claim` false only asks: the declaration is not marked as the acquisition)
+    static llvm::SmallVector<mlir::Operation *> findReceiverRetains(mlir::Value result, bool claim = true)
     {
         auto *definingOp = result.getDefiningOp();
         if (definingOp && definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
@@ -2775,7 +2790,11 @@ class OwnedReturnConsumptionPass
                 {
                     // the declaration becomes the acquisition, which is what keeps the
                     // ownership verifier able to pair the release still to come
-                    varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp.getContext()));
+                    if (claim)
+                    {
+                        varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp.getContext()));
+                    }
+
                     return {retainSlotOp.getOperation()};
                 }
             }

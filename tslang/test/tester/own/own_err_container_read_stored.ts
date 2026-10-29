@@ -1,5 +1,6 @@
 // -mm=own, phase 3 rejects: a value read out of a field is borrowed; storing it into another
-// field would give it a second owner.
+// field would give it a second owner. (With `h` not read again it would be a move out of the field
+// of an object a `const` names, spec 64: `h` reads it after.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}
@@ -24,5 +25,5 @@ function main() {
     const h = new H();
     const h2 = new H();
     h2.c = h.c;
-    print(h2.c.x);
+    print(h2.c.x, h.c.x);
 }
