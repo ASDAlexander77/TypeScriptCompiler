@@ -1758,6 +1758,59 @@ namespace mlirgen
         return std::nullopt;
     }
 
+    // The first interface member of a union whose every required field and method an object literal, a
+    // tuple or a class object has, by name; null for another value or when none fits.
+    mlir::Type MLIRGenImpl::interfaceMemberFitting(mlir_ts::UnionType unionType, mlir::Type valueType)
+    {
+        if (!isa<mlir_ts::ObjectType, mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ClassType>(valueType))
+        {
+            return mlir::Type();
+        }
+
+        // a field or a method of that name, as `"k" in v` asks of one value (mlirGenInLogic)
+        auto has = [&](mlir::Attribute id) { return !!mth.getFieldTypeByFieldName(valueType, id); };
+
+        std::function<bool(InterfaceInfo::TypePtr)> fits = [&](InterfaceInfo::TypePtr interfaceInfo) {
+            for (auto &extent : interfaceInfo->extends)
+            {
+                if (!fits(std::get<1>(extent)))
+                {
+                    return false;
+                }
+            }
+
+            for (auto &method : interfaceInfo->methods)
+            {
+                if (!method.isConditional && !has(builder.getStringAttr(method.name)))
+                {
+                    return false;
+                }
+            }
+
+            for (auto &field : interfaceInfo->fields)
+            {
+                if (!field.isConditional && !has(field.id))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        for (auto member : unionType.getTypes())
+        {
+            auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(member);
+            auto interfaceInfo = interfaceType ? getInterfaceInfoByFullName(interfaceType.getName().getValue()) : InterfaceInfo::TypePtr();
+            if (interfaceInfo && fits(interfaceInfo))
+            {
+                return member;
+            }
+        }
+
+        return mlir::Type();
+    }
+
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
@@ -1776,6 +1829,15 @@ namespace mlirgen
                             CAST(value, location, subType, value, genContext);
                             return V(builder.create<mlir_ts::CastOp>(location, type, value));
                         }
+                    }
+
+                    // an object literal, a tuple or a class object given to a union of interfaces
+                    // (`move({ swim: () => "s" })` for `Fish | Bird`): it becomes the first interface it has every member of, and the
+                    // union's tag says which (`"swim" in a`)
+                    if (auto memberType = interfaceMemberFitting(unionType, valueType))
+                    {
+                        CAST(value, location, memberType, value, genContext);
+                        return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
 
                     // one member and null (`{ k: number } | null`): what is not null is that member -
@@ -2149,6 +2211,14 @@ namespace mlirgen
                                                                   entryBlock.getArguments().take_front(inInputs.size()));
             if (hasResult)
             {
+                // the callee's result is the thunk's, handed on as `return f(x)` hands it: owned, and
+                // taken over by the return (a string `map` builds came back as a second reference)
+                if (mth.ownsHeapMemory(noLocation, results.front()))
+                {
+                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
             }
 

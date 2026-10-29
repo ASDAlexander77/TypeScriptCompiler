@@ -1,6 +1,8 @@
 # `isObjectShapedTuple` structural ambiguity: design
 
-Status: **proposed, not implemented** — written for later review. Triggered by
+Status: **proposed, not implemented** — written for later review. Re-checked 2026-10-29: still open,
+`isObjectShapedTuple` (now `MLIRPrinter.h:288`) unchanged; the recommendation in §6 stands, and the first
+step is the test §7 names, which pins the wrong output before any fix. Triggered by
 a code-review comment on `MLIRPrinter.h:232` during the cross-module
 class-extends work (`fix/cross-module-class-extends-crash` branch). A narrow
 symptom of the problem (numeric field ids) was already patched (see §4); this

@@ -14722,6 +14722,8 @@ class MLIRGenImpl
     // reports which part of a function signature does not match the one it is assigned to
     void emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match);
 
+    mlir::Type interfaceMemberFitting(mlir_ts::UnionType unionType, mlir::Type valueType);
+
     mlir::Value fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type);
 
     // optional
