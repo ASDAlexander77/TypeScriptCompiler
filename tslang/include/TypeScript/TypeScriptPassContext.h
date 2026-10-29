@@ -1,3 +1,4 @@
+#include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DataStructs.h"
@@ -180,7 +181,43 @@ struct TSFunctionContext
     TSFunctionContext() = default;
 
     mlir::SmallVector<mlir::Block *> stateLabels;
+
+    // the loads and stores through an interface's field inside a `try`, and the blocks their accessor calls unwind
+    // to (the innermost try's, which comes last): AccessorUnwindEdgeOps once the function is lowered
+    mlir::SmallVector<std::pair<Operation *, mlir::Block *>> accessorUnwinds;
 };
+
+// A reference through an interface's field whose slot may name a cell of accessors (INTERFACE_ACCESSOR_CELL_TAG)
+// instead of an offset: a field not optional, not function-typed, not a write of either kind.
+inline bool isInterfaceAccessorCellRef(mlir::Value reference)
+{
+    auto interfaceSymbolRefOp = reference.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+    if (!interfaceSymbolRefOp || interfaceSymbolRefOp.getOptional().value_or(false)
+        || interfaceSymbolRefOp->hasAttr(INTERFACE_FUNCTION_FIELD_WRITE_ATTR)
+        || interfaceSymbolRefOp->hasAttr(INTERFACE_OPTIONAL_WRITE_ATTR))
+    {
+        return false;
+    }
+
+    auto refType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
+    return refType && !isa<mlir_ts::FunctionType>(refType.getElementType());
+}
+
+// a load or a store that may call an interface field's getter or setter
+inline bool mayCallInterfaceAccessor(Operation *op)
+{
+    if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(op))
+    {
+        return isInterfaceAccessorCellRef(loadOp.getReference());
+    }
+
+    if (auto storeOp = dyn_cast<mlir_ts::StoreOp>(op))
+    {
+        return isInterfaceAccessorCellRef(storeOp.getReference());
+    }
+
+    return false;
+}
 
 template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
 {

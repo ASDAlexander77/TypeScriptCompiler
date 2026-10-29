@@ -606,6 +606,7 @@ tslang_add_test(NAME test-compile-00-class-discover-types COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-compile-00-class-accessor-increment COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_increment.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-getter-only-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
@@ -742,6 +743,7 @@ tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-try-finally-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
+tslang_add_test(NAME test-compile-00-try-catch-call-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_call_in_catch.ts")
 tslang_add_test(NAME test-compile-00-try-catch-mismatch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_mismatch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return_dispose.ts")
 tslang_add_test(NAME test-compile-01-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
@@ -1231,6 +1233,7 @@ tslang_add_test(NAME test-jit-00-class-discover-types COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-class-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-jit-00-class-accessor-increment COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_increment.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-getter-only-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
@@ -1365,6 +1368,7 @@ tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-try-finally-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-jit-00-try-catch-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
+tslang_add_test(NAME test-jit-00-try-catch-call-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_call_in_catch.ts")
 # pre-existing JIT limitation (reproduces on unmodified main too): the JIT's
 # Windows SEH landing pad/personality plumbing exits with code 3 and no
 # output on a typed-catch mismatch that must unwind past a function boundary,
@@ -2196,6 +2200,7 @@ set(TSLANG_CORPUS
     00class_override_inferred_return.ts
     00class_access_control.ts
     00class_accessor_super.ts
+    00class_accessor_increment.ts
     00class_accessor_getter_only_abstract.ts
     00class_accessor_virtual.ts
     00class_accessor_implements_field.ts
@@ -2466,6 +2471,7 @@ set(TSLANG_CORPUS
     00try_catch_mismatch_rethrow.ts
     00try_catch_rethrow.ts
     00try_catch_accessor.ts
+    00try_catch_call_in_catch.ts
     00try_catch_return_dispose.ts
     00try_catch_return.ts
     00try_catch_sequence_and_nesting.ts
@@ -5453,17 +5459,21 @@ if (NOT WIN32)
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Segmentation|assertion failed")
 endif()
 
-# An exception nothing catches ends a JIT run with an error, not with LLVM's crash handler
-# reporting a crash of the compiler. Windows only: that is where the JIT catches it.
+# An exception nothing catches ends a JIT run with an error that says what was thrown (a class by its
+# name), not with LLVM's crash handler reporting a crash of the compiler. Windows only: that is where
+# the JIT catches it.
 if (WIN32)
-    foreach(uncaught_name throw_string throw_class)
+    set(uncaught_expected_throw_string "error: uncaught exception: not caught")
+    set(uncaught_expected_throw_class "error: uncaught exception: Failure")
+    set(uncaught_expected_throw_number "error: uncaught exception: 2.5")
+    foreach(uncaught_name throw_string throw_class throw_number)
         foreach(uncaught_model gc rc none)
             add_test(NAME test-jit-${uncaught_model}-uncaught-${uncaught_name}
                      COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${uncaught_model}
                              --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
                              "${PROJECT_SOURCE_DIR}/test/tester/uncaught/${uncaught_name}.ts")
             set_tests_properties(test-jit-${uncaught_model}-uncaught-${uncaught_name}
-                                 PROPERTIES PASS_REGULAR_EXPRESSION "error: uncaught exception"
+                                 PROPERTIES PASS_REGULAR_EXPRESSION "${uncaught_expected_${uncaught_name}}"
                                             FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
         endforeach()
     endforeach()

@@ -454,6 +454,103 @@ static void *jitTypeInfoVftable()
 
 using JitEntryThunkFn = int (*)(int, char **);
 
+#ifdef _WIN32
+// What an uncaught exception threw, said after "uncaught exception: ", or empty
+static char uncaughtDescription[512];
+
+// The thrown value, read from the exception record of a throw (_CxxThrowException's): the object, and its
+// ThrowInfo, whose first catchable type names its type (`.N` a number, `.PEAD` a string, `.PEAVName@@` a class).
+// Read while the object is alive, in the filter; a record not shaped so is left undescribed.
+static void describeUncaught(EXCEPTION_POINTERS *pointers)
+{
+    uncaughtDescription[0] = '\0';
+    __try
+    {
+        auto *record = pointers->ExceptionRecord;
+        if (record->NumberParameters < 4)
+        {
+            return;
+        }
+
+        auto *object = reinterpret_cast<char *>(record->ExceptionInformation[1]);
+        auto *throwInfo = reinterpret_cast<int32_t *>(record->ExceptionInformation[2]);
+        auto *imageBase = reinterpret_cast<char *>(record->ExceptionInformation[3]);
+        if (!object || !throwInfo || !imageBase)
+        {
+            return;
+        }
+
+        auto *catchableTypes = reinterpret_cast<int32_t *>(imageBase + throwInfo[3]);
+        auto count = catchableTypes[0];
+        if (count < 1)
+        {
+            return;
+        }
+
+        // a type descriptor: the type_info vtable, a spare pointer, then the name
+        auto typeName = [&](int index) {
+            auto *catchableType = reinterpret_cast<int32_t *>(imageBase + catchableTypes[1 + index]);
+            return reinterpret_cast<const char *>(imageBase + catchableType[1] + 2 * sizeof(void *));
+        };
+
+        auto *name = typeName(0);
+        auto size = sizeof(uncaughtDescription);
+        if (strcmp(name, ".PEAD") == 0)
+        {
+            auto *text = *reinterpret_cast<const char **>(object);
+            snprintf(uncaughtDescription, size, "%s", text ? text : "null");
+        }
+        else if (strcmp(name, ".N") == 0)
+        {
+            snprintf(uncaughtDescription, size, "%.17g", *reinterpret_cast<double *>(object));
+        }
+        else if (strcmp(name, ".H") == 0)
+        {
+            snprintf(uncaughtDescription, size, "%d", *reinterpret_cast<int32_t *>(object));
+        }
+        else if (strcmp(name, "._N") == 0)
+        {
+            snprintf(uncaughtDescription, size, "%s", *reinterpret_cast<bool *>(object) ? "true" : "false");
+        }
+        else if (strcmp(name, "._J") == 0)
+        {
+            snprintf(uncaughtDescription, size, "%lldn", *reinterpret_cast<long long *>(object));
+        }
+        else if (strncmp(name, ".PEAV", 5) == 0)
+        {
+            // a class: its name, up to the `@@` that ends it
+            auto *className = name + 5;
+            auto *end = strstr(className, "@@");
+            auto length = end ? static_cast<int>(end - className) : static_cast<int>(strlen(className));
+            snprintf(uncaughtDescription, size, "%.*s", length, className);
+            // an Error (core.ts): after the vtable, `message?: string` - the text, and whether it is set
+            for (int i = 0; i < count; i++)
+            {
+                if (strcmp(typeName(i), ".PEAVError@@") != 0)
+                {
+                    continue;
+                }
+
+                auto *instance = *reinterpret_cast<char **>(object);
+                auto *message = instance ? *reinterpret_cast<const char **>(instance + sizeof(void *)) : nullptr;
+                auto isSet = instance && *reinterpret_cast<bool *>(instance + 2 * sizeof(void *));
+                if (isSet && message)
+                {
+                    auto used = strlen(uncaughtDescription);
+                    snprintf(uncaughtDescription + used, size - used, ": %s", message);
+                }
+
+                break;
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        uncaughtDescription[0] = '\0';
+    }
+}
+#endif
+
 // Calls the program's entry point; false when an exception nothing in the program catches came
 // out of it. Left alone, that exception reaches LLVM's crash handler, which reports it as a crash
 // of the compiler, with a stack dump and a request for a bug report. Windows only: SEH rather
@@ -468,7 +565,8 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
         exitCode = entryThunk(argc, argv);
         return true;
     }
-    __except (GetExceptionCode() == cxxExceptionCode ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+    __except (GetExceptionCode() == cxxExceptionCode ? (describeUncaught(GetExceptionInformation()), EXCEPTION_EXECUTE_HANDLER)
+                                                     : EXCEPTION_CONTINUE_SEARCH)
     {
         return false;
     }
@@ -1002,7 +1100,14 @@ static int runProgram(ProgramSymbolLookup lookup, llvm::ArrayRef<std::string> in
     if (!finished)
     {
         fflush(stdout);
-        llvm::WithColor::error(llvm::errs(), "tslang") << "uncaught exception\n";
+        auto &os = llvm::WithColor::error(llvm::errs(), "tslang") << "uncaught exception";
+#ifdef _WIN32
+        if (uncaughtDescription[0])
+        {
+            os << ": " << uncaughtDescription;
+        }
+#endif
+        os << "\n";
         exitCode = 1;
     }
 

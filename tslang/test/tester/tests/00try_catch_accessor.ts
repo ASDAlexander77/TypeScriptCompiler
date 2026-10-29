@@ -1,5 +1,7 @@
 // An accessor that throws inside `try` is caught there: its call is lowered after the `try`, which recorded only
-// the calls and throws already in its body, so a get or set reached the caller uncaught.
+// the calls and throws already in its body, so a get or set reached the caller uncaught. Through an interface's
+// field the call is made by the load or the store of a slot naming a cell of accessors, as late as LLVM: the access
+// ends its block with an edge to the handler, and calls the accessor by an invoke unwinding there.
 class Fail {
     constructor(public where: string) {}
 }
@@ -16,6 +18,20 @@ class A {
 class B extends A {
     override get v() { return super.v + 100; }
     override set v(x: number) { super.v = x; }
+}
+
+interface Named {
+    name: string;
+}
+
+class Box implements Named {
+    private n = "box";
+    get name() { if (this.n == "bad") throw new Fail("interface get"); return this.n; }
+    set name(v: string) { if (v == "") throw new Fail("interface set"); this.n = v; }
+}
+
+class Plain implements Named {
+    name = "plain";
 }
 
 abstract class Shape {
@@ -62,6 +78,36 @@ function main() {
     where = "";
     try { b.v = -1; } catch (e: Fail) { where = e.where; }
     assert(where == "set", "virtual set");
+
+    const box: Named = new Box();
+    where = "";
+    try { box.name = ""; } catch (e: Fail) { where = e.where; }
+    assert(where == "interface set", "set through an interface");
+
+    box.name = "bad";
+    where = "";
+    try { print(box.name); } catch (e: Fail) { where = e.where; }
+    assert(where == "interface get", "get through an interface");
+
+    box.name = "ok";
+    where = "";
+    try { where = box.name; } catch (e: Fail) { where = "wrong"; }
+    assert(where == "ok", "get through an interface that does not throw");
+
+    let boxFinally = false;
+    where = "";
+    try {
+        try { box.name = ""; } finally { boxFinally = true; }
+    } catch (e: Fail) {
+        where = e.where;
+    }
+    assert(boxFinally && where == "interface set", "set through an interface, finally");
+
+    // a plain field behind the interface: the slot is no cell
+    const plain: Named = new Plain();
+    where = "";
+    try { plain.name = "plain2"; where = plain.name; } catch (e: Fail) { where = "wrong"; }
+    assert(where == "plain2", "a field through an interface");
 
     const shape: Shape = new Square();
     where = "";

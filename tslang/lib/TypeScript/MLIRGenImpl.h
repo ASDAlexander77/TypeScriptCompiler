@@ -5634,6 +5634,9 @@ class MLIRGenImpl
         return value;
     }
 
+    ValueOrLogicalResult mlirGenAccessorIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value accessorValue,
+                                                  bool prefix, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext);
