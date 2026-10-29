@@ -754,6 +754,7 @@ tslang_add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-compile-00-any-to-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
 tslang_add_test(NAME test-compile-00-bigint-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_ops.ts")
+tslang_add_test(NAME test-compile-00-namespace-forward-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00namespace_forward_class.ts")
 tslang_add_test(NAME test-compile-00-any-literal-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-compile-00-interface-method-object-field-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_object_field_type.ts")
 tslang_add_test(NAME test-compile-00-unknown-round-trip COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
@@ -1380,6 +1381,7 @@ tslang_add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-jit-00-any-to-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
 tslang_add_test(NAME test-jit-00-bigint-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_ops.ts")
+tslang_add_test(NAME test-jit-00-namespace-forward-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00namespace_forward_class.ts")
 tslang_add_test(NAME test-jit-00-any-literal-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-jit-00-interface-method-object-field-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_object_field_type.ts")
 tslang_add_test(NAME test-jit-00-unknown-round-trip COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
@@ -2484,6 +2486,7 @@ set(TSLANG_CORPUS
     00types_unknown1.ts
     00any_to_tuple.ts
     00bigint_ops.ts
+    00namespace_forward_class.ts
     00any_literal_to_interface.ts
     00interface_method_object_field_type.ts
     00unknown_round_trip.ts
@@ -5076,6 +5079,25 @@ foreach(array_length_name negative huge fraction negative_integer new_negative)
         set_tests_properties(test-jit-${array_length_model}-array-length-${array_length_name}
                              PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: Invalid array length"
                                         FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|length: ")
+    endforeach()
+endforeach()
+
+# A bigint divided by 0n or raised to a negative power stops the program with a message, after the
+# output printed before it, under every model: TypeScript throws a RangeError.
+foreach(bigint_range_name division remainder power)
+    if(bigint_range_name STREQUAL "power")
+        set(bigint_range_message "Exponent must be non-negative")
+    else()
+        set(bigint_range_message "Division by zero")
+    endif()
+    foreach(bigint_range_model gc rc none own)
+        add_test(NAME test-jit-${bigint_range_model}-bigint-range-${bigint_range_name}
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${bigint_range_model}
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                         "${PROJECT_SOURCE_DIR}/test/tester/bigint-range/${bigint_range_name}.ts")
+        set_tests_properties(test-jit-${bigint_range_model}-bigint-range-${bigint_range_name}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: ${bigint_range_message}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|result: ")
     endforeach()
 endforeach()
 

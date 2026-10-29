@@ -76,7 +76,17 @@ namespace mlirgen
     {
         SymbolTableScopeT varScope(symbolTable);
 
-        clearState(statements);
+        // What a run before this one did is cleared when it ends, but for the statements a failed run
+        // of the real pass generated: the run is tried again (a namespace whose function names a class
+        // declared after it), and what it generated is still in the module, so those are not generated
+        // twice ("redefinition of symbol"). A dummy run's ops are thrown away; it clears them all.
+        auto keepGenerated = !genContext.dummyRun && !genContext.allowPartialResolve;
+        auto clearOnFailure = llvm::make_scope_exit([&]() {
+            if (!keepGenerated)
+            {
+                clearState(statements);
+            }
+        });
 
         auto notResolved = 0;
         do
