@@ -828,8 +828,12 @@ namespace own_inference
         // A value taken out of a field of an owning record local by one move, the field read again
         // by nothing before the local ends (spec 48): the `value` of the record `next()` returns, in
         // a `for...of` or a spread that keeps what a generator yields
+        // nothing is taken out of a field a back-reference is stored into (spec 70): what it holds may
+        // borrow the object it is in. Such a read stays a borrow, bounded by the object
+        auto readRef = mlir::isa<mlir_ts::LoadOp>(read) ? mlir::cast<mlir_ts::LoadOp>(read).getReference() : mlir::Value();
+        auto backReference = readRef && isBackReferenceField(readRef);
         FieldTake take;
-        if ((kept || letKept) && !countedHandle && fieldTakeOf(read, kept ? kept : letKept, take))
+        if ((kept || letKept) && !countedHandle && !backReference && fieldTakeOf(read, kept ? kept : letKept, take))
         {
             takenOps.insert(take.retain);
             takenOps.insert(take.taker);
@@ -845,7 +849,7 @@ namespace own_inference
         // ...or out of a field of a call's own result, released as a temporary right after the read
         // (spec 63): `init ?? next(xs, 0).value`. The temporary frees nothing of it then, so nothing
         // after the move can see the release.
-        if (!take.taker && kept && !countedHandle && temporaryFieldTakeOf(read, kept, take))
+        if (!take.taker && kept && !countedHandle && !backReference && temporaryFieldTakeOf(read, kept, take))
         {
             takenOps.insert(take.retain);
             takenOps.insert(take.taker);

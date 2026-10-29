@@ -1626,8 +1626,11 @@ namespace mlirgen
                 param->setReadWriteAccess();
                 // `this` of a @value class's method is the value, which nothing assigns: a closure
                 // takes a copy of it, not its cell (so a `ref` named `this` in a capture is the
-                // constructor's slot alone)
-                if (param->getName() == THIS_NAME && index == firstIndex && getValueClassInfo(param->getType()))
+                // constructor's slot alone). So does `this` of any class's member: the copy is the
+                // same object, with no cell for it (own spec 70: a field's closure over `this`
+                // borrows the object, which a cell moved into the box could not)
+                if (param->getName() == THIS_NAME && index == firstIndex &&
+                    (getValueClassInfo(param->getType()) || isa<mlir_ts::ClassType>(param->getType())))
                 {
                     param->setCaptureByValue();
                 }

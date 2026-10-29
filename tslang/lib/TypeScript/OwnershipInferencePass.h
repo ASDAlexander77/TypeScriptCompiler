@@ -253,6 +253,7 @@ class OwnershipInferencePass
     // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
     // with it - its box owns them, and each copy moves in.
     void classifyClosures();
+    bool isBackReference(Closure &closure);
     // An object literal's `.captured` box (its arrows' captures, spec 67): when the literal stays in
     // this function, the box borrows the copies it holds, as a closure that does not escape does
     void classifyLiteralCaptures();

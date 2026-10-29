@@ -5453,3 +5453,72 @@ that escapes owns what it captures ... its value is the caller's`. Two shapes, t
 `own_literal_let_captures` captures `let`s - inline in a call, in a `const` literal called and given on,
 given to an interface - assigns them after, and captures parameters in literals given to an object-type
 and an interface parameter, churning between steps, under own, rc, gc and none.
+
+## 70. A field that refers back to its own object, 2026-10-29
+
+`class A { n = 1; fn = () => this.n; }` was `a closure that escapes owns what it captures, but -mm=own
+cannot move this variable into it: its value is the caller's`, and `fn = this.get` was `'this value'
+takes a second reference`. Both are a **back-reference**: a value stored into a field of an object that
+holds the object itself. Own had no such value. An escaping closure owns what it captures (§17), so the
+object would own the field, the field the closure's box, and the box the object. gc and rc compiled
+both. rc's counts make the cycle a leak, which this section does not change.
+
+Such a value now **borrows** its object (USER decisions, 2026-10-29: Q1 every model, Q2 an error, Q3
+only a field of `this` itself). The field owns the closure, as it owns any value, and the box's release
+frees the box, not the object. What the field holds is only ever reached through the object, so the
+object bounds it: a read of the field is §14's borrow, and nothing takes it out.
+
+- **`this` is captured by copy** (MLIRGen, every model). An arrow reading a variable captured it by
+  reference, through a cell (`ts.Param {captured}`), so that an assignment after reaches the closure.
+  `this` is never assigned, so a copy is the same value, and a member of any class now gives
+  `setCaptureByValue` to its `this`, as a `@value` class's did. There is no cell, so the box holds the
+  object itself, which also saves a heap cell per closure. gc and rc box the copy as any copy, and rc
+  retains it as the cell held it before: the same cycle.
+- **A back-reference's box** (`isBackReferenceBox`, `OwnershipFacts.h`) holds the member's `this`
+  (`isMemberThis`: the first parameter, of a class type, or a read of its slot) and nothing else that
+  owns a block. The closure over it is stored once, into a field of that `this` (`isFieldOfMemberThis`:
+  of its object, or of a base class's storage in it, §57). Anything else done with the closure is a
+  call through it, a view of it, or a count of it. Inference (`classifyClosures`) marks the copies
+  borrowed (`OWN_CAPTURE_BORROW_ATTR_NAME`) and the closure `__own_borrows_captures`, so its routine
+  frees the box alone (`tsfrecb_`). rc's retain of the copy goes (`fieldBorrowRetains`).
+- **`this` in any box keeps nothing** (the signature pass's `keeps`): the object is the caller's, which
+  no box can own, so a member storing it into a capture box does not keep its `this`. Inference decides
+  the closure: one that does not escape borrows it, as it borrowed the cell before. A closure with cells
+  borrows every copy already (§16); one with copies only borrows them when it holds `this` and none of
+  them was made for it (`borrowsCopies`; `own_closure_borrow`'s `() => this.c.x`, `own_raytrace`'s
+  `addLight`). A back-reference borrows it as above. Any other escaping closure over `this`
+  (`return () => this.n`) stays an error, now `'this value' is a parameter, kept here, but -mm=own cannot
+  make the callers of ... give it up`.
+- **A bound method of `this`** (`ThisSymbolRef`/`ThisVirtualSymbolRef` of the member's `this`,
+  `isBoundMethodOfMemberThis`) stored into a field of `this` already borrows: the closure's tag is null
+  for a bound method, and its release frees nothing of the object. `keeps` takes the store for no
+  keeping, and inference drops rc's retain for it.
+- **The fields** (`OWN_BACK_REFERENCE_FIELDS_ATTR_NAME`, `ts.own_back_reference_fields`): the signature
+  pass lists each class storage and position a back-reference is stored into (`isBackReferenceStore`).
+  `checkPlaceRead` takes nothing out of such a field (`isBackReferenceField`): neither specs 48/65's
+  `fieldTakeOf` nor spec 63/64's `temporaryFieldTakeOf`. So `return a.fn`, `h.call = a.fn` and the
+  like stay borrows of the object, and are `borrows a field and cannot be stored, returned or
+  captured`, the error any other borrowed field gives (Q2), rather than a new message.
+- **Calling it** (`a.fn()`) needs nothing new. A body that writes the field it is called through
+  (`fn = () => { this.fn = g; return this.n; }`) frees its own box during the call, and that is safe:
+  a closure body reads each value captured by copy out of its box once, at its entry, so the box is not
+  read after. The code is static. The negative the proposal named, `own_err_back_reference_rewrites`,
+  is not one.
+- **Moving the object** (`let b = a`, `return a`, an array that holds it) moves the field with it. The
+  box still points at the same object, which the new owner keeps.
+
+A closure that captures anything besides `this` that owns a block (a parameter, a local, another
+object) is no back-reference and keeps §17's rules. So does a back-reference stored anywhere but a
+field of that `this`, and one in an array the object holds or in a nested object's field (Q3).
+
+`own_back_reference` stores arrow fields reading `this` (one with a parameter, one calling another and
+a method), a bound method field, a field a method assigns and one main assigns, a derived class's field
+and one its constructor stores, and calls them after the object moved and in objects an array holds.
+It churns between steps, under own, rc, gc and none, and own emits no counting. Negatives:
+`own_err_back_reference_taken` (`return c.get`), `own_err_back_reference_stored` (`h.call = c.get`) and
+`own_err_back_reference_captures` (a closure capturing `this` and a parameter, §17's error). Two million
+objects with an arrow field each run in a flat 49 MB under own.
+
+Not here: an arrow field reading a getter (`fn = () => this.prop` with `get prop()`) fails in every model,
+because its arrow is kept as returning void (PR #744). A call through a field returning a string, under
+`--no-default-lib`, is `borrows a field but is used here after ...` whatever the field holds, as before.
