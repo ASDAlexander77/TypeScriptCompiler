@@ -213,6 +213,15 @@ namespace mlirgen
             return {mlir::failure(), ""};
         }
 
+        // a discovery pass types the fields whose initializers read the others now that those are laid
+        // out (`fn = () => this.prop`), for the constructor it makes to read them (`this.fn()`); again
+        // once the members are declared, which an initializer may read too (an abstract property's)
+        if (genContext.allowPartialResolve && mlir::failed(mlirGenClassRetypeFields(newClassPtr, classGenContext, false)))
+        {
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
+            return {mlir::failure(), ""};
+        }
+
         setProcessingState(newClassPtr, ProcessingStages::ProcessedStorageClass, genContext);
 
         // the base classes are known now, and no method has been named yet
@@ -304,7 +313,7 @@ namespace mlirgen
             return {mlir::failure(), ""};
         }
 
-        if (mlir::failed(mlirGenClassRetypeFields(newClassPtr, classGenContext)))
+        if (mlir::failed(mlirGenClassRetypeFields(newClassPtr, classGenContext, true)))
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
             return {mlir::failure(), ""};
@@ -1772,6 +1781,16 @@ namespace mlirgen
             {
                 type = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
             }
+            // `fn = () => this.prop` captures: its type is the bound function's, whose first input is
+            // the capture box. Stored as the function without it, as `fn: () => string` is: another
+            // function can be assigned later
+            else if (auto boundFuncType = dyn_cast_or_null<mlir_ts::BoundFunctionType>(type);
+                     boundFuncType && boundFuncType.getNumInputs() > 0)
+            {
+                auto withoutCapture = mlir_ts::FunctionType::get(builder.getContext(), boundFuncType.getInputs().drop_front(),
+                                                                 boundFuncType.getResults(), boundFuncType.isVarArg());
+                type = mlir_ts::HybridFunctionType::get(builder.getContext(), withoutCapture);
+            }
         }
 
         // `v?: T` is `v: T | undefined`, as in a type literal: unassigned it reads as undefined, not as T's zero.
@@ -1784,9 +1803,89 @@ namespace mlirgen
         return {type, init};
     }
 
+    // every `this.x` the initializer reads is of a field laid out (`fields`) and typed (not in `untyped`);
+    // a function, method, accessor or class in it has a `this` of its own
+    bool MLIRGenImpl::readsOnlyTypedFields(Node initializer, ArrayRef<mlir_ts::FieldInfo> fields,
+                                           const llvm::StringSet<> &untyped)
+    {
+        auto readsOnly = true;
+        auto isThis = [](Node expression) {
+            while (expression == SyntaxKind::ParenthesizedExpression)
+            {
+                expression = expression.as<ParenthesizedExpression>()->expression;
+            }
+
+            return expression == SyntaxKind::ThisKeyword;
+        };
+
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+        visitNode = [&](Node node) -> Node {
+            if (!readsOnly || !node)
+            {
+                return undefined;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::Constructor:
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::ClassExpression:
+                return undefined;
+            case SyntaxKind::PropertyAccessExpression:
+                if (auto access = node.as<PropertyAccessExpression>(); isThis(access->expression))
+                {
+                    auto name = MLIRHelper::getName(access->name);
+                    auto laidOut = llvm::any_of(fields, [&](auto &field) {
+                        auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(field.id);
+                        return id && id.getValue() == name;
+                    });
+                    readsOnly = laidOut && !untyped.contains(name);
+                    return undefined;
+                }
+
+                break;
+            case SyntaxKind::ElementAccessExpression:
+                if (isThis(node.as<ElementAccessExpression>()->expression))
+                {
+                    readsOnly = false;
+                    return undefined;
+                }
+
+                break;
+            default:
+                break;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        visitNode(initializer);
+        return readsOnly;
+    }
+
     // the fields mlirGenClassDataFieldMember left untyped in a discovery pass get their types now that
-    // the members are declared; code made before against the placeholder is thrown away with the pass
-    mlir::LogicalResult MLIRGenImpl::mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    // the members are declared; code made before against the placeholder is thrown away with the pass.
+    // The types are kept for the full pass, which lays the fields out before it declares the members
+    // (fieldTypesFromMembers).
+    // `last`: the members are declared; the types are final, kept, and the list is done
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext,
+                                                              bool last)
     {
         if (newClassPtr->fieldsTypedAfterMembers.empty())
         {
@@ -1795,12 +1894,49 @@ namespace mlirgen
 
         auto storageType = mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType());
         SmallVector<mlir_ts::FieldInfo> fieldInfos(storageType.getFields().begin(), storageType.getFields().end());
+        // the fields still to be typed: an initializer reading one of them can't be typed before it is
+        llvm::StringSet<> untyped;
         for (auto propertyDeclaration : newClassPtr->fieldsTypedAfterMembers)
         {
-            auto [type, init] = mlirGenClassDataFieldType(loc(propertyDeclaration), propertyDeclaration, genContext);
+            untyped.insert(MLIRHelper::getName(propertyDeclaration->name));
+        }
+
+        for (auto propertyDeclaration : newClassPtr->fieldsTypedAfterMembers)
+        {
+            // before the members are declared, only an initializer whose `this.x` reads are all of fields
+            // laid out and typed: one reading a member (an accessor's `this.prop`) would be typed wrong,
+            // and its arrow kept so (as returning void)
+            if (!last && !readsOnlyTypedFields(propertyDeclaration->initializer, fieldInfos, untyped))
+            {
+                continue;
+            }
+
+            mlir::Type type;
+            {
+                // `this` in the initializer is the object, as in the constructor it runs in: without
+                // it `this` names the class, and `this.prop` a static
+                TempModuleScope tempModuleScope(*this);
+                SymbolTableScopeT varScope(symbolTable);
+                auto location = loc(propertyDeclaration);
+                auto thisValue = builder.create<mlir_ts::UndefOp>(location, newClassPtr->classType);
+                auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, newClassPtr->classType, location);
+                if (mlir::failed(declare(location, thisDecl, thisValue, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                type = std::get<0>(mlirGenClassDataFieldType(location, propertyDeclaration, genContext));
+            }
+
             if (mth.isNoneType(type))
             {
                 continue;
+            }
+
+            untyped.erase(MLIRHelper::getName(propertyDeclaration->name));
+            if (last)
+            {
+                newClassPtr->fieldTypesFromMembers[MLIRHelper::getName(propertyDeclaration->name)] = type;
             }
 
             auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
@@ -1811,10 +1947,20 @@ namespace mlirgen
                     fieldInfo.type = type;
                 }
             }
+
+            // the next initializer may read this one (`twice = () => this.fn() + this.fn()`)
+            if (mlir::failed(storageType.setFields(fieldInfos)))
+            {
+                return mlir::failure();
+            }
         }
 
-        newClassPtr->fieldsTypedAfterMembers.clear();
-        return storageType.setFields(fieldInfos);
+        if (last)
+        {
+            newClassPtr->fieldsTypedAfterMembers.clear();
+        }
+
+        return mlir::success();
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
@@ -1856,7 +2002,13 @@ namespace mlirgen
         // an instance field: a static one is a global, not part of the value
         auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, location,
                                             MLIRHelper::getName(name));
-        auto [type, init] = mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
+        // an initializer reading `this.x`, with no type given, is typed once `this` is the object
+        // (mlirGenClassRetypeFields): evaluated here, `this` would name the class, `this.prop` a static,
+        // and an arrow reading it be kept as returning void
+        auto readsThis = !propertyDeclaration->type && propertyDeclaration->initializer &&
+                         !readsOnlyTypedFields(propertyDeclaration->initializer, {}, {});
+        auto [type, init] = readsThis ? std::pair<mlir::Type, bool>{mlir::Type(), true}
+                                      : mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
         if (init)
         {
             newClassPtr->hasInitializers = true;
@@ -1872,8 +2024,16 @@ namespace mlirgen
                 return mlir::failure();
             }
 
-            // `fn = this.m`: a discovery pass lays out the fields before it declares the methods, so
-            // the initializer has no type yet. Hold the place and type the field once they are.
+            // `fn = () => this.prop`, `fn = this.m`: the fields are laid out before the methods are
+            // declared, so the initializer has no type yet. A discovery pass holds the place and types
+            // the field once they are (mlirGenClassRetypeFields); the full pass takes that type.
+            if (auto found = newClassPtr->fieldTypesFromMembers.find(MLIRHelper::getName(propertyDeclaration->name));
+                init && !isAccessor && found != newClassPtr->fieldTypesFromMembers.end())
+            {
+                fieldInfos.push_back({fieldId, found->second, false, accessLevel});
+                return mlir::success();
+            }
+
             if (init && !isAccessor && genContext.allowPartialResolve)
             {
                 newClassPtr->fieldsTypedAfterMembers.push_back(propertyDeclaration);

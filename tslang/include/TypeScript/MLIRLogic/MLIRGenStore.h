@@ -802,6 +802,9 @@ struct ClassInfo
     // fields whose initializer has no type yet in a discovery pass (`fn = this.m`: the methods are
     // declared after the fields), typed again once the members are (mlirGenClassRetypeFields)
     llvm::SmallVector<PropertyDeclaration> fieldsTypedAfterMembers;
+    // their types as a discovery pass found them, by field name: the full pass lays the fields out
+    // before it declares the members, so it can't type them itself
+    llvm::StringMap<mlir::Type> fieldTypesFromMembers;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
