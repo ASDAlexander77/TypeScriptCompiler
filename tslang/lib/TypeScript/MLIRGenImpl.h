@@ -5000,6 +5000,25 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
+            // `"swim" in a` for `a: Fish | Bird`: `a` is the members that have the key
+            if (op == SyntaxKind::InKeyword && binExpr->right == SyntaxKind::Identifier &&
+                (binExpr->left == SyntaxKind::StringLiteral || binExpr->left == SyntaxKind::NoSubstitutionTemplateLiteral))
+            {
+                if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(evaluate(binExpr->right, genContext)))
+                {
+                    auto key = builder.getStringAttr(convertWideToUTF8(binExpr->left.as<LiteralLikeNode>()->text));
+                    SmallVector<mlir::Type> withKey;
+                    if (interfacesWithKey(loc(binExpr), unionType, key, withKey) && !withKey.empty() &&
+                        withKey.size() < unionType.getTypes().size())
+                    {
+                        auto safeType = withKey.size() == 1 ? withKey.front() : getUnionType(withKey);
+                        return addSafeCastStatement(binExpr->right, safeType, false, elseSafeCase, genContext);
+                    }
+                }
+
+                return mlir::success();
+            }
+
             if (op == SyntaxKind::InstanceOfKeyword)
             {
                 auto instanceOf = binExpr;
@@ -6016,6 +6035,57 @@ class MLIRGenImpl
         return ifResult;
     }
 
+    // The members of a union of interfaces that have `key`, a field or a method; false when a member is
+    // not an interface, or the union has no tag to tell its members apart.
+    bool interfacesWithKey(mlir::Location location, mlir_ts::UnionType unionType, mlir::Attribute key,
+                           SmallVectorImpl<mlir::Type> &withKey)
+    {
+        mlir::Type baseType;
+        if (!isa_and_nonnull<mlir::StringAttr>(key) || !mth.isUnionTypeNeedsTag(location, unionType, baseType))
+        {
+            return false;
+        }
+
+        for (auto member : unionType.getTypes())
+        {
+            auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(member);
+            if (!interfaceType)
+            {
+                return false;
+            }
+
+            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            if (!interfaceInfo)
+            {
+                return false;
+            }
+
+            auto name = mlir::cast<mlir::StringAttr>(key).getValue();
+            if (interfaceInfo->getFieldIndex(key) >= 0 || interfaceInfo->getMethodIndex(name) >= 0)
+            {
+                withKey.push_back(member);
+            }
+        }
+
+        return true;
+    }
+
+    // Whether a tagged union holds one of `members`: its tag names one of them (ts.IsTypeTagOf).
+    ValueOrLogicalResult mlirGenUnionHoldsOneOf(mlir::Location location, mlir::Value unionValue, ArrayRef<mlir::Type> members)
+    {
+        auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), unionValue);
+        mlir::Value holds;
+        for (auto member : members)
+        {
+            mlir::Value isMember = builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag, mlir::TypeAttr::get(member));
+            holds = holds ? builder.create<mlir_ts::LogicalBinaryOp>(
+                                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken), holds, isMember)
+                          : isMember;
+        }
+
+        return holds;
+    }
+
     ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         // Supports only array now
@@ -6070,10 +6140,24 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (isa<mlir_ts::UnionType>(rightExpressionValue.getType()))
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType()))
         {
-            emitError(loc(binaryExpressionAST->right), "not supported");
-            return mlir::failure();
+            // a union of interfaces: which members have the key is known here, and which member the
+            // value holds is asked of its tag only when some have it and some do not
+            auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>();
+            SmallVector<mlir::Type> withKey;
+            if (!constantOp || !interfacesWithKey(location, unionType, constantOp.getValue(), withKey))
+            {
+                emitError(loc(binaryExpressionAST->right), "not supported");
+                return mlir::failure();
+            }
+
+            if (withKey.empty() || withKey.size() == unionType.getTypes().size())
+            {
+                return mlirGenBooleanValue(location, !withKey.empty());
+            }
+
+            return mlirGenUnionHoldsOneOf(location, rightExpressionValue, withKey);
         }
 
         if (auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>())        
@@ -6492,6 +6576,21 @@ class MLIRGenImpl
             }
         }
 #endif
+
+        // `a instanceof Fish` for `a: Fish | Bird`: which interface the union holds is its tag's (every
+        // one's reads "interface")
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(resultLeftfType); unionType && isa<mlir_ts::InterfaceType>(rightType))
+        {
+            mlir::Type baseType;
+            if (llvm::is_contained(unionType.getTypes(), rightType) && mth.isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                auto refType = dyn_cast<mlir_ts::RefType>(resultLeftValue.getType());
+                auto leftValue = refType
+                    ? builder.create<mlir_ts::LoadOp>(location, refType.getElementType(), resultLeftValue).getResult()
+                    : resultLeftValue;
+                return mlirGenUnionHoldsOneOf(location, leftValue, {rightType});
+            }
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultLeftfType == rightType) << " '" << resultLeftfType
                                 << "' is '" << rightType << "'\n";);

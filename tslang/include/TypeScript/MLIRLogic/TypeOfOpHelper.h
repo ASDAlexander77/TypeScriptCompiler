@@ -142,19 +142,27 @@ class TypeOfOpHelper
         os << "}";
     }
 
-    // TYPE_DESCR_LAYOUT of a type's descriptor: an id of a tuple's layout text (never 0), and 0 for
-    // anything else. A hash of the text, not of the type: the type's own hash differs between
-    // modules, which a tuple boxed in one and cast in another must not.
+    // TYPE_DESCR_LAYOUT of a type's descriptor: an id of a tuple's layout text, or of an interface's
+    // name (never 0), and 0 for anything else. A hash of the text, not of the type: the type's own
+    // hash differs between modules, which a tuple boxed in one and cast in another must not, nor an
+    // interface a union holds.
     static uint32_t layoutIdOf(mlir::Type type)
     {
-        if (!isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type))
+        std::string text;
+        llvm::raw_string_ostream os(text);
+        if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
+        {
+            os << "interface " << interfaceType.getName().getValue();
+        }
+        else if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type))
+        {
+            layoutText(type, os);
+        }
+        else
         {
             return 0;
         }
 
-        std::string text;
-        llvm::raw_string_ostream os(text);
-        layoutText(type, os);
         auto id = (uint32_t)llvm::xxh3_64bits(os.str());
         return id ? id : 1;
     }

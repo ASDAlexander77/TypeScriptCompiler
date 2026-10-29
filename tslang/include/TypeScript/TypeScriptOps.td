@@ -513,6 +513,18 @@ def TypeScript_IsTupleOfLayoutOp : TypeScript_Op<"IsTupleOfLayout", [Pure]> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
+def TypeScript_IsTypeTagOfOp : TypeScript_Op<"IsTypeTagOf", [Pure]> {
+  let summary = "whether a type tag names an interface";
+  let description = [{
+    True when $tag (a union's type tag, ts.GetTypeInfoFromUnionOp) names $type: the TYPE_DESCR_LAYOUT
+    of its descriptor is $type's. Every interface's tag reads "interface"; its descriptor says which
+    (`"swim" in a`, `a instanceof Fish` for `a: Fish | Bird`).
+  }];
+
+  let arguments = (ins TypeScript_String:$tag, TypeAttr:$type);
+  let results = (outs TypeScript_Boolean:$res);
+}
+
 def TypeScript_TypeDescriptorOp : TypeScript_Op<"TypeDescriptor", [Pure]> {
   let summary = "type name from the static descriptor of a type";
   let description = [{

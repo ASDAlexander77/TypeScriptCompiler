@@ -428,7 +428,7 @@ namespace own_inference
 
         // a test - `if (d)`, `d?.x`, `typeof u` - asks about the value, and keeps nothing
         if (mlir::isa<mlir_ts::HasValueOp, mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::TypeOfOp,
-                      mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp>(user))
+                      mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp, mlir_ts::IsTypeTagOfOp>(user))
         {
             return true;
         }

@@ -489,7 +489,8 @@
 // the block header, which has to stay last - see TYPE_DESCR_BLOCK_HEADER.
 #define TYPE_DESCR_KIND 0
 // For a tuple, an id of its layout - its fields' names and types (TypeOfOpHelper::layoutIdOf) -
-// and 0 for anything else. A cast from `any` to an object type compares it with the type's own
+// for an interface, an id of its name (which interface a union of interfaces holds, every one's tag
+// being "interface": ts.IsTypeTagOf), and 0 for anything else. A cast from `any` to an object type compares it with the type's own
 // (ts.IsTupleOfLayout): the box says only "tuple", and a tuple of other fields read as the type's
 // was garbage (`{ n: 5 }` holds an s32, read as a number). Computed from the type's text, so a
 // tuple boxed by one module matches the same type in another.

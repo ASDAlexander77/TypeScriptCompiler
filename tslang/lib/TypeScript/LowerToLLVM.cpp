@@ -7852,6 +7852,27 @@ struct IsTupleOfLayoutOpLowering : public TsLlvmPattern<mlir_ts::IsTupleOfLayout
     }
 };
 
+struct IsTypeTagOfOpLowering : public TsLlvmPattern<mlir_ts::IsTypeTagOfOp>
+{
+    using TsLlvmPattern<mlir_ts::IsTypeTagOfOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::IsTypeTagOfOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op.getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto layout = tdl.getLayoutFromTag(transformed.getTag());
+        auto expected = rewriter.create<LLVM::ConstantOp>(
+            loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)TypeOfOpHelper::layoutIdOf(op.getType())));
+        rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq, layout, expected);
+        return success();
+    }
+};
+
 struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 {
     using TsLlvmPattern<mlir_ts::TypeOfAnyOp>::TsLlvmPattern;
@@ -9517,7 +9538,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
-        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, DebuggerOpLowering,
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
