@@ -893,6 +893,14 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
     }
 };
 
+// an op a try's handler catches what it throws: a call, a throw, or an accessor, lowered later to calls
+static bool unwindsToHandler(Operation *op)
+{
+    return isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::ThrowOp, mlir_ts::AccessorOp, mlir_ts::ThisAccessorOp,
+               mlir_ts::ThisIndirectAccessorOp, mlir_ts::ThisIndexAccessorOp, mlir_ts::ThisIndirectIndexAccessorOp,
+               mlir_ts::BoundIndirectAccessorOp, mlir_ts::BoundIndirectIndexAccessorOp>(op);
+}
+
 struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
 {
     using TsPattern<mlir_ts::AccessorOp>::TsPattern;
@@ -909,7 +917,7 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
                 return mlir::failure();
             }
 
-            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getSetAccessor().value(),
+            auto callRes = createCall<mlir_ts::CallOp>(rewriter, accessorOp, loc, accessorOp.getSetAccessor().value(),
                                 mlir::TypeRange{}, mlir::ValueRange{accessorOp.getSetValue()});        
         }
 
@@ -921,7 +929,7 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
                 return failure();
             }
 
-            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
+            auto callRes = createCall<mlir_ts::CallOp>(rewriter, accessorOp, loc, accessorOp.getGetAccessor().value(),
                                                             TypeRange{accessorOp.getType(0)}, ValueRange{});
 
             rewriter.replaceOp(accessorOp, callRes.getResult(0));
@@ -951,7 +959,7 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
                 return mlir::failure();
             }
 
-            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getSetAccessor().value(),
+            createCall<mlir_ts::CallOp>(rewriter, thisAccessorOp, loc, thisAccessorOp.getSetAccessor().value(),
                 mlir::TypeRange{}, mlir::ValueRange{thisAccessorOp.getThisVal(), thisAccessorOp.getSetValue()});
         }
 
@@ -964,7 +972,7 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
             }
 
             auto callRes =
-                rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
+                createCall<mlir_ts::CallOp>(rewriter, thisAccessorOp, loc, thisAccessorOp.getGetAccessor().value(),
                     TypeRange{thisAccessorOp.getType(0)}, ValueRange{thisAccessorOp.getThisVal()});
 
             rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
@@ -995,7 +1003,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
                 return mlir::failure();
             }
 
-            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+            createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectAccessorOp, loc, TypeRange{}, 
                 thisIndirectAccessorOp.getSetAccessor(), ValueRange{thisIndirectAccessorOp.getThisVal(), 
                 thisIndirectAccessorOp.getSetValue()});                
         }
@@ -1009,7 +1017,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
                 return failure();
             }
 
-            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisIndirectAccessorOp.getType(0)}, 
+            auto callRes = createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectAccessorOp, loc, TypeRange{thisIndirectAccessorOp.getType(0)}, 
                     thisIndirectAccessorOp.getGetAccessor(), ValueRange{thisIndirectAccessorOp.getThisVal()});
 
             rewriter.replaceOp(thisIndirectAccessorOp, callRes.getResult(0));
@@ -1039,7 +1047,7 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
                 return mlir::failure();
             }
 
-            rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getSetAccessor().value(),
+            createCall<mlir_ts::CallOp>(rewriter, thisIndexAccessorOp, loc, thisIndexAccessorOp.getSetAccessor().value(),
                 mlir::TypeRange{}, mlir::ValueRange{thisIndexAccessorOp.getThisVal(), 
                     thisIndexAccessorOp.getIndex(), thisIndexAccessorOp.getSetValue()});
         }
@@ -1053,7 +1061,7 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
             }
 
             auto callRes =
-                rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getGetAccessor().value(),
+                createCall<mlir_ts::CallOp>(rewriter, thisIndexAccessorOp, loc, thisIndexAccessorOp.getGetAccessor().value(),
                     TypeRange{thisIndexAccessorOp.getType(0)}, 
                         ValueRange{thisIndexAccessorOp.getThisVal(), thisIndexAccessorOp.getIndex()});
 
@@ -1084,7 +1092,7 @@ struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndir
                 return mlir::failure();
             }
 
-            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, thisIndirectIndexAccessorOp.getSetAccessor(),
+            createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectIndexAccessorOp, loc, TypeRange{}, thisIndirectIndexAccessorOp.getSetAccessor(),
                 mlir::ValueRange{thisIndirectIndexAccessorOp.getThisVal(), 
                     thisIndirectIndexAccessorOp.getIndex(), thisIndirectIndexAccessorOp.getSetValue()});
         }
@@ -1098,7 +1106,7 @@ struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndir
             }
 
             auto callRes =
-                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisIndirectIndexAccessorOp.getType(0)}, thisIndirectIndexAccessorOp.getGetAccessor(), 
+                createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectIndexAccessorOp, loc, TypeRange{thisIndirectIndexAccessorOp.getType(0)}, thisIndirectIndexAccessorOp.getGetAccessor(), 
                         ValueRange{thisIndirectIndexAccessorOp.getThisVal(), thisIndirectIndexAccessorOp.getIndex()});
 
             rewriter.replaceOp(thisIndirectIndexAccessorOp, callRes.getResult(0));
@@ -1139,7 +1147,7 @@ struct BoundIndirectAccessorOpLowering : public TsPattern<mlir_ts::BoundIndirect
             auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getSetAccessor());
             auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getSetAccessor());
 
-            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+            createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectAccessorOp, loc, TypeRange{}, 
                 methodOp, ValueRange{thisOp, boundIndirectAccessorOp.getSetValue()});                
         }
 
@@ -1161,7 +1169,7 @@ struct BoundIndirectAccessorOpLowering : public TsPattern<mlir_ts::BoundIndirect
             auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getGetAccessor());
             auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getGetAccessor());
 
-            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{boundIndirectAccessorOp.getType(0)}, 
+            auto callRes = createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectAccessorOp, loc, TypeRange{boundIndirectAccessorOp.getType(0)}, 
                     methodOp, ValueRange{thisOp});
 
             rewriter.replaceOp(boundIndirectAccessorOp, callRes.getResult(0));
@@ -1201,7 +1209,7 @@ struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundInd
             auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectIndexAccessorOp.getSetAccessor());
             auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectIndexAccessorOp.getSetAccessor());
 
-            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, methodOp, mlir::ValueRange{thisOp, 
+            createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectIndexAccessorOp, loc, TypeRange{}, methodOp, mlir::ValueRange{thisOp, 
                     boundIndirectIndexAccessorOp.getIndex(), boundIndirectIndexAccessorOp.getSetValue()});
         }
 
@@ -1223,7 +1231,7 @@ struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundInd
             auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectIndexAccessorOp.getGetAccessor());
 
             auto callRes =
-                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{boundIndirectIndexAccessorOp.getType(0)}, 
+                createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectIndexAccessorOp, loc, TypeRange{boundIndirectIndexAccessorOp.getType(0)}, 
                 methodOp, ValueRange{thisOp, boundIndirectIndexAccessorOp.getIndex()});
 
             rewriter.replaceOp(boundIndirectIndexAccessorOp, callRes.getResult(0));
@@ -1890,15 +1898,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     return;
                 }
 
-                if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-                {
-                    tsContext->unwind[op] = landingBlock;
-                }
-                else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-                {
-                    tsContext->unwind[op] = landingBlock;
-                }
-                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                if (unwindsToHandler(op))
                 {
                     tsContext->unwind[op] = landingBlock;
                 }
@@ -2097,15 +2097,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             // point all throw in catch block to clean up block
             auto visitorCallOpContinueCleanup = [&](Operation *op) {
-                if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-                {
-                    tsContext->unwind[op] = finallyBlock;
-                }
-                else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-                {
-                    tsContext->unwind[op] = finallyBlock;
-                }
-                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                if (unwindsToHandler(op))
                 {
                     tsContext->unwind[op] = finallyBlock;
                 }
