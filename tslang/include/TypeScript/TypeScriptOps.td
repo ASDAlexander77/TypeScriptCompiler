@@ -501,6 +501,18 @@ def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny", [Pure]> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
+def TypeScript_IsTupleOfLayoutOp : TypeScript_Op<"IsTupleOfLayout", [Pure]> {
+  let summary = "whether an any holds a tuple of a type's layout";
+  let description = [{
+    True when the box $value holds a tuple whose fields have the names and types of $layoutType's:
+    the TYPE_DESCR_LAYOUT of the box's tag is $layoutType's. A cast from `any` to an object type
+    reads the box as that type's layout, which another tuple's is not (`{ n: 5 }` holds an s32).
+  }];
+
+  let arguments = (ins TypeScript_Any:$value, TypeAttr:$layoutType);
+  let results = (outs TypeScript_Boolean:$res);
+}
+
 def TypeScript_TypeDescriptorOp : TypeScript_Op<"TypeDescriptor", [Pure]> {
   let summary = "type name from the static descriptor of a type";
   let description = [{

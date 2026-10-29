@@ -32,7 +32,7 @@ class TypeDescriptorLogic
     {
     }
 
-    // { i32 kind, i32 reserved, ptr release, index blockHeader }
+    // { i32 kind, i32 layout, ptr release, ptr retain, index blockHeader }
     static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type llvmIndexType)
     {
         auto i32Ty = builder.getI32Type();
@@ -76,6 +76,15 @@ class TypeDescriptorLogic
         auto kindPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
                                                     ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_KIND});
         return rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), kindPtr);
+    }
+
+    // TYPE_DESCR_LAYOUT of the type this tag names
+    mlir::Value getLayoutFromTag(mlir::Value tagValue)
+    {
+        auto recordPtr = getRecordPtrFromTag(tagValue);
+        auto layoutPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
+                                                      ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_LAYOUT});
+        return rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), layoutPtr);
     }
 
     mlir::Value isKind(mlir::Value tagValue, int kind)

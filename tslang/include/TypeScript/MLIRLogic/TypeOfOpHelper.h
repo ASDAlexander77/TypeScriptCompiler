@@ -8,6 +8,7 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/xxhash.h"
 
 #define DEBUG_TYPE "mlir"
 
@@ -97,6 +98,65 @@ class TypeOfOpHelper
             .Case(UNDEFINED_NAME, TYPE_KIND_UNDEFINED)
             .Case("null", TYPE_KIND_NULL)
             .Default(TYPE_KIND_UNKNOWN);
+    }
+
+    // A tuple's layout as text: its fields' names and types, with a literal field as its type
+    // (`{ n: 5 }` holds an s32) and a const tuple as the tuple it is, so a literal and the object
+    // type that names the same fields read alike.
+    static void layoutText(mlir::Type type, llvm::raw_ostream &os)
+    {
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            layoutText(literalType.getElementType(), os);
+            return;
+        }
+
+        llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields = tupleType.getFields();
+        }
+        else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields = constTupleType.getFields();
+        }
+        else
+        {
+            type.print(os);
+            return;
+        }
+
+        os << "{";
+        for (auto &field : fields)
+        {
+            if (field.id)
+            {
+                field.id.print(os);
+            }
+
+            os << ":";
+            layoutText(field.type, os);
+            os << ",";
+        }
+
+        os << "}";
+    }
+
+    // TYPE_DESCR_LAYOUT of a type's descriptor: an id of a tuple's layout text (never 0), and 0 for
+    // anything else. A hash of the text, not of the type: the type's own hash differs between
+    // modules, which a tuple boxed in one and cast in another must not.
+    static uint32_t layoutIdOf(mlir::Type type)
+    {
+        if (!isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type))
+        {
+            return 0;
+        }
+
+        std::string text;
+        llvm::raw_string_ostream os(text);
+        layoutText(type, os);
+        auto id = (uint32_t)llvm::xxh3_64bits(os.str());
+        return id ? id : 1;
     }
 
     std::string typeOfAsString(mlir::Type type)

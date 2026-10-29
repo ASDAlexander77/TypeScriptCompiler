@@ -354,7 +354,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     // capture box); it is not part of the name the record carries.
     mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
                                              StringRef releaseRoutineName, StringRef retainRoutineName,
-                                             StringRef variant = "")
+                                             StringRef variant = "", uint32_t layout = 0)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -390,8 +390,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             mlir::Value recordValue = rewriter.create<LLVM::UndefOp>(loc, recordType);
             setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(kind)),
                            TYPE_DESCR_KIND);
-            setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(0)),
-                           TYPE_DESCR_RESERVED);
+            setStructValue(loc, recordValue,
+                           rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr((int32_t)layout)),
+                           TYPE_DESCR_LAYOUT);
             // empty when the type owns no heap memory, which a null slot states positively:
             // "nothing to release", rather than leaving it unknown
             mlir::Value releaseValue =
