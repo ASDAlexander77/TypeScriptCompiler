@@ -44,6 +44,13 @@ class Counter {
     static count = 7;
 }
 
+// declared again: through a value of Counter's type, the field of the class the value holds
+class Recount extends Counter {
+    static count = 8;
+}
+
+class Uncounted extends Counter {}
+
 // statics through a value: a subclass's static of the same name is the one called
 class Unit {
     static label() {
@@ -148,6 +155,9 @@ function main() {
     assert(typeof a == "function", "typeof");
 
     assert(countOf(Counter) == 7, "static through the value");
+    assert(countOf(Recount) == 8 && countOf(Uncounted) == 7, "static declared again");
+    Recount.count = 9;
+    assert(countOf(Recount) == 9 && Counter.count == 7, "static declared again, written");
 
     assert(labelOf(Double) == "double" && labelOf(Unit) == "unit" && labelOf(Inherits) == "unit", "static methods");
     const units: (typeof Unit)[] = [Double, Inherits];

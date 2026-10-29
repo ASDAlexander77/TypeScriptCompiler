@@ -127,8 +127,9 @@ between the value and that tuple, or to the value of a base class, lowers to not
 - **`typeof`** of a class value is `"function"`.
 - **A static method** is called through the value's vtable (ADD_STATIC_MEMBERS_TO_VTABLE). A subclass's
   static method of the same name takes over the slot, so `c.label()` is the label of the class `c` holds.
-- **A static field** is read through the vtable too. A static field that a subclass declares again has a
-  slot of its own, so the base's slot still reads the base's, as through an instance.
+- **A static field** is read through the vtable too. One that a subclass declares again, of the same
+  type, takes over the base's slot (`ClassInfo::getVirtualTable`), so it is the field of the class the
+  value holds; the compiler's own (`.rtti`, `.size`) keep a slot each.
 - Any other member through a value is an error.
 
 **Ownership:** the value owns nothing (its parts are static data and functions). The instance `new` makes
