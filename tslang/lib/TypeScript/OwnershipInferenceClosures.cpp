@@ -119,6 +119,158 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::classifyLiteralCaptures()
+    {
+        getFunction().walk([&](mlir_ts::VariableOp boxOp) {
+            if (!boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
+            {
+                return;
+            }
+
+            // filled field by field, and stored once into a literal's `.captured`: `{ w: (x) => x * b.n }`
+            // builds the literal in a local, then copies it into the object `ts.New` made
+            llvm::SmallVector<mlir_ts::StoreOp> fills;
+            mlir_ts::VariableOp literalOp;
+            for (auto &use : boxOp->getUses())
+            {
+                auto *user = use.getOwner();
+                if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user))
+                {
+                    for (auto *fieldUser : propertyRefOp->getUsers())
+                    {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                        if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                        {
+                            return;
+                        }
+
+                        fills.push_back(storeOp);
+                    }
+
+                    continue;
+                }
+
+                // rc's count of the box, for the literal's reference
+                if (mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(user))
+                {
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                auto fieldOp = storeOp && storeOp.getValue() == boxOp.getResult()
+                                   ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                   : mlir_ts::PropertyRefOp();
+                auto ownerOp = fieldOp ? fieldOp.getObjectRef().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                auto tupleType = ownerOp ? mlir::dyn_cast<mlir_ts::TupleType>(
+                                               mlir::cast<mlir_ts::RefType>(ownerOp.getType()).getElementType())
+                                         : mlir_ts::TupleType();
+                auto fieldName = tupleType && fieldOp.getPosition() < tupleType.size()
+                                     ? mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFieldInfo(fieldOp.getPosition()).id)
+                                     : mlir::StringAttr();
+                if (literalOp || !fieldName || fieldName.getValue() != CAPTURED_NAME)
+                {
+                    return;
+                }
+
+                literalOp = ownerOp;
+            }
+
+            if (!literalOp)
+            {
+                return;
+            }
+
+            // ...read once, into the object it becomes
+            llvm::SmallVector<mlir::Value> objects;
+            for (auto *user : literalOp->getUsers())
+            {
+                if (mlir::isa<mlir_ts::PropertyRefOp>(user))
+                {
+                    continue;
+                }
+
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (!loadOp || !loadOp.getResult().hasOneUse())
+                {
+                    return;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(*loadOp.getResult().getUsers().begin());
+                auto newOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::NewOp>() : mlir_ts::NewOp();
+                if (!newOp)
+                {
+                    return;
+                }
+
+                objects.push_back(newOp.getResult());
+            }
+
+            if (objects.size() != 1)
+            {
+                return;
+            }
+
+            // the literal stays here: nothing stores, returns, captures or keeps it
+            auto box = std::make_shared<Closure>();
+            llvm::SmallVector<BorrowUse> uses;
+            if (walkBorrowed(objects.front(), {}, uses))
+            {
+                return;
+            }
+
+            for (auto &use : uses)
+            {
+                box->uses.push_back(use.op);
+            }
+
+            // copies of values with an owner of their own: a named value released here, a parameter, a
+            // local's; not a cell (a captured `let`), and not one rc retained for the box
+            auto owned = [&](mlir::Value value) {
+                auto root = rootOf(value);
+                if (mlir::isa<mlir::BlockArgument>(root) || root.getDefiningOp<mlir_ts::LoadOp>())
+                {
+                    return true;
+                }
+
+                return isFresh(root) && llvm::any_of(root.getUsers(), [](mlir::Operation *rootUser) {
+                           return mlir::isa<mlir_ts::ReleaseOp>(rootUser);
+                       });
+            };
+
+            llvm::SmallVector<mlir_ts::StoreOp> borrowed;
+            for (auto storeOp : fills)
+            {
+                auto value = storeOp.getValue();
+                if (mlir::isa<mlir_ts::RefType>(value.getType()) || holdsNoBlock(value))
+                {
+                    continue;
+                }
+
+                if (!owned(value))
+                {
+                    return;
+                }
+
+                // rc's reference for the box goes with the borrow (decideClosures)
+                if (auto *retain = retainBefore(value, storeOp))
+                {
+                    box->retains.push_back(retain);
+                }
+
+                borrowed.push_back(storeOp);
+            }
+
+            captureRetains.insert(box->retains.begin(), box->retains.end());
+            for (auto storeOp : borrowed)
+            {
+                setAttrTracked(storeOp, OWN_CAPTURE_BORROW_ATTR_NAME);
+                captureStores[storeOp] = box.get();
+            }
+
+            literalBoxes.push_back(std::move(box));
+        });
+    }
+
     llvm::SmallVector<int32_t> OwnershipInferencePass::borrowingFieldsOf(mlir::Type recordType)
     {
         llvm::SmallVector<int32_t> fields;
@@ -923,6 +1075,11 @@ namespace own_inference
 
     void OwnershipInferencePass::decideClosures(llvm::SetVector<mlir::Operation *> &toErase)
     {
+        for (auto &box : literalBoxes)
+        {
+            toErase.insert(box->retains.begin(), box->retains.end());
+        }
+
         for (auto &closure : closures)
         {
             if (!closure->op)

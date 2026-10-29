@@ -63,6 +63,7 @@ namespace own_inference
 
         // first: whether a closure borrows what it captures changes what its box's stores are
         classifyClosures();
+        classifyLiteralCaptures();
         classifyStateBoxes();
         classifyBorrowingFields();
         // ...and whether an object literal borrows what its fields hold (spec 32)
@@ -143,6 +144,7 @@ namespace own_inference
         edgeReleases.clear();
         derivedCache.clear();
         closures.clear();
+        literalBoxes.clear();
         closureOf.clear();
         stateBoxes.clear();
         fieldBorrowRetains.clear();
