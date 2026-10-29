@@ -852,10 +852,12 @@ namespace own_inference
             {
                 if (!dryRun)
                 {
-                    mlir::OpBuilder builder(take.release);
+                    // (right after the read: rc's retain of it is erased with the bookkeeping)
+                    auto *at = take.emptyAtRead ? read->getNextNode() : take.release;
+                    mlir::OpBuilder builder(at);
                     auto fieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
-                    auto empty = builder.create<mlir_ts::DefaultOp>(take.release->getLoc(), fieldType);
-                    builder.create<mlir_ts::StoreOp>(take.release->getLoc(), empty, take.field);
+                    auto empty = builder.create<mlir_ts::DefaultOp>(at->getLoc(), fieldType);
+                    builder.create<mlir_ts::StoreOp>(at->getLoc(), empty, take.field);
                 }
 
                 bookkeeping.push_back(take.retain);
@@ -1145,7 +1147,33 @@ namespace own_inference
         // walk may meet the taker first (`r = next(xs, 0).value`). A string too: it moves, as nothing
         // else holds it.
         auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
-        auto retainOp = loadOp ? mlir::dyn_cast_or_null<mlir_ts::RetainOp>(read->getNextNode()) : mlir_ts::RetainOp();
+        auto field = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto temporary = field ? field.getObjectRef() : mlir::Value();
+        auto *call = temporary ? temporary.getDefiningOp() : nullptr;
+        if (!call || !field->hasOneUse())
+        {
+            return false;
+        }
+
+        // ...or out of an object a `const` names, `new`'s or a call's own (spec 64): `return r.value`.
+        // The read may be used before rc's retain of it, later in its block (`const v = r.value;
+        // print(v.n); return v`): the field is empty from the read on, and the read holds what it held.
+        if (call->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+        {
+            for (auto *user : loadOp->getUsers())
+            {
+                auto namedRetain = mlir::dyn_cast<mlir_ts::RetainOp>(user);
+                if (namedRetain && namedRetain->getBlock() == read->getBlock() &&
+                    (kept == namedRetain || takerOf(namedRetain, loadOp.getResult()) == kept))
+                {
+                    return namedFieldTakeOf(read, namedRetain, field, take);
+                }
+            }
+
+            return false;
+        }
+
+        auto retainOp = mlir::dyn_cast_or_null<mlir_ts::RetainOp>(read->getNextNode());
         if (!retainOp || retainOp.getReference() != loadOp.getResult() ||
             (kept != retainOp && takerOf(retainOp, loadOp.getResult()) != kept))
         {
@@ -1155,10 +1183,8 @@ namespace own_inference
         kept = retainOp;
 
         // a field read in place out of a call's own result, not a borrow of what the call was given
-        auto field = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
-        auto temporary = field ? field.getObjectRef() : mlir::Value();
-        auto *call = temporary ? temporary.getDefiningOp() : nullptr;
-        if (!call || !callResultIsOwn(call) || !field->hasOneUse())
+
+        if (!callResultIsOwn(call))
         {
             return false;
         }
@@ -1196,6 +1222,93 @@ namespace own_inference
         take.taker = taker;
         take.field = field.getResult();
         take.release = release;
+        return true;
+    }
+
+    bool OwnershipInferencePass::namedFieldTakeOf(mlir::Operation *read, mlir::Operation *retain,
+                                                  mlir_ts::PropertyRefOp field, FieldTake &take)
+    {
+        // The object a `const` names is `new`'s own, or a call's own result: nothing else holds it,
+        // and its releases end it. The field is left empty right at the read, so each release frees
+        // nothing of what the taker has, on a path that took it or not (`c ? init : r.value`).
+        auto object = field.getObjectRef();
+        auto *producer = object.getDefiningOp();
+        if (!(mlir::isa<mlir_ts::NewOp>(producer) && producer->hasAttr(OWNED_RESULT_ATTR_NAME)) && !callResultIsOwn(producer))
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::Operation *> releases;
+        for (auto *user : object.getUsers())
+        {
+            if (mlir::isa<mlir_ts::ReleaseOp>(user))
+            {
+                releases.push_back(user);
+            }
+        }
+
+        if (releases.empty())
+        {
+            return false;
+        }
+
+        // taken once for each object: not again around a loop that does not make it anew
+        auto *next = read->getNextNode();
+        if (!next || reachableAfter(next, read, producer))
+        {
+            return false;
+        }
+
+        // Nothing sees the object after the move but its releases: no method, no move of it, no read
+        // of that field, nor anything made of the object before it that is used after (a borrow of it).
+        // Its other fields are its own still.
+        auto seenAfter = [&](mlir::Operation *op) { return op != read && op != retain && reachableAfter(read, op, releases); };
+        for (auto *user : object.getUsers())
+        {
+            if (mlir::isa<mlir_ts::ReleaseOp>(user) || user == field.getOperation())
+            {
+                continue;
+            }
+
+            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                propertyRefOp && propertyRefOp.getPosition() != field.getPosition())
+            {
+                continue;
+            }
+
+            // the user, and what is made of its results in turn
+            llvm::SmallVector<mlir::Operation *> derived{user};
+            llvm::SmallPtrSet<mlir::Operation *, 8> visited;
+            while (!derived.empty())
+            {
+                auto *op = derived.pop_back_val();
+                if (!visited.insert(op).second)
+                {
+                    continue;
+                }
+
+                if (seenAfter(op))
+                {
+                    return false;
+                }
+
+                for (auto result : op->getResults())
+                {
+                    derived.append(result.getUsers().begin(), result.getUsers().end());
+                }
+            }
+        }
+
+        auto *taker = takerOf(retain, read->getResult(0));
+        if (!taker)
+        {
+            return false;
+        }
+
+        take.retain = retain;
+        take.taker = taker;
+        take.field = field.getResult();
+        take.emptyAtRead = true;
         return true;
     }
 

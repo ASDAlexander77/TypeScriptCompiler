@@ -819,6 +819,8 @@ class OwnershipInferencePass
         mlir_ts::VariableOp slot;
         // a field of a temporary (spec 63): the temporary's release, before which the field is emptied
         mlir::Operation *release = nullptr;
+        // a field of an object a `const` names (spec 64): emptied right at the read
+        bool emptyAtRead = false;
     };
 
     // Is `kept`, what keeps the borrow `read` (a read of a field of an owning record local), one
@@ -831,6 +833,9 @@ class OwnershipInferencePass
     // Is `kept` rc's retain of `read`, a read of a field of a call's own result released as a
     // temporary right after, with nothing else reading that field (spec 63)?
     bool temporaryFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take);
+    // ...or of an object a `const` names, `new`'s or a call's own, that nothing sees after the move
+    // but its releases, and that is not taken from twice (spec 64)?
+    bool namedFieldTakeOf(mlir::Operation *read, mlir::Operation *retain, mlir_ts::PropertyRefOp field, FieldTake &take);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
     // Does `store` put `value`, a string read out of a place, into another place with no retain of

@@ -5277,3 +5277,51 @@ own build fails its count (exit 3).
 Not here: the field of a named local of a class type (`const r = next(xs, 0); let v = initial ??
 r.value`) is still a borrow that cannot be stored, and a parameter on the other branch (`given ??
 pair(n).item`) is kept, which callers cannot give up.
+
+## 64. A field taken out of an object a `const` names, 2026-10-29
+
+`const r = new Holder(); return r.value` was `'this value' borrows a field and cannot be stored,
+returned or captured`, and so was `c ? initial : r.value` and `initial ?? r.value`. A `const` whose
+value is `new`'s or a call's own result is not a slot: MLIRGen folds the name into the value
+(`__owned_result_named`), so `r.value` is a `Load(PropertyRef(%new))` and rc releases `%new` where the
+name ends - the shape of spec 63 with an owner that has a name.
+
+- **The take** (`namedFieldTakeOf`, from `temporaryFieldTakeOf`). A read of a field of such an object
+  (`ts.New` with `__owned_result`, or `callResultIsOwn`), with rc's retain of the read later in its
+  block, is a move out of the field when:
+  1. nothing sees the object after the read but its releases: no method, no move of it, no read of
+     that field; and nothing made of the object before the read (a borrow `const w = same(r)`, followed
+     through every result made of it in turn) is used after it. Its other fields stay readable;
+  2. the read is not made again on the same object: no path from the read back to it that does not
+     make the object anew (a loop around the read but not around `new`);
+  3. rc's retain of the read is in the read's block, and is it or its taker what keeps the borrow.
+
+  rc's retain goes, and a `ts.Default` of the field's type is stored into the field right after the
+  read - not before the release, which after a `?:` stands on every path, and would leave the field of
+  a path that did not take it unreleased.
+- **rc, a branch retains** (`consumeConditionalResults`). Under own only, a branch of a `ts.If` that
+  yields a field read out of a named object retains it in the branch, right after the read, so that
+  the take sees its retain - when a receiver keeps the merge (rc retained it after the `ts.If`), whose
+  retain then goes, as for spec 63. A merge only read (`const x = c ? a : r.value; return x.n`) is left a
+  borrow: retained in its branches it would be an owned value, and the parameter on its other branch
+  kept, which callers cannot give up. Under rc the retain after the merge is left: the object outlives
+  the `ts.If` either way.
+
+A parameter on the other branch of a merge that is kept (`return c ? initial : r.value`) is moved in, as
+for any parameter a function keeps: the caller gives it up.
+
+Between the read and the taker the taken value has no owner but the read: an exception thrown there
+leaks it (as in spec 63), it does not free it twice.
+
+`own_err_container_read_stored` (`h2.c = h.c`) is now a move out of `h`'s field when `h` is not read
+again: the test reads `h.c` after, which stays an error.
+
+`own_named_field_take` returns, picks with a `?:` and a `??`, uses the read before returning it and
+reads another field after, reads a merge it does not keep, pushes it from a `new` in a loop, and takes
+from a call's result, churning between steps, under own, rc, gc and none; the ownership verifier is
+silent on it. `own_err_named_field_{read_again,method_after,object_moved,borrow_after}` are the four
+shapes that must stay borrows; a loop around the read but not around `new`, and a `let h = r` read after,
+are rejected too.
+
+Not here: a `let` of a class type (a slot, not a folded name), and a push of the field into a global
+array (spec 25's immortal keepers ask for a value made here).
