@@ -4331,9 +4331,18 @@ genContext);
             return mlir::failure();
         }
 
-        if (classInfo->isValue || classInfo->isCppVTable)
+        if (classInfo->isValue)
         {
             emitError(location) << "class '" << classInfo->fullName << "' can't be used as a value yet";
+            return mlir::failure();
+        }
+
+        // a @cpp class implemented here has its vtable (C++'s layout), `.new` and constructor; one made
+        // by C++ only has none of them here
+        if (classInfo->isCppVTable && !classInfo->isCppVTableImplementation)
+        {
+            emitError(location) << "the @cpp class '" << classInfo->fullName
+                                << "' can't be used as a value: its objects are made by C++";
             return mlir::failure();
         }
 
@@ -4416,10 +4425,15 @@ genContext);
         auto newFunc = functionAddress(classInfo->isAbstract ? nullptr : classInfo->findMethod(NEW_METHOD_NAME));
         auto constructorFunc = functionAddress(classInfo->getHasConstructor() ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr);
 
-        // the rtti: every class has one, and no two the same
+        // the rtti: every class has one, and no two the same - but a @cpp class, whose identity is its
+        // vtable, which each class implementing C++ methods has of its own
         mlir::Value rtti;
         auto rttiName = concat(classInfo->fullName, RTTI_NAME);
-        if (classInfo->isDynamicImport)
+        if (classInfo->isCppVTable)
+        {
+            rtti = vtable;
+        }
+        else if (classInfo->isDynamicImport)
         {
             rtti = loadedOpaque(rttiName);
         }

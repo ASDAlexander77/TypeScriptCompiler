@@ -801,6 +801,14 @@ namespace mlirgen
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
             genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
             genContextWithPassResult.postponedMessages = genContext.postponedMessages;
+            // a constructor of a class declared in a function: its field initializers
+            // (generateConstructorStatements) are discovered with its body, so what they read of the
+            // function is found as the body's reads are. This pass drains its copy; the real one
+            // still has them. (A class at the top level has nothing of a function to read.)
+            if (genContext.funcOp)
+            {
+                genContextWithPassResult.generatedStatements = genContext.generatedStatements;
+            }
 
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
