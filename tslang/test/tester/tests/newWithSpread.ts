@@ -32,9 +32,9 @@ function main() {
     const b2 = new weakB(1, 2, ...a, "string");
 
     let b: A = { f: B };
-    let c: C;
+    let c: C = { "a-b": B };
     let d: A[] = [b, b];
-    let g: C[];
+    let g: C[] = [c, c];
 
     // Property access expression
     new b.f(1, 2, "string");

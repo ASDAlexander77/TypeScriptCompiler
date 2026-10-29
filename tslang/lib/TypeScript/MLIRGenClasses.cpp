@@ -4483,10 +4483,9 @@ genContext);
         // the arguments, for the constructor the class itself has: a class whose value this can be
         // extends it, and takes what its constructor takes (castToClassValue)
         auto *constructorInfo = classInfo->getHasConstructor() ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr;
-        auto parameterCount = constructorInfo ? constructorInfo->funcType.getNumInputs() - 1 : 0;
-        if (arguments.size() > parameterCount)
+        if (!constructorInfo && arguments.size() > 0)
         {
-            emitError(location) << "Expected " << parameterCount << " arguments, but got " << arguments.size();
+            emitError(location) << "Expected 0 arguments, but got " << arguments.size();
             return mlir::failure();
         }
 
@@ -4511,35 +4510,22 @@ genContext);
         // construct: its constructor, when it has one
         auto constructorPart = classValuePart(location, classValue, 2);
         CAST_A(hasConstructor, location, getBooleanType(), constructorPart, genContext);
-        // the instance first, as a method's `this` (which the call borrows), then each argument as its
-        // parameter's type; one left out for an optional parameter is undefined
+        // the instance first, as a method's `this` (which the call borrows), then the arguments as a
+        // call of the constructor takes them: cast to its parameters, optional ones left out undefined,
+        // a rest parameter packed into its array
         auto constructorFuncType = constructorInfo ? constructorInfo->funcType : getFunctionType({classType}, {}, false);
-        SmallVector<mlir::Value, 4> callOperands{instance};
-        for (auto index = 0u; index < parameterCount; index++)
-        {
-            auto parameterType = constructorFuncType.getInput(index + 1);
-            if (index < operands.size())
-            {
-                CAST_A(argument, location, parameterType, operands[index], genContext);
-                callOperands.push_back(argument);
-            }
-            else if (isa<mlir_ts::OptionalType>(parameterType))
-            {
-                callOperands.push_back(builder.create<mlir_ts::OptionalUndefOp>(location, parameterType));
-            }
-            else
-            {
-                emitError(location) << "Expected " << parameterCount << " arguments, but got " << operands.size();
-                return mlir::failure();
-            }
-        }
-
+        auto failed = false;
         builder.create<mlir_ts::IfOp>(
             location, hasConstructor, [&](mlir::OpBuilder &opBuilder, mlir::Location loc) {
                 auto constructorFunc = builder.create<mlir_ts::CastOp>(location, constructorFuncType, constructorPart);
-                builder.create<mlir_ts::CallIndirectOp>(location, constructorFunc, callOperands);
+                auto result = mlirGenCallFunction(location, constructorFuncType, constructorFunc, instance, operands, genContext);
+                failed = mlir::failed(result);
                 builder.create<mlir_ts::ResultOp>(loc);
             });
+        if (failed)
+        {
+            return mlir::failure();
+        }
 
         return instance;
     }
