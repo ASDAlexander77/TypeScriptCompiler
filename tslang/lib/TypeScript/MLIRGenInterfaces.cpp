@@ -1399,7 +1399,16 @@ namespace mlirgen
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))
         {
-            addInterfaceDeclarationToExport(newInterfacePtr);
+            // a generic method prints as its slot, erased to `any`: the importer would call it without
+            // unboxing, so the interface goes as its source, as a generic interface does
+            if (llvm::any_of(newInterfacePtr->methods, [](auto &method) { return !!method.genericSignature; }))
+            {
+                addInterfaceSourceToExport(newInterfacePtr, interfaceDeclarationAST);
+            }
+            else
+            {
+                addInterfaceDeclarationToExport(newInterfacePtr);
+            }
         }
 
         return mlir::success();
@@ -1541,7 +1550,8 @@ namespace mlirgen
             }
 
             if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
-                methodName, funcType, isConditional, orderWeight, declarationMode, genContext))) 
+                methodName, funcType, isConditional, orderWeight, declarationMode, genContext,
+                methodSignature->typeParameters.size() > 0 ? SignatureDeclarationBase(methodSignature) : SignatureDeclarationBase()))) 
             {
                 return mlir::failure();
             }
