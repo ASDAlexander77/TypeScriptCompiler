@@ -606,6 +606,7 @@ tslang_add_test(NAME test-compile-00-class-discover-types COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-compile-00-class-accessor-increment COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_increment.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-getter-only-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
@@ -1232,6 +1233,7 @@ tslang_add_test(NAME test-jit-00-class-discover-types COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-class-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-jit-00-class-accessor-increment COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_increment.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-getter-only-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
@@ -2198,6 +2200,7 @@ set(TSLANG_CORPUS
     00class_override_inferred_return.ts
     00class_access_control.ts
     00class_accessor_super.ts
+    00class_accessor_increment.ts
     00class_accessor_getter_only_abstract.ts
     00class_accessor_virtual.ts
     00class_accessor_implements_field.ts

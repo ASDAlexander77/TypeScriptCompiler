@@ -563,6 +563,37 @@ namespace mlirgen
         return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
     }
 
+    // `++`/`--` on a get/set property (`o.prop++`): no reference to store back to, so the setter is called with the
+    // getter's value plus or minus one, as `o.prop += 1` does. The value is the new one for a prefix operator, and
+    // the old one for a postfix operator.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAccessorIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value accessorValue,
+                                                               bool prefix, const GenContext &genContext)
+    {
+        auto one = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(1));
+        mlir::Value step = one;
+        if (accessorValue.getType() != step.getType())
+        {
+            CAST(step, location, accessorValue.getType(), one, genContext);
+        }
+
+        auto binaryOpCode = opCode == SyntaxKind::PlusPlusToken ? SyntaxKind::PlusToken : SyntaxKind::MinusToken;
+        auto newValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, accessorValue.getType(), builder.getI32IntegerAttr(static_cast<int32_t>(binaryOpCode)), accessorValue, step);
+
+        auto saved = mlirGenSaveLogicOneItem(location, accessorValue, newValue, genContext);
+        EXIT_IF_FAILED(saved)
+
+        return prefix ? mlir::Value(newValue) : accessorValue;
+    }
+
+    static bool isAccessorValue(mlir::Value value)
+    {
+        auto *defOp = value.getDefiningOp();
+        return defOp && mlir::isa<mlir_ts::AccessorOp, mlir_ts::ThisAccessorOp, mlir_ts::ThisIndirectAccessorOp,
+                                  mlir_ts::ThisIndexAccessorOp, mlir_ts::ThisIndirectIndexAccessorOp,
+                                  mlir_ts::BoundIndirectAccessorOp, mlir_ts::BoundIndirectIndexAccessorOp>(defOp);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(prefixUnaryExpressionAST);
@@ -636,6 +667,11 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            if (isAccessorValue(expressionValue) && mth.isNumericType(expressionValue.getType()))
+            {
+                return mlirGenAccessorIncrement(location, opCode, expressionValue, true, genContext);
+            }
+
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -665,6 +701,11 @@ namespace mlirgen
             if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
             {
                 return mlir::failure();
+            }
+
+            if (isAccessorValue(expressionValue) && mth.isNumericType(expressionValue.getType()))
+            {
+                return mlirGenAccessorIncrement(location, opCode, expressionValue, false, genContext);
             }
 
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
