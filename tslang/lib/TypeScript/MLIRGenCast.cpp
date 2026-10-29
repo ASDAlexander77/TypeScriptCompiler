@@ -2079,6 +2079,76 @@ namespace mlirgen
         }
     }
 
+    // A function taking fewer parameters than the function type it is given as (`apply(one)` where `apply` takes
+    // `(a: number, b: number) => number` and `one` takes `a` only): TypeScript lets it ignore the rest. A named
+    // function or an arrow that captures nothing is given as a function of its own that takes them all and calls
+    // it with the first ones - called with every argument the type says, it would read them where it does not
+    // expect them. Null where it is not that (a closure, a bound method, parameters or results that differ).
+    mlir::Value MLIRGenImpl::fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type)
+    {
+        auto symbolRefOp = value.getDefiningOp<mlir_ts::SymbolRefOp>();
+        auto inFuncType = dyn_cast<mlir_ts::FunctionType>(value.getType());
+        auto resFuncType = mth.GetFunctionType(type);
+        if (!symbolRefOp || !inFuncType || !resFuncType || inFuncType.isVarArg() || inFuncType.isCVarArg()
+            || resFuncType.isVarArg() || resFuncType.isCVarArg())
+        {
+            return mlir::Value();
+        }
+
+        // no result and a `void` one are the same (a declared `=> void` keeps its result)
+        auto isVoid = [](mlir::TypeRange results) {
+            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+        };
+
+        auto inInputs = inFuncType.getInputs();
+        auto resInputs = resFuncType.getInputs();
+        auto sameResults = inFuncType.getResults() == resFuncType.getResults()
+            || (isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults()));
+        if (inInputs.size() >= resInputs.size() || !sameResults
+            || !llvm::equal(inInputs, resInputs.take_front(inInputs.size())))
+        {
+            return mlir::Value();
+        }
+
+        auto calleeName = symbolRefOp.getIdentifier();
+        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size())).str();
+        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
+        if (!theModule.lookupSymbol(thunkName))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+
+            // compiler glue with no source to step through, as INSTANCEOF_NONE_NAME's
+            auto noLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            auto results = inFuncType.getResults();
+            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto entryOp = builder.create<mlir_ts::EntryOp>(
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
+
+            auto callee = builder.create<mlir_ts::SymbolRefOp>(noLocation, inFuncType,
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName));
+            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee,
+                                                                  entryBlock.getArguments().take_front(inInputs.size()));
+            if (hasResult)
+            {
+                builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+
+            builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
+
+            theModule.push_back(funcOp);
+        }
+
+        return builder.create<mlir_ts::SymbolRefOp>(location, thunkType,
+                                                    mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+    }
+
     mlir::LogicalResult MLIRGenImpl::verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value &value, mlir::Type &valueType, const GenContext &genContext)
     {
         if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
@@ -2122,6 +2192,16 @@ namespace mlirgen
             {
                 // test fun types
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                if (test.result == MatchResultType::NotMatchArgCount)
+                {
+                    if (auto thunk = fewerParametersThunk(location, value, type))
+                    {
+                        value = thunk;
+                        valueType = thunk.getType();
+                        test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                    }
+                }
+
                 if (test.result != MatchResultType::Match)
                 {
                     emitFunctionTypeMismatch(location, valueType, type, test);

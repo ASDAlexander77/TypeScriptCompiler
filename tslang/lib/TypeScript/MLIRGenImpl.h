@@ -14623,6 +14623,8 @@ class MLIRGenImpl
     // reports which part of a function signature does not match the one it is assigned to
     void emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match);
 
+    mlir::Value fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type);
+
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here
     // but if optional points to interface then it will not work
