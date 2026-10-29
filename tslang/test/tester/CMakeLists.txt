@@ -741,6 +741,7 @@ tslang_add_test(NAME test-compile-00-try-finally-throws COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-function-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_fewer_parameters.ts")
 tslang_add_test(NAME test-compile-00-closure-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_fewer_parameters.ts")
 tslang_add_test(NAME test-compile-00-in-interface-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
+tslang_add_test(NAME test-compile-00-interface-generic-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_generic_method.ts")
 tslang_add_test(NAME test-compile-00-interface-union-literal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_union_literal.ts")
 tslang_add_test(NAME test-compile-01-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
@@ -1371,6 +1372,7 @@ tslang_add_test(NAME test-jit-00-try-finally-throws COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-function-fewer-parameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_fewer_parameters.ts")
 tslang_add_test(NAME test-jit-00-closure-fewer-parameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_fewer_parameters.ts")
 tslang_add_test(NAME test-jit-00-in-interface-union COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
+tslang_add_test(NAME test-jit-00-interface-generic-method COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_generic_method.ts")
 tslang_add_test(NAME test-jit-00-interface-union-literal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_union_literal.ts")
 tslang_add_test(NAME test-jit-01-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
@@ -1634,6 +1636,7 @@ tslang_add_test(NAME test-compile-export-import-class-accessor COMMAND test-runn
 tslang_add_test(NAME test-compile-export-import-class-indexer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_indexer.ts")
 tslang_add_test(NAME test-compile-export-import-interface-indexer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+tslang_add_test(NAME test-compile-export-import-interface-generic-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 tslang_add_test(NAME test-compile-export-import-class-structural-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
@@ -1824,6 +1827,7 @@ tslang_add_test(NAME test-compile-shared-export-import-class-static COMMAND test
 # implicitly inherited the replaced terminator's (also wrong) location instead of the function's
 # own. See class-implements-interface-dynamic-import-fix memory for the full account.
 tslang_add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+tslang_add_test(NAME test-compile-shared-export-import-interface-generic-method COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 # FIXED 2026-07-23 (was disabled): the "this.area()-returns-0-via-interface" symptom had nothing
@@ -1921,6 +1925,7 @@ tslang_add_test(NAME test-jit-shared-export-import-class-extends-implements-diam
 tslang_add_test(NAME test-jit-shared-export-import-class-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+tslang_add_test(NAME test-jit-shared-export-import-interface-generic-method COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 # FIXED 2026-07-23 (was disabled): see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (DeclarationPrinter dropped `abstract`, shifting the reimported vtable's slots).
@@ -4022,7 +4027,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_this_param own_copy_within_returned_param own_swap_elements
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
                  own_generator_take own_rest_array_borrows own_string_copies
-                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures
+                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
@@ -4060,7 +4065,7 @@ foreach(keeps_mm rc gc none)
                        own_copy_within_returned_param own_swap_elements own_callback_forwarded
                        own_optional_record_read own_param_default_kept own_literal_into_array
                        own_generator_take own_rest_array_borrows own_string_copies
-                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures
+                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")

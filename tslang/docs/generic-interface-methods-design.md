@@ -1,6 +1,7 @@
 # Generic methods in interfaces (and virtual generic class methods): design
 
-Status: **proposed, not implemented**. Written 2026-10-29, to be picked up later.
+Status: **option A implemented for interfaces, D for classes** (2026-10-29); see §7. Virtual dispatch of
+generic class methods through a base class is not done.
 
 ## 1. What fails today
 
@@ -76,3 +77,40 @@ A vtable slot holds one function pointer. A generic method has no single functio
 
 - Generic *interfaces* (`interface Box<T>`) already work: they are instantiated per type argument. This document is only about generic *methods*.
 - Making generic class methods virtual where nothing overrides them: a direct instantiation stays faster.
+
+## 7. What is implemented
+
+**Interfaces (option A).**
+- **The slot** (`getInterfaceMethodNameAndType`): a generic method's signature is generated with each type
+  parameter bound to `any`, and `InterfaceMethodInfo::genericSignature` keeps the AST for call sites.
+  A type parameter must be the whole type of a parameter or of the result: `T[]`, `[A, B]`, `A | B` or
+  `Box<T>` erased are not laid out as their instantiations are, so they are an error at the declaration.
+- **The implementer** (`findErasedGenericMethod`, `instantiateErasedGenericFunction`): when a class's
+  vtable for the interface finds no plain method of the name, the class's generic method (or its
+  nearest base's) is instantiated with `any` and fills the slot. Kept in `ClassInfo::erasedGenericMethods`,
+  and made again when the symbol is not in the current module (the discovery pass drops its module).
+  An object literal with an untyped arrow (`{ map: (x) => x }`) fills the slot as for any method.
+- **The call** (`mlirGenCallExpression`, `instantiateErasedGenericResultType`): an interface symbol ref of a
+  generic method is remembered (`erasedGenericCallees`); its call infers the type arguments from the
+  arguments when none are given (the signature with each type parameter as a named generic type, matched
+  by `inferType`), makes the call through the slot, and casts the `any` result to the instantiated
+  result type - the checked `<T>anyValue` cast.
+- **Cross-module**: an exported interface with a generic method is exported as its source
+  (`addInterfaceSourceToExport`), as a generic interface is, so the importer has the generic signature
+  and not only the erased slot.
+
+**Classes (option D).** A generic method declared in a class whose base has a generic method of that name
+is an error: a call through the base class would not reach it.
+
+**Limits.**
+- A body that depends on its type parameter's real type (`sizeof<T>()`) runs with `any` through an
+  interface; it is not rejected.
+- Under own, a class object unboxed from the `any` result is a borrow of the box: it can be read, not
+  given on as another `any` argument. An object literal and a class implementing the same interface
+  method that returns its parameter disagree on the family's result under own, as a non-generic
+  `map(x: any): any` does.
+
+**Tests.** `00interface_generic_method` (explicit and inferred type arguments, a string, a class object,
+two implementers, an inherited generic method, a direct call), `own_interface_generic_method` (under own,
+rc, gc and none, with churn), `export_interface_generic_method` / `import_interface_generic_method` (an
+exported interface, class and function used from another module, plain and `-shared`).

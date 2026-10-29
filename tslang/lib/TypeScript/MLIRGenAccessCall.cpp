@@ -1743,10 +1743,106 @@ namespace mlirgen
         return generate();
     }
 
+    mlir::Type MLIRGenImpl::instantiateErasedGenericResultType(mlir::Location location, SignatureDeclarationBase signature,
+                                                               mlir::Type thisType, NodeArray<TypeNode> typeArguments,
+                                                               SmallVector<mlir::Value, 4> &operands,
+                                                               const GenContext &genContext)
+    {
+        llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+        if (mlir::failed(processTypeParameters(signature->typeParameters, typeParams, genContext)))
+        {
+            return mlir::Type();
+        }
+
+        GenContext signatureGenContext(genContext);
+        signatureGenContext.clearScopeVars();
+        signatureGenContext.thisType = thisType;
+        signatureGenContext.typeParamsWithArgs.clear();
+        if (typeArguments.size() > 0)
+        {
+            auto [result, isGeneric] = zipTypeParametersWithArguments(location, typeParams, typeArguments,
+                                                                      signatureGenContext.typeParamsWithArgs, genContext);
+            if (mlir::failed(result) || isGeneric == IsGeneric::True)
+            {
+                return mlir::Type();
+            }
+        }
+        else
+        {
+            // each type parameter from the arguments, matched with the parameters it types
+            GenContext templateGenContext(signatureGenContext);
+            for (auto &typeParam : typeParams)
+            {
+                templateGenContext.typeParamsWithArgs[typeParam->getName()] =
+                    std::make_pair(typeParam, getNamedGenericType(typeParam->getName()));
+            }
+
+            auto [proto, templateType, results] = mlirGenFunctionSignaturePrototype(signature, true, templateGenContext);
+            if (!templateType || templateType.getNumInputs() < operands.size())
+            {
+                return mlir::Type();
+            }
+
+            StringMap<mlir::Type> inferred;
+            auto offset = templateType.getNumInputs() - operands.size();
+            for (auto [index, operand] : llvm::enumerate(operands))
+            {
+                inferType(location, templateType.getInput(offset + index), operand.getType(), inferred, genContext);
+            }
+
+            for (auto &typeParam : typeParams)
+            {
+                auto found = inferred.find(typeParam->getName());
+                if (found == inferred.end() || !found->getValue() || mth.isGenericType(found->getValue()))
+                {
+                    return mlir::Type();
+                }
+
+                signatureGenContext.typeParamsWithArgs[typeParam->getName()] =
+                    std::make_pair(typeParam, mth.wideStorageType(found->getValue()));
+            }
+        }
+
+        auto [proto, funcType, results] = mlirGenFunctionSignaturePrototype(signature, true, signatureGenContext);
+        if (!funcType || funcType.getNumResults() != 1 || mth.isGenericType(funcType.getResult(0)))
+        {
+            return mlir::Type();
+        }
+
+        return funcType.getResult(0);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext)
     {
+        // a generic interface method, erased to `any`: called as it is, and its result unboxed to the
+        // type its type arguments give it - the checked cast `<T>anyValue` is
+        if (auto *calleeOp = funcResult ? funcResult.getDefiningOp() : nullptr)
+        {
+            auto erased = erasedGenericCallees.find(calleeOp);
+            if (erased != erasedGenericCallees.end())
+            {
+                auto signature = erased->second;
+                erasedGenericCallees.erase(erased);
+
+                auto thisType = calleeOp->getOperand(0).getType();
+                auto resultType =
+                    instantiateErasedGenericResultType(location, signature, thisType, typeArguments, operands, genContext);
+                auto callResult = mlirGenCallExpression(location, funcResult, {}, operands, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(callResult)
+                auto callValue = V(callResult);
+                if (!resultType || resultType == callValue.getType() || mth.isNoneType(resultType) ||
+                    resultType == getVoidType())
+                {
+                    return callValue;
+                }
+
+                CAST_A(unboxed, location, resultType, callValue, genContext);
+                return unboxed;
+            }
+        }
+
         GenContext specGenContext(genContext);
         specGenContext.callOperands = operands;
 

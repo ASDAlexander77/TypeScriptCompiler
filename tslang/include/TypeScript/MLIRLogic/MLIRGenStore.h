@@ -6,6 +6,8 @@
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/ADT/StringMap.h"
+
+#include <deque>
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "mlir"
@@ -238,6 +240,9 @@ struct InterfaceMethodInfo
     bool isConditional;
     int interfacePosIndex;
     int virtualIndex;
+    // a generic method (`map<T>(x: T): T`): its slot takes and returns `any` for each type parameter
+    // (funcType), and a call instantiates this signature for its type arguments to unbox the result
+    SignatureDeclarationBase genericSignature;
 };
 
 struct InterfaceAccessorInfo
@@ -782,6 +787,10 @@ struct ClassInfo
     llvm::SmallVector<MethodInfo> methods;
 
     llvm::SmallVector<GenericMethodInfo> staticGenericMethods;
+
+    // its generic methods instantiated with `any` for each type parameter, filling the slots of the
+    // interfaces it implements (a deque: a vtable's callback hands out references to them)
+    std::deque<MethodInfo> erasedGenericMethods;
 
     llvm::SmallVector<AccessorInfo> accessors;
 
