@@ -1158,7 +1158,10 @@ namespace own_inference
         // ...or out of an object a `const` names, `new`'s or a call's own (spec 64): `return r.value`.
         // The read may be used before rc's retain of it, later in its block (`const v = r.value;
         // print(v.n); return v`): the field is empty from the read on, and the read holds what it held.
-        if (call->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+        // An owning `let` the same (spec 65): `let r = new Holder(); return r.value`.
+        auto slotRead = mlir::dyn_cast<mlir_ts::LoadOp>(call);
+        auto slot = slotRead ? slotRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (call->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) || (slot && isOwningVariable(slot)))
         {
             for (auto *user : loadOp->getUsers())
             {
@@ -1231,70 +1234,132 @@ namespace own_inference
         // The object a `const` names is `new`'s own, or a call's own result: nothing else holds it,
         // and its releases end it. The field is left empty right at the read, so each release frees
         // nothing of what the taker has, on a path that took it or not (`c ? init : r.value`).
+        // ...or the object an owning `let` holds (spec 65): every read of the local is the object, until
+        // the local ends or is given another - its releases and its stores are the object's ends, the
+        // store or the declaration in a loop makes it anew. Nothing else may use the local itself.
         auto object = field.getObjectRef();
         auto *producer = object.getDefiningOp();
-        if (!(mlir::isa<mlir_ts::NewOp>(producer) && producer->hasAttr(OWNED_RESULT_ATTR_NAME)) && !callResultIsOwn(producer))
+        // made here: `new`'s own, or a call's own result - not a global (immortal under own, spec 25,
+        // so a local given one is "owning" all the same) nor a parameter
+        auto madeHere = [&](mlir::Value value) {
+            auto *definingOp = value ? value.getDefiningOp() : nullptr;
+            return definingOp && ((mlir::isa<mlir_ts::NewOp>(definingOp) && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME)) ||
+                                  callResultIsOwn(definingOp));
+        };
+        llvm::SmallVector<mlir::Value> objects;
+        llvm::SmallVector<mlir::Operation *> ends;
+        llvm::SmallVector<mlir::Operation *> renewals;
+        if (auto slotRead = mlir::dyn_cast<mlir_ts::LoadOp>(producer))
         {
-            return false;
-        }
-
-        llvm::SmallVector<mlir::Operation *> releases;
-        for (auto *user : object.getUsers())
-        {
-            if (mlir::isa<mlir_ts::ReleaseOp>(user))
+            auto slot = slotRead.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (!slot || slot.getCaptured().value_or(false) || !isOwningVariable(slot) ||
+                (slot.getInitializer() && !madeHere(slot.getInitializer())))
             {
-                releases.push_back(user);
+                return false;
+            }
+
+            renewals.push_back(slot);
+            for (auto *user : slot->getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    objects.push_back(loadOp.getResult());
+                }
+                else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == slot.getResult())
+                {
+                    if (!madeHere(storeOp.getValue()))
+                    {
+                        return false;
+                    }
+
+                    ends.push_back(user);
+                    renewals.push_back(user);
+                }
+                else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                {
+                    ends.push_back(user);
+                }
+                else if (!mlir::isa<mlir_ts::RetainSlotOp>(user))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            if (!madeHere(object))
+            {
+                return false;
+            }
+
+            objects.push_back(object);
+            renewals.push_back(producer);
+            for (auto *user : object.getUsers())
+            {
+                if (mlir::isa<mlir_ts::ReleaseOp>(user))
+                {
+                    ends.push_back(user);
+                }
             }
         }
 
-        if (releases.empty())
+        if (ends.empty())
         {
             return false;
         }
 
         // taken once for each object: not again around a loop that does not make it anew
         auto *next = read->getNextNode();
-        if (!next || reachableAfter(next, read, producer))
+        if (!next || reachableAfter(next, read, renewals))
         {
             return false;
         }
 
-        // Nothing sees the object after the move but its releases: no method, no move of it, no read
-        // of that field, nor anything made of the object before it that is used after (a borrow of it).
-        // Its other fields are its own still.
-        auto seenAfter = [&](mlir::Operation *op) { return op != read && op != retain && reachableAfter(read, op, releases); };
-        for (auto *user : object.getUsers())
+        // Nothing sees the object after the move but its ends: no method, no move of it, no read of that
+        // field, nor anything made of the object before it that is used after (a borrow of it, a local
+        // given it). Its other fields are its own still.
+        auto seenAfter = [&](mlir::Operation *op) { return op != read && op != retain && reachableAfter(read, op, ends); };
+        for (auto value : objects)
         {
-            if (mlir::isa<mlir_ts::ReleaseOp>(user) || user == field.getOperation())
+            for (auto *user : value.getUsers())
             {
-                continue;
-            }
-
-            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
-                propertyRefOp && propertyRefOp.getPosition() != field.getPosition())
-            {
-                continue;
-            }
-
-            // the user, and what is made of its results in turn
-            llvm::SmallVector<mlir::Operation *> derived{user};
-            llvm::SmallPtrSet<mlir::Operation *, 8> visited;
-            while (!derived.empty())
-            {
-                auto *op = derived.pop_back_val();
-                if (!visited.insert(op).second)
+                if (mlir::isa<mlir_ts::ReleaseOp>(user) || user == field.getOperation())
                 {
                     continue;
                 }
 
-                if (seenAfter(op))
+                if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                    propertyRefOp && propertyRefOp.getPosition() != field.getPosition())
                 {
-                    return false;
+                    continue;
                 }
 
-                for (auto result : op->getResults())
+                // the user, and what is made of its results in turn, through a local it is stored into
+                llvm::SmallVector<mlir::Operation *> derived{user};
+                llvm::SmallPtrSet<mlir::Operation *, 8> visited;
+                while (!derived.empty())
                 {
-                    derived.append(result.getUsers().begin(), result.getUsers().end());
+                    auto *op = derived.pop_back_val();
+                    if (!visited.insert(op).second)
+                    {
+                        continue;
+                    }
+
+                    if (seenAfter(op))
+                    {
+                        return false;
+                    }
+
+                    for (auto result : op->getResults())
+                    {
+                        derived.append(result.getUsers().begin(), result.getUsers().end());
+                    }
+
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+                    {
+                        auto reference = storeOp.getReference();
+                        derived.append(reference.getUsers().begin(), reference.getUsers().end());
+                    }
                 }
             }
         }

@@ -5325,3 +5325,30 @@ are rejected too.
 
 Not here: a `let` of a class type (a slot, not a folded name), and a push of the field into a global
 array (spec 25's immortal keepers ask for a value made here).
+
+## 65. A field taken out of the object an owning `let` holds, 2026-10-29
+
+Spec 64 for a `let`: `let r = new Holder(); return r.value` (and `?:`, `??`) was still `'this value'
+borrows a field and cannot be stored, returned or captured`. A `let` is a slot - an owning
+`ts.Variable`, every mention a `Load` of it, its end a `ts.ReleaseSlot` - not a folded name.
+
+- **The take** (`namedFieldTakeOf`, reached from `temporaryFieldTakeOf` for a read of a field of a
+  `Load` of an owning, uncaptured `ts.Variable`). The object is every read of the local. Its ends are
+  the local's releases and the stores into it (the next value: reads after one see another object), and
+  what makes it anew is the declaration and those stores. The rules of spec 64 hold over every read of
+  the local: nothing but its ends sees the object after the move, nothing made of it before (followed
+  through a local it is stored into, too) is used after, and the read is not made again without the
+  local made anew. Any other use of the local itself (its address) refuses.
+- **Made here.** Every value the local is given - its initializer and each store - is `new`'s own or a
+  call's own result. A global is immortal under own (spec 25), so a local given one counts as owning:
+  without this, `let r = g; return r.value` emptied the global's field (the program died reading it).
+  The same rule now guards spec 64's `const`.
+- **rc** (`consumeConditionalResults`): a branch yielding a field read out of a `Load` of an owning
+  local (`__owned`) retains in the branch as for a named object, when a receiver keeps the merge.
+
+`own_let_field_take` returns, picks with a `?:` and a `??` (from a call's result), uses the read before
+returning it and reads another field after, gives the local a new object after the take, takes in a loop
+from a `let` declared in it and from one given anew in it, churning between steps, under own, rc, gc and
+none; the ownership verifier is silent on it. `own_err_let_field_{global,read_again,loop,captured}` stay
+borrows; so do a parameter or a mix of a parameter and a fresh object given to the local, and a `let h =
+r` read after.

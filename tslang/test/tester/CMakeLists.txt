@@ -3992,7 +3992,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_this_param own_copy_within_returned_param own_swap_elements
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
                  own_generator_take own_rest_array_borrows own_string_copies
-                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take
+                 own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
@@ -4030,7 +4030,7 @@ foreach(keeps_mm rc gc none)
                        own_copy_within_returned_param own_swap_elements own_callback_forwarded
                        own_optional_record_read own_param_default_kept own_literal_into_array
                        own_generator_take own_rest_array_borrows own_string_copies
-                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take
+                       own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
@@ -4743,7 +4743,11 @@ set(own_error_cases
     "own_err_named_field_read_again|:28:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_named_field_method_after|:28:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_named_field_object_moved|:28:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
-    "own_err_named_field_borrow_after|:29:5: error: '[^']*' borrows a field and cannot be stored, returned or captured")
+    "own_err_named_field_borrow_after|:29:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_let_field_global|:15:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_let_field_read_again|:17:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_let_field_loop|:17:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_let_field_captured|:18:5: error: '[^']*' borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
