@@ -1500,11 +1500,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // - hold pads of its own (Windows): a try in the finally. LLVM numbers no EH state for a
         //   pad in a cleanup funclet (the MSVC personality does not allow one), so an exception
         //   thrown in that try was never caught there, and the process terminated.
+        // - throw (Windows): a call or a throw in a finally run while an exception unwinds is a second
+        //   exception out of a cleanup funclet, which the MSVC personality takes for one thrown during
+        //   unwinding, and terminates. Thrown from a catch it is a nested exception, which replaces the
+        //   first, as JavaScript's does.
         // Such a finally is entered through a catch-all pad instead, which rethrows at its end
         // (see windowsFinallyCatches and linuxFinallyCatches).
         mlir::SmallVector<Operation *> escapingOpsFinally;
         auto finallyHasTry = false;
+        auto finallyMayThrow = false;
         tryOp.getFinally().walk([&](Operation *op) {
+            finallyMayThrow |= unwindsToHandler(op);
             if (isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp>(op) ||
                 (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.contains(op)))
             {
@@ -1634,22 +1640,41 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *exitBlockLast = nullptr;
         auto finallyPadId = 0;
         auto windowsFinallyCatches =
-            tsContext->compileOptions.isWindows && finallyHasOps && (!escapingOpsFinally.empty() || finallyHasTry);
+            tsContext->compileOptions.isWindows && finallyHasOps && (!escapingOpsFinally.empty() || finallyHasTry || finallyMayThrow);
         // with a try around it in the function the Itanium finally pad is a catch-all already
         auto linuxFinallyCatches = !tsContext->compileOptions.isWindows && finallyHasOps && !enclosingHandler &&
                                    !escapingOpsFinally.empty();
         if (finallyHasOps)
         {
             // cloneRegionBefore makes brand-new Operation* instances, so any tsContext
-            // side-table entry (jumps[], parentTryOp[]) keyed on the original finally
+            // side-table entry (jumps[], parentTryOp[], unwind[]) keyed on the original finally
             // region's ops -- populated by visitorTryOps above, or by an enclosing loop's
             // break/continue-scope walk that ran before this try was lowered -- would
             // silently be missing for the clones. Re-propagate those entries onto each
             // clone via the IRMapping so a nested try/break/continue inside `finally`
             // keeps correct wiring in all copies, not just the final inlined one.
+            // An enclosing try's handler, which a call or a throw in the finally unwinds to: without it a clone's
+            // call was a plain call, which in the funclet the exceptional copy runs in has no way out (optimized,
+            // WinEHPrepare took it for unreachable, and a throw in the finally crashed)
             auto propagateTsContextEntries = [&](const mlir::IRMapping &mapping) {
+                SmallVector<std::pair<Operation *, mlir::Block *>> clonedAccessorUnwinds;
+                for (auto [accessorOp, unwindBlock] : tsFuncContext->accessorUnwinds)
+                {
+                    if (auto *clone = mapping.lookupOrNull(accessorOp))
+                    {
+                        clonedAccessorUnwinds.push_back({clone, unwindBlock});
+                    }
+                }
+
+                tsFuncContext->accessorUnwinds.append(clonedAccessorUnwinds.begin(), clonedAccessorUnwinds.end());
+
                 for (auto &[oldOp, newOp] : mapping.getOperationMap())
                 {
+                    if (auto unwind = tsContext->unwind.lookup(oldOp))
+                    {
+                        tsContext->unwind[newOp] = unwind;
+                    }
+
                     if (auto jump = tsContext->jumps.lookup(oldOp))
                     {
                         tsContext->jumps[newOp] = jump;
