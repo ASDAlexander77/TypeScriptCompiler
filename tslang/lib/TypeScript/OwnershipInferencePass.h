@@ -227,6 +227,9 @@ class OwnershipInferencePass
     };
 
     llvm::SmallVector<std::shared_ptr<Closure>> closures;
+    // the capture boxes of object literals that borrow what they capture (classifyLiteralCaptures):
+    // `uses` only, what reaches the literal
+    llvm::SmallVector<std::shared_ptr<Closure>> literalBoxes;
     // a copy stored into a borrowing box -> its closure
     llvm::DenseMap<mlir::Operation *, Closure *> captureStores;
     // rc's references for boxes, which the closures decide
@@ -250,6 +253,9 @@ class OwnershipInferencePass
     // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
     // with it - its box owns them, and each copy moves in.
     void classifyClosures();
+    // An object literal's `.captured` box (its arrows' captures, spec 67): when the literal stays in
+    // this function, the box borrows the copies it holds, as a closure that does not escape does
+    void classifyLiteralCaptures();
 
     // The fields of a generator's state object of this type that borrow from its arguments
     // (OWN_BORROWING_FIELDS_ATTR_NAME, the signature pass's), the `.captured` box's first.

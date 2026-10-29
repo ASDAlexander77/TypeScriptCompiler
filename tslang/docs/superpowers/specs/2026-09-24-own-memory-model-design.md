@@ -5375,6 +5375,28 @@ and a `Load` of each field: a method bound to the literal) and makes the paramet
 object-type parameter, calls a member after, gives the literal again and to an interface, churning
 between steps, under own, rc, gc and none.
 
-Not here: a literal whose arrow captures an object (`const b = new Box(5); const q = { w: (x: number) =>
-x * b.n }`) moves the object into the literal's `.captured`, so `b` cannot be used after it under own,
-where a closure capturing it only borrows it (§16).
+Not here: a literal whose arrow captures an object; see spec 67.
+
+## 67. An object literal whose arrows capture an object, 2026-10-29
+
+`const b = new Box(5); const q = { w: (x: number) => x * b.n }; q.w(1); b.n` was `'this value' is used
+here after its value was moved`: the literal's `.captured` box took `b` (a copy of a `const`), where a
+closure capturing it that does not escape only borrows it (§16). MLIRGen gives the literal no release,
+and rc no reference of the box's own for it that the literal gives back: the box only ever borrowed.
+
+- **A literal's box** (`classifyLiteralCaptures`): a capture box (`__capture_box`) filled field by field
+  and stored once into the `.captured` field of a local the literal is built in, which is read once into
+  the object `ts.New` made. rc's `ts.RetainCell`/`ts.ReleaseCell` of the box are its own count.
+- **Stays here**: `walkBorrowed` from that object finds nothing that keeps it - its members called, the
+  literal given to calls that keep it not (an object-type parameter, spec 66). Its uses are the box's.
+- **Then the box borrows** each copy whose value has an owner of its own (a named value released here, a
+  parameter, a local's read; not a cell): the store is a borrow (`OWN_CAPTURE_BORROW_ATTR_NAME`, as a
+  closure's), rc's retain before it goes (`captureRetains`, erased in `decideClosures`), and whatever
+  uses the literal is a use of the borrowed value.
+
+`own_literal_object_captures` captures a local object and a parameter, calls members, gives the literal
+to an object-type parameter and reads the objects after, churning between steps, under own, rc, gc and
+none.
+
+Not here: a literal given to an interface (`apply(q)` for `apply(s: Scaler)`): the cast copies it into
+the interface's object, which keeps it, and the object stays moved into the box.
