@@ -117,6 +117,15 @@ class CastLogicHelper
             return in;
         }
 
+        // a class value is its storage tuple, and the value of a base class is laid out as its subclass's
+        if (isa<mlir_ts::ClassValueType>(inType) || isa<mlir_ts::ClassValueType>(resType))
+        {
+            if (isa<mlir_ts::ClassValueType, mlir_ts::TupleType>(inType) && isa<mlir_ts::ClassValueType, mlir_ts::TupleType>(resType))
+            {
+                return in;
+            }
+        }
+
         // a @value type is its storage tuple: the cast to or from that exact tuple changes nothing
         // (MLIRGenImpl::valueStorage, and the cast that makes a tuple a value)
         if (auto inValueType = dyn_cast<mlir_ts::ValueType>(inType); inValueType && inValueType.getStorageType() == resType)

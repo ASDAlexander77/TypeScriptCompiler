@@ -405,6 +405,10 @@ class MLIRPrinter
 
                 out << t.getName().getValue().str().c_str();
             })
+            .template Case<mlir_ts::ClassValueType>([&](auto t) {
+                out << "typeof ";
+                printType(out, t.getClassType());
+            })
             .template Case<mlir_ts::ClassStorageType>([&](auto t) {
                 printTupleType(out, t);                                
             })

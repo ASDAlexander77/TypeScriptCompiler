@@ -381,6 +381,32 @@ namespace mlirgen
                         classStorageType.getName().getValue(), name, true, argument, accessingFromLevel, genContext);
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
+                // a class as a value (`k: typeof M`): its statics, through the vtable of whichever class it
+                // holds (ClassStaticFieldAccess reads VTABLE_NAME of it)
+                .Case<mlir_ts::ClassValueType>([&](auto classValueType) -> mlir::Value {
+                    if (name == VTABLE_NAME)
+                    {
+                        return classValuePart(location, objectValue, 0);
+                    }
+
+                    auto classType = mlir::cast<mlir_ts::ClassType>(classValueType.getClassType());
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    if (!classInfo)
+                    {
+                        return mlir::Value();
+                    }
+
+                    auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
+                    if (staticFieldIndex >= 0)
+                    {
+                        return ClassStaticFieldAccess(classInfo, location, objectValue, staticFieldIndex,
+                                                      detectAccessLevel(classType, genContext), genContext);
+                    }
+
+                    emitError(location) << "'" << name << "' through a value of '" << to_print(classValueType)
+                                        << "': only a static field can be reached through a class value yet";
+                    return mlir::Value();
+                })
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     return InterfaceMembers(
                         location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), 
@@ -2771,6 +2797,12 @@ namespace mlirgen
                                           NodeArray<TypeNode> typeArguments, bool suppressConstructorCall, 
                                           const GenContext &genContext)
     {
+
+        // `new c(args)` with `c: typeof A`: whichever class `c` holds
+        if (isa<mlir_ts::ClassValueType>(value.getType()) && !suppressConstructorCall)
+        {
+            return NewClassInstanceFromClassValue(location, value, arguments, genContext);
+        }
 
         auto type = value.getType();
         type = mth.convertConstTupleTypeToTupleType(type);

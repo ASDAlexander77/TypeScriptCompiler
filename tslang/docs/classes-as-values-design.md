@@ -1,6 +1,7 @@
 # Classes as values, and local classes that capture: design
 
-Status: **proposed, not implemented**. Written 2026-10-29, to be picked up later.
+Status: **class values implemented for module-level classes; local classes that capture are an error
+(option C)** (2026-10-29); see §5. Captures in the instance (option A) are not done.
 
 ## 1. What works and what fails today
 
@@ -95,3 +96,48 @@ A local class used as a value (`return Counter`) carries its captures. Its value
 
 - `abstract new () => A` construct signatures and mixins (`function Mixin<T extends new (...a: any[]) => {}>(Base: T)`): these build on class values but need generic construct signatures. A follow-up.
 - `typeof` on a class value returning `"function"` as in JavaScript: tslang's `typeof` reports its own kind names. Decide when class values land.
+
+## 5. What is implemented
+
+**The value.** `ClassValueType<A>` (`class_value<...>`, printed `typeof A`) is what `typeof A` of a class
+gives (`typeOfQueried`). It is laid out as a tuple of four opaque pointers
+(`MLIRTypeHelper::getClassValueStorageType`), not as a vtable pointer alone:
+- **`.vtable`:** the class's vtable, or null for an abstract class, which has none.
+- **`.new`:** the class's `.new`, which allocates an instance and sets its vtable; null for an abstract class.
+- **`.constructor`:** the class's constructor, or null for none.
+- **`.rtti`:** the class's rtti, which every class has and no two share.
+
+A pair-or-more layout needs no new vtable slot, so no class's vtable changes (§2.4 is moot). `ts.Cast`
+between the value and that tuple, or to the value of a base class, lowers to nothing.
+
+**Making one** (`castToClassValue`, `mlirGenClassValue`):
+- **Where:** a class name becomes a value only where a `typeof A` is expected - a parameter, a typed
+  variable or field, an array element, a return. `const C = A` stays a compile-time alias.
+- **Assignable:** `B` is a value of `typeof A` when it extends `A` and its constructor takes the same
+  parameters (fewer is allowed).
+- **Not yet:** a class from a declaration or another module, a @value class or a @cpp class can't be a value.
+
+**Using one:**
+- **`new c(args)`** (`NewClassInstanceFromClassValue`): the arguments are cast to `A`'s constructor's
+  parameters, and `.new` is called through the value, its result marked owned and fresh. Then the
+  constructor is called with the instance first, when there is one. Too many arguments is an error, and
+  so is a value of an abstract class's type.
+- **`==` / `!=`:** compare the rtti; a class named beside a value is its value.
+- **`typeof`** of a class value is `"function"`.
+- **A static field** is read through the value's vtable (ADD_STATIC_MEMBERS_TO_VTABLE). A static that a
+  subclass declares again has a slot of its own, so the base's slot still reads the base's, as through
+  an instance. Any other member through a value (a static method) is an error.
+
+**Ownership:** the value owns nothing (its parts are static data and functions). The instance `new` makes
+through it is a fresh owned result.
+
+**Local classes (option C).** A method, constructor or accessor of a class declared in a function that reads
+one of the function's locals is an error naming the variable, in place of "Expected 1 arguments, but got
+0". A field initializer of a class without a constructor still fails as it did ("value defined outside the
+region"): the initializers reach the implicit constructor after captures are found.
+
+**Tests:**
+- **`00class_values`:** a factory, an array, a return, a field, a class without a constructor, a subclass
+  without its own constructor, equality, abstract classes, `typeof`, a static through the value; under
+  gc, rc, none and own.
+- **`class_value_constructor_error`** and **`class_local_capture_error`:** the errors.

@@ -681,6 +681,35 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   ];
 }
 
+def TypeScript_ClassValue : TypeScript_Type<"ClassValue"> {
+  let mnemonic = "class_value";
+
+  let summary = "A class as a value: `typeof A`";
+  let description = [{
+    Syntax:
+
+    ```
+    class-value-type ::= `class_value<` class-type `>`
+    ```
+
+    A class given, stored or returned as a value: `A` itself or any class that extends it. Laid out as
+    its storage tuple, `{.vtable, .new, .constructor, .rtti}` - the class's vtable (null for an abstract
+    class), the function that allocates an instance of it, its constructor (null for none) and its rtti,
+    each an opaque pointer
+    (MLIRTypeHelper::getClassValueStorageType). `ts.Cast` to or from that tuple, or to the value of a
+    base class, lowers to nothing.
+  }];
+  let parameters = (ins "Type":$classType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$classType), [{
+      return Base::get(classType.getContext(), classType);
+    }]>
+  ];
+}
+
 def TypeScript_Value : TypeScript_Type<"Value"> {
   let mnemonic = "value";
 

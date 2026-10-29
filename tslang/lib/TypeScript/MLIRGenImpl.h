@@ -8353,6 +8353,45 @@ class MLIRGenImpl
         case SyntaxKind::EqualsEqualsEqualsToken:
         case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
+            // two class values are the same class: the same rtti. A class named beside one (`k == A`) is
+            // its value
+            if (auto leftClassValueType = dyn_cast<mlir_ts::ClassValueType>(leftExpressionValue.getType());
+                leftClassValueType && rightExpressionValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = mlirGenClassValue(location, rightExpressionValue.getDefiningOp<mlir_ts::ClassRefOp>().getType(), genContext);
+                if (classValue.failed_or_no_value())
+                {
+                    return mlir::Value();
+                }
+
+                rightExpressionValue = V(classValue);
+            }
+            else if (auto rightClassValueType = dyn_cast<mlir_ts::ClassValueType>(rightExpressionValue.getType());
+                     rightClassValueType && leftExpressionValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = mlirGenClassValue(location, leftExpressionValue.getDefiningOp<mlir_ts::ClassRefOp>().getType(), genContext);
+                if (classValue.failed_or_no_value())
+                {
+                    return mlir::Value();
+                }
+
+                leftExpressionValue = V(classValue);
+            }
+
+            if (isa<mlir_ts::ClassValueType>(leftExpressionValue.getType()) &&
+                isa<mlir_ts::ClassValueType>(rightExpressionValue.getType()))
+            {
+                result = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                  builder.getI32IntegerAttr((int)opCode),
+                                                                  classValuePart(location, leftExpressionValue, 3),
+                                                                  classValuePart(location, rightExpressionValue, 3));
+                break;
+            }
+
+            result = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                              builder.getI32IntegerAttr((int)opCode),
+                                                              leftExpressionValue, rightExpressionValue);
+            break;
         case SyntaxKind::GreaterThanToken:
         case SyntaxKind::GreaterThanEqualsToken:
         case SyntaxKind::LessThanToken:
@@ -14882,6 +14921,20 @@ class MLIRGenImpl
     mlir::Type OmitTypes(mlir::Type type, mlir::Type keys);
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext);
+    // the type `typeof` gives the value an expression evaluated to: a class's value for a class
+    mlir::Type typeOfQueried(mlir::Value value);
+
+    // ---- Classes as values (docs/classes-as-values-design.md) ----
+    // `A` as a value of `typeof A`: its vtable, its `.new` and its constructor
+    ValueOrLogicalResult mlirGenClassValue(mlir::Location location, mlir_ts::ClassType classType, const GenContext &genContext);
+    // `B` (a class reference) or a value of `typeof B` as a value of `typeof A`, for B extending A
+    ValueOrLogicalResult castToClassValue(mlir::Location location, mlir_ts::ClassValueType classValueType, mlir::Value value,
+                                          const GenContext &genContext);
+    // the `index`th of a class value's {vtable, .new, constructor}, an opaque pointer
+    mlir::Value classValuePart(mlir::Location location, mlir::Value classValue, int index);
+    // `new c(args)` for `c: typeof A`: `.new` through the value, then its constructor
+    ValueOrLogicalResult NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
+                                                        NodeArray<Expression> arguments, const GenContext &genContext);
 
     mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext);
 

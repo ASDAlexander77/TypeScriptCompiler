@@ -874,6 +874,24 @@ namespace mlirgen
                                    << "\n!! ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
                 }
 
+                // a member of a class declared in a function, reading that function's locals: nothing passes
+                // them to it - a call through the object, or `new`, has no captures to give - so it is an
+                // error, not a call with an argument missing (docs/classes-as-values-design.md §3)
+                auto kind = (SyntaxKind)functionLikeDeclarationBaseAST;
+                if (passResult->outerVariables.size() > 0 && genContext.thisType &&
+                    isa<mlir_ts::ClassType>(genContext.thisType) &&
+                    (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor ||
+                     kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
+                {
+                    std::string captured = passResult->outerVariables.begin()->getKey().str();
+                    auto classInfo = getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.thisType).getName().getValue());
+                    std::string className = classInfo ? classInfo->name.str() : to_print(genContext.thisType);
+                    emitError(loc(functionLikeDeclarationBaseAST))
+                        << "a member of class '" << className.c_str() << "' reads '" << captured.c_str()
+                        << "', a local of the function the class is declared in: a class can't capture yet";
+                    return mlir::failure();
+                }
+
                 // if we have captured parameters, add first param to send lambda's type(class)
                 if (passResult->outerVariables.size() > 0)
                 {

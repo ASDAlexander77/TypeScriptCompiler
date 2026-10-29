@@ -241,6 +241,12 @@ class TypeOfOpHelper
             return "class";
         }
 
+        // a class as a value is its constructor, as in JavaScript
+        if (isa<mlir_ts::ClassValueType>(type))
+        {
+            return "function";
+        }
+
         if (isa<mlir_ts::ClassStorageType>(type))
         {
             return "class";
