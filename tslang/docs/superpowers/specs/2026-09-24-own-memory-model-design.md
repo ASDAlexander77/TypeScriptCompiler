@@ -5427,6 +5427,29 @@ object, and a parameter to interface parameters and reads the objects after; a l
 interface and one an array keeps still take their copies. It churns between steps, under own, rc, gc and
 none.
 
-Not here: a literal capturing a `let` (a cell), which errors as `captured by a closure that escapes`
-with or without an interface; and `return applyO({ w: (x) => x + item.n })` for an object-type parameter,
-`a closure that escapes owns what it captures`.
+Not here: a literal capturing a `let` (a cell), and `return applyO({ w: (x) => x + item.n })` for an
+object-type parameter; see spec 69.
+
+## 69. An object literal whose arrows capture a `let` or a parameter, 2026-10-29
+
+`let d = new Item(4); apply({ w: (x) => x + d.n }); d.n` was `'this value' is captured by a closure that
+escapes`, and `function viaParam(item: Item) { return applyO({ w: (x) => x + item.n }); }` was `a closure
+that escapes owns what it captures ... its value is the caller's`. Two shapes, two causes:
+
+- **A typed literal's arrow is a closure stored into an unboxed record** (spec 36) - the record built
+  for `apply`'s object-type parameter. `followClosure` took the store into the record's field for an
+  escape, and an escaping closure owns its cells. The record owns nothing, so the store is not one: the
+  record's reads, its reads of that field (in place, or `ts.ExtractProperty` of a read), and the calls it
+  is given are the closure's uses, as a local's reads are.
+- **A literal's `.captured` box was also taken for a generator's state** (`classifyStateBoxes`): every
+  object literal with arrows is state-shaped, and a state owns its cells and its copies. A box
+  `classifyLiteralCaptures` decides borrows (specs 67, 68) is no state's now, and it borrows a cell of a
+  `let` of this frame the way a closure that does not escape does: rc's `ts.RetainCell` for it and the
+  box's own go (`captureRetains`), and `decideClosures` checks that nothing using the literal comes after
+  the cell is released or moved into an escaping closure. Any other cell (one read out of an enclosing
+  function's box) leaves the literal to the state path, as before. The record path (spec 68) takes the
+  same cells: `tsfrecb_` frees the box, and the frame frees the cell.
+
+`own_literal_let_captures` captures `let`s - inline in a call, in a `const` literal called and given on,
+given to an interface - assigns them after, and captures parameters in literals given to an object-type
+and an interface parameter, churning between steps, under own, rc, gc and none.
