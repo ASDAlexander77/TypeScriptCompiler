@@ -2804,6 +2804,71 @@ genContext);
         return mlir::failure();
     }
 
+    std::pair<mlir::LogicalResult, MethodInfo *> MLIRGenImpl::findErasedGenericMethod(mlir::Location location,
+                                                                                    ClassInfo::TypePtr classInfo,
+                                                                                    mlir::StringRef name,
+                                                                                    const GenContext &genContext)
+    {
+        // made before, and in this module: a discovery pass makes its own in a module it then drops
+        for (auto &erased : classInfo->erasedGenericMethods)
+        {
+            if (erased.name == name && theModule.lookupSymbol(erased.funcName))
+            {
+                return {mlir::success(), &erased};
+            }
+        }
+
+        auto index = classInfo->getGenericMethodIndex(name);
+        if (index < 0)
+        {
+            // the nearest base class's
+            for (auto &base : classInfo->baseClasses)
+            {
+                auto [result, found] = findErasedGenericMethod(location, base, name, genContext);
+                if (mlir::failed(result) || found)
+                {
+                    return {result, found};
+                }
+            }
+
+            return {mlir::success(), nullptr};
+        }
+
+        auto &genericMethodInfo = classInfo->staticGenericMethods[index];
+        if (genericMethodInfo.isStatic)
+        {
+            return {mlir::success(), nullptr};
+        }
+
+        auto [result, funcType, funcName] =
+            instantiateErasedGenericFunction(location, genericMethodInfo.funcProto->getName(), genContext);
+        if (mlir::failed(result))
+        {
+            emitError(location) << "can't instantiate generic method '" << name << "' of class '" << classInfo->fullName
+                                << "' with 'any' for an interface";
+            return {mlir::failure(), nullptr};
+        }
+
+        for (auto &erased : classInfo->erasedGenericMethods)
+        {
+            if (erased.name == name)
+            {
+                erased.funcName = funcName;
+                erased.funcType = funcType;
+                return {mlir::success(), &erased};
+            }
+        }
+
+        MethodInfo methodInfo{};
+        methodInfo.name = name.str();
+        methodInfo.funcName = funcName;
+        methodInfo.funcType = funcType;
+        methodInfo.virtualIndex = -1;
+        methodInfo.accessLevel = genericMethodInfo.accessLevel;
+        classInfo->erasedGenericMethods.push_back(methodInfo);
+        return {mlir::success(), &classInfo->erasedGenericMethods.back()};
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location,
                                                                        ClassInfo::TypePtr newClassPtr,
                                                                        InterfaceInfo::TypePtr newInterfacePtr,
@@ -3016,6 +3081,18 @@ genContext);
             },
             [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> std::pair<MethodInfo &, mlir::LogicalResult> {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
+                // a generic method fills the interface's slot for it erased to `any`
+                if (!foundMethodPtr)
+                {
+                    auto [result, erasedMethodPtr] = findErasedGenericMethod(location, newClassPtr, name, genContext);
+                    if (mlir::failed(result))
+                    {
+                        return {emptyMethod, mlir::failure()};
+                    }
+
+                    foundMethodPtr = erasedMethodPtr;
+                }
+
                 if (!foundMethodPtr)
                 {
                     // TODO: generate method wrapper for calling new/ctor method
@@ -4027,6 +4104,23 @@ genContext);
         {
             if (classMethodMemberInfo.newClassPtr->getGenericMethodIndex(classMethodMemberInfo.methodName) < 0)
             {
+                // a generic method is instantiated for the class a call names, never dispatched: an override
+                // would be skipped by every call through a base class's reference
+                std::function<bool(ClassInfo::TypePtr)> baseHasGeneric = [&](ClassInfo::TypePtr classInfo) {
+                    return llvm::any_of(classInfo->baseClasses, [&](ClassInfo::TypePtr base) {
+                        auto index = base->getGenericMethodIndex(classMethodMemberInfo.methodName);
+                        return (index >= 0 && !base->staticGenericMethods[index].isStatic) || baseHasGeneric(base);
+                    });
+                };
+                if (!classMethodMemberInfo.isStatic && baseHasGeneric(classMethodMemberInfo.newClassPtr))
+                {
+                    emitError(loc(classMethodMemberInfo.classMember))
+                        << "generic method '" << classMethodMemberInfo.methodName
+                        << "' overrides a base class's generic method, which a call through the base class would not "
+                           "reach: generic methods are not virtual (declare it in an interface to dispatch it)";
+                    return mlir::failure();
+                }
+
                 llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
                 if (mlir::failed(
                         processTypeParameters(funcLikeDeclaration->typeParameters, typeParameters, genContext)))

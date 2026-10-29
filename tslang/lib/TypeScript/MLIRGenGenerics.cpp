@@ -995,6 +995,60 @@ namespace mlirgen
         return mlir::success();
     }
 
+    std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> MLIRGenImpl::instantiateErasedGenericFunction(
+        mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
+        if (!functionGenericTypeInfo)
+        {
+            emitError(location) << "can't find information about generic function. " << name;
+            return {mlir::failure(), mlir_ts::FunctionType(), ""};
+        }
+
+        MLIRNamespaceGuard ng(currentNamespace);
+        currentNamespace = functionGenericTypeInfo->elementNamespace;
+
+        SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+
+        GenContext genericTypeGenContext(genContext);
+        genericTypeGenContext.specialization = true;
+        genericTypeGenContext.instantiateSpecializedFunction = true;
+        genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
+        genericTypeGenContext.thisType = functionGenericTypeInfo->thisType;
+        genericTypeGenContext.thisClassType = functionGenericTypeInfo->thisClassType;
+        for (auto &typeParam : functionGenericTypeInfo->typeParams)
+        {
+            genericTypeGenContext.typeParamsWithArgs[typeParam->getName()] = std::make_pair(typeParam, getAnyType());
+        }
+
+        if (functionGenericTypeInfo->processing)
+        {
+            auto [fullName, funcName] = getNameOfFunction(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
+            if (auto funcType = lookupFunctionTypeMap(fullName))
+            {
+                return {mlir::success(), funcType, fullName};
+            }
+
+            emitError(location) << "can't instantiate '" << name << "' with 'any' while it is being instantiated";
+            return {mlir::failure(), mlir_ts::FunctionType(), ""};
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        functionGenericTypeInfo->processing = true;
+        auto [result, funcOp, funcName, isGeneric] =
+            mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
+        functionGenericTypeInfo->processing = false;
+        if (mlir::failed(result) || !funcOp)
+        {
+            return {mlir::failure(), mlir_ts::FunctionType(), ""};
+        }
+
+        functionGenericTypeInfo->processed = true;
+        return {mlir::success(), funcOp.getFunctionType(), funcName};
+    }
+
     std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> MLIRGenImpl::instantiateSpecializedFunction(
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, 
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)

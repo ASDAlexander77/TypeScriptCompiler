@@ -1638,6 +1638,16 @@ class MLIRGenImpl
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, 
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
 
+    // The generic function (a class's generic method) `name` instantiated with `any` for each of its
+    // type parameters: what fills an interface's slot for a generic method
+    std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateErasedGenericFunction(
+        mlir::Location location, StringRef name, const GenContext &genContext);
+
+    // The generic method `name` of a class (or of its nearest base) instantiated with `any`; null when it
+    // has none
+    std::pair<mlir::LogicalResult, MethodInfo *> findErasedGenericMethod(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                                         mlir::StringRef name, const GenContext &genContext);
+
     std::pair<mlir::LogicalResult, FunctionPrototypeDOM::TypePtr> getFuncArgTypesOfGenericMethod(
         FunctionLikeDeclarationBase functionLikeDeclarationAST, ArrayRef<TypeParameterDOM::TypePtr> typeParams,
         bool discoverReturnType, const GenContext &genContext);
@@ -9367,6 +9377,16 @@ class MLIRGenImpl
         return value;
     }
 
+    // the interface methods a call is yet to be made through that are generic, erased to `any`
+    // (InterfaceMethodInfo::genericSignature): the call unboxes its result (mlirGenCallExpression)
+    llvm::DenseMap<mlir::Operation *, SignatureDeclarationBase> erasedGenericCallees;
+
+    // The result type of a call of the generic interface method `signature` for its type arguments: given,
+    // or inferred from the arguments. Null when they can't be had: the call's result stays `any`.
+    mlir::Type instantiateErasedGenericResultType(mlir::Location location, SignatureDeclarationBase signature,
+                                                  mlir::Type thisType, NodeArray<TypeNode> typeArguments,
+                                                  SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
+
     // see InterfaceFieldAccess's vtableOffset doc comment above.
     mlir::Value InterfaceMethodAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo, int vtableOffset = 0)
     {
@@ -9378,6 +9398,10 @@ class MLIRGenImpl
         auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
             location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
             builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
+        if (methodInfo->genericSignature)
+        {
+            erasedGenericCallees[interfaceSymbolRefValue.getOperation()] = methodInfo->genericSignature;
+        }
 
         return interfaceSymbolRefValue;
     }    
@@ -14387,7 +14411,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult addInterfaceMethod(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
         llvm::SmallVector<InterfaceMethodInfo> &methodInfos, StringRef methodName, mlir_ts::FunctionType funcType, bool isConditional,
-        int orderWeight, bool declareInterface, const GenContext &genContext)
+        int orderWeight, bool declareInterface, const GenContext &genContext,
+        SignatureDeclarationBase genericSignature = SignatureDeclarationBase())
     {
         if (methodName.empty())
         {
@@ -14414,12 +14439,14 @@ class MLIRGenImpl
         if (methodIndex == -1)
         {
             methodInfos.push_back(
-                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()});
+                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex(),
+                 genericSignature});
         }
         else
         {
             methodInfos[methodIndex].funcType = funcType;
             methodInfos[methodIndex].isConditional = isConditional;
+            methodInfos[methodIndex].genericSignature = genericSignature;
         }
 
         return mlir::success();    
@@ -14436,15 +14463,53 @@ class MLIRGenImpl
         methodNameOut = methodName;
         propertyNameOut = propertyName;
         
-        if (methodSignature->typeParameters.size() > 0)
-        {
-            emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
-            return mlir::failure();
-        }
-
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = interfaceType;
+
+        // a generic method is one slot erased to `any` for each type parameter: whatever implements it
+        // fills the slot with its method instantiated so, and a call boxes its arguments and unboxes the
+        // result to its type arguments (InterfaceGenericMethodCall)
+        if (methodSignature->typeParameters.size() > 0)
+        {
+            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+            if (mlir::failed(processTypeParameters(methodSignature->typeParameters, typeParams, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // ...a whole parameter or result only: `T[]` erased is `any[]`, whose elements are not laid out
+            // as a `number[]`'s, and no cast between them can be made
+            GenContext templateGenContext(funcGenContext);
+            for (auto &typeParam : typeParams)
+            {
+                templateGenContext.typeParamsWithArgs[typeParam->getName()] =
+                    std::make_pair(typeParam, getNamedGenericType(typeParam->getName()));
+            }
+
+            auto [templateProto, templateType, templateResults] =
+                mlirGenFunctionSignaturePrototype(methodSignature, true, templateGenContext);
+            if (!templateType)
+            {
+                return mlir::failure();
+            }
+
+            auto erasable = [&](mlir::Type type) {
+                return isa<mlir_ts::NamedGenericType>(type) || !mth.isGenericType(type);
+            };
+            if (!llvm::all_of(templateType.getInputs(), erasable) || !llvm::all_of(templateType.getResults(), erasable))
+            {
+                emitError(location) << "generic method '" << methodName
+                                    << "' in an interface: a type parameter can only be the whole type of a parameter "
+                                       "or of the result, not part of one ('T[]', '[A, B]', 'Box<T>')";
+                return mlir::failure();
+            }
+
+            for (auto &typeParam : typeParams)
+            {
+                funcGenContext.typeParamsWithArgs[typeParam->getName()] = std::make_pair(typeParam, getAnyType());
+            }
+        }
 
         auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
         auto funcType = std::get<1>(res);
@@ -15494,6 +15559,33 @@ class MLIRGenImpl
         dp.print(interfaceInfo);
 
         declExports << ss.str().str();
+    }
+
+    void addInterfaceSourceToExport(InterfaceInfo::TypePtr interfaceInfo, InterfaceDeclaration interfaceDeclarationAST)
+    {
+        if (isAddedToExport(interfaceInfo->interfaceType))
+        {
+            return;
+        }
+
+        // re-declared from another module's embedded declarations: not this file's text
+        auto declEnd = static_cast<size_t>(interfaceDeclarationAST->_end);
+        if (declEnd > sourceFile->text.length())
+        {
+            return;
+        }
+
+        exportedTypes.insert(interfaceInfo->interfaceType);
+        addDependancyTypesToExport(interfaceInfo->interfaceType);
+
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(sourceFile->text, interfaceDeclarationAST.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss, classSpecializationNamer());
+        dp.printGenericClass(interfaceInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
     }
 
     void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType)
