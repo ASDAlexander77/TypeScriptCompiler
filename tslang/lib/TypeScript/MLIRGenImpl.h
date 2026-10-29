@@ -13341,7 +13341,8 @@ class MLIRGenImpl
     std::pair<mlir::Type, bool> mlirGenClassDataFieldType(mlir::Location location, PropertyDeclaration propertyDeclaration,
                                                           const GenContext &genContext);
 
-    mlir::LogicalResult mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
+    mlir::LogicalResult mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext, bool last);
+    bool readsOnlyTypedFields(Node initializer, ArrayRef<mlir_ts::FieldInfo> fields, const llvm::StringSet<> &untyped);
 
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext);
