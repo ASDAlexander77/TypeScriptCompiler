@@ -215,6 +215,85 @@ namespace own_signature
         }
     }
 
+    bool OwnershipSignaturePass::capturedBoxBorrows(mlir::Value field, llvm::ArrayRef<mlir::Operation *> interfaces)
+    {
+        // the box, stored once
+        mlir_ts::VariableOp boxOp;
+        for (auto *user : field.getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                continue;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto varOp = storeOp && storeOp.getReference() == field ? storeOp.getValue().getDefiningOp<mlir_ts::VariableOp>()
+                                                                    : mlir_ts::VariableOp();
+            if (!varOp || !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) || boxOp)
+            {
+                return false;
+            }
+
+            boxOp = varOp;
+        }
+
+        if (!boxOp)
+        {
+            return false;
+        }
+
+        // ...filled with copies of values that have owners of their own
+        for (auto *user : boxOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(user))
+            {
+                continue;
+            }
+
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == field)
+            {
+                continue;
+            }
+
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                return false;
+            }
+
+            for (auto *fieldUser : propertyRefOp->getUsers())
+            {
+                auto fillOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!fillOp || fillOp.getReference() != propertyRefOp.getResult())
+                {
+                    return false;
+                }
+
+                auto value = fillOp.getValue();
+                if (mlir::isa<mlir_ts::RefType>(value.getType()) || (!holdsNoBlock(value) && !hasOwnerOfItsOwn(value)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        // ...and nothing keeps the record: its retains and releases, and calls that only borrow it
+        for (auto *newInterfaceOp : interfaces)
+        {
+            auto stays = true;
+            forEachUse(newInterfaceOp->getResult(0), [&](mlir::Operation *use, mlir::Value used) {
+                stays = stays && (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(use) ||
+                                  (isCall(use) && !keeps(use, used) && resultBorrows(use) < 0));
+            });
+            if (!stays)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     void OwnershipSignaturePass::classifyRecordBox(mlir_ts::NewOp newOp)
     {
         auto boxOp = recordBoxOf(newOp.getResult());
@@ -294,6 +373,14 @@ namespace own_signature
             }
 
             auto field = propertyRefOp.getResult();
+            if (capturedBoxBorrows(field, interfaces))
+            {
+                // never returned: what the box borrows is this function's
+                info.returnable = false;
+                borrowed.push_back(propertyRefOp.getPosition());
+                continue;
+            }
+
             auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
             if (!refType || !mth.ownsHeapMemory(field.getLoc(), refType.getElementType()))
             {

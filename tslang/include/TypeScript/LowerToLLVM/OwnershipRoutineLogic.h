@@ -863,7 +863,11 @@ class OwnershipRoutineLogic
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
         {
-            if (llvm::is_contained(left, static_cast<int32_t>(index)))
+            // ...but for an object literal's `.captured` box that borrows its copies (own spec 68): the
+            // box is the record's, what it holds is not
+            auto leftBox = mlir::dyn_cast<mlir_ts::RefType>(fieldType);
+            if (llvm::is_contained(left, static_cast<int32_t>(index)) &&
+                !(leftBox && isa<mlir_ts::TupleType>(leftBox.getElementType())))
             {
                 continue;
             }
@@ -897,8 +901,10 @@ class OwnershipRoutineLogic
             {
                 if (isa<mlir_ts::TupleType>(refFieldType.getElementType()))
                 {
-                    routineName = borrows ? getOrCreateCaptureBoxCellsRoutine(refFieldType)
-                                          : getOrCreateCaptureBoxReleaseRoutine(refFieldType);
+                    routineName = llvm::is_contained(left, static_cast<int32_t>(index))
+                                      ? getOrCreateCaptureBoxFreeRoutine(refFieldType)
+                                  : borrows ? getOrCreateCaptureBoxCellsRoutine(refFieldType)
+                                            : getOrCreateCaptureBoxReleaseRoutine(refFieldType);
                 }
             }
             else

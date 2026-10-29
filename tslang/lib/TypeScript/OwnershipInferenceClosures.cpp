@@ -131,6 +131,7 @@ namespace own_inference
             // builds the literal in a local, then copies it into the object `ts.New` made
             llvm::SmallVector<mlir_ts::StoreOp> fills;
             mlir_ts::VariableOp literalOp;
+            int32_t capturedPosition = -1;
             for (auto &use : boxOp->getUses())
             {
                 auto *user = use.getOwner();
@@ -173,6 +174,7 @@ namespace own_inference
                 }
 
                 literalOp = ownerOp;
+                capturedPosition = static_cast<int32_t>(fieldOp.getPosition());
             }
 
             if (!literalOp)
@@ -213,7 +215,40 @@ namespace own_inference
             // the literal stays here: nothing stores, returns, captures or keeps it
             auto box = std::make_shared<Closure>();
             llvm::SmallVector<BorrowUse> uses;
-            if (walkBorrowed(objects.front(), {}, uses))
+            auto newOp = objects.front().getDefiningOp<mlir_ts::NewOp>();
+            if (llvm::is_contained(recordBorrowedFields(newOp), capturedPosition))
+            {
+                // ...or a borrowing record's box, seen only as interfaces given to calls that keep them
+                // not (spec 68): their uses are the box's, and its release frees the box alone
+                llvm::SmallVector<mlir::Value> interfaces;
+                for (auto *user : newOp->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::CastOp>(user))
+                    {
+                        for (auto *castUser : user->getUsers())
+                        {
+                            if (mlir::isa<mlir_ts::NewInterfaceOp>(castUser))
+                            {
+                                interfaces.push_back(castUser->getResult(0));
+                            }
+                        }
+                    }
+                }
+
+                RecordWalk walk;
+                llvm::SmallVector<mlir::Operation *, 2> kills{newOp.getOperation(), literalOp.getOperation()};
+                walkRecord(interfaces, kills, walk);
+                if (walk.kept || !walk.returns.empty())
+                {
+                    auto *at = walk.kept ? walk.kept : walk.returns.front();
+                    at->emitError("-mm=own: an object literal that borrows what its arrows capture can't outlive this function");
+                    signalPassFailure();
+                    return;
+                }
+
+                uses.append(walk.uses.begin(), walk.uses.end());
+            }
+            else if (walkBorrowed(objects.front(), {}, uses))
             {
                 return;
             }
@@ -223,20 +258,7 @@ namespace own_inference
                 box->uses.push_back(use.op);
             }
 
-            // copies of values with an owner of their own: a named value released here, a parameter, a
-            // local's; not a cell (a captured `let`), and not one rc retained for the box
-            auto owned = [&](mlir::Value value) {
-                auto root = rootOf(value);
-                if (mlir::isa<mlir::BlockArgument>(root) || root.getDefiningOp<mlir_ts::LoadOp>())
-                {
-                    return true;
-                }
-
-                return isFresh(root) && llvm::any_of(root.getUsers(), [](mlir::Operation *rootUser) {
-                           return mlir::isa<mlir_ts::ReleaseOp>(rootUser);
-                       });
-            };
-
+            // copies of values with an owner of their own, not one rc retained for the box
             llvm::SmallVector<mlir_ts::StoreOp> borrowed;
             for (auto storeOp : fills)
             {
@@ -246,7 +268,7 @@ namespace own_inference
                     continue;
                 }
 
-                if (!owned(value))
+                if (!hasOwnerOfItsOwn(value))
                 {
                     return;
                 }
@@ -494,7 +516,9 @@ namespace own_inference
     {
         getFunction().walk([&](mlir::Operation *call) {
             auto bounded = call->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BOUNDED_ATTR_NAME);
-            if (!bounded || !isCall(call) || call->getNumResults() != 1)
+            // a number holds nothing a bound could outlive: `return apply({ w: (x) => x + item.n })`
+            // makes a state-shaped literal, not a result that borrows `item`
+            if (!bounded || !isCall(call) || call->getNumResults() != 1 || !ownsHeap(call->getResult(0)))
             {
                 return;
             }

@@ -58,6 +58,13 @@ namespace own_inference
                         continue;
                     }
 
+                    // the `.captured` box: what it borrows is the literal's box's (classifyLiteralCaptures)
+                    if (auto boxOp = storeOp.getValue().getDefiningOp<mlir_ts::VariableOp>();
+                        borrows && boxOp && boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
+                    {
+                        continue;
+                    }
+
                     auto source = recordFieldSource(storeOp.getValue());
                     if (source == RecordFieldSource::NoBlock)
                     {
