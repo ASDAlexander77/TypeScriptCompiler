@@ -4331,8 +4331,7 @@ genContext);
             return mlir::failure();
         }
 
-        if (classInfo->isValue || classInfo->isDeclaration || classInfo->isImport || classInfo->isDynamicImport ||
-            classInfo->isCppVTable)
+        if (classInfo->isValue || classInfo->isCppVTable)
         {
             emitError(location) << "class '" << classInfo->fullName << "' can't be used as a value yet";
             return mlir::failure();
@@ -4342,10 +4341,43 @@ genContext);
         auto nullOpaque = [&]() -> mlir::Value {
             return builder.create<mlir_ts::CastOp>(location, opaqueType, builder.create<mlir_ts::NullOp>(location, getNullType()));
         };
+        // a class of a shared library (-shared) has its functions and its rtti behind pointers the
+        // importer resolves at load time (mlirGenClassMethodMemberDynamicImport,
+        // mlirGenCustomRTTIDynamicImport): the value is read through them
+        auto loadedOpaque = [&](mlir::StringRef name) -> mlir::Value {
+            auto value = resolveFullNameIdentifier(location, name, false, genContext);
+            if (!value)
+            {
+                return mlir::Value();
+            }
+
+            if (auto refType = dyn_cast<mlir_ts::RefType>(value.getType()))
+            {
+                value = builder.create<mlir_ts::LoadOp>(location, refType.getElementType(), value);
+            }
+
+            return builder.create<mlir_ts::CastOp>(location, opaqueType, value);
+        };
         auto functionAddress = [&](MethodInfo *methodInfo) -> mlir::Value {
             if (!methodInfo)
             {
                 return nullOpaque();
+            }
+
+            // the class that has the method: a class without a constructor of its own has its base's,
+            // which may be a shared library's
+            std::function<bool(ClassInfo::TypePtr)> ownedByDynamicImport = [&](ClassInfo::TypePtr cls) -> bool {
+                if (llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == methodInfo->funcName; }))
+                {
+                    return cls->isDynamicImport;
+                }
+
+                return llvm::any_of(cls->baseClasses, [&](auto &base) { return ownedByDynamicImport(base); });
+            };
+
+            if (ownedByDynamicImport(classInfo))
+            {
+                return loadedOpaque(methodInfo->funcName);
             }
 
             auto symbolRefOp = builder.create<mlir_ts::SymbolRefOp>(
@@ -4355,7 +4387,14 @@ genContext);
 
         // the vtable, for a static read through the value (an abstract class has one for that)
         mlir::Value vtable;
-        if (classInfo->getHasVirtualTable())
+        if (classInfo->isDynamicImport)
+        {
+            // the importer has no global of it: it is looked up in the library, as a vtable slot a
+            // library's class owns is (mlirGenClassVirtualTableDefinition)
+            auto vtableName = V(mlirGenStringValue(location, concat(classInfo->fullName, VTABLE_NAME), true));
+            vtable = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, opaqueType, vtableName);
+        }
+        else if (classInfo->getHasVirtualTable())
         {
             // as an instance gets it (mlirGenSetVTableToInstance)
             auto vtableName = concat(classInfo->fullName, VTABLE_NAME);
@@ -4380,13 +4419,24 @@ genContext);
         // the rtti: every class has one, and no two the same
         mlir::Value rtti;
         auto rttiName = concat(classInfo->fullName, RTTI_NAME);
-        if (auto rttiAddress = resolveFullNameIdentifier(location, rttiName, true, genContext))
+        if (classInfo->isDynamicImport)
+        {
+            rtti = loadedOpaque(rttiName);
+        }
+        else if (auto rttiAddress = resolveFullNameIdentifier(location, rttiName, true, genContext))
         {
             rtti = builder.create<mlir_ts::CastOp>(location, opaqueType, rttiAddress);
         }
         else
         {
             rtti = builder.create<mlir_ts::AddressOfOp>(location, opaqueType, rttiName, ::mlir::IntegerAttr());
+        }
+
+        if (!newFunc || !constructorFunc || !rtti)
+        {
+            emitError(location) << "class '" << classInfo->fullName << "' of a shared library can't be used as a value: "
+                                << "its functions can't be resolved";
+            return mlir::failure();
         }
 
         auto storageType = MLIRTypeHelper::getClassValueStorageType(builder.getContext());

@@ -116,7 +116,12 @@ between the value and that tuple, or to the value of a base class, lowers to not
   variable or field, an array element, a return. `const C = A` stays a compile-time alias.
 - **Assignable:** `B` is a value of `typeof A` when it extends `A` and its constructor takes the same
   parameters (fewer is allowed).
-- **Not yet:** a class from a declaration or another module, a @value class or a @cpp class can't be a value.
+- **Another module's class** is a value too. A shared library's (-shared) has its `.new`, constructor and
+  rtti behind the pointers the importer resolves at load time, and its vtable is looked up in the library
+  by name. A class without a constructor of its own, whose base is a library's, takes the base's through
+  that pointer. Through the value, a library class's static field is read where the library's vtable slot
+  points: the field itself, not the importer's pointer to it.
+- **Not yet:** a @value class or a @cpp class can't be a value.
 
 **Using one:**
 - **`new c(args)`** (`NewClassInstanceFromClassValue`): the arguments are cast to `A`'s constructor's
@@ -145,4 +150,6 @@ region"): the initializers reach the implicit constructor after captures are fou
   without its own constructor, equality, abstract classes, `typeof`, static fields and methods through
   the value (a subclass's, an inherited one, an abstract class's own); under
   gc, rc, none and own.
+- **`import_class_values`** + **`export_class_values`:** a library's classes, and one of this module extending
+  one, as values both ways; linked, -shared and -jit -shared, under every memory model.
 - **`class_value_constructor_error`** and **`class_local_capture_error`:** the errors.

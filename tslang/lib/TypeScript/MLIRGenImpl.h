@@ -9012,12 +9012,24 @@ class MLIRGenImpl
 
         assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
 
+        // a shared library's class: the importer keeps a pointer to the library's field
+        // (mlirGenClassStaticFieldMemberDynamicImport), but the library's vtable slot points at the
+        // field itself
+        auto fieldType = fieldInfo.type;
+        if (classInfo->isDynamicImport)
+        {
+            if (auto refType = dyn_cast<mlir_ts::RefType>(fieldType))
+            {
+                fieldType = refType.getElementType();
+            }
+        }
+
         auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
-            location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess,
+            location, mlir_ts::RefType::get(fieldType), vtableAccess,
             builder.getI32IntegerAttr(fieldInfo.virtualIndex),
             mlir::FlatSymbolRefAttr::get(builder.getContext(), fieldInfo.globalVariableName));
 
-        auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
+        auto value = builder.create<mlir_ts::LoadOp>(location, fieldType, virtualSymbOp);
         return value;
 #endif
     }

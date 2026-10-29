@@ -1639,6 +1639,7 @@ tslang_add_test(NAME test-compile-export-import-class-indexer COMMAND test-runne
 tslang_add_test(NAME test-compile-export-import-interface-indexer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 tslang_add_test(NAME test-compile-export-import-interface-generic-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
+tslang_add_test(NAME test-compile-export-import-class-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-compile-export-import-class-implements-interface-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 tslang_add_test(NAME test-compile-export-import-class-structural-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
@@ -1687,6 +1688,8 @@ set_tests_properties(test-compile-shared-import-unresolved-iface PROPERTIES PASS
 # Classes as values under every memory model (00class_values runs under gc above)
 foreach(class_value_mm rc none own)
     tslang_add_test(NAME test-jit-00-class-values-${class_value_mm} COMMAND test-runner -jit -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_values.ts")
+    # ...and of a shared library's classes
+    tslang_add_test(NAME test-jit-shared-export-import-class-values-${class_value_mm} COMMAND test-runner -jit -shared -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
 endforeach()
 # ...a class whose constructor takes other arguments than its base's is no value of the base's type
 add_test(NAME test-compile-class-value-constructor-error
@@ -1844,6 +1847,7 @@ tslang_add_test(NAME test-compile-shared-export-import-class-static COMMAND test
 # own. See class-implements-interface-dynamic-import-fix memory for the full account.
 tslang_add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 tslang_add_test(NAME test-compile-shared-export-import-interface-generic-method COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
+tslang_add_test(NAME test-compile-shared-export-import-class-values COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 # FIXED 2026-07-23 (was disabled): the "this.area()-returns-0-via-interface" symptom had nothing
@@ -1942,6 +1946,7 @@ tslang_add_test(NAME test-jit-shared-export-import-class-abstract COMMAND test-r
 tslang_add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 tslang_add_test(NAME test-jit-shared-export-import-interface-generic-method COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic_method.ts")
+tslang_add_test(NAME test-jit-shared-export-import-class-values COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 # FIXED 2026-07-23 (was disabled): see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (DeclarationPrinter dropped `abstract`, shifting the reimported vtable's slots).
