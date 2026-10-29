@@ -952,6 +952,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     void giveBorrowingRecordsTheirVTables(mlir::ModuleOp module);
 
     void classifyRecordBox(mlir_ts::NewOp newOp);
+    // Is `field` the `.captured` box of a literal's arrows that borrows its copies (spec 68): every one
+    // a value with an owner of its own (hasOwnerOfItsOwn), not a cell, and the record seen only as
+    // `interfaces` given to calls that keep them not? Its release then frees the box alone.
+    bool capturedBoxBorrows(mlir::Value field, llvm::ArrayRef<mlir::Operation *> interfaces);
 
     // An object literal of tuple type (a `@value` value, a type literal) that is never boxed and holds
     // a borrow beside nothing it owns - every field that holds a block borrows it - is an unboxed

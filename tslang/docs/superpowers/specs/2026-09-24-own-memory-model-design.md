@@ -5398,5 +5398,35 @@ and rc no reference of the box's own for it that the literal gives back: the box
 to an object-type parameter and reads the objects after, churning between steps, under own, rc, gc and
 none.
 
-Not here: a literal given to an interface (`apply(q)` for `apply(s: Scaler)`): the cast copies it into
-the interface's object, which keeps it, and the object stays moved into the box.
+Not here: a literal given to an interface (`apply(q)` for `apply(s: Scaler)`); see spec 68.
+
+## 68. An object literal whose arrows capture an object, given to an interface, 2026-10-29
+
+`const b = new Box(); use({ greet: () => "hi" + b.n }); b.n` for `use(g: Greeter)` was `'this value' is used
+here after its value was moved`: the interface is a view of the literal's box (`ts.NewInterface`), whose
+release - the interface's at the end - frees the box and the `.captured` box with every copy in it, so
+the copies could not borrow (spec 67 only covers a literal that is never released).
+
+- **A borrowing record's box** (spec 32, `capturedBoxBorrows` in the signature pass): the `.captured` field
+  is one more field the record borrows when the box is stored there once, each copy in it is a value with
+  an owner of its own (`hasOwnerOfItsOwn`, spec 67's test) or holds no block, none is a cell, and every
+  interface made of the record is only retained, released, or given to calls that keep it not and return
+  nothing borrowed of it. Never returnable.
+- **Its release** (`OwnershipRoutineLogic::releaseFields`): a borrowed field that is a capture box is
+  freed with `tsfrecb_` - the box, not what it holds - where any other borrowed field is skipped.
+- **Inference** (`classifyLiteralCaptures`): the record's uses (`walkRecord` from its interfaces) are the
+  box's, in place of `walkBorrowed` from the object; the copies borrow as in spec 67. `classifyRecords`
+  leaves the `.captured` store to it. A record the signature pass marked that the walk finds kept or
+  returned is an error, not a silent free.
+- **Bounded results that hold nothing**: `checkBoundedResults` skips a call whose result owns no block.
+  A literal capturing a parameter is state-shaped (`findBorrowingStates`), which bounded `viaParam`'s
+  number result by `item`, and `print(viaParam(c))` was an error.
+
+`own_literal_interface_captures` gives literals capturing a local object, two objects, a string beside an
+object, and a parameter to interface parameters and reads the objects after; a literal returned as an
+interface and one an array keeps still take their copies. It churns between steps, under own, rc, gc and
+none.
+
+Not here: a literal capturing a `let` (a cell), which errors as `captured by a closure that escapes`
+with or without an interface; and `return applyO({ w: (x) => x + item.n })` for an object-type parameter,
+`a closure that escapes owns what it captures`.

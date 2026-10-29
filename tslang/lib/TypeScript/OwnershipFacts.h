@@ -1664,6 +1664,20 @@ inline RecordFieldSource recordFieldSource(mlir::Value value)
     return RecordFieldSource::Unknown;
 }
 
+// A copy an object literal's `.captured` box may borrow (specs 67, 68): a value with an owner of its
+// own - a parameter, a local's read, a named value released here; not a cell (a captured `let`)
+inline bool hasOwnerOfItsOwn(mlir::Value value)
+{
+    auto root = rootOf(value);
+    if (mlir::isa<mlir::BlockArgument>(root) || root.getDefiningOp<mlir_ts::LoadOp>())
+    {
+        return true;
+    }
+
+    return isFresh(root) &&
+           llvm::any_of(root.getUsers(), [](mlir::Operation *rootUser) { return mlir::isa<mlir_ts::ReleaseOp>(rootUser); });
+}
+
 // The box of the object literal built in `varOp`: its one read, copied into a block `ts.New` made
 // (recordBoxOf). Null for anything else.
 inline mlir_ts::NewOp recordBoxOfLocal(mlir_ts::VariableOp varOp)
