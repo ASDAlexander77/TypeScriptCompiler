@@ -697,6 +697,10 @@ class MLIRGenImpl
             // NOTE: upward mailbox into caller context (process-once drain) - see GenContext
             const_cast<GenContext&>(genContext).generatedStatements.clear();
 
+            // a constructor's discovery pass generated them too (they are the field initializers):
+            // cleared as the body's statements are below
+            clearState(generatedStatements);
+
             // auto generated code
             for (auto statement : generatedStatements)
             {

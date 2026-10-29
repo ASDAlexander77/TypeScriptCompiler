@@ -1691,6 +1691,16 @@ foreach(class_value_mm rc none own)
     # ...and of a shared library's classes
     tslang_add_test(NAME test-jit-shared-export-import-class-values-${class_value_mm} COMMAND test-runner -jit -shared -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
 endforeach()
+# ...and of @cpp classes implemented here (their vtables C++'s), under every memory model
+tslang_add_test(NAME test-compile-00-cpp-class-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_class_values.ts")
+foreach(class_value_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-cpp-class-values-${class_value_mm} COMMAND test-runner -jit -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_class_values.ts")
+endforeach()
+# ...a @cpp class C++ makes can't be one
+add_test(NAME test-compile-cpp-class-value-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/cpp_class_value_error.ts")
+set_tests_properties(test-compile-cpp-class-value-error PROPERTIES PASS_REGULAR_EXPRESSION "the @cpp class 'Native' can't be used as a value: its objects are made by C\\+\\+"
+                                                                  FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class whose constructor takes other arguments than its base's is no value of the base's type
 add_test(NAME test-compile-class-value-constructor-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_value_constructor_error.ts")
@@ -1701,6 +1711,11 @@ add_test(NAME test-compile-class-local-capture-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_local_capture_error.ts")
 set_tests_properties(test-compile-class-local-capture-error PROPERTIES PASS_REGULAR_EXPRESSION "a member of class 'Counter' reads 'start', a local of the function the class is declared in"
                                                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...a field initializer's too, in a class without a constructor of its own
+add_test(NAME test-compile-class-field-capture-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_field_capture_error.ts")
+set_tests_properties(test-compile-class-field-capture-error PROPERTIES PASS_REGULAR_EXPRESSION "a member of class 'Counter' reads 'start', a local of the function the class is declared in"
+                                                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|defined outside the region")
 # @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
 # other models ignore them
 foreach(markers_mm gc rc own)

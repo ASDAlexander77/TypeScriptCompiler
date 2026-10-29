@@ -121,7 +121,12 @@ between the value and that tuple, or to the value of a base class, lowers to not
   by name. A class without a constructor of its own, whose base is a library's, takes the base's through
   that pointer. Through the value, a library class's static field is read where the library's vtable slot
   points: the field itself, not the importer's pointer to it.
-- **Not yet:** a @value class or a @cpp class can't be a value.
+- **A @cpp class implemented here** (its methods have bodies, `isCppVTableImplementation`) is a value: its
+  vtable (C++'s layout), `.new` and constructor are as any class's. It has no rtti, so its identity, the
+  value's last part, is its vtable, which each such class has of its own. A @cpp class has no statics, so
+  nothing but `new` and `==` is reached through its value. One whose objects C++ makes has no `.new` or
+  constructor here, and can't be a value (an error).
+- **Not yet:** a @value class can't be a value.
 
 **Using one:**
 - **`new c(args)`** (`NewClassInstanceFromClassValue`): the arguments are cast to `A`'s constructor's
@@ -142,8 +147,8 @@ through it is a fresh owned result.
 
 **Local classes (option C).** A method, constructor or accessor of a class declared in a function that reads
 one of the function's locals is an error naming the variable, in place of "Expected 1 arguments, but got
-0". A field initializer of a class without a constructor still fails as it did ("value defined outside the
-region"): the initializers reach the implicit constructor after captures are found.
+0". So is a field initializer's: the discovery pass of a constructor, implicit or not, is given the field
+initializers (`generatedStatements`) with its body, so what they read is found as the body's reads are.
 
 **Tests:**
 - **`00class_values`:** a factory, an array, a return, a field, a class without a constructor, a subclass
@@ -152,4 +157,7 @@ region"): the initializers reach the implicit constructor after captures are fou
   gc, rc, none and own.
 - **`import_class_values`** + **`export_class_values`:** a library's classes, and one of this module extending
   one, as values both ways; linked, -shared and -jit -shared, under every memory model.
-- **`class_value_constructor_error`** and **`class_local_capture_error`:** the errors.
+- **`00cpp_class_values`:** @cpp classes implemented here, made through a value and called through their
+  C++ slots (one by hand, as C++ would), in an array, compared; under gc, rc, none and own.
+- **`class_value_constructor_error`**, **`class_local_capture_error`**, **`class_field_capture_error`** and
+  **`cpp_class_value_error`:** the errors.
