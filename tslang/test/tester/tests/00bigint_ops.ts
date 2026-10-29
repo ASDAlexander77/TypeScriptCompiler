@@ -2,7 +2,7 @@
 // so `x ?? 7n` of an optional bigint is a bigint (it was `bigint | i64`, and the null test an i64 against a
 // pointer), and `5n` given for `bigint | string` is its bigint member (an invalid cast). `/`, `%`, shifts
 // and bitwise operators stay 64-bit integers: `10n / 3n` was 3.33333 through a number, and `1n << 40n`
-// shifted by 40 mod 32 through an i32.
+// shifted by 40 mod 32 through an i32. A division by 0n or a negative power stops the program (RangeError).
 function orSeven(x?: bigint) {
     return x ?? 7n;
 }
@@ -38,6 +38,14 @@ function main() {
     c /= 7n;
     c <<= 33n;
     assert(c == 120259084288n, "compound assignments");
+
+    // `**` is exact: through a number `2n ** 62n` was rounded
+    const two = 2n;
+    assert(two ** 62n == 4611686018427387904n, "a power past 2^53");
+    assert(3n ** 0n == 1n && (-3n) ** 3n == -27n && 10n ** 18n == 1000000000000000000n, "powers");
+    let p = 2n;
+    p **= 5n;
+    assert(p == 32n, "**=");
 
     print("done.");
 }

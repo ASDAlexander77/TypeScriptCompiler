@@ -4741,6 +4741,49 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
         return rewriter.create<arith::AndIOp>(loc, shiftAmount, mask);
     }
 
+    // `base ** exponent` of two integers (a bigint's), by squaring: math.powf is for floats only, and
+    // through one `2n ** 62n` was rounded. A negative exponent is checked where the op is made; here
+    // it gives 1.
+    static mlir::Value integerPower(mlir::Location loc, mlir::Value base, mlir::Value exponent,
+                                    ConversionPatternRewriter &rewriter)
+    {
+        auto intType = base.getType();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto result = continuationBlock->addArgument(intType, loc);
+        auto *bodyBlock = rewriter.createBlock(continuationBlock, {intType, intType, intType}, {loc, loc, loc});
+        auto *headerBlock = rewriter.createBlock(bodyBlock, {intType, intType, intType}, {loc, loc, loc});
+
+        auto zero = [&]() { return rewriter.create<arith::ConstantOp>(loc, intType, rewriter.getIntegerAttr(intType, 0)); };
+        auto one = [&]() { return rewriter.create<arith::ConstantOp>(loc, intType, rewriter.getIntegerAttr(intType, 1)); };
+
+        // header(result, base, exponent): done once the exponent is 0
+        rewriter.setInsertionPointToEnd(headerBlock);
+        auto more = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt, headerBlock->getArgument(2), zero());
+        rewriter.create<cf::CondBranchOp>(loc, more, bodyBlock, headerBlock->getArguments(), continuationBlock,
+                                          ValueRange{headerBlock->getArgument(0)});
+
+        // body: multiply the result by the base for a set low bit, square the base, halve the exponent
+        rewriter.setInsertionPointToEnd(bodyBlock);
+        auto accumulated = bodyBlock->getArgument(0);
+        auto factor = bodyBlock->getArgument(1);
+        auto remaining = bodyBlock->getArgument(2);
+        auto lowBit = rewriter.create<arith::AndIOp>(loc, remaining, one());
+        auto isOdd = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, lowBit, zero());
+        auto multiplied = rewriter.create<arith::MulIOp>(loc, accumulated, factor);
+        auto nextResult = rewriter.create<arith::SelectOp>(loc, isOdd, multiplied, accumulated);
+        auto squared = rewriter.create<arith::MulIOp>(loc, factor, factor);
+        auto halved = rewriter.create<arith::ShRUIOp>(loc, remaining, one());
+        rewriter.create<cf::BranchOp>(loc, headerBlock, ValueRange{nextResult, squared, halved});
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<cf::BranchOp>(loc, headerBlock, ValueRange{one(), base, exponent});
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+        return result;
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -4816,6 +4859,13 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
                                                                transformed.getOperand2(), rewriter);
 
         case SyntaxKind::AsteriskAsteriskToken:
+            if (isa<mlir::IntegerType>(transformed.getOperand1().getType()))
+            {
+                rewriter.replaceOp(arithmeticBinaryOp,
+                                   integerPower(arithmeticBinaryOp->getLoc(), transformed.getOperand1(), transformed.getOperand2(), rewriter));
+                return success();
+            }
+
             return BinOp<mlir_ts::ArithmeticBinaryOp, math::PowFOp, math::PowFOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                            transformed.getOperand2(), rewriter);
 

@@ -7856,13 +7856,14 @@ class MLIRGenImpl
 
         // A bigint is a 64-bit integer, and so is what `/`, `%`, a shift or a bitwise operator makes of
         // two of them: `10n / 3n` is 3n, not 3.33333 through a number, and `1n << 40n` is not shifted by
-        // 40 mod 32 through an i32.
+        // 40 mod 32 through an i32. `2n ** 62n` is exact, not rounded through a number.
         auto isBigInt = [&](mlir::Value value) { return isa<mlir_ts::BigIntType>(mth.stripLiteralType(value.getType())); };
         auto bigIntOperation = false;
         switch (opCode)
         {
         case SyntaxKind::SlashToken:
         case SyntaxKind::PercentToken:
+        case SyntaxKind::AsteriskAsteriskToken:
         case SyntaxKind::LessThanLessThanToken:
         case SyntaxKind::GreaterThanGreaterThanToken:
         case SyntaxKind::AmpersandToken:
@@ -7884,6 +7885,25 @@ class MLIRGenImpl
             if (rightExpressionValue.getType() != getBigIntType())
             {
                 CAST(rightExpressionValue, location, getBigIntType(), rightExpressionValue, genContext);
+            }
+
+            // TypeScript throws a RangeError for a bigint divided by 0n or raised to a negative power;
+            // a failed check stops the program as a failing assert does (#483), where the division
+            // was a hardware fault and a negative power was 1n.
+            auto checkRight = [&](SyntaxKind checkCode, StringRef message) {
+                auto zero = builder.create<mlir_ts::ConstantOp>(location, getBigIntType(), builder.getI64IntegerAttr(0));
+                auto holds = builder.create<mlir_ts::LogicalBinaryOp>(
+                    location, getBooleanType(), builder.getI32IntegerAttr((int)checkCode), rightExpressionValue, zero);
+                builder.create<mlir_ts::AssertOp>(location, holds, mlir::Value(), builder.getStringAttr(message));
+            };
+
+            if (opCode == SyntaxKind::SlashToken || opCode == SyntaxKind::PercentToken)
+            {
+                checkRight(SyntaxKind::ExclamationEqualsToken, "Division by zero");
+            }
+            else if (opCode == SyntaxKind::AsteriskAsteriskToken)
+            {
+                checkRight(SyntaxKind::GreaterThanEqualsToken, "Exponent must be non-negative");
             }
         }
 
