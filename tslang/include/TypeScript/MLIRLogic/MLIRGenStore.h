@@ -1095,6 +1095,24 @@ struct ClassInfo
         // static fields (a C++ vtable has none)
         for (auto &staticField : isCppVTable ? llvm::MutableArrayRef<StaticFieldInfo>() : llvm::MutableArrayRef<StaticFieldInfo>(staticFields))
         {
+            // a static field declared again, of the same type, takes over the base's slot, as a static
+            // method does: through a value of the base's class (`k: typeof A`) it is the field of the
+            // class `k` holds. The compiler's own (`.rtti`, `.size`) keep a slot each.
+            auto name = mlir::dyn_cast<mlir::StringAttr>(staticField.id);
+            if (name && !name.getValue().starts_with("."))
+            {
+                auto key = ("static " + name.getValue()).str();
+                auto it = methodSlots.find(key);
+                if (it != methodSlots.end() && vtable[it->second].staticFieldInfo.type == staticField.type)
+                {
+                    staticField.virtualIndex = it->second;
+                    vtable[it->second] = {staticField, false};
+                    continue;
+                }
+
+                methodSlots[key] = vtable.size();
+            }
+
             staticField.virtualIndex = vtable.size();
             vtable.push_back({staticField, false});
         }

@@ -207,6 +207,19 @@ class MLIRTypeHelper
     // of a value - their types, sizes, what they own - sees the tuple. Anything else is unchanged.
     // Sites that box or re-represent a tuple do not call this: a ValueType reaches them only as the
     // tuple it is cast to (MLIRGenImpl::valueStorage), where a conversion of it is allowed.
+    // A class value's layout (ClassValueType): the class's vtable (null for an abstract class, which has
+    // none), the function that allocates an instance of it, its constructor (null for none), and its
+    // rtti, which tells one class from another, each an opaque pointer.
+    static mlir_ts::TupleType getClassValueStorageType(mlir::MLIRContext *context)
+    {
+        auto opaqueType = mlir_ts::OpaqueType::get(context);
+        return mlir_ts::TupleType::get(
+            context, {mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(CLASS_VALUE_VTABLE_NAME, context), opaqueType, false, mlir_ts::AccessLevel::Public},
+                      mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(NEW_METHOD_NAME, context), opaqueType, false, mlir_ts::AccessLevel::Public},
+                      mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(CLASS_VALUE_CONSTRUCTOR_NAME, context), opaqueType, false, mlir_ts::AccessLevel::Public},
+                      mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(CLASS_VALUE_RTTI_NAME, context), opaqueType, false, mlir_ts::AccessLevel::Public}});
+    }
+
     static mlir::Type stripValueType(mlir::Type type)
     {
         if (auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(type))

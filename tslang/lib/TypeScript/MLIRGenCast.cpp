@@ -705,6 +705,13 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // a class given where its value is expected (`make(B)` for `c: typeof A`), or the value of a class
+        // where a base class's is: B's value is A's when B extends A
+        if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))
+        {
+            return castToClassValue(location, classValueType, value, genContext);
+        }
+
         // A @value class is nominal. Its value seen as `any`, `unknown`, `Object` or an ordinary
         // interface would be a boxed copy that has lost its class (no vtable to call its methods by);
         // seen as another @value type, a value of a class it is not. With null or undefined it is

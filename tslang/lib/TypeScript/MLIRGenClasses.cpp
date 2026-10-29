@@ -3650,11 +3650,22 @@ genContext);
     mlir::LogicalResult MLIRGenImpl::mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
-        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
+        // an abstract class has one too, though no instance carries it: a value of the class
+        // (`const k: typeof A = A`) reads its static members through it. Its abstract methods'
+        // and its interfaces' slots are null, as only a static is read through it.
+        if (!newClassPtr->getHasVirtualTable())
         {
             return mlir::success();
         }
-       
+
+        auto nullSlot = [&](mlir::Location location, mlir::Type slotType) -> mlir::Value {
+            // through Opaque: a null function is no TypeScript value
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            auto nullOpaque = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), nullValue);
+            auto castResult = cast(location, slotType, nullOpaque, genContext);
+            return castResult.failed_or_no_value() ? mlir::Value() : V(castResult);
+        };
+
         // TODO: ...
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
@@ -3688,7 +3699,13 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
                 {
-                    if (vtRecord.isInterfaceVTable)
+                    if (vtRecord.isInterfaceVTable && newClassPtr->isAbstract)
+                    {
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, nullSlot(location, getOpaqueType()), vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex++));
+                    }
+                    else if (vtRecord.isInterfaceVTable)
                     {
                         // TODO: write correct full name for vtable
                         auto fullClassInterfaceVTableFieldName =
@@ -3751,7 +3768,7 @@ genContext);
                         mlir::Type slotType;
                         if (!vtRecord.isStaticField)
                         {
-                            if (vtRecord.methodInfo.isAbstract)
+                            if (vtRecord.methodInfo.isAbstract && !newClassPtr->isAbstract)
                             {
                                 emitError(location) << "Abstract method '" << vtRecord.methodInfo.name <<  "' is not implemented in '" << newClassPtr->name << "'";
                                 return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
@@ -3808,18 +3825,13 @@ genContext);
                             return owner && owner->isCppVTable && !owner->isCppVTableImplementation;
                         };
 
-                        if (isUnimplementedCppMethod())
+                        if (isUnimplementedCppMethod() || (!vtRecord.isStaticField && vtRecord.methodInfo.isAbstract))
                         {
-                            // through Opaque: a null function is no TypeScript value
-                            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
-                            auto nullOpaque = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), nullValue);
-                            auto castResult = cast(location, slotType, nullOpaque, genContext);
-                            if (castResult.failed_or_no_value())
+                            methodOrFieldNameRef = nullSlot(location, slotType);
+                            if (!methodOrFieldNameRef)
                             {
                                 return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                             }
-
-                            methodOrFieldNameRef = V(castResult);
                         }
                         else if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
                         {
@@ -4307,6 +4319,277 @@ genContext);
         }
 
         return mlir::success();
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mlirGenClassValue(mlir::Location location, mlir_ts::ClassType classType,
+                                                        const GenContext &genContext)
+    {
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (!classInfo)
+        {
+            emitError(location) << "Can't find class " << to_print(classType);
+            return mlir::failure();
+        }
+
+        if (classInfo->isValue || classInfo->isCppVTable)
+        {
+            emitError(location) << "class '" << classInfo->fullName << "' can't be used as a value yet";
+            return mlir::failure();
+        }
+
+        auto opaqueType = getOpaqueType();
+        auto nullOpaque = [&]() -> mlir::Value {
+            return builder.create<mlir_ts::CastOp>(location, opaqueType, builder.create<mlir_ts::NullOp>(location, getNullType()));
+        };
+        // a class of a shared library (-shared) has its functions and its rtti behind pointers the
+        // importer resolves at load time (mlirGenClassMethodMemberDynamicImport,
+        // mlirGenCustomRTTIDynamicImport): the value is read through them
+        auto loadedOpaque = [&](mlir::StringRef name) -> mlir::Value {
+            auto value = resolveFullNameIdentifier(location, name, false, genContext);
+            if (!value)
+            {
+                return mlir::Value();
+            }
+
+            if (auto refType = dyn_cast<mlir_ts::RefType>(value.getType()))
+            {
+                value = builder.create<mlir_ts::LoadOp>(location, refType.getElementType(), value);
+            }
+
+            return builder.create<mlir_ts::CastOp>(location, opaqueType, value);
+        };
+        auto functionAddress = [&](MethodInfo *methodInfo) -> mlir::Value {
+            if (!methodInfo)
+            {
+                return nullOpaque();
+            }
+
+            // the class that has the method: a class without a constructor of its own has its base's,
+            // which may be a shared library's
+            std::function<bool(ClassInfo::TypePtr)> ownedByDynamicImport = [&](ClassInfo::TypePtr cls) -> bool {
+                if (llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == methodInfo->funcName; }))
+                {
+                    return cls->isDynamicImport;
+                }
+
+                return llvm::any_of(cls->baseClasses, [&](auto &base) { return ownedByDynamicImport(base); });
+            };
+
+            if (ownedByDynamicImport(classInfo))
+            {
+                return loadedOpaque(methodInfo->funcName);
+            }
+
+            auto symbolRefOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, methodInfo->funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), methodInfo->funcName));
+            return builder.create<mlir_ts::CastOp>(location, opaqueType, symbolRefOp);
+        };
+
+        // the vtable, for a static read through the value (an abstract class has one for that)
+        mlir::Value vtable;
+        if (classInfo->isDynamicImport)
+        {
+            // the importer has no global of it: it is looked up in the library, as a vtable slot a
+            // library's class owns is (mlirGenClassVirtualTableDefinition)
+            auto vtableName = V(mlirGenStringValue(location, concat(classInfo->fullName, VTABLE_NAME), true));
+            vtable = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, opaqueType, vtableName);
+        }
+        else if (classInfo->getHasVirtualTable())
+        {
+            // as an instance gets it (mlirGenSetVTableToInstance)
+            auto vtableName = concat(classInfo->fullName, VTABLE_NAME);
+            if (auto vtableAddress = resolveFullNameIdentifier(location, vtableName, true, genContext))
+            {
+                vtable = builder.create<mlir_ts::CastOp>(location, opaqueType, vtableAddress);
+            }
+            else
+            {
+                vtable = builder.create<mlir_ts::AddressOfOp>(location, opaqueType, vtableName, ::mlir::IntegerAttr());
+            }
+        }
+        else
+        {
+            vtable = nullOpaque();
+        }
+
+        // an abstract class has no `.new`: its value can't make an instance of it
+        auto newFunc = functionAddress(classInfo->isAbstract ? nullptr : classInfo->findMethod(NEW_METHOD_NAME));
+        auto constructorFunc = functionAddress(classInfo->getHasConstructor() ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr);
+
+        // the rtti: every class has one, and no two the same
+        mlir::Value rtti;
+        auto rttiName = concat(classInfo->fullName, RTTI_NAME);
+        if (classInfo->isDynamicImport)
+        {
+            rtti = loadedOpaque(rttiName);
+        }
+        else if (auto rttiAddress = resolveFullNameIdentifier(location, rttiName, true, genContext))
+        {
+            rtti = builder.create<mlir_ts::CastOp>(location, opaqueType, rttiAddress);
+        }
+        else
+        {
+            rtti = builder.create<mlir_ts::AddressOfOp>(location, opaqueType, rttiName, ::mlir::IntegerAttr());
+        }
+
+        if (!newFunc || !constructorFunc || !rtti)
+        {
+            emitError(location) << "class '" << classInfo->fullName << "' of a shared library can't be used as a value: "
+                                << "its functions can't be resolved";
+            return mlir::failure();
+        }
+
+        auto storageType = MLIRTypeHelper::getClassValueStorageType(builder.getContext());
+        auto storage = builder.create<mlir_ts::CreateTupleOp>(location, storageType,
+                                                              mlir::ValueRange{vtable, newFunc, constructorFunc, rtti});
+        return V(builder.create<mlir_ts::CastOp>(location, mlir_ts::ClassValueType::get(classType), storage));
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::castToClassValue(mlir::Location location, mlir_ts::ClassValueType classValueType,
+                                                       mlir::Value value, const GenContext &genContext)
+    {
+        auto baseClassType = mlir::cast<mlir_ts::ClassType>(classValueType.getClassType());
+        mlir_ts::ClassType classType;
+        mlir::Value classValue;
+        if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
+        {
+            classType = classRefOp.getType();
+        }
+        else if (auto valueClassValueType = dyn_cast<mlir_ts::ClassValueType>(value.getType()))
+        {
+            classType = mlir::cast<mlir_ts::ClassType>(valueClassValueType.getClassType());
+            classValue = value;
+        }
+        else
+        {
+            emitError(location) << "'" << to_print(value.getType()) << "' is not a class, so it can't be a value of '"
+                                << to_print(classValueType) << "'";
+            return mlir::failure();
+        }
+
+        if (classType != baseClassType)
+        {
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            auto baseClassInfo = getClassInfoByFullName(baseClassType.getName().getValue());
+            std::function<bool(ClassInfo::TypePtr)> extends = [&](ClassInfo::TypePtr derived) {
+                return llvm::any_of(derived->baseClasses,
+                                    [&](ClassInfo::TypePtr base) { return base == baseClassInfo || extends(base); });
+            };
+            if (!classInfo || !baseClassInfo || !extends(classInfo))
+            {
+                emitError(location) << "class '" << to_print(classType) << "' does not extend '" << to_print(baseClassType)
+                                    << "', so it can't be a value of '" << to_print(classValueType) << "'";
+                return mlir::failure();
+            }
+
+            // `new c(args)` passes what the base's constructor takes: the class's must take the same
+            auto parametersOf = [&](ClassInfo::TypePtr info) {
+                auto *constructorInfo = info->getHasConstructor() ? info->findMethod(CONSTRUCTOR_NAME) : nullptr;
+                return constructorInfo ? constructorInfo->funcType.getInputs().drop_front() : llvm::ArrayRef<mlir::Type>();
+            };
+            auto parameters = parametersOf(classInfo);
+            auto baseParameters = parametersOf(baseClassInfo);
+            if (parameters.size() > baseParameters.size() ||
+                !std::equal(parameters.begin(), parameters.end(), baseParameters.begin()))
+            {
+                emitError(location) << "the constructor of class '" << to_print(classType)
+                                    << "' does not take the arguments the constructor of '" << to_print(baseClassType)
+                                    << "' does, so it can't be a value of '" << to_print(classValueType) << "'";
+                return mlir::failure();
+            }
+        }
+
+        if (!classValue)
+        {
+            auto result = mlirGenClassValue(location, classType, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            classValue = V(result);
+        }
+
+        if (classValue.getType() == classValueType)
+        {
+            return classValue;
+        }
+
+        // laid out the same: the base's value is the subclass's
+        return V(builder.create<mlir_ts::CastOp>(location, classValueType, classValue));
+    }
+
+    mlir::Value MLIRGenImpl::classValuePart(mlir::Location location, mlir::Value classValue, int index)
+    {
+        auto storageType = MLIRTypeHelper::getClassValueStorageType(builder.getContext());
+        auto storage = builder.create<mlir_ts::CastOp>(location, storageType, classValue);
+        return builder.create<mlir_ts::ExtractPropertyOp>(location, getOpaqueType(), storage,
+                                                          builder.getDenseI64ArrayAttr({index}));
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
+                                                                     NodeArray<Expression> arguments,
+                                                                     const GenContext &genContext)
+    {
+        auto classType = mlir::cast<mlir_ts::ClassType>(mlir::cast<mlir_ts::ClassValueType>(classValue.getType()).getClassType());
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (!classInfo)
+        {
+            emitError(location) << "Can't find class " << to_print(classType);
+            return mlir::failure();
+        }
+
+        if (classInfo->isAbstract)
+        {
+            emitError(location) << "Cannot create an instance of an abstract class through a value of '"
+                                << to_print(classValue.getType()) << "'";
+            return mlir::failure();
+        }
+
+        // the arguments, for the constructor the class itself has: a class whose value this can be
+        // extends it, and takes what its constructor takes (castToClassValue)
+        auto *constructorInfo = classInfo->getHasConstructor() ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr;
+        if (!constructorInfo && arguments.size() > 0)
+        {
+            emitError(location) << "Expected 0 arguments, but got " << arguments.size();
+            return mlir::failure();
+        }
+
+        SmallVector<mlir::Value, 4> operands;
+        if (constructorInfo)
+        {
+            if (mlir::failed(mlirGenOperands(arguments, operands, constructorInfo->funcType, genContext, 1/*this params shift*/)))
+            {
+                emitError(location) << "Call constructor: can't resolve values of all parameters";
+                return mlir::failure();
+            }
+        }
+
+        // allocate: the class's own `.new`, which sets its vtable
+        auto newFuncType = getFunctionType({}, {classType}, false);
+        auto newFunc = builder.create<mlir_ts::CastOp>(location, newFuncType, classValuePart(location, classValue, 1));
+        auto callNewOp = builder.create<mlir_ts::CallIndirectOp>(location, newFunc, mlir::ValueRange{});
+        callNewOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        callNewOp->setAttr(OWN_FRESH_RESULT_ATTR_NAME, builder.getUnitAttr());
+        auto instance = callNewOp.getResult(0);
+
+        // construct: its constructor, when it has one
+        auto constructorPart = classValuePart(location, classValue, 2);
+        CAST_A(hasConstructor, location, getBooleanType(), constructorPart, genContext);
+        // the instance first, as a method's `this` (which the call borrows), then the arguments as a
+        // call of the constructor takes them: cast to its parameters, optional ones left out undefined,
+        // a rest parameter packed into its array
+        auto constructorFuncType = constructorInfo ? constructorInfo->funcType : getFunctionType({classType}, {}, false);
+        auto failed = false;
+        builder.create<mlir_ts::IfOp>(
+            location, hasConstructor, [&](mlir::OpBuilder &opBuilder, mlir::Location loc) {
+                auto constructorFunc = builder.create<mlir_ts::CastOp>(location, constructorFuncType, constructorPart);
+                auto result = mlirGenCallFunction(location, constructorFuncType, constructorFunc, instance, operands, genContext);
+                failed = mlir::failed(result);
+                builder.create<mlir_ts::ResultOp>(loc);
+            });
+        if (failed)
+        {
+            return mlir::failure();
+        }
+
+        return instance;
     }
 
 } // namespace mlirgen

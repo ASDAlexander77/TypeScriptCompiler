@@ -1667,11 +1667,23 @@ namespace mlirgen
             }
 
             auto val = V(result);
-            return val.getType();
+            return typeOfQueried(val);
         }
 
-        auto type = evaluate(exprName.as<Expression>(), genContext);
+        mlir::Type type;
+        evaluate(exprName.as<Expression>(), [&](mlir::Value val) { type = typeOfQueried(val); }, genContext);
         return type;
+    }
+
+    mlir::Type MLIRGenImpl::typeOfQueried(mlir::Value value)
+    {
+        // `typeof A` of a class is the class as a value, not an instance of it
+        if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
+        {
+            return mlir_ts::ClassValueType::get(classRefOp.getType());
+        }
+
+        return value.getType();
     }
 
     mlir::Type MLIRGenImpl::getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext)

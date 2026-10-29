@@ -8636,6 +8636,12 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return converter.convertType(type.getStorageType());
     });
 
+    // a class as a value: {vtable, .new, constructor, rtti}
+    converter.addConversion([&](mlir_ts::ClassValueType type) {
+        auto ptrType = LLVM::LLVMPointerType::get(m.getContext());
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), {ptrType, ptrType, ptrType, ptrType}, TUPLE_TYPE_PACKED);
+    });
+
     converter.addConversion([&](mlir_ts::BoundRefType type) {
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));

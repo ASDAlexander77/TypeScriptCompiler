@@ -245,6 +245,10 @@
 #define TYPE_DESCR_NAME ".type_descr"
 #define NEW_METHOD_NAME ".new"
 #define NEW_CTOR_METHOD_NAME ".new_ctor"
+// the fields of a class value's storage tuple (ClassValueType), beside NEW_METHOD_NAME
+#define CLASS_VALUE_VTABLE_NAME ".vtable"
+#define CLASS_VALUE_CONSTRUCTOR_NAME ".constructor"
+#define CLASS_VALUE_RTTI_NAME ".rtti"
 #define LENGTH_FIELD_NAME "length"
 #define INDEX_ACCESS_FIELD_NAME ".index"
 #define INDEX_ACCESS_GET_FIELD_NAME "get"
