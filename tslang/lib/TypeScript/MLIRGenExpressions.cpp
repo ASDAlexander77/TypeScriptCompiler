@@ -2178,11 +2178,21 @@ namespace mlirgen
             *(bigIntLiteral->text.end() - 1) == S('n') 
                 ? bigIntLiteral->text.substr(0, bigIntLiteral->text.length() - 1) 
                 : bigIntLiteral->text.c_str()));
-        // 64-bit whatever the target: a `bigint` literal is modeled as the language's own 64-bit
-        // integer type; its width is fixed by the language, not by the pointer width.
+        // 64-bit whatever the target: a `bigint` is the language's own 64-bit integer; its width is fixed
+        // by the language, not by the pointer width. A literal that does not fit was wrapped silently
+        // (12345678901234567890n printed -6101065172474983726).
+        if (newVal.getActiveBits() > 63)
+        {
+            emitError(loc(bigIntLiteral)) << "bigint literal '" << convertWideToUTF8(bigIntLiteral->text)
+                                          << "' is out of range: a bigint is a 64-bit signed integer";
+            return mlir::failure();
+        }
+
+        // the literal is a `bigint`: widened, it is one (`x ?? 7n` of an optional bigint), and a union
+        // with bigint takes it (`5n` given for `bigint | string`); typed by its i64 it was neither
         auto type = builder.getI64Type();
         auto attrVal = mlir::IntegerAttr::get(type, newVal.getExtValue());
-        auto literalType = mlir_ts::LiteralType::get(attrVal, type);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getBigIntType());
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 

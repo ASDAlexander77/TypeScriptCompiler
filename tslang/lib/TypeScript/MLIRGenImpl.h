@@ -5802,7 +5802,8 @@ class MLIRGenImpl
             return llvm::all_of(unionType.getTypes(), [&](mlir::Type subType) { return isNeverNullish(subType); });
         }
 
-        return mth.isValueType(type);
+        // a bigint is a 64-bit integer: compared with null it was an i64 against a pointer
+        return mth.isValueType(type) || isa<mlir_ts::BigIntType>(mth.stripLiteralType(type));
     }
 
     // the type without null and undefined: what is left once `?? b` did not take `b`
@@ -7853,8 +7854,41 @@ class MLIRGenImpl
             CAST(rightExpressionValue, location, type, rightExpressionValue, genContext);
         }
 
-        // cast step
+        // A bigint is a 64-bit integer, and so is what `/`, `%`, a shift or a bitwise operator makes of
+        // two of them: `10n / 3n` is 3n, not 3.33333 through a number, and `1n << 40n` is not shifted by
+        // 40 mod 32 through an i32.
+        auto isBigInt = [&](mlir::Value value) { return isa<mlir_ts::BigIntType>(mth.stripLiteralType(value.getType())); };
+        auto bigIntOperation = false;
         switch (opCode)
+        {
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::CaretToken:
+            bigIntOperation = isBigInt(leftExpressionValue) || isBigInt(rightExpressionValue);
+            break;
+        default:
+            break;
+        }
+
+        if (bigIntOperation)
+        {
+            if (leftExpressionValue.getType() != getBigIntType())
+            {
+                CAST(leftExpressionValue, location, getBigIntType(), leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType() != getBigIntType())
+            {
+                CAST(rightExpressionValue, location, getBigIntType(), rightExpressionValue, genContext);
+            }
+        }
+
+        // cast step
+        switch (bigIntOperation ? SyntaxKind::CommaToken : opCode)
         {
         case SyntaxKind::CommaToken:
             // no cast needed
