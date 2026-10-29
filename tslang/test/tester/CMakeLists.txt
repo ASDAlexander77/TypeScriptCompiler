@@ -753,6 +753,7 @@ tslang_add_test(NAME test-compile-00-spread COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-compile-00-any-to-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
+tslang_add_test(NAME test-compile-00-bigint-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_ops.ts")
 tslang_add_test(NAME test-compile-00-any-literal-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-compile-00-unknown-round-trip COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
@@ -1377,6 +1378,7 @@ tslang_add_test(NAME test-jit-00-spread COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
 tslang_add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 tslang_add_test(NAME test-jit-00-any-to-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_tuple.ts")
+tslang_add_test(NAME test-jit-00-bigint-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_ops.ts")
 tslang_add_test(NAME test-jit-00-any-literal-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_literal_to_interface.ts")
 tslang_add_test(NAME test-jit-00-unknown-round-trip COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unknown_round_trip.ts")
 tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
@@ -2479,6 +2481,7 @@ set(TSLANG_CORPUS
     00template_literal_escapes.ts
     00types_unknown1.ts
     00any_to_tuple.ts
+    00bigint_ops.ts
     00any_literal_to_interface.ts
     00unknown_round_trip.ts
     00types_utility.ts
@@ -3768,7 +3771,8 @@ set_tests_properties(test-compile-diagnostic-location-enum-member-initializer
 set(diagnostic_location_statement_cases
     "for_of|for_of\\.ts:6:5: error: Can't resolve property 'length' of type s32"
     "for_in|for_in\\.ts:6:5: error: Can't resolve property 'length' of type s32"
-    "using|using\\.ts:5:11: error: Can't resolve property 'dispose' of type s32")
+    "using|using\\.ts:5:11: error: Can't resolve property 'dispose' of type s32"
+    "bigint_literal_out_of_range|bigint_literal_out_of_range\\.ts:3:15: error: bigint literal '12345678901234567890n' is out of range")
 foreach(diagnostic_location_case ${diagnostic_location_statement_cases})
     string(REPLACE "|" ";" diagnostic_location_parts "${diagnostic_location_case}")
     list(GET diagnostic_location_parts 0 diagnostic_location_name)

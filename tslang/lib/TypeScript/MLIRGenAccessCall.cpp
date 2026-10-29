@@ -2551,6 +2551,26 @@ namespace mlirgen
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
+                // `Number(x)`, `BigInt(x)`, `String(x)` and `Boolean(x)` called without `new` convert `x` to the
+                // primitive, as in JavaScript: made the class's object, `BigInt(42) + 1n` was an invalid cast
+                // of the bigint to the class
+                if (operands.size() == 1)
+                {
+                    auto name = classType.getName().getValue();
+                    mlir::Type primitiveType = name == "Number"    ? mlir::Type(getNumberType())
+                                               : name == "BigInt"  ? mlir::Type(getBigIntType())
+                                               : name == "String"  ? mlir::Type(getStringType())
+                                               : name == "Boolean" ? mlir::Type(getBooleanType())
+                                                                   : mlir::Type();
+                    if (primitiveType)
+                    {
+                        value = operands.front().getType() == primitiveType
+                                    ? ValueOrLogicalResult(operands.front())
+                                    : cast(location, primitiveType, operands.front(), genContext);
+                        return;
+                    }
+                }
+
                 value = NewClassInstance(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
