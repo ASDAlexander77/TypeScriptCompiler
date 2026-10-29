@@ -833,8 +833,9 @@ class OwnershipInferencePass
     // Is `kept` rc's retain of `read`, a read of a field of a call's own result released as a
     // temporary right after, with nothing else reading that field (spec 63)?
     bool temporaryFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take);
-    // ...or of an object a `const` names, `new`'s or a call's own, that nothing sees after the move
-    // but its releases, and that is not taken from twice (spec 64)?
+    // ...or of an object a `const` names, `new`'s or a call's own, or an owning `let` given only such
+    // objects holds, that nothing sees after the move but its ends, and that is not taken from twice
+    // (specs 64, 65)?
     bool namedFieldTakeOf(mlir::Operation *read, mlir::Operation *retain, mlir_ts::PropertyRefOp field, FieldTake &take);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);

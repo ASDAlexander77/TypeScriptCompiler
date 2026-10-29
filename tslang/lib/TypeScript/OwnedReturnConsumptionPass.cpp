@@ -1597,8 +1597,12 @@ class OwnedReturnConsumptionPass
                 auto loadOp = producerOf(resultOp->getOperand(0)).getDefiningOp<mlir_ts::LoadOp>();
                 auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
                 auto *definingOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp() : nullptr;
+                // (or an owning `let` holds, spec 65)
+                auto slotRead = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(definingOp);
+                auto *slot = slotRead ? slotRead.getReference().getDefiningOp() : nullptr;
                 return compileOptions.memoryModel == MemoryModelOwn && mergeKept && definingOp &&
-                       definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME);
+                       (definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) ||
+                        (mlir::isa_and_nonnull<mlir_ts::VariableOp>(slot) && slot->hasAttr(OWNED_LOCAL_ATTR_NAME)));
             };
 
             if (llvm::none_of(yields, carriesOwned) && llvm::none_of(yields, borrowsBranchTemporary) &&
