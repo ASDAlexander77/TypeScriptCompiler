@@ -878,17 +878,19 @@ namespace mlirgen
                     {
                         // the resolved symbol's storage is a single boxed
                         // pointer (ObjectType lowers to `ptr`) to the real
-                        // data, not the data inline - load the pointer first,
-                        // then load through it, instead of reading
-                        // sizeof(fieldType) bytes directly at the symbol's own
-                        // address (which would read past a lone 8-byte slot).
-                        // See DeclarationPrinter.cpp's @boxed emission.
+                        // data, not the data inline - load the pointer,
+                        // instead of reading sizeof(fieldType) bytes directly
+                        // at the symbol's own address (which would read past a
+                        // lone 8-byte slot). The variable is that pointer, as
+                        // the exporter's is: a copy of the data it points to
+                        // was a snapshot, which the exporter's object never saw
+                        // a write to, nor a method call, and a cast to an
+                        // interface copied again. See DeclarationPrinter.cpp's
+                        // @boxed emission.
                         auto boxedType = getObjectType(fieldType);
                         auto refToBoxed = cast(location, mlir_ts::RefType::get(boxedType), referenceToStaticFieldOpaque, genContext);
                         auto boxedPtr = V(builder.create<mlir_ts::LoadOp>(location, boxedType, refToBoxed));
-                        auto refToTyped = V(cast(location, mlir_ts::RefType::get(fieldType), boxedPtr, genContext));
-                        auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                        return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
+                        return std::make_tuple(boxedPtr.getType(), boxedPtr, TypeProvided::Yes);
                     }
 
                     auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);

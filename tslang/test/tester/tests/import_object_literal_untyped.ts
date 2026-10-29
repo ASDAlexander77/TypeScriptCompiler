@@ -16,5 +16,9 @@ var c: A.Counter = <A.Counter>A.counterObj;
 c.inc();
 print(c.count);
 assert(c.count == 3);
+// the interface and the import are one object, the exporter's: the importer's variable is its
+// boxed pointer, not a copy of what it points to
+assert(A.counterObj.count == 3);
+assert(A.countOf() == 3);
 
 print("done.");

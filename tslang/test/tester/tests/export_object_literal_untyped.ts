@@ -14,4 +14,7 @@ namespace A {
     // `count: 0.0`: an integer literal is an s32, which the interface's `number` field would widen,
     // and a cast of an object whose method writes that field is an error (castObjectToInterface)
     export var counterObj = { count: 0.0, inc() { this.count = this.count + 1; } };
+
+    // the exporter's own view of the object, after the importer changed it
+    export function countOf() { return counterObj.count; }
 }
