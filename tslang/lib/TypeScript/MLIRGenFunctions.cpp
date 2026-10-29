@@ -587,6 +587,12 @@ namespace mlirgen
                     auto returnType = getType(typeParameter, funcProtoGenContext);
                     funcProto->setReturnType(returnType);
                 }
+                else if (funcProtoGenContext.overriddenReturnType
+                    && funcProtoGenContext.overriddenReturnFor == functionLikeDeclarationBaseAST.operator->()
+                    && mth.isNumericType(funcProto->getReturnType()))
+                {
+                    funcProto->setReturnType(funcProtoGenContext.overriddenReturnType);
+                }
                 else if (funcProtoGenContext.receiverFuncType)
                 {
                     // rewrite ret type with actual value

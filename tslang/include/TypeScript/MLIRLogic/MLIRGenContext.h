@@ -195,6 +195,11 @@ struct GenContext
     mlir::Type thisType;
     mlir_ts::ClassType thisClassType;
     mlir::Type receiverFuncType;
+    // the numeric result of the base class's method a method overrides without a return type of its own
+    // (`f() { return 3; }`, s32, for `f(): number`): its vtable slot calls it as the base's; for that
+    // declaration only, not for a function nested in it
+    mlir::Type overriddenReturnType;
+    const void *overriddenReturnFor = nullptr;
     mlir::Type receiverType;
     mlir::StringRef receiverName;
     bool isGlobalVarReceiver = false;

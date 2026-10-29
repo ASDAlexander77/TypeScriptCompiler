@@ -13145,6 +13145,10 @@ class MLIRGenImpl
 
     void mlirGenClassFieldAccessorsForBase(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration);
 
+    mlir::Type overriddenNumericReturnType(ClassInfo::TypePtr classInfo, StringRef methodName);
+
+    void mlirGenClassGetterOnlyForBase(ClassInfo::TypePtr newClassPtr, ClassLikeDeclaration classDeclarationAST);
+
     mlir_ts::AccessLevel getAccessLevel(Node node) {
         return hasModifier(node, SyntaxKind::PrivateKeyword) 
                 ? mlir_ts::AccessLevel::Private 

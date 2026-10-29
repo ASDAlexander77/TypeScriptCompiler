@@ -1158,6 +1158,8 @@ namespace mlirgen
             }
         }
 
+        mlirGenClassGetterOnlyForBase(newClassPtr, classDeclarationAST);
+
         if (newClassPtr->getHasVirtualTableVariable())
         {
             auto fieldId = MLIRHelper::TupleFieldName(VTABLE_NAME, builder.getContext());
@@ -1616,33 +1618,58 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // the numeric result of the nearest base class's method (or accessor) of the name, which a method of the same
+    // name without a return type overrides: `f() { return 3; }` infers s32, but its slot is called as returning
+    // the base's `number`
+    mlir::Type MLIRGenImpl::overriddenNumericReturnType(ClassInfo::TypePtr classInfo, StringRef methodName)
+    {
+        for (auto &base : classInfo->baseClasses)
+        {
+            auto index = base->getMethodIndex(methodName);
+            if (index >= 0)
+            {
+                auto funcType = base->methods[index].funcType;
+                return funcType && funcType.getNumResults() > 0 && mth.isNumericType(funcType.getResult(0))
+                    ? funcType.getResult(0)
+                    : mlir::Type();
+            }
+
+            if (auto found = overriddenNumericReturnType(base, methodName))
+            {
+                return found;
+            }
+        }
+
+        return mlir::Type();
+    }
+
+    // the nearest base class's accessor of the name: one implemented on the way is not abstract
+    static AccessorInfo *nearestBaseAccessor(ClassInfo::TypePtr classInfo, StringRef name)
+    {
+        for (auto &base : classInfo->baseClasses)
+        {
+            auto index = base->getAccessorIndex(name);
+            if (index >= 0)
+            {
+                return &base->accessors[index];
+            }
+
+            if (auto *found = nearestBaseAccessor(base, name))
+            {
+                return found;
+            }
+        }
+
+        return nullptr;
+    }
+
     // A field implementing an abstract accessor of a base class (`abstract prop: T` there, or
     // `abstract get prop(): T`): the class gets accessors over the field, which fill the base's slots, so a
     // read through the base reads the field. Through the class itself the field is read, found first.
     void MLIRGenImpl::mlirGenClassFieldAccessorsForBase(ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration)
     {
         auto nameStr = MLIRHelper::getName(propertyDeclaration->name);
-
-        // the nearest base class's accessor of the name: one implemented on the way is not abstract
-        std::function<AccessorInfo *(ClassInfo::TypePtr)> nearestAccessor = [&](ClassInfo::TypePtr classInfo) -> AccessorInfo * {
-            for (auto &base : classInfo->baseClasses)
-            {
-                auto index = base->getAccessorIndex(nameStr);
-                if (index >= 0)
-                {
-                    return &base->accessors[index];
-                }
-
-                if (auto *found = nearestAccessor(base))
-                {
-                    return found;
-                }
-            }
-
-            return nullptr;
-        };
-
-        auto *accessor = nearestAccessor(newClassPtr);
+        auto *accessor = nearestBaseAccessor(newClassPtr, nameStr);
         if (!accessor || accessor->isStatic || !accessor->isAbstract)
         {
             return;
@@ -1650,6 +1677,81 @@ namespace mlirgen
 
         auto type = accessor->get ? accessor->get.funcType.getResult(0) : accessor->set.funcType.getInput(1);
         mlirGenClassSynthAccessors(newClassPtr, propertyDeclaration, type, !!accessor->get, !!accessor->set, false);
+    }
+
+    // A getter alone implementing an abstract accessor pair of a base class (`abstract prop: T` there): a write
+    // through the base fills the setter's slot, so the class gets a setter that throws, as JavaScript's write to a
+    // property with only a getter does - a TypeError, or a failing assert without the default library.
+    void MLIRGenImpl::mlirGenClassGetterOnlyForBase(ClassInfo::TypePtr newClassPtr, ClassLikeDeclaration classDeclarationAST)
+    {
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (classMember != SyntaxKind::GetAccessor || hasModifier(classMember, SyntaxKind::StaticKeyword))
+            {
+                continue;
+            }
+
+            auto name = classMember.as<AccessorDeclaration>()->name;
+            auto nameStr = MLIRHelper::getName(name);
+            auto hasMember = [&](NodeArray<ClassElement> members, SyntaxKind kind) {
+                return llvm::any_of(members, [&](ClassElement member) {
+                    return member == kind && MLIRHelper::getName(member.as<AccessorDeclaration>()->name) == nameStr;
+                });
+            };
+
+            if (hasMember(classDeclarationAST->members, SyntaxKind::SetAccessor)
+                || hasMember(newClassPtr->extraMembersPost, SyntaxKind::SetAccessor))
+            {
+                continue;
+            }
+
+            auto *accessor = nearestBaseAccessor(newClassPtr, nameStr);
+            if (!accessor || accessor->isStatic || !accessor->isAbstract || !accessor->set)
+            {
+                continue;
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            auto typeAlias = StringRef("." + newClassPtr->fullName.str() + "." + nameStr + ".accessor").copy(stringAllocator);
+            getTypeAliasMap()[typeAlias] = { accessor->set.funcType.getInput(1), undefined };
+
+            auto message = nf.createStringLiteral(
+                stows("Cannot set property " + nameStr + " of " + newClassPtr->name.str() + " which has only a getter"));
+
+            NodeArray<Statement> statements;
+            if (getClassInfoByFullName("TypeError"))
+            {
+                NodeArray<Expression> arguments;
+                arguments.push_back(message);
+                statements.push_back(nf.createThrowStatement(
+                    nf.createNewExpression(nf.createIdentifier(S("TypeError")), undefined, arguments)));
+            }
+            else
+            {
+                NodeArray<Expression> arguments;
+                arguments.push_back(nf.createToken(SyntaxKind::FalseKeyword));
+                arguments.push_back(message);
+                statements.push_back(nf.createExpressionStatement(
+                    nf.createCallExpression(nf.createIdentifier(S("assert")), undefined, arguments)));
+            }
+
+            NodeArray<ModifierLike> modifiers;
+            for (auto modifier : classMember.as<AccessorDeclaration>()->modifiers)
+            {
+                if (modifier == SyntaxKind::PublicKeyword || modifier == SyntaxKind::ProtectedKeyword
+                    || modifier == SyntaxKind::PrivateKeyword)
+                {
+                    modifiers.push_back(modifier);
+                }
+            }
+
+            newClassPtr->extraMembersPost.push_back(nf.createSetAccessorDeclaration(
+                modifiers, name,
+                {nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined,
+                                               nf.createTypeReferenceNode(nf.createIdentifier(stows(typeAlias.str())), undefined))},
+                nf.createBlock(statements, /*multiLine*/ false)));
+        }
     }
 
     std::pair<mlir::Type, bool> MLIRGenImpl::mlirGenClassDataFieldType(mlir::Location location, PropertyDeclaration propertyDeclaration,
@@ -3785,6 +3887,14 @@ genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = newClassPtr->classType;
         funcGenContext.thisClassType = newClassPtr->classType;
+        if (!classMethodMemberInfo.isStatic && !classMethodMemberInfo.isConstructor && !funcLikeDeclaration->type)
+        {
+            if (auto baseReturnType = overriddenNumericReturnType(newClassPtr, classMethodMemberInfo.methodName))
+            {
+                funcGenContext.overriddenReturnType = baseReturnType;
+                funcGenContext.overriddenReturnFor = funcLikeDeclaration.operator->();
+            }
+        }
         // `this` of a @value class: in the constructor the slot `new` made, whose fields it assigns
         // (the variable `this` is that slot: mlirGenFunctionParams); in a method or a getter the value
         // itself, a copy. A static member's `this` is the class.

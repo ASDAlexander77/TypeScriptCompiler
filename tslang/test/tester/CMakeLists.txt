@@ -606,6 +606,7 @@ tslang_add_test(NAME test-compile-00-class-discover-types COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-compile-00-class-accessor-getter-only-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
@@ -621,6 +622,7 @@ tslang_add_test(NAME test-compile-00-generic-default-no-inference COMMAND test-r
 tslang_add_test(NAME test-compile-00-promise-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00promise_type.ts")
 tslang_add_test(NAME test-compile-00-class-static-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
 tslang_add_test(NAME test-compile-00-class-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
+tslang_add_test(NAME test-compile-00-class-override-inferred-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_override_inferred_return.ts")
 tslang_add_test(NAME test-compile-00-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_iface.ts")
 tslang_add_test(NAME test-compile-00-class-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic.ts")
 tslang_add_test(NAME test-compile-00-class-generic-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic_iface.ts")
@@ -739,6 +741,7 @@ tslang_add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
 tslang_add_test(NAME test-compile-00-try-finally-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
+tslang_add_test(NAME test-compile-00-try-catch-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
 tslang_add_test(NAME test-compile-00-try-catch-mismatch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_mismatch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return_dispose.ts")
 tslang_add_test(NAME test-compile-01-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
@@ -1228,6 +1231,7 @@ tslang_add_test(NAME test-jit-00-class-discover-types COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-class-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
+tslang_add_test(NAME test-jit-00-class-accessor-getter-only-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_getter_only_abstract.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
@@ -1243,6 +1247,7 @@ tslang_add_test(NAME test-jit-00-callback-result-ignored COMMAND test-runner -ji
 tslang_add_test(NAME test-jit-00-generic-default-no-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_default_no_inference.ts")
 tslang_add_test(NAME test-jit-00-promise-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00promise_type.ts")
 tslang_add_test(NAME test-jit-00-class-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
+tslang_add_test(NAME test-jit-00-class-override-inferred-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_override_inferred_return.ts")
 tslang_add_test(NAME test-jit-00-class-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_iface.ts")
 tslang_add_test(NAME test-jit-00-class-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic.ts")
 tslang_add_test(NAME test-jit-00-class-generic-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic_iface.ts")
@@ -1359,6 +1364,7 @@ tslang_add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
 tslang_add_test(NAME test-jit-00-try-finally-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
+tslang_add_test(NAME test-jit-00-try-catch-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
 # pre-existing JIT limitation (reproduces on unmodified main too): the JIT's
 # Windows SEH landing pad/personality plumbing exits with code 3 and no
 # output on a typed-catch mismatch that must unwind past a function boundary,
@@ -2187,8 +2193,10 @@ set(TSLANG_CORPUS
     00catch_value.ts
     00catch_value_minimal.ts
     00class_abstract.ts
+    00class_override_inferred_return.ts
     00class_access_control.ts
     00class_accessor_super.ts
+    00class_accessor_getter_only_abstract.ts
     00class_accessor_virtual.ts
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
@@ -2457,6 +2465,7 @@ set(TSLANG_CORPUS
     00toplevel_no_main_with_helpers.ts
     00try_catch_mismatch_rethrow.ts
     00try_catch_rethrow.ts
+    00try_catch_accessor.ts
     00try_catch_return_dispose.ts
     00try_catch_return.ts
     00try_catch_sequence_and_nesting.ts

@@ -191,6 +191,19 @@ template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
     }
 
   protected:
+    // a call an op lowers to (an accessor's) unwinds where the op does: to the handler a try recorded for it
+    template <typename CallOpTy, typename... Args>
+    CallOpTy createCall(PatternRewriter &rewriter, Operation *from, Args &&...args) const
+    {
+        auto call = rewriter.create<CallOpTy>(std::forward<Args>(args)...);
+        if (auto unwind = tsContext->unwind.lookup(from))
+        {
+            tsContext->unwind[call] = unwind;
+        }
+
+        return call;
+    }
+
     TSContext *tsContext;
     TSFunctionContext *tsFuncContext;
 };
