@@ -5352,3 +5352,29 @@ from a `let` declared in it and from one given anew in it, churning between step
 none; the ownership verifier is silent on it. `own_err_let_field_{global,read_again,loop,captured}` stay
 borrows; so do a parameter or a mix of a parameter and a fresh object given to the local, and a `let h =
 r` read after.
+
+## 66. An object literal whose arrows capture, given later to an object type, 2026-10-29
+
+`const k = 2; const o = { w: (x: number) => x * k }; apply(o)` for `apply(o: { w: (x: number) =>
+number })` was `'this value' borrows a field and cannot be stored, returned or captured` (spec 62 left
+an arrow that names a local around it a method bound to the literal). The cast to the parameter's object
+type reads each member out of the literal (`ts.Cast` of the object to its storage, a `ts.PropertyRef`
+and a `Load` of each field: a method bound to the literal) and makes the parameter's tuple of them
+(`ts.CreateTuple`). The members stay methods; the call borrows them.
+
+- **The tuple passes the borrow on** (`passesOn`): what the tuple is given to has the bound method, and
+  is walked as it. A store, a return or a call that keeps the tuple still keeps the borrow.
+- **The object is the chain's root** (`chainOf`): a field read through the object seen as its storage
+  has the object above it, owned when this function made it. Before, the cast was the root, owned by no
+  one, and so any call - the very call given the tuple - might drop it.
+- **Neither moves the object** (`isBorrow`): the cast to its storage when only its fields are reached
+  through it (each read is a place read, as `o.w` straight off the object is), and a tuple made of a
+  value only to be given to calls that keep none of it, released by nothing.
+
+`own_literal_captures` gives such literals (a number captured, a string captured by two members) to an
+object-type parameter, calls a member after, gives the literal again and to an interface, churning
+between steps, under own, rc, gc and none.
+
+Not here: a literal whose arrow captures an object (`const b = new Box(5); const q = { w: (x: number) =>
+x * b.n }`) moves the object into the literal's `.captured`, so `b` cannot be used after it under own,
+where a closure capturing it only borrows it (§16).
