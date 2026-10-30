@@ -198,7 +198,13 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
         {
-            optPM.addPass(mlir::createCSEPass());
+            // optPM runs ahead of own's inference. Not under own: CSE merges two equal allocations
+            // (`"a" + b` twice) into one value, which before inference has two owners and after it
+            // two releases. Under rc their retains and releases stay paired.
+            if (compileOptions.memoryModel != MemoryModelOwn)
+            {
+                optPM.addPass(mlir::createCSEPass());
+            }
             pm.addPass(mlir::createLoopInvariantCodeMotionPass());
             // Not under --di: stripping left every function a subprogram and every call no
             // location, which the LLVM dialect's verifier rejects for a call it could inline
