@@ -475,6 +475,13 @@ namespace own_inference
                     continue;
                 }
 
+                // the function value a call goes through: what it returns is the caller's, not a part
+                // of the function (`a.fn()` of a field `fn: () => string`, a string kept past `a`)
+                if (isCall(user) && use.getOperandNumber() == 0 && calleeValue(user) == pending.value)
+                {
+                    continue;
+                }
+
                 // A result that borrows what it was given borrows this too, and is walked as it.
                 for (auto result : user->getResults())
                 {
