@@ -882,6 +882,16 @@ namespace own_signature
                             kept = kept || keeps(use, used);
                         });
                     }
+
+                    // an element taken out of a rest parameter and kept (`this.data.push(args.shift())`):
+                    // the function takes what its callers move into the array, so it keeps the array and
+                    // they give their elements up (spec 72)
+                    if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(slotUser) && restParameterOf(varOp.getResult()))
+                    {
+                        forEachUse(slotUser->getResult(0), [&](mlir::Operation *use, mlir::Value used) {
+                            kept = kept || keeps(use, used);
+                        });
+                    }
                 }
             }
 
@@ -929,8 +939,10 @@ namespace own_signature
         {
             // the statements that keep the parameter, as decideParam sees a move
             llvm::SmallVector<mlir::Operation *> takers;
+            auto rest = false;
             for (auto varOp : parameterSlotsOf(body.front().getArgument(index)))
             {
+                rest = rest || restParameterOf(varOp.getResult());
                 for (auto *slotUser : varOp.getResult().getUsers())
                 {
                     if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
@@ -943,6 +955,13 @@ namespace own_signature
                         });
                     }
                 }
+            }
+
+            // a rest parameter kept only for the elements taken out of it (spec 72): the array itself is
+            // never taken, so the function releases it
+            if (takers.empty() && rest)
+            {
+                continue;
             }
 
             // a parameter kept only through what this pass cannot see (a mixed return): as before

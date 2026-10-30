@@ -4089,7 +4089,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot
-                 own_any_copies own_array_copies own_string_pushed_twice)
+                 own_any_copies own_array_copies own_string_pushed_twice own_rest_takes)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4826,6 +4826,8 @@ set(own_error_cases
     "own_err_keeper_called_through_value|:6:1: error: 'keep' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value"
     "own_err_shared_elements_object|:13:21: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]: an element has to be a value, a string, an any or a Shared<T> handle. use 'Shared<Node>'"
     "own_err_shared_elements_inferred|:12:17: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]"
+    "own_err_rest_take_dropped|:6:19: error: an element taken out of a rest parameter is the caller's"
+    "own_err_rest_take_used_after|:14:11: error: '[^']*' is used here after its value was moved"
     "own_err_keeper_popped|:14:9: error: argument '[^']*' is given to 'Registry[.]register', which keeps it, but -mm=own cannot move it here"
     "own_err_generator_keeps_missing|:9:1: error: '@keeps' of 'mapped<[^']*' names 'iter', but its body keeps 'iter', 'f'"
     "own_err_generator_keeps_used_after|:15:11: error: '[^']*' is used here after its value was moved"

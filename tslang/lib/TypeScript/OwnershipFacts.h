@@ -511,10 +511,41 @@ inline bool isLiteral(mlir::Operation *def)
 // survive the affine lowering), or another own module's `..new` (OWN_FRESH_RESULT_ATTR_NAME). A
 // declared callee, an indirect call, a parameter, a load, a value merged from branches, or a result
 // that borrows an argument is not fresh.
+// The rest parameter (`...args`) whose local `slot` is: the last argument of a function whose type
+// takes a rest. Null for any other slot.
+inline mlir::BlockArgument restParameterOf(mlir::Value slot)
+{
+    auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+    auto argument = varOp && varOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(varOp.getInitializer())
+                                                    : mlir::BlockArgument();
+    if (!argument || argument.getArgNumber() + 1 != argument.getOwner()->getNumArguments())
+    {
+        return {};
+    }
+
+    auto funcOp = mlir::dyn_cast<mlir_ts::FuncOp>(argument.getOwner()->getParentOp());
+    auto funcType = funcOp ? mlir::dyn_cast<mlir_ts::FunctionType>(funcOp.getFunctionType()) : mlir_ts::FunctionType();
+    return funcType && funcType.isVarArg() ? argument : mlir::BlockArgument();
+}
+
+// An element taken out (`pop`, `shift`) of a rest parameter its function does not keep (spec 72): the
+// array a caller gives a rest parameter only borrows its elements when they are the caller's (spec 49),
+// so what comes out of it is a borrow too, not a value of the function's own.
+inline bool takenOutOfBorrowedRest(mlir::Operation *def)
+{
+    if (!mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(def))
+    {
+        return false;
+    }
+
+    auto rest = restParameterOf(def->getOperand(0));
+    return rest && !llvm::is_contained(ownedParams(rest.getOwner()->getParentOp()), static_cast<int32_t>(rest.getArgNumber()));
+}
+
 inline bool isFresh(mlir::Value value)
 {
     auto *def = value.getDefiningOp();
-    if (!def || resultBorrows(def) >= 0)
+    if (!def || resultBorrows(def) >= 0 || takenOutOfBorrowedRest(def))
     {
         return false;
     }

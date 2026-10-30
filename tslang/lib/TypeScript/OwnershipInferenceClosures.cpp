@@ -582,6 +582,20 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::checkRestTakes()
+    {
+        getFunction().walk([&](mlir::Operation *op) {
+            if (!takenOutOfBorrowedRest(op) || !reporting())
+            {
+                return;
+            }
+
+            op->emitError("an element taken out of a rest parameter is the caller's: -mm=own lets a function take one "
+                          "only when it keeps what it takes; read it by its index instead");
+            signalPassFailure();
+        });
+    }
+
     void OwnershipInferencePass::checkBoundedResults()
     {
         getFunction().walk([&](mlir::Operation *call) {

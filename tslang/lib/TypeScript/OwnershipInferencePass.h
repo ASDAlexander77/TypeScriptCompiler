@@ -307,6 +307,11 @@ class OwnershipInferencePass
     // uses: the state object's release gives back nothing it borrows.
     void checkBoundedResults();
 
+    // An element taken out (`pop`, `shift`) of a rest parameter the function does not keep (spec 72):
+    // a caller's array may only borrow the elements it gives, so what comes out is the caller's. A
+    // function that keeps what it takes keeps the parameter, and its callers give the elements up.
+    void checkRestTakes();
+
     // The ends of a capture box given to a call with a bounded result: each release of a closure on
     // it (the box goes with its last), and each end of what a field of it was filled from. Reports
     // and returns false when a use of the result comes after one.

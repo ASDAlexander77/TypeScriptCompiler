@@ -233,6 +233,7 @@ namespace own_inference
         decideCells();
         checkBorrowedReads();
         checkBoundedResults();
+        checkRestTakes();
         checkBorrowingRecords();
         checkRecordResults();
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
