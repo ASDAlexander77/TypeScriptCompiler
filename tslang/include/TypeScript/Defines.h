@@ -69,6 +69,11 @@
 // MLIROwnedReference.h.
 #define OWNED_RESULT_NAMED_ATTR_NAME "__owned_result_named"
 
+// On a read through an interface's field that is owned under rc (MLIRGenImpl::InterfaceFieldAccess): a number
+// of its own. A `ts.Load` only reads memory, so CSE would fold two reads of the same field into one - one
+// reference taken, two given back. The number makes no two of them alike.
+#define OWNED_READ_ID_ATTR_NAME "__owned_read"
+
 // Marks a release MLIRGen put at the end of a hand-written `finally` for the exceptional leg only:
 // what the scopes around the `try` owe once the exception carries on past it. The finally region
 // is one region in MLIRGen but several copies after TryOpLowering - the copy the landing pad runs

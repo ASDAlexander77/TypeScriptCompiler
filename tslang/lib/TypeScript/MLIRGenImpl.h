@@ -9393,6 +9393,17 @@ class MLIRGenImpl
         {
             value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(),
                                                     interfaceSymbolRefValue.getResult());
+
+            // Under rc the slot may name a cell of accessors (INTERFACE_ACCESSOR_CELL_TAG), and then the load
+            // calls the getter, which returns its result retained. So the load is owned on both paths: the
+            // lowering retains what a plain slot holds (LoadOpLowering), and a receiver takes the reference
+            // over or it is given back as a temporary (§9.30).
+            if (compileOptions.isRefCounted() && !isa<mlir_ts::FunctionType>(fieldInfo->type) &&
+                mth.ownsHeapMemory(location, fieldInfo->type))
+            {
+                value.getDefiningOp()->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                value.getDefiningOp()->setAttr(OWNED_READ_ID_ATTR_NAME, builder.getI32IntegerAttr(++ownedReads));
+            }
         }
         else
         {
@@ -9443,6 +9454,9 @@ class MLIRGenImpl
     // the interface methods a call is yet to be made through that are generic, erased to `any`
     // (InterfaceMethodInfo::genericSignature): the call unboxes its result (mlirGenCallExpression)
     llvm::DenseMap<mlir::Operation *, SignatureDeclarationBase> erasedGenericCallees;
+
+    // the last OWNED_READ_ID_ATTR_NAME given
+    int ownedReads = 0;
 
     // The result type of a call of the generic interface method `signature` for its type arguments: given,
     // or inferred from the arguments. Null when they can't be had: the call's result stays `any`.
