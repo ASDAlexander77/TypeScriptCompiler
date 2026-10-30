@@ -1309,11 +1309,16 @@ namespace own_signature
             setFacts(funcOp, effective);
             funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
             funcOp->removeAttr(OWN_PARAMS_RELEASED_ATTR_NAME);
-            // a signature's `@keeps` is checked against the body as it is (checkDeclared)
+            // a signature's `@keeps` is checked against the body as it is (checkDeclared). But a rest
+            // parameter it names is the array the callers move their elements into (spec 72): the body
+            // takes the elements out, and the emptied array is released as an inferred keep's is
+            auto ownFunc = mlir::dyn_cast<mlir_ts::FuncOp>(funcOp);
+            auto funcType = ownFunc ? mlir::dyn_cast<mlir_ts::FunctionType>(ownFunc.getFunctionType()) : mlir_ts::FunctionType();
+            auto restIndex = funcType && funcType.isVarArg() ? static_cast<int32_t>(funcType.getNumInputs()) - 1 : -1;
             llvm::SmallVector<int32_t> released;
             for (auto index : effective.owned)
             {
-                if (!declaresCallerFacts(funcOp) && !llvm::is_contained(takenParams.lookup(funcOp), index))
+                if ((!declaresCallerFacts(funcOp) || index == restIndex) && !llvm::is_contained(takenParams.lookup(funcOp), index))
                 {
                     released.push_back(index);
                 }

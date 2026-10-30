@@ -4089,6 +4089,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot
+                 own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
+                 own_rest_keeps_declared)
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
@@ -4127,7 +4129,7 @@ foreach(keeps_mm rc gc none)
                        own_generator_take own_rest_array_borrows own_string_copies
                        own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                        own_callback_shapes own_callback_extended own_callback_interface
-                       own_generic_specializations own_callback_cast own_callback_interface_slot)
+                       own_generic_specializations own_callback_cast own_callback_interface_slot own_rest_keeps_declared)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4192,6 +4194,13 @@ add_test(NAME test-own-caught-value-call
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_call.ts")
 set_tests_properties(test-own-caught-value-call PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
                                                            FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# A rest parameter its function says it keeps (`@keeps`) is released once emptied under own, as an
+# inferred keep's is (spec 72); no run can see the leak, so the IR is read.
+add_test(NAME test-own-rest-keeps-declared-released
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_rest_keeps_declared.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-rest-keeps-declared.cmake")
 
 # A read through an interface field a getter may fill is freed after its last use under own, on the
 # getter's path only (own_interface_getter_read.ts): the release is placed by inference.
