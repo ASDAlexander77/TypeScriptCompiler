@@ -8,6 +8,7 @@
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -52,6 +53,53 @@ static bool isStaticLinkInput(llvm::StringRef file)
 
     return magic == llvm::file_magic::archive || magic == llvm::file_magic::coff_object ||
            magic == llvm::file_magic::elf_relocatable;
+}
+
+// The default library's static library, as its facts are read: on Linux libTypeScriptDefaultLib.a is
+// a GNU ld script, `INPUT(-lTypeScriptDefaultLibCore -lcurl)` (the default library's build.sh), and
+// the code it links is the archive of the first `-l` it names that sits beside it. Read as the script,
+// it published nothing: an own program built with --emit=exe got no facts of the library, and every
+// call into it might destroy anything. Any other file is itself.
+static std::string staticDefaultLibFactsFile(const std::string &file)
+{
+    if (!llvm::sys::fs::is_regular_file(file) || isStaticLinkInput(file))
+    {
+        return file;
+    }
+
+    auto buffer = llvm::MemoryBuffer::getFile(file);
+    if (!buffer || (*buffer)->getBufferSize() > 4096)
+    {
+        return file;
+    }
+
+    auto text = (*buffer)->getBuffer();
+    auto input = text.find("INPUT(");
+    if (input == llvm::StringRef::npos)
+    {
+        return file;
+    }
+
+    auto list = text.substr(input + 6);
+    list = list.take_until([](char c) { return c == ')'; });
+    llvm::SmallVector<llvm::StringRef> items;
+    list.split(items, ' ', -1, /*KeepEmpty=*/false);
+    for (auto item : items)
+    {
+        if (!item.consume_front("-l"))
+        {
+            continue;
+        }
+
+        llvm::SmallString<256> archive(llvm::sys::path::parent_path(file));
+        llvm::sys::path::append(archive, "lib" + item + ".a");
+        if (llvm::sys::fs::is_regular_file(archive) && isStaticLinkInput(archive))
+        {
+            return archive.str().str();
+        }
+    }
+
+    return file;
 }
 
 // The static library a `--lib` value names, when this compile can tell: the value itself if it is
@@ -153,7 +201,7 @@ void readBorrowFacts(CompileOptions &compileOptions)
     std::vector<std::string> files;
     if (!compileOptions.noDefaultLib)
     {
-        files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+        files.push_back(staticDefaultLibFactsFile(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple())));
     }
 
     for (auto &lib : libs)
@@ -200,7 +248,7 @@ void readOwnFacts(CompileOptions &compileOptions)
         }
         else
         {
-            files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+            files.push_back(staticDefaultLibFactsFile(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple())));
         }
     }
 
