@@ -80,6 +80,11 @@ class OwnershipInferencePass
 
     void runOnFunction();
 
+    // A read through an interface's field that a getter may have made (OWN_CELL_READ_ATTR_NAME), whose value and
+    // what is borrowed from it stay in its block: a release after their last use, for the getter's path only. One
+    // nothing uses - what an assignment `i.f = v` leaves of the place it wrote - goes.
+    void releaseCellReads();
+
     // The analysis of one function; true when it passed. In a dry run it erases nothing and strips
     // no facts.
     bool analyze(llvm::SetVector<mlir::Operation *> &toErase);
