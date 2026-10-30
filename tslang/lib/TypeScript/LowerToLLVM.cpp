@@ -5243,12 +5243,23 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                                                    InterfaceAccessorCell::unwindBlockOf(loadOp));
             };
 
+            // an owned read (InterfaceFieldAccess): the getter's result is retained, so what the slot holds is too
+            auto slotLoadFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                auto value = loadedValueFunc(builder, location);
+                retainOwnedInterfaceRead(loadOp, elementType, value, rewriter);
+                return value;
+            };
+
             loadedValue = clh.conditionalExpressionLowering(loc, elementTypeConverted, accessorCell->isCell, getterCallFunc,
-                                                            loadedValueFunc);
+                                                            slotLoadFunc);
         }
         else
         {
             loadedValue = loadedValueFunc(rewriter, loc);
+            if (interfaceSymbolRefOp)
+            {
+                retainOwnedInterfaceRead(loadOp, elementType, loadedValue, rewriter);
+            }
         }
 
         if (!loadedValue)
@@ -5266,6 +5277,21 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         //LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp DUMP: \n" << *loadOp->getParentOp() << "\n";);
 
         return success();
+    }
+
+  private:
+    // A read through an interface's field that MLIRGen marked owned under rc: what a plain slot holds is retained,
+    // as the getter of a field filled by accessors retains its result
+    void retainOwnedInterfaceRead(mlir_ts::LoadOp loadOp, mlir::Type elementType, mlir::Value value,
+                                  ConversionPatternRewriter &rewriter) const
+    {
+        if (!tsLlvmContext->compileOptions.isRefCounted() || !loadOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+        {
+            return;
+        }
+
+        OwnershipRoutineLogic orl(loadOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        orl.emitRetainValue(elementType, value);
     }
 };
 

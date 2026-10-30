@@ -612,6 +612,8 @@ tslang_add_test(NAME test-compile-00-class-accessor-getter-only-abstract COMMAND
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-compile-00-class-implicit-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
@@ -1249,6 +1251,8 @@ tslang_add_test(NAME test-jit-00-class-accessor-getter-only-abstract COMMAND tes
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
+tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-jit-00-class-implicit-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
@@ -2262,6 +2266,7 @@ set(TSLANG_CORPUS
     00class_accessor_virtual.ts
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
+    00interface_field_getter_owned.ts
     00class_accessor_untyped_setter.ts
     00class_accessor.ts
     00class_accessor2.ts
@@ -4393,6 +4398,12 @@ add_test(NAME test-rc-conditional-named-const-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
+# A read through an interface field a getter may fill is owned under rc, and given back; no run can see
+# the leak, so the IR is read.
+add_test(NAME test-rc-interface-field-getter-owned
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/interface-field-getter-owned.cmake")
 
 # A fresh object's field read after another allocation is the value just stored: the optimized IR
 # loads nothing back, under none, rc and own (the allocator is declared as LLVM declares malloc).

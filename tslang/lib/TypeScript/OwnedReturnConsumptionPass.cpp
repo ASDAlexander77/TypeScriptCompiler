@@ -1702,10 +1702,23 @@ class OwnedReturnConsumptionPass
         });
 
         llvm::SmallVector<mlir::Operation *> discarded;
+        llvm::SmallVector<mlir::Operation *> unread;
         module.walk([&](mlir::Operation *op) {
             if (!op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
             {
                 return;
+            }
+
+            // A read through an interface's field is owned only once it is lowered (InterfaceFieldAccess), so one
+            // nothing uses - what an assignment `i.f = v` leaves of the place it wrote - goes, rather than calling
+            // a getter to give its result back.
+            if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(op))
+            {
+                if (loadOp->use_empty() && loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+                {
+                    unread.push_back(op);
+                    return;
+                }
             }
 
             if (op->getNumResults() != 1 || !mth.ownsHeapMemory(op->getLoc(), op->getResult(0).getType()))
@@ -1724,6 +1737,11 @@ class OwnedReturnConsumptionPass
 
             discarded.push_back(op);
         });
+
+        for (auto *op : unread)
+        {
+            op->erase();
+        }
 
         mlir::OpBuilder builder(&getContext());
         std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> placedAfterFinally;
