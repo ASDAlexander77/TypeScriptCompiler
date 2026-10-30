@@ -533,6 +533,7 @@ tslang_add_test(NAME test-compile-00-instanceof-namespace-narrowing COMMAND test
 tslang_add_test(NAME test-compile-00-global-initializer-branches COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_initializer_branches.ts")
 tslang_add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+tslang_add_test(NAME test-compile-00-using-dispose-throws COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_dispose_throws.ts")
 tslang_add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 tslang_add_test(NAME test-compile-00-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
 tslang_add_test(NAME test-compile-00-owned-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
@@ -1173,6 +1174,7 @@ tslang_add_test(NAME test-jit-00-instanceof-namespace-narrowing COMMAND test-run
 tslang_add_test(NAME test-jit-00-global-initializer-branches COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_initializer_branches.ts")
 tslang_add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+tslang_add_test(NAME test-jit-00-using-dispose-throws COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_dispose_throws.ts")
 tslang_add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 tslang_add_test(NAME test-jit-00-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
 tslang_add_test(NAME test-jit-00-owned-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
@@ -2580,6 +2582,7 @@ set(TSLANG_CORPUS
     00union_to_any.ts
     00union_type.ts
     00using_nested_scopes.ts
+    00using_dispose_throws.ts
     00using_unwind_progress.ts
     00var_bindings.ts
     00vars.ts

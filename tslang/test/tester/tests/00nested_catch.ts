@@ -13,12 +13,10 @@
 // A try nested in a try *body* or in a `finally` always worked - only the catch clause was
 // affected, which is why nothing caught this.
 //
-// These check which clause runs and in what order, and deliberately never read a catch
-// variable's value. That is not squeamishness about the fix: reading one is broken on its own,
-// with no nesting involved - `try { throw 2 } catch (v: int) { t = v }` in a module that throws
-// only that one type reads 0 rather than 2, and reads correctly again once the module throws
-// other types elsewhere. `00try_catch.ts` passes for that second reason. A separate bug, and
-// nothing here should be made to depend on it.
+// These check which clause runs and in what order, and never read a catch variable's value.
+// When they were written, reading one was broken on its own under the JIT; that was item 5am
+// (a type descriptor at the JIT image base read as `catch(...)`), since fixed and guarded by
+// `00catch_value_minimal.ts`.
 //
 // See docs/reference-counting-evaluation.md section 9.29.
 

@@ -1505,7 +1505,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         //   unwinding, and terminates. Thrown from a catch it is a nested exception, which replaces the
         //   first, as JavaScript's does.
         // Such a finally is entered through a catch-all pad instead, which rethrows at its end
-        // (see windowsFinallyCatches and linuxFinallyCatches).
+        // (see windowsFinallyCatches and linuxFinallyCatches). The cleanup region - a `using`'s
+        // `[Symbol.dispose]()` on the way out - throws the same way, and is entered the same way
+        // (windowsCleanupCatches).
         mlir::SmallVector<Operation *> escapingOpsFinally;
         auto finallyHasTry = false;
         auto finallyMayThrow = false;
@@ -1529,6 +1531,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto cleanupHasOps =
             llvm::any_of(tryOp.getCleanup(), [](auto &block) { return &block.front() != block.getTerminator(); });
+        auto cleanupMayThrow = false;
+        tryOp.getCleanup().walk([&](Operation *op) { cleanupMayThrow |= unwindsToHandler(op); });
+        auto windowsCleanupCatches = tsContext->compileOptions.isWindows && cleanupHasOps && cleanupMayThrow;
         // an empty `catch { }` still catches: HAS_CATCH_ATTR_NAME tells it from no catch clause
         auto catchHasOps =
             tryOp->hasAttr(HAS_CATCH_ATTR_NAME) ||
@@ -1546,14 +1551,54 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         rewriter.create<mlir::cf::BranchOp>(loc, bodyBlock, ValueRange{});
 
         // cleanup
-        auto linuxHasCleanups = cleanupHasOps && !tsContext->compileOptions.isWindows;
+        // On the Itanium path the cleanup shares its landing pad with this try's catch (or finally),
+        // and runs before it with nothing caught, so what a `[Symbol.dispose]()` throws there has no
+        // edge into that catch: it left the function, and with nothing outside to catch it the
+        // process terminated. A cleanup that may throw with a catch or a finally of its own is a
+        // catch-all of its own instead, which unwinds and rethrows to them (linuxCleanupCatches),
+        // and the catch and the finally lower as they do with no cleanup.
+        auto linuxCleanupCatches = cleanupHasOps && !tsContext->compileOptions.isWindows && cleanupMayThrow &&
+                                   (catchHasOps || finallyHasOps);
+        auto linuxHasCleanups = cleanupHasOps && !tsContext->compileOptions.isWindows && !linuxCleanupCatches;
+        // A disposal that throws in the cleanup must not skip the rest of it: the releases after it
+        // were a leak on that path (the ownership verifier's report), and the resources still to
+        // dispose went undisposed. Its calls unwind to a copy of the cleanup instead (retryBlock),
+        // entered through a catch-all, which hands what was thrown on once it has run. The cleanup
+        // runs again safely: each disposal's flag is cleared before its call, so the copy skips the
+        // one that threw and those already done, and the releases come after every disposal. The
+        // copy's own calls are given no unwind edge here: a second disposal that throws is a nested
+        // exception there, and the rest of the copy is skipped (00using_dispose_throws.ts).
+        auto cleanupRetries = cleanupHasOps && cleanupMayThrow && (catchHasOps || finallyHasOps || enclosingHandler);
         mlir::Block * cleanupBlock = nullptr;
         mlir::Block * cleanupBlockLast = nullptr;
+        mlir::Block * retryBlock = nullptr;
+        mlir::Block * retryBlockLast = nullptr;
         if (cleanupHasOps)
         {
-            rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
+            if (cleanupRetries)
+            {
+                mlir::IRMapping retryMapping;
+                rewriter.cloneRegionBefore(tryOp.getCleanup(), *continuation->getParent(), continuation->getIterator(),
+                                           retryMapping);
+                retryBlock = bodyBlockLast->getNextNode();
+                retryBlockLast = continuation->getPrevNode();
+            }
+
+            rewriter.inlineRegionBefore(tryOp.getCleanup(), retryBlock ? retryBlock : continuation);
             cleanupBlock = bodyBlockLast->getNextNode();
-            cleanupBlockLast = continuation->getPrevNode();
+            cleanupBlockLast = (retryBlock ? retryBlock : continuation)->getPrevNode();
+
+            if (cleanupRetries)
+            {
+                // the copy's pad is nested in the cleanup's, and Win32ExceptionPass reads the nesting
+                // off the order of the code: the copy has to come before the cleanup's end. So the
+                // cleanup's terminator moves into a block of its own, after the copy.
+                auto *cleanupTail = rewriter.splitBlock(cleanupBlockLast, cleanupBlockLast->getTerminator()->getIterator());
+                rewriter.moveBlockBefore(cleanupTail, continuation);
+                rewriter.setInsertionPointToEnd(cleanupBlockLast);
+                rewriter.create<mlir::cf::BranchOp>(loc, cleanupTail, ValueRange{});
+                cleanupBlockLast = cleanupTail;
+            }
         }
         else
         {
@@ -1915,6 +1960,35 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto landingBlock = cleanupHasOps ? cleanupBlock : catchHasOps ? catchesBlock : finallyBlock;
         tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
 
+        // the cleanup's calls unwind to `dest` (its copy, see cleanupRetries): nothing else gives
+        // them an unwind edge, as the body's walk below skips the region
+        auto unwindCleanupTo = [&](mlir::Block *dest) {
+            for (auto it = cleanupBlock;; it = it->getNextNode())
+            {
+                // the copy sits inside the cleanup's blocks (see cleanupRetries), and its calls stay plain
+                if (it == retryBlock)
+                {
+                    it = retryBlockLast;
+                    continue;
+                }
+
+                it->walk([&](Operation *op) {
+                    if (unwindsToHandler(op))
+                    {
+                        tsContext->unwind[op] = dest;
+                    }
+                    else if (mayCallInterfaceAccessor(op))
+                    {
+                        tsFuncContext->accessorUnwinds.push_back({op, dest});
+                    }
+                });
+                if (it == cleanupBlockLast)
+                {
+                    break;
+                }
+            }
+        };
+
         if (landingBlock)
         {
             // TODO: check for nested ops for example in if block
@@ -1989,10 +2063,37 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Value catchAll;
         if (enclosingHandler && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
             linuxCleanupOnlyChainsToParent || linuxTypedCatchChains || windowsFinallyCatches ||
-            linuxFinallyCatches)
+            windowsCleanupCatches || linuxCleanupCatches || linuxFinallyCatches)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
+
+        // see cleanupRetries: the cleanup's calls unwind to its copy, a catch-all inside the
+        // cleanup's own (cleanupPadId, Windows), which ends by rethrowing to `dest`
+        auto retryCleanupTo = [&](mlir::Block *dest, int cleanupPadId) {
+            unwindCleanupTo(retryBlock);
+
+            rewriter.setInsertionPointToStart(retryBlock);
+            auto retryPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
+                                                                     rewriter.getBoolAttr(false), ValueRange{catchAll});
+            rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), retryPadOp);
+
+            rewriter.setInsertionPoint(retryBlockLast->getTerminator());
+            auto resultOpRetry = cast<mlir_ts::ResultOp>(retryBlockLast->getTerminator());
+            if (tsContext->compileOptions.isWindows)
+            {
+                retryPadOp->setAttr(EH_PAD_ID_ATTR_NAME, rewriter.getI32IntegerAttr(++tsContext->nextCatchPadId));
+                retryPadOp->setAttr(EH_PAD_PARENT_ATTR_NAME, rewriter.getI32IntegerAttr(cleanupPadId));
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpRetry, retryPadOp,
+                                                                   mlir::SmallVector<mlir::Block *>{dest});
+            }
+            else
+            {
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+                auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpRetry, nullVal);
+                tsContext->unwind[throwOp] = dest;
+            }
+        };
 
         mlir::Value undefArrayValue;
         if (finallyHasOps || cleanupHasOps)
@@ -2019,10 +2120,25 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         {
             rewriter.setInsertionPointToStart(cleanupBlock);
 
-            auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
-                loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
-            tagPad(landingPadCleanupOp, 0);
-            auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+            // see windowsFinallyCatches: a cleanup that may throw is a catch-all, so that what it
+            // throws is a nested exception - which replaces the one unwinding - rather than one
+            // out of a cleanup funclet, which terminates
+            auto landingPadCleanupOp =
+                windowsCleanupCatches
+                    ? rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false),
+                                                             ValueRange{catchAll})
+                    : rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true),
+                                                             ValueRange{undefArrayValue});
+            auto cleanupPadId = windowsCleanupCatches ? ++tsContext->nextCatchPadId : 0;
+            tagPad(landingPadCleanupOp, cleanupPadId);
+            if (windowsCleanupCatches)
+            {
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+            }
+            else
+            {
+                rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+            }
 
             rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
             mlir::SmallVector<mlir::Block *> unwindDests;
@@ -2043,6 +2159,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             else if (enclosingHandler)
             {
                 unwindDests.push_back(enclosingHandler);
+            }
+
+            if (cleanupRetries)
+            {
+                retryCleanupTo(unwindDests.front(), cleanupPadId);
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
             }
 
             auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
@@ -2379,6 +2501,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
                 rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
 
+                // and what a disposal throws goes there too, once the cleanup has run again
+                if (cleanupRetries)
+                {
+                    retryCleanupTo(enclosingHandler, 0);
+                }
+
                 rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
@@ -2404,6 +2532,27 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp,
                                                                    mlir::SmallVector<mlir::Block *>{});
             }
+        }
+        else if (linuxCleanupCatches)
+        {
+            // the linuxCleanupOnlyChainsToParent shape, with this try's own catch (or finally) for
+            // the parent: catch-all, the cleanup, then a rethrow that unwinds to it
+            auto *dest = catchHasOps ? catchesBlock : finallyBlock;
+
+            rewriter.setInsertionPointToStart(cleanupBlock);
+
+            auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+            rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+
+            retryCleanupTo(dest, 0);
+
+            rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+            auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+            auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+            auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
+            tsContext->unwind[throwOp] = dest;
         }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
