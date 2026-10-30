@@ -3446,6 +3446,24 @@ class MLIRGenImpl
                 return;
             }
 
+            // `@copies` names nothing either: it lets -mm=own copy an array in the body (spec 71)
+            if (name == COPIES_DECORATOR)
+            {
+                if (!args.empty())
+                {
+                    emitError(location) << "'@" COPIES_DECORATOR "' names no parameter";
+                    result = mlir::failure();
+                    return;
+                }
+
+                if (llvm::none_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_DECLARED_COPIES_ATTR_NAME; }))
+                {
+                    attrs.push_back({builder.getStringAttr(OWN_DECLARED_COPIES_ATTR_NAME), builder.getUnitAttr()});
+                }
+
+                return;
+            }
+
             if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR &&
                 name != IMMORTALIZES_DECORATOR)
             {

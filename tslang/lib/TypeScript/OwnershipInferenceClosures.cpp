@@ -594,14 +594,43 @@ namespace own_inference
             }
 
             auto name = ownerName(call->getResult(0));
+            auto args = callArgs(call);
+
+            // Borrowing only immortal globals (spec 25: never given another value, never freed) it
+            // outlives nothing, wherever it is kept: `const it = map.values()` at the top of a script.
+            // One of them at least: a callback that holds no block says nothing of the array `.map` reads.
+            auto immortals = 0;
+            auto boundedByImmortals = llvm::all_of(bounded.asArrayRef(), [&](int32_t index) {
+                if (static_cast<size_t>(index) >= args.size())
+                {
+                    return true;
+                }
+
+                auto root = rootOf(args[index]);
+                if (auto object = boundThis(root))
+                {
+                    root = rootOf(object);
+                }
+
+                if (isImmortalGlobalRead(root))
+                {
+                    immortals++;
+                    return true;
+                }
+
+                return holdsNoBlock(args[index]);
+            });
+            if (boundedByImmortals && immortals > 0)
+            {
+                return;
+            }
+
             llvm::SmallVector<mlir::Operation *> uses;
             if (auto *kept = boundedUses(call->getResult(0), uses))
             {
                 reportPlaceBorrowEscapes(kept, name, "its generator's arguments");
                 return;
             }
-
-            auto args = callArgs(call);
             for (auto index : bounded.asArrayRef())
             {
                 if (static_cast<size_t>(index) >= args.size())

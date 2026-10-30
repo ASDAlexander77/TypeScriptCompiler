@@ -368,6 +368,12 @@
 // that returns such a record has to say it. A unit attribute on the FuncOp.
 #define RECORD_DECORATOR "record"
 #define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
+// `@copies`: inside this function -mm=own may copy an array whose elements own nothing where it cannot
+// prove one owner (own spec 71), as it copies a string anywhere. A copy of an array can be told from
+// the array - a change to one is not a change to the other - so only a function that says so makes
+// one: reduce's accumulator, which starts as an element. The other models ignore it. A unit attribute.
+#define COPIES_DECORATOR "copies"
+#define OWN_DECLARED_COPIES_ATTR_NAME "ts.own_declared_copies"
 // `@immortalizes` names the parameters the function keeps for good, in an append-only global (a
 // keeper, docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): its callers make each
 // argument immortal. Checked against a body; trusted on a declaration, a C function that keeps a

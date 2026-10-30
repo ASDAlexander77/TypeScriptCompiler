@@ -1235,6 +1235,64 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
             return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, pointer, rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy));
         };
 
+        // An `any` box: a new box of the same bytes. A payload that owns nothing (its descriptor has
+        // no release routine) is copied with them; a string payload is copied in turn, as above.
+        if (mlir::isa<mlir_ts::AnyType>(op.getIn().getType()))
+        {
+            AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+            TypeDescriptorLogic tdl(rewriter, tch, loc);
+            auto boxCopy = clh.conditionalExpressionLowering(
+                loc, i8PtrTy, isSet(in),
+                [&](OpBuilder &, Location) -> mlir::Value {
+                    auto dataOffset = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, al.getDataPtrOfAny(rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy)));
+                    mlir::Value bytes = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{dataOffset, al.getDataSizeOfAny(in)});
+                    auto copy = ch.MemoryAlloc(bytes);
+                    ch.MemoryCopy(copy, bytes, in, bytes);
+
+                    auto tag = al.getTypeOfAny(in);
+                    auto releasePtr = rewriter.create<LLVM::GEPOp>(loc, i8PtrTy, tdl.getRecordType(), tdl.getRecordPtrFromTag(tag),
+                                                                   ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RELEASE});
+                    auto release = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, releasePtr);
+                    return clh.conditionalExpressionLowering(
+                        loc, i8PtrTy, isSet(release),
+                        [&](OpBuilder &, Location) -> mlir::Value {
+                            return clh.conditionalExpressionLowering(
+                                loc, i8PtrTy, tdl.isKind(tag, TYPE_KIND_STRING),
+                                [&](OpBuilder &, Location) -> mlir::Value {
+                                    auto dataSlot = al.getDataPtrOfAny(copy);
+                                    auto text = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, dataSlot);
+                                    rewriter.create<LLVM::StoreOp>(loc, copyOf(text, isSet(text)), dataSlot);
+                                    return copy;
+                                },
+                                [&](OpBuilder &, Location) -> mlir::Value {
+                                    // an object payload has one owner, and the box being copied is it: the
+                                    // program stops, as a failed assert does (spec 71)
+                                    AssertLogic(op, rewriter, tch, loc, tsLlvmContext->compileOptions)
+                                        .check(rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(), rewriter.getBoolAttr(false)),
+                                               "-mm=own cannot copy an 'any' that holds an object; give the object a Shared<T>");
+                                    return copy;
+                                });
+                        },
+                        [&](OpBuilder &, Location) -> mlir::Value { return copy; });
+                },
+                [&](OpBuilder &, Location) -> mlir::Value { return in; });
+            rewriter.replaceOp(op, ValueRange{boxCopy});
+            return success();
+        }
+
+        // An array whose elements own nothing: a new header over a copy of the data block. A null
+        // array reads as an empty one, and its copy is an empty array.
+        if (auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(op.getIn().getType()))
+        {
+            ArrayLayout al(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            auto length = al.length(arrayType, in);
+            auto bytes = al.bytesFor(arrayType, length);
+            auto data = ch.MemoryAlloc(bytes);
+            ch.MemoryCopy(data, bytes, al.data(arrayType, in), bytes);
+            rewriter.replaceOp(op, ValueRange{al.make(arrayType, data, length)});
+            return success();
+        }
+
         if (mlir::isa<LLVM::LLVMPointerType>(in.getType()))
         {
             rewriter.replaceOp(op, ValueRange{copyOf(in, isSet(in))});
@@ -2311,7 +2369,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             if (name == OWN_DECLARED_NO_DROPS_ATTR_NAME || name == OWN_DECLARED_KEEPS_ATTR_NAME ||
                 name == OWN_DECLARED_BORROWS_ATTR_NAME || name == OWN_DECLARED_LENDS_ATTR_NAME ||
                 name == OWN_DECLARED_RECORD_ATTR_NAME || name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME ||
-                name == OWN_DECLARED_IMMORTALIZES_ATTR_NAME) {
+                name == OWN_DECLARED_IMMORTALIZES_ATTR_NAME || name == OWN_DECLARED_COPIES_ATTR_NAME) {
                 continue;
             }
 

@@ -492,6 +492,15 @@ inline bool isLiteral(mlir::Operation *def)
         return false;
     }
 
+    // ...but a constant boxed into `any` is a new box, and a number printed into a string a new
+    // string: blocks of their own, which their releases free (`k.keep(42)` freed the box it kept)
+    auto out = castOp.getType();
+    if (mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(out) ||
+        (mlir::isa<mlir_ts::StringType>(out) && mlir_ts::castToStringAllocates(castOp.getIn().getType())))
+    {
+        return false;
+    }
+
     auto *in = castOp.getIn().getDefiningOp();
     return in && mlir::isa<mlir_ts::ConstantOp, mlir_ts::NullOp, mlir_ts::UndefOp>(in);
 }
@@ -1082,6 +1091,35 @@ inline bool isCopyableString(mlir::Type type)
     }
 
     return isText(type);
+}
+
+// A value -mm=own may copy rather than give a second owner (ts.StringCopy of it): a string as
+// above, or an `any` box, copied into a new box with a copy of a string payload in it. Neither can
+// change in place, so the copy cannot be told from the original.
+inline bool isCopyableValue(mlir::Type type)
+{
+    return isCopyableString(type) || mlir::isa<mlir_ts::AnyType>(type);
+}
+
+// An array whose elements own nothing (`number[]`): a copy is a new header over a copy of the data
+// block. It can be told from the original, so it is made only where a function says `@copies`.
+inline bool isCopyableArray(mlir::Type type)
+{
+    auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(type);
+    return arrayType && !ownsHeap(mlir::UnknownLoc::get(type.getContext()), arrayType.getElementType());
+}
+
+// What -mm=own may copy at `at`: a copyable value anywhere, and an array in a function that says
+// `@copies`.
+inline bool isCopyableValueAt(mlir::Operation *at, mlir::Type type)
+{
+    if (isCopyableValue(type))
+    {
+        return true;
+    }
+
+    auto funcOp = at ? at->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp();
+    return funcOp && funcOp->hasAttr(OWN_DECLARED_COPIES_ATTR_NAME) && isCopyableArray(type);
 }
 
 // Some view of `value` is a `ts.NewInterface`, which boxes what it shows into a block.
