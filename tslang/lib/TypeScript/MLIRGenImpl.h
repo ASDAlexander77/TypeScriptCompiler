@@ -9404,6 +9404,14 @@ class MLIRGenImpl
                 value.getDefiningOp()->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
                 value.getDefiningOp()->setAttr(OWNED_READ_ID_ATTR_NAME, builder.getI32IntegerAttr(++ownedReads));
             }
+
+            // under own the read stays a borrow, and is freed afterwards only if a getter made it (OWN_CELL_READ_ATTR_NAME)
+            if (compileOptions.memoryModel == MemoryModelOwn && !isa<mlir_ts::FunctionType>(fieldInfo->type) &&
+                mth.ownsHeapMemory(location, fieldInfo->type))
+            {
+                value.getDefiningOp()->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+                value.getDefiningOp()->setAttr(OWNED_READ_ID_ATTR_NAME, builder.getI32IntegerAttr(++ownedReads));
+            }
         }
         else
         {

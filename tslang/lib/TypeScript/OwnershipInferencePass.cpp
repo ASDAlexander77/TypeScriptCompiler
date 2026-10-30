@@ -2,6 +2,7 @@
 // its retains decided and erased, string copies made.
 
 #include "OwnershipInferencePass.h"
+#include "TypeScript/TypeScriptPassContext.h"
 
 #define DEBUG_TYPE "own"
 
@@ -48,7 +49,130 @@ namespace own_inference
         }
 
         llvm::SetVector<mlir::Operation *> toErase;
-        analyze(toErase);
+        if (analyze(toErase))
+        {
+            releaseCellReads();
+        }
+    }
+
+    // Does nothing `value` gives - its own value, a field read out of it, a call's result that may be it - leave
+    // `block`? Then the last of them that uses it is collected into `last`. A scalar is not followed: it is a copy.
+    static bool staysInBlock(mlir::Value value, mlir::Block *block, mlir::Operation *&last, int depth = 0)
+    {
+        auto isScalar = [](mlir::Type type) {
+            return mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir::IntegerType, mlir::IndexType,
+                             mlir::FloatType>(type);
+        };
+
+        auto follow = [&](mlir::Value result) {
+            return isScalar(result.getType()) || staysInBlock(result, block, last, depth + 1);
+        };
+
+        if (depth > 8)
+        {
+            return false;
+        }
+
+        for (auto *user : value.getUsers())
+        {
+            if (user->getBlock() != block)
+            {
+                return false;
+            }
+
+            if (!last || last->isBeforeInBlock(user))
+            {
+                last = user;
+            }
+
+            if (mlir::isa<mlir_ts::LengthOfOp, mlir_ts::PrintOp>(user))
+            {
+                continue;
+            }
+
+            // a field of it: what is read from the field is borrowed from it too
+            if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::InterfaceSymbolRefOp>(user))
+            {
+                for (auto *refUser : user->getResult(0).getUsers())
+                {
+                    if (refUser->getBlock() != block)
+                    {
+                        return false;
+                    }
+
+                    if (last->isBeforeInBlock(refUser))
+                    {
+                        last = refUser;
+                    }
+
+                    auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(refUser);
+                    if (!loadOp || !follow(loadOp.getResult()))
+                    {
+                        return false;
+                    }
+                }
+
+                continue;
+            }
+
+            // an argument: the result may be it, or borrowed from it
+            auto callIndirectOp = mlir::dyn_cast<mlir_ts::CallIndirectOp>(user);
+            if ((mlir::isa<mlir_ts::SymbolCallInternalOp>(user) || callIndirectOp) &&
+                (!callIndirectOp || callIndirectOp.getCallee() != value))
+            {
+                for (auto result : user->getResults())
+                {
+                    if (!follow(result))
+                    {
+                        return false;
+                    }
+                }
+
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::LogicalBinaryOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::CastOp>(user) &&
+                user->getNumResults() == 1 && follow(user->getResult(0)))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    void OwnershipInferencePass::releaseCellReads()
+    {
+        llvm::SmallVector<mlir_ts::LoadOp> reads;
+        getFunction()->walk([&](mlir_ts::LoadOp loadOp) {
+            if (loadOp->hasAttr(OWN_CELL_READ_ATTR_NAME) && isInterfaceAccessorCellRef(loadOp.getReference()))
+            {
+                reads.push_back(loadOp);
+            }
+        });
+
+        for (auto loadOp : reads)
+        {
+            if (loadOp->use_empty())
+            {
+                loadOp->erase();
+                continue;
+            }
+
+            mlir::Operation *last = nullptr;
+            if (!staysInBlock(loadOp.getResult(), loadOp->getBlock(), last) || !last ||
+                last->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                continue;
+            }
+
+            mlir::OpBuilder builder(last->getContext());
+            builder.setInsertionPointAfter(last);
+            auto releaseOp = builder.create<mlir_ts::ReleaseOp>(loadOp.getLoc(), loadOp.getResult());
+            releaseOp->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+        }
     }
 
     bool OwnershipInferencePass::analyze(llvm::SetVector<mlir::Operation *> &toErase)

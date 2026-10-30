@@ -4071,7 +4071,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
                  own_immortal_global own_immortal_global_region own_global_loop_store
                  own_literal_moves own_record_literal_given
-                 own_field_chain_let own_read_after_move own_conditional_move
+                 own_field_chain_let own_interface_getter_read own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
@@ -4188,6 +4188,15 @@ add_test(NAME test-own-caught-value-call
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_call.ts")
 set_tests_properties(test-own-caught-value-call PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
                                                            FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# A read through an interface field a getter may fill is freed after its last use under own, on the
+# getter's path only (own_interface_getter_read.ts): the release is placed by inference.
+add_test(NAME test-own-interface-getter-read-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_getter_read.ts")
+set_tests_properties(test-own-interface-getter-read-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] {__own_cell_read}"
+                                FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
 # A field read through an interface is a place read under own (spec 28); the same program under
 # every other model.

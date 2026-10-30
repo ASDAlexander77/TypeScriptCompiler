@@ -520,34 +520,6 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
     }
 };
 
-class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
-{
-  public:
-    using TsLlvmPattern<mlir_ts::ReleaseOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
-                                  ConversionPatternRewriter &rewriter) const final
-    {
-        if (tsLlvmContext->compileOptions.tracksOwnership())
-        {
-            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            // an array that only borrowed its elements (-mm=own's classifyArgumentArrays)
-            auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getReference().getType());
-            if (arrayType && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
-            {
-                orl.emitReleaseArrayShallow(arrayType, transformed.getReference());
-            }
-            else
-            {
-                orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
-            }
-        }
-
-        rewriter.eraseOp(op);
-        return mlir::success();
-    }
-};
-
 // A promoted object's fields given back without freeing the object, and with `reset` the object
 // zeroed - a fresh one where its allocation was.
 class ReleaseContentsOpLowering : public TsLlvmPattern<mlir_ts::ReleaseContentsOp>
@@ -679,6 +651,53 @@ struct InterfaceAccessorCell
         return rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), accessorPtr);
     }
 };
+
+class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.tracksOwnership())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            // an array that only borrowed its elements (-mm=own's classifyArgumentArrays)
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getReference().getType());
+            if (arrayType && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
+            {
+                orl.emitReleaseArrayShallow(arrayType, transformed.getReference());
+            }
+            else if (op->hasAttr(OWN_CELL_READ_ATTR_NAME))
+            {
+                // -mm=own: a read through an interface's field is freed only when a getter made it
+                auto loadOp = op.getReference().getDefiningOp<mlir_ts::LoadOp>();
+                if (auto accessorCell = loadOp ? InterfaceAccessorCell::of(loadOp.getReference(), rewriter,
+                                                                           tsLlvmContext->compileOptions)
+                                               : std::nullopt)
+                {
+                    CodeLogicHelper clh(op, rewriter);
+                    clh.conditionalBlocksLowering(
+                        accessorCell->isCell,
+                        [&](OpBuilder &, Location) -> ValueRange {
+                            orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+                            return ValueRange{};
+                        },
+                        [&](OpBuilder &, Location) -> ValueRange { return ValueRange{}; });
+                }
+            }
+            else
+            {
+                orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+            }
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 
 // The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
 // access with it - there is no load to leave behind in a collected build.

@@ -74,6 +74,13 @@
 // reference taken, two given back. The number makes no two of them alike.
 #define OWNED_READ_ID_ATTR_NAME "__owned_read"
 
+// -mm=own. On a read through an interface's field that may be filled by a getter (MLIRGenImpl::InterfaceFieldAccess),
+// and on the `ts.Release` OwnershipInferencePass gives it when nothing it read escapes its block
+// (releaseCellReads). Through a plain slot the read is a borrow, as any field read is (spec 28); through a cell of
+// accessors it is the getter's result, a value of its own that nothing else holds. The release frees it on that
+// path only (ReleaseOpLowering). A read that escapes is not given one, and leaks on the getter's path.
+#define OWN_CELL_READ_ATTR_NAME "__own_cell_read"
+
 // Marks a release MLIRGen put at the end of a hand-written `finally` for the exceptional leg only:
 // what the scopes around the `try` owe once the exception carries on past it. The finally region
 // is one region in MLIRGen but several copies after TryOpLowering - the copy the landing pad runs
