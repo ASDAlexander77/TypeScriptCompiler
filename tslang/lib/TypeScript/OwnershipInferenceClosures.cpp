@@ -582,6 +582,60 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::checkRestTakes()
+    {
+        getFunction().walk([&](mlir::Operation *op) {
+            if (!takenOutOfBorrowedRest(op) || !reporting())
+            {
+                return;
+            }
+
+            op->emitError("an element taken out of a rest parameter is the caller's: -mm=own lets a function take one "
+                          "only when it keeps what it takes; read it by its index instead");
+            signalPassFailure();
+        });
+    }
+
+    void OwnershipInferencePass::checkCannotShare()
+    {
+        if (getFunction()->hasAttr(OWN_CANNOT_SHARE_ATTR_NAME))
+        {
+            return;
+        }
+
+        getFunction().walk([&](mlir::Operation *op) {
+            auto symbol = op->getAttrOfType<mlir::FlatSymbolRefAttr>("callee");
+            if (!symbol)
+            {
+                symbol = op->getAttrOfType<mlir::FlatSymbolRefAttr>("identifier");
+            }
+
+            auto callee = symbol ? mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(op, symbol) : mlir_ts::FuncOp();
+            auto elementType = callee ? callee->getAttrOfType<mlir::StringAttr>(OWN_CANNOT_SHARE_ATTR_NAME) : mlir::StringAttr();
+            if (!elementType || !reporting())
+            {
+                return;
+            }
+
+            // the method's own name: `Array<!ts.class<Item, ...>>.slice` is `slice`
+            std::string name;
+            auto depth = 0;
+            for (auto c : callee.getSymName())
+            {
+                depth += c == '<' ? 1 : c == '>' ? -1 : 0;
+                if (depth == 0 && c != '>')
+                {
+                    name = c == '.' ? std::string() : name + c;
+                }
+            }
+
+            op->emitError("'") << name << "' would give an element of type '" << elementType.getValue()
+                               << "' a second owner, which -mm=own cannot do; hold the elements as 'Shared<"
+                               << elementType.getValue() << ">'";
+            signalPassFailure();
+        });
+    }
+
     void OwnershipInferencePass::checkBoundedResults()
     {
         getFunction().walk([&](mlir::Operation *call) {
@@ -594,14 +648,43 @@ namespace own_inference
             }
 
             auto name = ownerName(call->getResult(0));
+            auto args = callArgs(call);
+
+            // Borrowing only immortal globals (spec 25: never given another value, never freed) it
+            // outlives nothing, wherever it is kept: `const it = map.values()` at the top of a script.
+            // One of them at least: a callback that holds no block says nothing of the array `.map` reads.
+            auto immortals = 0;
+            auto boundedByImmortals = llvm::all_of(bounded.asArrayRef(), [&](int32_t index) {
+                if (static_cast<size_t>(index) >= args.size())
+                {
+                    return true;
+                }
+
+                auto root = rootOf(args[index]);
+                if (auto object = boundThis(root))
+                {
+                    root = rootOf(object);
+                }
+
+                if (isImmortalGlobalRead(root))
+                {
+                    immortals++;
+                    return true;
+                }
+
+                return holdsNoBlock(args[index]);
+            });
+            if (boundedByImmortals && immortals > 0)
+            {
+                return;
+            }
+
             llvm::SmallVector<mlir::Operation *> uses;
             if (auto *kept = boundedUses(call->getResult(0), uses))
             {
                 reportPlaceBorrowEscapes(kept, name, "its generator's arguments");
                 return;
             }
-
-            auto args = callArgs(call);
             for (auto index : bounded.asArrayRef())
             {
                 if (static_cast<size_t>(index) >= args.size())

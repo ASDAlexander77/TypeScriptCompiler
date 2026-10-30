@@ -3423,6 +3423,54 @@ class MLIRGenImpl
         const GenContext &genContext)
     {
         auto result = mlir::success();
+
+        // a marker names parameters by string, `@keeps("p")`: iterateDecorators drops an argument it
+        // cannot read as a literal, so `@keeps(p)` would name nothing
+        for (auto modifier : functionLikeDeclarationBaseAST->modifiers)
+        {
+            if (modifier != SyntaxKind::Decorator)
+            {
+                continue;
+            }
+
+            auto expr = modifier.as<Decorator>()->expression;
+            if (expr != SyntaxKind::CallExpression)
+            {
+                continue;
+            }
+
+            auto callExpression = expr.as<CallExpression>();
+            if (callExpression->expression != SyntaxKind::Identifier)
+            {
+                continue;
+            }
+
+            auto name = MLIRHelper::getName(callExpression->expression.as<Node>(), stringAllocator);
+            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR &&
+                name != IMMORTALIZES_DECORATOR)
+            {
+                continue;
+            }
+
+            for (auto argExpr : callExpression->arguments)
+            {
+                if (argExpr != SyntaxKind::StringLiteral)
+                {
+                    emitError(loc(argExpr)) << "'@" << name << "' takes the names of parameters as strings: '@" << name << "(\""
+                                            << (argExpr == SyntaxKind::Identifier
+                                                    ? MLIRHelper::getName(argExpr.as<Node>(), stringAllocator)
+                                                    : argExpr == SyntaxKind::ThisKeyword ? StringRef("this") : StringRef("p"))
+                                            << "\")'";
+                    result = mlir::failure();
+                }
+            }
+        }
+
+        if (mlir::failed(result))
+        {
+            return result;
+        }
+
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             // `@record` names nothing: it says what `@lends` lends into (OWN_DECLARED_RECORD_ATTR_NAME)
             if (name == RECORD_DECORATOR)
@@ -3443,6 +3491,47 @@ class MLIRGenImpl
                 }
 
                 attrs.push_back({builder.getStringAttr(OWN_DECLARED_RECORD_ATTR_NAME), builder.getUnitAttr()});
+                return;
+            }
+
+            // `@sharesElements` names nothing: made for an element type that owns a block of its own,
+            // the function is marked with it (spec 73)
+            if (name == SHARES_ELEMENTS_DECORATOR)
+            {
+                MLIRTypeHelper mth(builder.getContext(), compileOptions);
+                for (auto &entry : genContext.typeParamsWithArgs)
+                {
+                    auto type = mth.stripLiteralType(std::get<1>(entry.getValue()));
+                    if (!type || mlir::isa<mlir_ts::NamedGenericType, mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::UnknownType>(type) ||
+                        MLIRTypeHelper::isSharedHandleType(type) || !mth.ownsHeapMemory(location, type))
+                    {
+                        continue;
+                    }
+
+                    if (llvm::none_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_CANNOT_SHARE_ATTR_NAME; }))
+                    {
+                        attrs.push_back({builder.getStringAttr(OWN_CANNOT_SHARE_ATTR_NAME), builder.getStringAttr(to_print(type))});
+                    }
+                }
+
+                return;
+            }
+
+            // `@copies` names nothing either: it lets -mm=own copy an array in the body (spec 71)
+            if (name == COPIES_DECORATOR)
+            {
+                if (!args.empty())
+                {
+                    emitError(location) << "'@" COPIES_DECORATOR "' names no parameter";
+                    result = mlir::failure();
+                    return;
+                }
+
+                if (llvm::none_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_DECLARED_COPIES_ATTR_NAME; }))
+                {
+                    attrs.push_back({builder.getStringAttr(OWN_DECLARED_COPIES_ATTR_NAME), builder.getUnitAttr()});
+                }
+
                 return;
             }
 
@@ -15349,8 +15438,9 @@ class MLIRGenImpl
                         continue;
                     }
 
+                    // an identifier that names nothing in scope, `@keeps(p)`, evaluates to no type
                     auto resultType = evaluate(argExpr, genContext);
-                    if (auto litType = dyn_cast<mlir_ts::LiteralType>(resultType))
+                    if (auto litType = dyn_cast_if_present<mlir_ts::LiteralType>(resultType))
                     {
                         mlir::Attribute value = litType.getValue();
                         if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 

@@ -1341,24 +1341,19 @@ namespace mlirgen
                 continue;
             }
 
+            // an `any` (or `unknown`, the same box) is copied as a string is, payload and all
             auto type = mth.stripLiteralType(std::get<1>(found->getValue()));
             if (!type || mlir::isa<mlir_ts::NamedGenericType>(type) || mlir::isa<mlir_ts::StringType>(type) ||
-                MLIRTypeHelper::isSharedHandleType(type) || !mth.ownsHeapMemory(location, type))
+                mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) || MLIRTypeHelper::isSharedHandleType(type) ||
+                !mth.ownsHeapMemory(location, type))
             {
                 continue;
             }
 
-            auto diag = emitError(location) << "-mm=own: '" << genericClassInfo->name << "' cannot hold '" << to_print(type)
-                                            << "' (its '" << typeParam->getName()
-                                            << "'): an element has to be a value, a string or a Shared<T> handle; ";
-            if (mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
-            {
-                diag << "give it one of those types";
-            }
-            else
-            {
-                diag << "use 'Shared<" << to_print(type) << ">'";
-            }
+            emitError(location) << "-mm=own: '" << genericClassInfo->name << "' cannot hold '" << to_print(type)
+                                << "' (its '" << typeParam->getName()
+                                << "'): an element has to be a value, a string, an any or a Shared<T> handle; use 'Shared<"
+                                << to_print(type) << ">'";
 
             result = mlir::failure();
         }

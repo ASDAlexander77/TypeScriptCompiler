@@ -368,6 +368,19 @@
 // that returns such a record has to say it. A unit attribute on the FuncOp.
 #define RECORD_DECORATOR "record"
 #define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
+// `@copies`: inside this function -mm=own may copy an array whose elements own nothing where it cannot
+// prove one owner (own spec 71), as it copies a string anywhere. A copy of an array can be told from
+// the array - a change to one is not a change to the other - so only a function that says so makes
+// one: reduce's accumulator, which starts as an element. The other models ignore it. A unit attribute.
+#define COPIES_DECORATOR "copies"
+#define OWN_DECLARED_COPIES_ATTR_NAME "ts.own_declared_copies"
+// `@sharesElements`, on a generic method or function that gives an element a second place (`slice`,
+// `concat`, `fill`): made for a type argument that owns a block of its own and is not a string, an
+// `any` or a Shared<T> (an object, an array), it is marked with that type (OWN_CANNOT_SHARE_ATTR_NAME,
+// a string attribute). -mm=own cannot give such an element a second owner (own spec 73): the body
+// stops the program if it is ever reached, and a call to it is an error. The other models ignore it.
+#define SHARES_ELEMENTS_DECORATOR "sharesElements"
+#define OWN_CANNOT_SHARE_ATTR_NAME "ts.own_cannot_share"
 // `@immortalizes` names the parameters the function keeps for good, in an append-only global (a
 // keeper, docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): its callers make each
 // argument immortal. Checked against a body; trusted on a declaration, a C function that keeps a

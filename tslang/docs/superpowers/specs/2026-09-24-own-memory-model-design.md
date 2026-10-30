@@ -5522,3 +5522,92 @@ objects with an arrow field each run in a flat 49 MB under own.
 Not here: an arrow field reading a getter (`fn = () => this.prop` with `get prop()`) fails in every model,
 because its arrow is kept as returning void (PR #744). A call through a field returning a string, under
 `--no-default-lib`, is `borrows a field but is used here after ...` whatever the field holds, as before.
+
+## 71. Copies of `any`, of arrays in `@copies`, and generators over immortal globals, 2026-10-30
+
+The default library's untyped Map (`new Map()` is `Map<any, any>`) and `reduceRight` over arrays of
+arrays were `not own` by design (§49, the containers ruling of 2026-10-26). USER decisions, 2026-10-30:
+an `any` is copied as a string is (not counted: a counted box would put counting in every own program
+that catches, since a caught value is an `any`); an `any` that holds an object stops the program where
+it would be copied; an array is copied only in a function that says so.
+
+- **An `any` is a copyable value** (`isCopyableValue`): §22's dry run, then copies for the retains it
+  could not erase, now takes an `any` beside a string. `ts.StringCopy` of an `any` lowers to a new box
+  of the same bytes (`{size, tag, data}`). A payload whose descriptor has no release routine owns
+  nothing and is copied with them; a string payload is copied in turn. Any other payload (a class or
+  object literal, an interface, a closure, an array or tuple holding blocks) has one owner, the box: the
+  copy stops the program, as a failed assert does, with "-mm=own cannot copy an 'any' that holds an
+  object; give the object a Shared<T>" (`own_any_object_copy_stops`). Nothing counts.
+- **`@sharedElements` takes `any`** (and `unknown`, the same box): its elements are copied as strings
+  are. An object still goes in as Shared<T>, and the message names `any` among what may.
+- **The nearest use** (`copyForRetain`): a retain whose value has several consuming uses (`f(s); f(s)`
+  boxing `s` twice, `push(s, s)`) copies for the first use after it in its block, as rc retained each
+  beside its use. `own_err_string_pushed_twice` pinned the old rule and asked to become a positive when
+  it widened: it is `own_string_pushed_twice`.
+- **A constant boxed or printed is a block** (`isLiteral`): `<any>42` and a number cast to a string were
+  taken for literals that hold no block, so their release stayed after a move and `k.keep(42)` freed the
+  box twice. On main too.
+- **`@copies`** (`OWN_DECLARED_COPIES_ATTR_NAME`, no arguments): in a function that says it, an array
+  whose elements own nothing (`number[]`, `isCopyableArray`) is copied as well: a new header over a copy
+  of the data block. A copy of an array can be told from it (a push to one is not a push to the other),
+  so it is not made anywhere else: `own_err_field_alias` and `own_err_two_owners` stay errors. The
+  default library's `reduce` and `reduceRight` say it: with no initial value their accumulator starts as
+  a copy of an element (`own_array_copies`).
+- **A generator over immortal globals** (§25) may be kept anywhere (`checkBoundedResults`): `const it =
+  map.values()` at the top of a script. At least one bounded argument has to be one; a callback that
+  holds no block says nothing of the array `.map` reads (`own_err_generator_map_outlives`).
+
+`own_any_copies` boxes one string into two keeping calls, fresh boxes into two, and strings and numbers
+into a @sharedElements container, under own, rc, gc and none; own emits no counting. Not here: a
+`const` string boxed once into a call that keeps it (`const s = "a" + "b"; c.has(s)`) is still `takes a
+second reference`, on main too.
+
+## 72. Elements taken out of a rest parameter, 2026-10-30
+
+The array a caller gives a rest parameter borrows its elements when they are the caller's (§49). A
+`pop` or `shift` of it was nevertheless a value of the function's own (`isFresh`): `this.data.push(
+args.shift())` compiled, and `list.push(item)` freed `item` twice, as did `const first =
+items.shift()` dropped. On main.
+
+- **Taking and keeping keeps the parameter** (the signature pass's `localOwnedParams`): a `pop` or
+  `shift` of a rest parameter (`restParameterOf`: the last argument of a function whose type takes a
+  rest) whose result is kept makes the function keep the parameter. Its callers then move what they
+  give into the array, as for any kept parameter (`classifyArgumentArrays` leaves an array given to a
+  keeping call alone), so a local given is moved (`own_err_rest_take_used_after`).
+- **The emptied array is released** (`takenOnEveryPath`): nothing takes the array itself, so the
+  function releases it at its exits, as it releases a parameter kept on some paths only.
+- **Taking without keeping is an error** (`checkRestTakes`, `takenOutOfBorrowedRest`): what comes out of
+  a rest parameter the function does not keep is the caller's. "an element taken out of a rest parameter
+  is the caller's: -mm=own lets a function take one only when it keeps what it takes; read it by its
+  index instead" (`own_err_rest_take_dropped`).
+
+`own_rest_takes` pushes, unshifts and splices objects into an Array<T>-like class (fresh ones and a
+local), under own, rc, gc and none; own emits no counting. The default library's Array<T> does the
+same. Not here: a function that *declares* `@keeps` on such a parameter skips the release
+(`declaresCallerFacts`), so the library relies on inference, not the decorator.
+
+## 73. Methods that share elements: `@sharesElements`, 2026-10-30
+
+USER decision, 2026-10-30: the default library's Array<T> owns its objects (no `@sharedElements` on
+Array; Map and Set keep it), and a method that gives an element a second place is an error where it is
+called. All methods of a generic class are made with it, so `copyWithin`, `slice`, `concat`, `fill`,
+`filter`, `filter2`, `toSorted`, `toReversed`, `with`, `entries`, `values` and the iterator failed for
+Array<Item> whether called or not.
+
+- **`@sharesElements`** (no arguments) on such a method or function: MLIRGen marks what it makes
+  (`OWN_CANNOT_SHARE_ATTR_NAME`, the type printed) when a type argument owns a block of its own and is
+  not a string, an `any` or a handle. That is a fact of the types, the same in every model (§4.3), and
+  only own reads it.
+- **The body becomes a stop** (the signature pass, first, `stubCannotShare`): `assert(false, ...)` and
+  a default return, so nothing analyses it, and it keeps its place in the vtable. The functions the
+  removed body made for itself (a generator's `next`, named in its constant state record) go with it
+  once nothing else refers to them. What the declaration said of its parameters (`@borrows`) goes too.
+- **A call is the error** (`checkCannotShare`): a call or reference to a marked function, by `callee`
+  or `identifier`: "'slice' would give an element of type 'Item' a second owner, which -mm=own cannot
+  do; hold the elements as 'Shared<Item>'".
+
+`own_shares_elements` makes a class with a marked method for objects (the rest works) and for numbers
+(the method works), under own, rc, gc and none; `own_err_shares_elements_called` calls it for objects.
+The default library marks the functions above in `__Array` and in Array<T>; Array<T>'s push, unshift
+and splice move elements as §72 says, and splice removes by swapping each to the end and popping it.
+

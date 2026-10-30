@@ -8,9 +8,99 @@
 namespace own_signature
 {
 
+    // A function made for an element type -mm=own cannot give a second owner (`@sharesElements`, spec
+    // 73): its body becomes a stop, so nothing analyses what it would do. It keeps its place in a
+    // vtable; a call to it is inference's error.
+    static void stubCannotShare(mlir::ModuleOp module)
+    {
+        llvm::SmallVector<mlir_ts::FuncOp> work;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp->hasAttr(OWN_CANNOT_SHARE_ATTR_NAME) && !funcOp.getBody().empty())
+            {
+                work.push_back(funcOp);
+            }
+        });
+
+        llvm::SmallPtrSet<mlir::Operation *, 8> stubbed;
+        while (!work.empty())
+        {
+            auto funcOp = work.pop_back_val();
+            if (!stubbed.insert(funcOp).second)
+            {
+                continue;
+            }
+
+            auto elementType = funcOp->getAttrOfType<mlir::StringAttr>(OWN_CANNOT_SHARE_ATTR_NAME);
+            auto &body = funcOp.getBody();
+
+            // what the body made for itself - a generator's `next`, a closure - goes with it once
+            // nothing else refers to it
+            llvm::SetVector<mlir_ts::FuncOp> made;
+            // (a generator's state is a constant record that names its `next`)
+            funcOp.walk([&](mlir::Operation *op) {
+                op->getAttrDictionary().walk([&](mlir::FlatSymbolRefAttr symbol) {
+                    if (auto callee = module.lookupSymbol<mlir_ts::FuncOp>(symbol); callee && callee != funcOp)
+                    {
+                        made.insert(callee);
+                    }
+                });
+            });
+
+            // where the body began: a debug location of this function's own scope (the function's location
+            // may be the instantiation's, another subprogram's)
+            auto location = body.front().empty() ? funcOp.getLoc() : body.front().front().getLoc();
+
+            auto *stub = new mlir::Block();
+            for (auto argument : body.front().getArguments())
+            {
+                stub->addArgument(argument.getType(), argument.getLoc());
+            }
+
+            body.dropAllReferences();
+            while (!body.empty())
+            {
+                body.front().erase();
+            }
+
+            body.push_back(stub);
+
+            // what the declaration says of its parameters described the body that is gone: nothing
+            // calls the stub, so nothing needs it
+            for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
+                               OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_IMMORTALIZES_ATTR_NAME})
+            {
+                funcOp->removeAttr(name);
+            }
+
+            mlir::OpBuilder builder(stub, stub->begin());
+            auto never = builder.create<mlir_ts::ConstantOp>(location, mlir_ts::BooleanType::get(builder.getContext()),
+                                                             builder.getBoolAttr(false));
+            std::string message = "-mm=own cannot give an element of type '" + elementType.getValue().str() +
+                                  "' a second owner: '" + funcOp.getSymName().str() + "'";
+            builder.create<mlir_ts::AssertOp>(location, never, mlir::Value(), builder.getStringAttr(message));
+            llvm::SmallVector<mlir::Value> results;
+            for (auto type : funcOp.getFunctionType().getResults())
+            {
+                results.push_back(builder.create<mlir_ts::DefaultOp>(location, type));
+            }
+
+            builder.create<mlir_ts::ReturnInternalOp>(location, results);
+
+            for (auto made : made)
+            {
+                if (!made.getBody().empty() && mlir::SymbolTable::symbolKnownUseEmpty(made, module))
+                {
+                    made->setAttr(OWN_CANNOT_SHARE_ATTR_NAME, elementType);
+                    work.push_back(made);
+                }
+            }
+        }
+    }
+
     void OwnershipSignaturePass::runOnOperation()
     {
         auto module = getOperation();
+        stubCannotShare(module);
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
         module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });
         module.walk([&](mlir_ts::AddressOfOp addressOfOp) {
@@ -882,6 +972,16 @@ namespace own_signature
                             kept = kept || keeps(use, used);
                         });
                     }
+
+                    // an element taken out of a rest parameter and kept (`this.data.push(args.shift())`):
+                    // the function takes what its callers move into the array, so it keeps the array and
+                    // they give their elements up (spec 72)
+                    if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(slotUser) && restParameterOf(varOp.getResult()))
+                    {
+                        forEachUse(slotUser->getResult(0), [&](mlir::Operation *use, mlir::Value used) {
+                            kept = kept || keeps(use, used);
+                        });
+                    }
                 }
             }
 
@@ -929,8 +1029,10 @@ namespace own_signature
         {
             // the statements that keep the parameter, as decideParam sees a move
             llvm::SmallVector<mlir::Operation *> takers;
+            auto rest = false;
             for (auto varOp : parameterSlotsOf(body.front().getArgument(index)))
             {
+                rest = rest || restParameterOf(varOp.getResult());
                 for (auto *slotUser : varOp.getResult().getUsers())
                 {
                     if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
@@ -943,6 +1045,13 @@ namespace own_signature
                         });
                     }
                 }
+            }
+
+            // a rest parameter kept only for the elements taken out of it (spec 72): the array itself is
+            // never taken, so the function releases it
+            if (takers.empty() && rest)
+            {
+                continue;
             }
 
             // a parameter kept only through what this pass cannot see (a mixed return): as before
@@ -1200,11 +1309,16 @@ namespace own_signature
             setFacts(funcOp, effective);
             funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
             funcOp->removeAttr(OWN_PARAMS_RELEASED_ATTR_NAME);
-            // a signature's `@keeps` is checked against the body as it is (checkDeclared)
+            // a signature's `@keeps` is checked against the body as it is (checkDeclared). But a rest
+            // parameter it names is the array the callers move their elements into (spec 72): the body
+            // takes the elements out, and the emptied array is released as an inferred keep's is
+            auto ownFunc = mlir::dyn_cast<mlir_ts::FuncOp>(funcOp);
+            auto funcType = ownFunc ? mlir::dyn_cast<mlir_ts::FunctionType>(ownFunc.getFunctionType()) : mlir_ts::FunctionType();
+            auto restIndex = funcType && funcType.isVarArg() ? static_cast<int32_t>(funcType.getNumInputs()) - 1 : -1;
             llvm::SmallVector<int32_t> released;
             for (auto index : effective.owned)
             {
-                if (!declaresCallerFacts(funcOp) && !llvm::is_contained(takenParams.lookup(funcOp), index))
+                if ((!declaresCallerFacts(funcOp) || index == restIndex) && !llvm::is_contained(takenParams.lookup(funcOp), index))
                 {
                     released.push_back(index);
                 }
