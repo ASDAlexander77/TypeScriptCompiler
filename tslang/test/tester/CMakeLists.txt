@@ -4088,7 +4088,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_take own_rest_array_borrows own_string_copies
                  own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                  own_callback_shapes own_callback_extended own_callback_interface
-                 own_generic_specializations own_callback_cast own_callback_interface_slot)
+                 own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4117,8 +4117,8 @@ endforeach()
 
 # A generator whose `@keeps` makes its state own its arguments (spec 38), and one given a generator
 # that borrows, and one over its `this` parameter; strings copied within a parameter the result borrows;
-# elements and fields swapped; a callback given on through a parameter; the same programs under every
-# other model.
+# elements and fields swapped; a callback given on through a parameter; two equal concatenations
+# each boxed into an `any` once; the same programs under every other model.
 foreach(keeps_mm rc gc none)
     foreach(keeps_test own_generator_keeps own_generator_keeps_bounded own_generator_this_param
                        own_copy_within_returned_param own_swap_elements own_callback_forwarded
@@ -4126,7 +4126,7 @@ foreach(keeps_mm rc gc none)
                        own_generator_take own_rest_array_borrows own_string_copies
                        own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                        own_callback_shapes own_callback_extended own_callback_interface
-                       own_generic_specializations own_callback_cast own_callback_interface_slot)
+                       own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
