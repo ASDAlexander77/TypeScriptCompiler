@@ -4751,6 +4751,7 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_marker_identifier_arg|:8:8: error: '@keeps' takes the names of parameters as strings: '@keeps[(]\"it\"[)]'"
     "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps', '@borrows', '@lends' and '@record'"
     "own_err_lends_missing|'firstOf' could return a borrow or keep a parameter, but it can be called from another module. '@lends' or '@keeps' would say it in its signature"
     "own_err_lends_mismatch|'@lends' of 'pick' names 'a', but its body returns a borrow of 'b'"

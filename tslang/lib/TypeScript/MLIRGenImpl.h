@@ -3423,6 +3423,54 @@ class MLIRGenImpl
         const GenContext &genContext)
     {
         auto result = mlir::success();
+
+        // a marker names parameters by string, `@keeps("p")`: iterateDecorators drops an argument it
+        // cannot read as a literal, so `@keeps(p)` would name nothing
+        for (auto modifier : functionLikeDeclarationBaseAST->modifiers)
+        {
+            if (modifier != SyntaxKind::Decorator)
+            {
+                continue;
+            }
+
+            auto expr = modifier.as<Decorator>()->expression;
+            if (expr != SyntaxKind::CallExpression)
+            {
+                continue;
+            }
+
+            auto callExpression = expr.as<CallExpression>();
+            if (callExpression->expression != SyntaxKind::Identifier)
+            {
+                continue;
+            }
+
+            auto name = MLIRHelper::getName(callExpression->expression.as<Node>(), stringAllocator);
+            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR &&
+                name != IMMORTALIZES_DECORATOR)
+            {
+                continue;
+            }
+
+            for (auto argExpr : callExpression->arguments)
+            {
+                if (argExpr != SyntaxKind::StringLiteral)
+                {
+                    emitError(loc(argExpr)) << "'@" << name << "' takes the names of parameters as strings: '@" << name << "(\""
+                                            << (argExpr == SyntaxKind::Identifier
+                                                    ? MLIRHelper::getName(argExpr.as<Node>(), stringAllocator)
+                                                    : argExpr == SyntaxKind::ThisKeyword ? StringRef("this") : StringRef("p"))
+                                            << "\")'";
+                    result = mlir::failure();
+                }
+            }
+        }
+
+        if (mlir::failed(result))
+        {
+            return result;
+        }
+
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             // `@record` names nothing: it says what `@lends` lends into (OWN_DECLARED_RECORD_ATTR_NAME)
             if (name == RECORD_DECORATOR)
@@ -15390,8 +15438,9 @@ class MLIRGenImpl
                         continue;
                     }
 
+                    // an identifier that names nothing in scope, `@keeps(p)`, evaluates to no type
                     auto resultType = evaluate(argExpr, genContext);
-                    if (auto litType = dyn_cast<mlir_ts::LiteralType>(resultType))
+                    if (auto litType = dyn_cast_if_present<mlir_ts::LiteralType>(resultType))
                     {
                         mlir::Attribute value = litType.getValue();
                         if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 
