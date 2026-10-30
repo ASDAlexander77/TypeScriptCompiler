@@ -39,6 +39,24 @@ namespace mlirgen
             auto result = mlirGen(body.as<Expression>(), genContext);
             EXIT_IF_FAILED(result)
             auto resultValue = V(result);
+            // a read with no value in a discovery pass is one not resolved yet (`() => this.prop`, a get
+            // accessor declared later): asked again, as the return statement's is, not taken as a body
+            // returning nothing. A call can return nothing.
+            if (!resultValue && genContext.allowPartialResolve && !genContext.discardReturnValue)
+            {
+                auto expression = body.as<Expression>();
+                while (expression == SyntaxKind::ParenthesizedExpression)
+                {
+                    expression = expression.as<ParenthesizedExpression>()->expression;
+                }
+
+                if (expression == SyntaxKind::PropertyAccessExpression || expression == SyntaxKind::ElementAccessExpression ||
+                    expression == SyntaxKind::Identifier)
+                {
+                    return mlir::failure();
+                }
+            }
+
             if (resultValue && !genContext.discardReturnValue)
             {
                 // A concise arrow body (`() => expr`) returns without going through the return
