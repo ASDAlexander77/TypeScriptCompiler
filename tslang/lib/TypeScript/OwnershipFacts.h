@@ -531,9 +531,12 @@ inline mlir::BlockArgument restParameterOf(mlir::Value slot)
 // An element taken out (`pop`, `shift`) of a rest parameter its function does not keep (spec 72): the
 // array a caller gives a rest parameter only borrows its elements when they are the caller's (spec 49),
 // so what comes out of it is a borrow too, not a value of the function's own.
+inline bool ownsHeap(mlir::Value value);
+
 inline bool takenOutOfBorrowedRest(mlir::Operation *def)
 {
-    if (!mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(def))
+    // a number taken out is a copy of it, whoever's the array is
+    if (!mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(def) || !ownsHeap(def->getResult(0)))
     {
         return false;
     }

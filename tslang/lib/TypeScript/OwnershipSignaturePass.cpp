@@ -46,6 +46,10 @@ namespace own_signature
                 });
             });
 
+            // where the body began: a debug location of this function's own scope (the function's location
+            // may be the instantiation's, another subprogram's)
+            auto location = body.front().empty() ? funcOp.getLoc() : body.front().front().getLoc();
+
             auto *stub = new mlir::Block();
             for (auto argument : body.front().getArguments())
             {
@@ -68,7 +72,6 @@ namespace own_signature
                 funcOp->removeAttr(name);
             }
 
-            auto location = funcOp.getLoc();
             mlir::OpBuilder builder(stub, stub->begin());
             auto never = builder.create<mlir_ts::ConstantOp>(location, mlir_ts::BooleanType::get(builder.getContext()),
                                                              builder.getBoolAttr(false));

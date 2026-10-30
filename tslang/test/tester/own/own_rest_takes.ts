@@ -38,6 +38,13 @@ class List<T> {
     }
 }
 
+// a number taken out of a rest parameter is a copy: the function need not keep it
+function sum(...args: number[]) {
+    let s = 0;
+    while (args.length > 0) s += args.pop();
+    return s;
+}
+
 function churn() {
     const hold: Item[] = [];
     for (let i = 0; i < 64; i++) hold.push(new Item("churn" + i));
@@ -67,6 +74,8 @@ function main() {
     churn();
     assert(removed.length == 2 && removed[0].name == "a" && removed[1].name == "b", "removed");
     assert(names(list) == "pqxcd", "spliced");
+
+    assert(sum(1, 2, 3) == 6, "sum");
 
     print("done.");
 }
