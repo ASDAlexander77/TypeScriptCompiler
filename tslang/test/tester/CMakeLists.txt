@@ -4076,7 +4076,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
                  own_tuple_record_values own_value_record own_value_loop own_value_temporaries
-                 own_call_field_drops own_immortal_keepers
+                 own_call_field_drops own_immortal_keepers own_keeper_literal_elements
                  own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
                  own_loop_read_again own_length_drops_elements own_tuple_param_kept
                  own_for_of_borrowed_iterator own_generator_keeps own_generator_keeps_bounded
@@ -4670,6 +4670,7 @@ set(own_error_cases
     "own_err_global_read_callee_assigns|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_global_read_callee_assigns_transitive|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_argument_assigned|is lent to 'g', but is given a new value before the call takes it"
+    "own_err_param_assigned_local|:15:5: error: a parameter cannot be assigned under -mm=own yet"
     "own_err_argument_assigned_conditional|is lent to 'g', but is given a new value before the call takes it"
     "own_err_argument_assigned_closure|is lent to 'g', but is given a new value before the call takes it"
     "own_err_global_method_transitive|:19:11: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
