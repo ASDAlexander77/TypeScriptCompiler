@@ -470,6 +470,48 @@ class OwnedReturnConsumptionPass
             }
         }
 
+        auto mayAssignAnyGlobal = [&](mlir::Operation *op) {
+            auto callee = calleeOf(op);
+            if (callee.empty() || assignsAny.contains(callee))
+            {
+                return true;
+            }
+
+            auto it = assigns.find(callee);
+            return it != assigns.end() && !it->getValue().empty();
+        };
+
+        // Is this a read out of a field or an element of an object a parameter names (`p.n`, `p.a[0].v`)? The
+        // parameter may be a global's object (`f(HG)`), so a call that gives a global's field a new value may
+        // free what was read.
+        auto readsParameterPlace = [](mlir::Value value) {
+            auto inPlace = false;
+            for (auto depth = 0; depth < 16 && value; depth++)
+            {
+                while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                }
+
+                auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+                auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+                if (mlir::isa_and_nonnull<mlir_ts::ParamOp>(place))
+                {
+                    return inPlace;
+                }
+
+                if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+                {
+                    return false;
+                }
+
+                inPlace = true;
+                value = place->getOperand(0);
+            }
+
+            return false;
+        };
+
         auto mayAssign = [&](mlir::Operation *op, mlir::StringRef global) {
             auto callee = calleeOf(op);
             if (callee.empty() || assignsAny.contains(callee))
@@ -641,6 +683,15 @@ class OwnedReturnConsumptionPass
                 // caller holds it, as it holds a global's (A1, R8 of the fuzzer).
                 if (compileOptions.isRefCounted() &&
                     (overwrittenBeforeCall(argument, op) || readFromOtherArgument(argument, op)))
+                {
+                    held.push_back({op, argument});
+                    continue;
+                }
+
+                // Out of a field of an object a parameter names, to a call that may give a global's field a new
+                // value: the object may be that global's (`f(HG)` then `g(p.n)`, `g` setting `HG.n`), and the
+                // store freed the block the argument read. Under rc the caller holds it (fuzz seed 71210).
+                if (compileOptions.isRefCounted() && readsParameterPlace(argument) && mayAssignAnyGlobal(op))
                 {
                     held.push_back({op, argument});
                     continue;
