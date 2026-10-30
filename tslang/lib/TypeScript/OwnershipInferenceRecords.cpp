@@ -467,7 +467,8 @@ namespace own_inference
                     continue;
                 }
 
-                if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+                // (not a call in a `try`, a `ts.Invoke`: a branch too, but its operands are the call's)
+                if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user); branchOp && !isCall(user))
                 {
                     if (auto argument = branchOp.getSuccessorBlockArgument(use.getOperandNumber()))
                     {
@@ -517,6 +518,21 @@ namespace own_inference
                     {
                         keep(user);
                         continue;
+                    }
+
+                    // a callee that may overwrite a field of what it is given (`p.v = ...`) gives back
+                    // the old value, which may be one the record borrows - as a write of the field here
+                    // would
+                    if (pending.record && !isCalleeOperand(use) && !callNoDrops(user))
+                    {
+                        auto places = callDropFields(user);
+                        if (places && llvm::any_of(*places, [](auto &place) {
+                                return place.first >= 0 || place.first == OWN_INTERFACE_FIELD_POSITION;
+                            }))
+                        {
+                            keep(user);
+                            continue;
+                        }
                     }
 
                     // a result that borrows it - a plain borrow (`id(r)`), or a borrowing record that
