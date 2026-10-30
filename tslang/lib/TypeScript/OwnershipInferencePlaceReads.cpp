@@ -758,14 +758,14 @@ namespace own_inference
     {
         // given once: a copy given twice would have two owners. Not an invoke, whose release after
         // it would go on the normal path only.
-        return (isCopyableString(value.getType()) || isHandle(value)) && !mlir::isa<mlir_ts::InvokeOp>(call) &&
+        return (isCopyableValueAt(call, value.getType()) || isHandle(value)) && !mlir::isa<mlir_ts::InvokeOp>(call) &&
                llvm::count(call->getOperands(), value) == 1;
     }
 
     bool OwnershipInferencePass::storesCopyOf(mlir::Operation *store, mlir::Value value)
     {
         auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(store);
-        if (!storeOp || storeOp.getValue() != value || !(isCopyableString(value.getType()) || isHandle(value)) ||
+        if (!storeOp || storeOp.getValue() != value || !(isCopyableValueAt(store, value.getType()) || isHandle(value)) ||
             !isPlace(storeOp.getReference()))
         {
             return false;
@@ -1024,7 +1024,7 @@ namespace own_inference
         };
 
         if (!slot || slot.getCaptured().value_or(false) || !ownsOrHoldsResults() || !slotType ||
-            !mlir::isa<mlir_ts::TupleType>(slotType.getElementType()) || isCopyableString(read->getResult(0).getType()))
+            !mlir::isa<mlir_ts::TupleType>(slotType.getElementType()) || isCopyableValueAt(read, read->getResult(0).getType()))
         {
             return false;
         }

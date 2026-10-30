@@ -492,6 +492,15 @@ inline bool isLiteral(mlir::Operation *def)
         return false;
     }
 
+    // ...but a constant boxed into `any` is a new box, and a number printed into a string a new
+    // string: blocks of their own, which their releases free (`k.keep(42)` freed the box it kept)
+    auto out = castOp.getType();
+    if (mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(out) ||
+        (mlir::isa<mlir_ts::StringType>(out) && mlir_ts::castToStringAllocates(castOp.getIn().getType())))
+    {
+        return false;
+    }
+
     auto *in = castOp.getIn().getDefiningOp();
     return in && mlir::isa<mlir_ts::ConstantOp, mlir_ts::NullOp, mlir_ts::UndefOp>(in);
 }
@@ -502,10 +511,44 @@ inline bool isLiteral(mlir::Operation *def)
 // survive the affine lowering), or another own module's `..new` (OWN_FRESH_RESULT_ATTR_NAME). A
 // declared callee, an indirect call, a parameter, a load, a value merged from branches, or a result
 // that borrows an argument is not fresh.
+// The rest parameter (`...args`) whose local `slot` is: the last argument of a function whose type
+// takes a rest. Null for any other slot.
+inline mlir::BlockArgument restParameterOf(mlir::Value slot)
+{
+    auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+    auto argument = varOp && varOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(varOp.getInitializer())
+                                                    : mlir::BlockArgument();
+    if (!argument || argument.getArgNumber() + 1 != argument.getOwner()->getNumArguments())
+    {
+        return {};
+    }
+
+    auto funcOp = mlir::dyn_cast<mlir_ts::FuncOp>(argument.getOwner()->getParentOp());
+    auto funcType = funcOp ? mlir::dyn_cast<mlir_ts::FunctionType>(funcOp.getFunctionType()) : mlir_ts::FunctionType();
+    return funcType && funcType.isVarArg() ? argument : mlir::BlockArgument();
+}
+
+// An element taken out (`pop`, `shift`) of a rest parameter its function does not keep (spec 72): the
+// array a caller gives a rest parameter only borrows its elements when they are the caller's (spec 49),
+// so what comes out of it is a borrow too, not a value of the function's own.
+inline bool ownsHeap(mlir::Value value);
+
+inline bool takenOutOfBorrowedRest(mlir::Operation *def)
+{
+    // a number taken out is a copy of it, whoever's the array is
+    if (!mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp>(def) || !ownsHeap(def->getResult(0)))
+    {
+        return false;
+    }
+
+    auto rest = restParameterOf(def->getOperand(0));
+    return rest && !llvm::is_contained(ownedParams(rest.getOwner()->getParentOp()), static_cast<int32_t>(rest.getArgNumber()));
+}
+
 inline bool isFresh(mlir::Value value)
 {
     auto *def = value.getDefiningOp();
-    if (!def || resultBorrows(def) >= 0)
+    if (!def || resultBorrows(def) >= 0 || takenOutOfBorrowedRest(def))
     {
         return false;
     }
@@ -1082,6 +1125,35 @@ inline bool isCopyableString(mlir::Type type)
     }
 
     return isText(type);
+}
+
+// A value -mm=own may copy rather than give a second owner (ts.StringCopy of it): a string as
+// above, or an `any` box, copied into a new box with a copy of a string payload in it. Neither can
+// change in place, so the copy cannot be told from the original.
+inline bool isCopyableValue(mlir::Type type)
+{
+    return isCopyableString(type) || mlir::isa<mlir_ts::AnyType>(type);
+}
+
+// An array whose elements own nothing (`number[]`): a copy is a new header over a copy of the data
+// block. It can be told from the original, so it is made only where a function says `@copies`.
+inline bool isCopyableArray(mlir::Type type)
+{
+    auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(type);
+    return arrayType && !ownsHeap(mlir::UnknownLoc::get(type.getContext()), arrayType.getElementType());
+}
+
+// What -mm=own may copy at `at`: a copyable value anywhere, and an array in a function that says
+// `@copies`.
+inline bool isCopyableValueAt(mlir::Operation *at, mlir::Type type)
+{
+    if (isCopyableValue(type))
+    {
+        return true;
+    }
+
+    auto funcOp = at ? at->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp();
+    return funcOp && funcOp->hasAttr(OWN_DECLARED_COPIES_ATTR_NAME) && isCopyableArray(type);
 }
 
 // Some view of `value` is a `ts.NewInterface`, which boxes what it shows into a block.

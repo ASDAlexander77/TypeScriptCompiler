@@ -233,6 +233,8 @@ namespace own_inference
         decideCells();
         checkBorrowedReads();
         checkBoundedResults();
+        checkRestTakes();
+        checkCannotShare();
         checkBorrowingRecords();
         checkRecordResults();
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
@@ -851,7 +853,7 @@ namespace own_inference
         {
             auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
             auto init = varOp ? varOp.getInitializer() : mlir::Value();
-            if (!init || !isCopyableString(init.getType()) || isCellVariable(varOp.getResult()))
+            if (!init || !isCopyableValueAt(varOp, init.getType()) || isCellVariable(varOp.getResult()))
             {
                 return false;
             }
@@ -879,13 +881,15 @@ namespace own_inference
             return true;
         }
 
-        if (!isCopyableString(value.getType()))
+        if (!isCopyableValueAt(retain, value.getType()))
         {
             return false;
         }
 
-        // the one use rc retained it for
+        // the one use rc retained it for. Of several (`f(s); f(s)` boxing `s` into `any` twice), the
+        // first after the retain in its block: rc retains each beside the use it takes it for.
         mlir::OpOperand *taking = nullptr;
+        mlir::OpOperand *nearest = nullptr;
         auto several = false;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user) || isBorrow(user, used))
@@ -899,11 +903,22 @@ namespace own_inference
                 {
                     several = several || taking;
                     taking = &operand;
+                    if (user->getBlock() == retain->getBlock() && retain->isBeforeInBlock(user) &&
+                        (!nearest || user->isBeforeInBlock(nearest->getOwner())))
+                    {
+                        nearest = &operand;
+                    }
                 }
             }
         });
 
-        if (!taking || several || !isCopyableString(taking->get().getType()))
+        if (several)
+        {
+            taking = nearest;
+            several = false;
+        }
+
+        if (!taking || several || !isCopyableValueAt(retain, taking->get().getType()))
         {
             return false;
         }
@@ -981,7 +996,7 @@ namespace own_inference
                 continue;
             }
 
-            if (!isCopyableString(field.getType()) || borrowsKnownParam(field))
+            if (!isCopyableValueAt(retainOp, field.getType()) || borrowsKnownParam(field))
             {
                 return false;
             }

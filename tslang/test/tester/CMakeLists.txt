@@ -4088,7 +4088,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generator_take own_rest_array_borrows own_string_copies
                  own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                  own_callback_shapes own_callback_extended own_callback_interface
-                 own_generic_specializations own_callback_cast own_callback_interface_slot)
+                 own_generic_specializations own_callback_cast own_callback_interface_slot
+                 own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4752,7 +4753,6 @@ set(own_error_cases
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_generator_method_reassigned|:17:5: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_callback_method_overridden|:12:53: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_string_pushed_twice|:9:5: error: '[^']*' is used here after its value was moved"
     "own_err_shared_borrow_write|:12:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_borrow_call|:19:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_borrow_push|:17:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
@@ -4824,9 +4824,11 @@ set(own_error_cases
     "own_err_keeper_exported|:7:5: error: 'Registry[.]register' keeps '#1' for good, but -mm=own cannot tell its callers in other modules. '@immortalizes' would say it in its signature"
     "own_err_keeper_declared|:5:1: error: '@immortalizes' of 'keep' names 'a', but its body keeps for good 'b'"
     "own_err_keeper_called_through_value|:6:1: error: 'keep' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value"
-    "own_err_shared_elements_object|:13:21: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]: an element has to be a value, a string or a Shared<T> handle. use 'Shared<Node>'"
-    "own_err_shared_elements_any|:8:21: error: -mm=own: 'Bag' cannot hold 'any' [(]its 'T'[)]: an element has to be a value, a string or a Shared<T> handle. give it one of those types"
+    "own_err_shared_elements_object|:13:21: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]: an element has to be a value, a string, an any or a Shared<T> handle. use 'Shared<Node>'"
     "own_err_shared_elements_inferred|:12:17: error: -mm=own: 'Bag' cannot hold 'Node' [(]its 'T'[)]"
+    "own_err_rest_take_dropped|:6:19: error: an element taken out of a rest parameter is the caller's"
+    "own_err_rest_take_used_after|:14:11: error: '[^']*' is used here after its value was moved"
+    "own_err_shares_elements_called|:18:11: error: 'twice' would give an element of type 'Item' a second owner"
     "own_err_keeper_popped|:14:9: error: argument '[^']*' is given to 'Registry[.]register', which keeps it, but -mm=own cannot move it here"
     "own_err_generator_keeps_missing|:9:1: error: '@keeps' of 'mapped<[^']*' names 'iter', but its body keeps 'iter', 'f'"
     "own_err_generator_keeps_used_after|:15:11: error: '[^']*' is used here after its value was moved"
@@ -5188,6 +5190,16 @@ add_test(NAME test-jit-assert-message-failing
 set_tests_properties(test-jit-assert-message-failing
                      PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
+
+# Under own, a copy of an `any` that holds an object stops the program with a message, after the
+# output printed before it (spec 71).
+add_test(NAME test-jit-own-own_any_object_copy_stops
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=own
+                 --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_any_object_copy_stops.ts")
+set_tests_properties(test-jit-own-own_any_object_copy_stops
+                     PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: -mm=own cannot copy an 'any' that holds an object"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|not reached")
 
 # An invalid array length stops the program with a message, after the output printed before it,
 # under every model (#483), when there is no default library: with one it throws a RangeError. The JIT reports it itself on every platform, as for a failing assert.
