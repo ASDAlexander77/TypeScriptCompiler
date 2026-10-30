@@ -56,7 +56,8 @@ namespace own_inference
     }
 
     // Does nothing `value` gives - its own value, a field read out of it, a call's result that may be it - leave
-    // `block`? Then the last of them that uses it is collected into `last`. A scalar is not followed: it is a copy.
+    // `block` (the function, when null)? Then the last of them that uses it is collected into `last` (in `block`
+    // only). A scalar is not followed: it is a copy.
     static bool staysInBlock(mlir::Value value, mlir::Block *block, mlir::Operation *&last, int depth = 0)
     {
         auto isScalar = [](mlir::Type type) {
@@ -75,12 +76,12 @@ namespace own_inference
 
         for (auto *user : value.getUsers())
         {
-            if (user->getBlock() != block)
+            if (block && user->getBlock() != block)
             {
                 return false;
             }
 
-            if (!last || last->isBeforeInBlock(user))
+            if (block && (!last || last->isBeforeInBlock(user)))
             {
                 last = user;
             }
@@ -95,12 +96,12 @@ namespace own_inference
             {
                 for (auto *refUser : user->getResult(0).getUsers())
                 {
-                    if (refUser->getBlock() != block)
+                    if (block && refUser->getBlock() != block)
                     {
                         return false;
                     }
 
-                    if (last->isBeforeInBlock(refUser))
+                    if (block && last->isBeforeInBlock(refUser))
                     {
                         last = refUser;
                     }
@@ -161,18 +162,75 @@ namespace own_inference
                 continue;
             }
 
+            mlir::OpBuilder builder(loadOp->getContext());
+            auto release = [&](mlir::Operation *at) {
+                auto releaseOp = builder.create<mlir_ts::ReleaseOp>(loadOp.getLoc(), loadOp.getResult());
+                releaseOp->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+            };
+
             mlir::Operation *last = nullptr;
-            if (!staysInBlock(loadOp.getResult(), loadOp->getBlock(), last) || !last ||
-                last->hasTrait<mlir::OpTrait::IsTerminator>())
+            if (staysInBlock(loadOp.getResult(), loadOp->getBlock(), last) && last &&
+                !last->hasTrait<mlir::OpTrait::IsTerminator>())
             {
+                builder.setInsertionPointAfter(last);
+                release(last);
                 continue;
             }
 
-            mlir::OpBuilder builder(last->getContext());
-            builder.setInsertionPointAfter(last);
-            auto releaseOp = builder.create<mlir_ts::ReleaseOp>(loadOp.getLoc(), loadOp.getResult());
-            releaseOp->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+            // ...or put in a `let` (`let x = i.item`) that is only read, across blocks too, and nothing read
+            // out of it leaves the function: freed at the function's returns, when the read reaches them all
+            // and the object it reads through is a parameter's, which outlives them
+            auto exits = localHeldToExits(loadOp);
+            for (auto *exit : exits)
+            {
+                builder.setInsertionPoint(exit);
+                release(exit);
+            }
         }
+    }
+
+    llvm::SmallVector<mlir::Operation *> OwnershipInferencePass::localHeldToExits(mlir_ts::LoadOp read)
+    {
+        auto result = read.getResult();
+        auto varOp = result.hasOneUse() ? mlir::dyn_cast<mlir_ts::VariableOp>(*result.getUsers().begin()) : mlir_ts::VariableOp();
+        if (!varOp || varOp.getInitializer() != result || varOp.getCaptured().value_or(false))
+        {
+            return {};
+        }
+
+        // only read, and what is read stays in the function
+        for (auto *user : varOp->getUsers())
+        {
+            mlir::Operation *ignored = nullptr;
+            auto slotRead = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!mlir::isa<mlir_ts::DebugVariableOp>(user) &&
+                (!slotRead || !staysInBlock(slotRead.getResult(), /*block=*/nullptr, ignored)))
+            {
+                return {};
+            }
+        }
+
+        // read through a parameter: `i.item` of an interface parameter `i`
+        auto refOp = read.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        auto objectRead = refOp ? refOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto objectSlot = objectRead ? objectRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto index = -1;
+        if (!objectSlot || !isParameterSlot(objectSlot, index))
+        {
+            return {};
+        }
+
+        // every return, after the read
+        auto f = getFunction();
+        mlir::DominanceInfo dominanceInfo(f);
+        llvm::SmallVector<mlir::Operation *> exits;
+        auto all = true;
+        f.walk([&](mlir_ts::ReturnInternalOp returnOp) {
+            exits.push_back(returnOp);
+            all = all && dominanceInfo.properlyDominates(read.getOperation(), returnOp.getOperation());
+        });
+
+        return all ? exits : llvm::SmallVector<mlir::Operation *>();
     }
 
     bool OwnershipInferencePass::analyze(llvm::SetVector<mlir::Operation *> &toErase)
