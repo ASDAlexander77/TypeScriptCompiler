@@ -2199,10 +2199,24 @@ namespace mlirgen
             mlir::OpBuilder::InsertionGuard guard(builder);
 
             // compiler glue with no source to step through, as INSTANCEOF_NONE_NAME's
-            auto noLocation = mlir::UnknownLoc::get(builder.getContext());
+            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
             auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
             funcOp.setPrivate();
             funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            // ...but with --di a function of its own to the debugger, as the catch copy thunk is
+            // (mlirGenCatchCopyThunk): its call into the callee needs a location, or LLVM rejects the
+            // module ("inlinable function call in a function with a DISubprogram location must have a
+            // debug location"). A subprogram for the thunk at the place that first needs it, the body
+            // scoped under it.
+            DITableScopeT debugFuncScope(debugScope);
+            if (compileOptions.generateDebugInfo)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                auto plainLocation = stripMetadata(location);
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, thunkName, thunkName, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
 
             auto &entryBlock = *funcOp.addEntryBlock();
             builder.setInsertionPointToStart(&entryBlock);

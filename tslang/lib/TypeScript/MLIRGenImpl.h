@@ -7927,6 +7927,14 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
+
+            // a copy in each module that checks, its own: the default library has one as well, and two
+            // public ones were a duplicate symbol where nothing optimized one away (a debug build's link)
+            if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+            {
+                funcOp.setPrivate();
+                funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+            }
         }
 
         auto funcResult = resolveIdentifier(location, funcName, genContext);

@@ -2913,6 +2913,14 @@ add_test(NAME test-compile-debug-info-opt
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-opt.cmake)
 
+# Debug info without optimisation, for the functions the compiler makes itself - see
+# debug-info-glue.cmake.
+add_test(NAME test-compile-debug-info-glue
+         COMMAND ${CMAKE_COMMAND}
+                 -DTSLANG=$<TARGET_FILE:tslang>
+                 -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-glue.cmake)
+
 # A throw under the JIT without TypeScriptRuntime (which test-runner always passes), under every
 # model but gc - see jit-throw-without-runtime.cmake. Windows only: the symbol is MSVC's type_info vtable.
 if (WIN32)
