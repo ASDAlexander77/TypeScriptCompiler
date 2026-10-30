@@ -22,8 +22,10 @@ namespace own_signature
         return value;
     }
 
-    // Does a global's initializer region give it a new array - `[]`, an array literal - and nothing
-    // else?
+    // Does a global's initializer region give it a new array - `[]`, an array literal of constants - and
+    // nothing else? Only what is pushed onto a keeper is made immortal (decideKeptForGood): an element its
+    // literal is made with - `[mk(5)]` - is not, so a read of it is no keeper's read, and a local given
+    // one and released frees it from the array.
     static bool regionYieldsNewArray(mlir_ts::GlobalOp globalOp)
     {
         if (!globalOp.getInitializerRegion().hasOneBlock())
@@ -38,7 +40,14 @@ namespace own_signature
         }
 
         auto *def = castRoot(resultOp->getOperand(0)).getDefiningOp();
-        return mlir::isa_and_nonnull<mlir_ts::ConstantOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp>(def);
+        if (auto createArrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(def))
+        {
+            return llvm::all_of(createArrayOp->getOperands(), [](mlir::Value element) {
+                return !!castRoot(element).getDefiningOp<mlir_ts::ConstantOp>();
+            });
+        }
+
+        return mlir::isa_and_nonnull<mlir_ts::ConstantOp, mlir_ts::NewArrayOp>(def);
     }
 
     void OwnershipSignaturePass::findKeepers(mlir::ModuleOp module)

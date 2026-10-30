@@ -284,6 +284,32 @@ namespace own_inference
         recordStoreUses.clear();
     }
 
+    // A store of a value that owns a block into a parameter's own slot: the function's argument, which no local
+    // that owns what it holds took over (MLIRGen's mlirGenFunctionOwnAssignedParams makes one only of a string or a
+    // Shared<T> parameter). Another parameter's value may go there: the caller holds both for the whole call.
+    static bool assignsParameter(mlir_ts::StoreOp storeOp)
+    {
+        auto isParameterSlot = [](mlir_ts::VariableOp slot) {
+            auto argument = slot ? mlir::dyn_cast_or_null<mlir::BlockArgument>(slot.getInitializer()) : nullptr;
+            return slot && !isOwningVariable(slot) && argument && argument.getOwner()->isEntryBlock() &&
+                   mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp());
+        };
+
+        if (!isParameterSlot(storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()) || !ownsHeap(storeOp.getValue()))
+        {
+            return false;
+        }
+
+        auto value = storeOp.getValue();
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            value = castOp.getIn();
+        }
+
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        return !loadOp || !isParameterSlot(loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>());
+    }
+
     void OwnershipInferencePass::collectOwnershipOps(FunctionOps &ops, llvm::SetVector<mlir::Operation *> &toErase)
     {
         auto f = getFunction();
@@ -328,6 +354,27 @@ namespace own_inference
                 if (!captureRetains.contains(op) && reporting())
                 {
                     op->emitError("closures that capture a variable are not supported by -mm=own here yet");
+                    signalPassFailure();
+                }
+            }
+            else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op); storeOp && assignsParameter(storeOp))
+            {
+                // A parameter's slot given another value: the slot owns nothing, so the value is neither
+                // taken from its owner nor retained, and the owner frees it - `p = n; n = mk()` left `p`
+                // reading freed memory. Reported where a retain for it would have been, but there is none.
+                if (reporting())
+                {
+                    // a parameter's name is known only from its debug location (--di)
+                    auto name = varName(storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>());
+                    if (name == "this value")
+                    {
+                        op->emitError("a parameter cannot be assigned under -mm=own yet");
+                    }
+                    else
+                    {
+                        op->emitError("'") << name << "' is a parameter and cannot be assigned under -mm=own yet";
+                    }
+
                     signalPassFailure();
                 }
             }

@@ -614,6 +614,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND tes
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-compile-00-class-implicit-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
@@ -1253,6 +1254,7 @@ tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-ru
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 tslang_add_test(NAME test-jit-00-class-implicit-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
@@ -2267,6 +2269,7 @@ set(TSLANG_CORPUS
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
+    00call_arg_param_field_global.ts
     00class_accessor_untyped_setter.ts
     00class_accessor.ts
     00class_accessor2.ts
@@ -4076,7 +4079,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
                  own_tuple_record_values own_value_record own_value_loop own_value_temporaries
-                 own_call_field_drops own_immortal_keepers
+                 own_call_field_drops own_immortal_keepers own_keeper_literal_elements
                  own_generator_method_this own_string_copy_call own_param_kept_some_paths own_method_callbacks
                  own_loop_read_again own_length_drops_elements own_tuple_param_kept
                  own_for_of_borrowed_iterator own_generator_keeps own_generator_keeps_bounded
@@ -4679,6 +4682,7 @@ set(own_error_cases
     "own_err_global_read_callee_assigns|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_global_read_callee_assigns_transitive|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_argument_assigned|is lent to 'g', but is given a new value before the call takes it"
+    "own_err_param_assigned_local|:15:5: error: a parameter cannot be assigned under -mm=own yet"
     "own_err_argument_assigned_conditional|is lent to 'g', but is given a new value before the call takes it"
     "own_err_argument_assigned_closure|is lent to 'g', but is given a new value before the call takes it"
     "own_err_global_method_transitive|:19:11: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
