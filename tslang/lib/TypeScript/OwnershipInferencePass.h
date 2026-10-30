@@ -312,6 +312,10 @@ class OwnershipInferencePass
     // function that keeps what it takes keeps the parameter, and its callers give the elements up.
     void checkRestTakes();
 
+    // A call to, or a reference to, a function made for an element type it cannot give a second owner
+    // (`@sharesElements`, OWN_CANNOT_SHARE_ATTR_NAME, spec 73): `slice` of an Array<Item>.
+    void checkCannotShare();
+
     // The ends of a capture box given to a call with a bounded result: each release of a closure on
     // it (the box goes with its last), and each end of what a field of it was filled from. Reports
     // and returns false when a use of the result comes after one.

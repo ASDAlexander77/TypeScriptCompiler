@@ -8,9 +8,96 @@
 namespace own_signature
 {
 
+    // A function made for an element type -mm=own cannot give a second owner (`@sharesElements`, spec
+    // 73): its body becomes a stop, so nothing analyses what it would do. It keeps its place in a
+    // vtable; a call to it is inference's error.
+    static void stubCannotShare(mlir::ModuleOp module)
+    {
+        llvm::SmallVector<mlir_ts::FuncOp> work;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp->hasAttr(OWN_CANNOT_SHARE_ATTR_NAME) && !funcOp.getBody().empty())
+            {
+                work.push_back(funcOp);
+            }
+        });
+
+        llvm::SmallPtrSet<mlir::Operation *, 8> stubbed;
+        while (!work.empty())
+        {
+            auto funcOp = work.pop_back_val();
+            if (!stubbed.insert(funcOp).second)
+            {
+                continue;
+            }
+
+            auto elementType = funcOp->getAttrOfType<mlir::StringAttr>(OWN_CANNOT_SHARE_ATTR_NAME);
+            auto &body = funcOp.getBody();
+
+            // what the body made for itself - a generator's `next`, a closure - goes with it once
+            // nothing else refers to it
+            llvm::SetVector<mlir_ts::FuncOp> made;
+            // (a generator's state is a constant record that names its `next`)
+            funcOp.walk([&](mlir::Operation *op) {
+                op->getAttrDictionary().walk([&](mlir::FlatSymbolRefAttr symbol) {
+                    if (auto callee = module.lookupSymbol<mlir_ts::FuncOp>(symbol); callee && callee != funcOp)
+                    {
+                        made.insert(callee);
+                    }
+                });
+            });
+
+            auto *stub = new mlir::Block();
+            for (auto argument : body.front().getArguments())
+            {
+                stub->addArgument(argument.getType(), argument.getLoc());
+            }
+
+            body.dropAllReferences();
+            while (!body.empty())
+            {
+                body.front().erase();
+            }
+
+            body.push_back(stub);
+
+            // what the declaration says of its parameters described the body that is gone: nothing
+            // calls the stub, so nothing needs it
+            for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
+                               OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_IMMORTALIZES_ATTR_NAME})
+            {
+                funcOp->removeAttr(name);
+            }
+
+            auto location = funcOp.getLoc();
+            mlir::OpBuilder builder(stub, stub->begin());
+            auto never = builder.create<mlir_ts::ConstantOp>(location, mlir_ts::BooleanType::get(builder.getContext()),
+                                                             builder.getBoolAttr(false));
+            std::string message = "-mm=own cannot give an element of type '" + elementType.getValue().str() +
+                                  "' a second owner: '" + funcOp.getSymName().str() + "'";
+            builder.create<mlir_ts::AssertOp>(location, never, mlir::Value(), builder.getStringAttr(message));
+            llvm::SmallVector<mlir::Value> results;
+            for (auto type : funcOp.getFunctionType().getResults())
+            {
+                results.push_back(builder.create<mlir_ts::DefaultOp>(location, type));
+            }
+
+            builder.create<mlir_ts::ReturnInternalOp>(location, results);
+
+            for (auto made : made)
+            {
+                if (!made.getBody().empty() && mlir::SymbolTable::symbolKnownUseEmpty(made, module))
+                {
+                    made->setAttr(OWN_CANNOT_SHARE_ATTR_NAME, elementType);
+                    work.push_back(made);
+                }
+            }
+        }
+    }
+
     void OwnershipSignaturePass::runOnOperation()
     {
         auto module = getOperation();
+        stubCannotShare(module);
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
         module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });
         module.walk([&](mlir_ts::AddressOfOp addressOfOp) {

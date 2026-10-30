@@ -234,6 +234,7 @@ namespace own_inference
         checkBorrowedReads();
         checkBoundedResults();
         checkRestTakes();
+        checkCannotShare();
         checkBorrowingRecords();
         checkRecordResults();
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());

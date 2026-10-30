@@ -3446,6 +3446,29 @@ class MLIRGenImpl
                 return;
             }
 
+            // `@sharesElements` names nothing: made for an element type that owns a block of its own,
+            // the function is marked with it (spec 73)
+            if (name == SHARES_ELEMENTS_DECORATOR)
+            {
+                MLIRTypeHelper mth(builder.getContext(), compileOptions);
+                for (auto &entry : genContext.typeParamsWithArgs)
+                {
+                    auto type = mth.stripLiteralType(std::get<1>(entry.getValue()));
+                    if (!type || mlir::isa<mlir_ts::NamedGenericType, mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::UnknownType>(type) ||
+                        MLIRTypeHelper::isSharedHandleType(type) || !mth.ownsHeapMemory(location, type))
+                    {
+                        continue;
+                    }
+
+                    if (llvm::none_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_CANNOT_SHARE_ATTR_NAME; }))
+                    {
+                        attrs.push_back({builder.getStringAttr(OWN_CANNOT_SHARE_ATTR_NAME), builder.getStringAttr(to_print(type))});
+                    }
+                }
+
+                return;
+            }
+
             // `@copies` names nothing either: it lets -mm=own copy an array in the body (spec 71)
             if (name == COPIES_DECORATOR)
             {

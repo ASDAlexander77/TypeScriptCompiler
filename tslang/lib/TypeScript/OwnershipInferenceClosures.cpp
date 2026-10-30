@@ -596,6 +596,46 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::checkCannotShare()
+    {
+        if (getFunction()->hasAttr(OWN_CANNOT_SHARE_ATTR_NAME))
+        {
+            return;
+        }
+
+        getFunction().walk([&](mlir::Operation *op) {
+            auto symbol = op->getAttrOfType<mlir::FlatSymbolRefAttr>("callee");
+            if (!symbol)
+            {
+                symbol = op->getAttrOfType<mlir::FlatSymbolRefAttr>("identifier");
+            }
+
+            auto callee = symbol ? mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(op, symbol) : mlir_ts::FuncOp();
+            auto elementType = callee ? callee->getAttrOfType<mlir::StringAttr>(OWN_CANNOT_SHARE_ATTR_NAME) : mlir::StringAttr();
+            if (!elementType || !reporting())
+            {
+                return;
+            }
+
+            // the method's own name: `Array<!ts.class<Item, ...>>.slice` is `slice`
+            std::string name;
+            auto depth = 0;
+            for (auto c : callee.getSymName())
+            {
+                depth += c == '<' ? 1 : c == '>' ? -1 : 0;
+                if (depth == 0 && c != '>')
+                {
+                    name = c == '.' ? std::string() : name + c;
+                }
+            }
+
+            op->emitError("'") << name << "' would give an element of type '" << elementType.getValue()
+                               << "' a second owner, which -mm=own cannot do; hold the elements as 'Shared<"
+                               << elementType.getValue() << ">'";
+            signalPassFailure();
+        });
+    }
+
     void OwnershipInferencePass::checkBoundedResults()
     {
         getFunction().walk([&](mlir::Operation *call) {
