@@ -614,6 +614,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND tes
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -1254,6 +1255,7 @@ tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-ru
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -2269,6 +2271,7 @@ set(TSLANG_CORPUS
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
+    00conditional_record_literal_temporary.ts
     00call_arg_param_field_global.ts
     00class_accessor_untyped_setter.ts
     00class_accessor.ts
@@ -4751,6 +4754,9 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_literal_element_overwritten|:20:24: error: '[^']*' borrows 'HG[.]v' and cannot be stored, returned or captured"
+    "own_err_record_field_overwritten|:23:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"
+    "own_err_record_borrow_in_try|:31:14: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_marker_identifier_arg|:8:8: error: '@keeps' takes the names of parameters as strings: '@keeps[(]\"it\"[)]'"
     "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps', '@borrows', '@lends' and '@record'"
     "own_err_lends_missing|'firstOf' could return a borrow or keep a parameter, but it can be called from another module. '@lends' or '@keeps' would say it in its signature"
