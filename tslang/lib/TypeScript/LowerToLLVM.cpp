@@ -8877,8 +8877,22 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         // can sit in that padding: at 32-bit a member's f64 lands in the storage member's padding
         // after a 4-byte pointer, and it read back as garbage once the union was copied. Without
         // a tag there is no real union - the members share one base type - and that type is kept
-        // as it is.
-        mlir::Type selectedType = needTag ? ltch.getUnionStorageType(type) : ltch.findMaxSizeType(type);
+        // as it is. `T | null` of a @value T kept without a tag (MLIRTypeHelper::getValueNullNiche)
+        // is T: with one pointer field T's `{ptr}` is no larger than null's `ptr`, and the largest
+        // member was null's - a bare pointer the niche code could not extract T's field from.
+        mlir::Type selectedType;
+        if (needTag)
+        {
+            selectedType = ltch.getUnionStorageType(type);
+        }
+        else if (auto valueType = MLIRTypeHelper::getMissingValueElement(type))
+        {
+            selectedType = converter.convertType(valueType);
+        }
+        else
+        {
+            selectedType = ltch.findMaxSizeType(type);
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! storage type in union: " << selectedType
                                 << "\n size: " << ltch.getTypeAllocSizeInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
