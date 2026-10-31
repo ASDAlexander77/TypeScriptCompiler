@@ -739,6 +739,13 @@ class CastLogicHelper
                 }
                 else
                 {
+                    // null into `T | null` of a @value type that holds null in a pointer of its own
+                    // (MLIRTypeHelper::getValueNullNiche): T with every field zeroed, that pointer too
+                    if (isa<mlir_ts::NullType>(inType) && isa<mlir_ts::ValueType>(baseType))
+                    {
+                        return rewriter.create<LLVM::ZeroOp>(loc, tch.convertType(baseType));
+                    }
+
                     return cast(in, inType, tch.convertType(inType), baseType, tch.convertType(baseType));
                 }
             }
@@ -1302,6 +1309,14 @@ class CastLogicHelper
                 auto nullTag = toh.typeOfLogic(loc, mlir_ts::NullType::get(rewriter.getContext()));
                 mlir::Value pointer =
                     in.getType() == inLLVMType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, inLLVMType, in);
+                // ...or a @value type that holds null in a pointer of its own (MLIRTypeHelper::
+                // getValueNullNiche): that pointer
+                if (auto valueType = dyn_cast<mlir_ts::ValueType>(baseType))
+                {
+                    auto niche = MLIRTypeHelper::getValueNullNiche(valueType);
+                    pointer = rewriter.create<LLVM::ExtractValueOp>(loc, pointer, llvm::SmallVector<int64_t>(niche.begin(), niche.end()));
+                }
+
                 auto isSet = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, pointer,
                                                            rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
                 auto tagType = setTag.getType();

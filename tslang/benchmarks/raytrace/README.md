@@ -26,7 +26,7 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
-## Results 2026-10-31: parameters captured by copy, direct method calls, null tested by kind
+## Results 2026-10-31: parameters captured by copy, direct method calls, null without a tag
 
 Release, Windows 11 x64, the same machine; main 1cd17c33 against the same tree with each change
 added in turn. Median of 7 runs after a warm-up; every build prints the same checksum. Neither
@@ -47,17 +47,22 @@ benchmark file changed.
 - Null tested by kind: a union's tag points into its type's descriptor, so whether it holds null
   is the descriptor's kind (`TYPE_KIND_NULL`), one load and one compare. It was a `strcmp` of the
   type's name with `"null"`, on every `intersect` result and every `traceRay` and `testRay`.
+- Null in the reference: `Intersection` holds an interface, `thing`, and an interface is null when
+  the object in it is (`{vtable, this}`, `this` null). So `Intersection | null` needs no tag: it is
+  stored as an `Intersection`, null being one whose `thing` holds no object, and the 88-byte
+  tagged result of `intersect` is the value itself with the optional's flag. A `@value` type with
+  only numbers keeps its tag.
 
-| Build | main | parameters by copy | and direct method calls | and null by kind | vs Rust idiomatic (55 ms) |
-|---|---|---|---|---|---|
-| tslang gc | 266 ms | 97 ms | 79 ms | 75 ms | 1.4x |
-| tslang rc | 171 ms | 133 ms | 120 ms | 115 ms | 2.1x |
-| tslang none | 157 ms | 96 ms | 79 ms | 74 ms | 1.3x |
-| tslang own | 143 ms | 104 ms | 86 ms | 82 ms | 1.5x |
+| Build | main | parameters by copy | and direct method calls | and null by kind | and null in the reference | vs Rust idiomatic (55 ms) |
+|---|---|---|---|---|---|---|
+| tslang gc | 266 ms | 97 ms | 79 ms | 75 ms | 71 ms | 1.3x |
+| tslang rc | 171 ms | 133 ms | 120 ms | 115 ms | 110 ms | 2.0x |
+| tslang none | 157 ms | 96 ms | 79 ms | 74 ms | 70 ms | 1.3x |
+| tslang own | 143 ms | 104 ms | 86 ms | 82 ms | 77 ms | 1.4x |
 
-Of the three costs measured below, A's cells and F's virtual calls are now gone without editing
-the source, and B is mostly gone: variant B (`intersect` returns `dist: 0` for a miss, no union)
-now runs in 69.5 ms under none against 75 ms.
+Of the three costs measured below, A's cells, F's virtual calls and B's union are now gone without
+editing the source: variant B (`intersect` returns `dist: 0` for a miss, no union) runs in 69.9 ms
+under none, as the benchmark itself now does.
 
 ## Results 2026-10-24: `@value`
 

@@ -195,6 +195,14 @@ TypeScript lets `null` and `undefined` stand for an `Intersection`. A value has 
   `object` tag and the tuple. `=== undefined` reads the `i1`; `=== null` and `== null` read it and
   then compare the tag with the string `"null"` (`strcmp` when the tag is not a null pointer).
   This is the cost the benchmark README measures for `Intersection | null`.
+- 2026-10-31: the `null` test reads the tag's descriptor kind (`TYPE_KIND_NULL`) instead of the
+  `strcmp`. And a `T` that holds an interface or a class (`Intersection.thing`), directly or in a
+  `@value` field, holds null in it: an interface is null when its `this` is, a class when its
+  pointer is (`MLIRTypeHelper::getValueNullNiche`, the first such field). Its union has no tag
+  (`isUnionTypeNeedsTag` answers no, base type `T`): null is `T` zeroed, `== null` reads that
+  pointer, and `T | null` is passed as `{ T, i1 }`. Undefined is still the empty optional, so null
+  and undefined stay apart. Under `// @strict-null false` a `T` built with that field null
+  (`{ thing: null, ... }`) therefore reads as null.
 - Strict comparisons with `null` and `undefined` are exact, as in TypeScript: `x === undefined` is
   false for `null`, and `x === null` false for `undefined`. Loose `x == null` and `x != null` ask
   whether `x` holds a value. Comparing one with anything else (another value, a number) is the
