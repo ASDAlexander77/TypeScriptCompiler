@@ -6,6 +6,7 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/xxhash.h"
 
 #include "parser.h"
 #include "node_factory.h"
@@ -159,7 +160,10 @@ class MLIRHelper
 
                 assert(line != 0 || column != 0);
 
-                auto hashCode = hash_value(fileName);
+                // of the file's name, not of the attribute (hash_value(StringAttr) hashes its storage
+                // address): an anonymous function's name was different in every run, and a table keyed
+                // by those names visited them in a different order each time
+                auto hashCode = (uint32_t)llvm::xxh3_64bits(fileName.getValue());
                 ssName << 'L' << line << 'C' << column << "FH" << hashCode;
             })
             .Case<mlir::NameLoc>([&](auto loc) {
