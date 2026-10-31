@@ -376,6 +376,27 @@ class TypeOfOpHelper
                 return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
             }
 
+            // `T | null` of a @value type that holds null in a pointer of its own (MLIRTypeHelper::
+            // getValueNullNiche) is T with no tag: null is that pointer null, so asked here
+            if (isa<mlir_ts::ValueType>(baseType))
+            {
+                auto stringType = mlir_ts::StringType::get(rewriter.getContext());
+                auto nullValue = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                auto isNull = rewriter.create<mlir_ts::LogicalBinaryOp>(
+                    loc, mlir_ts::BooleanType::get(rewriter.getContext()),
+                    rewriter.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), value, nullValue);
+                auto ifOp = rewriter.create<mlir_ts::IfOp>(loc, stringType, isNull, true);
+
+                rewriter.setInsertionPointToStart(&ifOp.getThenRegion().back());
+                rewriter.create<mlir_ts::ResultOp>(loc, typeDescriptorValue(loc, mlir_ts::NullType::get(rewriter.getContext())));
+
+                rewriter.setInsertionPointToStart(&ifOp.getElseRegion().back());
+                rewriter.create<mlir_ts::ResultOp>(loc, typeOfLogic(loc, baseType));
+
+                rewriter.setInsertionPointAfter(ifOp);
+                return ifOp.getResult(0);
+            }
+
             origType = baseType;
         }
 

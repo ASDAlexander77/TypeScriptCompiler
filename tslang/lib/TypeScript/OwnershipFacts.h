@@ -393,8 +393,18 @@ inline bool isView(mlir::Operation *op)
         return valueType && valueType.getStorageType() == tuple;
     };
 
+    // ...or a `@value` value seen as its own `T | null`, or read back from it: when T holds null in a
+    // pointer of its own (MLIRTypeHelper::getValueNullNiche) the union is T itself, no tag added, and
+    // the cast stays a cast where a tagged one becomes CreateUnionInstanceOp
+    auto isMissingValueView = [](mlir::Type value, mlir::Type missing) {
+        auto valueType = mlir::dyn_cast<mlir_ts::ValueType>(value);
+        return valueType && mlir::isa<mlir_ts::UnionType>(missing) &&
+               MLIRTypeHelper::getMissingValueElement(missing) == valueType;
+    };
+
     return (keeps(in) && keeps(out)) || (isClosure(in) && isClosure(out)) || isMadeObject() || isNullableView ||
-           isValueStorage(in, out) || isValueStorage(out, in);
+           isValueStorage(in, out) || isValueStorage(out, in) || isMissingValueView(in, out) ||
+           isMissingValueView(out, in);
 }
 
 // The block a value is a view of.

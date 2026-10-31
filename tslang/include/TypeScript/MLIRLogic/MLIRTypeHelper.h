@@ -254,6 +254,48 @@ class MLIRTypeHelper
         return mlir_ts::OptionalType::get(mlir_ts::UnionType::get(valueType.getContext(), members));
     }
 
+    // Where null of a @value type T is in T itself: the index path, into T's storage, of a pointer no
+    // value of T holds as null - the `this` of a field of an interface type (`{vtable, this}`, null
+    // exactly when the interface is), or a field of a class type - so `T | null` needs no tag: null is
+    // T with that pointer null (zeroed). Fields of a @value type T holds are looked into as well.
+    // Empty when T has no such field (only numbers, say), and its null keeps a tag of its own.
+    static llvm::SmallVector<int32_t> getValueNullNiche(mlir_ts::ValueType valueType)
+    {
+        llvm::SmallVector<int32_t> path;
+        auto storageType = dyn_cast<mlir_ts::TupleType>(valueType.getStorageType());
+        if (!storageType)
+        {
+            return path;
+        }
+
+        for (auto [index, field] : llvm::enumerate(storageType.getFields()))
+        {
+            auto fieldType = field.type;
+            if (isa<mlir_ts::InterfaceType>(fieldType))
+            {
+                return {static_cast<int32_t>(index), THIS_VALUE_INDEX};
+            }
+
+            if (isa<mlir_ts::ClassType>(fieldType))
+            {
+                return {static_cast<int32_t>(index)};
+            }
+
+            if (auto innerValueType = dyn_cast<mlir_ts::ValueType>(fieldType))
+            {
+                auto inner = getValueNullNiche(innerValueType);
+                if (!inner.empty())
+                {
+                    path.push_back(static_cast<int32_t>(index));
+                    path.append(inner.begin(), inner.end());
+                    return path;
+                }
+            }
+        }
+
+        return path;
+    }
+
     // `T | null` of a @value type T, which getMissingValueType wraps in the optional
     static bool isMissingValueUnion(mlir_ts::UnionType unionType)
     {
@@ -2447,6 +2489,14 @@ class MLIRTypeHelper
         // merged again would be the optional around it, not it
         if (isMissingValueUnion(unionType))
         {
+            // ...unless T holds null in a pointer of its own (getValueNullNiche): then it is T
+            auto valueType = getMissingValueElement(unionType);
+            if (valueType && !getValueNullNiche(valueType).empty())
+            {
+                baseType = valueType;
+                return false;
+            }
+
             baseType = unionType;
             return true;
         }

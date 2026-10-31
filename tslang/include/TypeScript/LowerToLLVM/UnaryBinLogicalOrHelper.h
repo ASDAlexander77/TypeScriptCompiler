@@ -8,6 +8,8 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
@@ -129,11 +131,45 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             return builder.create<StdIOpTy>(loc, v1, pointerWord, zero);
         }
 
+        // The tag points into the type's descriptor (TypeOfOpHelper::typeDescriptorValue), whose kind
+        // says null in one load and one compare - not a strcmp of the name with "null", which every
+        // `Intersection | null` result paid for. A tag never set (a zeroed union) is not null, as it
+        // was not equal to "null": it reads the descriptor of undefined instead.
         auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
                             llvmUnion, MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
-        auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
-        return builder.create<mlir_ts::StringCompareOp>(
-            loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
+        auto tagIsSet = builder.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagValue,
+                                                     builder.create<LLVM::ZeroOp>(loc, tagValue.getType()));
+        TypeOfOpHelper toh(builder);
+        auto undefinedTag = builder.create<mlir_ts::DialectCastOp>(
+            loc, tagValue.getType(), toh.typeDescriptorValue(loc, mlir_ts::UndefinedType::get(builder.getContext())));
+        auto readTag = builder.create<LLVM::SelectOp>(loc, tagIsSet, tagValue, undefinedTag);
+        TypeConverterHelper tch(&typeConverter);
+        TypeDescriptorLogic tdl(builder, tch, loc);
+        auto isNull = tdl.isKind(readTag, TYPE_KIND_NULL);
+        auto trueValue = builder.create<LLVM::ConstantOp>(loc, isNull.getType(), builder.getBoolAttr(true));
+        return builder.create<StdIOpTy>(loc, v1, isNull, trueValue);
+    };
+
+    // `T | null` of a @value type T that holds null in a pointer of its own (MLIRTypeHelper::
+    // getValueNullNiche) is stored as T: it is null when that pointer is
+    auto valueNullCompare = [&](mlir::Value unionValue, mlir_ts::UnionType unionType) -> mlir::Value {
+        auto valueType = ::typescript::MLIRTypeHelper::getMissingValueElement(unionType);
+        if (!valueType)
+        {
+            return mlir::Value();
+        }
+
+        auto niche = ::typescript::MLIRTypeHelper::getValueNullNiche(valueType);
+        if (niche.empty())
+        {
+            return mlir::Value();
+        }
+
+        auto llvmValue = asLLVMUnion(unionValue, unionType);
+        llvm::SmallVector<int64_t> path(niche.begin(), niche.end());
+        auto pointerWord = builder.create<LLVM::ExtractValueOp>(loc, llvmValue, path);
+        auto zero = builder.create<LLVM::ZeroOp>(loc, pointerWord.getType());
+        return builder.create<StdIOpTy>(loc, v1, pointerWord, zero).getResult();
     };
 
     if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
@@ -248,6 +284,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
                 return nullCompare(right, unionType);
             }
 
+            if (auto compared = valueNullCompare(right, unionType))
+            {
+                return compared;
+            }
+
             // the union is the right operand, so it is the right type that becomes its base type:
             // passing the base type as the left type and the union again as the right one came
             // straight back here, until the compiler's stack ran out (`opaque != (opaque | null)`)
@@ -340,6 +381,14 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
             emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
             return mlir::Value();
+        }
+
+        if (right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero()))
+        {
+            if (auto compared = valueNullCompare(left, unionType))
+            {
+                return compared;
+            }
         }
 
         return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, baseType, right, rightType, builder, typeConverter, compileOptions);

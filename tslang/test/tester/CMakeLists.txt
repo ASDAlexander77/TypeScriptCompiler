@@ -3385,6 +3385,13 @@ foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-missing-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
     tslang_add_test(NAME test-jit-value-missing-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
 endforeach()
+# ...the same of a @value type holding an interface or a class, whose `T | null` has no tag: null is
+# that reference null (MLIRTypeHelper::getValueNullNiche). Not under own, which refuses the program's
+# records holding a borrowed global (`thing: ball`) in fields and loops; own_raytrace covers own.
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-missing-niche-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
+    tslang_add_test(NAME test-jit-value-missing-niche-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
+endforeach()
 # ...and `g?.ray.dir.x` (and `.len()`) of a missing one skips the rest of the chain: undefined, as is a
 # type literal's
 foreach(value_mm gc rc none own)
