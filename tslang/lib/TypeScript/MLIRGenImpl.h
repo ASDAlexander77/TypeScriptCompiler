@@ -1614,11 +1614,11 @@ class MLIRGenImpl
 
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
-                                                        const GenContext &genContext);
+                                                        const GenContext &genContext, bool *capturesFirst = nullptr);
 
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location, FunctionLikeDeclarationBase funcDecl,
                                                         mlir::Type recieverType, bool discoverReturnType,
-                                                        const GenContext &genContext);
+                                                        const GenContext &genContext, bool *capturesFirst = nullptr);
 
     void rollbackPostponedErrorMessages(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages, size_t size);
 

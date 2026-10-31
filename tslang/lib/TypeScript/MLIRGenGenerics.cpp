@@ -526,7 +526,7 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
-                                                        const GenContext &genContext)
+                                                        const GenContext &genContext, bool *capturesFirst)
     {
         auto currValue = functionRefValue;
         if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
@@ -547,7 +547,7 @@ namespace mlirgen
             SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
 
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
-                                                            recieverType, discoverReturnType, genContext);
+                                                            recieverType, discoverReturnType, genContext, capturesFirst);
         }
 
         // a plausible trigger (a generic function assigned to a variable, then called through
@@ -561,7 +561,7 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::instantiateSpecializedFunctionTypeHelper(mlir::Location location, FunctionLikeDeclarationBase funcDecl,
                                                         mlir::Type recieverType, bool discoverReturnType,
-                                                        const GenContext &genContext)
+                                                        const GenContext &genContext, bool *capturesFirst)
     {
         GenContext funcGenContext(genContext);
         funcGenContext.receiverFuncType = recieverType;
@@ -578,6 +578,15 @@ namespace mlirgen
             }
 
             return mlir::Type();
+        }
+
+        // a closure's type has its captures as an input ahead of its parameters
+        // (discoverFunctionReturnTypeAndCapturedVars)
+        if (capturesFirst)
+        {
+            auto funcType = funcOp->getFuncType();
+            *capturesFirst = funcOp->getHasCapturedVars() && funcType &&
+                             funcType.getNumInputs() > funcOp->getParams().size();
         }
 
         return funcOp->getFuncType();
@@ -789,8 +798,9 @@ namespace mlirgen
             LLVM_DEBUG(llvm::dbgs()
                             << "\n!! param type for arrow func[" << paramIndex << "]: " << recreatedParamType << "\n";);
 
+            auto capturesFirst = false;
             auto newArrowFuncType = instantiateSpecializedFunctionTypeHelper(location, argOp, recreatedParamType,
-                                                                                true, genericTypeGenContext);
+                                                                                true, genericTypeGenContext, &capturesFirst);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized arrow type function: "
                                     << newArrowFuncType << "\n";);
@@ -800,9 +810,13 @@ namespace mlirgen
                 return {mlir::failure(), true};
             }
 
-            // ...and so does the arrow's type built again here
+            // ...and so does the arrow's type built again here: bound already, or a closure whose
+            // captures were just discovered (the arrow still a bare generic reference), it has them as its
+            // first input, which paired with `T` made it `T | captures` - in an order of the members' type
+            // addresses, so the arrow's parameter was taken for its captures in some runs and not others
             if (auto funcType = dyn_cast<mlir_ts::FunctionType>(newArrowFuncType);
-                funcType && argOp.getDefiningOp<mlir_ts::CreateBoundFunctionOp>() && funcType.getNumInputs() > 0)
+                funcType && (argOp.getDefiningOp<mlir_ts::CreateBoundFunctionOp>() || capturesFirst) &&
+                funcType.getNumInputs() > 0)
             {
                 newArrowFuncType = mlir_ts::FunctionType::get(builder.getContext(), funcType.getInputs().drop_front(),
                                                               funcType.getResults(), funcType.isVarArg());
