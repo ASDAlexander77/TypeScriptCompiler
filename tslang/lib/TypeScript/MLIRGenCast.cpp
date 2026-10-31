@@ -3177,6 +3177,36 @@ namespace mlirgen
 
                 auto toBoolean = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
 
+                // The tag says "class"; `instanceof` tells the classes apart. A @cpp class's objects
+                // are C++ objects with no type information, so `instanceof` refuses them: when the
+                // class need not be told - the only class of the union, or tested for truth, as
+                // `h && n == 3` with h a `Handle | null` is - `typeof` has already narrowed t enough.
+                // Otherwise only the other classes are tested.
+                auto writeClassTests = [&]() {
+                    auto hasCppClass = llvm::any_of(classInstances, [&](mlir::Type classType) { return isCppVTableClass(classType); });
+                    if (hasCppClass && (toBoolean || classInstances.size() == 1))
+                    {
+                        ss << S("return t;\n");
+                        return;
+                    }
+
+                    ss << S("{ \n");
+
+                    for (auto [index, classType] : enumerate(classInstances))
+                    {
+                        if (isCppVTableClass(classType))
+                        {
+                            continue;
+                        }
+
+                        ss << S("if (t instanceof TYPE_INST_ALIAS");
+                        ss << index;
+                        ss << S(") return t;\n");
+                    }
+
+                    ss << S(" }\n");
+                };
+
                 // A union whose actual type has no null member but whose members all hold null in
                 // their own pointer (`A | B | null`) is null when that pointer is null, whatever its
                 // tag: asked first, so that no member's test - `instanceof` reads the vtable - meets a
@@ -3216,16 +3246,7 @@ namespace mlirgen
                         ss << S("') ");
                         if (pair.getKey() == "class")
                         {
-                            ss << S("{ \n");
-
-                            for (auto [index, _] : enumerate(classInstances))
-                            {
-                                ss << S("if (t instanceof TYPE_INST_ALIAS");
-                                ss << index;
-                                ss << S(") return t;\n");
-                            }
-
-                            ss << S(" }\n");
+                            writeClassTests();
                         }
                         else
                         {
@@ -3261,16 +3282,7 @@ namespace mlirgen
                         }
                         else if (pair.getKey() == "class")
                         {
-                            ss << S("{ \n");
-
-                            for (auto [index, _] : enumerate(classInstances))
-                            {
-                                ss << S("if (t instanceof TYPE_INST_ALIAS");
-                                ss << index;
-                                ss << S(") return t;\n");
-                            }
-
-                            ss << S(" }\n");
+                            writeClassTests();
                         }
                         else
                         {
