@@ -464,6 +464,7 @@ namespace mlirgen
 
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert(fullNamePtr, newClassPtr);
+            moduleClasses.push_back(newClassPtr);
         }
 
         return newClassPtr;
