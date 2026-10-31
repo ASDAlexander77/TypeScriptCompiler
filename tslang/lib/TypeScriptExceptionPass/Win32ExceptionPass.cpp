@@ -23,6 +23,10 @@ struct CatchRegion
 
     LandingPadInst *landingPad;
     llvm::SmallVector<CallBase *> calls;
+    // throws the inliner brought into a catch, left out of `calls`: the catchret placed ahead of
+    // the region's end takes them out of the funclet - unless the region ends in a `resume` (a
+    // catch-all entered as a cleanup is), which has no catchret, and they need the bundle after all
+    llvm::SmallVector<CallBase *, 0> skippedThrows;
     CatchPadInst *catchPad;
     CleanupPadInst *cleanupPad;
     InvokeInst *unwindInfoOp;
@@ -307,6 +311,7 @@ struct Win32ExceptionPassCode
                         // funclet and does still need the bundle; leave that path alone.
                         if (catchRegion->isCatch())
                         {
+                            catchRegion->skippedThrows.push_back(CI);
                             continue;
                         }
                     }
@@ -436,6 +441,11 @@ struct Win32ExceptionPassCode
                 catchRegion.stack = callInst;
             }
 #endif
+
+            if (isa_and_nonnull<ResumeInst>(catchRegion.end))
+            {
+                catchRegion.calls.append(catchRegion.skippedThrows);
+            }
 
             // set funcset
             llvm::SmallVector<CallBase *> newCalls;
