@@ -615,6 +615,7 @@ tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND te
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-compile-00-conditional-nested-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-interface-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_print.ts")
 tslang_add_test(NAME test-compile-00-class-method-devirtualized COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
@@ -1258,6 +1259,7 @@ tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-r
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-jit-00-conditional-nested-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-interface-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_print.ts")
 tslang_add_test(NAME test-jit-00-class-method-devirtualized COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
@@ -2282,6 +2284,7 @@ set(TSLANG_CORPUS
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00conditional_record_literal_temporary.ts
+    00conditional_nested_record_literal_temporary.ts
     00interface_print.ts
     00class_method_devirtualized.ts
     00call_arg_param_field_global.ts

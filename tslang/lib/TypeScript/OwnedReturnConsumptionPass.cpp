@@ -17,6 +17,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
+#include <functional>
 #include <set>
 #include <tuple>
 
@@ -1663,13 +1664,15 @@ class OwnedReturnConsumptionPass
             // ...or some branch yields a record literal it built whose field holds a temporary it made
             // (`c ? { start: this.pos, dir: new V(1) } : ...`): the branch gives the temporary back before
             // it ends, so the receiver's retain after the `ts.If` - which retains the fields - comes too
-            // late, and the field is freed under it. The branch retains it first. Not under -mm=own,
-            // which settles a literal's fields itself.
-            auto yieldsLiteralOfBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
-                auto loadOp = producerOf(resultOp->getOperand(0)).getDefiningOp<mlir_ts::LoadOp>();
+            // late, and the field is freed under it. The branch retains it first. A field may hold
+            // another literal the branch built (`{ one: { h: new H() } }` of a @value type holding a
+            // @value type), whose fields are looked into the same way. Not under -mm=own, which
+            // settles a literal's fields itself.
+            std::function<bool(mlir::Value, mlir::Region *)> isLiteralOfBranchTemporary = [&](mlir::Value value,
+                                                                                               mlir::Region *region) {
+                auto loadOp = producerOf(value).getDefiningOp<mlir_ts::LoadOp>();
                 auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-                if (compileOptions.memoryModel == MemoryModelOwn || !varOp ||
-                    varOp->getParentRegion() != resultOp->getParentRegion())
+                if (!varOp || varOp->getParentRegion() != region)
                 {
                     return false;
                 }
@@ -1678,13 +1681,21 @@ class OwnedReturnConsumptionPass
                     auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
                     return propertyRefOp && llvm::any_of(propertyRefOp->getUsers(), [&](mlir::Operation *fieldUser) {
                                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
-                               auto stored = storeOp && storeOp.getReference() == propertyRefOp.getResult()
-                                                 ? producerOf(storeOp.getValue())
-                                                 : mlir::Value();
-                               return stored && stored.getDefiningOp() && ::typescript::mayTakeOverReference(stored) &&
-                                      stored.getDefiningOp()->getParentRegion() == resultOp->getParentRegion();
+                               if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                               {
+                                   return false;
+                               }
+
+                               auto stored = producerOf(storeOp.getValue());
+                               return (stored.getDefiningOp() && ::typescript::mayTakeOverReference(stored) &&
+                                       stored.getDefiningOp()->getParentRegion() == region) ||
+                                      isLiteralOfBranchTemporary(storeOp.getValue(), region);
                            });
                 });
+            };
+            auto yieldsLiteralOfBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
+                return compileOptions.memoryModel != MemoryModelOwn &&
+                       isLiteralOfBranchTemporary(resultOp->getOperand(0), resultOp->getParentRegion());
             };
 
             if (llvm::none_of(yields, carriesOwned) && llvm::none_of(yields, borrowsBranchTemporary) &&
