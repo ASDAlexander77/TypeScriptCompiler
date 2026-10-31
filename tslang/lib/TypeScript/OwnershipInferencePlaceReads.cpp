@@ -732,6 +732,18 @@ namespace own_inference
                             return !notString;
                         }
 
+                        // a captured object assigned frees what only its cell owns: a chain read through
+                        // a captured variable's cell may be under it, nothing else (OWN_CAPTURED_CELL_POSITION)
+                        if (place.first == OWN_CAPTURED_CELL_POSITION)
+                        {
+                            return llvm::any_of(chain.roots, [](auto &root) {
+                                auto loadOp = root.first.template getDefiningOp<mlir_ts::LoadOp>();
+                                auto through = loadOp ? loadOp.getReference() : mlir::Value();
+                                return isCellVariable(root.first) || isLoadedCell(root.first) ||
+                                       (through && (isCellVariable(through) || isLoadedCell(through)));
+                            });
+                        }
+
                         return overwritesChain(place.first, place.second, chain);
                     });
                 }

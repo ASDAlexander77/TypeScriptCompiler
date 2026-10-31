@@ -4093,7 +4093,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
-                 own_rest_keeps_declared own_interface_getter_let)
+                 own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4132,7 +4132,7 @@ foreach(keeps_mm rc gc none)
                        own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
-                       own_rest_keeps_declared own_interface_getter_let)
+                       own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4761,6 +4761,9 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_callback_assigns_receiver|:17:5: error: '[^']*' is lent to 'Bag[.]forEach', which may run a closure that gives '[^']*' a new value"
+    "own_err_callback_assigns_borrowed|:25:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_arg_assigned_in_call|:27:11: error: '[^']*' is lent to 'f', but is given a new value before the call takes it"
     "own_err_getter_read_returned|:19:12: error: 'item' is read through an interface, and 'Fresh' fills it with a getter"
     "own_err_literal_element_overwritten|:20:24: error: '[^']*' borrows 'HG[.]v' and cannot be stored, returned or captured"
     "own_err_record_field_overwritten|:23:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"

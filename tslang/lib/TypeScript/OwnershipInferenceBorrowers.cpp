@@ -29,6 +29,13 @@ namespace own_inference
                     }
                 }
 
+                // what a view of it shows (`f(n, ...)` with `n` given as an interface): the value read
+                for (auto depth = 0; depth < 8 && isView(argument.getDefiningOp()) && !argument.getDefiningOp<mlir_ts::CastOp>();
+                     depth++)
+                {
+                    argument = argument.getDefiningOp()->getOperand(0);
+                }
+
                 auto *read = argument.getDefiningOp();
                 auto local = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(slotOf(argument));
                 if (!read || !local || !ownsHeap(argument) || isHandle(argument))
@@ -48,12 +55,31 @@ namespace own_inference
                     return (storeOp && storeOp.getReference() == local.getResult()) ||
                            (releaseSlotOp && releaseSlotOp.getSlot() == local.getResult());
                 });
+                // ...or the call itself, when it may run a closure that gives a captured object a new value
+                // (OWN_CAPTURED_CELL_POSITION): its callee's borrow of the argument would not see that
+                auto places = callDropFields(call);
+                if (!write && assignedByClosure && places && llvm::any_of(*places, [](auto &place) {
+                        return place.first == OWN_CAPTURED_CELL_POSITION;
+                    }))
+                {
+                    write = call;
+                }
+
                 if (!write)
                 {
                     continue;
                 }
 
-                if (reporting())
+                if (reporting() && write == call)
+                {
+                    auto name = varName(local);
+                    auto callee = calleeName(call);
+                    call->emitError("'") << name << "' is lent to '" << (callee.empty() ? "a function" : callee)
+                                         << "', which may run a closure that gives '" << name
+                                         << "' a new value; -mm=own cannot prove it outlives the call";
+                    signalPassFailure();
+                }
+                else if (reporting())
                 {
                     auto name = varName(local);
                     auto callee = calleeName(call);
