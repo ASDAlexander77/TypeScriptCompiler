@@ -8,6 +8,8 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
@@ -129,11 +131,23 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             return builder.create<StdIOpTy>(loc, v1, pointerWord, zero);
         }
 
+        // The tag points into the type's descriptor (TypeOfOpHelper::typeDescriptorValue), whose kind
+        // says null in one load and one compare - not a strcmp of the name with "null", which every
+        // `Intersection | null` result paid for. A tag never set (a zeroed union) is not null, as it
+        // was not equal to "null": it reads the descriptor of undefined instead.
         auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
                             llvmUnion, MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
-        auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
-        return builder.create<mlir_ts::StringCompareOp>(
-            loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
+        auto tagIsSet = builder.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagValue,
+                                                     builder.create<LLVM::ZeroOp>(loc, tagValue.getType()));
+        TypeOfOpHelper toh(builder);
+        auto undefinedTag = builder.create<mlir_ts::DialectCastOp>(
+            loc, tagValue.getType(), toh.typeDescriptorValue(loc, mlir_ts::UndefinedType::get(builder.getContext())));
+        auto readTag = builder.create<LLVM::SelectOp>(loc, tagIsSet, tagValue, undefinedTag);
+        TypeConverterHelper tch(&typeConverter);
+        TypeDescriptorLogic tdl(builder, tch, loc);
+        auto isNull = tdl.isKind(readTag, TYPE_KIND_NULL);
+        auto trueValue = builder.create<LLVM::ConstantOp>(loc, isNull.getType(), builder.getBoolAttr(true));
+        return builder.create<StdIOpTy>(loc, v1, isNull, trueValue);
     };
 
     if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
