@@ -19,6 +19,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #ifdef ENABLE_ASYNC
 #include "mlir/Dialect/Async/IR/Async.h"
 #endif
@@ -338,6 +339,9 @@ std::unique_ptr<mlir::MLIRContext> createMLIRContext()
 {
     mlir::DialectRegistry registry;
     registerAllExtensions(registry);
+    // the llvm dialect promises an inliner interface that only registerAllDialects provides: without
+    // it a pass that inlines past lowering (the JIT's) failed the promise check in an assertions build
+    mlir::LLVM::registerInlinerInterface(registry);
 
     auto mlirContext = std::make_unique<mlir::MLIRContext>(registry);
     // Load our Dialect in this MLIR Context.
