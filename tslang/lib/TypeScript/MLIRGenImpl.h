@@ -10180,9 +10180,12 @@ class MLIRGenImpl
         }
 
         auto name = symbolRef.getIdentifier().str();
-        auto declared = declaredFunctions.find(name);
-        if (declared == declaredFunctions.end() || declared->second.second != theModule.getOperation()
-            || !rootDeclaredFunctions.contains(name))
+        // Declared at the top level with no body, by whichever module's pass reached its .d.ts first:
+        // the entry keeps the module of that pass, which is not this one when an imported module
+        // referenced the same .d.ts (a `/// <reference>` is loaded once), and the string a C function
+        // returned was then taken as it was, not copied (TSLANG_ISSUES 21). Whether it is C is
+        // whether this module's function has a body, below.
+        if (!declaredFunctions.count(name) || !rootDeclaredFunctions.contains(name))
         {
             return false;
         }
