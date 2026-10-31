@@ -2002,8 +2002,10 @@ namespace mlirgen
                 return castFromUnion(location, type, value, genContext);
             }
 
+            // ...and a @value type's `T | null` stored as T (MLIRTypeHelper::getValueNullNiche): null
+            // is "null", not T's fields read from a zeroed T
             if (isa<mlir_ts::StringType>(type)
-                && isa<mlir_ts::ClassType>(baseType)
+                && isa<mlir_ts::ClassType, mlir_ts::ValueType>(baseType)
                 && llvm::any_of(unionType.getTypes(), [](auto subType) { return isa<mlir_ts::NullType>(subType); }))
             {
                 return castNullableToString(location, type, value, baseType, genContext);
@@ -2027,7 +2029,11 @@ namespace mlirgen
         // unwrapping optional value to work with union inside, we need it as ' | undefined ' is part of union type
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(valueType))
         {
-            if (isa<mlir_ts::UnionType>(optType.getElementType()))
+            // ...but not a @value type's that may be missing put into a string: undefined is "undefined",
+            // not the default of its union (a zeroed value, read as null or as T's fields) - below
+            auto missingValueToString =
+                isa<mlir_ts::StringType>(type) && MLIRTypeHelper::getMissingValueElement(optType);
+            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString)
             {
                 auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
                 CAST_A(unwrappedValue, location, type, val, genContext);
@@ -3235,11 +3241,18 @@ namespace mlirgen
     // see nullStringAsText in LowerToLLVM.)
     ValueOrLogicalResult MLIRGenImpl::castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext)
     {
-        CAST_A(opaqueValue, location, getOpaqueType(), value, genContext);
+        // a class is compared as its pointer; a @value type's union as itself, whose null is a pointer
+        // in it (the lowering's valueNullCompare)
+        mlir::Value compared = value;
+        if (!isa<mlir_ts::ValueType>(baseType))
+        {
+            CAST_A(opaqueValue, location, getOpaqueType(), value, genContext);
+            compared = opaqueValue;
+        }
 
         auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
         auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(
-            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), opaqueValue,
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), compared,
             nullVal);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, isNull, true);
@@ -3249,7 +3262,7 @@ namespace mlirgen
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{nullText});
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-        // the union as the class: the same pointer, now known not to be null
+        // the union as its base type, now known not to be null: the same pointer, or the same value
         auto baseValue = V(builder.create<mlir_ts::CastOp>(location, baseType, value));
         CAST_A(text, location, type, baseValue, genContext);
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{text});

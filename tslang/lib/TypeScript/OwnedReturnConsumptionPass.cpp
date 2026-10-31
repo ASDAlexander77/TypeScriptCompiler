@@ -1576,7 +1576,9 @@ class OwnedReturnConsumptionPass
             // branch borrows, the receiver's retain is already the right and only answer.
             // What a branch yields, seen through the casts that only widen it: `new C()` yielded as
             // `C | null` or `C | undefined` is still that block, so its reference goes out with it
-            // (#465). A cast that makes a new value (a box) carries its own reference instead.
+            // (#465). So is a literal yielded as the @value type it is laid out as (the cast lowers to
+            // nothing): `c ? null : { at: d, owner: new Owner(d) }` of `Mark | null`. A cast that makes
+            // a new value (a box) carries its own reference instead.
             auto producerOf = [](mlir::Value value) {
                 while (auto *definingOp = value.getDefiningOp())
                 {
@@ -1586,7 +1588,9 @@ class OwnedReturnConsumptionPass
                     }
 
                     if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp);
-                        castOp && mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                        castOp && (mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()) ||
+                                   (mlir::isa<mlir_ts::ValueType>(castOp.getType()) &&
+                                    mlir::isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(castOp.getIn().getType()))))
                     {
                         value = castOp.getIn();
                     }
