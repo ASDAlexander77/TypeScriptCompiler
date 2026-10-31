@@ -14923,6 +14923,12 @@ class MLIRGenImpl
     ValueOrLogicalResult castTupleToString(mlir::Location location, mlir::Value value, mlir_ts::TupleType tupleType,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext);
 
+    ValueOrLogicalResult fieldsToString(mlir::Location location,
+        ::llvm::ArrayRef<std::pair<mlir::Attribute, mlir::Value>> fieldValues, const GenContext &genContext);
+
+    ValueOrLogicalResult castInterfaceToString(mlir::Location location, mlir::Value value,
+        mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
+
     ValueOrLogicalResult generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext);
 
     ValueOrLogicalResult castClassToTuple(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, 
@@ -16901,6 +16907,9 @@ class MLIRGenImpl
 
     // every class this module made, its imported sources' too (devirtualizeClosedMethods)
     llvm::SmallVector<ClassInfo::TypePtr> moduleClasses;
+
+    // the interfaces whose text castInterfaceToString is making, outermost first
+    llvm::SmallVector<mlir_ts::InterfaceType> interfacesBeingPrinted;
 
     // the vtables of classes for interfaces they don't declare that casts ask for
     // (interfaceVTableNameForClass), from the discovery pass on: see castAnyToInterface
