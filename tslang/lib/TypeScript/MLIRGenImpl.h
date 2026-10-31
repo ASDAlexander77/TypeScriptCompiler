@@ -274,6 +274,9 @@ class MLIRGenImpl
     mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {},
                                           bool validate = true, bool isMain = true);
 
+    // calls through a vtable to methods no class overrides made direct, once the module is generated
+    void devirtualizeClosedMethods();
+
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false);
 
     mlir::LogicalResult exitNamespace();
@@ -16895,6 +16898,9 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, EnumInfo::TypePtr> fullNameEnumsMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
+
+    // every class this module made, its imported sources' too (devirtualizeClosedMethods)
+    llvm::SmallVector<ClassInfo::TypePtr> moduleClasses;
 
     // the vtables of classes for interfaces they don't declare that casts ask for
     // (interfaceVTableNameForClass), from the discovery pass on: see castAnyToInterface

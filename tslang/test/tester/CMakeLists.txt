@@ -615,6 +615,7 @@ tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND te
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-compile-00-class-method-devirtualized COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -1256,6 +1257,7 @@ tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-r
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-jit-00-class-method-devirtualized COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -2272,6 +2274,7 @@ set(TSLANG_CORPUS
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00conditional_record_literal_temporary.ts
+    00class_method_devirtualized.ts
     00call_arg_param_field_global.ts
     00class_accessor_untyped_setter.ts
     00class_accessor.ts
@@ -4093,7 +4096,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
-                 own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
+                 own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
+                 own_param_capture_copies)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4132,7 +4136,8 @@ foreach(keeps_mm rc gc none)
                        own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
-                       own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
+                       own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
+                       own_param_capture_copies)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4204,6 +4209,13 @@ add_test(NAME test-own-interface-getter-let-released
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_getter_let.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-interface-getter-let.cmake")
+
+# A call through a vtable to a method no class overrides is made direct; one with an override stays
+# virtual. The program runs the same either way, so the IR is read.
+add_test(NAME test-class-method-devirtualized-ir
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/class-method-devirtualized.cmake")
 
 # A rest parameter its function says it keeps (`@keeps`) is released once emptied under own, as an
 # inferred keep's is (spec 72); no run can see the leak, so the IR is read.

@@ -104,16 +104,16 @@ namespace own_inference
                 // ...and only when every copy has an owner of its own: the box frees itself alone, so a
                 // value made for it (a callback that captures, `a.filter((x) => x > n)`) would be
                 // nobody's
-                // ...or when it holds the member's `this` (a copy, spec 70), the caller's, as a closure
-                // that does not escape borrowed the cell it held before
+                // ...or when it holds the member's `this` (a copy, spec 70) or another parameter's copy,
+                // the caller's, as a closure that does not escape borrowed the cell it held before
                 auto noneFresh = llvm::none_of(closure->fills, [&](auto &fill) {
                     auto value = fill.second.getValue();
                     return !holdsNoBlock(value) && isFresh(rootOf(value));
                 });
-                auto holdsThis = llvm::any_of(closure->fills, [&](auto &fill) { return isMemberThis(fill.second.getValue()); });
+                auto holdsParam = llvm::any_of(closure->fills, [&](auto &fill) { return isBorrowableCapture(fill.second.getValue()); });
                 closure->borrowsCopies =
                     !closure->escape && noneFresh &&
-                    (holdsThis || llvm::any_of(closure->boxUses, [](mlir::Operation *use) {
+                    (holdsParam || llvm::any_of(closure->boxUses, [](mlir::Operation *use) {
                          return use->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME);
                      }));
                 if (!closure->borrowsCopies)

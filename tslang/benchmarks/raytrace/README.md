@@ -26,6 +26,35 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
+## Results 2026-10-31: parameters captured by copy, direct method calls
+
+Release, Windows 11 x64, the same machine; main 1cd17c33 against the same tree with each change
+added in turn. Median of 7 runs after a warm-up; every build prints the same checksum. Neither
+benchmark file changed.
+
+- Parameters by copy: a closure used to move every parameter it captured into a heap cell, shared
+  by the frame and the closure's box, so `getNaturalColor` made six cells on every call for
+  `addLight`. Now a parameter that nothing assigns (neither the body nor a closure in it) is
+  captured by copy, as `this` and a `const` already were. Under `-mm=own`, a closure that does not
+  escape borrows the copy, as it borrowed the cell. Under own, a generator's parameters, callbacks
+  and `Shared<T>` handles stay in cells. Under none, the optimized `RayTracer.getNaturalColor` no
+  longer allocates on the heap: the closure's box is on its stack.
+- Direct method calls: a call through a class's vtable to a method that no class in the module
+  overrides is made a direct call, as a call on a `@final` class's value already was, so LLVM can
+  inline it. A class that code outside the module may extend (exported, declared or imported, a
+  C++ binding, or a base of one of these) keeps its methods virtual. That takes in `RayTracer`'s
+  methods: variant F below, now without the source edit.
+
+| Build | main | parameters by copy | and direct method calls | vs Rust idiomatic (55 ms) |
+|---|---|---|---|---|
+| tslang gc | 266 ms | 97 ms | 79 ms | 1.4x |
+| tslang rc | 171 ms | 133 ms | 120 ms | 2.2x |
+| tslang none | 157 ms | 96 ms | 79 ms | 1.4x |
+| tslang own | 143 ms | 104 ms | 86 ms | 1.6x |
+
+Of the three costs measured below, A's cells and F's virtual calls are now gone without editing
+the source; B, `Intersection | null`, measured 16-17 ms under none and own, and remains.
+
 ## Results 2026-10-24: `@value`
 
 Release, Windows 11 x64, the same machine and toolchains as below; branch `value-types` (98ec37ff,

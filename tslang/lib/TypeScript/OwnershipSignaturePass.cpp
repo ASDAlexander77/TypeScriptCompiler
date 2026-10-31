@@ -877,11 +877,13 @@ namespace own_signature
                 return false;
             }
 
-            // `this` in a closure's box (captured by copy, spec 70): the object is the caller's, which
-            // no box can own. A closure that does not escape borrows it, as it did the cell; one stored
-            // into a field of `this` is a back-reference; any other one is inference's error
+            // `this` in a closure's box (captured by copy, spec 70), any other parameter nothing
+            // assigns, which a closure captures by copy too, or a copy the enclosing closure's box
+            // holds: the object is the caller's, which no box can own. A closure that does not escape
+            // borrows it, as it did the cell; one stored into a field of `this` is a back-reference;
+            // any other one is inference's error
             if (auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
-                propertyRefOp && isMemberThis(used) && closureOfBox(propertyRefOp->getOperand(0)))
+                propertyRefOp && isBorrowableCapture(used) && closureOfBox(propertyRefOp->getOperand(0)))
             {
                 return false;
             }

@@ -336,11 +336,110 @@ namespace mlirgen
             compileOptions.generateDebugInfo = storeDebugInfo;
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
+                devirtualizeClosedMethods();
                 return theModule;
             }
         }
 
         return nullptr;
+    }
+
+    // A call through a class's vtable to a method that no class overrides reaches that method
+    // alone, so it is made a direct call, as one on a @final receiver is (ClassMethodAccess): LLVM
+    // can inline it. Every class the module made is known by now, the imported sources' too; a
+    // class code outside the module may extend - exported, declared or imported, a C++ binding,
+    // or one of its subclasses so - keeps its methods virtual.
+    void MLIRGenImpl::devirtualizeClosedMethods()
+    {
+        auto seenOutside = [](const ClassInfo::TypePtr &classInfo) {
+            return classInfo->isExport || classInfo->isPublic || classInfo->isDeclaration || classInfo->isImport ||
+                   classInfo->isDynamicImport || classInfo->isCppVTable;
+        };
+
+        llvm::StringSet<> candidates;
+        llvm::StringSet<> kept;
+        for (auto &classInfo : moduleClasses)
+        {
+            // the classes it extends, directly or not
+            llvm::SmallVector<ClassInfo::TypePtr> ancestors;
+            llvm::SmallPtrSet<ClassInfo *, 8> seen;
+            llvm::SmallVector<ClassInfo::TypePtr> pending(classInfo->baseClasses.begin(), classInfo->baseClasses.end());
+            while (!pending.empty())
+            {
+                auto base = pending.pop_back_val();
+                if (base && seen.insert(base.get()).second)
+                {
+                    ancestors.push_back(base);
+                    pending.append(base->baseClasses.begin(), base->baseClasses.end());
+                }
+            }
+
+            auto outside = seenOutside(classInfo);
+            for (auto &method : classInfo->methods)
+            {
+                if (method.isStatic)
+                {
+                    continue;
+                }
+
+                // an abstract method has no body to call
+                if (outside || method.isAbstract)
+                {
+                    kept.insert(method.funcName);
+                }
+                else
+                {
+                    candidates.insert(method.funcName);
+                }
+
+                // a method of the same name in a base class, which this one overrides
+                for (auto &ancestor : ancestors)
+                {
+                    for (auto &baseMethod : ancestor->methods)
+                    {
+                        if (!baseMethod.isStatic && baseMethod.name == method.name && baseMethod.funcName != method.funcName)
+                        {
+                            kept.insert(baseMethod.funcName);
+                        }
+                    }
+                }
+            }
+
+            // a class seen from outside may be extended there, overriding any method it has
+            if (outside)
+            {
+                for (auto &ancestor : ancestors)
+                {
+                    for (auto &baseMethod : ancestor->methods)
+                    {
+                        kept.insert(baseMethod.funcName);
+                    }
+                }
+            }
+        }
+
+        llvm::SmallVector<mlir_ts::ThisVirtualSymbolRefOp> virtualRefs;
+        theModule.walk([&](mlir_ts::ThisVirtualSymbolRefOp virtualRefOp) {
+            auto symbol = virtualRefOp.getIdentifier();
+            if (candidates.contains(symbol) && !kept.contains(symbol))
+            {
+                virtualRefs.push_back(virtualRefOp);
+            }
+        });
+
+        for (auto virtualRefOp : virtualRefs)
+        {
+            mlir::OpBuilder refBuilder(virtualRefOp);
+            auto directRefOp = refBuilder.create<mlir_ts::ThisSymbolRefOp>(
+                virtualRefOp.getLoc(), virtualRefOp.getType(), virtualRefOp.getThisVal(), virtualRefOp.getIdentifierAttr());
+            virtualRefOp.getResult().replaceAllUsesWith(directRefOp.getResult());
+            auto vtable = virtualRefOp.getVtable();
+            virtualRefOp.erase();
+            if (auto *vtableOp = vtable.getDefiningOp(); vtableOp && vtableOp->use_empty() && mlir::isMemoryEffectFree(vtableOp))
+            {
+                vtableOp->erase();
+            }
+        }
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenCodeGenInit(SourceFile module)
