@@ -116,10 +116,17 @@ namespace own_inference
                 continue;
             }
 
-            // an argument: the result may be it, or borrowed from it
-            auto callIndirectOp = mlir::dyn_cast<mlir_ts::CallIndirectOp>(user);
-            if ((mlir::isa<mlir_ts::SymbolCallInternalOp>(user) || callIndirectOp) &&
-                (!callIndirectOp || callIndirectOp.getCallee() != value))
+            // a method of it (`i.item.get()`): the method bound to it, its object and its function, which only
+            // the call below uses
+            if (mlir::isa<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::GetThisOp,
+                          mlir_ts::GetMethodOp>(user) &&
+                user->getNumResults() == 1 && follow(user->getResult(0)))
+            {
+                continue;
+            }
+
+            // an argument, or the method called: the result may be it, or borrowed from it
+            if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallIndirectOp>(user))
             {
                 for (auto result : user->getResults())
                 {
@@ -186,7 +193,49 @@ namespace own_inference
                 builder.setInsertionPoint(exit);
                 release(exit);
             }
+
+            // ...else a getter's new value would be lost: returned, stored, or kept where nothing frees it. Only
+            // a field some class of this module fills with accessors has one; its value cannot leave its read
+            auto refOp = loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+            if (!exits.empty() || !refOp)
+            {
+                continue;
+            }
+
+            auto fieldAttr = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+            auto filler = fieldAttr ? accessorFiller(fieldAttr.getValue()) : llvm::StringRef();
+            if (!filler.empty())
+            {
+                loadOp.emitError("'")
+                    << fieldAttr.getValue() << "' is read through an interface, and '" << filler
+                    << "' fills it with a getter, whose new value -mm=own frees only where it is read: it cannot "
+                       "be returned, kept or outlive its block; read the field where it is used";
+                signalPassFailure();
+            }
         }
+    }
+
+    llvm::StringRef OwnershipInferencePass::accessorFiller(llvm::StringRef field)
+    {
+        // the cell of a class's accessors for an interface's field: `<class>.<interface>..vtbl.<field>.accessor`
+        auto suffix = (llvm::Twine(".") + field + ".accessor").str();
+        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+        llvm::StringRef found;
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            auto name = globalOp.getSymName();
+            auto vtbl = name.find("..vtbl.");
+            if (vtbl != llvm::StringRef::npos && name.ends_with(suffix) && vtbl + 6 + suffix.size() == name.size())
+            {
+                // the class: up to the interface's name
+                auto head = name.take_front(vtbl);
+                found = head.take_front(head.rfind('.') == llvm::StringRef::npos ? head.size() : head.rfind('.'));
+                return mlir::WalkResult::interrupt();
+            }
+
+            return mlir::WalkResult::advance();
+        });
+
+        return found;
     }
 
     llvm::SmallVector<mlir::Operation *> OwnershipInferencePass::localHeldToExits(mlir_ts::LoadOp read)

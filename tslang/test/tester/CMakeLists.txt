@@ -4761,6 +4761,7 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_getter_read_returned|:19:12: error: 'item' is read through an interface, and 'Fresh' fills it with a getter"
     "own_err_literal_element_overwritten|:20:24: error: '[^']*' borrows 'HG[.]v' and cannot be stored, returned or captured"
     "own_err_record_field_overwritten|:23:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"
     "own_err_record_borrow_in_try|:31:14: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
