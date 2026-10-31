@@ -1508,6 +1508,12 @@ namespace own_signature
                     // a captured string assigned (`each += v` in a callback): it frees that string only
                     drops.add({OWN_CAPTURED_STRING_POSITION, slot.getType()});
                 }
+                else if (isLoadedCell(slot) && !touchesHandle(op))
+                {
+                    // a captured object assigned (`last = new Box()` in a callback): it frees what the cell
+                    // owns, which only a read through a captured variable may borrow
+                    drops.add({OWN_CAPTURED_CELL_POSITION, slot.getType()});
+                }
                 else if (slot.getDefiningOp<mlir_ts::AddressOfOp>() || isLoadedCell(slot) ||
                     (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot)))
                 {

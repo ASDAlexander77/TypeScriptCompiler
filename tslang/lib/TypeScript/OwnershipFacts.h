@@ -70,6 +70,11 @@ constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
 // The position of a captured variable's cell holding a string, assigned: the old string goes, and a
 // string owns nothing else, so only a borrow that is a string may be it (spec 52)
 constexpr int64_t OWN_CAPTURED_STRING_POSITION = -4;
+// The position of a captured variable's cell holding a block (an object, an array), assigned: the old
+// value goes with all it owns, and only the cell owns it, so only a borrow read through a captured
+// variable's cell may be under it. A call given anything read through a variable a closure assigns
+// is an error where it is made (checkArgumentsAssigned), so no parameter of the callee is under it.
+constexpr int64_t OWN_CAPTURED_CELL_POSITION = -5;
 // On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
 // result that borrows): why, for the error the body gets instead.
 #define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"

@@ -56,7 +56,8 @@ namespace own_inference
     }
 
     // Does nothing `value` gives - its own value, a field read out of it, a call's result that may be it - leave
-    // `block`? Then the last of them that uses it is collected into `last`. A scalar is not followed: it is a copy.
+    // `block` (the function, when null)? Then the last of them that uses it is collected into `last` (in `block`
+    // only). A scalar is not followed: it is a copy.
     static bool staysInBlock(mlir::Value value, mlir::Block *block, mlir::Operation *&last, int depth = 0)
     {
         auto isScalar = [](mlir::Type type) {
@@ -75,12 +76,12 @@ namespace own_inference
 
         for (auto *user : value.getUsers())
         {
-            if (user->getBlock() != block)
+            if (block && user->getBlock() != block)
             {
                 return false;
             }
 
-            if (!last || last->isBeforeInBlock(user))
+            if (block && (!last || last->isBeforeInBlock(user)))
             {
                 last = user;
             }
@@ -95,12 +96,12 @@ namespace own_inference
             {
                 for (auto *refUser : user->getResult(0).getUsers())
                 {
-                    if (refUser->getBlock() != block)
+                    if (block && refUser->getBlock() != block)
                     {
                         return false;
                     }
 
-                    if (last->isBeforeInBlock(refUser))
+                    if (block && last->isBeforeInBlock(refUser))
                     {
                         last = refUser;
                     }
@@ -115,10 +116,17 @@ namespace own_inference
                 continue;
             }
 
-            // an argument: the result may be it, or borrowed from it
-            auto callIndirectOp = mlir::dyn_cast<mlir_ts::CallIndirectOp>(user);
-            if ((mlir::isa<mlir_ts::SymbolCallInternalOp>(user) || callIndirectOp) &&
-                (!callIndirectOp || callIndirectOp.getCallee() != value))
+            // a method of it (`i.item.get()`): the method bound to it, its object and its function, which only
+            // the call below uses
+            if (mlir::isa<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::GetThisOp,
+                          mlir_ts::GetMethodOp>(user) &&
+                user->getNumResults() == 1 && follow(user->getResult(0)))
+            {
+                continue;
+            }
+
+            // an argument, or the method called: the result may be it, or borrowed from it
+            if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallIndirectOp>(user))
             {
                 for (auto result : user->getResults())
                 {
@@ -161,18 +169,117 @@ namespace own_inference
                 continue;
             }
 
+            mlir::OpBuilder builder(loadOp->getContext());
+            auto release = [&](mlir::Operation *at) {
+                auto releaseOp = builder.create<mlir_ts::ReleaseOp>(loadOp.getLoc(), loadOp.getResult());
+                releaseOp->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+            };
+
             mlir::Operation *last = nullptr;
-            if (!staysInBlock(loadOp.getResult(), loadOp->getBlock(), last) || !last ||
-                last->hasTrait<mlir::OpTrait::IsTerminator>())
+            if (staysInBlock(loadOp.getResult(), loadOp->getBlock(), last) && last &&
+                !last->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                builder.setInsertionPointAfter(last);
+                release(last);
+                continue;
+            }
+
+            // ...or put in a `let` (`let x = i.item`) that is only read, across blocks too, and nothing read
+            // out of it leaves the function: freed at the function's returns, when the read reaches them all
+            // and the object it reads through is a parameter's, which outlives them
+            auto exits = localHeldToExits(loadOp);
+            for (auto *exit : exits)
+            {
+                builder.setInsertionPoint(exit);
+                release(exit);
+            }
+
+            // ...else a getter's new value would be lost: returned, stored, or kept where nothing frees it. Only
+            // a field some class of this module fills with accessors has one; its value cannot leave its read
+            auto refOp = loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+            if (!exits.empty() || !refOp)
             {
                 continue;
             }
 
-            mlir::OpBuilder builder(last->getContext());
-            builder.setInsertionPointAfter(last);
-            auto releaseOp = builder.create<mlir_ts::ReleaseOp>(loadOp.getLoc(), loadOp.getResult());
-            releaseOp->setAttr(OWN_CELL_READ_ATTR_NAME, builder.getUnitAttr());
+            auto fieldAttr = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+            auto filler = fieldAttr ? accessorFiller(fieldAttr.getValue()) : llvm::StringRef();
+            if (!filler.empty())
+            {
+                loadOp.emitError("'")
+                    << fieldAttr.getValue() << "' is read through an interface, and '" << filler
+                    << "' fills it with a getter, whose new value -mm=own frees only where it is read: it cannot "
+                       "be returned, kept or outlive its block; read the field where it is used";
+                signalPassFailure();
+            }
         }
+    }
+
+    llvm::StringRef OwnershipInferencePass::accessorFiller(llvm::StringRef field)
+    {
+        // the cell of a class's accessors for an interface's field: `<class>.<interface>..vtbl.<field>.accessor`
+        auto suffix = (llvm::Twine(".") + field + ".accessor").str();
+        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+        llvm::StringRef found;
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            auto name = globalOp.getSymName();
+            auto vtbl = name.find("..vtbl.");
+            if (vtbl != llvm::StringRef::npos && name.ends_with(suffix) && vtbl + 6 + suffix.size() == name.size())
+            {
+                // the class: up to the interface's name
+                auto head = name.take_front(vtbl);
+                found = head.take_front(head.rfind('.') == llvm::StringRef::npos ? head.size() : head.rfind('.'));
+                return mlir::WalkResult::interrupt();
+            }
+
+            return mlir::WalkResult::advance();
+        });
+
+        return found;
+    }
+
+    llvm::SmallVector<mlir::Operation *> OwnershipInferencePass::localHeldToExits(mlir_ts::LoadOp read)
+    {
+        auto result = read.getResult();
+        auto varOp = result.hasOneUse() ? mlir::dyn_cast<mlir_ts::VariableOp>(*result.getUsers().begin()) : mlir_ts::VariableOp();
+        if (!varOp || varOp.getInitializer() != result || varOp.getCaptured().value_or(false))
+        {
+            return {};
+        }
+
+        // only read, and what is read stays in the function
+        for (auto *user : varOp->getUsers())
+        {
+            mlir::Operation *ignored = nullptr;
+            auto slotRead = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!mlir::isa<mlir_ts::DebugVariableOp>(user) &&
+                (!slotRead || !staysInBlock(slotRead.getResult(), /*block=*/nullptr, ignored)))
+            {
+                return {};
+            }
+        }
+
+        // read through a parameter: `i.item` of an interface parameter `i`
+        auto refOp = read.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        auto objectRead = refOp ? refOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto objectSlot = objectRead ? objectRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto index = -1;
+        if (!objectSlot || !isParameterSlot(objectSlot, index))
+        {
+            return {};
+        }
+
+        // every return, after the read
+        auto f = getFunction();
+        mlir::DominanceInfo dominanceInfo(f);
+        llvm::SmallVector<mlir::Operation *> exits;
+        auto all = true;
+        f.walk([&](mlir_ts::ReturnInternalOp returnOp) {
+            exits.push_back(returnOp);
+            all = all && dominanceInfo.properlyDominates(read.getOperation(), returnOp.getOperation());
+        });
+
+        return all ? exits : llvm::SmallVector<mlir::Operation *>();
     }
 
     bool OwnershipInferencePass::analyze(llvm::SetVector<mlir::Operation *> &toErase)

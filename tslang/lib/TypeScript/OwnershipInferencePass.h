@@ -84,6 +84,11 @@ class OwnershipInferencePass
     // what is borrowed from it stay in its block: a release after their last use, for the getter's path only. One
     // nothing uses - what an assignment `i.f = v` leaves of the place it wrote - goes.
     void releaseCellReads();
+    // The returns of the function, where a read through a parameter's interface field put in a `let` that is
+    // only read is released (releaseCellReads); none when the read does not reach them all or may leave.
+    llvm::SmallVector<mlir::Operation *> localHeldToExits(mlir_ts::LoadOp read);
+    // The class of this module that fills an interface's field of this name with accessors, if any.
+    llvm::StringRef accessorFiller(llvm::StringRef field);
 
     // The analysis of one function; true when it passed. In a dry run it erases nothing and strips
     // no facts.

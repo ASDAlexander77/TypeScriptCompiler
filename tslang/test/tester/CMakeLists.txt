@@ -614,6 +614,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND tes
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -1254,6 +1255,7 @@ tslang_add_test(NAME test-jit-00-class-accessor-implements-field COMMAND test-ru
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
+tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
@@ -2269,6 +2271,7 @@ set(TSLANG_CORPUS
     00class_accessor_implements_field.ts
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
+    00conditional_record_literal_temporary.ts
     00call_arg_param_field_global.ts
     00class_accessor_untyped_setter.ts
     00class_accessor.ts
@@ -4090,7 +4093,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_callback_shapes own_callback_extended own_callback_interface
                  own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
-                 own_rest_keeps_declared)
+                 own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4129,7 +4132,7 @@ foreach(keeps_mm rc gc none)
                        own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
-                       own_rest_keeps_declared)
+                       own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -4194,6 +4197,13 @@ add_test(NAME test-own-caught-value-call
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_call.ts")
 set_tests_properties(test-own-caught-value-call PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
                                                            FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# A read through an interface field a getter may fill, put in a `let` that is only read, is freed at the
+# function's returns under own, on the getter's path only; no run can see the leak, so the IR is read.
+add_test(NAME test-own-interface-getter-let-released
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_getter_let.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-interface-getter-let.cmake")
 
 # A rest parameter its function says it keeps (`@keeps`) is released once emptied under own, as an
 # inferred keep's is (spec 72); no run can see the leak, so the IR is read.
@@ -4751,6 +4761,13 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_callback_assigns_receiver|:17:5: error: '[^']*' is lent to 'Bag[.]forEach', which may run a closure that gives '[^']*' a new value"
+    "own_err_callback_assigns_borrowed|:25:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_arg_assigned_in_call|:27:11: error: '[^']*' is lent to 'f', but is given a new value before the call takes it"
+    "own_err_getter_read_returned|:19:12: error: 'item' is read through an interface, and 'Fresh' fills it with a getter"
+    "own_err_literal_element_overwritten|:20:24: error: '[^']*' borrows 'HG[.]v' and cannot be stored, returned or captured"
+    "own_err_record_field_overwritten|:23:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"
+    "own_err_record_borrow_in_try|:31:14: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_marker_identifier_arg|:8:8: error: '@keeps' takes the names of parameters as strings: '@keeps[(]\"it\"[)]'"
     "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps', '@borrows', '@lends' and '@record'"
     "own_err_lends_missing|'firstOf' could return a borrow or keep a parameter, but it can be called from another module. '@lends' or '@keeps' would say it in its signature"

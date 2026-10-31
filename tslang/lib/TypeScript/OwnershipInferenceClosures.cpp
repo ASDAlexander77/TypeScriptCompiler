@@ -525,6 +525,18 @@ namespace own_inference
                 return;
             }
 
+            // a callee that may overwrite an element (`p[0] = v`) gives back the old one, which is not
+            // the array's to give: the borrowed value is freed under its owner, and the new one is
+            // lost with the array's shallow release. So is a callee that may destroy anything
+            auto elementSlot = mlir_ts::RefType::get(mlir::cast<mlir_ts::ArrayType>(result.getType()).getElementType());
+            auto places = callDropFields(call);
+            if (!callNoDrops(call) && (!places || llvm::any_of(*places, [&](auto &place) {
+                                           return place.first == -1 && place.second == elementSlot;
+                                       })))
+            {
+                return;
+            }
+
             // rc's references for the elements go: the array borrows them, for as long as the call
             setAttrTracked(arrayOp, OWN_BORROWING_ARRAY_ATTR_NAME);
             fieldBorrowRetains.insert(retains.begin(), retains.end());
