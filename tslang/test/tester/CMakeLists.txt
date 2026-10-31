@@ -3401,6 +3401,11 @@ foreach(value_mm gc rc none)
     tslang_add_test(NAME test-compile-value-missing-niche-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
     tslang_add_test(NAME test-jit-value-missing-niche-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
 endforeach()
+# ...and with that reference as T's only field, where T is no larger than null's pointer
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-missing-niche-one-field-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche_one_field.ts")
+    tslang_add_test(NAME test-jit-value-missing-niche-one-field-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche_one_field.ts")
+endforeach()
 # ...made by `?:` from null and a literal holding a new object, given to `??`, and printed. Not under own,
 # which cannot yet tell which branch of a `?:` owns a literal it merges.
 foreach(value_mm gc rc none)
