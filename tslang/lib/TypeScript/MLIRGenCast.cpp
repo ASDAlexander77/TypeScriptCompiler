@@ -498,6 +498,24 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castTupleToString(mlir::Location location, mlir::Value value, mlir_ts::TupleType tupleType,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
     {
+        SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldValues;
+        for (auto [index, fieldInfo] : enumerate(fields))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);
+
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
+            auto fieldValue = cl.Tuple(tupleType, true);
+            VALIDATE(value, location)
+            fieldValues.push_back({fieldInfo.id, fieldValue});
+        }
+
+        return fieldsToString(location, fieldValues, genContext);
+    }
+
+    // `{ a: 1, b: 'text' }`: each field's name and its value as a string, a string's in quotes
+    ValueOrLogicalResult MLIRGenImpl::fieldsToString(mlir::Location location,
+        ::llvm::ArrayRef<std::pair<mlir::Attribute, mlir::Value>> fieldValues, const GenContext &genContext)
+    {
         auto stringType = getStringType();
         SmallVector<mlir::Value, 4> strs;
 
@@ -521,27 +539,23 @@ namespace mlirgen
 
         strs.push_back(beginValue);
 
-        for (auto [index, fieldInfo] : enumerate(fields))
+        for (auto [index, field] : enumerate(fieldValues))
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
-
-            if (index > 0) 
+            auto fieldId = field.first;
+            auto fieldValue = field.second;
+            if (index > 0)
             {
                 // text
                 strs.push_back(spanValue);
             }
 
             strs.push_back(spaceValue);
-            if (fieldInfo.id)
+            if (fieldId)
             {
-                auto fieldNameValue = builder.create<mlir_ts::ConstantOp>(location, stringType, fieldInfo.id);
+                auto fieldNameValue = builder.create<mlir_ts::ConstantOp>(location, stringType, fieldId);
                 strs.push_back(fieldNameValue);
                 strs.push_back(fieldSepValue);
             }
-
-            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
-            auto fieldValue = cl.Tuple(tupleType, true);
-            VALIDATE(value, location)
 
             if (fieldValue.getType() != stringType)
             {
@@ -575,6 +589,86 @@ namespace mlirgen
 
         return V(concatValues);        
     }       
+
+    // An interface printed: its `toString` when it has one, as a class's is; else its fields, read
+    // through it, as an object literal's are (`{ n: 3 }`), those of the interfaces it extends first;
+    // and null as "null". An interface whose fields hold its own type again is printed `[Object]`
+    // there: the text is made inline, and the type nests without end.
+    ValueOrLogicalResult MLIRGenImpl::castInterfaceToString(mlir::Location location, mlir::Value value,
+        mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        auto stringType = getStringType();
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        if (!interfaceInfo)
+        {
+            return mlir::failure();
+        }
+
+        if (llvm::is_contained(interfacesBeingPrinted, interfaceType))
+        {
+            return V(builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr("[Object]")));
+        }
+
+        interfacesBeingPrinted.push_back(interfaceType);
+        auto popPrinted = llvm::make_scope_exit([&]() { interfacesBeingPrinted.pop_back(); });
+
+        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), value, nullValue);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{stringType}, isNull, true);
+
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{
+            builder.create<mlir_ts::ConstantOp>(location, stringType, builder.getStringAttr(NULL_NAME))});
+
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+        mlir::Value text;
+        if (interfaceInfo->findMethod(TO_STRING))
+        {
+            auto result = mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            text = V(result);
+            if (text.getType() != stringType)
+            {
+                CAST(text, location, stringType, text, genContext);
+            }
+        }
+        else
+        {
+            llvm::SmallVector<InterfaceFieldInfo> fields;
+            std::function<void(InterfaceInfo::TypePtr)> collect = [&](InterfaceInfo::TypePtr info) {
+                for (auto &extent : info->extends)
+                {
+                    collect(std::get<1>(extent));
+                }
+
+                fields.append(info->fields.begin(), info->fields.end());
+            };
+            collect(interfaceInfo);
+
+            SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldValues;
+            for (auto &field : fields)
+            {
+                auto name = mlir::dyn_cast_or_null<mlir::StringAttr>(field.id);
+                if (!name)
+                {
+                    continue;
+                }
+
+                auto fieldValue = mlirGenPropertyAccessExpression(location, value, name.getValue(), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(fieldValue)
+                fieldValues.push_back({field.id, V(fieldValue)});
+            }
+
+            auto result = fieldsToString(location, fieldValues, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            text = V(result);
+        }
+
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{text});
+        builder.setInsertionPointAfter(ifOp);
+        return V(ifOp.getResults().front());
+    }
 
     ValueOrLogicalResult MLIRGenImpl::generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext)
     {
@@ -1069,6 +1163,11 @@ namespace mlirgen
                 }
 
                 return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+            }
+
+            if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(valueType))
+            {
+                return castInterfaceToString(location, value, interfaceType, genContext);
             }
 
             if (auto arrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType))
@@ -2002,8 +2101,10 @@ namespace mlirgen
                 return castFromUnion(location, type, value, genContext);
             }
 
+            // ...and a @value type's `T | null` stored as T (MLIRTypeHelper::getValueNullNiche): null
+            // is "null", not T's fields read from a zeroed T
             if (isa<mlir_ts::StringType>(type)
-                && isa<mlir_ts::ClassType>(baseType)
+                && isa<mlir_ts::ClassType, mlir_ts::ValueType>(baseType)
                 && llvm::any_of(unionType.getTypes(), [](auto subType) { return isa<mlir_ts::NullType>(subType); }))
             {
                 return castNullableToString(location, type, value, baseType, genContext);
@@ -2027,7 +2128,11 @@ namespace mlirgen
         // unwrapping optional value to work with union inside, we need it as ' | undefined ' is part of union type
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(valueType))
         {
-            if (isa<mlir_ts::UnionType>(optType.getElementType()))
+            // ...but not a @value type's that may be missing put into a string: undefined is "undefined",
+            // not the default of its union (a zeroed value, read as null or as T's fields) - below
+            auto missingValueToString =
+                isa<mlir_ts::StringType>(type) && MLIRTypeHelper::getMissingValueElement(optType);
+            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString)
             {
                 auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
                 CAST_A(unwrappedValue, location, type, val, genContext);
@@ -3235,11 +3340,18 @@ namespace mlirgen
     // see nullStringAsText in LowerToLLVM.)
     ValueOrLogicalResult MLIRGenImpl::castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext)
     {
-        CAST_A(opaqueValue, location, getOpaqueType(), value, genContext);
+        // a class is compared as its pointer; a @value type's union as itself, whose null is a pointer
+        // in it (the lowering's valueNullCompare)
+        mlir::Value compared = value;
+        if (!isa<mlir_ts::ValueType>(baseType))
+        {
+            CAST_A(opaqueValue, location, getOpaqueType(), value, genContext);
+            compared = opaqueValue;
+        }
 
         auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
         auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(
-            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), opaqueValue,
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), compared,
             nullVal);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, isNull, true);
@@ -3249,7 +3361,7 @@ namespace mlirgen
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{nullText});
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-        // the union as the class: the same pointer, now known not to be null
+        // the union as its base type, now known not to be null: the same pointer, or the same value
         auto baseValue = V(builder.create<mlir_ts::CastOp>(location, baseType, value));
         CAST_A(text, location, type, baseValue, genContext);
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{text});

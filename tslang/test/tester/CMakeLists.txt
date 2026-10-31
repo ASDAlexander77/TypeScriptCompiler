@@ -615,6 +615,7 @@ tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND te
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-compile-00-interface-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_print.ts")
 tslang_add_test(NAME test-compile-00-class-method-devirtualized COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-compile-00-call-arg-param-field-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-untyped-setter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
@@ -1257,6 +1258,7 @@ tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-r
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
+tslang_add_test(NAME test-jit-00-interface-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_print.ts")
 tslang_add_test(NAME test-jit-00-class-method-devirtualized COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_method_devirtualized.ts")
 tslang_add_test(NAME test-jit-00-call-arg-param-field-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_arg_param_field_global.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-untyped-setter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_untyped_setter.ts")
@@ -1565,6 +1567,12 @@ tslang_add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJ
 
 # imports support only compile mode
 tslang_add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
+# A C function declared in a .d.ts that an imported module referenced first: its string result is still
+# copied (TSLANG_ISSUES 21)
+foreach(c_string_mm gc rc none own)
+    tslang_add_test(NAME test-compile-import-c-string-copy-${c_string_mm} COMMAND test-runner -mm=${c_string_mm} "${PROJECT_SOURCE_DIR}/test/tester/c-string-import/c_string_copy_import.ts" "${PROJECT_SOURCE_DIR}/test/tester/c-string-import/c_string_copy_lib.ts")
+    tslang_add_test(NAME test-jit-import-c-string-copy-${c_string_mm} COMMAND test-runner -jit -mm=${c_string_mm} "${PROJECT_SOURCE_DIR}/test/tester/c-string-import/c_string_copy_import.ts")
+endforeach()
 # A library whose root only declares and initializes a variable must not get an entry point of
 # its own: it is compiled with the same --emit=obj as the program linked beside it, and a `main`
 # in both fails to link. Only the program half is given --entry-point.
@@ -2274,6 +2282,7 @@ set(TSLANG_CORPUS
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00conditional_record_literal_temporary.ts
+    00interface_print.ts
     00class_method_devirtualized.ts
     00call_arg_param_field_global.ts
     00class_accessor_untyped_setter.ts
@@ -3391,6 +3400,12 @@ endforeach()
 foreach(value_mm gc rc none)
     tslang_add_test(NAME test-compile-value-missing-niche-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
     tslang_add_test(NAME test-jit-value-missing-niche-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_niche.ts")
+endforeach()
+# ...made by `?:` from null and a literal holding a new object, given to `??`, and printed. Not under own,
+# which cannot yet tell which branch of a `?:` owns a literal it merges.
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-missing-ops-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_ops.ts")
+    tslang_add_test(NAME test-jit-value-missing-ops-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_ops.ts")
 endforeach()
 # ...and `g?.ray.dir.x` (and `.len()`) of a missing one skips the rest of the chain: undefined, as is a
 # type literal's

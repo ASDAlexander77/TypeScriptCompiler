@@ -3551,7 +3551,10 @@ class MLIRTypeHelper
         {
             if (unionContext.isUndefined)
             {
-                unionContext.types.insert(optionalType.getElementType());
+                // its element as a member like any other: a union in it (`Hit | null`, the optional a
+                // @value type's `T | null` is) gives its members, not itself as one - `h ?? find(3)`
+                // was typed `Hit | (Hit | null)`, and failed
+                return processUnionTypeItem(optionalType.getElementType(), unionContext);
             }
             else
             {
