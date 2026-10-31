@@ -26,6 +26,29 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
+## Results 2026-10-31: parameters captured by copy
+
+Release, Windows 11 x64, the same machine; main 1cd17c33 against the same tree with this change.
+Median of 7 runs after a warm-up; every build prints the same checksum. Neither benchmark file
+changed.
+
+A closure used to move every parameter it captured into a heap cell, shared by the frame and the
+closure's box, so `getNaturalColor` made six cells on every call for `addLight`. Now a parameter that
+nothing assigns (neither the body nor a closure in it) is captured by copy, as `this` and a `const`
+already were. Under `-mm=own`, a closure that does not escape borrows the copy, as it borrowed the
+cell. Under own, a generator's parameters, callbacks and `Shared<T>` handles stay in cells.
+
+| Build | main | parameters by copy | vs Rust idiomatic (55 ms) |
+|---|---|---|---|
+| tslang gc | 273 ms | 97 ms | 1.8x |
+| tslang rc | 171 ms | 134 ms | 2.4x |
+| tslang none | 158 ms | 97 ms | 1.8x |
+| tslang own | 143 ms | 104 ms | 1.9x |
+
+Under none, the optimized `RayTracer.getNaturalColor` allocates nothing on the heap any more: the
+closure's box is on its stack. Variant A below (`addLight` rewritten as a loop) measured 89 ms
+under none and own. Both now stay 8-15 ms above that, which this run does not explain.
+
 ## Results 2026-10-24: `@value`
 
 Release, Windows 11 x64, the same machine and toolchains as below; branch `value-types` (98ec37ff,

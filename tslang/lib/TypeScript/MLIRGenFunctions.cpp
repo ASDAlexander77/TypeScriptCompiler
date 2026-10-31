@@ -1714,6 +1714,23 @@ namespace mlirgen
                     }
                 }
             }
+            else if (node == SyntaxKind::PrefixUnaryExpression || node == SyntaxKind::PostfixUnaryExpression)
+            {
+                auto opCode = node == SyntaxKind::PrefixUnaryExpression
+                                  ? node.as<ts::PrefixUnaryExpression>()->_operator
+                                  : node.as<ts::PostfixUnaryExpression>()->_operator;
+                if (opCode == SyntaxKind::PlusPlusToken || opCode == SyntaxKind::MinusMinusToken)
+                {
+                    if (node == SyntaxKind::PrefixUnaryExpression)
+                    {
+                        addTargets(node.as<ts::PrefixUnaryExpression>()->operand);
+                    }
+                    else
+                    {
+                        addTargets(node.as<ts::PostfixUnaryExpression>()->operand);
+                    }
+                }
+            }
             else if (node == SyntaxKind::ForOfStatement)
             {
                 auto initializer = node.as<ts::ForOfStatement>()->initializer;
@@ -1976,6 +1993,43 @@ namespace mlirgen
         if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
+        }
+
+        // A parameter nothing assigns - not this body, not a closure in it - holds the caller's value
+        // for the whole call, so a closure takes a copy of it, as it does of `this` and of a `const`,
+        // instead of moving it into a heap cell the frame and the box share: a closure made per call
+        // (`reduce((col, light) => ... pos ...)`) cost one cell per parameter on every call.
+        // -mm=own keeps a generator's parameters in cells, whose state keeps or borrows them by its
+        // own rules (spec 38) - the generator is the wrapper buildGeneratorWrapperDeclaration made,
+        // whose body holds the `next` method - and two kinds anywhere: a callback, whose reach own
+        // follows through the cell (spec 54), and a Shared<T> handle, whose cell holds a count of its
+        // own (spec 23.2)
+        auto own = compileOptions.memoryModel == MemoryModelOwn;
+        auto generatorWrapper = false;
+        if (own && functionLikeDeclarationBaseAST->body)
+        {
+            ts::VisitorAST nextVisitor([&](ts::Node node) {
+                generatorWrapper = generatorWrapper ||
+                                   (node->internalFlags & InternalFlags::GeneratorNext) == InternalFlags::GeneratorNext;
+            });
+            nextVisitor.visit(functionLikeDeclarationBaseAST->body);
+        }
+
+        if (functionLikeDeclarationBaseAST->body && !generatorWrapper)
+        {
+            llvm::StringSet<> assignedNames;
+            llvm::StringSet<> lengthNames;
+            collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames, &lengthNames);
+            for (const auto &param : funcProto->getParams())
+            {
+                auto keptInCell = own && (mth.isAnyFunctionType(param->getType()) ||
+                                          MLIRTypeHelper::isSharedHandleType(param->getType()));
+                if (!keptInCell && !param->getBindingPattern() && param->getName() != THIS_NAME &&
+                    !assignedNames.contains(param->getName()) && !lengthNames.contains(param->getName()))
+                {
+                    param->setCaptureByValue();
+                }
+            }
         }
 
         if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))

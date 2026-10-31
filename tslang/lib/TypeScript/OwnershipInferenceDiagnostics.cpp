@@ -290,6 +290,29 @@ namespace own_inference
         // (spec 15), and noteLostFacts says why they cannot
         if (auto param = borrowedParam(root); param >= 0)
         {
+            // the retain of a parameter's copy for a closure's box (MLIRGen's mlirGenRetainCaptured
+            // reads the slot again for the box's field), the box of a closure that escapes - a
+            // parameter nothing assigns is captured by copy, and its cell used to be refused the same
+            // way (decideEscaping)
+            auto isBoxFill = [&](mlir::Operation *user) {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                             : mlir_ts::PropertyRefOp();
+                return propertyRefOp && closureOfBox(propertyRefOp.getObjectRef()) && user->getLoc() == op->getLoc();
+            };
+            auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op);
+            auto retainedRead = retainOp ? retainOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            auto boxFill = retainedRead && llvm::any_of(retainedRead.getReference().getUsers(), [&](mlir::Operation *user) {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                return loadOp && llvm::any_of(loadOp->getUsers(), isBoxFill);
+            });
+            if (boxFill)
+            {
+                op->emitError("a closure that escapes owns what it captures, but -mm=own cannot move this variable "
+                              "into it: its value is the caller's");
+                return true;
+            }
+
             auto diag = op->emitError("'") << (name == "this value" ? paramName(param) : name);
             if (isReturned(root))
             {

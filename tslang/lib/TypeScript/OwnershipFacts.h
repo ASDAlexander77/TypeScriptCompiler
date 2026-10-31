@@ -1420,9 +1420,9 @@ inline mlir_ts::CreateBoundFunctionOp closureOfBox(mlir::Value box)
     return {};
 }
 
-// `this` of the class member a function is: its first parameter, of a class type, or a read of the
-// parameter's slot, seen through views (spec 70)
-inline bool isMemberThis(mlir::Value value)
+// The function's own parameter a value is: the argument itself, or a read of the parameter's slot,
+// seen through views; null for anything else
+inline mlir::BlockArgument parameterRead(mlir::Value value)
 {
     value = rootOf(value);
     // the parameter's slot: `ts.Param` in MLIRGen, `ts.Variable` initialized from it by the time the
@@ -1440,14 +1440,45 @@ inline bool isMemberThis(mlir::Value value)
         }
         else
         {
-            return false;
+            return {};
         }
     }
 
     auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+    if (!argument || !argument.getOwner()->isEntryBlock() || !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()))
+    {
+        return {};
+    }
+
+    return argument;
+}
+
+// `this` of the class member a function is: its first parameter, of a class type, or a read of the
+// parameter's slot, seen through views (spec 70)
+inline bool isMemberThis(mlir::Value value)
+{
+    auto argument = parameterRead(value);
+    return argument && argument.getArgNumber() == 0 && mlir::isa<mlir_ts::ClassType>(argument.getType());
+}
+
+// A copy a closure's own box holds, read out of it (the box is the closure body's first argument): the
+// enclosing frame's, which the box keeps for as long as the closure runs
+inline bool isOwnCaptureRead(mlir::Value value)
+{
+    value = rootOf(value);
+    auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+    auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+    auto argument = propertyRefOp ? mlir::dyn_cast<mlir::BlockArgument>(propertyRefOp.getObjectRef()) : mlir::BlockArgument();
     return argument && argument.getArgNumber() == 0 && argument.getOwner()->isEntryBlock() &&
            mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) &&
-           mlir::isa<mlir_ts::ClassType>(argument.getType());
+           mlir::isa<mlir_ts::RefType>(argument.getType()) && !mlir::isa<mlir_ts::RefType>(value.getType());
+}
+
+// A value a closure may capture by copy and borrow while it does not escape: the function's parameter
+// (MLIRGen captures one nothing assigns by copy, `this` too - spec 70), or a copy its own box holds
+inline bool isBorrowableCapture(mlir::Value value)
+{
+    return parameterRead(value) || isOwnCaptureRead(value);
 }
 
 // A field of the member's `this`: of its object, or of a base class's storage in it (spec 57)
