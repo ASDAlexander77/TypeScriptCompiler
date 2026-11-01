@@ -487,6 +487,8 @@ tslang_add_test(NAME test-compile-own-00-cpp-slot COMMAND test-runner -mm=own "$
 tslang_add_test(NAME test-compile-own-00-cpp-overloads COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-compile-00-cpp-slot COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-compile-00-cpp-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
+tslang_add_test(NAME test-compile-00-cpp-union-truth COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_union_truth.ts")
+tslang_add_test(NAME test-compile-own-00-cpp-union-truth COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_union_truth.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -1139,6 +1141,8 @@ tslang_add_test(NAME test-jit-00-cpp-overloads COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-own-00-cppvtable-class COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-jit-own-00-cpp-slot COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-jit-own-00-cpp-overloads COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
+tslang_add_test(NAME test-jit-00-cpp-union-truth COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_union_truth.ts")
+tslang_add_test(NAME test-jit-own-00-cpp-union-truth COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_union_truth.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2747,6 +2751,7 @@ set(TSLANG_CORPUS
     00cppvtable_class.ts
     00cpp_slot.ts
     00cpp_overloads.ts
+    00cpp_union_truth.ts
     )
 
 # the default model runs these ahead of time only, so the other models do too
