@@ -17,8 +17,10 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -161,7 +163,15 @@ static std::deque<JitImage> jitImages;
 //    __CxxFrameHandler3 personality referenced from .xdata — RTDyld materializes a
 //    jump thunk in the *referencing* section's stub area, and the OS exception
 //    dispatcher calls through it. Read-only sections therefore must be mapped
-//    executable; route them through the code allocator.
+//    executable: they are allocated from the read-only pool like any, and their pages
+//    made read+execute in finalizeMemory.
+//
+//    They used to be routed through the code allocator instead. The reservation (4) sizes
+//    the code pool for the code alone, so a program whose read-only data outgrew the
+//    page-rounding slack overflowed it, and the rest went to a fresh mapping wherever the OS
+//    put it - below the reserved block in about a third of runs, where an ADDR32NB
+//    relocation to it falls below the image base: "LLVM ERROR: IMAGE_REL_AMD64_ADDR32NB
+//    relocation requires an ordered section layout".
 class JitSectionMemoryManager : public llvm::SectionMemoryManager
 {
     using GCRootsFn = void (*)(void *, void *);
@@ -188,6 +198,28 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     {
     }
 
+    // The size of the block the base reserves, as it computes it (SectionMemoryManager.cpp), for
+    // the check in finalizeMemory: a manager serves one object, so this is called once.
+    void reserveAllocationSpace(uintptr_t codeSize, llvm::Align codeAlign, uintptr_t roDataSize, llvm::Align roDataAlign,
+                                uintptr_t rwDataSize, llvm::Align rwDataAlign) override
+    {
+        static const uint64_t pageSize = llvm::sys::Process::getPageSizeEstimate();
+        auto required = [&](uintptr_t size, llvm::Align align) -> uint64_t {
+            if (size == 0)
+            {
+                return 0;
+            }
+
+            auto alignment = llvm::Align(std::max<uint64_t>(align.value(), 8));
+            return llvm::alignTo(llvm::alignTo(size, alignment) + alignment.value(), pageSize);
+        };
+
+        reservedSize = reservedSize == 0 && sectionsEnd == 0
+                           ? required(codeSize, codeAlign) + required(roDataSize, roDataAlign) + required(rwDataSize, rwDataAlign)
+                           : 0;
+        llvm::SectionMemoryManager::reserveAllocationSpace(codeSize, codeAlign, roDataSize, roDataAlign, rwDataSize, rwDataAlign);
+    }
+
     uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment, unsigned sectionID,
                                  llvm::StringRef sectionName) override
     {
@@ -199,16 +231,16 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     uint8_t *allocateDataSection(uintptr_t size, unsigned alignment, unsigned sectionID,
                                  llvm::StringRef sectionName, bool isReadOnly) override
     {
+        auto *addr = llvm::SectionMemoryManager::allocateDataSection(size, alignment, sectionID, sectionName, isReadOnly);
+        noteSectionAddress(addr, size);
 #ifdef _WIN64
-        if (isReadOnly)
+        if (isReadOnly && addr != nullptr)
         {
             // see (3): unwind personality thunks live in read-only sections
-            return allocateCodeSection(size, alignment, sectionID, sectionName);
+            readOnlySections.push_back({addr, size});
         }
 #endif
 
-        auto *addr = llvm::SectionMemoryManager::allocateDataSection(size, alignment, sectionID, sectionName, isReadOnly);
-        noteSectionAddress(addr, size);
         if (!isReadOnly && addr != nullptr)
         {
             if (auto addRoots = reinterpret_cast<GCRootsFn>(
@@ -223,6 +255,49 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     }
 
 #ifdef _WIN64
+    // see (3): the base makes the read-only sections read-only; their pages hold nothing else (the
+    // pool is page-aligned, in the reservation (4) as in a mapping of its own), so they become
+    // read+execute as they are
+    bool finalizeMemory(std::string *errMsg = nullptr) override
+    {
+        if (llvm::SectionMemoryManager::finalizeMemory(errMsg))
+        {
+            return true;
+        }
+
+        // Every section is meant to come from the reserved block (4). One that did not was given a
+        // mapping of its own wherever the OS put it, and one below the block falls below the image
+        // base its ADDR32NB relocations are resolved against - the failure (3) describes, in some
+        // runs only. Its spans and the block's are page-aligned, and the block starts at its first
+        // section, so a span wider than the block always means one went outside it: this says so
+        // in every run, as a warning, rather than failing in a few.
+        if (reservedSize > 0 && sectionsEnd - imageBase > reservedSize)
+        {
+            llvm::errs() << "warning: a JIT'd section is outside the block reserved for its object (" << (sectionsEnd - imageBase)
+                         << " bytes used, " << reservedSize << " reserved)\n";
+        }
+
+        static const auto pageSize = llvm::sys::Process::getPageSizeEstimate();
+        for (auto &section : readOnlySections)
+        {
+            auto start = llvm::alignDown(reinterpret_cast<uintptr_t>(section.first), pageSize);
+            auto end = llvm::alignTo(reinterpret_cast<uintptr_t>(section.first) + section.second, pageSize);
+            llvm::sys::MemoryBlock block(reinterpret_cast<void *>(start), end - start);
+            if (auto ec = llvm::sys::Memory::protectMappedMemory(block, llvm::sys::Memory::MF_READ | llvm::sys::Memory::MF_EXEC))
+            {
+                if (errMsg)
+                {
+                    *errMsg = ec.message();
+                }
+
+                return true;
+            }
+        }
+
+        readOnlySections.clear();
+        return false;
+    }
+
     void registerEHFrames(uint8_t *addr, uint64_t loadAddr, size_t size) override
     {
         auto entryCount = size / sizeof(RUNTIME_FUNCTION);
@@ -273,6 +348,8 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
             imageBase = reinterpret_cast<uint64_t>(addr);
         }
 
+        sectionsEnd = (std::max)(sectionsEnd, reinterpret_cast<uint64_t>(addr) + size);
+
 #ifdef _WIN64
         // a memory manager serves one object: its image is the span of its sections
         if (image == nullptr)
@@ -287,12 +364,15 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     }
 
     uint64_t imageBase = 0;
+    uint64_t sectionsEnd = 0;
+    uint64_t reservedSize = 0;
 #ifdef _WIN64
     JitImage *image = nullptr;
 #endif
     mlir::SmallVector<std::pair<uint8_t *, uintptr_t>> gcRootSections;
 #ifdef _WIN64
     mlir::SmallVector<PRUNTIME_FUNCTION> functionTables;
+    mlir::SmallVector<std::pair<uint8_t *, uintptr_t>> readOnlySections;
 #endif
 };
 
