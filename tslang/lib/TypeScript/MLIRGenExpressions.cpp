@@ -467,6 +467,18 @@ namespace mlirgen
         mlir::Value resultSlot;
         if (resultType)
         {
+            // A slot that will own the result is released by the scope, on the unwind leg too: in
+            // the body of a TryOp - a `try`, or a block wrapped for its cleanup (on Itanium, any
+            // block with a typed `catch`) - its storage goes in front of the TryOp, as an owned
+            // local's does (allocateScopeOwnedVarsOutsideOfOperation), or the cleanup region
+            // names a slot the body declares
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            if (genContext.allocateScopeOwnedVarsOutsideOfOperation && genContext.currentOperation &&
+                compileOptions.tracksOwnership() && mth.ownsHeapMemory(location, resultType))
+            {
+                builder.setInsertionPoint(genContext.currentOperation);
+            }
+
             resultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(resultType),
                                                              mlir::Value(), builder.getBoolAttr(false),
                                                              builder.getIndexAttr(0));

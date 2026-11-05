@@ -1166,6 +1166,17 @@ namespace own_inference
     {
         if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(retain))
         {
+            // an owned local hoisted in front of a TryOp (allocateScopeOwnedVarsOutsideOfOperation)
+            // is declared with no value and given it by the store right before the retain: that
+            // store is the move, not the declaration, which ran before the value was made
+            auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            auto storeOp = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(retain->getPrevNode());
+            if (varOp && !varOp.getInitializer() && storeOp && storeOp.getReference() == retainSlotOp.getSlot() &&
+                storeOp.getValue() == value)
+            {
+                return storeOp;
+            }
+
             return retainSlotOp.getSlot().getDefiningOp();
         }
 
