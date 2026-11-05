@@ -5140,6 +5140,9 @@ set(reference_path_dir "${PROJECT_SOURCE_DIR}/test/tester/reference-path")
 tslang_add_import_tests(reference-path-import-and-reference "${reference_path_dir}" import_and_reference module_left)
 tslang_add_import_tests(reference-path-two-imports "${reference_path_dir}" two_imports module_left module_right)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
+# The library is named after nested_bottom, the first module, and holds nested_middle as well: the
+# program imports nested_middle as source and meets the library only inside it.
+tslang_add_import_tests(reference-path-import-nested "${reference_path_dir}" nested_import nested_bottom nested_middle)
 tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
 # Through a -shared library of these two modules the importer read Node twice ("redefinition of
 # symbol named 'Node..new'"), and then called its methods through the wrong vtable slots - see
