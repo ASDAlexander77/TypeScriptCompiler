@@ -774,11 +774,23 @@ namespace own_inference
                llvm::count(call->getOperands(), value) == 1;
     }
 
+    bool OwnershipInferencePass::isAwaitResultStore(mlir_ts::StoreOp storeOp)
+    {
+        // `await f(x)` runs the call in an `async.execute` region, which the async lowering outlines
+        // into a `func.func` given a reference to the caller's local, and stores the value through
+        // it for the code after the await to read. The outlined function's temporaries (`x`) are
+        // released when it ends, so what borrows them cannot be given back as it is.
+        auto argument = mlir::dyn_cast<mlir::BlockArgument>(storeOp.getReference());
+        auto *owner = argument ? argument.getOwner() : nullptr;
+        return owner && owner->isEntryBlock() && owner->getParentOp() &&
+               owner->getParentOp()->getName().getStringRef() == "func.func";
+    }
+
     bool OwnershipInferencePass::storesCopyOf(mlir::Operation *store, mlir::Value value)
     {
         auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(store);
         if (!storeOp || storeOp.getValue() != value || !(isCopyableValueAt(store, value.getType()) || isHandle(value)) ||
-            !isPlace(storeOp.getReference()))
+            !(isPlace(storeOp.getReference()) || isAwaitResultStore(storeOp)))
         {
             return false;
         }

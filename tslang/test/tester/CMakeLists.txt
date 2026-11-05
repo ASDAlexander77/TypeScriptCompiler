@@ -923,6 +923,8 @@ tslang_add_test(NAME test-compile-00-new-alias-and-ctor-overloads COMMAND test-r
 tslang_add_test(NAME test-compile-own-00-atomic-builtins COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
 tslang_add_test(NAME test-compile-own-00-generic-literal-inference COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
 tslang_add_test(NAME test-compile-own-00-new-alias-and-ctor-overloads COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
+tslang_add_test(NAME test-compile-00-own-throw-param-await-borrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
+tslang_add_test(NAME test-compile-own-00-own-throw-param-await-borrow COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
 tslang_add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -1574,6 +1576,8 @@ tslang_add_test(NAME test-jit-00-new-alias-and-ctor-overloads COMMAND test-runne
 tslang_add_test(NAME test-jit-own-00-atomic-builtins COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
 tslang_add_test(NAME test-jit-own-00-generic-literal-inference COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
 tslang_add_test(NAME test-jit-own-00-new-alias-and-ctor-overloads COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
+tslang_add_test(NAME test-jit-00-own-throw-param-await-borrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
+tslang_add_test(NAME test-jit-own-00-own-throw-param-await-borrow COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
 tslang_add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -2168,6 +2172,7 @@ set(TSLANG_CORPUS
     00atomic_builtins.ts
     00generic_literal_inference.ts
     00new_alias_and_ctor_overloads.ts
+    00own_throw_param_await_borrow.ts
     00any_truthiness_objects.ts
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
