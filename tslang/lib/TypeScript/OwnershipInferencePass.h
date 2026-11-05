@@ -868,6 +868,9 @@ class OwnershipInferencePass
     // Does `store` put `value`, a string read out of a place, into another place with no retain of
     // rc's for it, so that the place can take a copy instead (callCopies)?
     bool storesCopyOf(mlir::Operation *store, mlir::Value value);
+    // Is `storeOp` an `await`'s store of its value, from the function the async lowering outlined
+    // its region into, through the reference to the caller's local the code after the await reads?
+    bool isAwaitResultStore(mlir_ts::StoreOp storeOp);
 
     // A local that holds a borrow through `user`, and the field path under it that holds it (empty:
     // the local's value itself): a store of it into the local, or into a field of the local's value

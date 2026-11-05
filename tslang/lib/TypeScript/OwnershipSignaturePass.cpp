@@ -910,6 +910,13 @@ namespace own_signature
             return llvm::is_contained(pushOp.getItems(), used);
         }
 
+        // `throw reason` takes the value with the exception: the catch owns it, not the caller
+        // (releaseKeptParamsAtExits places no release at such a throw)
+        if (mlir::isa<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>(user))
+        {
+            return user->getOperand(0) == used;
+        }
+
         // `new Shared(x)` moves `x` into the block, as a store into a place does (spec 23.1)
         if (auto sharedNewOp = mlir::dyn_cast<mlir_ts::SharedNewOp>(user))
         {
