@@ -1223,8 +1223,29 @@ class OwnershipInferencePass
                           const llvm::SetVector<mlir::Block *> &releasedInto);
 
     // Puts in the releases placeOnUnmovedEdges decided: at the end of a block that goes only to the
-    // join, else in a block of its own on the edge.
+    // join, else in a block of its own on the edge - and the clears clearsOnUnwind decided.
     void placeEdgeReleases();
+
+    // A slot emptied right after the move out of it, put in after the analysis (clearsOnUnwind).
+    struct SlotClear
+    {
+        mlir::Value slot;
+        mlir::Operation *after;
+    };
+
+    llvm::SmallVector<SlotClear> slotClears;
+
+    // The move out of `varOp` at `taker` (rc's retain at `acquire`) reaches `release`, in an exception
+    // handler, on some paths only: the scope's release on the unwind leg of a block wrapped in a TryOp
+    // - an explicit `try`, or on Itanium any block with a typed `catch` - is reached from before the
+    // move and after it. No release can go on an unwind edge, but the slot of a hoisted owned local
+    // starts null and a release of null does nothing, so emptying the slot right after the move
+    // leaves the handler's release with the value only on the paths that did not move it. The op to
+    // put the clear after, or null when the slot is not such a local or the move could unwind
+    // part-way (a call taking the value, or one between the read and the taker).
+    mlir::Operation *clearsOnUnwind(mlir_ts::VariableOp varOp, mlir_ts::LoadOp load, mlir::Operation *acquire,
+                                    mlir::Operation *taker, mlir::Operation *release,
+                                    const llvm::SmallPtrSet<mlir::Block *, 8> &handler);
 
     // The stores of the assignments to an owning local: rc releases what the slot holds right
     // before it stores the new value (an assignment, and a `var` declaration met again).

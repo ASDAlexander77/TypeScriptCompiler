@@ -375,6 +375,7 @@ namespace own_inference
         auto f = getFunction();
         drops.clear();
         edgeReleases.clear();
+        slotClears.clear();
         derivedCache.clear();
         closures.clear();
         literalBoxes.clear();

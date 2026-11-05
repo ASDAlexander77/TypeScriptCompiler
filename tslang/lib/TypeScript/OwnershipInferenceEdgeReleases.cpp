@@ -512,6 +512,58 @@ namespace own_inference
         }
 
         edgeReleases.clear();
+
+        for (auto &clear : slotClears)
+        {
+            mlir::OpBuilder builder(clear.after->getContext());
+            builder.setInsertionPointAfter(clear.after);
+            auto loc = clear.after->getLoc();
+            auto elementType = mlir::cast<mlir_ts::RefType>(clear.slot.getType()).getElementType();
+            auto empty = builder.create<mlir_ts::DefaultOp>(loc, elementType);
+            builder.create<mlir_ts::StoreOp>(loc, empty, clear.slot);
+        }
+
+        slotClears.clear();
+    }
+
+    mlir::Operation *OwnershipInferencePass::clearsOnUnwind(mlir_ts::VariableOp varOp, mlir_ts::LoadOp load,
+                                                            mlir::Operation *acquire, mlir::Operation *taker,
+                                                            mlir::Operation *release,
+                                                            const llvm::SmallPtrSet<mlir::Block *, 8> &handler)
+    {
+        // a hoisted owned local: no initializer, so VariableOpLowering starts it as null
+        auto &body = getFunction().getFunctionBody();
+        if (!varOp || !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || varOp.getInitializer() ||
+            varOp.getCaptured().value_or(false) || varOp->getParentRegion() != &body)
+        {
+            return nullptr;
+        }
+
+        if (!handler.contains(release->getBlock()))
+        {
+            return nullptr;
+        }
+
+        // the read, the taker and rc's retain in one block of the body, with nothing between that
+        // could unwind with the value read but not yet taken: a call that takes it may throw having
+        // taken it or not
+        auto *block = load->getBlock();
+        if (block->getParent() != &body || taker->getBlock() != block || acquire->getBlock() != block ||
+            handler.contains(block) || !load->isBeforeInBlock(taker) || isCall(taker))
+        {
+            return nullptr;
+        }
+
+        auto *last = taker->isBeforeInBlock(acquire) ? acquire : taker;
+        for (auto *op = load->getNextNode(); op && op != last->getNextNode(); op = op->getNextNode())
+        {
+            if (isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                return nullptr;
+            }
+        }
+
+        return last;
     }
 
     llvm::SmallVector<mlir::Operation *> OwnershipInferencePass::slotAssignments(mlir::Value slot)

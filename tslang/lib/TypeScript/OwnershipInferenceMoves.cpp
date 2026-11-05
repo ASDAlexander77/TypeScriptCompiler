@@ -1376,6 +1376,8 @@ namespace own_inference
 
         auto *acquire = mlir::isa<mlir_ts::RetainSlotOp>(retain) ? taker : retain;
         llvm::SmallVector<mlir::Operation *> moved;
+        mlir::Operation *clearAfter = nullptr;
+        std::optional<llvm::SmallPtrSet<mlir::Block *, 8>> handler;
         for (auto *use : slot.getUsers())
         {
             if (!mlir::isa<mlir_ts::ReleaseSlotOp>(use) || !reachableAfter(acquire, use, kills))
@@ -1400,6 +1402,23 @@ namespace own_inference
 
             if (someMoved)
             {
+                // ...the scope's release on the unwind leg, reached from before the move and after
+                // it: the slot is emptied at the move, and the release stays for the paths that
+                // did not move it
+                if (placeReleases)
+                {
+                    if (!handler)
+                    {
+                        handler = handlerBlocks();
+                    }
+
+                    if (auto *after = clearsOnUnwind(varOp, load, acquire, taker, use, *handler))
+                    {
+                        clearAfter = after;
+                        continue;
+                    }
+                }
+
                 // ...but the paths that did not move it can release it before they join the
                 // others (spec 30)
                 if (placeReleases && placeOnUnmovedEdges(varOp, acquire, retain, taker, assignments, toErase))
@@ -1412,6 +1431,11 @@ namespace own_inference
             }
 
             moved.push_back(use);
+        }
+
+        if (clearAfter)
+        {
+            slotClears.push_back({slot, clearAfter});
         }
 
         toErase.insert(moved.begin(), moved.end());
