@@ -1423,7 +1423,10 @@ namespace mlirgen
             MLIRValueGuard<mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *> diagnosticsGuard(importDiagnostics);
             importDiagnostics = &diagnostics;
 
-            generated = mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
+            // discovered once already (generated into an earlier module): its declarations are
+            // known, and discovering it again would generate every import inside it twice more
+            generated = (discoveredImports.contains(canonicalPath) ||
+                         mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles))) &&
                 mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false));
         }
 
@@ -1441,6 +1444,7 @@ namespace mlirgen
             emittedFiles.insert(canonicalPath);
             emittedFiles.insert(declSymbol);
             emittedFiles.insert(genericDeclSymbol);
+            discoveredImports.insert(canonicalPath);
 
             // the object the JIT has to load for it; after the ones it imports, which were
             // generated inside it. A pass generated again (discovery, then the module) finds it
