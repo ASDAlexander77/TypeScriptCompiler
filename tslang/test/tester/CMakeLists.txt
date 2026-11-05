@@ -5139,6 +5139,23 @@ endfunction()
 set(reference_path_dir "${PROJECT_SOURCE_DIR}/test/tester/reference-path")
 tslang_add_import_tests(reference-path-import-and-reference "${reference_path_dir}" import_and_reference module_left)
 tslang_add_import_tests(reference-path-two-imports "${reference_path_dir}" two_imports module_left module_right)
+
+# An import discovered again in every module it was generated into was generated 2^depth times:
+# twenty imports deep took about 1000 s, so the TIMEOUT is what fails it if that comes back.
+set(import_chain_modules "")
+foreach(import_chain_index RANGE 1 20)
+    if (import_chain_index LESS 10)
+        set(import_chain_index "0${import_chain_index}")
+    endif()
+    list(APPEND import_chain_modules "${PROJECT_SOURCE_DIR}/test/tester/import-chain/chain_${import_chain_index}.ts")
+endforeach()
+# Not -shared: a module that imports another is declared twice in the one library, chain or not.
+# The JIT compiles each import into its cache by itself.
+tslang_add_test(NAME test-compile-import-chain-deep
+                COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts" ${import_chain_modules})
+tslang_add_test(NAME test-jit-import-chain-deep
+                COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts")
+set_tests_properties(test-compile-import-chain-deep test-jit-import-chain-deep PROPERTIES TIMEOUT 120)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
 tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
 # Through a -shared library of these two modules the importer read Node twice ("redefinition of

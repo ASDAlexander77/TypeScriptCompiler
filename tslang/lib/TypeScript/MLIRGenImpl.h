@@ -16814,6 +16814,13 @@ class MLIRGenImpl
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
 
+    // Source imports whose own discovery pass has run once (mlirGenInclude). Their declarations
+    // are in the maps from then on, so an import generated into another module - each discovery
+    // module, then theModule - is generated without discovering it again. Discovered again each
+    // time, an import nested d deep was generated 2^d times: a chain of eight imports took 10 GB.
+    // Survives discovery, as filesInProgress does.
+    llvm::StringSet<> discoveredImports;
+
     // The default library's files - lib.d.ts and every file it references - by file key. Its
     // ambient data is defined in its DLL when the program links that (see
     // isImportedFromSharedDefaultLib).
