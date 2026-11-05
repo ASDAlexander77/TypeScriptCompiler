@@ -2128,6 +2128,32 @@ namespace mlirgen
             argumentTypes.push_back(type);
         }
 
+        // an array literal is generated for its parameter's type: `[250]` evaluates s32[], and fits
+        // `data: u8[]` as its elements fit u8 (`new TypedArray<u8>([250])` of a class with a second
+        // constructor found none that took s32[]); an empty one fits any array
+        auto argumentFit = [&](size_t index, mlir::Type param) {
+            auto fit = overloadArgumentFit(location, argumentTypes[index], param);
+            auto arrayParam = dyn_cast<mlir_ts::ArrayType>(mth.stripOptionalType(param));
+            if (fit > 0 || !arrayParam || arguments[index] != SyntaxKind::ArrayLiteralExpression)
+            {
+                return fit;
+            }
+
+            auto elementsFit = 3;
+            for (auto element : arguments[index].as<ArrayLiteralExpression>()->elements)
+            {
+                auto elementType = element == SyntaxKind::SpreadElement ? mlir::Type() : evaluate(element, genContext);
+                if (!elementType)
+                {
+                    return 0;
+                }
+
+                elementsFit = std::min(elementsFit, overloadArgumentFit(location, elementType, arrayParam.getElementType()));
+            }
+
+            return elementsFit;
+        };
+
         auto bestScore = -1;
         auto best = -1;
         for (auto candidate : candidates)
@@ -2154,7 +2180,7 @@ namespace mlirgen
                     continue;
                 }
 
-                auto argFit = overloadArgumentFit(location, argumentTypes[index], param);
+                auto argFit = argumentFit(index, param);
                 fits &= argFit > 0;
                 score += argFit;
             }
@@ -2169,7 +2195,7 @@ namespace mlirgen
 
                 for (auto index = fixedParams.size(); index < argumentTypes.size(); index++)
                 {
-                    auto argFit = overloadArgumentFit(location, argumentTypes[index], restType);
+                    auto argFit = argumentFit(index, restType);
                     fits &= argFit > 0;
                     score += argFit;
                 }

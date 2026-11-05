@@ -917,6 +917,12 @@ tslang_add_test(NAME test-compile-nbody COMMAND test-runner "${PROJECT_SOURCE_DI
 tslang_add_test(NAME test-compile-no-main COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/no_main.ts")
 tslang_add_test(NAME test-compile-parser COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/parser.ts")
 tslang_add_test(NAME test-compile-internals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/internals.ts")
+tslang_add_test(NAME test-compile-00-atomic-builtins COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
+tslang_add_test(NAME test-compile-00-generic-literal-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
+tslang_add_test(NAME test-compile-00-new-alias-and-ctor-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
+tslang_add_test(NAME test-compile-own-00-atomic-builtins COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
+tslang_add_test(NAME test-compile-own-00-generic-literal-inference COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
+tslang_add_test(NAME test-compile-own-00-new-alias-and-ctor-overloads COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
 tslang_add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -1562,6 +1568,12 @@ tslang_add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_D
 tslang_add_test(NAME test-jit-no-main COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/no_main.ts")
 tslang_add_test(NAME test-jit-parser COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/parser.ts")
 tslang_add_test(NAME test-jit-internals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/internals.ts")
+tslang_add_test(NAME test-jit-00-atomic-builtins COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
+tslang_add_test(NAME test-jit-00-generic-literal-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
+tslang_add_test(NAME test-jit-00-new-alias-and-ctor-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
+tslang_add_test(NAME test-jit-own-00-atomic-builtins COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00atomic_builtins.ts")
+tslang_add_test(NAME test-jit-own-00-generic-literal-inference COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_literal_inference.ts")
+tslang_add_test(NAME test-jit-own-00-new-alias-and-ctor-overloads COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
 tslang_add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -2153,6 +2165,9 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00atomic_builtins.ts
+    00generic_literal_inference.ts
+    00new_alias_and_ctor_overloads.ts
     00any_truthiness_objects.ts
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
@@ -3271,6 +3286,57 @@ foreach(call_arity_case ${call_arity_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# The atomic builtins (atomicrmw, cmpxchg, atomicload, atomicstore, fence) take their op code,
+# orderings, alignment and flags as constants. A variable one crashed tslang, and a constant LLVM
+# doesn't take was reported by LLVM's verifier at `<unknown>:0`; a wrong argument count said only
+# "failed statement". Each file in atomic-errors/ makes one bad call; the test passes when the
+# compiler reports it at the call. Plain add_test: these compile nothing.
+set(atomic_error_cases
+    "op_variable|op_variable\\.ts:3:12: error: atomicrmw: the op code must be a constant integer"
+    "op_range|op_range\\.ts:3:12: error: atomicrmw: the op code 99 is not one of 0 \\(xchg\\)"
+    "rmw_ordering|rmw_ordering\\.ts:3:12: error: atomicrmw: the ordering 1 \\(unordered\\) is not allowed here. expected 2 \\(monotonic\\)"
+    "ordering_hole|ordering_hole\\.ts:3:12: error: atomicrmw: the ordering 3 is not allowed here"
+    "rmw_arguments|rmw_arguments\\.ts:3:12: error: expected atomicrmw\\(op, ref, value, ordering., syncscope., alignment., volatile...\\), but got 3 arguments"
+    "rmw_float_op_on_int|rmw_float_op_on_int\\.ts:3:12: error: atomicrmw: the reference points at 'i32', expected a float"
+    "rmw_int_op_on_float|rmw_int_op_on_float\\.ts:3:12: error: atomicrmw: the reference points at '!ts\\.number', expected an 8, 16, 32 or 64-bit integer"
+    "cmpxchg_failure_ordering|cmpxchg_failure_ordering\\.ts:3:12: error: cmpxchg: the failure ordering 5 \\(release\\) is not allowed here"
+    "cmpxchg_float|cmpxchg_float\\.ts:3:12: error: cmpxchg: the reference points at '!ts\\.number'"
+    "cmpxchg_arguments|cmpxchg_arguments\\.ts:3:12: error: expected cmpxchg\\(ref, expected, value, successOrdering, failureOrdering.*but got 4 arguments"
+    "fence_ordering|fence_ordering\\.ts:2:5: error: fence: the ordering 2 \\(monotonic\\) is not allowed here"
+    "fence_variable|fence_variable\\.ts:2:5: error: fence: the ordering must be a constant integer"
+    "load_ordering|load_ordering\\.ts:3:12: error: atomicload: the ordering 5 \\(release\\) is not allowed here"
+    "store_ordering|store_ordering\\.ts:3:5: error: atomicstore: the ordering 4 \\(acquire\\) is not allowed here"
+    "alignment|alignment\\.ts:3:12: error: atomicload: the alignment 3 is not a power of two"
+    "volatile_variable|volatile_variable\\.ts:3:12: error: atomicload: the volatile flag must be a constant boolean"
+    "not_a_reference|not_a_reference\\.ts:3:12: error: atomicload: expected a reference \\(ReferenceOf\\(x\\)\\), but got 'i32'"
+    "boolean_reference|boolean_reference\\.ts:3:12: error: atomicload: the reference points at '!ts\\.boolean'")
+foreach(atomic_error_case ${atomic_error_cases})
+    string(FIND "${atomic_error_case}" "|" atomic_error_sep)
+    string(SUBSTRING "${atomic_error_case}" 0 ${atomic_error_sep} atomic_error_name)
+    math(EXPR atomic_error_sep "${atomic_error_sep} + 1")
+    string(SUBSTRING "${atomic_error_case}" ${atomic_error_sep} -1 atomic_error_message)
+    string(REPLACE "_" "-" atomic_error_slug "${atomic_error_name}")
+    add_test(NAME test-compile-atomic-errors-${atomic_error_slug}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/atomic-errors/${atomic_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/atomic-errors-${atomic_error_slug}.obj")
+    set_tests_properties(test-compile-atomic-errors-${atomic_error_slug}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${atomic_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|<unknown>")
+endforeach()
+
+# A JIT'd object with more read-only data than its code reservation has room to spare (see
+# tests/00jit_rodata_layout.ts). Read-only sections came from the code pool and spilled out of the
+# reserved block, below it in some runs: "IMAGE_REL_AMD64_ADDR32NB relocation requires an ordered
+# section layout". The JIT warns of a section outside the block in every run that spills, so this
+# fails every time rather than in a few. --jit-cache=false: one object, compiled each run.
+add_test(NAME test-jit-rodata-layout
+         COMMAND $<TARGET_FILE:tslang> --emit=jit -mm=none --no-default-lib --jit-cache=false
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00jit_rodata_layout.ts")
+set_tests_properties(test-jit-rodata-layout
+                     PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
+                                FAIL_REGULAR_EXPRESSION "outside the block reserved|LLVM ERROR|Stack dump")
 
 # `@final` (docs/superpowers/specs/2026-10-19-final-classes-design.md): a class nobody may extend.
 # Each file in final/ breaks one rule; the test passes when the compiler prints the message.

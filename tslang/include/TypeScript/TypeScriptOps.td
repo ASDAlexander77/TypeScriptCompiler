@@ -2608,6 +2608,28 @@ def TypeScript_AtomicCmpXchgOp : TypeScript_Op<"CmpXchg"> {
   let results = (outs AnyType:$res);
 }
 
+def TypeScript_AtomicLoadOp : TypeScript_Op<"AtomicLoad"> {
+  let summary = "atomicload command";
+  let description = [{
+    The "atomicload" builtin operation: an LLVM `load atomic` of the value $ptr points at. An
+    alignment of none is the natural alignment of the value.
+  }];
+
+  let arguments = (ins TypeScript_AnyRefLike:$ptr, I32Attr:$ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$volatile_);
+  let results = (outs AnyType:$res);
+}
+
+def TypeScript_AtomicStoreOp : TypeScript_Op<"AtomicStore"> {
+  let summary = "atomicstore command";
+  let description = [{
+    The "atomicstore" builtin operation: an LLVM `store atomic` of $value where $ptr points. An
+    alignment of none is the natural alignment of the value.
+  }];
+
+  let arguments = (ins TypeScript_AnyRefLike:$ptr, AnyType:$value, I32Attr:$ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$volatile_);
+  let results = (outs );
+}
+
 def TypeScript_FenceOp : TypeScript_Op<"Fence"> {
   let summary = "fence command";
   let description = [{

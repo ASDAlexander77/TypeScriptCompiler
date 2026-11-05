@@ -4083,6 +4083,59 @@ class MLIRTypeHelper
         return mergeType(location, existType, currentType, merged);
     }
 
+    // whether `literalType` is a number literal whose value `type`, a number type, holds as it is
+    bool numberLiteralFits(mlir::Type literalType, mlir::Type type)
+    {
+        auto literal = dyn_cast<mlir_ts::LiteralType>(literalType);
+        if (!literal || isa<mlir_ts::LiteralType>(type))
+        {
+            return false;
+        }
+
+        auto value = literal.getValue();
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            llvm::APSInt intValue;
+            if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value); intAttr && !isa<mlir::BoolAttr>(value))
+            {
+                auto literalInt = dyn_cast<mlir::IntegerType>(intAttr.getType());
+                intValue = llvm::APSInt(intAttr.getValue(), literalInt && literalInt.isUnsigned());
+            }
+            else if (auto floatAttr = dyn_cast<mlir::FloatAttr>(value))
+            {
+                auto isExact = false;
+                intValue = llvm::APSInt(128, false);
+                if (floatAttr.getValue().convertToInteger(intValue, llvm::APFloat::rmTowardZero, &isExact) != llvm::APFloat::opOK ||
+                    !isExact)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            auto width = intType.getWidth();
+            if (!intValue.isRepresentableByInt64() || width > 64)
+            {
+                return false;
+            }
+
+            auto number = intValue.getExtValue();
+            auto fitsUnsigned = number >= 0 && (width == 64 || static_cast<uint64_t>(number) < (uint64_t(1) << width));
+            auto fitsSigned = width == 64 || (number >= -(int64_t(1) << (width - 1)) && number < (int64_t(1) << (width - 1)));
+            return intType.isUnsigned() ? fitsUnsigned : intType.isSigned() ? fitsSigned : fitsSigned || fitsUnsigned;
+        }
+
+        if (isa<mlir_ts::NumberType>(type) || type.isF64())
+        {
+            return isa<mlir::IntegerAttr, mlir::FloatAttr>(value) && !isa<mlir::BoolAttr>(value);
+        }
+
+        return false;
+    }
+
     mlir::Type mergeType(mlir::Location location, mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;

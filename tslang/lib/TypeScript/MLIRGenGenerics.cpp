@@ -21,7 +21,21 @@ namespace mlirgen
         auto currentType = concreteType;
         auto name = namedGenType.getName().getValue();
         auto existType = results.lookup(name);
-        if (existType)
+        if (existType && mth.numberLiteralFits(currentType, existType))
+        {
+            // a number literal yields to the type T already has, when it holds its value: in
+            // `add<T>(ta: TA<T>, v: T)`, `add(new TA<u16>(...), 2)` is T = u16 with 2 cast to it, where
+            // merging the two made T the literal's s32, and TA<u16> no longer passed for TA<s32>
+            LLVM_DEBUG(llvm::dbgs() << "\n!! literal " << currentType << " yields to: " << existType << "\n";);
+            currentType = existType;
+        }
+        else if (existType && mth.numberLiteralFits(existType, currentType))
+        {
+            // ...in either order: `add2<T>(v: T, ta: TA<T>)`
+            LLVM_DEBUG(llvm::dbgs() << "\n!! literal " << existType << " yields to: " << currentType << "\n";);
+            results[name] = currentType;
+        }
+        else if (existType)
         {
             auto merged = false;
             currentType = mth.mergeType(location, existType, currentType, merged);

@@ -1584,10 +1584,47 @@ namespace mlirgen
         MLIRValueGuard<bool> sharedElementsRefusedGuard(sharedElementsRefused);
         sharedElementsRefused = false;
 
+        // `type Uint8Array = TypedArray<u8>`: `new Uint8Array([250])` names a class its alias already
+        // gave type arguments, which neither the constructor's arguments nor the receiver override.
+        // Inferred from the arguments, it was a TypedArray<s32>.
+        auto namesSpecializedAlias = [&](mlir_ts::ClassType classType) {
+            if (getGenericClassInfoByFullName(classType.getName().getValue()))
+            {
+                // the generic class itself
+                return false;
+            }
+
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo || !classInfo->originClassType)
+            {
+                return false;
+            }
+
+            auto genericClassInfo = getGenericClassInfoByFullName(classInfo->originClassType.getName().getValue());
+            StringRef name;
+            if (typeExpression == SyntaxKind::Identifier)
+            {
+                name = MLIRHelper::getName(typeExpression.as<Identifier>(), stringAllocator);
+            }
+            else if (typeExpression == SyntaxKind::PropertyAccessExpression)
+            {
+                name = MLIRHelper::getName(typeExpression.as<PropertyAccessExpression>()->name, stringAllocator);
+            }
+
+            return genericClassInfo && !name.empty() && name != genericClassInfo->name;
+        };
+
+        auto classOfType = dyn_cast<mlir_ts::ClassType>(value.getType());
+        auto inferTypeArguments = newExpression->typeArguments.size() == 0 && !(classOfType && namesSpecializedAlias(classOfType));
+        if (!inferTypeArguments)
+        {
+            unspecialized = mlir::Value();
+        }
+
         // `new Set([2, 4, 6, 8])`: a generic class written without type arguments takes them from
         // its constructor's arguments (see inferClassTypeFromConstructorArguments). Ahead of the
         // receiver below, which overrides it: `const s: Set<number> = new Set([1, 2])` is Set<number>.
-        if (newExpression->typeArguments.size() == 0 && newExpression->arguments.size() > 0)
+        if (inferTypeArguments && newExpression->arguments.size() > 0)
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(value.getType()))
             {
@@ -1625,7 +1662,7 @@ namespace mlirgen
         // arguments takes them from the type it is given to, when that is the same class. Its
         // type parameter defaults (`Map<K = any, V = any>`) made Map<any, any> otherwise, a
         // different layout, and the cast to the declared type crashed at run time.
-        if (newExpression->typeArguments.size() == 0 && genContext.receiverType)
+        if (inferTypeArguments && genContext.receiverType)
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(value.getType()))
             {

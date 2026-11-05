@@ -8548,6 +8548,64 @@ struct AtomicCmpXchgOpLowering : public TsLlvmPattern<mlir_ts::AtomicCmpXchgOp>
     }
 };
 
+// LLVM wants an atomic load or store aligned; none given is the natural alignment of the value
+static uint64_t atomicAccessAlignment(const mlir::TypeConverter *typeConverter, mlir::Type llvmType, std::optional<uint64_t> alignment)
+{
+    if (alignment.has_value() && *alignment > 0)
+    {
+        return *alignment;
+    }
+
+    LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(typeConverter));
+    return llvmtch.getTypeAllocSizeInBytes(llvmType);
+}
+
+struct AtomicLoadOpLowering : public TsLlvmPattern<mlir_ts::AtomicLoadOp>
+{
+    using TsLlvmPattern<mlir_ts::AtomicLoadOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AtomicLoadOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeConverterHelper tch(getTypeConverter());
+        auto llvmType = tch.convertType(op.getType());
+        rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+            op,
+            llvmType,
+            transformed.getPtr(),
+            atomicAccessAlignment(getTypeConverter(), llvmType, transformed.getAlignment()),
+            transformed.getVolatile_(),
+            /*isNonTemporal=*/false,
+            /*isInvariant=*/false,
+            /*isInvariantGroup=*/false,
+            (LLVM::AtomicOrdering)transformed.getOrdering(),
+            transformed.getSyncscope().value_or(StringRef()));
+        return success();
+    }
+};
+
+struct AtomicStoreOpLowering : public TsLlvmPattern<mlir_ts::AtomicStoreOp>
+{
+    using TsLlvmPattern<mlir_ts::AtomicStoreOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AtomicStoreOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto value = transformed.getValue();
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+            op,
+            value,
+            transformed.getPtr(),
+            atomicAccessAlignment(getTypeConverter(), value.getType(), transformed.getAlignment()),
+            transformed.getVolatile_(),
+            /*isNonTemporal=*/false,
+            /*isInvariantGroup=*/false,
+            (LLVM::AtomicOrdering)transformed.getOrdering(),
+            transformed.getSyncscope().value_or(StringRef()));
+        return success();
+    }
+};
+
 struct FenceOpLowering : public TsLlvmPattern<mlir_ts::FenceOp>
 {
     using TsLlvmPattern<mlir_ts::FenceOp>::TsLlvmPattern;
@@ -9673,7 +9731,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 #endif
         ,
         SwitchStateInternalOpLowering, LoadLibraryPermanentlyOpLowering, SearchForAddressOfSymbolOpLowering,
-        AtomicRMWOpLowering, AtomicCmpXchgOpLowering, FenceOpLowering, InlineAsmOpLowering, CallIntrinsicOpLowering, LinkerOptionsOpLowering>(
+        AtomicRMWOpLowering, AtomicCmpXchgOpLowering, AtomicLoadOpLowering, AtomicStoreOpLowering, FenceOpLowering, InlineAsmOpLowering, CallIntrinsicOpLowering, LinkerOptionsOpLowering>(
             typeConverter, &getContext(), &tsLlvmContext);
 
     if (tsLlvmContext.compileOptions.isWindows)
