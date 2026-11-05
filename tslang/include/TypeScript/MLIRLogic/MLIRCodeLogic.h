@@ -403,7 +403,7 @@ class MLIRCustomMethods
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }, { "Deref", true }, { "Ref", true },
-            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+            {"atomicrmw", true}, {"cmpxchg", true}, {"atomicload", true}, {"atomicstore", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
         };
         return m[functionName.str()];
     }
@@ -413,7 +413,7 @@ class MLIRCustomMethods
         static std::map<std::string, bool> m {
             {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true},
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }, { "Deref", true }, { "Ref", true },
-            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+            {"atomicrmw", true}, {"cmpxchg", true}, {"atomicload", true}, {"atomicstore", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
         };
         return m[functionName.str()];    
     }   
@@ -499,12 +499,20 @@ class MLIRCustomMethods
         }
         else if (functionName == "atomicrmw")
         {
-            return mlirGenAtomicRMW(location, operands);
-        }        
+            return mlirGenAtomicRMW(location, operands, castFn, genContext);
+        }
         else if (functionName == "cmpxchg")
         {
-            return mlirGenCmpXchg(location, operands);
-        }        
+            return mlirGenCmpXchg(location, operands, castFn, genContext);
+        }
+        else if (functionName == "atomicload")
+        {
+            return mlirGenAtomicLoad(location, operands);
+        }
+        else if (functionName == "atomicstore")
+        {
+            return mlirGenAtomicStore(location, operands, castFn, genContext);
+        }
         else if (functionName == "fence")
         {
             return mlirGenFence(location, operands);
@@ -1199,32 +1207,405 @@ class MLIRCustomMethods
         return V(refValue);
     }    
 
-    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    // The atomic builtins. Their op codes, orderings, alignments and flags become attributes of the
+    // op, so each has to be a constant: a variable used to give the op a null attribute, and
+    // tslang crashed building it. A constant LLVM does not accept was only caught by LLVM's
+    // verifier, reported at `<unknown>:0`. Both are reported here, at the call.
+    //
+    //   atomicrmw(op, ref, value, ordering[, syncscope[, alignment[, volatile]]])
+    //   cmpxchg(ref, expected, value, successOrdering, failureOrdering[, syncscope[, alignment[, weak[, volatile]]]])
+    //   atomicload(ref, ordering[, syncscope[, alignment[, volatile]]])
+    //   atomicstore(ref, value, ordering[, syncscope[, alignment[, volatile]]])
+    //   fence(ordering[, syncscope])
+    //
+    // The orderings are LLVM's: 0 not_atomic, 1 unordered, 2 monotonic, 4 acquire, 5 release,
+    // 6 acq_rel, 7 seq_cst (3 is not one). A syncscope of "" and an alignment of 0 mean the default
+    // (the natural alignment of the value), so a call that wants a trailing flag passes them. The
+    // value (and cmpxchg's expected value) is cast to the type the reference points at, which is
+    // the type the atomic reads and writes.
+    using AtomicCastFn = std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)>;
+
+    static constexpr const char *atomicRMWSignature = "atomicrmw(op, ref, value, ordering[, syncscope[, alignment[, volatile]]])";
+    static constexpr const char *cmpXchgSignature =
+        "cmpxchg(ref, expected, value, successOrdering, failureOrdering[, syncscope[, alignment[, weak[, volatile]]]])";
+    static constexpr const char *atomicLoadSignature = "atomicload(ref, ordering[, syncscope[, alignment[, volatile]]])";
+    static constexpr const char *atomicStoreSignature = "atomicstore(ref, value, ordering[, syncscope[, alignment[, volatile]]])";
+    static constexpr const char *fenceSignature = "fence(ordering[, syncscope])";
+
+    mlir::Attribute getConstantAttr(mlir::Value oper)
     {
-        auto size = operands.size();
-        if (size < 4 || size > 6)
+        if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return constantOp.getValue();
+        }
+
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(oper.getType()))
+        {
+            return literalType.getValue();
+        }
+
+        return mlir::Attribute();
+    }
+
+    bool checkAtomicArgCount(const mlir::Location &location, StringRef signature, size_t size, size_t min, size_t max)
+    {
+        if (size >= min && size <= max)
+        {
+            return true;
+        }
+
+        emitError(location) << "expected " << signature << ", but got " << size << " argument" << (size == 1 ? "" : "s");
+        return false;
+    }
+
+    std::optional<int64_t> getAtomicConstInt(const mlir::Location &location, StringRef builtin, StringRef argName, mlir::Value oper)
+    {
+        auto value = getConstantAttr(oper);
+        if (auto intAttr = dyn_cast_or_null<mlir::IntegerAttr>(value); intAttr && !isa<mlir::BoolAttr>(value))
+        {
+            return intAttr.getValue().getSExtValue();
+        }
+
+        if (auto floatAttr = dyn_cast_or_null<mlir::FloatAttr>(value))
+        {
+            auto floatValue = floatAttr.getValueAsDouble();
+            if (floatValue >= -1e9 && floatValue <= 1e9 && floatValue == static_cast<double>(static_cast<int64_t>(floatValue)))
+            {
+                return static_cast<int64_t>(floatValue);
+            }
+        }
+
+        emitError(location) << builtin << ": the " << argName << " must be a constant integer";
+        return std::nullopt;
+    }
+
+    std::optional<bool> getAtomicConstFlag(const mlir::Location &location, StringRef builtin, StringRef argName, mlir::Value oper)
+    {
+        if (auto boolAttr = dyn_cast_or_null<mlir::BoolAttr>(getConstantAttr(oper)))
+        {
+            return boolAttr.getValue();
+        }
+
+        emitError(location) << builtin << ": the " << argName << " flag must be a constant boolean";
+        return std::nullopt;
+    }
+
+    static StringRef atomicOrderingName(int64_t ordering)
+    {
+        switch (ordering)
+        {
+        case 0: return "not_atomic";
+        case 1: return "unordered";
+        case 2: return "monotonic";
+        case 4: return "acquire";
+        case 5: return "release";
+        case 6: return "acq_rel";
+        case 7: return "seq_cst";
+        default: return "";
+        }
+    }
+
+    // `allowed` lists the orderings this argument accepts, in LLVM's numbering
+    std::optional<int64_t> getAtomicOrdering(const mlir::Location &location, StringRef builtin, StringRef argName, mlir::Value oper,
+        ArrayRef<int64_t> allowed)
+    {
+        auto ordering = getAtomicConstInt(location, builtin, argName, oper);
+        if (!ordering)
+        {
+            return std::nullopt;
+        }
+
+        if (llvm::is_contained(allowed, *ordering))
+        {
+            return ordering;
+        }
+
+        auto diag = emitError(location) << builtin << ": the " << argName << " " << *ordering;
+        auto name = atomicOrderingName(*ordering);
+        if (!name.empty())
+        {
+            diag << " (" << name << ")";
+        }
+
+        diag << " is not allowed here; expected ";
+        for (auto [index, value] : llvm::enumerate(allowed))
+        {
+            diag << (index == 0 ? "" : index + 1 == allowed.size() ? " or " : ", ") << value << " (" << atomicOrderingName(value) << ")";
+        }
+
+        return std::nullopt;
+    }
+
+    // the optional syncscope ("" is the default, system scope) and alignment (0 is the natural one)
+    mlir::LogicalResult getAtomicScopeAndAlignment(const mlir::Location &location, StringRef builtin, ArrayRef<mlir::Value> operands,
+        size_t scopeIndex, bool hasAlignment, mlir::StringAttr &syncscope, mlir::IntegerAttr &alignment)
+    {
+        if (operands.size() > scopeIndex)
+        {
+            auto scope = dyn_cast_or_null<mlir::StringAttr>(getConstantAttr(operands[scopeIndex]));
+            if (!scope)
+            {
+                emitError(location) << builtin << ": the syncscope must be a constant string";
+                return mlir::failure();
+            }
+
+            if (!scope.getValue().empty())
+            {
+                syncscope = scope;
+            }
+        }
+
+        if (hasAlignment && operands.size() > scopeIndex + 1)
+        {
+            auto align = getAtomicConstInt(location, builtin, "alignment", operands[scopeIndex + 1]);
+            if (!align)
+            {
+                return mlir::failure();
+            }
+
+            if (*align < 0 || (*align & (*align - 1)) != 0)
+            {
+                emitError(location) << builtin << ": the alignment " << *align << " is not a power of two (0 is the natural one)";
+                return mlir::failure();
+            }
+
+            if (*align > 0)
+            {
+                alignment = builder.getI64IntegerAttr(*align);
+            }
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult getAtomicFlag(const mlir::Location &location, StringRef builtin, StringRef argName, ArrayRef<mlir::Value> operands,
+        size_t index, mlir::UnitAttr &flag)
+    {
+        if (operands.size() > index)
+        {
+            auto value = getAtomicConstFlag(location, builtin, argName, operands[index]);
+            if (!value)
+            {
+                return mlir::failure();
+            }
+
+            if (*value)
+            {
+                flag = builder.getUnitAttr();
+            }
+        }
+
+        return mlir::success();
+    }
+
+    enum class AtomicValueKind
+    {
+        // xchg, atomicload, atomicstore: an integer, a float or a pointer
+        Any,
+        // add, sub, and, nand, or, xor, max, min, umax, umin, uinc_wrap, udec_wrap, usub_cond, usub_sat
+        Integer,
+        // fadd, fsub, fmax, fmin, fmaximum, fminimum
+        Float,
+        // cmpxchg: an integer or a pointer
+        IntegerOrPointer
+    };
+
+    static bool isAtomicIntegerType(mlir::Type type)
+    {
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            auto width = intType.getWidth();
+            return width == 8 || width == 16 || width == 32 || width == 64;
+        }
+
+        return false;
+    }
+
+    static bool isAtomicFloatType(mlir::Type type)
+    {
+        return isa<mlir_ts::NumberType>(type) || type.isF16() || type.isBF16() || type.isF32() || type.isF64();
+    }
+
+    // the type the reference points at, which is the type the atomic reads and writes
+    mlir::Type getAtomicElementType(const mlir::Location &location, StringRef builtin, mlir::Value ref, AtomicValueKind kind)
+    {
+        mlir::Type elementType;
+        if (auto refType = dyn_cast<mlir_ts::RefType>(ref.getType()))
+        {
+            elementType = refType.getElementType();
+        }
+        else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(ref.getType()))
+        {
+            elementType = valueRefType.getElementType();
+        }
+        else
+        {
+            emitError(location) << builtin << ": expected a reference (ReferenceOf(x)), but got " << ref.getType();
+            return mlir::Type();
+        }
+
+        auto isInteger = isAtomicIntegerType(elementType);
+        auto isFloat = isAtomicFloatType(elementType);
+        // a boolean is an i1, which no atomic takes; any other type is a pointer once lowered
+        auto isOther = !isInteger && !isFloat && !isa<mlir::IntegerType, mlir::FloatType, mlir_ts::BooleanType>(elementType);
+        auto ok = false;
+        StringRef expected;
+        switch (kind)
+        {
+        case AtomicValueKind::Any:
+            ok = isInteger || isFloat || isOther;
+            expected = "an 8, 16, 32 or 64-bit integer, a float or a reference";
+            break;
+        case AtomicValueKind::Integer:
+            ok = isInteger;
+            expected = "an 8, 16, 32 or 64-bit integer";
+            break;
+        case AtomicValueKind::Float:
+            ok = isFloat;
+            expected = "a float";
+            break;
+        case AtomicValueKind::IntegerOrPointer:
+            ok = isInteger || isOther;
+            expected = "an 8, 16, 32 or 64-bit integer or a reference";
+            break;
+        }
+
+        if (!ok)
+        {
+            emitError(location) << builtin << ": the reference points at " << elementType << ", expected " << expected;
+            return mlir::Type();
+        }
+
+        return elementType;
+    }
+
+    mlir::Value castAtomicValue(const mlir::Location &location, mlir::Type elementType, mlir::Value value, AtomicCastFn castFn,
+        const GenContext &genContext)
+    {
+        if (value.getType() == elementType)
+        {
+            return value;
+        }
+
+        auto result = castFn(location, elementType, value, genContext, false);
+        if (mlir::failed(result) || !result.value)
+        {
+            return mlir::Value();
+        }
+
+        return result;
+    }
+
+    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands, AtomicCastFn castFn,
+        const GenContext &genContext)
+    {
+        const StringRef builtin = "atomicrmw";
+        if (!checkAtomicArgCount(location, atomicRMWSignature, operands.size(), 4, 7))
         {
             return mlir::failure();
         }
 
-        MLIRCodeLogic mcl(builder, compileOptions);
-        return V(builder.create<mlir_ts::AtomicRMWOp>(location, 
-            operands[2].getType(),
-            mcl.getIntegerAttr(location, operands[0]), operands[1], operands[2], mcl.getIntegerAttr(location, operands[3]), 
-            size > 4 ? mcl.getStringAttr(location, operands[4]) : mlir::StringAttr(), 
-            size > 5 ? mcl.getIntegerAttr(location, operands[5], 64) : mlir::IntegerAttr(), 
-            mlir::UnitAttr()/*isVolatile*/));
-    }     
+        auto binOp = getAtomicConstInt(location, builtin, "op code", operands[0]);
+        if (!binOp)
+        {
+            return mlir::failure();
+        }
+
+        // LLVM's AtomicRMWInst::BinOp
+        if (*binOp < 0 || *binOp > 20)
+        {
+            emitError(location) << builtin << ": the op code " << *binOp
+                                << " is not one of 0 (xchg), 1 (add), 2 (sub), 3 (and), 4 (nand), 5 (or), 6 (xor), 7 (max), "
+                                   "8 (min), 9 (umax), 10 (umin), 11 (fadd), 12 (fsub), 13 (fmax), 14 (fmin), 15 (uinc_wrap), "
+                                   "16 (udec_wrap), 17 (usub_cond), 18 (usub_sat), 19 (fmaximum) or 20 (fminimum)";
+            return mlir::failure();
+        }
+
+        auto isFloatOp = (*binOp >= 11 && *binOp <= 14) || *binOp >= 19;
+        auto kind = *binOp == 0 ? AtomicValueKind::Any : isFloatOp ? AtomicValueKind::Float : AtomicValueKind::Integer;
+        auto elementType = getAtomicElementType(location, builtin, operands[1], kind);
+        if (!elementType)
+        {
+            return mlir::failure();
+        }
+
+        auto ordering = getAtomicOrdering(location, builtin, "ordering", operands[3], {2, 4, 5, 6, 7});
+        if (!ordering)
+        {
+            return mlir::failure();
+        }
+
+        mlir::StringAttr syncscope;
+        mlir::IntegerAttr alignment;
+        mlir::UnitAttr isVolatile;
+        if (mlir::failed(getAtomicScopeAndAlignment(location, builtin, operands, 4, true, syncscope, alignment))
+            || mlir::failed(getAtomicFlag(location, builtin, "volatile", operands, 6, isVolatile)))
+        {
+            return mlir::failure();
+        }
+
+        auto value = castAtomicValue(location, elementType, operands[2], castFn, genContext);
+        if (!value)
+        {
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::AtomicRMWOp>(location, elementType, builder.getI32IntegerAttr(*binOp), operands[1], value,
+            builder.getI32IntegerAttr(*ordering), syncscope, alignment, isVolatile));
+    }
 
     mlir::Type getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
     {
         return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
     }
 
-    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands, AtomicCastFn castFn,
+        const GenContext &genContext)
     {
-        auto size = operands.size();
-        if (size < 5 || size > 7)
+        const StringRef builtin = "cmpxchg";
+        if (!checkAtomicArgCount(location, cmpXchgSignature, operands.size(), 5, 9))
+        {
+            return mlir::failure();
+        }
+
+        auto elementType = getAtomicElementType(location, builtin, operands[0], AtomicValueKind::IntegerOrPointer);
+        if (!elementType)
+        {
+            return mlir::failure();
+        }
+
+        auto successOrdering = getAtomicOrdering(location, builtin, "success ordering", operands[3], {2, 4, 5, 6, 7});
+        if (!successOrdering)
+        {
+            return mlir::failure();
+        }
+
+        // the failure ordering is that of a load: it can't release
+        auto failureOrdering = getAtomicOrdering(location, builtin, "failure ordering", operands[4], {2, 4, 7});
+        if (!failureOrdering)
+        {
+            return mlir::failure();
+        }
+
+        mlir::StringAttr syncscope;
+        mlir::IntegerAttr alignment;
+        mlir::UnitAttr isWeak;
+        mlir::UnitAttr isVolatile;
+        if (mlir::failed(getAtomicScopeAndAlignment(location, builtin, operands, 5, true, syncscope, alignment))
+            || mlir::failed(getAtomicFlag(location, builtin, "weak", operands, 7, isWeak))
+            || mlir::failed(getAtomicFlag(location, builtin, "volatile", operands, 8, isVolatile)))
+        {
+            return mlir::failure();
+        }
+
+        auto expected = castAtomicValue(location, elementType, operands[1], castFn, genContext);
+        if (!expected)
+        {
+            return mlir::failure();
+        }
+
+        auto value = castAtomicValue(location, elementType, operands[2], castFn, genContext);
+        if (!value)
         {
             return mlir::failure();
         }
@@ -1233,11 +1614,11 @@ class MLIRCustomMethods
         fields.push_back(
             mlir_ts::FieldInfo{
                 mlir::Attribute(),
-                operands[2].getType(),
+                elementType,
                 false,
                 mlir_ts::AccessLevel::Public
             });
-        
+
         fields.push_back(
             mlir_ts::FieldInfo{
                 mlir::Attribute(),
@@ -1248,36 +1629,112 @@ class MLIRCustomMethods
 
         auto resultTuple = getTupleType(fields);
 
-        MLIRCodeLogic mcl(builder, compileOptions);
-        return V(builder.create<mlir_ts::AtomicCmpXchgOp>(location, 
-            resultTuple, operands[0],
-            operands[1], operands[2], mcl.getIntegerAttr(location, operands[3]), mcl.getIntegerAttr(location, operands[4]), 
-            size > 5 ? mcl.getStringAttr(location, operands[5]) : mlir::StringAttr(), 
-            size > 6 ? mcl.getIntegerAttr(location, operands[6], 64) : mlir::IntegerAttr(), 
-            mlir::UnitAttr()/*Weak*/,
-            mlir::UnitAttr()/*isVolatile*/));
-    }     
+        return V(builder.create<mlir_ts::AtomicCmpXchgOp>(location, resultTuple, operands[0], expected, value,
+            builder.getI32IntegerAttr(*successOrdering), builder.getI32IntegerAttr(*failureOrdering), syncscope, alignment,
+            isWeak, isVolatile));
+    }
 
-    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenAtomicLoad(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        auto size = operands.size();
-        if (size == 0 || size > 2)
+        const StringRef builtin = "atomicload";
+        if (!checkAtomicArgCount(location, atomicLoadSignature, operands.size(), 2, 5))
         {
             return mlir::failure();
         }
 
-        MLIRCodeLogic mcl(builder, compileOptions);
-        if (size > 1)
+        auto elementType = getAtomicElementType(location, builtin, operands[0], AtomicValueKind::Any);
+        if (!elementType)
         {
-            builder.create<mlir_ts::FenceOp>(location, mcl.getIntegerAttr(location, operands[0]), mcl.getStringAttr(location, operands[1]));
-        }
-        else
-        {
-            builder.create<mlir_ts::FenceOp>(location, mcl.getIntegerAttr(location, operands[0]), mlir::StringAttr());
+            return mlir::failure();
         }
 
+        // a load can't release
+        auto ordering = getAtomicOrdering(location, builtin, "ordering", operands[1], {1, 2, 4, 7});
+        if (!ordering)
+        {
+            return mlir::failure();
+        }
+
+        mlir::StringAttr syncscope;
+        mlir::IntegerAttr alignment;
+        mlir::UnitAttr isVolatile;
+        if (mlir::failed(getAtomicScopeAndAlignment(location, builtin, operands, 2, true, syncscope, alignment))
+            || mlir::failed(getAtomicFlag(location, builtin, "volatile", operands, 4, isVolatile)))
+        {
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::AtomicLoadOp>(location, elementType, operands[0], builder.getI32IntegerAttr(*ordering),
+            syncscope, alignment, isVolatile));
+    }
+
+    ValueOrLogicalResult mlirGenAtomicStore(const mlir::Location &location, ArrayRef<mlir::Value> operands, AtomicCastFn castFn,
+        const GenContext &genContext)
+    {
+        const StringRef builtin = "atomicstore";
+        if (!checkAtomicArgCount(location, atomicStoreSignature, operands.size(), 3, 6))
+        {
+            return mlir::failure();
+        }
+
+        auto elementType = getAtomicElementType(location, builtin, operands[0], AtomicValueKind::Any);
+        if (!elementType)
+        {
+            return mlir::failure();
+        }
+
+        // a store can't acquire
+        auto ordering = getAtomicOrdering(location, builtin, "ordering", operands[2], {1, 2, 5, 7});
+        if (!ordering)
+        {
+            return mlir::failure();
+        }
+
+        mlir::StringAttr syncscope;
+        mlir::IntegerAttr alignment;
+        mlir::UnitAttr isVolatile;
+        if (mlir::failed(getAtomicScopeAndAlignment(location, builtin, operands, 3, true, syncscope, alignment))
+            || mlir::failed(getAtomicFlag(location, builtin, "volatile", operands, 5, isVolatile)))
+        {
+            return mlir::failure();
+        }
+
+        auto value = castAtomicValue(location, elementType, operands[1], castFn, genContext);
+        if (!value)
+        {
+            return mlir::failure();
+        }
+
+        builder.create<mlir_ts::AtomicStoreOp>(location, operands[0], value, builder.getI32IntegerAttr(*ordering), syncscope,
+            alignment, isVolatile);
         return mlir::success();
-    }     
+    }
+
+    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        const StringRef builtin = "fence";
+        if (!checkAtomicArgCount(location, fenceSignature, operands.size(), 1, 2))
+        {
+            return mlir::failure();
+        }
+
+        // a fence orders: acquire, release, acq_rel or seq_cst
+        auto ordering = getAtomicOrdering(location, builtin, "ordering", operands[0], {4, 5, 6, 7});
+        if (!ordering)
+        {
+            return mlir::failure();
+        }
+
+        mlir::StringAttr syncscope;
+        mlir::IntegerAttr alignment;
+        if (mlir::failed(getAtomicScopeAndAlignment(location, builtin, operands, 1, false, syncscope, alignment)))
+        {
+            return mlir::failure();
+        }
+
+        builder.create<mlir_ts::FenceOp>(location, builder.getI32IntegerAttr(*ordering), syncscope);
+        return mlir::success();
+    }
 
     ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
