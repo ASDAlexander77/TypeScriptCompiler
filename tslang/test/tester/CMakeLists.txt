@@ -925,6 +925,8 @@ tslang_add_test(NAME test-compile-own-00-generic-literal-inference COMMAND test-
 tslang_add_test(NAME test-compile-own-00-new-alias-and-ctor-overloads COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
 tslang_add_test(NAME test-compile-00-own-throw-param-await-borrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
 tslang_add_test(NAME test-compile-own-00-own-throw-param-await-borrow COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
+tslang_add_test(NAME test-compile-00-own-move-in-unwound-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_move_in_unwound_scope.ts")
+tslang_add_test(NAME test-compile-own-00-own-move-in-unwound-scope COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_move_in_unwound_scope.ts")
 tslang_add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -1578,6 +1580,19 @@ tslang_add_test(NAME test-jit-own-00-generic-literal-inference COMMAND test-runn
 tslang_add_test(NAME test-jit-own-00-new-alias-and-ctor-overloads COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_alias_and_ctor_overloads.ts")
 tslang_add_test(NAME test-jit-00-own-throw-param-await-borrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
 tslang_add_test(NAME test-jit-own-00-own-throw-param-await-borrow COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_throw_param_await_borrow.ts")
+tslang_add_test(NAME test-jit-00-own-move-in-unwound-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_move_in_unwound_scope.ts")
+tslang_add_test(NAME test-jit-own-00-own-move-in-unwound-scope COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_move_in_unwound_scope.ts")
+# On Itanium a function body with a typed `catch` is wrapped in a TryOp for its cleanup, so a move at
+# its top level meets the unwind leg's release there too: checked on every host, for both triples
+foreach(own_unwind_triple x86_64-pc-windows-msvc x86_64-unknown-linux-gnu)
+    add_test(NAME test-compile-own-move-in-unwound-scope-${own_unwind_triple}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm -mm=own -mtriple=${own_unwind_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_move_in_unwound_scope.ts" -o -)
+    set_tests_properties(test-compile-own-move-in-unwound-scope-${own_unwind_triple}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "define [^
+]*@main"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
 tslang_add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 tslang_add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 tslang_add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
@@ -2173,6 +2188,7 @@ set(TSLANG_CORPUS
     00generic_literal_inference.ts
     00new_alias_and_ctor_overloads.ts
     00own_throw_param_await_borrow.ts
+    00own_move_in_unwound_scope.ts
     00any_truthiness_objects.ts
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
