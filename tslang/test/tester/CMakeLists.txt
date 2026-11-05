@@ -5154,14 +5154,22 @@ foreach(import_chain_index RANGE 1 20)
     endif()
     list(APPEND import_chain_modules "${PROJECT_SOURCE_DIR}/test/tester/import-chain/chain_${import_chain_index}.ts")
 endforeach()
-# Not -shared: a module that imports another is declared twice in the one library, chain or not.
-# The JIT compiles each import into its cache by itself.
+# The JIT compiles each import into its cache by itself. Under -shared the library is chain_01,
+# reached only at the bottom of the chain, and holds every link: chain_20 is imported from it.
 tslang_add_test(NAME test-compile-import-chain-deep
                 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts" ${import_chain_modules})
 tslang_add_test(NAME test-jit-import-chain-deep
                 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts")
-set_tests_properties(test-compile-import-chain-deep test-jit-import-chain-deep PROPERTIES TIMEOUT 120)
+tslang_add_test(NAME test-compile-shared-import-chain-deep
+                COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts" ${import_chain_modules})
+tslang_add_test(NAME test-jit-shared-import-chain-deep
+                COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts" ${import_chain_modules})
+set_tests_properties(test-compile-import-chain-deep test-jit-import-chain-deep test-compile-shared-import-chain-deep
+                     test-jit-shared-import-chain-deep PROPERTIES TIMEOUT 120)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
+# The library is named after nested_bottom, the first module, and holds nested_middle as well: the
+# program imports nested_middle as source and meets the library only inside it.
+tslang_add_import_tests(reference-path-import-nested "${reference_path_dir}" nested_import nested_bottom nested_middle)
 tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
 # Through a -shared library of these two modules the importer read Node twice ("redefinition of
 # symbol named 'Node..new'"), and then called its methods through the wrong vtable slots - see

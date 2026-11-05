@@ -289,6 +289,23 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext);
 
+    // A library an `import` names: its file, and whether it is loaded at run time (no @static).
+    struct ImportedLibrary
+    {
+        std::string path;
+        bool dynamic;
+    };
+
+    // The library file an `import` of `specifier` points to when that file exists, named as the
+    // target names libraries.
+    std::string importLibraryPath(StringRef specifier);
+
+    // A library that the imports of the source module `fullPath` reach - its own, or those of the
+    // source modules it imports, and so on - and that holds the module itself (exports one of
+    // `declSymbols`).
+    std::optional<ImportedLibrary> libraryHoldingModule(mlir::Location location, StringRef fullPath,
+                                                        ArrayRef<std::string> declSymbols);
+
     void addImportedOwnNoDrops(StringRef factsText);
 
     void addImportedOwnObjectFacts(StringRef factsText);
@@ -16813,6 +16830,23 @@ class MLIRGenImpl
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
+
+    // The declaration symbols (__decls_<moduleSymbolSuffix>, and the _generic_ one) of the files
+    // in filesInProgress. A library imported while one of them is generated must not declare that
+    // one: its source is declaring it right now, and the two redefine each other.
+    llvm::StringSet<> declSymbolsInProgress;
+
+    // What a source module's top-level imports name, read from its text once
+    // (libraryHoldingModule): the source modules, by canonicalFilePath, and the libraries.
+    struct ModuleImports
+    {
+        std::vector<std::string> sources;
+        std::vector<ImportedLibrary> libraries;
+    };
+    llvm::StringMap<ModuleImports> moduleImportsCache;
+
+    // The declaration symbols each library libraryHoldingModule looked into exports.
+    llvm::StringMap<llvm::StringSet<>> libraryDeclSymbolsCache;
 
     // Source imports whose own discovery pass has run once (mlirGenInclude). Their declarations
     // are in the maps from then on, so an import generated into another module - each discovery

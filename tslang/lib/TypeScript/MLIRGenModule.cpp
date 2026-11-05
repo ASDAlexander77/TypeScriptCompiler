@@ -326,6 +326,10 @@ namespace mlirgen
 
         // an imported module importing the program back does not generate the program again
         filesInProgress.insert(fileKey(module));
+        // nor does a library holding the program declare the program again
+        auto programSuffix = moduleSymbolSuffix(fileKey(module));
+        declSymbolsInProgress.insert(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_") + programSuffix);
+        declSymbolsInProgress.insert(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_generic_") + programSuffix);
 
         stage = Stages::Discovering;
         auto storeDebugInfo = compileOptions.generateDebugInfo;
@@ -1367,8 +1371,25 @@ namespace mlirgen
             return mlir::success();
         }
 
+        // Held by a library that its own imports reach: test-runner -shared links every module
+        // but the program into one, so with main -> m2 -> m1 the library m1 holds m2 as well. The
+        // program finds the module there - linked with the library alone, it has no other
+        // definition of what the module's source declares - so the library is imported in its
+        // place. Found before the source is read: once generated, even by discovery, the source's
+        // declarations would stand beside the library's.
+        if (auto library = libraryHoldingModule(location, fullPath, {declSymbol, genericDeclSymbol}))
+        {
+            return mlirGenImportSharedLib(location, library->path, library->dynamic, genContext);
+        }
+
         filesInProgress.insert(canonicalPath);
-        auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
+        declSymbolsInProgress.insert(declSymbol);
+        declSymbolsInProgress.insert(genericDeclSymbol);
+        auto inProgress = llvm::make_scope_exit([&]() {
+            filesInProgress.erase(canonicalPath);
+            declSymbolsInProgress.erase(declSymbol);
+            declSymbolsInProgress.erase(genericDeclSymbol);
+        });
 
         // An import that points to a .ts file: compiled, it is a declaration - the module is
         // compiled into an object of its own, and the objects are linked into one program. The
@@ -1470,6 +1491,13 @@ namespace mlirgen
         {
             return mlir::success();
         }
+
+        // Read the same wherever the import is: inside a module imported as source, which is
+        // generated in declaration mode (mlirGenInclude), the globals through which this module
+        // calls the library's functions became external, and their initializers - the symbol
+        // lookups - were left at the module's top, outside any function.
+        MLIRValueGuard<bool> declarationModeGuard(declarationMode);
+        declarationMode = false;
 
         // A library built for another architecture or OS (an i686 DLL for this x64 compiler)
         // cannot be loaded into this process. Its declarations are then read from the file; the
@@ -1663,11 +1691,13 @@ namespace mlirgen
 
         // A library can hold several modules (test-runner -shared links them all into one), each
         // with its own __decls_<module>. A module already in this module - imported as source,
-        // or through another library - is not declared again; see mlirGenInclude.
+        // or through another library - is not declared again; see mlirGenInclude. Nor is one
+        // whose source is being generated around this import (declSymbolsInProgress): the
+        // program, say, built into a library it imports. Its source declares it.
         SmallVector<StringRef> declaredSymbols;
         for (auto declSymbol : symbols)
         {
-            if (emittedFiles.contains(declSymbol))
+            if (emittedFiles.contains(declSymbol) || declSymbolsInProgress.contains(declSymbol))
             {
                 continue;
             }
@@ -1784,6 +1814,127 @@ namespace mlirgen
         return mlir::success();
     }
 
+    std::string MLIRGenImpl::importLibraryPath(StringRef specifier)
+    {
+        // The library is named as the target names it, as --emit=dll does (utils.cpp): the path is
+        // also what the program loads at run time, so a host's naming would not be found there.
+        auto targetIsWindows = llvm::Triple(compileOptions.moduleTargetTriple).getOS() == llvm::Triple::Win32;
+
+        std::string fullPath;
+        fullPath += specifier;
+        if (!targetIsWindows)
+        {
+            // rebuild file path
+            auto fileName = sys::path::filename(specifier);
+            auto path = specifier.substr(0, specifier.size() - fileName.size());
+            fullPath = path;
+            fullPath += "lib";
+            fullPath += fileName;
+        }
+
+        if (sys::path::extension(fullPath) == "")
+        {
+            fullPath += targetIsWindows ? ".dll" : ".so";
+        }
+
+        return fullPath;
+    }
+
+    std::optional<MLIRGenImpl::ImportedLibrary> MLIRGenImpl::libraryHoldingModule(mlir::Location location, StringRef fullPath,
+                                                                                ArrayRef<std::string> declSymbols)
+    {
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        // a library's declarations are not told apart by module there
+        return std::nullopt;
+#else
+        auto libraryHolds = [&](StringRef libraryPath) {
+            auto cached = libraryDeclSymbolsCache.find(libraryPath);
+            if (cached == libraryDeclSymbolsCache.end())
+            {
+                SmallVector<StringRef> symbolsAll;
+                Dump::getSymbols(libraryPath, symbolsAll, stringAllocator);
+                llvm::StringSet<> declSymbolsOfLibrary;
+                for (auto symbol : symbolsAll)
+                {
+                    if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
+                    {
+                        declSymbolsOfLibrary.insert(symbol);
+                    }
+                }
+
+                cached = libraryDeclSymbolsCache.insert({libraryPath, std::move(declSymbolsOfLibrary)}).first;
+            }
+
+            return llvm::any_of(declSymbols, [&](const std::string &symbol) { return cached->second.contains(symbol); });
+        };
+
+        // every source module reached through imports, each read once (moduleImportsCache)
+        llvm::StringSet<> visited;
+        SmallVector<std::string> pending{canonicalFilePath(fullPath)};
+        while (!pending.empty())
+        {
+            auto file = pending.pop_back_val();
+            if (!visited.insert(file).second)
+            {
+                continue;
+            }
+
+            auto cached = moduleImportsCache.find(file);
+            if (cached == moduleImportsCache.end())
+            {
+                ModuleImports imports;
+                // a file that does not open is the import's to report
+                if (sys::fs::exists(file) && !StringRef(file).ends_with(".d.ts"))
+                {
+                    auto [source, includeFiles] = loadIncludeFile(location, file);
+                    if (source)
+                    {
+                        for (auto statement : source->statements)
+                        {
+                            if (statement != SyntaxKind::ImportDeclaration)
+                            {
+                                continue;
+                            }
+
+                            auto importDeclaration = statement.as<ImportDeclaration>();
+                            if (importDeclaration->moduleSpecifier != SyntaxKind::StringLiteral)
+                            {
+                                continue;
+                            }
+
+                            auto specifier = convertWideToUTF8(importDeclaration->moduleSpecifier.as<ts::StringLiteral>()->text);
+                            auto libraryPath = importLibraryPath(specifier);
+                            if (sys::fs::exists(libraryPath))
+                            {
+                                imports.libraries.push_back({libraryPath, !MLIRHelper::hasDecorator(importDeclaration, "static")});
+                            }
+                            else
+                            {
+                                imports.sources.push_back(canonicalFilePath(includeFilePath(specifier)));
+                            }
+                        }
+                    }
+                }
+
+                cached = moduleImportsCache.insert({file, std::move(imports)}).first;
+            }
+
+            auto &imports = cached->second;
+            for (auto &library : imports.libraries)
+            {
+                if (libraryHolds(library.path))
+                {
+                    return library;
+                }
+            }
+
+            pending.append(imports.sources.begin(), imports.sources.end());
+        }
+
+        return std::nullopt;
+#endif
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(importDeclarationAST);
@@ -1798,27 +1949,7 @@ namespace mlirgen
 
         auto stringVal = valueAttr.getValue();
 
-        // The library is named as the target names it, as --emit=dll does (utils.cpp): the path is
-        // also what the program loads at run time, so a host's naming would not be found there.
-        auto targetIsWindows = llvm::Triple(compileOptions.moduleTargetTriple).getOS() == llvm::Triple::Win32;
-
-        std::string fullPath;
-        fullPath += stringVal;
-        if (!targetIsWindows)
-        {
-            // rebuild file path
-            auto fileName = sys::path::filename(stringVal);
-            auto path = stringVal.substr(0, stringVal.size() - fileName.size());
-            fullPath = path;
-            fullPath += "lib";
-            fullPath += fileName;
-        }
-
-        if (sys::path::extension(fullPath) == "")
-        {
-            fullPath += targetIsWindows ? ".dll" : ".so";
-        }
-
+        auto fullPath = importLibraryPath(stringVal);
         if (sys::fs::exists(fullPath))
         {
             //auto dynamic = MLIRHelper::hasDecorator(importDeclarationAST, "dynamic");
