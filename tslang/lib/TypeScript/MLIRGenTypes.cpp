@@ -382,7 +382,21 @@ namespace mlirgen
                 LLVM_DEBUG(llvm::dbgs() << "\n!! replacing existing type for: " << name
                                         << " exist type: " << existType.second << " new type: " << type << "\n";);
 
-                if (!isa<mlir_ts::NamedGenericType>(existType.second) && mergeTypes)
+                if (!isa<mlir_ts::NamedGenericType>(existType.second) && mergeTypes && !arrayMerge &&
+                    mth.numberLiteralFits(type, existType.second))
+                {
+                    // a number literal argument yields to the type T already has from another one, when
+                    // it holds the literal's value: `add<T>(ta: TA<T>, i: int, v: T)` called as
+                    // `add(new TA<u16>(...), 0, 2)` is T = u16, the literal cast to it. Merged, T was the
+                    // literal's s32, and TA<u16> did not pass for TA<s32>.
+                    type = existType.second;
+                }
+                else if (!isa<mlir_ts::NamedGenericType>(existType.second) && mergeTypes && !arrayMerge &&
+                         mth.numberLiteralFits(existType.second, type))
+                {
+                    // ...in either order: `add2<T>(v: T, ta: TA<T>)`
+                }
+                else if (!isa<mlir_ts::NamedGenericType>(existType.second) && mergeTypes)
                 {
                     auto merged = false;
                     if (arrayMerge)
