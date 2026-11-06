@@ -218,6 +218,11 @@ class MLIRGenImpl
 
     std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain = false);
 
+    // A source import and the files it references, parsed the first time it is imported and
+    // reused after that (parsedImports).
+    std::pair<SourceFile, std::vector<SourceFile>> loadImportFile(mlir::Location location, StringRef fullPath,
+                                                                  StringRef canonicalPath);
+
     // The one name of a file, however it was spelled: `./x.d.ts`, `sub/../x.d.ts` and `x.d.ts`
     // are the same file. Keys `emittedFiles` and `filesInProgress`.
     static std::string canonicalFilePath(StringRef filePath);
@@ -16854,6 +16859,12 @@ class MLIRGenImpl
     // time, an import nested d deep was generated 2^d times: a chain of eight imports took 10 GB.
     // Survives discovery, as filesInProgress does.
     llvm::StringSet<> discoveredImports;
+
+    // Source imports parsed once, by canonicalFilePath (loadImportFile): an import is generated
+    // into every module that needs it - each discovery module, then theModule - and each time it
+    // was read and parsed again. powder_sandbox's checks.ts parsed its imports 211 times, half of
+    // its compile.
+    llvm::StringMap<std::pair<SourceFile, std::vector<SourceFile>>> parsedImports;
 
     // The default library's files - lib.d.ts and every file it references - by file key. Its
     // ambient data is defined in its DLL when the program links that (see
