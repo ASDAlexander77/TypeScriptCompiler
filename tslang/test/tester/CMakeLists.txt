@@ -753,6 +753,7 @@ tslang_add_test(NAME test-compile-00-function-fewer-parameters COMMAND test-runn
 tslang_add_test(NAME test-compile-00-closure-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_fewer_parameters.ts")
 tslang_add_test(NAME test-compile-00-in-interface-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
 tslang_add_test(NAME test-compile-00-class-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_values.ts")
+tslang_add_test(NAME test-compile-00-mixins COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
 tslang_add_test(NAME test-compile-00-class-arrow-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_arrow_fields.ts")
 tslang_add_test(NAME test-compile-00-class-arrow-getter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_arrow_getter.ts")
 tslang_add_test(NAME test-compile-00-interface-generic-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_generic_method.ts")
@@ -1769,6 +1770,15 @@ add_test(NAME test-compile-class-value-constructor-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_value_constructor_error.ts")
 set_tests_properties(test-compile-class-value-constructor-error PROPERTIES PASS_REGULAR_EXPRESSION "the constructor of class 'Named' does not take the arguments the constructor of 'Base' does"
                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# Mixins (a generic function given a class) under every memory model
+foreach(mixin_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-mixins-${mixin_mm} COMMAND test-runner -jit -mm=${mixin_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
+endforeach()
+# ...a class extending a class value known at run time only is an error
+add_test(NAME test-compile-mixin-runtime-base-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")
+set_tests_properties(test-compile-mixin-runtime-base-error PROPERTIES PASS_REGULAR_EXPRESSION "class cannot extend a class value \\(typeof A\\): its class is known at run time only"
+                                                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...and a local class's member reading the function's locals is an error naming the variable
 add_test(NAME test-compile-class-local-capture-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_local_capture_error.ts")

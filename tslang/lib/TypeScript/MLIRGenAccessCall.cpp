@@ -1847,6 +1847,63 @@ namespace mlirgen
         return funcType.getResult(0);
     }
 
+    // A class named as the argument of a generic function's parameter declared as a bare type parameter
+    // (`function Mixin<T extends Ctor>(Base: T)` called as `Mixin(A)`): T is inferred as the class, and the
+    // specialization uses it at compile time only. Any other parameter typed by a class keeps the class name
+    // as it is (no run-time value: an error).
+    SmallVector<unsigned> MLIRGenImpl::classNamesGivenToTypeParameters(mlir::Value funcResult,
+                                                                       ArrayRef<mlir::Value> operands)
+    {
+        SmallVector<unsigned> indexes;
+        auto symbolOp = funcResult ? funcResult.getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+        if (!symbolOp || !symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME)
+            || llvm::none_of(operands, [](mlir::Value operand) { return operand && operand.getDefiningOp<mlir_ts::ClassRefOp>(); }))
+        {
+            return indexes;
+        }
+
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.getIdentifierAttr().getValue());
+        if (!functionGenericTypeInfo || !functionGenericTypeInfo->functionDeclaration)
+        {
+            return indexes;
+        }
+
+        auto declarationParams = functionGenericTypeInfo->functionDeclaration->parameters;
+        for (auto [index, operand] : enumerate(operands))
+        {
+            if (index >= declarationParams.size() || declarationParams[index]->dotDotDotToken)
+            {
+                break;
+            }
+
+            if (!operand || !operand.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                continue;
+            }
+
+            auto paramTypeNode = declarationParams[index]->type;
+            if (!paramTypeNode || paramTypeNode != SyntaxKind::TypeReference)
+            {
+                continue;
+            }
+
+            auto typeReference = paramTypeNode.as<TypeReferenceNode>();
+            if (typeReference->typeArguments.size() > 0)
+            {
+                continue;
+            }
+
+            auto typeName = MLIRHelper::getName(typeReference->typeName);
+            if (llvm::any_of(functionGenericTypeInfo->typeParams,
+                             [&](auto &typeParam) { return typeParam->getName() == typeName; }))
+            {
+                indexes.push_back(index);
+            }
+        }
+
+        return indexes;
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext)
@@ -1881,10 +1938,23 @@ namespace mlirgen
         GenContext specGenContext(genContext);
         specGenContext.callOperands = operands;
 
+        auto classNameOperands = classNamesGivenToTypeParameters(funcResult, operands);
+
         // get function ref.
         auto result = mlirGenSpecialized(location, funcResult, typeArguments, operands, specGenContext);
         EXIT_IF_FAILED(result)
         auto actualFuncRefValue = V(result);
+
+        // the specialization knows the class by its type (`T` is the class: `class extends Base`, `new Base()`
+        // name it at compile time), so the argument itself is never read: a class name has no run-time value
+        // of the instance type it was inferred as. Give the parameter a null of that type
+        for (auto index : classNameOperands)
+        {
+            auto classType = operands[index].getType();
+            // a cast of its own: the checked one (strict null) refuses null for a class type
+            mlir::Value nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            operands[index] = builder.create<mlir_ts::CastOp>(location, classType, nullValue);
+        }
 
         if (!result.value && genContext.allowPartialResolve)
         {

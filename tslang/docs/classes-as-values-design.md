@@ -94,7 +94,7 @@ A local class used as a value (`return Counter`) carries its captures. Its value
 
 ## 4. Non-goals
 
-- `abstract new () => A` construct signatures and mixins (`function Mixin<T extends new (...a: any[]) => {}>(Base: T)`): these build on class values but need generic construct signatures. A follow-up.
+- `abstract new () => A` construct signatures, and values of a construct-signature type (`const B: new () => {} = A; new B()`). Mixins as the handbook writes them work without them (§6).
 - `typeof` on a class value returning `"function"` as in JavaScript: tslang's `typeof` reports its own kind names. Decide when class values land.
 
 ## 5. What is implemented
@@ -113,7 +113,9 @@ between the value and that tuple, or to the value of a base class, lowers to not
 
 **Making one** (`castToClassValue`, `mlirGenClassValue`):
 - **Where:** a class name becomes a value only where a `typeof A` is expected - a parameter, a typed
-  variable or field, an array element, a return. `const C = A` stays a compile-time alias.
+  variable or field, an array element, a return. A local `const C = A` stays a compile-time alias; a
+  module-level `const C = A` or a `let C = A` is not supported yet (the class name has no run-time value of
+  the instance type it is given).
 - **Assignable:** `B` is a value of `typeof A` when it extends `A` and its constructor takes the same
   parameters (fewer is allowed).
 - **Another module's class** is a value too. A shared library's (-shared) has its `.new`, constructor and
@@ -161,3 +163,42 @@ initializers (`generatedStatements`) with its body, so what they read is found a
   C++ slots (one by hand, as C++ would), in an array, compared; under gc, rc, none and own.
 - **`class_value_constructor_error`**, **`class_local_capture_error`**, **`class_field_capture_error`** and
   **`cpp_class_value_error`:** the errors.
+
+## 6. Mixins
+
+```ts
+type Constructor = new (...args: any[]) => {};
+function Scale<TBase extends Constructor>(Base: TBase) {
+    return class Scaling extends Base { _scale: number = 1; };
+}
+const EightBitSprite = Scale(Sprite);
+```
+
+**A specialization per class.** `Scale(Sprite)` infers `TBase` as the class `Sprite` (its `ClassType`, not
+`typeof Sprite`) and specializes `Scale` for it, so `Scaling` extends `Sprite` at compile time, with an
+ordinary layout and vtable. Chains (`Loud(Tagged(Sprite))`) specialize the outer mixin for the inner one's
+class.
+
+What makes it work:
+- **The base's type only:** the heritage clause wants the base's type. A base named by a parameter was read by
+  a load emitted at module level, outside the function owning the parameter ("null operand found"); the load
+  is erased (`mlirGenClassHeritageClause`).
+- **The argument:** a class name given to a parameter declared as a bare type parameter has no run-time value
+  of the instance type T is inferred as. The specialization uses the class at compile time only (`extends Base`,
+  `new Base()`), so the call passes a null of that type (`classNamesGivenToTypeParameters`). A parameter typed
+  otherwise (`f(a: A)` called as `f(A)`) is left as it was: an error.
+- **The constraint** (`extendsType` against a construct signature): a class without a constructor of its own
+  is made by `new A()`; a method without a return type matches a `void` one (`{ setPos(x, y): void }`).
+
+**Not supported:**
+- **A base known at run time:** `function make(B: typeof A) { return class extends B {} }`. `typeof A` may hold
+  a subclass of A, laid out otherwise, so it's an error that names the generic form. For the same reason
+  `TBase` is not inferred as `typeof A`, and `Scale<typeof Sprite>(Sprite)` does not satisfy the constraint.
+- **`applyMixins`** (copying prototype members at run time): there are no prototypes. A merged
+  `interface Sprite extends Jumpable, Duckable {}` adds nothing to the class.
+- **An integer-initialized field** (`x = 0`) is `s32`, which does not satisfy a `{ x: number }` constraint;
+  write `x: number = 0`.
+
+Tests: **`00mixins`** (the handbook's constructor and constrained mixins, chains, a mixin over a class
+without a constructor, super calls, a class declared in a generic function) under gc, rc, none and own;
+**`mixin_runtime_base_error`**.

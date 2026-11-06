@@ -10068,6 +10068,8 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> mlirGenArrayInsertWithSpread(
         mlir::Location location, mlir::Value funcResult, NodeArray<Expression> arguments, const GenContext &genContext);
 
+    SmallVector<unsigned> classNamesGivenToTypeParameters(mlir::Value funcResult, ArrayRef<mlir::Value> operands);
+
     ValueOrLogicalResult mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext);

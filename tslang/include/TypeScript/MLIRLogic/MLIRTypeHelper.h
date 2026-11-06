@@ -3065,7 +3065,14 @@ class MLIRTypeHelper
             }
         }      
 
-        // compare return types
+        // compare return types; a function with no result is a void one (`setPos(x) { ... }` is a
+        // `setPos(x): void`)
+        auto isNoResult = [&](mlir::Type type) { return !type || isNoneType(type) || isa<mlir_ts::VoidType>(type); };
+        if (isNoResult(srcReturnType) && isNoResult(extReturnType))
+        {
+            return ExtendsResult::True;
+        }
+
         return extendsType(location, srcReturnType, extReturnType, typeParamsWithArgs);
 
     }
@@ -3387,14 +3394,16 @@ class MLIRTypeHelper
             {
                 if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
                 {
-                    // we have class
-                    if (!srcClassInfo->getHasConstructor())
-                    {
-                        return ExtendsResult::False;
-                    }
-
                     // find constructor type
                     auto constrMethod = srcClassInfo->findMethod(CONSTRUCTOR_NAME);
+                    if (!constrMethod)
+                    {
+                        // a class without a constructor of its own is made by `new A()`
+                        auto defaultConstrType = mlir_ts::FunctionType::get(
+                            srcClassType.getContext(), {srcClassInfo->classType}, {srcClassInfo->classType}, false);
+                        return extendsTypeFuncTypes(location, defaultConstrType, extendType, typeParamsWithArgs, 1/*because of this param*/);
+                    }
+
                     auto constrWithRetType = mlir_ts::FunctionType::get(
                         constrMethod->funcType.getContext(), 
                         constrMethod->funcType.getInputs(), 

@@ -1328,9 +1328,19 @@ namespace mlirgen
             {
                 auto result = mlirGen(extendingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
-                auto baseType = V(result);
+                auto baseValue = V(result);
+                auto baseType = baseValue.getType();
+
+                // only the base's type is wanted. A base named by a parameter (`class extends Base` in a
+                // mixin) is read by a load emitted here, outside the function that owns the parameter
+                if (auto baseOp = baseValue.getDefiningOp();
+                    baseOp && !isa<mlir_ts::ClassRefOp>(baseOp) && baseOp->use_empty())
+                {
+                    baseOp->erase();
+                }
+
                 auto success = false;
-                mlir::TypeSwitch<mlir::Type>(baseType.getType())
+                mlir::TypeSwitch<mlir::Type>(baseType)
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
                         auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
@@ -1368,6 +1378,14 @@ namespace mlirgen
                         }
 
                         success = true;
+                    })
+                    .template Case<mlir_ts::ClassValueType>([&](auto classValueType) {
+                        // `typeof A` may hold a subclass of A, laid out otherwise: the base is known at run
+                        // time only. A generic mixin given the class (`Mixin(A)`) knows it at compile time
+                        emitError(loc(extendingType))
+                            << "class cannot extend a class value (" << to_print(classValueType)
+                            << "): its class is known at run time only. Take the base as a type parameter, "
+                               "`<T extends new (...args: any[]) => {}>(Base: T)`, and give it the class";
                     })
                     .Default([&](auto type) {
                         // e.g. `class Sub extends SomeInterface {}` - real TypeScript rejects
