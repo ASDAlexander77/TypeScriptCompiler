@@ -141,6 +141,10 @@ namespace mlirgen
         else if (variableDeclarationInfo.isFullName)
         {
             fullNameGlobalsMap.insert(variableDeclarationInfo.fullName, variableDeclaration);
+            if (auto *unit = recordingImportUnit())
+            {
+                unit->globals.push_back({importKeySaver.save(variableDeclarationInfo.fullName), variableDeclaration});
+            }
         }
         else
         {

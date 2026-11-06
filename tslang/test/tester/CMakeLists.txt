@@ -5182,6 +5182,12 @@ tslang_add_test(NAME test-jit-shared-import-chain-deep
                 COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/import-chain/deep_chain.ts" ${import_chain_modules})
 set_tests_properties(test-compile-import-chain-deep test-jit-import-chain-deep test-compile-shared-import-chain-deep
                      test-jit-shared-import-chain-deep PROPERTIES TIMEOUT 120)
+# An import discovered already is not generated again into a discovery module; the class .rtti
+# global two imports down has to be put back for the program's discovery to read it.
+tslang_add_import_tests(import-chain-rtti-skipped "${PROJECT_SOURCE_DIR}/test/tester/import-chain" rtti_skipped_import
+                        rtti_bottom rtti_middle rtti_top)
+tslang_add_test(NAME test-jit-import-chain-rtti-skipped
+                COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/import-chain/rtti_skipped_import.ts")
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
 # The library is named after nested_bottom, the first module, and holds nested_middle as well: the
 # program imports nested_middle as source and meets the library only inside it.
