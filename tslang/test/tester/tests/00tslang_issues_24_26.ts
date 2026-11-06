@@ -68,5 +68,13 @@ function main() {
     const ints: int[] = [1, 2, 3];
     assert(fillF32(Ref(floats[0])) == 1 && fillInt(Ref(ints[1])) == 2, "references laid out alike");
 
+    // asserted, a reference reads what it refers to as another type: the default library hashes a
+    // number's bits so. 1.5 is 0x3FF8000000000000
+    let d: number = 1.5;
+    const halves = <Reference<i32>>Ref(d);
+    assert(Deref(halves[0]) == 0 && Deref(halves[1]) == 0x3ff80000, "<Reference<i32>> of a number");
+    const low = Ref(d) as Reference<i32>;
+    assert(Deref(low) == 0, "as Reference<i32>");
+
     print("done.");
 }
