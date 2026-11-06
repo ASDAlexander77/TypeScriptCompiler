@@ -4053,6 +4053,8 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext);
 
+    mlir::Value reinterpretReference(mlir::Location location, mlir::Type type, mlir::Value value);
+
     ValueOrLogicalResult mlirGen(AsExpression asExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(ComputedPropertyName computedPropertyNameAST, const GenContext &genContext);

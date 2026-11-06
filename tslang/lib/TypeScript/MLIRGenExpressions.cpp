@@ -324,8 +324,25 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
+        if (auto reinterpreted = reinterpretReference(location, typeInfo, exprValue))
+        {
+            return reinterpreted;
+        }
+
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
+    }
+
+    // `<Reference<i32>>ref` asserted on a reference to something else reads its bytes as i32s: meant
+    // (hashing a number's bits), so the layout check an implicit conversion gets (cast) is not made
+    mlir::Value MLIRGenImpl::reinterpretReference(mlir::Location location, mlir::Type type, mlir::Value value)
+    {
+        if (isa<mlir_ts::RefType>(type) && isa<mlir_ts::RefType>(value.getType()) && type != value.getType())
+        {
+            return builder.create<mlir_ts::CastOp>(location, type, value);
+        }
+
+        return mlir::Value();
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(AsExpression asExpressionAST, const GenContext &genContext)
@@ -345,6 +362,11 @@ namespace mlirgen
         auto result = mlirGen(asExpressionAST->expression, noReceiverGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
+
+        if (auto reinterpreted = reinterpretReference(location, typeInfo, exprValue))
+        {
+            return reinterpreted;
+        }
 
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
