@@ -55,7 +55,9 @@ set(not_compilable_alone
     class_field_capture_error.ts
     cpp_class_value_error.ts
     # an error by design (test-compile-mixin-runtime-base-error)
-    mixin_runtime_base_error.ts)
+    mixin_runtime_base_error.ts
+    # an error by design (test-compile-ref-element-layout-error)
+    ref_element_layout_error.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

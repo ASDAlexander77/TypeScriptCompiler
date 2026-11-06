@@ -982,6 +982,44 @@ namespace mlirgen
             }
         }
 
+        // a reference is the address of what it refers to: one to a number (a double) handed on as a
+        // `Ref<f32>` is a `double*` read as a `float*`. Numbers referred to must be laid out alike
+        if (auto destRefType = dyn_cast<mlir_ts::RefType>(type))
+        {
+            if (auto srcRefType = dyn_cast<mlir_ts::RefType>(valueType))
+            {
+                // {is float, width} of a scalar number, or none
+                auto layoutOf = [](mlir::Type elementType) -> std::optional<std::pair<bool, unsigned>> {
+                    if (isa<mlir_ts::NumberType>(elementType))
+                    {
+                        return std::make_pair(true, 64u);
+                    }
+
+                    if (auto floatType = dyn_cast<mlir::FloatType>(elementType))
+                    {
+                        return std::make_pair(true, floatType.getWidth());
+                    }
+
+                    if (auto intType = dyn_cast<mlir::IntegerType>(elementType); intType && intType.getWidth() > 1)
+                    {
+                        return std::make_pair(false, intType.getWidth());
+                    }
+
+                    return std::nullopt;
+                };
+
+                auto srcLayout = layoutOf(srcRefType.getElementType());
+                auto destLayout = layoutOf(destRefType.getElementType());
+                if (srcLayout && destLayout && *srcLayout != *destLayout)
+                {
+                    emitError(location) << "a reference to " << to_print(srcRefType.getElementType())
+                                        << " can't be used as a reference to " << to_print(destRefType.getElementType())
+                                        << ": what it refers to is laid out otherwise";
+                    return mlir::failure();
+                }
+            }
+        }
+
         if (auto result = castFromSourceSpecialCases(location, type, value, valueType, genContext))
         {
             return *result;

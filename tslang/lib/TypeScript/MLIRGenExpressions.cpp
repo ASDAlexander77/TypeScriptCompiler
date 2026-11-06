@@ -817,6 +817,22 @@ namespace mlirgen
             };
             auto trueType = widenArrayLiteral(resultTrue.getType());
             auto falseType = widenArrayLiteral(resultFalse.getType());
+
+            // an empty array literal is an array of the other branch's elements: TypeScript has
+            // `c ? [1] : []` a `number[]`. Left an `any[]`, the merge was a union `s32[] | any[]`
+            // whose `for...of` read the array through the union's tag and crashed
+            auto isEmptyArrayLiteral = [](mlir::Type type) {
+                auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type);
+                return constArrayType && constArrayType.getSize() == 0;
+            };
+            if (isEmptyArrayLiteral(resultFalse.getType()) && isa<mlir_ts::ArrayType>(trueType))
+            {
+                falseType = trueType;
+            }
+            else if (isEmptyArrayLiteral(resultTrue.getType()) && isa<mlir_ts::ArrayType>(falseType))
+            {
+                trueType = falseType;
+            }
             auto defaultUnionType = getUnionType(location, trueType, falseType);
             auto merged = false;
             auto resultType = mth.findBaseType(trueType, falseType, merged, defaultUnionType);
@@ -832,7 +848,11 @@ namespace mlirgen
                 auto array = value;
                 if (isa<mlir_ts::ConstArrayType>(value.getType()))
                 {
-                    auto result = cast(location, mth.removeConstType(value.getType()), value, genContext);
+                    // an empty literal is made an array of the merged type's elements directly
+                    auto arrayType = isEmptyArrayLiteral(value.getType()) && isa<mlir_ts::ArrayType>(resultType)
+                        ? resultType
+                        : mth.removeConstType(value.getType());
+                    auto result = cast(location, arrayType, value, genContext);
                     if (result.failed_or_no_value())
                     {
                         return mlir::Value();
