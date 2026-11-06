@@ -754,6 +754,7 @@ tslang_add_test(NAME test-compile-00-closure-fewer-parameters COMMAND test-runne
 tslang_add_test(NAME test-compile-00-in-interface-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_interface_union.ts")
 tslang_add_test(NAME test-compile-00-class-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_values.ts")
 tslang_add_test(NAME test-compile-00-mixins COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
+tslang_add_test(NAME test-compile-00-tslang-issues-24-26 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_24_26.ts")
 tslang_add_test(NAME test-compile-00-class-arrow-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_arrow_fields.ts")
 tslang_add_test(NAME test-compile-00-class-arrow-getter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_arrow_getter.ts")
 tslang_add_test(NAME test-compile-00-interface-generic-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_generic_method.ts")
@@ -1774,6 +1775,16 @@ set_tests_properties(test-compile-class-value-constructor-error PROPERTIES PASS_
 foreach(mixin_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-mixins-${mixin_mm} COMMAND test-runner -jit -mm=${mixin_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
 endforeach()
+# TSLANG_ISSUES 24-26 (bitwise results are s32, an empty array literal in a conditional, references laid
+# out alike) under every memory model
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tslang-issues-24-26-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_24_26.ts")
+endforeach()
+# ...a reference to a number is no reference to an f32
+add_test(NAME test-compile-ref-element-layout-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/ref_element_layout_error.ts")
+set_tests_properties(test-compile-ref-element-layout-error PROPERTIES PASS_REGULAR_EXPRESSION "a reference to number can't be used as a reference to f32"
+                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class extending a class value known at run time only is an error
 add_test(NAME test-compile-mixin-runtime-base-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")

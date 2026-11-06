@@ -8245,7 +8245,11 @@ class MLIRGenImpl
             // cast to int: JavaScript's Int32 coercion, but a 64-bit integer left operand keeps its
             // type (and signedness), the right one is cast to it. Cast to i32, `u64 << 40` shifted
             // by 40 mod 32 and dropped the upper half.
-            mlir::Type intType = builder.getI32Type();
+            // ToInt32 is signed: `1 << 18` is an s32 as `int` is, so `[1 << 18, w]` with `w: int` is an
+            // s32[]. Signless, it merged with s32 as an index would, to s64. `>>>` is ToUint32's
+            mlir::Type intType = opCode == SyntaxKind::GreaterThanGreaterThanGreaterThanToken
+                ? builder.getI32Type()
+                : mlir::IntegerType::get(builder.getContext(), 32, mlir::IntegerType::Signed);
             if (auto leftIntType = dyn_cast<mlir::IntegerType>(leftExpressionValue.getType()))
             {
                 if (leftIntType.getWidth() > 32)
