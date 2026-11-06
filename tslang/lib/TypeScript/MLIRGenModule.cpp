@@ -282,6 +282,51 @@ namespace mlirgen
         return {sourceFile, includeFiles};
     }
 
+    std::pair<SourceFile, std::vector<SourceFile>> MLIRGenImpl::loadImportFile(mlir::Location location, StringRef fullPath,
+                                                                               StringRef canonicalPath)
+    {
+        auto cached = parsedImports.find(canonicalPath);
+        if (cached == parsedImports.end())
+        {
+            auto loaded = loadIncludeFile(location, fullPath);
+            if (loaded.first)
+            {
+                parsedImports[canonicalPath] = loaded;
+            }
+
+            return loaded;
+        }
+
+        // As freshly parsed: a pass marks the statements and members it generated `processed`,
+        // and the next module generates them all again. An import already on the generation stack
+        // is never reloaded (filesInProgress), so no pass is still using these nodes. The rest
+        // MLIRGen writes into the tree (accessor methods added to a class, internal flags) is the
+        // same every time, as it already was for discovery followed by codegen of one parse.
+        FuncT<> visitNode;
+        ArrayFuncT<> visitArray;
+        visitNode = [&](Node node) -> Node {
+            node->processed = false;
+            forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        visitNode(cached->second.first.as<Node>());
+        for (auto includeFile : cached->second.second)
+        {
+            visitNode(includeFile.as<Node>());
+        }
+
+        return cached->second;
+    }
+
     mlir::LogicalResult MLIRGenImpl::showMessages(SourceFile module, std::vector<SourceFile> includeFiles)
     {
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -1421,7 +1466,7 @@ namespace mlirgen
             exportCheckedDependenciesTypes = savedExportCheckedDependenciesTypes;
         });
 
-        auto [importSource, importIncludeFiles] = loadIncludeFile(location, fullPath);
+        auto [importSource, importIncludeFiles] = loadImportFile(location, fullPath, canonicalPath);
         if (!importSource)
         {
             return mlir::failure();
