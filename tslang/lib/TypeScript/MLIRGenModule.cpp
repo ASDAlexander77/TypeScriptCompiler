@@ -327,6 +327,138 @@ namespace mlirgen
         return cached->second;
     }
 
+    MLIRGenImpl::ImportUnit *MLIRGenImpl::recordingImportUnit()
+    {
+        if (importRecordStack.empty() || importRecordStack.back().empty())
+        {
+            return nullptr;
+        }
+
+        return &importUnits[importRecordStack.back()];
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenRecordedInclude(SourceFile includeFile, const GenContext &genContext)
+    {
+        auto key = fileKey(includeFile);
+        importRecordStack.push_back(importUnits[key].recorded ? std::string() : key);
+        auto result = mlirGen(includeFile->statements, genContext);
+        auto recorded = importRecordStack.back();
+        importRecordStack.pop_back();
+        if (!recorded.empty())
+        {
+            if (mlir::succeeded(result))
+            {
+                importUnits[recorded].recorded = true;
+            }
+            else
+            {
+                importUnits.erase(recorded);
+            }
+        }
+
+        return result;
+    }
+
+    bool MLIRGenImpl::replayImportGlobals(StringRef path)
+    {
+        llvm::StringSet<> visited;
+        mlir::SmallVector<ImportUnit *> units;
+
+        // A file `importKey` references, generated into this module the first time it is reached
+        // here, as generating the import would (mlirCodeGenModule); recorded on the way. A file a
+        // module referenced is emitted by its discovery's dummy run first, so a nested import
+        // finds it there and skips it: it is first generated, and recorded, only here.
+        auto generateReferencedFile = [&](StringRef importKey, StringRef key) {
+            auto parsed = parsedImports.find(importKey);
+            if (parsed == parsedImports.end())
+            {
+                return false;
+            }
+
+            for (auto includeFile : parsed->second.second)
+            {
+                if (fileKey(includeFile) != key)
+                {
+                    continue;
+                }
+
+                mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+                mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+                    postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+                });
+
+                GenContext genContext{};
+                genContext.rootContext = &genContext;
+                genContext.postponedMessages = &postponedMessages;
+
+                SourceFileScope sourceFileScope(*this, includeFile);
+                if (mlir::failed(mlirGenRecordedInclude(includeFile, genContext)))
+                {
+                    return false;
+                }
+
+                emittedFiles.insert(key);
+                return true;
+            }
+
+            return false;
+        };
+
+        std::function<bool(StringRef, StringRef)> collect = [&](StringRef parentKey, StringRef key) {
+            if (!visited.insert(key).second)
+            {
+                return true;
+            }
+
+            // in this module already, and so are its globals
+            if (emittedFiles.contains(key))
+            {
+                return true;
+            }
+
+            auto found = importUnits.find(key);
+            if ((found == importUnits.end() || !found->second.recorded) && !parentKey.empty() &&
+                generateReferencedFile(parentKey, key))
+            {
+                return true;
+            }
+
+            if (found == importUnits.end() || !found->second.recorded || !found->second.skippable)
+            {
+                return false;
+            }
+
+            units.push_back(&found->second);
+            for (auto &child : found->second.children)
+            {
+                if (!collect(key, child))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        if (!collect(StringRef(), path))
+        {
+            return false;
+        }
+
+        for (auto *unit : units)
+        {
+            for (auto &[name, variableDeclaration] : unit->globals)
+            {
+                if (!fullNameGlobalsMap.count(name))
+                {
+                    fullNameGlobalsMap.insert(name, variableDeclaration);
+                }
+            }
+        }
+
+        return true;
+    }
+
     mlir::LogicalResult MLIRGenImpl::showMessages(SourceFile module, std::vector<SourceFile> includeFiles)
     {
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -1141,6 +1273,10 @@ namespace mlirgen
         // (e.g. default-lib function bodies such as 'console.log') that must survive.
         DiscoveryModuleScope discoveryModuleScope(*this);
 
+        // what a dummy run registers is not what generating the file registers (importUnits)
+        importRecordStack.push_back(std::string());
+        auto notRecording = llvm::make_scope_exit([&]() { importRecordStack.pop_back(); });
+
         // Process of discovery here
         GenContext genContextPartial{};
         genContextPartial.allowPartialResolve = true;
@@ -1211,6 +1347,11 @@ namespace mlirgen
         // a file the program, or another import, already emitted into this module is skipped
         for (auto includeFile : includeFiles)
         {
+            if (auto *unit = recordingImportUnit())
+            {
+                unit->children.push_back(fileKey(includeFile));
+            }
+
             if (emittedFiles.contains(fileKey(includeFile)))
             {
                 continue;
@@ -1218,7 +1359,7 @@ namespace mlirgen
 
             SourceFileScope sourceFileScope(*this, includeFile);
 
-            if (failed(mlirGen(includeFile->statements, genContext)))
+            if (failed(mlirGenRecordedInclude(includeFile, genContext)))
             {
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
@@ -1391,6 +1532,13 @@ namespace mlirgen
         auto fullPath = includeFilePath(filePath);
         auto canonicalPath = canonicalFilePath(fullPath);
 
+        // the file being recorded reached this one: its globals come with it (replayImportGlobals)
+        auto *recordingUnit = recordingImportUnit();
+        if (recordingUnit)
+        {
+            recordingUnit->children.push_back(canonicalPath);
+        }
+
         // Already in this module - referenced with `/// <reference path>`, or imported directly
         // and through another module - so its declarations are all there. Or an import cycle back
         // to a file still being generated: generating it again would never end; what the cycle
@@ -1403,6 +1551,11 @@ namespace mlirgen
         if (filesInProgress.contains(canonicalPath))
         {
             compileOptions.importCycle = true;
+            if (recordingUnit)
+            {
+                recordingUnit->skippable = false;
+            }
+
             return mlir::success();
         }
 
@@ -1413,6 +1566,11 @@ namespace mlirgen
         auto genericDeclSymbol = std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_generic_") + suffix;
         if (emittedFiles.contains(declSymbol) || emittedFiles.contains(genericDeclSymbol))
         {
+            if (recordingUnit)
+            {
+                recordingUnit->skippable = false;
+            }
+
             return mlir::success();
         }
 
@@ -1424,7 +1582,22 @@ namespace mlirgen
         // declarations would stand beside the library's.
         if (auto library = libraryHoldingModule(location, fullPath, {declSymbol, genericDeclSymbol}))
         {
+            if (recordingUnit)
+            {
+                recordingUnit->skippable = false;
+            }
+
             return mlirGenImportSharedLib(location, library->path, library->dynamic, genContext);
+        }
+
+        // In a discovery module, an import discovered once already is not generated again: what
+        // discovery resolves against it is in the compile's maps, but for the globals it put in
+        // fullNameGlobalsMap, which belongs to each module and is put back. theModule still
+        // generates every import. Generated again into each discovery module that reached it, an
+        // import was generated 211 times for powder_sandbox's checks.ts.
+        if (discoveryDepth > 0 && discoveredImports.contains(canonicalPath) && replayImportGlobals(canonicalPath))
+        {
+            return mlir::success();
         }
 
         filesInProgress.insert(canonicalPath);
@@ -1491,9 +1664,32 @@ namespace mlirgen
 
             // discovered once already (generated into an earlier module): its declarations are
             // known, and discovering it again would generate every import inside it twice more
-            generated = (discoveredImports.contains(canonicalPath) ||
-                         mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles))) &&
-                mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false));
+            generated = discoveredImports.contains(canonicalPath) ||
+                        mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles));
+            if (generated)
+            {
+                // the first generation that succeeds is recorded (importUnits)
+                auto record = !importUnits[canonicalPath].recorded;
+                if (record)
+                {
+                    importUnits.erase(canonicalPath);
+                }
+
+                importRecordStack.push_back(record ? canonicalPath : std::string());
+                generated = mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false));
+                importRecordStack.pop_back();
+                if (record)
+                {
+                    if (generated)
+                    {
+                        importUnits[canonicalPath].recorded = true;
+                    }
+                    else
+                    {
+                        importUnits.erase(canonicalPath);
+                    }
+                }
+            }
         }
 
         // the import's own diagnostic handlers are gone: these reach the importer's
@@ -1532,6 +1728,13 @@ namespace mlirgen
         // Imported into this module already - directly and through another module, say: it is
         // loaded, and its declarations are here. A second copy of them redefines every symbol.
         auto canonicalPath = canonicalFilePath(filePath);
+
+        // what a library declares is not recorded: a file that imports one is generated each time
+        if (auto *unit = recordingImportUnit())
+        {
+            unit->skippable = false;
+        }
+
         if (emittedFiles.contains(canonicalPath))
         {
             return mlir::success();

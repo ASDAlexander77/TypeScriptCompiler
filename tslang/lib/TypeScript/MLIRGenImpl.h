@@ -59,6 +59,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/StringSaver.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
@@ -222,6 +223,24 @@ class MLIRGenImpl
     // reused after that (parsedImports).
     std::pair<SourceFile, std::vector<SourceFile>> loadImportFile(mlir::Location location, StringRef fullPath,
                                                                   StringRef canonicalPath);
+
+    // One file's entry in importUnits.
+    struct ImportUnit
+    {
+        std::vector<std::pair<StringRef, VariableDeclarationDOM::TypePtr>> globals;
+        std::vector<std::string> children;
+        bool recorded = false;
+        bool skippable = true;
+    };
+
+    // importUnits: the file being recorded (top of importRecordStack), if any.
+    ImportUnit *recordingImportUnit();
+    // Generates `includeFile`, a file a source import references, recording it (importUnits).
+    mlir::LogicalResult mlirGenRecordedInclude(SourceFile includeFile, const GenContext &genContext);
+    // Puts back into this discovery module's fullNameGlobalsMap the globals generating `path`
+    // registered, and those of every file it reached. False when one of them was not recorded or
+    // is not skippable: the import is then generated.
+    bool replayImportGlobals(StringRef path);
 
     // The one name of a file, however it was spelled: `./x.d.ts`, `sub/../x.d.ts` and `x.d.ts`
     // are the same file. Keys `emittedFiles` and `filesInProgress`.
@@ -14742,7 +14761,8 @@ class MLIRGenImpl
         // `emittedFiles`: discovery has to see every declaration to resolve against it.
         DiscoveryModuleScope(MLIRGenImpl &mlirGenImpl)
             : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder),
-              emittedFilesGuard(mlirGenImpl.emittedFiles, {})
+              emittedFilesGuard(mlirGenImpl.emittedFiles, {}),
+              discoveryDepthGuard(mlirGenImpl.discoveryDepth, mlirGenImpl.discoveryDepth + 1)
         {
             discoveryModule =
                 mlir::ModuleOp::create(mlirGenImpl.theModule.getLoc(), mlir::StringRef("discovery_module"));
@@ -14760,6 +14780,7 @@ class MLIRGenImpl
         MLIRValueGuard<mlir::ModuleOp> moduleGuard;
         mlir::OpBuilder::InsertionGuard insertGuard;
         MLIRValueGuard<llvm::StringSet<>> emittedFilesGuard;
+        MLIRValueGuard<int> discoveryDepthGuard;
         mlir::ModuleOp discoveryModule;
     };
 
@@ -16865,6 +16886,24 @@ class MLIRGenImpl
     // was read and parsed again. powder_sandbox's checks.ts parsed its imports 211 times, half of
     // its compile.
     llvm::StringMap<std::pair<SourceFile, std::vector<SourceFile>>> parsedImports;
+
+    // How many discovery modules (DiscoveryModuleScope) enclose the current generation: above 0,
+    // theModule is a throwaway one. GenContext::dummyRun does not say it: a module generated
+    // inside discovery (mlirCodeGenModule) starts a GenContext of its own.
+    int discoveryDepth = 0;
+
+    // What generating a file (a source import, or a file one references) registered that a
+    // discovery module needs from it when the import is not generated there again
+    // (replayImportGlobals): the globals it put in fullNameGlobalsMap - scoped to each module,
+    // the class's .rtti among them - and the files it reached, whose globals come with it.
+    // Recorded the first time the file is generated (importRecordStack). A file that reached a
+    // library, or an import cycle, is not `skippable`: it is generated each time, as before.
+    llvm::StringMap<ImportUnit> importUnits;
+    // The file being generated, innermost last; "" for one whose first generation is recorded
+    // already, or for the program.
+    std::vector<std::string> importRecordStack;
+    llvm::BumpPtrAllocator importKeyAllocator;
+    llvm::StringSaver importKeySaver{importKeyAllocator};
 
     // The default library's files - lib.d.ts and every file it references - by file key. Its
     // ambient data is defined in its DLL when the program links that (see
