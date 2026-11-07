@@ -2180,6 +2180,13 @@ namespace mlirgen
         auto concatValues =
             builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
 
+        // a template builds a new string, as `"a" + b` does: it carries a reference of its own,
+        // which a receiver takes over and which is given back at the end of the block otherwise.
+        // Unmarked, `f(\`a${b}\`)` passed a string nothing held: under rc a callee that handed its
+        // parameter to a call (`console.log(text)`) dropped the count to zero and freed it before
+        // `this.message = text` stored it (TSLANG 27).
+        markFreshBlockOwned(location, concatValues);
+
         return V(concatValues);
     }
 

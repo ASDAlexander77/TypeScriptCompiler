@@ -489,8 +489,11 @@ namespace mlirgen
             auto concatValues =
                 builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
 
-            return V(concatValues);    
-        }    
+            // a new string, owned as a template's is (TSLANG 27)
+            markFreshBlockOwned(location, concatValues);
+
+            return V(concatValues);
+        }
 
         return mlir::failure();
     }     
@@ -587,7 +590,11 @@ namespace mlirgen
         auto concatValues =
             builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
 
-        return V(concatValues);        
+        // `<string>{ a: 1 }` builds a new string, owned as a template's is: unmarked, passed
+        // straight to a call it reached the callee with no reference behind it (TSLANG 27)
+        markFreshBlockOwned(location, concatValues);
+
+        return V(concatValues);
     }       
 
     // An interface printed: its `toString` when it has one, as a class's is; else its fields, read
