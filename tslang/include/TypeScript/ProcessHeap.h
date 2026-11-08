@@ -11,9 +11,11 @@
 // list of its blocks per copy, while tslang.exe's own `malloc` is rpmalloc when LLVM is the
 // prebuilt package. The process heap is the same heap in every module and every build.
 //
-// An executable that loads no library tslang built is one module, so it allocates from mimalloc
-// instead: tslang links TypeScriptMimalloc.lib, whose definitions of the same entry points win over
-// these (lib/TypeScriptMimalloc), and the JIT does the same for the program it runs (jit.cpp).
+// The process's one heap is the program's, and an executable tslang links has mimalloc for it
+// (TypeScriptMimalloc.lib, whose definitions of the entry points win over these), as does a program
+// the JIT runs (jit.cpp). A library tslang built allocates from the program's heap through the
+// entry points the program exports, and from the process heap only when the program exports none
+// (lib/ProcessHeapExports.inc).
 //
 // Header-only, so each place that has to provide them - the async runtime library a program links,
 // TypeScriptRuntime.dll and the JIT - compiles the same code.
@@ -89,6 +91,31 @@ inline void *allocateAligned(size_t align, size_t size)
     }
 
     return allocate(size);
+}
+
+// Whether the program allocates from mimalloc (an executable that links TypeScriptMimalloc exports
+// this marker; the JIT knows for itself).
+inline bool programUsesMimalloc()
+{
+    return GetProcAddress(GetModuleHandleW(nullptr), "__tslang_heap_mimalloc") != nullptr;
+}
+
+// Whether a library allocates from the program's heap (lib/ProcessHeapExports.inc exports the
+// marker) rather than keeping one of its own, as a library a tslang before it built does. Read from
+// the library mapped without running any of its code or loading what it imports, found where
+// LoadLibrary would find it - so it can be asked before the library is loaded. A library that is not
+// there says yes: loading it fails on its own.
+inline bool librarySharesHeap(const wchar_t *fileName)
+{
+    auto library = LoadLibraryExW(fileName, nullptr, DONT_RESOLVE_DLL_REFERENCES);
+    if (library == nullptr)
+    {
+        return true;
+    }
+
+    auto shares = GetProcAddress(library, "__tslang_heap_shared") != nullptr;
+    FreeLibrary(library);
+    return shares;
 }
 
 } // namespace process_heap

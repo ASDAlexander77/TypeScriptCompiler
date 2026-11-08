@@ -198,12 +198,18 @@ Under `-mm=rc`, `-mm=own` and `-mm=none`, a Windows program allocates from
   `TypeScriptAsyncRuntime.lib`);
 - a program run with `--emit=jit` gets the same.
 
-There is one exception, because a block allocated by one module is often freed by another. A
-program that loads a library tslang built keeps the process heap, and so does that library. That
-covers importing a `--emit=dll` library, the default library's DLL under the JIT, and a library
-given with `--shared-libs`. A program you link yourself, against `TypeScriptAsyncRuntime.lib`, also
-keeps the process heap unless you link `TypeScriptMimalloc.lib` ahead of it. Do that only for an
-executable that loads no library tslang built.
+A block allocated by one module is often freed by another, so a process has one heap, and it is
+the program's. A library tslang built - a `--emit=dll` library the program imports, the default
+library's DLL under the JIT, a library given with `--shared-libs` - allocates from the program's
+heap, which it finds through the entry points the program exports. Under a program that exports
+none (one tslang did not build), a library allocates from the process heap.
+
+A library built by an older tslang keeps a heap of its own. A program on mimalloc refuses to load it
+and says to rebuild it; under the JIT, such a library given with `--shared-libs` keeps the program
+on the process heap instead.
+
+A program you link yourself, against `TypeScriptAsyncRuntime.lib`, keeps the process heap unless you
+link `TypeScriptMimalloc.lib` ahead of it.
 
 `--process-heap` keeps the process heap anyway, for heap debugging tools such as page heap or
 Application Verifier. `-mm=gc` allocates from the collector, and other platforms from the C

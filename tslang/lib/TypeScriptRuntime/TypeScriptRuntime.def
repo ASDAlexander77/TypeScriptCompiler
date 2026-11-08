@@ -36,12 +36,7 @@ EXPORTS
     aligned_alloc=AlignedAlloc
     aligned_free=AlignedFree
 
-    ; --- the process-heap allocator (ProcessHeapExports.inc) a JIT'd program calls on Windows ---
-    __tslang_heap_malloc
-    __tslang_heap_calloc
-    __tslang_heap_realloc
-    __tslang_heap_free
-    __tslang_heap_aligned_alloc
+    ; --- the heap entry points (ProcessHeapExports.inc) export themselves (__declspec(dllexport)) ---
 
     ; --- dynamic-library runtime (DynamicRuntime.cpp, extern "C", names already match) ---
     tslang_load_library_permanently

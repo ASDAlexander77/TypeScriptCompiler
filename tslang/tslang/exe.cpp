@@ -982,11 +982,10 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         }
 
         // An executable allocates from mimalloc (TypeScriptMimalloc.lib) rather than the process
-        // heap, as long as it is one module: one that loads a library tslang built shares that
-        // library's process heap, since each frees what the other allocates. gc allocates from the
-        // collector either way. --process-heap keeps the process heap, for heap debugging tools.
-        useMimalloc = winX86OrX64 && !shared && !compileOptions.importsSharedLibrary
-            && !compileOptions.needsGCRuntime() && !processHeap;
+        // heap, and lends it to every library tslang built that it loads (ProcessHeapExports.inc):
+        // a library never owns the heap. gc allocates from the collector either way.
+        // --process-heap keeps the process heap, for heap debugging tools.
+        useMimalloc = winX86OrX64 && !shared && !compileOptions.needsGCRuntime() && !processHeap;
         if (useMimalloc && !tslangLibPath.empty())
         {
             llvm::SmallString<256> mimallocLib(tslangLibPath);
@@ -1082,6 +1081,16 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         }
 
         args.push_back("-lTypeScriptAsyncRuntime");
+
+        // A library says it allocates from the program's heap (`__tslang_heap_shared`, with the
+        // entry points that find it), or a program on mimalloc refuses to load it - so every one
+        // carries the marker, even one that never allocates and so would not pull it in
+        // (TypeScript/ProcessHeap.h, librarySharesHeap). x86 decorates C names with an underscore.
+        if (shared && winX86OrX64)
+        {
+            args.push_back(arch == llvm::Triple::x86 ? "-Wl,-include:___tslang_heap_shared"
+                                                     : "-Wl,-include:__tslang_heap_shared");
+        }
     }
 
     if (!win && !wasm)
