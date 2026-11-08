@@ -23,7 +23,9 @@
 #include "llvm/Support/Process.h"
 
 #include <cstdio>
+#include <cfloat>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <typeinfo>
 #ifdef _WIN32
@@ -660,6 +662,71 @@ using JitEntryThunkFn = int (*)(int, char **);
 // What an uncaught exception threw, said after "uncaught exception: ", or empty
 static char uncaughtDescription[512];
 
+// A thrown number as the program would print it (Number::toString, as ConvertLogic's
+// __ts_number_to_string): the fewest digits that read back as the same double, plain decimal for
+// a decimal exponent n in -6 < n <= 21, `d.ddde+N` / `e-N` otherwise. `%.17g` said `0.1` as
+// 0.10000000000000001.
+static void numberText(char *out, size_t size, double value)
+{
+    if (value != value)
+    {
+        snprintf(out, size, "NaN");
+        return;
+    }
+
+    if (value == 0)
+    {
+        snprintf(out, size, "0");
+        return;
+    }
+
+    auto *sign = value < 0 ? "-" : "";
+    auto magnitude = value < 0 ? -value : value;
+    if (magnitude > DBL_MAX)
+    {
+        snprintf(out, size, "%sInfinity", sign);
+        return;
+    }
+
+    char scientific[32];
+    int decimals = 0;
+    for (; decimals < 16; decimals++)
+    {
+        snprintf(scientific, sizeof(scientific), "%.*e", decimals, magnitude);
+        if (strtod(scientific, nullptr) == magnitude)
+        {
+            break;
+        }
+    }
+
+    if (decimals == 16)
+    {
+        snprintf(scientific, sizeof(scientific), "%.*e", decimals, magnitude);
+    }
+
+    char digits[32];
+    snprintf(digits, sizeof(digits), "%c%.*s", scientific[0], decimals, scientific + 2);
+    int k = decimals + 1;
+    int n = atoi(strchr(scientific, 'e') + 1) + 1;
+    static const char zeros[] = "000000000000000000000";
+    if (k <= n && n <= 21)
+    {
+        snprintf(out, size, "%s%s%.*s", sign, digits, n - k, zeros);
+    }
+    else if (0 < n && n <= 21)
+    {
+        snprintf(out, size, "%s%.*s.%s", sign, n, digits, digits + n);
+    }
+    else if (-6 < n && n <= 0)
+    {
+        snprintf(out, size, "%s0.%.*s%s", sign, -n, zeros, digits);
+    }
+    else
+    {
+        snprintf(out, size, "%s%c%s%se%+d", sign, digits[0], k > 1 ? "." : "", digits + 1, n - 1);
+    }
+}
+
 // The thrown value, read from the exception record of a throw (_CxxThrowException's): the object, and its
 // ThrowInfo, whose first catchable type names its type (`.N` a number, `.PEAD` a string, `.PEAVName@@` a class).
 // Read while the object is alive, in the filter; a record not shaped so is left undescribed.
@@ -704,7 +771,7 @@ static void describeUncaught(EXCEPTION_POINTERS *pointers)
         }
         else if (strcmp(name, ".N") == 0)
         {
-            snprintf(uncaughtDescription, size, "%.17g", *reinterpret_cast<double *>(object));
+            numberText(uncaughtDescription, size, *reinterpret_cast<double *>(object));
         }
         else if (strcmp(name, ".H") == 0)
         {
