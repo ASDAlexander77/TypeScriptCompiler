@@ -1455,10 +1455,11 @@ namespace own_inference
                     auto root = rootOf(value);
                     captured = ownerName(root);
                     Chain chain;
-                    if (holdsNoBlock(value) || placeReadOf(root) || borrowedParam(root) >= 0 || isHandle(root))
+                    if (holdsNoBlock(value) || placeReadOf(root) || borrowedParam(root) >= 0 ||
+                        (isHandle(root) && !fill.second->hasAttr(OWN_CAPTURE_BORROW_ATTR_NAME)))
                     {
                         // nothing to own, a read the read's check bounds, a parameter, or a handle,
-                        // whose copy in the box is counted (spec 23.2)
+                        // whose copy in the box is counted (spec 23.2) - unless the box borrows it
                     }
                     else if (auto slotLoad = slotLoadOf(root))
                     {

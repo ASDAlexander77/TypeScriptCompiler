@@ -353,10 +353,11 @@ namespace own_inference
 
         // a handle's retains and releases are rc's, and stay (spec 23.2); but not the release of a
         // yielded field's old value: the yield gave the state's count to the caller, who owns the
-        // record `next` returns and releases it
+        // record `next` returns and releases it; nor the retain for a box that borrows what it holds:
+        // that box gives nothing back
         toErase.remove_if([&](mlir::Operation *op) {
             auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
-            return touchesHandle(op) && !(releaseSlotOp && isYieldedField(releaseSlotOp.getSlot()));
+            return touchesHandle(op) && !(releaseSlotOp && isYieldedField(releaseSlotOp.getSlot())) && !captureRetains.contains(op);
         });
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)

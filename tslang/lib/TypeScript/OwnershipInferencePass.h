@@ -1349,6 +1349,20 @@ class OwnershipInferencePass
 
     void reportGivenNotOwned(mlir::Operation *call, mlir::Value arg);
 
+    // What an error says about an op that fills a closure's capture box, or retains for it: the
+    // captured variable's name (the box's field has it, with or without --di) and where the
+    // closure's body first uses it (CAPTURE_USES_ATTR_NAME). For any other op, no name and its own
+    // location.
+    struct CaptureSite
+    {
+        std::string name;
+        mlir::Location location;
+    };
+
+    mlir_ts::StoreOp captureFillOf(mlir::Operation *op);
+    CaptureSite captureSiteOf(mlir::Operation *op);
+    static std::string namedByCapture(llvm::StringRef name, const CaptureSite &first, const CaptureSite &second);
+
     void reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name);
 
     void reportMovedInLoop(mlir::Operation *move, llvm::StringRef name);

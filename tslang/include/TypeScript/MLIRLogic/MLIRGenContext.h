@@ -57,6 +57,8 @@ struct PassResult
     // a generator's next(): its {value, done} is Iterator<T>'s, so a finished one's undefined value is not in T
     bool iteratorResult = false;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> outerVariables;
+    // where the function first uses each of them, for the errors about the capture
+    llvm::StringMap<mlir::LocationAttr> outerVariableUses;
     SmallVector<mlir_ts::FieldInfo> extraFieldsInThisContext;
 };
 

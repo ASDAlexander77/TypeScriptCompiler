@@ -103,12 +103,13 @@ struct CompileOptions
     }
 
     // --atomic-rc: every reference count change is an atomic read-modify-write, so objects may
-    // be shared between threads under `rc`. Only `rc` keeps counts; `own` never counts at all.
+    // be shared between threads under `rc`. `own` counts only Shared<T> handles, which exist to be
+    // shared, so it always counts them atomically; `Shared.share` has nothing to mark there.
     bool atomicRC = false;
 
     bool atomicRefCounts() const
     {
-        return isRefCounted() && atomicRC;
+        return (isRefCounted() && atomicRC) || memoryModel == MemoryModelOwn;
     }
 
     // Whether the ownership operations are live and lower to code - retains and releases under

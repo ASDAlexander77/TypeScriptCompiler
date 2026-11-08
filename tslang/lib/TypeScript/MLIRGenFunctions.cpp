@@ -922,6 +922,7 @@ namespace mlirgen
                     }
 
                     getCaptureVarsMap().insert({name, passResult->outerVariables});
+                    getCaptureUsesMap().insert({name, passResult->outerVariableUses});
                     funcProto->setHasCapturedVars(true);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! has captured vars, name: " << name << "\n";);
@@ -2601,6 +2602,20 @@ namespace mlirgen
             // dropped - `apply(v => v.x + base.x, v)` - is released at the end of the block that
             // made it (§9.30), which is what gives the box back.
             boundFuncVal->setAttr(OWNS_CAPTURE_ATTR_NAME, builder.getUnitAttr());
+            if (compileOptions.memoryModel == MemoryModelOwn)
+            {
+                if (auto captureUses = getCaptureUsesMap().find(name); captureUses != getCaptureUsesMap().end())
+                {
+                    SmallVector<mlir::NamedAttribute> uses;
+                    for (auto &use : captureUses->getValue())
+                    {
+                        uses.push_back(builder.getNamedAttr(use.getKey(), use.getValue()));
+                    }
+
+                    boundFuncVal->setAttr(CAPTURE_USES_ATTR_NAME, builder.getDictionaryAttr(uses));
+                }
+            }
+
             builder.create<mlir_ts::RetainOp>(location, boundFuncVal);
             boundFuncVal->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
 

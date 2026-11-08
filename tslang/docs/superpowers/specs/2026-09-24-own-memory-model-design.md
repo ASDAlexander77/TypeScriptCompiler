@@ -5611,3 +5611,33 @@ Array<Item> whether called or not.
 The default library marks the functions above in `__Array` and in Array<T>; Array<T>'s push, unshift
 and splice move elements as §72 says, and splice removes by swapping each to the end and popping it.
 
+## 74. What threads need: a callback's result, and a handle in several closures, 2026-11-08
+
+`Thread.spawn` keeps its function in a field and the function's result in another, and threads that
+share memory capture it (TSLANG_ISSUES 31-33).
+
+**A callback's result.** A call through a function value had no fresh result, so `this.result =
+this.fn()` was a second reference. Where the signature pass has resolved the call to a closed callback
+family (`Callees::viaCallback`), it knows every function that can be called: each returns its result
+retained as any function does, and one that returns a borrow of a parameter says so in its facts. So
+when every member is defined here and no member's facts have `borrows` or `record`, the call is
+`__own_fresh_result`. A body that returns what it does not own (a capture, a global that can be
+assigned) is refused where it is written, whichever way it is called.
+
+**A handle in several closures.** A `const` Shared<T> has a slot (identity storage), which made it a
+read-write variable, captured through its cell, and a cell has one owner. Nothing assigns a `const`,
+so it is now captured by copy (`setCaptureByValue`): each box holds a counted handle of its own, and
+the box's release gives it back. A `let` Shared<T> keeps its cell.
+
+A box that borrows what it holds (a closure that does not escape, over a parameter's copy or beside a
+cell) gives nothing back, so the retain made for a handle in it is erased too, although other handle
+retains stay (spec 23.2), and a handle read from a local is then bounded like any other borrowed copy.
+
+**Counts.** Under own only handles are counted, and they are what threads share, so their counts are
+always atomic (`CompileOptions::atomicRefCounts`). `Shared.share` stays erased: there is nothing to mark.
+
+**Names.** A captured variable's name is the box field's (`fieldName` of the fill's `ts.PropertyRef`),
+which needs no `--di`. MLIRGen records where a closure first uses each capture
+(`PassResult::outerVariableUses`) and puts it on the closure (`__capture_uses`, under own only); the
+errors about a capture point there. The fill and its retain keep the arrow's location, so debug info
+never holds a location from another function's scope.

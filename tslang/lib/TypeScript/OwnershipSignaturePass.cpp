@@ -262,6 +262,19 @@ namespace own_signature
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
 
+            // a callback's call, where every function that can reach it is defined here (spec 74): each
+            // returns its result retained, as a direct call's does, unless its facts say it borrows
+            // an argument. A body that returns anything else it does not own is refused on its own.
+            if (call.callees.viaCallback && !call.callees.imported && !call.callees.funcs.empty() &&
+                call.op->getNumResults() == 1 && !isRecordResult(call.op) &&
+                llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) {
+                    auto facts = factsEffective.lookup(callee);
+                    return facts.borrows.empty() && !facts.record;
+                }))
+            {
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
             // a generator whose state object borrows from its arguments (not through a callback
             // family, whose member's parameters may be shifted)
             if (call.callees.funcs.size() == 1 && !call.callees.imported && !call.callees.viaCallback)
