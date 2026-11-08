@@ -11161,6 +11161,28 @@ class MLIRGenImpl
     {
         APSInt newVal(wstos(text));
 
+        // a literal past 64 bits is a `number`, the nearest double, as in JS: taken as an integer it
+        // was cut to its low 64 bits (123456789012345680000 read -5670419503621181000), and past 128
+        // bits it was an error
+        if (newVal.getActiveBits() > 64)
+        {
+#ifdef NUMBER_F64
+            auto floatType = builder.getF64Type();
+#else
+            auto floatType = builder.getF32Type();
+#endif
+            llvm::APFloat val(floatType.getFloatSemantics());
+            val.convertFromAPInt(newVal, newVal.isSigned(), llvm::APFloat::rmNearestTiesToEven);
+            return builder.getFloatAttr(floatType, val);
+        }
+
+        // [2^63, 2^64): a u64, exactly (`let max: u64 = 18446744073709551615`). The signed string
+        // parse makes it 65 bits wide, which took a 128-bit type and read back only its low word.
+        if (newVal.getActiveBits() == 64)
+        {
+            return mlir::IntegerAttr::get(builder.getIntegerType(64, false), llvm::APInt(newVal.trunc(64)));
+        }
+
         auto unsignedVal = false;
         auto width = newVal.getBitWidth();
         switch (width)
@@ -11170,22 +11192,13 @@ class MLIRGenImpl
         // a literal in [2^31, 2^32) does not fit s32; it takes s64 (default branch), not u32,
         // so arithmetic with other integer literals does not wrap
         case 64:
-        case 128:
             unsignedVal = true;
             break;
         default:
             //if (width < 8) width = 8; else
             //if (width < 16) width = 16; else
             if (width < 32) width = 32; else
-            if (width < 64) width = 64; else
-            if (width < 128) width = 128;
-            else
-            {
-                // no mlir::Location available at this layer to emitError with;
-                // return a null Attribute and let the caller (which has the
-                // literal's location) report it cleanly instead of crashing.
-                return mlir::Attribute();
-            }
+            width = 64;
         }
 
         auto type = builder.getIntegerType(width, !unsignedVal);
