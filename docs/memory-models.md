@@ -188,11 +188,15 @@ two throwaway heap allocations of the same size back at the same point and the p
 at the unpromoted speed (157 ms against 158). Expect the same kind of swing, in either direction,
 from any change to what a program allocates early.
 
-## The heap on Windows
+## The heap
 
-Under `-mm=rc`, `-mm=own` and `-mm=none`, a Windows program allocates from
-[mimalloc](https://github.com/microsoft/mimalloc) rather than the Windows process heap
-(`HeapAlloc`):
+Under `-mm=rc`, `-mm=own` and `-mm=none`, a program on Windows or Linux allocates from
+[mimalloc](https://github.com/microsoft/mimalloc) rather than the system's heap. Linux works
+differently from Windows; see [On Linux](#on-linux) below.
+
+### On Windows
+
+A Windows program allocates from mimalloc rather than the Windows process heap (`HeapAlloc`):
 
 - an executable `tslang --emit=exe` builds links `TypeScriptMimalloc.lib` (it ships beside
   `TypeScriptAsyncRuntime.lib`);
@@ -212,22 +216,44 @@ A program you link yourself, against `TypeScriptAsyncRuntime.lib`, keeps the pro
 link `TypeScriptMimalloc.lib` ahead of it.
 
 `--process-heap` keeps the process heap anyway, for heap debugging tools such as page heap or
-Application Verifier. `-mm=gc` allocates from the collector, and other platforms from the C
-library's `malloc`; neither changes.
+Application Verifier.
 
-Measured, median of eleven runs, ahead-of-time build with `--opt --opt_level=3`, in milliseconds.
-`--process-heap` → default:
+### On Linux
 
-| program | model | `--process-heap` → default |
-| --- | --- | --- |
-| ray tracer, every vector and colour an object on the heap | `-mm=own` | 529 → 180 (2.9×) |
-| ray tracer, vectors and colours `@value` types | `-mm=own` | 78 → 74 |
-| ray tracer, vectors and colours `@value` types | `-mm=rc` | 111 → 106 |
-| 20,000 arrays of 200 new objects | `-mm=rc` / `-mm=own` | 131 → 48 (2.7×) |
-| 5 million strings built by `+` | `-mm=own` | 910 → 696 (1.3×) |
+An executable `tslang --emit=exe` builds links `libTypeScriptMimalloc.a`, which defines `malloc`,
+`free` and the rest. On Linux, the `malloc` an executable defines is the one every shared object in
+the process uses: the default library's `.so`, a library tslang built, and the C library itself. So
+the whole process has one heap without any further step, and a library built by an older tslang
+needs no rebuild.
 
-The gain is in programs that make and drop many small objects, arrays and strings. Where `@value`
-types or stack promotion already keep a program's data off the heap, the heap barely matters.
+tslang itself is linked the same way, so a program run with `--emit=jit`, and every library it
+loads, allocates from tslang's mimalloc. Under the JIT, `--process-heap` has no effect on Linux.
+A tslang built with a sanitizer keeps the C library's `malloc`, because the sanitizer needs to own
+it.
+
+A program you link yourself keeps the C library's `malloc` unless you link
+`-Wl,--whole-archive -lTypeScriptMimalloc -Wl,--no-whole-archive`. `--process-heap` keeps the C
+library's `malloc` in an executable tslang links.
+
+### Everywhere
+
+`-mm=gc` allocates from the collector, and other platforms (wasm, Android) from the C library's
+`malloc`; neither changes.
+
+Measured, median of eleven runs, ahead-of-time build with `--opt --opt_level=3`, in milliseconds,
+`--process-heap` → default. Windows 11 and Linux (Ubuntu under WSL 2, glibc) on the same machine:
+
+| program | model | Windows | Linux |
+| --- | --- | --- | --- |
+| ray tracer, every vector and colour an object on the heap | `-mm=own` | 529 → 180 (2.9×) | 131 → 118 (1.1×) |
+| ray tracer, vectors and colours `@value` types | `-mm=own` | 78 → 74 | 60 → 60 |
+| ray tracer, vectors and colours `@value` types | `-mm=rc` | 111 → 106 | 101 → 102 |
+| 20,000 arrays of 200 new objects | `-mm=rc` / `-mm=own` | 131 → 48 (2.7×) | 68 → 35 (1.9×) |
+| 5 million strings built by `+` | `-mm=own` | 910 → 696 (1.3×) | 431 → 440 |
+
+The gain is in programs that make and drop many small objects, arrays and strings, and it is larger
+on Windows, whose process heap is slower than glibc's `malloc`. Where `@value` types or stack
+promotion already keep a program's data off the heap, the heap barely matters.
 
 ## Other limits of `-mm=rc`
 

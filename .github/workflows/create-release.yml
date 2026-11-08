@@ -463,6 +463,7 @@ jobs:
           cp ./tslang/ninja/release/lib/libTypeScriptRuntime.so ./__stage/
           cp ./gc/ninja/release/libgc.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
+          cp ./tslang/ninja/release/lib/libTypeScriptMimalloc.a ./__stage/
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
           # Add the default library as a whole tree so its per-target, per-build, per-memory-model
           # subfolders are preserved:

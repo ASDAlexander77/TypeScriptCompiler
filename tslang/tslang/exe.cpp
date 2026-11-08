@@ -981,21 +981,24 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
             args.push_back(tslangLibPathOpt.c_str());    
         }
 
-        // An executable allocates from mimalloc (TypeScriptMimalloc.lib) rather than the process
-        // heap, and lends it to every library tslang built that it loads (ProcessHeapExports.inc):
-        // a library never owns the heap. gc allocates from the collector either way.
-        // --process-heap keeps the process heap, for heap debugging tools.
-        useMimalloc = winX86OrX64 && !shared && !compileOptions.needsGCRuntime() && !processHeap;
+        // An executable allocates from mimalloc (TypeScriptMimalloc) rather than the system's heap,
+        // and every library tslang built that it loads allocates from it too: on Windows through the
+        // entry points the executable exports (ProcessHeapExports.inc), on Linux because the
+        // executable's malloc is the process's. A library never owns the heap. gc allocates from the
+        // collector either way. --process-heap keeps the system's heap, for heap debugging tools.
+        auto linuxTarget = os == llvm::Triple::Linux && !android;
+        useMimalloc = (winX86OrX64 || linuxTarget) && !shared && !compileOptions.needsGCRuntime() && !processHeap;
         if (useMimalloc && !tslangLibPath.empty())
         {
+            auto mimallocName = getTargetStaticLibName("TypeScriptMimalloc");
             llvm::SmallString<256> mimallocLib(tslangLibPath);
-            llvm::sys::path::append(mimallocLib, "TypeScriptMimalloc.lib");
+            llvm::sys::path::append(mimallocLib, mimallocName);
             if (!llvm::sys::fs::exists(mimallocLib))
             {
                 llvm::WithColor::error(llvm::errs(), "tslang")
-                    << "TypeScriptMimalloc.lib, the heap an executable allocates from, is not in " << tslangLibPath
-                    << " next to TypeScriptAsyncRuntime.lib. Use the runtime libraries of the same tslang build, "
-                    << "or link with --process-heap to allocate from the Windows process heap instead.\n";
+                    << mimallocName << ", the heap an executable allocates from, is not in " << tslangLibPath
+                    << " next to the async runtime library. Use the runtime libraries of the same tslang build, "
+                    << "or link with --process-heap to allocate from the system's heap instead.\n";
                 return 1;
             }
         }
@@ -1074,10 +1077,18 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
 
     if (isTslangLibNeeded)
     {
-        if (useMimalloc)
+        if (useMimalloc && win)
         {
             // ahead of TypeScriptAsyncRuntime: its process-heap entry points are the ones taken
             args.push_back("-lTypeScriptMimalloc");
+        }
+        else if (useMimalloc)
+        {
+            // whole: the archive defines malloc, free and the rest, which the linker would otherwise
+            // take from libc
+            args.push_back("-Wl,--whole-archive");
+            args.push_back("-lTypeScriptMimalloc");
+            args.push_back("-Wl,--no-whole-archive");
         }
 
         args.push_back("-lTypeScriptAsyncRuntime");
