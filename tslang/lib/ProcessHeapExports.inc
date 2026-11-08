@@ -5,11 +5,17 @@
 //
 // The program owns the heap. In the program's own module these are the process heap; an executable
 // that links TypeScriptMimalloc gets that library's definitions instead (mimalloc), and tslang.exe
-// gives a program it runs its own (jit.cpp). Every one of them is exported, so a library - a
-// module other than the process's executable - looks them up there at its first allocation and
-// calls the program's: the library's blocks and the program's come from one heap, whichever it is.
-// A program that exports none (a host tslang did not build, or one built before this) leaves a
-// library on the process heap, which is what such a program allocates from too.
+// gives a program it runs its own (jit.cpp). Those two export theirs, so a library - a module other
+// than the process's executable - looks them up there at its first allocation and calls the
+// program's: the library's blocks and the program's come from one heap, whichever it is. A program
+// that exports none (one on the process heap, a host tslang did not build) leaves a library on the
+// process heap, which is what such a program allocates from too.
+//
+// These are not exported. Only the program's are ever looked up, and these would add nothing there:
+// they are the process heap, which a library falls back to anyway. Exported from a library they did
+// harm: its import library defines them, and a DLL linking it - the default library's, say - took
+// the five from there, then pulled this file in for `__tslang_heap_shared` and had each twice
+// (LNK2005).
 //
 // `__tslang_heap_shared` says a module does this, so that a program on mimalloc can refuse a library
 // that would keep a heap of its own (ProcessHeap.h, librarySharesHeap).
@@ -116,31 +122,31 @@ void ensureHeap()
 
 } // namespace
 
-extern "C" __declspec(dllexport) void *__tslang_heap_malloc(size_t size)
+extern "C" void *__tslang_heap_malloc(size_t size)
 {
     ensureHeap();
     return heapMalloc.load(std::memory_order_relaxed)(size);
 }
 
-extern "C" __declspec(dllexport) void *__tslang_heap_calloc(size_t count, size_t size)
+extern "C" void *__tslang_heap_calloc(size_t count, size_t size)
 {
     ensureHeap();
     return heapCalloc.load(std::memory_order_relaxed)(count, size);
 }
 
-extern "C" __declspec(dllexport) void *__tslang_heap_realloc(void *ptr, size_t size)
+extern "C" void *__tslang_heap_realloc(void *ptr, size_t size)
 {
     ensureHeap();
     return heapRealloc.load(std::memory_order_relaxed)(ptr, size);
 }
 
-extern "C" __declspec(dllexport) void __tslang_heap_free(void *ptr)
+extern "C" void __tslang_heap_free(void *ptr)
 {
     ensureHeap();
     heapFree.load(std::memory_order_relaxed)(ptr);
 }
 
-extern "C" __declspec(dllexport) void *__tslang_heap_aligned_alloc(size_t alignment, size_t size)
+extern "C" void *__tslang_heap_aligned_alloc(size_t alignment, size_t size)
 {
     ensureHeap();
     return heapAlignedAlloc.load(std::memory_order_relaxed)(alignment, size);
