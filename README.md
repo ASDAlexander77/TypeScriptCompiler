@@ -760,31 +760,30 @@ what to do about it, and **[docs/own-memory-model.md](docs/own-memory-model.md)*
 ### Performance
 
 The ray tracer benchmark in [tslang/benchmarks/raytrace](tslang/benchmarks/raytrace/README.md)
-(`raytrace.ts` at 512x512, median of 7 runs; the `-mm=own` row measured 2026-10-23, the other rows
-2026-10-21) against Rust and C++ ports of the same
-code, each written twice: with plain value vectors and colors, and with every object
-reference-counted on the heap the way tslang allocates them:
+(`raytrace.ts` at 512x512; release build, Windows 11 x64, median of 7 runs; the tslang rows measured
+2026-10-31, the Rust and C++ rows 2026-10-21 on the same machine) against Rust and C++ ports of the
+same code. The benchmark's copy marks `Vector` and `Color` as `@value` classes and `Ray` and
+`Intersection` as `@value` interfaces, so they are structs passed by value rather than heap
+objects; `-mm=own` builds `rtbench_own.ts`, the same program with the shared surfaces as
+`Shared<T>` handles.
 
-| build | time | peak memory | vs C++ values (clang -O3) |
-| --- | --- | --- | --- |
-| `-mm=gc` | 1298 ms | 6 MB | 26x slower |
-| `-mm=rc` | 599 ms | 4 MB | 12x slower |
-| `-mm=none` | 703 ms | 845 MB | 14x slower |
-| `-mm=own` (2026-10-23) | 628 ms | 4.5 MB | 12x slower |
-| C++, values (clang / MSVC) | 51 / 69 ms | | |
-| Rust, values (`Copy` vectors and colors) | 55 ms | 4 MB | 1.1x slower |
-| Rust, every object in an `Rc` | 492 ms | 4 MB | 9.7x slower |
-| C++, every object in a `shared_ptr` (clang / MSVC) | 830 / 899 ms | | 16x slower |
+| build | time | vs Rust (values) |
+| --- | --- | --- |
+| `-mm=gc` | 71 ms | 1.3x slower |
+| `-mm=none` | 70 ms | 1.3x slower |
+| `-mm=own` | 77 ms | 1.4x slower |
+| `-mm=rc` | 110 ms | 2.0x slower |
+| Rust, values (`Copy` vectors and colors) | 55 ms | |
+| C++, values (clang -O3 / MSVC /O2) | 51 / 69 ms | |
+| Rust, every object in an `Rc` | 492 ms | 8.9x slower |
+| C++, every object in a `shared_ptr` (clang / MSVC) | 830 / 899 ms | 15x slower |
 
-Almost all of the gap is allocation: every vector and color the program computes is a heap object.
-Rust that allocates the same way is only 1.2x faster than `-mm=rc`, and C++ with `shared_ptr`
-(atomic counts) is 1.4x slower than it. `-mm=none` is slower than
-`-mm=rc` because it never frees and keeps touching fresh pages. Stack promotion makes no measurable
-difference here yet: the hot allocations are returned from functions or captured by closures.
-`-mm=own` builds the benchmark's copy with two source edits (the shared surfaces are `Shared<T>`
-handles, and one method returns a fresh vector instead of its own field). It runs as fast as
-`-mm=rc` in as little memory, counting only those two handles (its row measured 2026-10-23, when
-`-mm=rc` took 638 ms and peaked at 4.5 MB).
+On 2026-10-21, before `@value`, every vector and color the program computed was a heap object and
+the same benchmark took 1298 ms under `-mm=gc` and 599 ms under `-mm=rc`; `@value` took it to 255
+and 172 ms. The rest of the gain came from capturing parameters by copy instead of in heap cells,
+calling methods nothing overrides directly, and testing a union for null without a tag. `-mm=rc`
+still pays for retains and releases in the inner loops. The benchmark's README has every step and
+the earlier results.
 
 ### `-mm=own`
 
