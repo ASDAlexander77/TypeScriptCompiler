@@ -2251,8 +2251,10 @@ namespace mlirgen
             auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
             auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
             auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
+            // `constructor(readonly x: T)` is a public parameter property as well
+            auto isReadonly = hasModifier(parameter, SyntaxKind::ReadonlyKeyword);
 
-            if (!(isPublic || isProtected || isPrivate))
+            if (!(isPublic || isProtected || isPrivate || isReadonly))
             {
                 continue;
             }
@@ -4469,8 +4471,9 @@ genContext);
                     auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
                     auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
                     auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
+                    auto isReadonly = hasModifier(parameter, SyntaxKind::ReadonlyKeyword);
 
-                    if (!(isPublic || isProtected || isPrivate))
+                    if (!(isPublic || isProtected || isPrivate || isReadonly))
                     {
                         continue;
                     }
