@@ -3186,6 +3186,7 @@ add_test(NAME test-compile-atomic-rc
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/atomic-rc"
                  "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
                  "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/atomic-rc.cmake")
 
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.

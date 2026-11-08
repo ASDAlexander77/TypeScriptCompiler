@@ -276,6 +276,9 @@ promotion already keep a program's data off the heap, the heap barely matters.
     seen: a store through an interface or a base type that is not `@atomic`, and an element added
     to an array a field holds (`obj.items.push(x)`) - share those first.
   - `--atomic-rc` treats every block as shared: no marking needed, at about 2.5x the counting cost.
+    Only in the code built with it, though: the default library and any other library built
+    without it still count an unmarked block plainly, so share what their code touches on several
+    threads.
 
   Keeping the objects themselves consistent is the program's job (`@atomic` variables, `Atomics`).
   The share routine sits in every type descriptor, so code built before it - a default library

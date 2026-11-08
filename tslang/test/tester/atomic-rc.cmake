@@ -12,10 +12,17 @@
 # The same library built without the flag is run too, but only reported: losing an update is a
 # race, so its absence proves nothing, and a drift there is what the flag is for, not a failure.
 # Seeing it drift is what shows this test can see the race at all.
+#
+# Then, when a default library has been built (DEFAULT_LIB_CANDIDATES, DEFAULT_LIB_PATH), a library
+# linked against its DLL: the shared objects are a RegExp and strings the default library made, and
+# RegExp.test runs in its DLL on all threads at once. The descriptor whose share routine marks them
+# is the default library's, so this is where a library built before the share slot would show.
+# Under --atomic-rc alone the default library's own code still counts an unmarked block plainly,
+# so that build is only reported.
 
 cmake_minimum_required(VERSION 3.17.3)
 
-foreach(var TSLANG HOST WORK_DIR TSLANG_LIB LLVM_LIB)
+foreach(var TSLANG HOST WORK_DIR TSLANG_LIB LLVM_LIB DEFAULT_LIB_CANDIDATES)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "${var} is required")
     endif()
@@ -105,6 +112,7 @@ export function count(): number {
 ]=])
 
 set(libs "--tslang-lib-path=${TSLANG_LIB}" "--llvm-lib-path=${LLVM_LIB}")
+set(default_lib_option --no-default-lib)
 
 if(WIN32)
     set(prefix "")
@@ -128,7 +136,7 @@ file(WRITE "${WORK_DIR}/atomic_class.ts" "${atomic_class}")
 
 function(build_and_run name source expect_exact)
     set(library "${WORK_DIR}/${prefix}${name}${suffix}")
-    execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=rc ${ARGN} --no-default-lib ${pic} ${libs}
+    execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=rc ${ARGN} ${default_lib_option} ${pic} ${libs}
                             ${source} -o "${library}"
         WORKING_DIRECTORY "${WORK_DIR}"
         OUTPUT_VARIABLE out
@@ -165,3 +173,93 @@ build_and_run(atomic-class atomic_class.ts TRUE)
 build_and_run(marked-atomic marked.ts TRUE --atomic-rc)
 # neither: reported only
 build_and_run(plain unmarked.ts FALSE)
+
+# Against the default library's DLL, when one has been built for this target and model
+execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=dll --opt -mm=rc
+    OUTPUT_VARIABLE default_lib_dll_subdir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE status)
+if(NOT status EQUAL 0 OR default_lib_dll_subdir STREQUAL "")
+    message(FATAL_ERROR "tslang --print-default-lib-dir=dll --opt -mm=rc: exit ${status}")
+endif()
+
+set(default_lib "")
+foreach(candidate "$ENV{DEFAULT_LIB_PATH}" ${DEFAULT_LIB_CANDIDATES})
+    if(NOT candidate STREQUAL "" AND IS_DIRECTORY "${candidate}/${default_lib_dll_subdir}")
+        set(default_lib "${candidate}")
+        break()
+    endif()
+endforeach()
+
+if(default_lib STREQUAL "")
+    message(STATUS "no default library built in ${default_lib_dll_subdir}: its DLL is not checked")
+    return()
+endif()
+
+message(STATUS "default library: ${default_lib}")
+set(ENV{DEFAULT_LIB_PATH} "")
+set(default_lib_option "--default-lib-path=${default_lib}")
+# the host loads a library's dependencies from the library's folder
+file(COPY "${default_lib}/${default_lib_dll_subdir}/${prefix}TypeScriptDefaultLib${suffix}" DESTINATION "${WORK_DIR}")
+
+file(WRITE "${WORK_DIR}/defaultlib_churn.ts" [=[
+class Child {
+    v: number = 1;
+}
+
+class Box {
+    s: Shared<Child>;
+    rx: Shared<RegExp>;
+    words: string[];
+
+    constructor(s: Shared<Child>, rx: Shared<RegExp>, words: string[]) {
+        this.s = s;
+        this.rx = rx;
+        this.words = words;
+    }
+}
+
+// objects of the default library's: a RegExp, and strings split made
+ATOMIC_IT class Holder {
+    s = new Shared(new Child());
+    rx = new Shared(new RegExp("ab"));
+    words: string[] = "x,ab,y".split(",");
+}
+
+const H = new Holder();
+SHARE_IT
+
+export function churn(n: number): number {
+    let sum: number = 0;
+    for (let i = 0; i < n; i++) {
+        const box = new Box(H.s, H.rx, H.words);
+        // in the default library's DLL, on the shared RegExp and a shared string
+        if (box.rx.value.test(box.words[1])) {
+            sum += box.s.value.v;
+        }
+    }
+
+    return sum;
+}
+
+export function count(): number {
+    return Shared.count(H.s) * 1000 + Shared.count(H.rx);
+}
+]=])
+
+file(READ "${WORK_DIR}/defaultlib_churn.ts" churn_source)
+string(REPLACE "ATOMIC_IT " "" churn_source_plain "${churn_source}")
+string(REPLACE "SHARE_IT" "" unmarked "${churn_source_plain}")
+string(REPLACE "SHARE_IT" "Shared.share(H);" marked "${churn_source_plain}")
+string(REPLACE "ATOMIC_IT " "@atomic " churn_source_atomic "${churn_source}")
+string(REPLACE "SHARE_IT" "" atomic_class "${churn_source_atomic}")
+file(WRITE "${WORK_DIR}/defaultlib_unmarked.ts" "${unmarked}")
+file(WRITE "${WORK_DIR}/defaultlib_marked.ts" "${marked}")
+file(WRITE "${WORK_DIR}/defaultlib_atomic_class.ts" "${atomic_class}")
+
+build_and_run(defaultlib-marked defaultlib_marked.ts TRUE)
+build_and_run(defaultlib-atomic-class defaultlib_atomic_class.ts TRUE)
+build_and_run(defaultlib-marked-atomic defaultlib_marked.ts TRUE --atomic-rc)
+# the default library's own count changes on these blocks stay plain: reported only
+build_and_run(defaultlib-atomic defaultlib_unmarked.ts FALSE --atomic-rc)
+build_and_run(defaultlib-plain defaultlib_unmarked.ts FALSE)
