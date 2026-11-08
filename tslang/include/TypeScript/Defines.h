@@ -112,6 +112,10 @@
 // closure is built and the difference is known.
 #define OWNS_CAPTURE_ATTR_NAME "__owns_capture"
 
+// On such a closure, under -mm=own: a dictionary from each captured variable's name to where the
+// closure's body first uses it, which is where an error about the capture points.
+#define CAPTURE_USES_ATTR_NAME "__capture_uses"
+
 // On a `ts.CreateBoundFunction` that binds a method to an object: the object's type, which the
 // lowering casts `this` away from. Under rc the bound value counts the object through that type's
 // tag at CLOSURE_TYPE_INDEX, as an interface over it does.

@@ -5,6 +5,9 @@
 
 #define DEBUG_TYPE "own"
 
+// what to do about a value several closures, or several threads, need (TSLANG_ISSUES 31)
+#define CLOSURES_SHARE_NOTE "a closure that escapes owns what it captures; closures can share a value held in a const Shared<T>"
+
 namespace own_inference
 {
 
@@ -573,6 +576,90 @@ namespace own_inference
         signalPassFailure();
     }
 
+    mlir_ts::StoreOp OwnershipInferencePass::captureFillOf(mlir::Operation *op)
+    {
+        auto isFill = [](mlir_ts::StoreOp storeOp) {
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            return propertyRefOp && closureOfBox(propertyRefOp.getObjectRef());
+        };
+
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+        {
+            return isFill(storeOp) ? storeOp : mlir_ts::StoreOp();
+        }
+
+        if (!mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainCellOp>(op))
+        {
+            return {};
+        }
+
+        // the retain, made where the box is filled (mlirGenResolveCapturedVars), of what goes into it
+        auto fillOf = [&](mlir::Value value) {
+            for (auto *user : value.getUsers())
+            {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                if (storeOp && storeOp.getValue() == value && user->getLoc() == op->getLoc() && isFill(storeOp))
+                {
+                    return storeOp;
+                }
+            }
+
+            return mlir_ts::StoreOp();
+        };
+
+        auto value = op->getOperand(0);
+        if (auto storeOp = fillOf(value))
+        {
+            return storeOp;
+        }
+
+        // a copy of a local: its slot is read again for the box's field
+        if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            for (auto *user : loadOp.getReference().getUsers())
+            {
+                auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (auto storeOp = readOp ? fillOf(readOp.getResult()) : mlir_ts::StoreOp())
+                {
+                    return storeOp;
+                }
+            }
+        }
+
+        return {};
+    }
+
+    OwnershipInferencePass::CaptureSite OwnershipInferencePass::captureSiteOf(mlir::Operation *op)
+    {
+        auto fill = captureFillOf(op);
+        if (!fill)
+        {
+            return {std::string(), op->getLoc()};
+        }
+
+        auto propertyRefOp = fill.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        CaptureSite site{fieldName(propertyRefOp), op->getLoc()};
+        if (auto uses = closureOfBox(propertyRefOp.getObjectRef())->getAttrOfType<mlir::DictionaryAttr>(CAPTURE_USES_ATTR_NAME))
+        {
+            if (auto use = uses.getAs<mlir::LocationAttr>(site.name))
+            {
+                site.location = use;
+            }
+        }
+
+        return site;
+    }
+
+    std::string OwnershipInferencePass::namedByCapture(llvm::StringRef name, const CaptureSite &first, const CaptureSite &second)
+    {
+        if (name != "this value")
+        {
+            return name.str();
+        }
+
+        return !first.name.empty() ? first.name : !second.name.empty() ? second.name : name.str();
+    }
+
     void OwnershipInferencePass::reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
     {
         if (!reporting())
@@ -580,8 +667,16 @@ namespace own_inference
             return;
         }
 
-        auto diag = use->emitError("'") << name << "' is used here after its value was moved";
-        diag.attachNote(move->getLoc()) << "value moved here";
+        auto useSite = captureSiteOf(use);
+        auto moveSite = captureSiteOf(move);
+        auto diag = mlir::emitError(useSite.location) << "'" << namedByCapture(name, useSite, moveSite)
+                                                      << "' is used here after its value was moved";
+        diag.attachNote(moveSite.location) << "value moved here";
+        if (!moveSite.name.empty())
+        {
+            diag.attachNote() << CLOSURES_SHARE_NOTE;
+        }
+
         signalPassFailure();
     }
 
@@ -592,9 +687,15 @@ namespace own_inference
             return;
         }
 
-        move->emitError("'") << name
-                             << "' is moved inside a loop but was made outside it; only a borrow could do "
-                                "that, and -mm=own cannot prove one yet";
+        auto moveSite = captureSiteOf(move);
+        auto diag = mlir::emitError(moveSite.location) << "'" << namedByCapture(name, moveSite, moveSite)
+                                                       << "' is moved inside a loop but was made outside it; only a borrow "
+                                                          "could do that, and -mm=own cannot prove one yet";
+        if (!moveSite.name.empty())
+        {
+            diag.attachNote() << CLOSURES_SHARE_NOTE;
+        }
+
         signalPassFailure();
     }
 
@@ -704,8 +805,12 @@ namespace own_inference
             return;
         }
 
-        auto diag = use->emitError("'") << name << "' is captured by a closure that escapes, and is still used here";
-        diag.attachNote(capture->getLoc()) << "the closure takes it here";
+        auto useSite = captureSiteOf(use);
+        auto captureSite = captureSiteOf(capture);
+        auto diag = mlir::emitError(useSite.location) << "'" << namedByCapture(name, captureSite, useSite)
+                                                      << "' is captured by a closure that escapes, and is still used here";
+        diag.attachNote(captureSite.location) << "the closure takes it here";
+        diag.attachNote() << CLOSURES_SHARE_NOTE;
         signalPassFailure();
     }
 
@@ -755,9 +860,10 @@ namespace own_inference
             return;
         }
 
-        auto diag = move->emitError("'") << name
-                                         << "' is moved here on some paths only; -mm=own cannot release it "
-                                            "on the others yet";
+        auto moveSite = captureSiteOf(move);
+        auto diag = mlir::emitError(moveSite.location) << "'" << namedByCapture(name, moveSite, moveSite)
+                                                       << "' is moved here on some paths only; -mm=own cannot release it "
+                                                          "on the others yet";
         diag.attachNote(release->getLoc()) << "released here on every path";
         if (usedAt)
         {

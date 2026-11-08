@@ -2216,6 +2216,14 @@ class MLIRGenImpl
             if (!isConst || varClass == VariableType::ConstRef || needsIdentityStorage)
             {
                 varDecl->setReadWriteAccess();
+                // A `const` Shared<T> has a slot, but nothing assigns it: each closure takes a counted
+                // handle of its own, so any number of them can share the value, where a cell would
+                // have one owner (TSLANG_ISSUES 31).
+                if (isConst && !(varClass == VariableType::ConstRef) && MLIRTypeHelper::isSharedHandleType(type))
+                {
+                    varDecl->setCaptureByValue();
+                }
+
                 // TODO: HACK: to mark var as local and ignore when capturing. Not a generator's alias
                 // of its `this` parameter (buildGeneratorWrapperDeclaration), which its `next`
                 // captures: it captures the parameter's storage
@@ -16466,6 +16474,11 @@ class MLIRGenImpl
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> &
     {
         return currentNamespace->captureVarsMap;
+    }
+
+    auto getCaptureUsesMap() -> llvm::StringMap<llvm::StringMap<mlir::LocationAttr>> &
+    {
+        return currentNamespace->captureUsesMap;
     }
 
     auto getLocalVarsInThisContextMap() -> llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> &

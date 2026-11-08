@@ -1801,6 +1801,11 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-30-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-30-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
 endforeach()
+# TSLANG_ISSUES 31, 33: a const Shared<T> in several closures; a callback's result stored in a field
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tslang-issues-31-33-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_31_33.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issues-31-33-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_31_33.ts")
+endforeach()
 # TSLANG 29: a @cdecl function takes a callback as a C function pointer; a C function with arguments
 # after the callback (a thread start) showed the three-pointer value it was given before
 if(WIN32)
@@ -4848,11 +4853,11 @@ set(own_error_cases
     "own_err_field_alias|:9:11: error: '[^']*' is used here after its value was moved"
     "own_err_call_in_try_drops|:30:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|:9:11: error: '[^']*' is captured by a closure that escapes, and is still used here"
-    "own_err_closure_escape_twice|:12:19: error: '[^']*' is captured by a closure that escapes, and is still used here"
+    "own_err_closure_escape_twice|:12:25: error: 'n' is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_param|:7:12: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: its value is the caller's"
     "own_err_closure_escape_inherited|:9:21: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: it is captured from an enclosing function"
-    "own_err_closure_escape_loop|:16:23: error: '[^']*' is moved inside a loop but was made outside it"
-    "own_err_closure_escape_some_paths|:17:23: error: '[^']*' is moved here on some paths only"
+    "own_err_closure_escape_loop|:16:29: error: 'a' is moved inside a loop but was made outside it"
+    "own_err_closure_escape_some_paths|:17:29: error: 'a' is moved here on some paths only"
     "own_err_closure_outlives_cell|:13:11: error: '[^']*' borrows '[^']*', which it captures, but runs here after '[^']*' is released"
     "own_err_closure_copy_moved|:13:11: error: '[^']*' borrows '[^']*', which it captures, but runs here after '[^']*' is released"
     "own_err_closure_param_assigned|:9:5: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
@@ -5123,6 +5128,10 @@ set(own_error_cases
     "own_err_swap_borrow_used_after|:11:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_swap_call_borrow_used_after|:15:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_callback_forwarded_drops|:15:17: error: 'this value' borrows an element but is used here after it may be released or overwritten"
+    "own_err_capture_two_closures|:14:37: error: 'thing' is used here after its value was moved"
+    "own_err_capture_in_loop|:15:44: error: 'thing' is moved inside a loop but was made outside it"
+    "own_err_callback_result_captured|:19:45: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_callback_result_argument|:13:9: error: '[^']*' borrows a call's result and cannot be stored, returned or captured"
     "own_err_callback_forwarded_keeps|:32:18: error: '[^']*' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value"
     "own_err_optional_record_field_kept|:15:12: error: '[^']*' borrows the result of 'findIn' and cannot be stored, returned or captured"
     "own_err_generator_take_used_after|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"

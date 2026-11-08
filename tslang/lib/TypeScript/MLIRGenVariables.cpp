@@ -1185,6 +1185,7 @@ namespace mlirgen
                 // special case, to prevent capturing ".a" because of reference to outer VaribleOp, which is hack (review
                 // solution for it)
                 genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
+                genContext.passResult->outerVariableUses.insert({value.second->getName(), mlir::LocationAttr(location)});
             }
 
             // end of logic: outer vars
