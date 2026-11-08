@@ -20,17 +20,60 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+// A wide string of the parser holds UTF-16 units on every platform - stows() reads a source with
+// codecvt_utf8_utf16, as TypeScript counts a string in UTF-16 units - so a character outside the BMP
+// is a surrogate pair even where wchar_t has 32 bits (Linux). llvm::convertWideToUTF8 takes a 32-bit
+// wchar_t string for UTF-32, where a surrogate is invalid, and gave "" for a literal such as "😀".
 static std::string convertWideToUTF8(const std::wstring &ws)
 {
     std::string s;
-    llvm::convertWideToUTF8(ws, s);
+    if constexpr (sizeof(wchar_t) == sizeof(llvm::UTF16))
+    {
+        llvm::convertWideToUTF8(ws, s);
+    }
+    else
+    {
+        llvm::SmallVector<llvm::UTF16> units;
+        units.reserve(ws.size());
+        for (auto c : ws)
+        {
+            auto code = static_cast<uint32_t>(c);
+            if (code > 0xFFFF && code <= 0x10FFFF)
+            {
+                // a code point made elsewhere (not by stows) - its surrogate pair
+                code -= 0x10000;
+                units.push_back(static_cast<llvm::UTF16>(0xD800 + (code >> 10)));
+                units.push_back(static_cast<llvm::UTF16>(0xDC00 + (code & 0x3FF)));
+            }
+            else
+            {
+                units.push_back(static_cast<llvm::UTF16>(code));
+            }
+        }
+
+        llvm::convertUTF16ToUTF8String(units, s);
+    }
+
     return s;
 }
 
+// the other way, UTF-16 units again, as stows() makes them
 static std::wstring convertUTF8toWide(const std::string &s)
 {
     std::wstring ws;
-    llvm::ConvertUTF8toWide(s, ws);
+    if constexpr (sizeof(wchar_t) == sizeof(llvm::UTF16))
+    {
+        llvm::ConvertUTF8toWide(s, ws);
+    }
+    else
+    {
+        llvm::SmallVector<llvm::UTF16> units;
+        if (llvm::convertUTF8ToUTF16String(s, units))
+        {
+            ws.assign(units.begin(), units.end());
+        }
+    }
+
     return ws;
 }
 

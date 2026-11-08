@@ -3627,7 +3627,16 @@ auto Scanner::charSize(CharacterCodes ch) -> number
 auto Scanner::utf16EncodeAsStringFallback(number codePoint) -> string
 {
     debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
-    return fromCharCode(codePoint);
+    if (codePoint <= 0xFFFF)
+    {
+        return fromCharCode(codePoint);
+    }
+
+    // past the BMP: a surrogate pair, as every other string of the parser holds such a character
+    // (fromCharCode alone kept the low 16 bits where wchar_t has 16, so "\u{1F600}" was U+F600)
+    auto codeUnit1 = (codePoint - 0x10000) / 0x400 + 0xD800;
+    auto codeUnit2 = (codePoint - 0x10000) % 0x400 + 0xDC00;
+    return fromCharCode(codeUnit1) + fromCharCode(codeUnit2);
 }
 
 /* @internal */
