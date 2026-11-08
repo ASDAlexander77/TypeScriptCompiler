@@ -221,7 +221,7 @@ int linkJitUnits(const char *argv0, llvm::ArrayRef<JitUnit> units, CompileOption
         }
 
         os << "crt=" << (debugCRT ? "debug" : "release") << " di=" << compileOptions.generateDebugInfo
-           << " mm=" << compileOptions.memoryModel << " no-default-lib=" << compileOptions.noDefaultLib << "\n";
+           << " mm=" << compileOptions.memoryModel << " atomic-rc=" << compileOptions.atomicRC << " no-default-lib=" << compileOptions.noDefaultLib << "\n";
         os << "default-lib="
            << (compileOptions.noDefaultLib ? std::string() : getDefaultLibBinary(/*shared=*/false, compileOptions, tm.getTargetTriple()))
            << "\n";

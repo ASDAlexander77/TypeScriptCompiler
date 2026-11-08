@@ -360,7 +360,7 @@ class JitUnitBuilder
         std::string key;
         llvm::raw_string_ostream os(key);
         os << (isMain ? "main " + mainFuncName.getValue() : std::string("import")) << "\n";
-        os << "mm=" << compileOptions.memoryModel << " opt=" << enableOpt.getValue() << " opt_level=" << optLevel.getValue()
+        os << "mm=" << compileOptions.memoryModel << " atomic-rc=" << compileOptions.atomicRC << " opt=" << enableOpt.getValue() << " opt_level=" << optLevel.getValue()
            << " size_level=" << sizeLevel.getValue() << " di=" << compileOptions.generateDebugInfo
            << " lldb=" << compileOptions.lldbDebugInfo << " no-default-lib=" << compileOptions.noDefaultLib
            << " builtins=" << compileOptions.enableBuiltins << " strict-null-checks=" << compileOptions.strictNullChecks

@@ -3158,6 +3158,28 @@ if (NOT WIN32 OR TSLANG_HAVE_SHARED_GC)
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/foreign-thread-gc.cmake")
 endif()
 
+# The same programs as a few of the -mm=rc tests above with --atomic-rc: the count changes are atomic
+# read-modify-writes and the last reference takes an acquire fence, and a program single-threaded
+# or not has to behave the same.
+foreach(arc_test 00strings 00array4_push_pop 00any 00owned_closures 00interface 00shared_global_field_argument)
+    tslang_add_test(NAME test-jit-rc-atomic-${arc_test} COMMAND test-runner -jit -mm=rc -atomic-rc "${PROJECT_SOURCE_DIR}/test/tester/tests/${arc_test}.ts")
+    tslang_add_test(NAME test-compile-rc-atomic-${arc_test} COMMAND test-runner -mm=rc -atomic-rc "${PROJECT_SOURCE_DIR}/test/tester/tests/${arc_test}.ts")
+endforeach()
+
+# A -mm=rc --atomic-rc shared library called from a host's threads at once - see atomic-rc.cmake.
+add_executable(atomic-rc-host atomic-rc-host.cpp)
+if (NOT WIN32)
+    target_link_libraries(atomic-rc-host PRIVATE ${CMAKE_DL_LIBS} pthread)
+endif()
+add_test(NAME test-compile-atomic-rc
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DHOST=$<TARGET_FILE:atomic-rc-host>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/atomic-rc"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/atomic-rc.cmake")
+
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.
 # Skipped (not failed) when no default library has been built; the release workflows run them after
 # building one. The sources live outside tests/: without the default library they do not compile,

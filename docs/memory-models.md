@@ -262,7 +262,14 @@ promotion already keep a program's data off the heap, the heap barely matters.
   rather than being freed twice. The compiler warns when it can see the mismatch. Building
   everything with the same `-mm=` avoids it. (The standard library is not affected — see
   above.)
-- **Counts are not atomic.** `-mm=rc` is single-threaded today.
+- **Counts are not atomic unless you ask.** A plain `-mm=rc` count change is a load, an add and a
+  store, so two threads taking or dropping references to the same object at once lose updates: the
+  object is freed while still held, or never. `--atomic-rc` makes every count change one atomic
+  read-modify-write (relaxed for a retain; release for a release, with an acquire fence before the
+  last one frees), so objects can be shared between threads. It costs every count change, shared
+  or not. It covers the modules built with it: code built without it - including a default library
+  built without it - still changes counts plainly. Keeping the objects themselves consistent is
+  the program's job (`@atomic`, `Atomics`).
 
 ## Shared libraries and `-mm=gc`
 

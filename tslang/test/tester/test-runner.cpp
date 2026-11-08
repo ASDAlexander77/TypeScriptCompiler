@@ -102,6 +102,7 @@ auto fastMath = false;
 auto memoryModel = std::string("");
 // `-no-stack-promotion`: build with every allocation on the heap, for comparing against the default
 auto noStackPromotion = false;
+auto atomicRC = false;
 auto tslang_opt_ext = std::string("");
 
 // `-x86`: build and run a 32-bit (i686) program. The target triple goes into tslang_opt rather
@@ -157,7 +158,7 @@ void writeLibPathSettings(std::ostream &batFile)
 // would let whichever runner created it first decide the flags for everyone.
 std::string optVariantSuffix()
 {
-    return std::string(fastMath ? "fm" : "") + memoryModel + (x86 ? "x86" : "") + (noStackPromotion ? "nosp" : "");
+    return std::string(fastMath ? "fm" : "") + memoryModel + (x86 ? "x86" : "") + (noStackPromotion ? "nosp" : "") + (atomicRC ? "arc" : "");
 }
 
 // What tslang links into an executable (exe.cpp): mimalloc, under every memory model but gc. A
@@ -820,6 +821,12 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
             noStackPromotion = true;
             // into tslang_opt, like -mm=: every file of a multi-file test is built without it
             tslang_opt += " --no-stack-promotion";
+        }
+        else if (std::string(argv[index]) == "-atomic-rc")
+        {
+            atomicRC = true;
+            // into tslang_opt, like -mm=: every file of a multi-file test counts atomically
+            tslang_opt += " --atomic-rc";
         }
         // `-mm=gc` is accepted as well as the three that change behaviour, and it is not a no-op:
         // it names the default explicitly, which is what anyone comparing the models types.

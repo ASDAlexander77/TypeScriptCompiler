@@ -145,6 +145,7 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
                                        cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
                                        cl::values(clEnumValN(MemoryModelOwn, "own", "single ownership inferred at compile time, no counting (in development; ownership that cannot be proven is a compile error)")),
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> atomicRCOpt("atomic-rc", cl::desc("-mm=rc: change reference counts with atomic operations, so objects can be shared between threads"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> noStackPromotion("no-stack-promotion", cl::desc("Keep every allocation on the heap; by default one that provably never outlives its function goes on the stack"), cl::cat(TypeScriptCompilerCategory));
@@ -446,6 +447,13 @@ int main(int argc, char **argv)
     cl::AddExtraVersionPrinter(llvm::TargetRegistry::printRegisteredTargetsForVersion);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
+
+    // only `rc` keeps counts for the flag to make atomic
+    if (atomicRCOpt && memoryModelOpt != MemoryModelRC)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "--atomic-rc needs -mm=rc\n";
+        return -1;
+    }
 
     // Before program arguments existed a second positional was an error; keep it one wherever
     // nothing would receive it

@@ -644,13 +644,23 @@ class OwnershipRoutineLogic
     // A block marked HEAP_BLOCK_IMMORTAL is neither decremented nor ever the last. That is what
     // lets a string literal, or a `typeof` result pointing into a descriptor, be released like
     // any other string without writing to read-only memory or freeing a static block.
+    //
+    // Under --atomic-rc the decrement is an atomic subtract with release ordering, and the last
+    // reference is the one that saw the count at 1 before it: two threads dropping the last two
+    // references at once must not both see 1 left, nor both see 0. The thread that frees then
+    // takes an acquire fence, so the writes other threads made to the object before giving up
+    // their references happen before its destruction. The immortal check stays a relaxed read:
+    // an immortal header is never written again.
+    // Marking a block immortal (emitMarkImmortal) stays a plain write: it is done to globals and
+    // keepers before any other thread can reach the block.
     mlir::Value emitDecRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const char *helperName = "__tslang_dec_ref";
+        const bool atomic = compileOptions.atomicRefCounts();
+        const char *helperName = atomic ? "__tslang_dec_ref_atomic" : "__tslang_dec_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -667,7 +677,7 @@ class OwnershipRoutineLogic
 
             auto llvmIndexType = tch.convertType(th.getIndexType());
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, entryBlock->getArgument(0), llvmIndexType);
-            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr, atomic);
             auto immortal = rewriter.create<LLVM::ConstantOp>(
                 loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
             auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
@@ -680,11 +690,37 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(decBlock);
             auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one);
-            rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
-            auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
-            auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
-            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
+            if (atomic)
+            {
+                auto oldCount = rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::sub, blockPtr, one,
+                                                                   LLVM::AtomicOrdering::release);
+                auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, oldCount, one);
+
+                auto *lastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+                auto *notLastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+
+                rewriter.setInsertionPointToEnd(decBlock);
+                rewriter.create<LLVM::CondBrOp>(loc, wasLast, lastBlock, notLastBlock);
+
+                rewriter.setInsertionPointToStart(lastBlock);
+                rewriter.create<LLVM::FenceOp>(loc, LLVM::AtomicOrdering::acquire);
+                rewriter.create<LLVM::ReturnOp>(
+                    loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
+                                                                      rewriter.getIntegerAttr(th.getLLVMBoolType(), 1))});
+
+                rewriter.setInsertionPointToStart(notLastBlock);
+                rewriter.create<LLVM::ReturnOp>(
+                    loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
+                                                                      rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+            }
+            else
+            {
+                auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one);
+                rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
+                auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+                auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
+            }
 
             rewriter.setInsertionPointToStart(immortalBlock);
             rewriter.create<LLVM::ReturnOp>(
@@ -705,13 +741,18 @@ class OwnershipRoutineLogic
     // Skipping an immortal block is not an optimisation: incrementing HEAP_BLOCK_IMMORTAL
     // would turn all-ones into zero, and the next release would read that as "last reference"
     // and free a string literal.
+    //
+    // Under --atomic-rc the increment is an atomic add. Relaxed ordering is enough: whoever takes
+    // a reference already holds one, so the block cannot be freed under it, and nothing else is
+    // published by taking a reference.
     void emitIncRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const char *helperName = "__tslang_inc_ref";
+        const bool atomic = compileOptions.atomicRefCounts();
+        const char *helperName = atomic ? "__tslang_inc_ref_atomic" : "__tslang_inc_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -741,7 +782,7 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(loadBlock);
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payload, llvmIndexType);
-            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr, atomic);
             auto immortal = rewriter.create<LLVM::ConstantOp>(
                 loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
             auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
@@ -749,7 +790,15 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(incBlock);
             auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one), blockPtr);
+            if (atomic)
+            {
+                rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::add, blockPtr, one,
+                                                   LLVM::AtomicOrdering::monotonic);
+            }
+            else
+            {
+                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one), blockPtr);
+            }
             rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
 
             rewriter.setInsertionPointToStart(returnBlock);
@@ -760,6 +809,22 @@ class OwnershipRoutineLogic
 
         rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
                                       ValueRange{payloadPtr});
+    }
+
+    // The read of a block's count that decides whether it is immortal. Under --atomic-rc other
+    // threads may be changing the count at the same time, so it is a relaxed atomic load rather
+    // than a plain one, which would be a data race.
+    mlir::Value emitCountLoad(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value blockPtr, bool atomic)
+    {
+        if (!atomic)
+        {
+            return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        }
+
+        auto alignment = compileOptions.sizeBits() / 8;
+        return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr, alignment, /*isVolatile=*/false,
+                                             /*isNonTemporal=*/false, /*isInvariant=*/false,
+                                             /*isInvariantGroup=*/false, LLVM::AtomicOrdering::monotonic);
     }
 
     // Is this block mortal - that is, not HEAP_BLOCK_IMMORTAL? Inline rather than a helper: it
