@@ -160,13 +160,33 @@ std::string optVariantSuffix()
     return std::string(fastMath ? "fm" : "") + memoryModel + (x86 ? "x86" : "") + (noStackPromotion ? "nosp" : "");
 }
 
-#ifdef WIN32
-// What tslang links into an executable it builds whole (exe.cpp): mimalloc, ahead of the async
-// runtime, under every memory model but gc. Not for a program that loads a library of its test -
-// that library allocates from the process heap, and so must the program.
+// What tslang links into an executable (exe.cpp): mimalloc, under every memory model but gc. A
+// library of a -shared test allocates from it too: on Windows through the entry points the program
+// exports (lib/ProcessHeapExports.inc), on Linux because the program's malloc is the process's.
 std::string mimallocLib()
 {
-    return memoryModel.empty() || memoryModel == "gc" ? std::string() : std::string("TypeScriptMimalloc.lib ");
+    if (memoryModel.empty() || memoryModel == "gc")
+    {
+        return std::string();
+    }
+
+#ifdef WIN32
+    // ahead of the async runtime, whose process-heap definitions it replaces
+    return std::string("TypeScriptMimalloc.lib ");
+#else
+    // whole: the archive defines malloc and the rest, which the linker would otherwise take from libc
+    return std::string("-Wl,--whole-archive -lTypeScriptMimalloc -Wl,--no-whole-archive ");
+#endif
+}
+
+#ifdef WIN32
+
+// ...and what tslang links into a library: the marker saying it allocates from the program's heap,
+// which a program on mimalloc checks before loading it - kept even in a library that never
+// allocates. x86 decorates C names with an underscore.
+std::string sharedHeapMarkerOpt()
+{
+    return x86 ? " /include:___tslang_heap_shared" : " /include:__tslang_heap_shared";
 }
 #endif
 
@@ -260,7 +280,7 @@ void createCompileBatchFile()
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSLANGEXEPATH/tslang --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
-            << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
+            << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "echo $? > $FILENAME.code" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
@@ -510,7 +530,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
             << "-L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
-            << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
+            << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "echo $? > $FILENAME.code" << std::endl;
     
@@ -590,7 +610,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             <<  LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
-            << machineOpt()
+            << machineOpt() << sharedHeapMarkerOpt()
             << std::endl;
 
     shared_libs << shared_filenameNoExt << ".lib ";
@@ -616,7 +636,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             batFile << shared_filenameNoExt << ".lib ";
         }
 
-        batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+        batFile << LIBS << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
                 << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
                 << machineOpt() << exeManifestOpt()
@@ -714,7 +734,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
         }
 
-        batFile << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
+        batFile << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
 
         batFile << "rm -f " << exec_objs.str() << std::endl;
 

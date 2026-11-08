@@ -79,6 +79,17 @@ if (WIN32)
     target_link_libraries(tslang PRIVATE TypeScriptMimallocCore)
     # ...and the library an executable it links needs, built with it
     add_dependencies(tslang TypeScriptMimalloc)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # mimalloc as tslang's own malloc: the program the JIT runs and every shared object it loads
+    # (the default library's, one tslang built) resolve malloc to it, as an executable tslang links
+    # gives them its own (TypeScriptMimalloc overrides malloc). Not under a sanitizer, which has to
+    # own malloc itself.
+    if ("${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}" MATCHES "-fsanitize")
+        add_dependencies(tslang TypeScriptMimalloc)
+    else()
+        # whole: the archive defines malloc, which the linker would otherwise take from libc first
+        target_link_libraries(tslang PRIVATE -Wl,--whole-archive TypeScriptMimalloc -Wl,--no-whole-archive)
+    endif()
 endif()
 target_compile_definitions(tslang PUBLIC TSLANG_PACKAGE_VERSION="${TSLANG_PACKAGE_VERSION}")
 

@@ -3067,8 +3067,8 @@ if (WIN32)
                      "-DOPT=${gc_shared_auto_opt}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
 
-    # ...and the heap under the other models: mimalloc in an executable and under the JIT, the
-    # process heap beside a library tslang built - see mimalloc-heap.cmake. 00mimalloc_heap is the
+    # ...and the heap under the other models: mimalloc in an executable and under the JIT, lent to
+    # the libraries tslang built that the program loads - see mimalloc-heap.cmake. 00mimalloc_heap is the
     # program it builds; it runs under every model as an ordinary test too.
     add_test(NAME test-compile-mimalloc-heap
              COMMAND ${CMAKE_COMMAND}

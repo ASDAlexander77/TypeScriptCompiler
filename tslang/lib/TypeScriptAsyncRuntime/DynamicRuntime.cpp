@@ -20,6 +20,10 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+
+#include <cstdio>
+
+#include "TypeScript/ProcessHeap.h"
 #else
 #include <dlfcn.h>
 #endif
@@ -53,6 +57,19 @@ void *openLibrary(const char *fileName)
     std::wstring wideFileName(size, L'\0');
     if (MultiByteToWideChar(CP_UTF8, 0, fileName, -1, wideFileName.data(), size) <= 0)
     {
+        return nullptr;
+    }
+
+    // A program on mimalloc lends it to every library it loads (ProcessHeapExports.inc). A library
+    // that keeps a heap of its own - one a tslang before that built - would free the program's
+    // blocks on it, and the program its: refused here, before any of its code runs.
+    if (typescript::process_heap::programUsesMimalloc()
+        && !typescript::process_heap::librarySharesHeap(wideFileName.c_str()))
+    {
+        fprintf(stderr,
+                "tslang runtime: %s does not allocate from the program's heap (a tslang before this one built it); "
+                "rebuild it, or build the program with --process-heap\n",
+                fileName);
         return nullptr;
     }
 

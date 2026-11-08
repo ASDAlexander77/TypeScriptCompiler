@@ -35,14 +35,15 @@ namespace mlir
 namespace runtime
 {
 
-// The heap these hand out is the process heap, which is what every module tslang builds allocates
-// from and frees to (TypeScript/ProcessHeap.h): a coroutine frame this allocates, the program frees.
+// The heap these hand out is the program's, which is what every module tslang builds allocates from
+// and frees to (TypeScript/ProcessHeap.h): a coroutine frame this allocates, the program frees. Under
+// the JIT that is tslang.exe's, found through the entry points it exports (ProcessHeapExports.inc).
 // This DLL's own `malloc` need not be that heap - a debug CRT keeps its blocks per copy, and against
 // the prebuilt LLVM, LLVMSupport makes it rpmalloc.
 #ifdef _WIN32
-static void *heapMalloc(size_t size) { return typescript::process_heap::allocate(size); }
+static void *heapMalloc(size_t size) { return __tslang_heap_malloc(size); }
 
-static void heapFree(void *ptr) { typescript::process_heap::release(ptr); }
+static void heapFree(void *ptr) { __tslang_heap_free(ptr); }
 #else
 static void *heapMalloc(size_t size) { return malloc(size); }
 

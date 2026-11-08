@@ -47,6 +47,8 @@
 
 #ifdef _WIN32
 #include <mimalloc.h>
+
+#include "TypeScript/ProcessHeap.h"
 #endif
 
 // From TypeScript/ObjDumper.h, which cannot be included here: its llvm/BinaryFormat/COFF.h
@@ -407,8 +409,28 @@ static void jitEnableGCThreads()
 // them from TypeScriptAsyncRuntime; under the JIT they are defined here, for every memory model,
 // because TypeScriptRuntime is only loaded for `gc`. They go through this process's own
 // DynamicLibrary, so a lookup also sees the libraries passed with `--shared-libs`.
+// Whether the program the JIT runs allocates from mimalloc rather than the process heap (see the heap
+// entry points below, and jitChooseHeap).
+static bool jitMimalloc = false;
+
+#ifdef _WIN32
+static std::wstring jitWidePath(llvm::StringRef path);
+#endif
+
 static int jitLoadLibraryPermanently(const char *fileName)
 {
+#ifdef _WIN32
+    // a library that keeps a heap of its own (a tslang before this one built it) would free the
+    // program's mimalloc blocks on it: refused, before any of its code runs
+    if (jitMimalloc && !typescript::process_heap::librarySharesHeap(jitWidePath(fileName).c_str()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << fileName << " does not allocate from the program's heap (a tslang before this one built it); "
+            << "rebuild it, or run with --process-heap\n";
+        return 1;
+    }
+#endif
+
     return llvm::sys::DynamicLibrary::LoadLibraryPermanently(fileName);
 }
 
@@ -441,43 +463,40 @@ static void jitAssertFailed(const char *message, const char *file, unsigned line
 }
 
 #ifdef _WIN32
-// The allocator JIT'd code gets. A block it allocates can be freed by another module and the other
-// way round - an object of a library's class under -mm=rc or -mm=own is made in the library and
-// destroyed by the program, a coroutine frame comes from TypeScriptRuntime.dll - so it is the one
-// every module tslang builds uses: the process heap (TypeScript/ProcessHeap.h). The program calls
-// it by the names ProcessHeapPass gives it; `malloc`, `calloc`, `realloc` and `free` are bound to
-// it as well, for whatever still calls those. tslang.exe's own would not do: with the prebuilt
-// LLVM its `malloc` is rpmalloc, and a debug CRT keeps its blocks per copy of the CRT.
-#include "../lib/ProcessHeapExports.inc"
-
-// ...or mimalloc, as an executable tslang links allocates from (TypeScriptMimalloc), when the
-// program is the only module allocating: no library tslang built is loaded - the default library's
-// DLL, one given with --shared-libs, one the program imports dynamically - since such a library
-// allocates from the process heap and frees what the program allocated. Decided once, before the
-// program's first instruction runs (jitChooseHeap), and never changed after: a block goes back to
-// the heap it came from.
-static bool jitMimalloc = false;
-
-static void *jitHeapMalloc(size_t size)
+// The heap JIT'd code gets. A block it allocates can be freed by another module and the other way
+// round - an object of a library's class under -mm=rc or -mm=own is made in the library and
+// destroyed by the program, a coroutine frame comes from TypeScriptRuntime.dll - so there is one
+// heap in the process (TypeScript/ProcessHeap.h), and it is the program's: tslang.exe's here.
+// Exported, so the libraries the program loads - the default library's DLL, --shared-libs, a
+// dynamic import, TypeScriptRuntime.dll - find it and allocate from it too
+// (lib/ProcessHeapExports.inc). The program calls it by the names ProcessHeapPass gives it;
+// `malloc`, `calloc`, `realloc` and `free` are bound to it as well, for whatever still calls those.
+// tslang.exe's own `malloc` would not do: with the prebuilt LLVM it is rpmalloc, and a debug CRT
+// keeps its blocks per copy of the CRT.
+//
+// It is mimalloc, as an executable tslang links allocates from (TypeScriptMimalloc), or the process
+// heap: decided once, before the first library is loaded or the program's first instruction runs
+// (jitChooseHeap), and never changed after - a block goes back to the heap it came from.
+extern "C" __declspec(dllexport) void *__tslang_heap_malloc(size_t size)
 {
-    return jitMimalloc ? mi_malloc(size ? size : 1) : __tslang_heap_malloc(size);
+    return jitMimalloc ? mi_malloc(size ? size : 1) : typescript::process_heap::allocate(size);
 }
 
-static void *jitHeapCalloc(size_t count, size_t size)
+extern "C" __declspec(dllexport) void *__tslang_heap_calloc(size_t count, size_t size)
 {
     if (!jitMimalloc)
     {
-        return __tslang_heap_calloc(count, size);
+        return typescript::process_heap::allocateZeroed(count, size);
     }
 
     return count == 0 || size == 0 ? mi_calloc(1, 1) : mi_calloc(count, size);
 }
 
-static void *jitHeapRealloc(void *ptr, size_t size)
+extern "C" __declspec(dllexport) void *__tslang_heap_realloc(void *ptr, size_t size)
 {
     if (!jitMimalloc)
     {
-        return __tslang_heap_realloc(ptr, size);
+        return typescript::process_heap::reallocate(ptr, size);
     }
 
     // as the process heap's: a block resized to nothing is freed, and there is none
@@ -490,14 +509,15 @@ static void *jitHeapRealloc(void *ptr, size_t size)
     return mi_realloc(ptr, size);
 }
 
-static void jitHeapFree(void *ptr)
+extern "C" __declspec(dllexport) void __tslang_heap_free(void *ptr)
 {
-    jitMimalloc ? mi_free(ptr) : __tslang_heap_free(ptr);
+    jitMimalloc ? mi_free(ptr) : typescript::process_heap::release(ptr);
 }
 
-static void *jitHeapAlignedAlloc(size_t alignment, size_t size)
+extern "C" __declspec(dllexport) void *__tslang_heap_aligned_alloc(size_t alignment, size_t size)
 {
-    return jitMimalloc ? mi_malloc_aligned(size ? size : 1, alignment) : __tslang_heap_aligned_alloc(alignment, size);
+    return jitMimalloc ? mi_malloc_aligned(size ? size : 1, alignment)
+                       : typescript::process_heap::allocateAligned(alignment, size);
 }
 
 struct JitHeapFunction
@@ -507,47 +527,49 @@ struct JitHeapFunction
 };
 
 static const JitHeapFunction jitHeapFunctions[] = {
-    {"malloc", (void *)&jitHeapMalloc},
-    {"calloc", (void *)&jitHeapCalloc},
-    {"realloc", (void *)&jitHeapRealloc},
-    {"free", (void *)&jitHeapFree},
-    {PROCESS_HEAP_MALLOC, (void *)&jitHeapMalloc},
-    {PROCESS_HEAP_CALLOC, (void *)&jitHeapCalloc},
-    {PROCESS_HEAP_REALLOC, (void *)&jitHeapRealloc},
-    {PROCESS_HEAP_FREE, (void *)&jitHeapFree},
-    {PROCESS_HEAP_ALIGNED_ALLOC, (void *)&jitHeapAlignedAlloc},
+    {"malloc", (void *)&__tslang_heap_malloc},
+    {"calloc", (void *)&__tslang_heap_calloc},
+    {"realloc", (void *)&__tslang_heap_realloc},
+    {"free", (void *)&__tslang_heap_free},
+    {PROCESS_HEAP_MALLOC, (void *)&__tslang_heap_malloc},
+    {PROCESS_HEAP_CALLOC, (void *)&__tslang_heap_calloc},
+    {PROCESS_HEAP_REALLOC, (void *)&__tslang_heap_realloc},
+    {PROCESS_HEAP_FREE, (void *)&__tslang_heap_free},
+    {PROCESS_HEAP_ALIGNED_ALLOC, (void *)&__tslang_heap_aligned_alloc},
 };
+
+static std::wstring jitWidePath(llvm::StringRef path)
+{
+    llvm::SmallVector<llvm::UTF16, 260> wide;
+    if (!llvm::convertUTF8ToUTF16String(path, wide))
+    {
+        return std::wstring();
+    }
+
+    // null-terminated, and the terminator is not part of the path
+    return std::wstring(wide.begin(), std::find(wide.begin(), wide.end(), 0));
+}
 #endif
 
-// Whether the program the JIT runs allocates from mimalloc (see jitMimalloc). `importsLibrary`:
-// the program, or a module of it, imports a library dynamically. Called once the libraries the
-// process loads (clSharedLibs) are known and before the program runs.
-static void jitChooseHeap(const CompileOptions &compileOptions, bool nativeImage, bool importsLibrary)
+// Whether the program the JIT runs allocates from mimalloc (see jitMimalloc). Called once the
+// libraries the process loads (clSharedLibs) are known, before any of them is loaded.
+static void jitChooseHeap(const CompileOptions &compileOptions)
 {
 #ifdef _WIN32
-    // TypeScriptRuntime.dll and gc.dll hand the program no block of their heap to free
-    auto loadsTslangLibrary = llvm::any_of(clSharedLibs, [](const std::string &libPath) {
-        auto stem = llvm::sys::path::stem(libPath);
-        return !stem.contains_insensitive("TypeScriptRuntime") && !stem.equals_insensitive("gc");
+    // Each library shares the heap unless a tslang before this one built it: then it keeps the
+    // process heap, and so does the program. gc.dll allocates nothing the program frees.
+    auto librariesShare = llvm::all_of(clSharedLibs, [](const std::string &libPath) {
+        return llvm::sys::path::stem(libPath).equals_insensitive("gc")
+            || typescript::process_heap::librarySharesHeap(jitWidePath(libPath).c_str());
     });
 
-    // a --jit-native image links the async runtime, process heap and all, into itself
-    jitMimalloc = !nativeImage && !compileOptions.needsGCRuntime() && !processHeap && !loadsTslangLibrary
-        && !importsLibrary;
+    jitMimalloc = !compileOptions.needsGCRuntime() && !processHeap && librariesShare;
 
     if (verbose && !compileOptions.needsGCRuntime())
     {
         llvm::errs() << "JIT heap: " << (jitMimalloc ? "mimalloc" : "process heap") << "\n";
     }
 #endif
-}
-
-// Whether an object the JIT cache made calls tslang_load_library_permanently, which a dynamic import
-// lowers to. Its name in the object's string table is enough: a string literal spelling the same
-// name only costs the program mimalloc.
-static bool objectImportsLibrary(const llvm::MemoryBuffer &object)
-{
-    return object.getBuffer().contains("tslang_load_library_permanently");
 }
 
 #ifndef _WIN32
@@ -1422,7 +1444,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return result;
     }
 
-    jitChooseHeap(compileOptions, /*nativeImage=*/false, compileOptions.importsSharedLibrary);
+    jitChooseHeap(compileOptions);
 
     if (dumpObjectFile)
     {
@@ -1567,6 +1589,9 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
         return result;
     }
 
+    // before a library is loaded: its global constructors already allocate from the program's heap
+    jitChooseHeap(compileOptions);
+
     auto needsGCEnableThreadsStandIn = false;
     if (auto result = loadJitSharedLibraries(needsGCEnableThreadsStandIn))
     {
@@ -1590,8 +1615,6 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
 
     std::vector<std::string> initFunctions;
     auto hasGCtorsMethod = false;
-    // a unit loaded from the cache has no module to ask, only its object
-    auto importsLibrary = false;
     for (auto &unit : units)
     {
         if (!unit.initFunction.empty())
@@ -1600,10 +1623,7 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
         }
 
         hasGCtorsMethod |= unit.isMain && unit.hasGCtorsMethod;
-        importsLibrary |= unit.object && objectImportsLibrary(*unit.object);
     }
-
-    jitChooseHeap(compileOptions, /*nativeImage=*/jitNative, importsLibrary);
 
 #ifdef _WIN32
     if (jitNative)

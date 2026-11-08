@@ -1,7 +1,8 @@
 # The heap a Windows program allocates from (every memory model but gc): mimalloc
-# (TypeScriptMimalloc.lib) in an executable tslang links, and under the JIT - unless the program
-# loads a library tslang built, which allocates from the process heap and frees what the program
-# allocated, or --process-heap asks for the process heap.
+# (TypeScriptMimalloc.lib) in an executable tslang links, and under the JIT, unless --process-heap
+# asks for the process heap. A library tslang built allocates from the program's heap, whichever it
+# is (lib/ProcessHeapExports.inc); one that would keep a heap of its own keeps the JIT on the process
+# heap.
 #
 # An executable that has mimalloc prints its statistics at exit when MIMALLOC_SHOW_STATS is set;
 # one that allocates from the process heap prints nothing. The JIT says which heap it gave the
@@ -87,11 +88,17 @@ jit("mimalloc" -mm=own "${program}")
 jit("mimalloc" -mm=rc --jit-cache=false "${program}")
 jit("process heap" -mm=own --process-heap "${program}")
 
-# 3. A program importing a library tslang built shares that library's process heap: the importer
-#    makes objects of the library's class, which the library's code releases.
+# 3. A program importing a library tslang built lends it its heap: the importer makes objects of the
+#    library's class, which the library's code releases - as an executable, under the JIT, and as an
+#    executable on the process heap.
 run("--emit=dll" "${TSLANG}" --emit=dll ${common} -mm=rc "${TESTS_DIR}/export_class_interface.ts"
     -o export_class_interface.dll)
 # `import './export_class_interface'` finds the DLL in the working directory before the source
-build(import.exe FALSE -mm=rc "${TESTS_DIR}/import_class_interface.ts")
-jit("process heap" -mm=rc "${TESTS_DIR}/import_class_interface.ts")
-jit("process heap" -mm=rc --jit-cache=false "${TESTS_DIR}/import_class_interface.ts")
+build(import.exe TRUE -mm=rc "${TESTS_DIR}/import_class_interface.ts")
+build(import_process.exe FALSE -mm=rc --process-heap "${TESTS_DIR}/import_class_interface.ts")
+jit("mimalloc" -mm=rc "${TESTS_DIR}/import_class_interface.ts")
+jit("mimalloc" -mm=rc --jit-cache=false "${TESTS_DIR}/import_class_interface.ts")
+
+# 4. A library given to the JIT that does not say it allocates from the program's heap - here one
+#    tslang did not build at all - keeps the program on the process heap.
+jit("process heap" -mm=own "--shared-libs=$ENV{SystemRoot}/System32/version.dll" "${program}")
