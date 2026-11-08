@@ -551,6 +551,7 @@ tslang_add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJE
 tslang_add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 tslang_add_test(NAME test-compile-00-string-length-resize COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
+tslang_add_test(NAME test-compile-00-string-non-bmp COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_non_bmp.ts")
 tslang_add_test(NAME test-compile-00-narrow-array-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_array_null.ts")
 tslang_add_test(NAME test-compile-00-array-length-grow-zeroed COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
@@ -1214,6 +1215,7 @@ tslang_add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJ
 tslang_add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 tslang_add_test(NAME test-jit-00-string-length-resize COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
+tslang_add_test(NAME test-jit-00-string-non-bmp COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_non_bmp.ts")
 tslang_add_test(NAME test-jit-00-narrow-array-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_array_null.ts")
 # own sees each branch's array of its literal as fresh
 tslang_add_test(NAME test-jit-own-00-narrow-array-null COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_array_null.ts")
