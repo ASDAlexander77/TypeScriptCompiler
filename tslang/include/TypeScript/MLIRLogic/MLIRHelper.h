@@ -24,36 +24,50 @@ namespace typescript
 // codecvt_utf8_utf16, as TypeScript counts a string in UTF-16 units - so a character outside the BMP
 // is a surrogate pair even where wchar_t has 32 bits (Linux). llvm::convertWideToUTF8 takes a 32-bit
 // wchar_t string for UTF-32, where a surrogate is invalid, and gave "" for a literal such as "😀".
+//
+// The units are converted as they are: llvm::convertUTF16ToUTF8String reads a leading U+FEFF as a byte
+// order mark and skips it (and a leading U+FFFE byte-swaps the whole string), so a string literal
+// starting with \uFEFF lost it (TSLANG_ISSUES 34).
 static std::string convertWideToUTF8(const std::wstring &ws)
 {
-    std::string s;
-    if constexpr (sizeof(wchar_t) == sizeof(llvm::UTF16))
+    llvm::SmallVector<llvm::UTF16> units;
+    units.reserve(ws.size());
+    for (auto c : ws)
     {
-        llvm::convertWideToUTF8(ws, s);
-    }
-    else
-    {
-        llvm::SmallVector<llvm::UTF16> units;
-        units.reserve(ws.size());
-        for (auto c : ws)
+        auto code = static_cast<uint32_t>(c);
+        if (code > 0xFFFF && code <= 0x10FFFF)
         {
-            auto code = static_cast<uint32_t>(c);
-            if (code > 0xFFFF && code <= 0x10FFFF)
-            {
-                // a code point made elsewhere (not by stows) - its surrogate pair
-                code -= 0x10000;
-                units.push_back(static_cast<llvm::UTF16>(0xD800 + (code >> 10)));
-                units.push_back(static_cast<llvm::UTF16>(0xDC00 + (code & 0x3FF)));
-            }
-            else
-            {
-                units.push_back(static_cast<llvm::UTF16>(code));
-            }
+            // a code point made elsewhere (not by stows) - its surrogate pair
+            code -= 0x10000;
+            units.push_back(static_cast<llvm::UTF16>(0xD800 + (code >> 10)));
+            units.push_back(static_cast<llvm::UTF16>(0xDC00 + (code & 0x3FF)));
         }
-
-        llvm::convertUTF16ToUTF8String(units, s);
+        else
+        {
+            units.push_back(static_cast<llvm::UTF16>(code));
+        }
     }
 
+    std::string s;
+    if (units.empty())
+    {
+        return s;
+    }
+
+    // room for every unit, as convertUTF16ToUTF8String allocates
+    s.resize(units.size() * UNI_MAX_UTF8_BYTES_PER_CODE_POINT + 1);
+    const llvm::UTF16 *src = units.begin();
+    auto *dstStart = reinterpret_cast<llvm::UTF8 *>(&s[0]);
+    auto *dst = dstStart;
+    auto result = llvm::ConvertUTF16toUTF8(&src, units.end(), &dst, dstStart + s.size(), llvm::strictConversion);
+    if (result != llvm::conversionOK)
+    {
+        // as convertUTF16ToUTF8String: an invalid sequence (a lone surrogate) gives ""
+        s.clear();
+        return s;
+    }
+
+    s.resize(dst - dstStart);
     return s;
 }
 

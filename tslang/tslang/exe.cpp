@@ -488,6 +488,40 @@ static bool resolveWindowsLibPath(const llvm::Triple &triple, std::string &path,
     return checkWindowsBinaryMachine(triple, lib);
 }
 
+// A library tslang builds on Windows links with `-include:__tslang_heap_shared`, which the runtime
+// (TypeScriptAsyncRuntime.lib) defines since #784. A runtime older than that failed every
+// --emit=dll with a bare "unresolved external symbol __tslang_heap_shared" (TSLANG_ISSUES 36): say
+// which runtime it is and that it is older than the compiler. `path` is the directory the link
+// takes the runtime from (resolveWindowsLibPath has made it the x86 one for x86); a runtime not
+// found there is the linker's to report.
+static bool checkRuntimeSharesHeap(llvm::StringRef path)
+{
+    if (path.empty())
+    {
+        return true;
+    }
+
+    llvm::SmallString<256> lib(path);
+    llvm::sys::path::append(lib, "TypeScriptAsyncRuntime.lib");
+    auto buffer = llvm::MemoryBuffer::getFile(lib, /*IsText=*/false, /*RequiresNullTerminator=*/false);
+    if (!buffer)
+    {
+        return true;
+    }
+
+    // the archive's symbol table names it (x86 decorates it with one more underscore)
+    if ((*buffer)->getBuffer().contains("__tslang_heap_shared"))
+    {
+        return true;
+    }
+
+    llvm::WithColor::error(llvm::errs(), "tslang")
+        << "the TypeScript runtime " << lib << " is older than this tslang: it has no __tslang_heap_shared, "
+        << "which a library (--emit=dll) links with. Point --tslang-lib-path (or TSLANG_LIB_PATH) at the "
+        << "runtime that came with this tslang.\n";
+    return false;
+}
+
 void addCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*> cmdParts)
 {
     for (auto &job : c->getJobs())
@@ -971,6 +1005,11 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
                                       "--tslang-lib-path (or TSLANG_LIB_PATH)",
                                       "build_tslang_runtime_" + libConfig + "_x86",
                                       "__build\\tslang-runtime\\" + libConfig))
+        {
+            return 1;
+        }
+
+        if (shared && winX86OrX64 && !checkRuntimeSharesHeap(tslangLibPath))
         {
             return 1;
         }
