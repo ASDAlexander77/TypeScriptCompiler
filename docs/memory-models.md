@@ -262,7 +262,27 @@ promotion already keep a program's data off the heap, the heap barely matters.
   rather than being freed twice. The compiler warns when it can see the mismatch. Building
   everything with the same `-mm=` avoids it. (The standard library is not affected — see
   above.)
-- **Counts are not atomic.** `-mm=rc` is single-threaded today.
+- **Sharing objects between threads.** A plain count change is a load, an add and a store, so two
+  threads taking or dropping references to the same object at once lose updates: the object is
+  freed while still held, or never. So the top bit of a block's header word marks it *shared*, and
+  a shared block's count changes atomically (relaxed for a retain; release for a release, with an
+  acquire fence before the last one frees). A block only one thread holds counts as before; the
+  test costs the ray tracer about 4.5%. There are three ways to share:
+  - `Shared.share(v)` marks every block `v` reaches - fields, elements, closures' captures, and
+    what an `any`, interface or union holds. It marks the graph as it is: a value stored into a
+    shared object later has to be shared too before another thread can see it.
+  - An `@atomic class` marks each new object once its constructor has run, and marks every value
+    stored into one of its fields before the store. A class extending one is `@atomic` too. Not
+    seen: a store through an interface or a base type that is not `@atomic`, and an element added
+    to an array a field holds (`obj.items.push(x)`) - share those first.
+  - `--atomic-rc` treats every block as shared: no marking needed, at about 2.5x the counting cost.
+    Only in the code built with it, though: the default library and any other library built
+    without it still count an unmarked block plainly, so share what their code touches on several
+    threads.
+
+  Keeping the objects themselves consistent is the program's job (`@atomic` variables, `Atomics`).
+  The share routine sits in every type descriptor, so code built before it - a default library
+  included - cannot be mixed with code built after it; rebuild the library.
 
 ## Shared libraries and `-mm=gc`
 

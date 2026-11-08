@@ -420,6 +420,12 @@ namespace own_inference
             return true;
         }
 
+        // `Shared.share(v)` sets bits in the headers of what `v` reaches, and keeps nothing
+        if (mlir::isa<mlir_ts::MarkSharedOp>(user))
+        {
+            return true;
+        }
+
         // `--di`'s record of a folded const's value for the debugger: names it, keeps nothing
         if (mlir::isa<mlir_ts::DebugVariableOp>(user))
         {

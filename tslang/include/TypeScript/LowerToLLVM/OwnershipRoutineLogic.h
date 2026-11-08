@@ -524,6 +524,148 @@ class OwnershipRoutineLogic
         });
     }
 
+    // === Sharing between threads ===
+    //
+    // `Shared.share(v)` (ts.MarkShared) sets the shared bit (Defines.h, beside HEAP_BLOCK_IMMORTAL)
+    // in the header of every counted block `v` reaches, after which emitIncRef and emitDecRef
+    // change those counts atomically. "Reaches" is what the release routine of the same type would
+    // give back - fields, elements, an array's data block, a closure's capture box and its cells,
+    // and through a descriptor (TYPE_DESCR_SHARE) whatever an `any`, an interface or a union holds -
+    // so that no block another thread can reach through `v` is counted plainly. A block that is
+    // already shared stops the walk below it: what it holds was marked when it was, and that is
+    // also what ends the walk on a cycle. An immortal block is left alone, and has to be: a
+    // literal's header may be in read-only memory.
+    //
+    // Only `rc` keeps counts on every block; under the other models the op is erased.
+
+    // Symbol name of the share routine for `type`, generating it if needed; empty when the type
+    // owns no heap memory. Like release, it takes the storage holding a value.
+    std::string getOrCreateShareRoutine(mlir::Type type)
+    {
+        if (!compileOptions.isRefCounted() || !ownsHeapMemory(type))
+        {
+            return {};
+        }
+
+        std::stringstream nameStream;
+        nameStream << "tsshr_" << (size_t)hash_value(type);
+        auto name = nameStream.str();
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+            loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+
+        // the symbol exists before the body, for a recursive type, as the release routine's does
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        buildShareBody(type, entryBlock->getArgument(0));
+
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        dropDebugLocations(funcOp);
+        return name;
+    }
+
+    // The share routine of a closure's capture box: the box, each captured variable's cell and what
+    // the cell holds, and what each field captured by value holds. Keyed by the capture's
+    // `ref<tuple<..>>`, as the box's release routine is.
+    std::string getOrCreateCaptureBoxShareRoutine(mlir_ts::RefType captureRefType)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return {};
+        }
+
+        std::stringstream nameStream;
+        nameStream << "tsshrbox_" << (size_t)hash_value(captureRefType);
+        auto name = nameStream.str();
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(loc, name, th.getFunctionType(th.getVoidType(), {ptrTy}),
+                                                        LLVM::Linkage::Internal);
+
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        auto tupleType = captureRefType.getElementType();
+        auto captureTupleType = dyn_cast<mlir_ts::TupleType>(tupleType);
+        auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, entryBlock->getArgument(0));
+        emitMarkBlockShared(boxValue, [&]() {
+            auto llvmTupleType = tch.convertType(tupleType);
+            for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(tupleType)))
+            {
+                // a @value constructor's `this` is the caller's slot, not a cell (releaseCapturedFields)
+                if (captureTupleType &&
+                    MLIRTypeHelper::isValueConstructorThisCapture(captureTupleType.getFields()[index].id, fieldType))
+                {
+                    continue;
+                }
+
+                auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType);
+                if (!refFieldType && !ownsHeapMemory(fieldType))
+                {
+                    continue;
+                }
+
+                auto fieldPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmTupleType, boxValue,
+                                                             ArrayRef<LLVM::GEPArg>{0, (int32_t)index});
+                if (refFieldType)
+                {
+                    // the field holds the cell's address: the cell is a counted block of its own
+                    auto cellValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, fieldPtr);
+                    emitMarkBlockShared(cellValue, [&]() { shareSlot(refFieldType.getElementType(), cellValue); });
+                }
+                else
+                {
+                    shareSlot(fieldType, fieldPtr);
+                }
+            }
+        });
+
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        dropDebugLocations(funcOp);
+        return name;
+    }
+
+    // ts.MarkShared: the share routine of `type` on `value`.
+    void emitShareValue(mlir::Type type, mlir::Value value)
+    {
+        auto wrapperName = getOrCreateValueWrapper(type, getOrCreateShareRoutine(type), "tsshrv_");
+        if (wrapperName.empty())
+        {
+            return;
+        }
+
+        rewriter.create<LLVM::CallOp>(op->getLoc(), TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName),
+                                      ValueRange{value});
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)
@@ -644,20 +786,37 @@ class OwnershipRoutineLogic
     // A block marked HEAP_BLOCK_IMMORTAL is neither decremented nor ever the last. That is what
     // lets a string literal, or a `typeof` result pointing into a descriptor, be released like
     // any other string without writing to read-only memory or freeing a static block.
+    //
+    // A block with the shared bit set (other threads may hold references to it)
+    // is decremented with an atomic subtract with release ordering, and the last reference is the
+    // one that saw a count of 1 before it: two threads dropping the last two references at once
+    // must not both see 1 left, nor both see 0. The thread that frees then takes an acquire fence,
+    // so the writes other threads made to the object before giving up their references happen
+    // before its destruction. Any other block - the common case, one thread's own - is a plain
+    // load, subtract and store, as it always was. Under --atomic-rc every block takes the atomic
+    // path, shared bit or not.
+    //
+    // The first read is a plain load (emitCountLoad says why that is enough). An immortal header
+    // is never written again, and a block's shared bit is only ever set, by the one thread that
+    // holds the block before any other can reach it, so neither test can be made stale by another
+    // thread. Marking a block immortal (emitMarkImmortal) stays a plain
+    // write: it is done to globals and keepers before any other thread can reach the block.
     mlir::Value emitDecRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const char *helperName = "__tslang_dec_ref";
+        const bool atomicAlways = compileOptions.atomicRefCounts();
+        const char *helperName = atomicAlways ? "__tslang_dec_ref_atomic" : "__tslang_dec_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
+            auto boolType = th.getLLVMBoolType();
             auto helper = rewriter.create<LLVM::LLVMFuncOp>(
-                loc, helperName, th.getFunctionType(th.getLLVMBoolType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+                loc, helperName, th.getFunctionType(boolType, {th.getPtrType()}), LLVM::Linkage::Internal);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
@@ -667,29 +826,51 @@ class OwnershipRoutineLogic
 
             auto llvmIndexType = tch.convertType(th.getIndexType());
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, entryBlock->getArgument(0), llvmIndexType);
-            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
-            auto immortal = rewriter.create<LLVM::ConstantOp>(
-                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
-            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr);
 
-            auto *decBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-            auto *immortalBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *sharedBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *plainBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *lastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *falseBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
 
             rewriter.setInsertionPointToEnd(entryBlock);
-            rewriter.create<LLVM::CondBrOp>(loc, isMortal, decBlock, immortalBlock);
+            emitBranchOnHeaderWord(loc, llvmIndexType, count, atomicAlways, plainBlock, sharedBlock, falseBlock);
 
-            rewriter.setInsertionPointToStart(decBlock);
-            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one);
-            rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
-            auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
-            auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
-            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
+            auto one = [&]() {
+                return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            };
 
-            rewriter.setInsertionPointToStart(immortalBlock);
+            // shared: the count without the bit was 1 before this thread's subtract
+            rewriter.setInsertionPointToStart(sharedBlock);
+            auto oldWord = rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::sub, blockPtr, one(),
+                                                              LLVM::AtomicOrdering::release);
+            auto oldCount = emitWithoutSharedBit(loc, llvmIndexType, oldWord);
+            auto wasLastShared = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, oldCount, one());
+            rewriter.create<LLVM::CondBrOp>(loc, wasLastShared, lastBlock, falseBlock);
+
+            rewriter.setInsertionPointToStart(lastBlock);
+            rewriter.create<LLVM::FenceOp>(loc, LLVM::AtomicOrdering::acquire);
             rewriter.create<LLVM::ReturnOp>(
-                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
-                                                                  rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 1))});
+
+            // this thread's own: the bit is clear, so the word is the count
+            rewriter.setInsertionPointToStart(plainBlock);
+            if (atomicAlways)
+            {
+                rewriter.create<LLVM::BrOp>(loc, ValueRange{}, falseBlock);
+            }
+            else
+            {
+                auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one());
+                rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
+                auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+                auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
+            }
+
+            rewriter.setInsertionPointToStart(falseBlock);
+            rewriter.create<LLVM::ReturnOp>(
+                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 0))});
 
             dropDebugLocations(helper);
         }
@@ -705,13 +886,19 @@ class OwnershipRoutineLogic
     // Skipping an immortal block is not an optimisation: incrementing HEAP_BLOCK_IMMORTAL
     // would turn all-ones into zero, and the next release would read that as "last reference"
     // and free a string literal.
+    //
+    // A shared block (or any, under --atomic-rc) takes an atomic add. Relaxed ordering is enough:
+    // whoever takes a reference already holds one, so the block cannot be freed under it, and
+    // nothing else is published by taking a reference. The count never reaches the shared bit,
+    // so the add leaves the bit alone.
     void emitIncRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const char *helperName = "__tslang_inc_ref";
+        const bool atomicAlways = compileOptions.atomicRefCounts();
+        const char *helperName = atomicAlways ? "__tslang_inc_ref_atomic" : "__tslang_inc_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -733,7 +920,8 @@ class OwnershipRoutineLogic
             auto isNotNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, payload, nullPtr);
 
             auto *loadBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-            auto *incBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *sharedBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *plainBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
             auto *returnBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
 
             rewriter.setInsertionPointToEnd(entryBlock);
@@ -741,15 +929,24 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(loadBlock);
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payload, llvmIndexType);
-            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
-            auto immortal = rewriter.create<LLVM::ConstantOp>(
-                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
-            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
-            rewriter.create<LLVM::CondBrOp>(loc, isMortal, incBlock, returnBlock);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr);
+            emitBranchOnHeaderWord(loc, llvmIndexType, count, atomicAlways, plainBlock, sharedBlock, returnBlock);
 
-            rewriter.setInsertionPointToStart(incBlock);
-            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one), blockPtr);
+            auto one = [&]() {
+                return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            };
+
+            rewriter.setInsertionPointToStart(sharedBlock);
+            rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::add, blockPtr, one(),
+                                               LLVM::AtomicOrdering::monotonic);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
+
+            rewriter.setInsertionPointToStart(plainBlock);
+            if (!atomicAlways)
+            {
+                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one()),
+                                               blockPtr);
+            }
             rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
 
             rewriter.setInsertionPointToStart(returnBlock);
@@ -760,6 +957,69 @@ class OwnershipRoutineLogic
 
         rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
                                       ValueRange{payloadPtr});
+    }
+
+    // The read of a block's header word by the count helpers. A plain load, though a shared block's
+    // word may be changing under other threads' atomic adds and subtracts: all the helpers decide
+    // from it is which kind of block this is, and that cannot change under them. A word only this
+    // thread holds is written by this thread alone; a shared block's top bit is never cleared, and
+    // an immortal word never written, so either reads negative whatever the count does. The count
+    // of a shared block is never taken from this read - its atomic subtract returns its own. An
+    // atomic load would say the same, but it keeps LLVM from cancelling a retain against the
+    // release that follows it on a block this thread holds, which is most of what reference
+    // counting costs in a hot loop (the ray tracer: 4.5% over the counts before blocks could be
+    // shared, 7% with an atomic load here).
+    mlir::Value emitCountLoad(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value blockPtr)
+    {
+        return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+    }
+
+    // The shared bit of a block's header word: the top bit (Defines.h, beside HEAP_BLOCK_IMMORTAL).
+    // A count never grows into it, and HEAP_BLOCK_IMMORTAL (all ones) has it set too - which is why
+    // every helper tests for immortal first.
+    mlir::Value emitSharedBitConstant(mlir::Location loc, mlir::Type llvmIndexType)
+    {
+        auto bits = compileOptions.sizeBits();
+        return rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, llvm::APInt::getOneBitSet(bits, bits - 1)));
+    }
+
+    // Ends the current block with the three-way branch of the count helpers on a header word:
+    // `plainBlock` for a block only this thread holds, `sharedBlock` for a shared one, and
+    // `immortalBlock` for an immortal one. The shared bit is the word's top bit, which
+    // HEAP_BLOCK_IMMORTAL has set as well, so one signed test - the word is not negative - is all
+    // the common case pays, as it paid one test for immortal before blocks could be shared. Under
+    // --atomic-rc every mortal block is treated as shared.
+    void emitBranchOnHeaderWord(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value word, bool atomicAlways,
+                                mlir::Block *plainBlock, mlir::Block *sharedBlock, mlir::Block *immortalBlock)
+    {
+        auto immortal = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, word, immortal);
+        if (atomicAlways)
+        {
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, sharedBlock, immortalBlock);
+            return;
+        }
+
+        auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+        auto isPlain = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, word, zero);
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *topBitBlock = rewriter.createBlock(currentBlock->getParent(), std::next(currentBlock->getIterator()));
+        rewriter.create<LLVM::CondBrOp>(loc, isMortal, sharedBlock, immortalBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, isPlain, plainBlock, topBitBlock);
+    }
+
+    // The count a header word holds, without the shared bit.
+    mlir::Value emitWithoutSharedBit(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value word)
+    {
+        auto bits = compileOptions.sizeBits();
+        auto mask = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, llvm::APInt::getLowBitsSet(bits, bits - 1)));
+        return rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, mask);
     }
 
     // Is this block mortal - that is, not HEAP_BLOCK_IMMORTAL? Inline rather than a helper: it
@@ -1599,6 +1859,281 @@ class OwnershipRoutineLogic
         rewriter.create<LLVM::BrOp>(loc, ValueRange{nextIndex}, conditionBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
+    // Sets the shared bit of one block and then runs `thenBody` - the walk into what the block
+    // holds - only when this call is what set it: not for null, not for an immortal block, not for
+    // one already shared. The bit is the word's top bit, which an immortal word has too, so a word
+    // that is not negative is exactly a block to mark. An atomic `or`: the count is left as it is.
+    void emitMarkBlockShared(mlir::Value payloadPtr, llvm::function_ref<void()> thenBody)
+    {
+        emitIfNonNull(payloadPtr, [&]() {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(typeConverter);
+            LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+            auto loc = op->getLoc();
+
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+            auto word = emitCountLoad(loc, llvmIndexType, blockPtr);
+            auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+            auto isUnmarked = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, word, zero);
+
+            auto *currentBlock = rewriter.getInsertionBlock();
+            auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            auto *markBlock = rewriter.createBlock(continuationBlock);
+
+            rewriter.setInsertionPointToEnd(markBlock);
+            rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::_or, blockPtr,
+                                               emitSharedBitConstant(loc, llvmIndexType),
+                                               LLVM::AtomicOrdering::monotonic);
+            thenBody();
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, isUnmarked, markBlock, continuationBlock);
+            rewriter.setInsertionPointToStart(continuationBlock);
+        });
+    }
+
+    // Calls the share routine of `type` on `slotPtr`, if it has one.
+    void shareSlot(mlir::Type type, mlir::Value slotPtr)
+    {
+        auto routineName = getOrCreateShareRoutine(type);
+        if (routineName.empty())
+        {
+            return;
+        }
+
+        rewriter.create<LLVM::CallOp>(op->getLoc(), TypeRange{},
+                                      FlatSymbolRefAttr::get(rewriter.getContext(), routineName), ValueRange{slotPtr});
+    }
+
+    // Calls the routine a descriptor holds in `descriptorSlot` (TYPE_DESCR_*) on `valueSlotPtr`, if
+    // it holds one. `tagValue` must not be null.
+    void callViaDescriptor(mlir::Value tagValue, mlir::Value valueSlotPtr, int32_t descriptorSlot)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+
+        auto loc = op->getLoc();
+
+        auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
+        auto routinePtrSlot =
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
+                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         recordPtr, ArrayRef<LLVM::GEPArg>{0, descriptorSlot});
+        auto routine = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), routinePtrSlot);
+
+        emitIfNonNull(routine, [&]() {
+            mlir::SmallVector<mlir::Value> ops{routine, valueSlotPtr};
+            auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{}, ops);
+            callOp.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+            callOp.setOpBundleSizes({});
+        });
+    }
+
+    // The fields of a record-shaped value, `basePtr` addressing the record. Every field the release
+    // routine would visit, and the ones it leaves to an owner elsewhere too: marking more than
+    // another thread can reach costs atomic counts, marking less costs a race.
+    void shareFields(mlir::Type recordType, mlir::Value basePtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto llvmRecordType = tch.convertType(recordType);
+
+        for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
+        {
+            auto routineName = std::string();
+            if (auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType))
+            {
+                // a `ref` to a tuple is a capture box (releaseFields); any other `ref` owns nothing
+                if (isa<mlir_ts::TupleType>(refFieldType.getElementType()))
+                {
+                    routineName = getOrCreateCaptureBoxShareRoutine(refFieldType);
+                }
+            }
+            else
+            {
+                routineName = getOrCreateShareRoutine(fieldType);
+            }
+
+            if (routineName.empty())
+            {
+                continue;
+            }
+
+            auto fieldPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmRecordType, basePtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, (int32_t)index});
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
+                                          ValueRange{fieldPtr});
+        }
+    }
+
+    // The share routine's body, case for case with buildBody's.
+    void buildShareBody(mlir::Type typeIn, mlir::Value slotPtr)
+    {
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+
+        if (isa<mlir_ts::StringType>(type))
+        {
+            auto strValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitMarkBlockShared(strValue, [&]() {});
+            return;
+        }
+
+        // the header, then its data block, then the elements [0, length) - each only when the one
+        // before it was not shared already
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
+            auto header = layout.headerForRead(arrayType, slotPtr);
+            emitMarkBlockShared(header, [&]() {
+                auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, layout.dataAddress(arrayType, header));
+                emitMarkBlockShared(dataValue, [&]() {
+                    auto elementRoutine = getOrCreateShareRoutine(arrayType.getElementType());
+                    if (elementRoutine.empty())
+                    {
+                        return;
+                    }
+
+                    auto llvmIndexType = tch.convertType(th.getIndexType());
+                    auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, layout.lengthAddress(arrayType, header));
+                    emitCountedLoop(sizeValue, [&](mlir::Value index) {
+                        auto llvmElementType = tch.convertType(arrayType.getElementType());
+                        auto elementPtr =
+                            rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataValue, ValueRange{index});
+                        rewriter.create<LLVM::CallOp>(loc, TypeRange{},
+                                                      FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
+                                                      ValueRange{elementPtr});
+                    });
+                });
+            });
+            return;
+        }
+
+        if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type))
+        {
+            auto storageType = isa<mlir_ts::ClassType>(type) ? cast<mlir_ts::ClassType>(type).getStorageType()
+                                                             : cast<mlir_ts::ObjectType>(type).getStorageType();
+
+            auto instanceValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitMarkBlockShared(instanceValue, [&]() { shareFields(storageType, instanceValue); });
+            return;
+        }
+
+        if (auto sharedType = dyn_cast<mlir_ts::SharedType>(type))
+        {
+            auto handle = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitMarkBlockShared(handle, [&]() { shareSlot(sharedType.getElementType(), handle); });
+            return;
+        }
+
+        if (isa<mlir_ts::AnyType>(type))
+        {
+            auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitMarkBlockShared(boxValue, [&]() {
+                auto anyStructType = LLVM::LLVMStructType::getLiteral(
+                    rewriter.getContext(), {tch.convertType(th.getIndexType()), ptrTy, th.getI8Type()}, false);
+
+                auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, anyStructType, boxValue,
+                                                            ArrayRef<LLVM::GEPArg>{0, ANY_TYPE});
+                auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+                auto dataSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, anyStructType, boxValue,
+                                                             ArrayRef<LLVM::GEPArg>{0, ANY_DATA});
+                emitIfNonNull(tagValue, [&]() { callViaDescriptor(tagValue, dataSlot, TYPE_DESCR_SHARE); });
+            });
+            return;
+        }
+
+        // { vtable, this }: the tag of what `this` points at is the vtable's first slot
+        if (isa<mlir_ts::InterfaceType>(type))
+        {
+            auto llvmType = tch.convertType(type);
+            auto vtableSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                           ArrayRef<LLVM::GEPArg>{0, DATA_VALUE_INDEX});
+            auto vtableValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, vtableSlot);
+            auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
+            emitIfNonNull(vtableValue, [&]() {
+                auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, ptrTy, vtableValue,
+                                                            ArrayRef<LLVM::GEPArg>{INTERFACE_VTABLE_TYPE_SLOT});
+                auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+                emitIfNonNull(tagValue, [&]() { callViaDescriptor(tagValue, thisSlot, TYPE_DESCR_SHARE); });
+            });
+            return;
+        }
+
+        // { func, this, type }: the tag beside `this` says what `this` is - a capture box, or the
+        // object a method is bound to
+        if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
+        {
+            auto llvmType = tch.convertType(type);
+            auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                        ArrayRef<LLVM::GEPArg>{0, CLOSURE_TYPE_INDEX});
+            auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+            auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
+            emitIfNonNull(tagValue, [&]() { callViaDescriptor(tagValue, thisSlot, TYPE_DESCR_SHARE); });
+            return;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            {
+                auto llvmUnionType = tch.convertType(unionType);
+                auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
+                                                            ArrayRef<LLVM::GEPArg>{0, UNION_TAG_INDEX});
+                auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+                auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
+                                                              ArrayRef<LLVM::GEPArg>{0, UNION_VALUE_INDEX});
+                emitIfNonNull(tagValue, [&]() { callViaDescriptor(tagValue, valueSlot, TYPE_DESCR_SHARE); });
+            }
+            else
+            {
+                shareSlot(baseType, slotPtr);
+            }
+
+            return;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            auto llvmOptionalType = tch.convertType(optionalType);
+            auto hasValueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmOptionalType, slotPtr,
+                                                             ArrayRef<LLVM::GEPArg>{0, OPTIONAL_HASVALUE_INDEX});
+            auto hasValue = rewriter.create<LLVM::LoadOp>(loc, th.getLLVMBoolType(), hasValueSlot);
+
+            auto *currentBlock = rewriter.getInsertionBlock();
+            auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            auto *thenBlock = rewriter.createBlock(continuationBlock);
+
+            rewriter.setInsertionPointToEnd(thenBlock);
+            auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmOptionalType, slotPtr,
+                                                          ArrayRef<LLVM::GEPArg>{0, OPTIONAL_VALUE_INDEX});
+            shareSlot(optionalType.getElementType(), valueSlot);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, hasValue, thenBlock, continuationBlock);
+            rewriter.setInsertionPointToStart(continuationBlock);
+            return;
+        }
+
+        // record-shaped and inline: the value's storage is its holder's, only its fields reach blocks
+        shareFields(type, slotPtr);
     }
 };
 

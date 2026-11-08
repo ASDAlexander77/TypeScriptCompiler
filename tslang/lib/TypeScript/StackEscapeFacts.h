@@ -616,6 +616,8 @@ class StackEscapeFacts
                 return use.getOperandNumber() == 0 ? fieldRefEscapes(elementRefOp.getResult()) : "unclassified";
             })
             .Case<mlir_ts::RetainOp, mlir_ts::ReleaseOp>([&](auto) { return ""; })
+            // `Shared.share(v)`: other threads may hold it from here, past any frame
+            .Case<mlir_ts::MarkSharedOp>([&](auto) { return "shared with other threads"; })
             .Case<mlir_ts::LogicalBinaryOp>([&](auto) { return ""; })
             .Case<mlir_ts::CastOp>([&](auto castOp) -> llvm::StringRef {
                 // a view of the same object - a boxed literal seen as an object, a class as its

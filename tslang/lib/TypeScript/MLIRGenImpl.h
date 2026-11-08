@@ -7005,6 +7005,36 @@ class MLIRGenImpl
         return mlirGenSaveLogicOneItem(location, fieldValue, savingValue, genContext);
     }
 
+    // The field barrier of an @atomic class: a store through a field of an object whose static type is
+    // an @atomic class (or extends one) marks the value shared before it lands (ts.MarkShared), so
+    // nothing another thread can reach through the object is counted plainly. Under -mm=rc only. A
+    // store through a type that is not @atomic - a base class of one - is not seen.
+    void markStoreIntoAtomicField(mlir::Location location, mlir::Value storeReference, mlir::Value savingValue)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        auto propertyRefOp = storeReference.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return;
+        }
+
+        auto classType = dyn_cast<mlir_ts::ClassType>(propertyRefOp.getObjectRef().getType());
+        if (!classType)
+        {
+            return;
+        }
+
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (classInfo && classInfo->isAtomicClass())
+        {
+            builder.create<mlir_ts::MarkSharedOp>(location, savingValue);
+        }
+    }
+
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
@@ -7123,6 +7153,10 @@ class MLIRGenImpl
             {
                 return mlir::success();
             }
+
+            // A field of an @atomic class: what it is given may be read by other threads from here,
+            // so it is marked shared first (ClassInfo::isAtomic)
+            markStoreIntoAtomicField(location, storeReference, savingValue);
 
             // Overwriting owning storage hands the count over: the incoming value gains an
             // owner and the outgoing one loses it. Retaining first is what makes `x = x` safe -
@@ -10895,6 +10929,8 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenNewShared(mlir::Location location, NewExpression newExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenSharedCount(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
+    void markAtomicInstanceShared(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value instance);
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext);
 
