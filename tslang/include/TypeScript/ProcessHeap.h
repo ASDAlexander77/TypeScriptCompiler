@@ -11,6 +11,10 @@
 // list of its blocks per copy, while tslang.exe's own `malloc` is rpmalloc when LLVM is the
 // prebuilt package. The process heap is the same heap in every module and every build.
 //
+// An executable that loads no library tslang built is one module, so it allocates from mimalloc
+// instead: tslang links TypeScriptMimalloc.lib, whose definitions of the same entry points win over
+// these (lib/TypeScriptMimalloc), and the JIT does the same for the program it runs (jit.cpp).
+//
 // Header-only, so each place that has to provide them - the async runtime library a program links,
 // TypeScriptRuntime.dll and the JIT - compiles the same code.
 

@@ -45,6 +45,10 @@
 
 #include "jitcache.h"
 
+#ifdef _WIN32
+#include <mimalloc.h>
+#endif
+
 // From TypeScript/ObjDumper.h, which cannot be included here: its llvm/BinaryFormat/COFF.h
 // collides with the IMAGE_* macros <windows.h> defines above.
 namespace Dump
@@ -66,6 +70,8 @@ extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
 extern cl::list<std::string> programArgs;
 extern cl::opt<bool> jitNative;
+extern cl::opt<bool> processHeap;
+extern cl::opt<bool> verbose;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -444,6 +450,56 @@ static void jitAssertFailed(const char *message, const char *file, unsigned line
 // LLVM its `malloc` is rpmalloc, and a debug CRT keeps its blocks per copy of the CRT.
 #include "../lib/ProcessHeapExports.inc"
 
+// ...or mimalloc, as an executable tslang links allocates from (TypeScriptMimalloc), when the
+// program is the only module allocating: no library tslang built is loaded - the default library's
+// DLL, one given with --shared-libs, one the program imports dynamically - since such a library
+// allocates from the process heap and frees what the program allocated. Decided once, before the
+// program's first instruction runs (jitChooseHeap), and never changed after: a block goes back to
+// the heap it came from.
+static bool jitMimalloc = false;
+
+static void *jitHeapMalloc(size_t size)
+{
+    return jitMimalloc ? mi_malloc(size ? size : 1) : __tslang_heap_malloc(size);
+}
+
+static void *jitHeapCalloc(size_t count, size_t size)
+{
+    if (!jitMimalloc)
+    {
+        return __tslang_heap_calloc(count, size);
+    }
+
+    return count == 0 || size == 0 ? mi_calloc(1, 1) : mi_calloc(count, size);
+}
+
+static void *jitHeapRealloc(void *ptr, size_t size)
+{
+    if (!jitMimalloc)
+    {
+        return __tslang_heap_realloc(ptr, size);
+    }
+
+    // as the process heap's: a block resized to nothing is freed, and there is none
+    if (ptr && size == 0)
+    {
+        mi_free(ptr);
+        return nullptr;
+    }
+
+    return mi_realloc(ptr, size);
+}
+
+static void jitHeapFree(void *ptr)
+{
+    jitMimalloc ? mi_free(ptr) : __tslang_heap_free(ptr);
+}
+
+static void *jitHeapAlignedAlloc(size_t alignment, size_t size)
+{
+    return jitMimalloc ? mi_malloc_aligned(size ? size : 1, alignment) : __tslang_heap_aligned_alloc(alignment, size);
+}
+
 struct JitHeapFunction
 {
     const char *name;
@@ -451,17 +507,48 @@ struct JitHeapFunction
 };
 
 static const JitHeapFunction jitHeapFunctions[] = {
-    {"malloc", (void *)&__tslang_heap_malloc},
-    {"calloc", (void *)&__tslang_heap_calloc},
-    {"realloc", (void *)&__tslang_heap_realloc},
-    {"free", (void *)&__tslang_heap_free},
-    {PROCESS_HEAP_MALLOC, (void *)&__tslang_heap_malloc},
-    {PROCESS_HEAP_CALLOC, (void *)&__tslang_heap_calloc},
-    {PROCESS_HEAP_REALLOC, (void *)&__tslang_heap_realloc},
-    {PROCESS_HEAP_FREE, (void *)&__tslang_heap_free},
-    {PROCESS_HEAP_ALIGNED_ALLOC, (void *)&__tslang_heap_aligned_alloc},
+    {"malloc", (void *)&jitHeapMalloc},
+    {"calloc", (void *)&jitHeapCalloc},
+    {"realloc", (void *)&jitHeapRealloc},
+    {"free", (void *)&jitHeapFree},
+    {PROCESS_HEAP_MALLOC, (void *)&jitHeapMalloc},
+    {PROCESS_HEAP_CALLOC, (void *)&jitHeapCalloc},
+    {PROCESS_HEAP_REALLOC, (void *)&jitHeapRealloc},
+    {PROCESS_HEAP_FREE, (void *)&jitHeapFree},
+    {PROCESS_HEAP_ALIGNED_ALLOC, (void *)&jitHeapAlignedAlloc},
 };
 #endif
+
+// Whether the program the JIT runs allocates from mimalloc (see jitMimalloc). `importsLibrary`:
+// the program, or a module of it, imports a library dynamically. Called once the libraries the
+// process loads (clSharedLibs) are known and before the program runs.
+static void jitChooseHeap(const CompileOptions &compileOptions, bool nativeImage, bool importsLibrary)
+{
+#ifdef _WIN32
+    // TypeScriptRuntime.dll and gc.dll hand the program no block of their heap to free
+    auto loadsTslangLibrary = llvm::any_of(clSharedLibs, [](const std::string &libPath) {
+        auto stem = llvm::sys::path::stem(libPath);
+        return !stem.contains_insensitive("TypeScriptRuntime") && !stem.equals_insensitive("gc");
+    });
+
+    // a --jit-native image links the async runtime, process heap and all, into itself
+    jitMimalloc = !nativeImage && !compileOptions.needsGCRuntime() && !processHeap && !loadsTslangLibrary
+        && !importsLibrary;
+
+    if (verbose && !compileOptions.needsGCRuntime())
+    {
+        llvm::errs() << "JIT heap: " << (jitMimalloc ? "mimalloc" : "process heap") << "\n";
+    }
+#endif
+}
+
+// Whether an object the JIT cache made calls tslang_load_library_permanently, which a dynamic import
+// lowers to. Its name in the object's string table is enough: a string literal spelling the same
+// name only costs the program mimalloc.
+static bool objectImportsLibrary(const llvm::MemoryBuffer &object)
+{
+    return object.getBuffer().contains("tslang_load_library_permanently");
+}
 
 #ifndef _WIN32
 // glibc's `__assert_fail`, which the lowering calls off Windows, ends in abort(). tslang's own
@@ -1335,6 +1422,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return result;
     }
 
+    jitChooseHeap(compileOptions, /*nativeImage=*/false, compileOptions.importsSharedLibrary);
+
     if (dumpObjectFile)
     {
         // Compile-and-dump only, no execution: the stock MLIR engine is enough.
@@ -1501,6 +1590,8 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
 
     std::vector<std::string> initFunctions;
     auto hasGCtorsMethod = false;
+    // a unit loaded from the cache has no module to ask, only its object
+    auto importsLibrary = false;
     for (auto &unit : units)
     {
         if (!unit.initFunction.empty())
@@ -1509,7 +1600,10 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
         }
 
         hasGCtorsMethod |= unit.isMain && unit.hasGCtorsMethod;
+        importsLibrary |= unit.object && objectImportsLibrary(*unit.object);
     }
+
+    jitChooseHeap(compileOptions, /*nativeImage=*/jitNative, importsLibrary);
 
 #ifdef _WIN32
     if (jitNative)

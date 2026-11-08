@@ -188,6 +188,41 @@ two throwaway heap allocations of the same size back at the same point and the p
 at the unpromoted speed (157 ms against 158). Expect the same kind of swing, in either direction,
 from any change to what a program allocates early.
 
+## The heap on Windows
+
+Under `-mm=rc`, `-mm=own` and `-mm=none`, a Windows program allocates from
+[mimalloc](https://github.com/microsoft/mimalloc) rather than the Windows process heap
+(`HeapAlloc`):
+
+- an executable `tslang --emit=exe` builds links `TypeScriptMimalloc.lib` (it ships beside
+  `TypeScriptAsyncRuntime.lib`);
+- a program run with `--emit=jit` gets the same.
+
+There is one exception, because a block allocated by one module is often freed by another. A
+program that loads a library tslang built keeps the process heap, and so does that library. That
+covers importing a `--emit=dll` library, the default library's DLL under the JIT, and a library
+given with `--shared-libs`. A program you link yourself, against `TypeScriptAsyncRuntime.lib`, also
+keeps the process heap unless you link `TypeScriptMimalloc.lib` ahead of it. Do that only for an
+executable that loads no library tslang built.
+
+`--process-heap` keeps the process heap anyway, for heap debugging tools such as page heap or
+Application Verifier. `-mm=gc` allocates from the collector, and other platforms from the C
+library's `malloc`; neither changes.
+
+Measured, median of eleven runs, ahead-of-time build with `--opt --opt_level=3`, in milliseconds.
+`--process-heap` → default:
+
+| program | model | `--process-heap` → default |
+| --- | --- | --- |
+| ray tracer, every vector and colour an object on the heap | `-mm=own` | 529 → 180 (2.9×) |
+| ray tracer, vectors and colours `@value` types | `-mm=own` | 78 → 74 |
+| ray tracer, vectors and colours `@value` types | `-mm=rc` | 111 → 106 |
+| 20,000 arrays of 200 new objects | `-mm=rc` / `-mm=own` | 131 → 48 (2.7×) |
+| 5 million strings built by `+` | `-mm=own` | 910 → 696 (1.3×) |
+
+The gain is in programs that make and drop many small objects, arrays and strings. Where `@value`
+types or stack promotion already keep a program's data off the heap, the heap barely matters.
+
 ## Other limits of `-mm=rc`
 
 - **Objects crossing between differently-managed modules are never freed.** If you link a

@@ -160,6 +160,16 @@ std::string optVariantSuffix()
     return std::string(fastMath ? "fm" : "") + memoryModel + (x86 ? "x86" : "") + (noStackPromotion ? "nosp" : "");
 }
 
+#ifdef WIN32
+// What tslang links into an executable it builds whole (exe.cpp): mimalloc, ahead of the async
+// runtime, under every memory model but gc. Not for a program that loads a library of its test -
+// that library allocates from the process heap, and so must the program.
+std::string mimallocLib()
+{
+    return memoryModel.empty() || memoryModel == "gc" ? std::string() : std::string("TypeScriptMimalloc.lib ");
+}
+#endif
+
 std::string jitBatName()
 {
     return std::string(JIT_NAME) + optVariantSuffix() + BAT_NAME;
@@ -220,7 +230,7 @@ void createCompileBatchFile()
     batFile << "set GC_LIB_PATH=" << TEST_PATH_FOR_ARCH(TEST_GCPATH) << std::endl;
     batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% "
-            << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+            << LIBS << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << machineOpt() << exeManifestOpt()
@@ -461,7 +471,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     }
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
-            << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+            << LIBS << mimallocLib() << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << machineOpt() << exeManifestOpt()

@@ -74,6 +74,12 @@ add_llvm_executable(tslang
 
 llvm_update_compile_flags(tslang)
 target_link_libraries(tslang PRIVATE ${LIBS})
+if (WIN32)
+    # mimalloc, which the JIT gives the program it runs as its heap (jit.cpp)
+    target_link_libraries(tslang PRIVATE TypeScriptMimallocCore)
+    # ...and the library an executable it links needs, built with it
+    add_dependencies(tslang TypeScriptMimalloc)
+endif()
 target_compile_definitions(tslang PUBLIC TSLANG_PACKAGE_VERSION="${TSLANG_PACKAGE_VERSION}")
 
 # TSLANG_PACKAGE_VERSION is only set by a release build (CI passes the tag via

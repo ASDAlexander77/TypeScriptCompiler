@@ -392,7 +392,8 @@
 
 // The process-heap allocator of a Windows module (TypeScript/ProcessHeap.h), which ProcessHeapPass
 // calls instead of the C runtime's. Defined by the async runtime library a program links,
-// TypeScriptRuntime.dll and the JIT.
+// TypeScriptRuntime.dll and the JIT - and, served by mimalloc, by TypeScriptMimalloc.lib, which an
+// executable links ahead of the async runtime.
 #define PROCESS_HEAP_MALLOC "__tslang_heap_malloc"
 #define PROCESS_HEAP_CALLOC "__tslang_heap_calloc"
 #define PROCESS_HEAP_REALLOC "__tslang_heap_realloc"
