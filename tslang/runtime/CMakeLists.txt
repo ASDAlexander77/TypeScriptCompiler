@@ -45,3 +45,16 @@ if (MSVC)
 endif()
 
 install(TARGETS TypeScriptAsyncRuntime ARCHIVE DESTINATION .)
+
+# The heap a Windows executable allocates from (lib/TypeScriptMimalloc/CMakeLists.txt): mimalloc
+# behind the process-heap entry points, linked ahead of TypeScriptAsyncRuntime.
+if (WIN32)
+  enable_language(C)
+  set(MIMALLOC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../lib/mimalloc")
+  add_library(TypeScriptMimalloc STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/../lib/TypeScriptMimalloc/MimallocHeap.c"
+    "${MIMALLOC_DIR}/src/static.c")
+  target_include_directories(TypeScriptMimalloc PRIVATE "${MIMALLOC_DIR}/include")
+  target_compile_definitions(TypeScriptMimalloc PRIVATE MI_SECURE=0)
+  install(TARGETS TypeScriptMimalloc ARCHIVE DESTINATION .)
+endif()

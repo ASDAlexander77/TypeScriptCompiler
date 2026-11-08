@@ -3066,7 +3066,25 @@ if (WIN32)
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      "-DOPT=${gc_shared_auto_opt}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
+
+    # ...and the heap under the other models: mimalloc in an executable and under the JIT, the
+    # process heap beside a library tslang built - see mimalloc-heap.cmake. 00mimalloc_heap is the
+    # program it builds; it runs under every model as an ordinary test too.
+    add_test(NAME test-compile-mimalloc-heap
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/mimalloc-heap"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${gc_shared_auto_opt}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/mimalloc-heap.cmake")
 endif()
+foreach(heap_mm gc rc none own)
+    tslang_add_test(NAME test-jit-${heap_mm}-00-mimalloc-heap COMMAND test-runner -jit -mm=${heap_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mimalloc_heap.ts")
+    tslang_add_test(NAME test-compile-${heap_mm}-00-mimalloc-heap COMMAND test-runner -mm=${heap_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mimalloc_heap.ts")
+endforeach()
 
 # Importing a DLL for a target other than the host, whose declarations are read from the file -
 # see foreign-target-import.cmake. Always on, with no x86 libraries: it is what covers that path

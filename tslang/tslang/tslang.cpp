@@ -173,6 +173,10 @@ cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript
 cl::opt<std::string> androidndkpath("android-ndk-path", cl::desc("Android NDK path, the directory holding 'toolchains/llvm/prebuilt', or ANDROID_NDK_HOME environmental variable. (used when '-mtriple=<arch>-linux-android<api>')"), cl::value_desc("androidndkpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (used in --emit=exe and --emit=dll)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
+// Windows, every memory model but gc: the heap a program allocates from. An executable links mimalloc
+// (TypeScriptMimalloc.lib), and the JIT gives the program it runs mimalloc, unless the program loads a
+// library tslang built - such a library allocates from the process heap, and so must the program.
+cl::opt<bool> processHeap("process-heap", cl::desc("Windows: allocate from the process heap (HeapAlloc) instead of mimalloc, in an executable (--emit=exe) and under --emit=jit. For heap debugging tools such as page heap"), cl::init(false), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> ownFacts{"own-facts", cl::desc("Objects (or static libraries) of the modules this one imports, compiled under -mm=own and linked with it: their ownership facts are trusted for calls into them. (used with -mm=own)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 
 cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
