@@ -133,7 +133,9 @@ cl::opt<bool> jitCache{"jit-cache", cl::desc("--emit=jit: compile the program an
 cl::opt<bool> jitNative{"jit-native", cl::desc("--emit=jit on Windows: link the JIT cache's objects into a DLL with a PDB and load it with the system loader, so that WinDbg and Visual Studio can debug the program with its symbols and source (implies --di unless --opt is given; needs a linker and the JIT cache)"), cl::cat(TypeScriptCompilerCategory)};
 cl::opt<std::string> jitCacheDir{"jit-cache-dir", cl::desc("--emit=jit: the folder the JIT cache keeps its objects in (default: '__jit' beside each source file)"), cl::value_desc("folder"), cl::cat(TypeScriptCompilerCategory)};
 
-cl::opt<bool> verbose{"verbose", cl::Hidden, cl::desc("Verbose output"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<bool> verbose{"verbose", cl::desc("Verbose output: print the linker's command line and what else is run"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+// the linker's own failure message says "use -v to see invocation" (TSLANG_ISSUES 36)
+cl::alias verboseShort{"v", cl::desc("Alias for --verbose"), cl::aliasopt(verbose)};
 cl::opt<bool> printOp{"print-op", cl::Hidden, cl::desc("Print Op on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 

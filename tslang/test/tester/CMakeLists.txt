@@ -1814,6 +1814,12 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
     tslang_add_test(NAME test-compile-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
 endforeach()
+# TSLANG 34/35: a string literal holds what its escapes say: a leading U+FEFF is kept, and "\\n" is a
+# backslash and n
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-string-literal-escapes-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_literal_escapes.ts")
+    tslang_add_test(NAME test-compile-00-string-literal-escapes-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_literal_escapes.ts")
+endforeach()
 # an Opaque out of an `any` is as wide as the value in the box: `<Opaque><any>0` is null (the
 # padding after a 4-byte value was read as the pointer's high bytes)
 foreach(issues_mm gc rc none own)

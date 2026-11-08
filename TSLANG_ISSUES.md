@@ -35,3 +35,127 @@ a local `values` broke the default library's `Array<T>`): a generic declared out
 now sees no local of another function; one declared in a function still reads that function's locals,
 and lambdas in a generic still capture the generic's own. Regression test
 `tslang/test/tester/tests/00tslang_issue_30.ts`.
+Items 34-36, found in the default library on 2026-11-08, are fixed or answered too: 34 (a string
+literal starting with U+FEFF lost it, so its `.length` was 0): LLVM's UTF-16 to UTF-8
+conversion took a leading U+FEFF for a byte order mark and skipped it, and would have byte-swapped a
+literal starting with U+FFFE. Literals are now converted as they are. 35 (`"\\n"` read as a line feed)
+did not reproduce: on the same build the repro prints `2 6 4 2 2 3` and `92 2`, as expected. The repro
+file was most likely written through a shell that turns `\\` into `\`, which gives exactly the output
+reported. Both are covered by `tslang/test/tester/tests/00string_literal_escapes.ts`. 36 (an older
+runtime on `TSLANG_LIB_PATH` failed every `--emit=dll` with a bare LNK2001 for `__tslang_heap_shared`):
+tslang now checks the runtime's `TypeScriptAsyncRuntime.lib` before linking a library and says it is
+older than the compiler. `-v` is an alias for `--verbose`, which prints the linker's command line, so
+the linker's "use -v" hint works.
+
+Items 31-33 are `-mm=own` limits found in the default library (TypeScriptCompilerDefaultLib), not in
+native_ts_graphics. There the tests `thread_spawn.ts` and `atomics_wait.ts` are marked `// not own`
+because of them. Each repro was compiled with `--emit=exe` (the JIT's default-library DLL didn't
+link against this build) and runs under `-mm=gc` with the output shown.
+
+### 31. `-mm=own`: two closures can't capture the same array
+
+tslang (commit 94b8bdb2, built with uncommitted local changes). Found 2026-11-08.
+
+A closure passed to `Thread.spawn` moves what it captures, so a second closure capturing the same
+`Int32Array` is a use after move. Threads can't share memory under `-mm=own`, which is what
+`Atomics` is for. A single capture is fine: in the third repro the main thread still reads the
+array after the thread captured it. The error names `'this value'`, not `counter`, and points at the
+second arrow function rather than at `counter` inside it.
+
+Repro (`share_two.ts`):
+```ts
+// -mm=own: two threads that capture the same Int32Array
+function main() {
+    const counter = new Int32Array([0]);
+    const a = Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; });
+    const b = Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; });
+    a.join();
+    b.join();
+    print(Atomics.load(counter, 0));
+}
+```
+
+`-mm=gc` prints `2`. `-mm=own`:
+```
+share_two.ts:5:28: error: 'this value' is used here after its value was moved
+    const b = Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; });
+                           ^
+share_two.ts:4:28: note: value moved here
+    const a = Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; });
+                           ^
+```
+
+The same in a loop (`share_loop.ts`), the usual way to start workers, gives a different error:
+```ts
+// -mm=own: threads spawned in a loop, each capturing the same Int32Array
+function main() {
+    const counter = new Int32Array([0]);
+    const workers: ThreadHandle<int>[] = [];
+    for (let t = 0; t < 4; t++) {
+        workers.push(Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; }));
+    }
+
+    for (const w of workers) w.join();
+    print(Atomics.load(counter, 0));
+}
+```
+
+`-mm=gc` prints `4`. `-mm=own`:
+```
+share_loop.ts:6:35: error: 'this value' is moved inside a loop but was made outside it; only a borrow could do that, and -mm=own cannot prove one yet
+        workers.push(Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; }));
+                                  ^
+```
+
+One capture compiles and runs under both models, printing `1` (`share_after.ts`):
+```ts
+// -mm=own: the main thread uses the Int32Array after a thread captured it
+function main() {
+    const counter = new Int32Array([0]);
+    const a = Thread.spawn((): int => { Atomics.add(counter, 0, 1); return 0; });
+    a.join();
+    print(Atomics.load(counter, 0));
+}
+```
+
+Expected: a way to share one array between threads under `-mm=own`, such as `Shared<T>` captured by
+each closure, or a capture that borrows when the closure can't outlive the array.
+
+### 32. `-mm=own`: the error for a move in a loop doesn't say what was moved
+
+tslang (commit 94b8bdb2, built with uncommitted local changes). Found 2026-11-08.
+
+Both errors in 31 call the captured variable `'this value'`. In a program with several captures,
+nothing says which one is moved. The error should name `counter` and point at its use inside the
+arrow function.
+
+### 33. `-mm=own`: a thread can't return an object, and the error points into the default library
+
+tslang (commit 94b8bdb2, built with uncommitted local changes). Found 2026-11-08.
+
+`Thread.spawn` keeps the function's result in a field of `ThreadStart<R>` for `join()` to return.
+When `R` is a class, storing it is rejected. The error is reported in the default library's
+`lib.generics.ts` (`this.result = result;` in `ThreadStart.run`) with no line in the user's program,
+so nothing points at the `Thread.spawn` call that caused it. A string or a number works.
+
+Repro (`return_object.ts`):
+```ts
+// -mm=own: a thread whose function returns an object
+class Box {
+    constructor(public value: int) {}
+}
+
+function main() {
+    const t = Thread.spawn((): Box => new Box(42));
+    print(t.join().value);
+}
+```
+
+`-mm=gc` prints `42`. `-mm=own`:
+```
+.\__build\defaultlib\generics/lib.generics.ts:857:13: error: 'this value' takes a second reference; -mm=own cannot prove a move or a borrow here yet
+```
+
+`const result = this.fn(); this.result = result;` moves a value the function just returned, which
+the field should be able to take. Expected: the move is accepted. Failing that, the error should
+also name the instantiating call in the user's file.
