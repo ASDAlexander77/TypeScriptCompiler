@@ -1787,6 +1787,11 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-27-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_27.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-27-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_27.ts")
 endforeach()
+# TSLANG_ISSUES 28: a `readonly` constructor parameter is a parameter property
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tslang-issue-28-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issue-28-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
+endforeach()
 # ...a reference to a number is no reference to an f32
 add_test(NAME test-compile-ref-element-layout-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/ref_element_layout_error.ts")

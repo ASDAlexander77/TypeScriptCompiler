@@ -5,7 +5,7 @@ should be a complete file that was run (`tslang file.ts`, JIT, Windows x64), wit
 
 ## Open
 
-Items 1-27 (collected 2026-10-12 to pre-alpha116) are fixed or answered; their write-ups are in this
+Items 1-28 (collected 2026-10-12 to pre-alpha118) are fixed or answered; their write-ups are in this
 file's git history. 24-26 were fixed by #775 (regression tests
 `tslang/test/tester/tests/00tslang_issues_24_26.ts` and `ref_element_layout_error.ts`): 24 (an array
 literal holding `const X = 1 << n` widened to 64-bit elements: shifts and bitwise operators now give an
@@ -17,3 +17,6 @@ before `this.message = text` stored it): a template, and an object or literal ar
 string, now carry a reference of their own as `"a" + b` does, which the caller gives back after the
 call. Under `-mm=own` and rc the same strings also leaked (3M template arguments: ~570 MB, now ~50 MB).
 Regression test `tslang/test/tester/tests/00tslang_issue_27.ts`.
+28 (a `readonly` constructor parameter without `public`, `private` or `protected` made no parameter
+property, so `t.width` didn't resolve): `readonly` alone now makes a public one, as in TypeScript.
+Regression test `tslang/test/tester/tests/00tslang_issue_28.ts`.
