@@ -505,6 +505,13 @@
 // ABI break. See docs/reference-counting-evaluation.md sections 9.5 and 9.24.
 #define HEAP_BLOCK_IMMORTAL -1
 
+// The top bit of a counted block's header word says the block is shared: other threads may hold
+// references to it, so its count changes are atomic (OwnershipRoutineLogic::emitIncRef and
+// emitDecRef). The rest of the word is the count, which never grows into the bit. A block's bit
+// is set once, by the thread that holds it before any other can reach it, and never cleared.
+// HEAP_BLOCK_IMMORTAL has the bit set too, so an immortal test always comes first. It is the
+// word's top bit, so the value depends on the word size: 1 << (bits - 1).
+
 // Runtime type descriptor.
 //
 // The ANY_TYPE slot of an "any" box, and the UNION_TAG_INDEX slot of a tagged union, both

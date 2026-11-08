@@ -645,29 +645,36 @@ class OwnershipRoutineLogic
     // lets a string literal, or a `typeof` result pointing into a descriptor, be released like
     // any other string without writing to read-only memory or freeing a static block.
     //
-    // Under --atomic-rc the decrement is an atomic subtract with release ordering, and the last
-    // reference is the one that saw the count at 1 before it: two threads dropping the last two
-    // references at once must not both see 1 left, nor both see 0. The thread that frees then
-    // takes an acquire fence, so the writes other threads made to the object before giving up
-    // their references happen before its destruction. The immortal check stays a relaxed read:
-    // an immortal header is never written again.
-    // Marking a block immortal (emitMarkImmortal) stays a plain write: it is done to globals and
-    // keepers before any other thread can reach the block.
+    // A block with the shared bit set (other threads may hold references to it)
+    // is decremented with an atomic subtract with release ordering, and the last reference is the
+    // one that saw a count of 1 before it: two threads dropping the last two references at once
+    // must not both see 1 left, nor both see 0. The thread that frees then takes an acquire fence,
+    // so the writes other threads made to the object before giving up their references happen
+    // before its destruction. Any other block - the common case, one thread's own - is a plain
+    // load, subtract and store, as it always was. Under --atomic-rc every block takes the atomic
+    // path, shared bit or not.
+    //
+    // The first read is a plain load (emitCountLoad says why that is enough). An immortal header
+    // is never written again, and a block's shared bit is only ever set, by the one thread that
+    // holds the block before any other can reach it, so neither test can be made stale by another
+    // thread. Marking a block immortal (emitMarkImmortal) stays a plain
+    // write: it is done to globals and keepers before any other thread can reach the block.
     mlir::Value emitDecRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const bool atomic = compileOptions.atomicRefCounts();
-        const char *helperName = atomic ? "__tslang_dec_ref_atomic" : "__tslang_dec_ref";
+        const bool atomicAlways = compileOptions.atomicRefCounts();
+        const char *helperName = atomicAlways ? "__tslang_dec_ref_atomic" : "__tslang_dec_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
+            auto boolType = th.getLLVMBoolType();
             auto helper = rewriter.create<LLVM::LLVMFuncOp>(
-                loc, helperName, th.getFunctionType(th.getLLVMBoolType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+                loc, helperName, th.getFunctionType(boolType, {th.getPtrType()}), LLVM::Linkage::Internal);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
@@ -677,55 +684,51 @@ class OwnershipRoutineLogic
 
             auto llvmIndexType = tch.convertType(th.getIndexType());
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, entryBlock->getArgument(0), llvmIndexType);
-            auto count = emitCountLoad(loc, llvmIndexType, blockPtr, atomic);
-            auto immortal = rewriter.create<LLVM::ConstantOp>(
-                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
-            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr);
 
-            auto *decBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-            auto *immortalBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *sharedBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *plainBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *lastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *falseBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
 
             rewriter.setInsertionPointToEnd(entryBlock);
-            rewriter.create<LLVM::CondBrOp>(loc, isMortal, decBlock, immortalBlock);
+            emitBranchOnHeaderWord(loc, llvmIndexType, count, atomicAlways, plainBlock, sharedBlock, falseBlock);
 
-            rewriter.setInsertionPointToStart(decBlock);
-            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            if (atomic)
+            auto one = [&]() {
+                return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            };
+
+            // shared: the count without the bit was 1 before this thread's subtract
+            rewriter.setInsertionPointToStart(sharedBlock);
+            auto oldWord = rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::sub, blockPtr, one(),
+                                                              LLVM::AtomicOrdering::release);
+            auto oldCount = emitWithoutSharedBit(loc, llvmIndexType, oldWord);
+            auto wasLastShared = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, oldCount, one());
+            rewriter.create<LLVM::CondBrOp>(loc, wasLastShared, lastBlock, falseBlock);
+
+            rewriter.setInsertionPointToStart(lastBlock);
+            rewriter.create<LLVM::FenceOp>(loc, LLVM::AtomicOrdering::acquire);
+            rewriter.create<LLVM::ReturnOp>(
+                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 1))});
+
+            // this thread's own: the bit is clear, so the word is the count
+            rewriter.setInsertionPointToStart(plainBlock);
+            if (atomicAlways)
             {
-                auto oldCount = rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::sub, blockPtr, one,
-                                                                   LLVM::AtomicOrdering::release);
-                auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, oldCount, one);
-
-                auto *lastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-                auto *notLastBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-
-                rewriter.setInsertionPointToEnd(decBlock);
-                rewriter.create<LLVM::CondBrOp>(loc, wasLast, lastBlock, notLastBlock);
-
-                rewriter.setInsertionPointToStart(lastBlock);
-                rewriter.create<LLVM::FenceOp>(loc, LLVM::AtomicOrdering::acquire);
-                rewriter.create<LLVM::ReturnOp>(
-                    loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
-                                                                      rewriter.getIntegerAttr(th.getLLVMBoolType(), 1))});
-
-                rewriter.setInsertionPointToStart(notLastBlock);
-                rewriter.create<LLVM::ReturnOp>(
-                    loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
-                                                                      rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+                rewriter.create<LLVM::BrOp>(loc, ValueRange{}, falseBlock);
             }
             else
             {
-                auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one);
+                auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one());
                 rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
                 auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
                 auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
             }
 
-            rewriter.setInsertionPointToStart(immortalBlock);
+            rewriter.setInsertionPointToStart(falseBlock);
             rewriter.create<LLVM::ReturnOp>(
-                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
-                                                                  rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 0))});
 
             dropDebugLocations(helper);
         }
@@ -742,17 +745,18 @@ class OwnershipRoutineLogic
     // would turn all-ones into zero, and the next release would read that as "last reference"
     // and free a string literal.
     //
-    // Under --atomic-rc the increment is an atomic add. Relaxed ordering is enough: whoever takes
-    // a reference already holds one, so the block cannot be freed under it, and nothing else is
-    // published by taking a reference.
+    // A shared block (or any, under --atomic-rc) takes an atomic add. Relaxed ordering is enough:
+    // whoever takes a reference already holds one, so the block cannot be freed under it, and
+    // nothing else is published by taking a reference. The count never reaches the shared bit,
+    // so the add leaves the bit alone.
     void emitIncRef(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
-        const bool atomic = compileOptions.atomicRefCounts();
-        const char *helperName = atomic ? "__tslang_inc_ref_atomic" : "__tslang_inc_ref";
+        const bool atomicAlways = compileOptions.atomicRefCounts();
+        const char *helperName = atomicAlways ? "__tslang_inc_ref_atomic" : "__tslang_inc_ref";
         if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -774,7 +778,8 @@ class OwnershipRoutineLogic
             auto isNotNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, payload, nullPtr);
 
             auto *loadBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-            auto *incBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *sharedBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *plainBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
             auto *returnBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
 
             rewriter.setInsertionPointToEnd(entryBlock);
@@ -782,22 +787,23 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(loadBlock);
             auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payload, llvmIndexType);
-            auto count = emitCountLoad(loc, llvmIndexType, blockPtr, atomic);
-            auto immortal = rewriter.create<LLVM::ConstantOp>(
-                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
-            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
-            rewriter.create<LLVM::CondBrOp>(loc, isMortal, incBlock, returnBlock);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr);
+            emitBranchOnHeaderWord(loc, llvmIndexType, count, atomicAlways, plainBlock, sharedBlock, returnBlock);
 
-            rewriter.setInsertionPointToStart(incBlock);
-            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
-            if (atomic)
+            auto one = [&]() {
+                return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            };
+
+            rewriter.setInsertionPointToStart(sharedBlock);
+            rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::add, blockPtr, one(),
+                                               LLVM::AtomicOrdering::monotonic);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
+
+            rewriter.setInsertionPointToStart(plainBlock);
+            if (!atomicAlways)
             {
-                rewriter.create<LLVM::AtomicRMWOp>(loc, LLVM::AtomicBinOp::add, blockPtr, one,
-                                                   LLVM::AtomicOrdering::monotonic);
-            }
-            else
-            {
-                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one), blockPtr);
+                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one()),
+                                               blockPtr);
             }
             rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
 
@@ -811,20 +817,67 @@ class OwnershipRoutineLogic
                                       ValueRange{payloadPtr});
     }
 
-    // The read of a block's count that decides whether it is immortal. Under --atomic-rc other
-    // threads may be changing the count at the same time, so it is a relaxed atomic load rather
-    // than a plain one, which would be a data race.
-    mlir::Value emitCountLoad(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value blockPtr, bool atomic)
+    // The read of a block's header word by the count helpers. A plain load, though a shared block's
+    // word may be changing under other threads' atomic adds and subtracts: all the helpers decide
+    // from it is which kind of block this is, and that cannot change under them. A word only this
+    // thread holds is written by this thread alone; a shared block's top bit is never cleared, and
+    // an immortal word never written, so either reads negative whatever the count does. The count
+    // of a shared block is never taken from this read - its atomic subtract returns its own. An
+    // atomic load would say the same, but it keeps LLVM from cancelling a retain against the
+    // release that follows it on a block this thread holds, which is most of what reference
+    // counting costs in a hot loop (the ray tracer: 4.5% over the counts before blocks could be
+    // shared, 7% with an atomic load here).
+    mlir::Value emitCountLoad(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value blockPtr)
     {
-        if (!atomic)
+        return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+    }
+
+    // The shared bit of a block's header word: the top bit (Defines.h, beside HEAP_BLOCK_IMMORTAL).
+    // A count never grows into it, and HEAP_BLOCK_IMMORTAL (all ones) has it set too - which is why
+    // every helper tests for immortal first.
+    mlir::Value emitSharedBitConstant(mlir::Location loc, mlir::Type llvmIndexType)
+    {
+        auto bits = compileOptions.sizeBits();
+        return rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, llvm::APInt::getOneBitSet(bits, bits - 1)));
+    }
+
+    // Ends the current block with the three-way branch of the count helpers on a header word:
+    // `plainBlock` for a block only this thread holds, `sharedBlock` for a shared one, and
+    // `immortalBlock` for an immortal one. The shared bit is the word's top bit, which
+    // HEAP_BLOCK_IMMORTAL has set as well, so one signed test - the word is not negative - is all
+    // the common case pays, as it paid one test for immortal before blocks could be shared. Under
+    // --atomic-rc every mortal block is treated as shared.
+    void emitBranchOnHeaderWord(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value word, bool atomicAlways,
+                                mlir::Block *plainBlock, mlir::Block *sharedBlock, mlir::Block *immortalBlock)
+    {
+        auto immortal = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, word, immortal);
+        if (atomicAlways)
         {
-            return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, sharedBlock, immortalBlock);
+            return;
         }
 
-        auto alignment = compileOptions.sizeBits() / 8;
-        return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr, alignment, /*isVolatile=*/false,
-                                             /*isNonTemporal=*/false, /*isInvariant=*/false,
-                                             /*isInvariantGroup=*/false, LLVM::AtomicOrdering::monotonic);
+        auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+        auto isPlain = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, word, zero);
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *topBitBlock = rewriter.createBlock(currentBlock->getParent(), std::next(currentBlock->getIterator()));
+        rewriter.create<LLVM::CondBrOp>(loc, isMortal, sharedBlock, immortalBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, isPlain, plainBlock, topBitBlock);
+    }
+
+    // The count a header word holds, without the shared bit.
+    mlir::Value emitWithoutSharedBit(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value word)
+    {
+        auto bits = compileOptions.sizeBits();
+        auto mask = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, llvm::APInt::getLowBitsSet(bits, bits - 1)));
+        return rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, mask);
     }
 
     // Is this block mortal - that is, not HEAP_BLOCK_IMMORTAL? Inline rather than a helper: it

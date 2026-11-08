@@ -1372,7 +1372,12 @@ class SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, transformed.getShared(), llvmIndexType);
-        auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        auto word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        // the count without the shared bit (Defines.h, beside HEAP_BLOCK_IMMORTAL)
+        auto bits = tsLlvmContext->compileOptions.sizeBits();
+        auto mask = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, llvm::APInt::getLowBitsSet(bits, bits - 1)));
+        auto count = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, mask);
         rewriter.replaceOpWithNewOp<LLVM::SIToFPOp>(op, numberType, count);
         return success();
     }
