@@ -3535,7 +3535,7 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
         auto resType = op.getRes().getType();
 
         AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
-        auto result = al.UnboxAny(in, tch.convertType(resType));
+        auto result = al.UnboxAny(in, tch.convertType(resType), isa<mlir_ts::OpaqueType>(resType));
 
         rewriter.replaceOp(op, result);
 
