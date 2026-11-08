@@ -571,6 +571,25 @@ def TypeScript_ReleaseOp : TypeScript_Op<"Release"> {
   let arguments = (ins AnyType:$reference);
 }
 
+def TypeScript_MarkSharedOp : TypeScript_Op<"MarkShared"> {
+  let summary = "mark a value, and every block it reaches, shared between threads";
+  let description = [{
+    `Shared.share(v)`: sets the shared bit (Defines.h, beside HEAP_BLOCK_IMMORTAL) in the header
+    of every counted block $value reaches - the blocks its release would give back - so that
+    their count changes are atomic from here on and other threads may take and drop references
+    to them. A block already shared stops the walk, which is also what ends it on a cycle, and an
+    immortal one is left alone. Takes no reference and keeps none.
+
+    What is stored into a shared object afterwards is not marked by this: it has to be shared
+    first (or be stored into a field of an `@atomic` class, which marks what it is given - but
+    not an element pushed into an array such a field holds).
+
+    Erased under a memory model that keeps no counts.
+  }];
+
+  let arguments = (ins AnyType:$value);
+}
+
 def TypeScript_RetainSlotOp : TypeScript_Op<"RetainSlot"> {
   let summary = "take one reference to the value held in a slot";
   let description = [{

@@ -839,6 +839,31 @@ struct ClassInfo
     // else, a slot left to a declared C++ method null), may have a constructor and field
     // initializers, and `.new`; still no RTTI. tslang allocates its objects.
     bool isCppVTableImplementation = false;
+    // `@atomic`: its objects may be used by several threads at once. Under -mm=rc a new object is
+    // marked shared, with everything it holds, once its constructor has run, and a value stored
+    // into one of its fields is marked before the store (ts.MarkShared), so every block reachable
+    // from it counts atomically. A class extending one is @atomic too (isAtomicClass). Its fields'
+    // own consistency is still the program's to keep.
+    bool isAtomic = false;
+
+    // this class or a base class is @atomic
+    bool isAtomicClass() const
+    {
+        if (isAtomic)
+        {
+            return true;
+        }
+
+        for (auto &baseClass : baseClasses)
+        {
+            if (baseClass && baseClass->isAtomicClass())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
     // two @cpp methods in one slot, or an override's @slot not its base's: found by
     // getVirtualTable, which can't report it, and reported by its caller
     std::string cppSlotConflict;

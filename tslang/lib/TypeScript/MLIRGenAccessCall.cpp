@@ -2600,7 +2600,21 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        markAtomicInstanceShared(location, classInfo, V(newOp));
         return V(newOp);
+    }
+
+    // An @atomic class's new object, its constructor done: marked shared with everything its fields
+    // hold by then (ts.MarkShared). What its constructor stored went through the field barrier
+    // (markStoreIntoAtomicField) already; this catches what reached a field any other way. Under
+    // -mm=rc only, the one model whose counts the mark changes: elsewhere it would only keep the
+    // object off the stack.
+    void MLIRGenImpl::markAtomicInstanceShared(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value instance)
+    {
+        if (compileOptions.isRefCounted() && classInfo && classInfo->isAtomicClass() && instance)
+        {
+            builder.create<mlir_ts::MarkSharedOp>(location, instance);
+        }
     }
 
     // `new V(...)` of a @value class: a stack slot for its storage tuple, the constructor run with
@@ -3104,6 +3118,8 @@ namespace mlirgen
                     auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext, constructorName);
                     EXIT_IF_FAILED(result)
                 }
+
+                markAtomicInstanceShared(location, classInfo, newOp);
             }
 
             return newOp;

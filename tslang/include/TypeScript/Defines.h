@@ -414,6 +414,9 @@
 // `@value class C` / `@value interface R`: a type whose values are copied, not shared - no identity,
 // no vtable, no base (docs/superpowers/specs/2026-10-24-value-types-design.md)
 #define VALUE_DECORATOR "value"
+// `@atomic class`: objects several threads may use at once (ClassInfo::isAtomic). On a variable,
+// an atomic load and store (MLIRGenVariables).
+#define ATOMIC_DECORATOR "atomic"
 // `@sharedElements class Map<K, V>`: a container that keeps what it is given and hands out
 // borrows of it. Under -mm=own each of its type arguments has to be a value, a string (copied) or
 // a Shared<T> handle (counted): an object, whose block has one owner, goes through Shared<T>.
@@ -541,12 +544,16 @@
 // because a tagged union carries its payload inline: copying or dropping one has to retain
 // or release a value whose type is only known at run time, and the tag is what knows it.
 #define TYPE_DESCR_RETAIN 3
+// Address of the type's share routine (`Shared.share`, OwnershipRoutineLogic::getOrCreateShareRoutine),
+// on the same terms again: it sets the shared bit of every block a value whose type is only known
+// at run time reaches. Null under every model but `rc`.
+#define TYPE_DESCR_SHARE 4
 // The block header, last so that it sits immediately in front of the name bytes. A tag is a
 // `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
 // string - so a tag has to look like a payload with an immortal block header, exactly as a
 // string literal does, on top of being a name preceded by a descriptor. Both reads work off
 // the same pointer: `tag - sizeof(header)` is the marker, `tag - sizeof(record)` the record.
-#define TYPE_DESCR_BLOCK_HEADER 4
+#define TYPE_DESCR_BLOCK_HEADER 5
 
 // Coarse category of the described type. These correspond one-to-one with the names
 // TypeOfOpHelper::typeOfAsString reports, and are derived from that name so the two cannot

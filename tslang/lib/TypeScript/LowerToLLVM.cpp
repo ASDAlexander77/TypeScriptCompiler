@@ -477,10 +477,13 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
                     !MLIRTypeHelper::isSharedHandleType(descriptorType)
                 ? std::string()
                 : orl.getOrCreateRetainRoutine(descriptorType);
+        // empty but under rc, the one model that counts every block
+        auto shareRoutineName = orl.getOrCreateShareRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
-                                                               releaseRoutineName, retainRoutineName, variant,
+                                                               releaseRoutineName, retainRoutineName,
+                                                               shareRoutineName, variant,
                                                                TypeOfOpHelper::layoutIdOf(descriptorType)));
 
         return success();
@@ -513,6 +516,27 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitRetainValue(op.getReference().getType(), transformed.getReference());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+// `Shared.share(v)`: the share routine of v's type (OwnershipRoutineLogic::getOrCreateShareRoutine)
+// under rc; nothing under the models that do not count every block.
+class MarkSharedOpLowering : public TsLlvmPattern<mlir_ts::MarkSharedOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::MarkSharedOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::MarkSharedOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitShareValue(op.getValue().getType(), transformed.getValue());
         }
 
         rewriter.eraseOp(op);
@@ -7749,10 +7773,12 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
                                      ? std::string()
                                      : orl.getOrCreateCaptureBoxRetainRoutine(captureRefType);
+        auto shareRoutineName = orl.getOrCreateCaptureBoxShareRoutine(captureRefType);
 
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(captureRefType, name, TypeOfOpHelper::typeKindFromName(name),
-                                                releaseRoutineName, retainRoutineName, borrows ? "b" : "");
+                                                releaseRoutineName, retainRoutineName, shareRoutineName,
+                                                borrows ? "b" : "");
     }
 
     // Under rc, a method bound to a class object counts that object like an interface over it does
@@ -7786,10 +7812,11 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
         auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+        auto shareRoutineName = orl.getOrCreateShareRoutine(thisType);
 
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
-                                                releaseRoutineName, retainRoutineName);
+                                                releaseRoutineName, retainRoutineName, shareRoutineName);
     }
 
     LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,
@@ -9720,7 +9747,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SwapOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
-        SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
+        SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering, MarkSharedOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

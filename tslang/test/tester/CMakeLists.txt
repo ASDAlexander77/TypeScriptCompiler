@@ -3161,12 +3161,20 @@ endif()
 # The same programs as a few of the -mm=rc tests above with --atomic-rc: the count changes are atomic
 # read-modify-writes and the last reference takes an acquire fence, and a program single-threaded
 # or not has to behave the same.
-foreach(arc_test 00strings 00array4_push_pop 00any 00owned_closures 00interface 00shared_global_field_argument)
+foreach(arc_test 00strings 00array4_push_pop 00any 00owned_closures 00interface 00shared_global_field_argument 00shared_share)
     tslang_add_test(NAME test-jit-rc-atomic-${arc_test} COMMAND test-runner -jit -mm=rc -atomic-rc "${PROJECT_SOURCE_DIR}/test/tester/tests/${arc_test}.ts")
     tslang_add_test(NAME test-compile-rc-atomic-${arc_test} COMMAND test-runner -mm=rc -atomic-rc "${PROJECT_SOURCE_DIR}/test/tester/tests/${arc_test}.ts")
 endforeach()
 
-# A -mm=rc --atomic-rc shared library called from a host's threads at once - see atomic-rc.cmake.
+# Shared.share and @atomic class on one thread: marking ends on a cycle and leaves a literal alone,
+# and a marked block counts and frees as before. Not -mm=own, which rejects the cycle it builds.
+foreach(share_mm gc rc none)
+    tslang_add_test(NAME test-jit-${share_mm}-00-shared-share COMMAND test-runner -jit -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00shared_share.ts")
+    tslang_add_test(NAME test-compile-${share_mm}-00-shared-share COMMAND test-runner -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00shared_share.ts")
+endforeach()
+
+# A -mm=rc shared library called from a host's threads at once, its objects shared by --atomic-rc,
+# Shared.share or @atomic - see atomic-rc.cmake.
 add_executable(atomic-rc-host atomic-rc-host.cpp)
 if (NOT WIN32)
     target_link_libraries(atomic-rc-host PRIVATE ${CMAKE_DL_LIBS} pthread)

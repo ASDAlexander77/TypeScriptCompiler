@@ -1,10 +1,13 @@
-# --atomic-rc: a `-mm=rc` shared library called from several threads at once (atomic-rc-host.cpp),
-# every one of them taking and dropping references to the same object.
+# A `-mm=rc` shared library called from several threads at once (atomic-rc-host.cpp), every one of
+# them taking and dropping references to the same objects: built with --atomic-rc, or with the
+# objects marked shared by `Shared.share` once at load.
 #
 # Under plain `rc` a count change is a load, an add and a store, so two threads changing the same
 # count at once lose one of the changes: the count drifts, and the object is freed while it is
-# still held or never freed at all. --atomic-rc makes each change one atomic read-modify-write.
-# With it the count after the threads are done has to be the count before, exactly.
+# still held or never freed at all. --atomic-rc makes each change one atomic read-modify-write;
+# `Shared.share(v)` sets a bit in the header of every block v reaches, and only those blocks'
+# counts change atomically. Either way the count after the threads are done has to be the count
+# before, exactly.
 #
 # The same library built without the flag is run too, but only reported: losing an update is a
 # race, so its absence proves nothing, and a drift there is what the flag is for, not a failure.
@@ -24,34 +27,80 @@ file(MAKE_DIRECTORY "${WORK_DIR}")
 set(ENV{TSLANG_LIB_PATH} "")
 
 file(WRITE "${WORK_DIR}/shared_churn.ts" [=[
+interface HasV {
+    v: number;
+}
+
+class Child {
+    v: number = 1;
+}
+
+function makeReader(c: Child) {
+    return () => c.v;
+}
+
 class Node {
-    v = 1;
+    v: number = 1;
+    // a literal: immortal, which marking has to leave alone (its header may be read-only)
+    tag = "node";
+    child = new Child();
+    children: Child[] = [new Child(), new Child()];
+    // reached only through a descriptor: what an `any`, an interface, a union and a closure hold
+    boxed: any = new Child();
+    viewed: HasV = new Child();
+    either: Child | string = new Child();
+    reader = makeReader(new Child());
 }
 
 class Box {
     s: Shared<Node>;
+    child: Child;
+    children: Child[];
+    tag: string;
+    boxed: any;
+    viewed: HasV;
+    either: Child | string;
+    reader: () => number;
 
     constructor(s: Shared<Node>) {
+        const node = s.value;
         this.s = s;
+        this.child = node.child;
+        this.children = node.children;
+        this.tag = node.tag;
+        this.boxed = node.boxed;
+        this.viewed = node.viewed;
+        this.either = node.either;
+        this.reader = node.reader;
     }
 }
 
-// written once, here, and only read after: the threads share the block, not the global
-const G = new Shared(new Node());
+// The root every thread starts from: written here, while one thread runs, and only read after.
+// Without @atomic or Shared.share its blocks are counted plainly.
+ATOMIC_IT class Holder {
+    s = new Shared(new Node());
+    late: Child | undefined;
+}
 
-// every Box takes a reference to G's block and gives it back when it goes
+const H = new Holder();
+// stored after the constructor: an @atomic class's field barrier marks it
+H.late = new Child();
+SHARE_IT
+
+// every Box takes a reference to each of them, and gives it back when it goes
 export function churn(n: number): number {
-    let sum = 0;
+    let sum: number = 0;
     for (let i = 0; i < n; i++) {
-        const box = new Box(G);
-        sum += box.s.value.v;
+        const box = new Box(H.s);
+        const late = H.late;
+        sum += box.s.value.v * box.child.v * box.children[1].v * box.viewed.v * box.reader() * (late ? late.v : 0);
     }
 
     return sum;
 }
 
 export function count(): number {
-    return Shared.count(G);
+    return Shared.count(H.s);
 }
 ]=])
 
@@ -67,10 +116,20 @@ else()
     set(pic "-relocation-model=pic")
 endif()
 
-function(build_and_run name expect_exact)
+file(READ "${WORK_DIR}/shared_churn.ts" churn_source)
+string(REPLACE "ATOMIC_IT" "" churn_source_plain "${churn_source}")
+string(REPLACE "SHARE_IT" "" unmarked "${churn_source_plain}")
+string(REPLACE "SHARE_IT" "Shared.share(H);" marked "${churn_source_plain}")
+string(REPLACE "ATOMIC_IT" "@atomic" churn_source_atomic "${churn_source}")
+string(REPLACE "SHARE_IT" "" atomic_class "${churn_source_atomic}")
+file(WRITE "${WORK_DIR}/unmarked.ts" "${unmarked}")
+file(WRITE "${WORK_DIR}/marked.ts" "${marked}")
+file(WRITE "${WORK_DIR}/atomic_class.ts" "${atomic_class}")
+
+function(build_and_run name source expect_exact)
     set(library "${WORK_DIR}/${prefix}${name}${suffix}")
     execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=rc ${ARGN} --no-default-lib ${pic} ${libs}
-                            shared_churn.ts -o "${library}"
+                            ${source} -o "${library}"
         WORKING_DIRECTORY "${WORK_DIR}"
         OUTPUT_VARIABLE out
         ERROR_VARIABLE err
@@ -95,5 +154,14 @@ function(build_and_run name expect_exact)
     endif()
 endfunction()
 
-build_and_run(atomic TRUE --atomic-rc)
-build_and_run(plain FALSE)
+# every count atomic
+build_and_run(atomic unmarked.ts TRUE --atomic-rc)
+# Shared.share(H) at load: everything H reaches is marked, and only those counts change atomically
+build_and_run(marked marked.ts TRUE)
+# `@atomic class Holder`: marked once its constructor has run, and `H.late = ...` marked by the
+# field barrier
+build_and_run(atomic-class atomic_class.ts TRUE)
+# both: a block with the shared bit under --atomic-rc still frees at the right count
+build_and_run(marked-atomic marked.ts TRUE --atomic-rc)
+# neither: reported only
+build_and_run(plain unmarked.ts FALSE)

@@ -1221,6 +1221,15 @@ namespace mlirgen
             {
                 return mlirGenSharedCount(location, callExpression, genContext);
             }
+
+            // `Shared.share(v)`: v, and every block it reaches, may be used by other threads
+            if (access->expression == SyntaxKind::Identifier
+                && MLIRHelper::getName(access->expression.as<Identifier>()) == "Shared"
+                && MLIRHelper::getName(access->name) == "share"
+                && !resolveIdentifier(location, "Shared", genContext))
+            {
+                return mlirGenSharedShare(location, callExpression, genContext);
+            }
         }
 
         auto result = mlirGen(callExpr, genContext);
@@ -1596,6 +1605,27 @@ namespace mlirgen
         }
 
         return V(builder.create<mlir_ts::SharedCountOp>(location, getNumberType(), handle));
+    }
+
+    // `Shared.share(v)`: sets the shared bit of every counted block `v` reaches (ts.MarkShared), so
+    // that from here on their counts change atomically and other threads may hold them. Any value:
+    // one that owns no heap memory has nothing to mark. Returns nothing.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenSharedShare(mlir::Location location, CallExpression callExpression,
+                                                         const GenContext &genContext)
+    {
+        if (callExpression->arguments.size() != 1)
+        {
+            emitError(location, "Shared.share(value) takes one argument");
+            return mlir::failure();
+        }
+
+        auto result = mlirGen(callExpression->arguments.front(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        builder.create<mlir_ts::MarkSharedOp>(location, value);
+
+        return mlir::success();
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NewExpression newExpression, const GenContext &genContext)

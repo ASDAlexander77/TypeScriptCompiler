@@ -460,6 +460,11 @@ namespace mlirgen
                 {
                     newClassPtr->isValue = true;
                 }
+
+                if (name == ATOMIC_DECORATOR)
+                {
+                    newClassPtr->isAtomic = true;
+                }
             });
 
             getClassesMap().insert({namePtr, newClassPtr});
