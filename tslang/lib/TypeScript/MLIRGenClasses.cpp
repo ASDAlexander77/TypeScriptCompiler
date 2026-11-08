@@ -44,6 +44,8 @@ namespace mlirgen
             newGenericClassPtr->elementNamespace = currentNamespace;
             newGenericClassPtr->sourceFile = sourceFile;
             newGenericClassPtr->fileName = mainSourceFileName;
+            newGenericClassPtr->declaredInFunction =
+            (genContext.funcOp && genContext.funcOp != genContext.rootStatementsFuncOp) || !lexicalFuncOps.empty();
 
             mlirGenClassType(newGenericClassPtr, genContext);
 

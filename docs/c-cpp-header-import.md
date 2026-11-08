@@ -76,7 +76,7 @@ compiler):
 | `enum E { A = 1 }` | `enum E { A = 1 }` | Underlying width from clang. |
 | `#define NAME 42` (object-like macro, literal) | `const NAME = 42` | Via clang's preprocessing record; only literal/`constexpr`-foldable macros; skip function-like macros (report them in a comment). |
 | `typedef` | `type` alias | |
-| Function pointers | function type `(a: T) => R` | Already representable; C callbacks into tslang functions work if the closure has no captured environment (thick-vs-thin function pointer distinction must be checked per site). |
+| Function pointers | function type `(a: T) => R` on a `@cdecl declare function` | `@cdecl` makes each function-typed parameter a C function pointer. A function or an arrow capturing nothing passes; a capturing arrow or bound method is a compile error. Without `@cdecl` the parameter is a TypeScript function value (three pointers), which C can't call. |
 | `...` varargs | `...args` + `func.varargs` | Already supported. |
 | Bitfields | not representable | Emit the containing struct as opaque + generated accessor functions (phase 2), or skip with a diagnostic. |
 

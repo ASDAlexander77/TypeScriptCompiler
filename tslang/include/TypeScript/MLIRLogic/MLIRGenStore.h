@@ -47,6 +47,10 @@ struct GenericFunctionInfo
     bool processing;
     bool processed;
 
+    // declared inside a function, whose locals its body may read; otherwise an instantiation sees no
+    // local of the function it is instantiated from (MLIRGenImpl::isolateGeneratedBodies)
+    bool declaredInFunction = false;
+
     GenericFunctionInfo() = default;
 };
 
@@ -1300,6 +1304,9 @@ struct GenericClassInfo
 
     SourceFile sourceFile;
     StringRef fileName;
+
+    // see GenericFunctionInfo::declaredInFunction
+    bool declaredInFunction = false;
 
     GenericClassInfo()
     {

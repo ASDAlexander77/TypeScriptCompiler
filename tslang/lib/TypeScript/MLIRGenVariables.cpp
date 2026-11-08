@@ -1125,8 +1125,31 @@ namespace mlirgen
         {
             //LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
 
-            // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
+
+            // a local of a function this one is not declared in - the caller a generic is instantiated
+            // from - is no name here: the name is the module's (lexicalFuncOps, TSLANG_ISSUES 30)
+            if (!lexicalFuncOps.empty() && valueRegion && valueRegion->getParentOp() &&
+                (isa<mlir_ts::FuncOp>(valueRegion->getParentOp()) || valueRegion->getParentOp()->getParentOfType<mlir_ts::FuncOp>()))
+            {
+                auto inRoot = llvm::any_of(lexicalFuncOps, [&](mlir_ts::FuncOp lexicalFuncOp) {
+                    return lexicalFuncOp.getCallableRegion() && lexicalFuncOp.getCallableRegion()->isAncestor(valueRegion);
+                });
+                mlir_ts::FuncOp contextFuncOp = genContext.funcOp;
+                auto inFunction = contextFuncOp && contextFuncOp.getCallableRegion() &&
+                                  contextFuncOp.getCallableRegion()->isAncestor(valueRegion);
+                // a module's top-level code is a function of its own (rootStatementsFuncOp), whose
+                // locals are the module's variables
+                mlir_ts::FuncOp rootStatementsFuncOp = genContext.rootStatementsFuncOp;
+                auto inModuleCode = rootStatementsFuncOp && rootStatementsFuncOp.getCallableRegion() &&
+                                    rootStatementsFuncOp.getCallableRegion()->isAncestor(valueRegion);
+                if (!inRoot && !inFunction && !inModuleCode)
+                {
+                    return mlir::Value();
+                }
+            }
+
+            // begin of logic: outer vars
             auto isOuterVar = false;
             // TODO: review code "valueRegion && valueRegion->getParentOp()" is to support async.execute
             if (genContext.funcOp && genContext.funcOp != tempFuncOp && valueRegion &&

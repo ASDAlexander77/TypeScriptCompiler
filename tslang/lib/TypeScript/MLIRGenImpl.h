@@ -3797,6 +3797,8 @@ class MLIRGenImpl
         newGenericFunctionPtr->thisClassType = genContext.thisClassType;
         newGenericFunctionPtr->sourceFile = sourceFile;
         newGenericFunctionPtr->fileName = mainSourceFileName;
+        newGenericFunctionPtr->declaredInFunction =
+            (genContext.funcOp && genContext.funcOp != genContext.rootStatementsFuncOp) || !lexicalFuncOps.empty();
 
         // TODO: review it, ignore in case of ArrowFunction,
         if (!ignoreFunctionArgsDetection)
@@ -10787,7 +10789,35 @@ class MLIRGenImpl
 
             if (value.getType() != argTypeDestFuncType)
             {
+                // A closure or a bound method is a function and the value it runs with (its captures,
+                // its `this`); a plain function type parameter - a C callback (@cdecl, TSLANG_ISSUES 29)
+                // - is only a code pointer, and the cast drops the value: the function would read its
+                // captures through whatever the caller passed first. An arrow with untyped parameters
+                // becomes a closure only as the cast instantiates it.
+                auto closureAsFunctionPointer = [&](mlir::Type valueType) {
+                    if (isa<mlir_ts::BoundFunctionType>(valueType) && isa<mlir_ts::FunctionType>(argTypeDestFuncType))
+                    {
+                        emitError(location, "a closure or a bound method can't be used as a plain function pointer: "
+                                            "the pointer carries no captured variables and no 'this'");
+                        return true;
+                    }
+
+                    return false;
+                };
+
+                if (closureAsFunctionPointer(value.getType()))
+                {
+                    return mlir::failure();
+                }
+
                 CAST_A(castValue, location, argTypeDestFuncType, value, genContext);
+
+                if (auto castOp = castValue.getDefiningOp<mlir_ts::CastOp>();
+                    castOp && closureAsFunctionPointer(castOp.getIn().getType()))
+                {
+                    return mlir::failure();
+                }
+
                 operands[i] = castValue;
             }
 
@@ -17160,6 +17190,16 @@ class MLIRGenImpl
     // `break` or `continue` has to name one of them. A function body starts with none: a jump
     // can't leave a function.
     SmallVector<std::string> activeLabels;
+
+    // A generic is instantiated where it is first used, so the locals of the function using it are
+    // still in symbolTable while its body is generated; a name in the body resolved to a local of its
+    // caller (TSLANG_ISSUES 30). While a generic declared outside every function is instantiated,
+    // isolateGeneratedBodies is set, and each function body generated then (the generic function, or
+    // each method of the generic class) starts lexicalFuncOps over: that body, and the functions
+    // generated within it (its lambdas and nested generics, which redeclare what they capture), see
+    // no local of any other function (resolveIdentifierAsVariable).
+    bool isolateGeneratedBodies = false;
+    SmallVector<mlir_ts::FuncOp> lexicalFuncOps;
 
     // The yields standing where nothing is computed before them, marked by the statement around
     // them (the AST has no parent links to look up): yield node -> its value is used. See
