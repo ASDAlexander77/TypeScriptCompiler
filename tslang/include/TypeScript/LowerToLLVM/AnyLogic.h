@@ -88,7 +88,7 @@ class AnyLogic
         return memValue;
     }
 
-    mlir::Value UnboxAny(mlir::Value in, mlir::Type resLLVMType)
+    mlir::Value UnboxAny(mlir::Value in, mlir::Type resLLVMType, bool rawPointer = false)
     {
         // TODO: add type id to track data type
         // TODO: add data size check
@@ -104,6 +104,37 @@ class AnyLogic
         // set actual value
         auto ptrValue =
             rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue, ValueRange{zero, two});
+
+        // An Opaque read out of a box holding a smaller value (`<Opaque><any>0`: an s32) took the
+        // padding after it as the pointer's high bytes, which only a zeroing allocator left at 0. The
+        // value is as wide as the box says (ANY_SIZE): its bytes, zero-extended. The data field
+        // starts 8-aligned, so the 8 bytes read are inside the box either way.
+        if (rawPointer && isa<LLVM::LLVMPointerType>(resLLVMType))
+        {
+            auto i64Type = th.getI64Type();
+            auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
+                                                        ValueRange{zero, zero});
+            mlir::Value size = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, ptrSize);
+            if (llvmIndexType != i64Type)
+            {
+                size = rewriter.create<LLVM::ZExtOp>(loc, i64Type, size);
+            }
+
+            mlir::Value raw = rewriter.create<LLVM::LoadOp>(loc, i64Type, ptrValue);
+
+            auto eight = rewriter.create<LLVM::ConstantOp>(loc, i64Type, rewriter.getI64IntegerAttr(8));
+            auto one64 = rewriter.create<LLVM::ConstantOp>(loc, i64Type, rewriter.getI64IntegerAttr(1));
+            auto isWide = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::uge, size, eight);
+            // for a narrower value: (1 << size * 8) - 1, its bytes' mask (a shift by 64 is poison,
+            // so the select keeps it out of the wide case)
+            auto narrowSize = rewriter.create<LLVM::SelectOp>(loc, isWide, rewriter.create<LLVM::ConstantOp>(loc, i64Type, rewriter.getI64IntegerAttr(0)), size);
+            auto bits = rewriter.create<LLVM::MulOp>(loc, narrowSize, eight);
+            auto mask = rewriter.create<LLVM::SubOp>(loc, rewriter.create<LLVM::ShlOp>(loc, one64, bits), one64);
+            auto narrowed = rewriter.create<LLVM::AndOp>(loc, raw, mask);
+            mlir::Value value = rewriter.create<LLVM::SelectOp>(loc, isWide, raw, narrowed);
+            return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, value);
+        }
+
         return rewriter.create<LLVM::LoadOp>(loc, resLLVMType, ptrValue);
     }
 

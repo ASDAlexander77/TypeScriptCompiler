@@ -1814,6 +1814,12 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
     tslang_add_test(NAME test-compile-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
 endforeach()
+# an Opaque out of an `any` is as wide as the value in the box: `<Opaque><any>0` is null (the
+# padding after a 4-byte value was read as the pointer's high bytes)
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-any-to-opaque-narrow-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_opaque_narrow.ts")
+    tslang_add_test(NAME test-compile-00-any-to-opaque-narrow-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_to_opaque_narrow.ts")
+endforeach()
 # ...and a closure, which needs its captured variables, can't be one
 add_test(NAME test-compile-cdecl-closure-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/cdecl_closure_error.ts")
