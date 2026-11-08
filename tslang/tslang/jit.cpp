@@ -641,6 +641,19 @@ static void *jitTypeInfoVftable()
 }
 #endif
 
+#ifdef _WIN32
+// sprintf_s and strtod write and read a number as text (`"" + x`, parseFloat). Left to the process
+// resolver they bind to another CRT DLL than tslang.exe's static UCRT: one whose `%.*e` is not
+// correctly rounded and writes 3-digit exponents, so the JIT printed `155280381172789.87` where
+// an executable prints `155280381172789.88` (#780). sprintf_s is inline in the UCRT headers, with
+// C++ template overloads beside it: name the C one by its type.
+static void *jitSprintfS()
+{
+    int (*sprintfS)(char *, size_t, const char *, ...) = &sprintf_s;
+    return (void *)sprintfS;
+}
+#endif
+
 using JitEntryThunkFn = int (*)(int, char **);
 
 #ifdef _WIN32
@@ -1016,6 +1029,9 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
 #ifdef _WIN32
         // the bounded copy a Windows target emits (LLVMCodeHelperBase::MemoryCopy)
         addSym("memcpy_s", (void*)&memcpy_s);
+        // number to string (ConvertLogic) and parseFloat; see jitSprintfS
+        addSym("sprintf_s", jitSprintfS());
+        addSym("strtod", (void*)&strtod);
 #endif
         addSym("fflush", (void*)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
@@ -1180,6 +1196,9 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         addOverride("memcpy", (void *)&memcpy);
 #ifdef _WIN32
         addOverride("memcpy_s", (void *)&memcpy_s);
+        // see jitSprintfS
+        addOverride("sprintf_s", jitSprintfS());
+        addOverride("strtod", (void *)&strtod);
 #endif
         addOverride("fflush", (void *)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
