@@ -57,7 +57,9 @@ set(not_compilable_alone
     # an error by design (test-compile-mixin-runtime-base-error)
     mixin_runtime_base_error.ts
     # an error by design (test-compile-ref-element-layout-error)
-    ref_element_layout_error.ts)
+    ref_element_layout_error.ts
+    # an error by design (test-compile-cdecl-closure-error)
+    cdecl_closure_error.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

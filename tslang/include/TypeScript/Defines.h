@@ -337,6 +337,10 @@
 // declaration can give it: never on one that may run TypeScript code (it takes a callback) or
 // one re-parsed from a TypeScript library, whose functions may destroy what they are given.
 #define NO_DROPS_DECORATOR "nodrops"
+// `@cdecl declare function f(cb: (x: T) => R)`: f is a C function, so a parameter of a function type is
+// a C function pointer - one code pointer, not the code-and-context a TypeScript function value is.
+// Only a function that captures nothing can be passed there (TSLANG_ISSUES 29).
+#define CDECL_DECORATOR "cdecl"
 // The memory model a module is compiled for, a string literal: `if (__MEMORY_MODEL__ === "gc")`
 // generates the branch taken only (MLIRGenImpl::foldLiteralCompare)
 #define MEMORY_MODEL_IDENTIFIER "__MEMORY_MODEL__"

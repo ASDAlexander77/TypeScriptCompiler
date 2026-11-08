@@ -597,6 +597,12 @@ declare function dist(p: Reference<Point> | null): f64;
 
 A pointer parameter or struct field is nullable (`| null`), as C lets it be null; a C++ reference (`const Point &`) and a result aren't.
 
+A C function taking a callback is declared `@cdecl`: its function-typed parameters are then C function pointers, given a function or an arrow that captures nothing (a closure or a bound method is a compile error):
+
+```typescript
+@cdecl declare function qsort(base: Opaque, count: u64, size: u64, compare: (a: Opaque, b: Opaque) => s32): void;
+```
+
 A struct is a named tuple with its fields where C puts them; tslang lays a nested tuple out in place, as C does a struct member:
 
 - **an array** `T x[N]` is a tuple of its elements, `x: [_0: T, _1: T, ...]` (tslang has no fixed-size array type; one of more than 1024 elements, or of unknown size, is skipped);

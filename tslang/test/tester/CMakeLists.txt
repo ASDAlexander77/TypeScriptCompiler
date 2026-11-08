@@ -1796,6 +1796,29 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-28-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-28-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
 endforeach()
+# TSLANG_ISSUES 30: a generic sees no local of the function it is instantiated from
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tslang-issue-30-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issue-30-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
+endforeach()
+# TSLANG 29: a @cdecl function takes a callback as a C function pointer; a C function with arguments
+# after the callback (a thread start) showed the three-pointer value it was given before
+if(WIN32)
+    set(issue_29_thread_test "00tslang_issue_29_thread.ts")
+else()
+    set(issue_29_thread_test "00tslang_issue_29_pthread.ts")
+endif()
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tslang-issue-29-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issue-29-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29.ts")
+    tslang_add_test(NAME test-jit-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
+    tslang_add_test(NAME test-compile-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
+endforeach()
+# ...and a closure, which needs its captured variables, can't be one
+add_test(NAME test-compile-cdecl-closure-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/cdecl_closure_error.ts")
+set_tests_properties(test-compile-cdecl-closure-error PROPERTIES PASS_REGULAR_EXPRESSION "a closure or a bound method can't be used as a plain function pointer"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a reference to a number is no reference to an f32
 add_test(NAME test-compile-ref-element-layout-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/ref_element_layout_error.ts")

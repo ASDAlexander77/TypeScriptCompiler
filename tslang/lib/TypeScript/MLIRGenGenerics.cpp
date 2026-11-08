@@ -559,6 +559,9 @@ namespace mlirgen
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
             SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+            // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+            MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+            isolateGeneratedBodies = !functionGenericTypeInfo->declaredInFunction;
 
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
                                                             recieverType, discoverReturnType, genContext, capturesFirst);
@@ -666,6 +669,9 @@ namespace mlirgen
             currentNamespace = functionGenericTypeInfo->elementNamespace;
             
             SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+            // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+            MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+            isolateGeneratedBodies = !functionGenericTypeInfo->declaredInFunction;
 
             auto [result, specFuncOp, specFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, funcGenContext);
@@ -1037,6 +1043,9 @@ namespace mlirgen
         currentNamespace = functionGenericTypeInfo->elementNamespace;
 
         SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+        // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+        MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+        isolateGeneratedBodies = !functionGenericTypeInfo->declaredInFunction;
 
         GenContext genericTypeGenContext(genContext);
         genericTypeGenContext.specialization = true;
@@ -1098,6 +1107,9 @@ namespace mlirgen
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
             SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+            // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+            MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+            isolateGeneratedBodies = !functionGenericTypeInfo->declaredInFunction;
 
             auto anyNamedGenericType = IsGeneric::False;
 
@@ -1405,6 +1417,9 @@ namespace mlirgen
             currentNamespace = genericClassInfo->elementNamespace;
 
             SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
+            // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+            MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+            isolateGeneratedBodies = !genericClassInfo->declaredInFunction;
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -1481,6 +1496,9 @@ namespace mlirgen
             currentNamespace = genericClassInfo->elementNamespace;
 
             SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
+            // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+            MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+            isolateGeneratedBodies = !genericClassInfo->declaredInFunction;
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -1603,6 +1621,9 @@ namespace mlirgen
         currentNamespace = genericClassInfo->elementNamespace;
 
         SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
+        // the generic sees the locals of no function it is not declared in (TSLANG_ISSUES 30)
+        MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
+        isolateGeneratedBodies = !genericClassInfo->declaredInFunction;
 
         GenContext templateGenContext(genContext);
         for (auto &typeParam : genericClassInfo->typeParams)

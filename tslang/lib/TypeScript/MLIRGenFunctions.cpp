@@ -254,9 +254,19 @@ namespace mlirgen
             if (typeParameter)
             {
                 type = getType(typeParameter, genContext);
+
+                // a C function's callback is a bare code pointer (CDECL_DECORATOR)
+                if (auto hybridFuncType = dyn_cast_or_null<mlir_ts::HybridFunctionType>(type))
+                {
+                    if (MLIRHelper::hasDecorator(parametersContextAST, CDECL_DECORATOR))
+                    {
+                        type = mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(),
+                                                          hybridFuncType.getResults(), hybridFuncType.isVarArg());
+                    }
+                }
             }
 
-            // special case, setup 'this' and type provided 
+            // special case, setup 'this' and type provided
             if (namePtr == THIS_NAME && type) 
             {
                 // NOTE: upward mailbox: explicit this-parameter type must reach the prototype chain - see GenContext
@@ -1926,6 +1936,25 @@ namespace mlirgen
         auto restoreLabels = llvm::make_scope_exit([&]() {
             activeLabels = std::move(outerLabels);
             loopLabelAliases = std::move(outerLoopLabelAliases);
+        });
+
+        // nor are the locals of the function a generic is instantiated from this body's: it starts a new
+        // lexical root, and a function generated within it joins it (isolateGeneratedBodies)
+        auto outerLexicalFuncOps = lexicalFuncOps;
+        auto outerIsolateGeneratedBodies = isolateGeneratedBodies;
+        if (isolateGeneratedBodies)
+        {
+            lexicalFuncOps.clear();
+            lexicalFuncOps.push_back(funcOp);
+            isolateGeneratedBodies = false;
+        }
+        else if (!lexicalFuncOps.empty())
+        {
+            lexicalFuncOps.push_back(funcOp);
+        }
+        auto restoreLexicalRoot = llvm::make_scope_exit([&]() {
+            lexicalFuncOps = std::move(outerLexicalFuncOps);
+            isolateGeneratedBodies = outerIsolateGeneratedBodies;
         });
 
         // nor is a @value type a body needs one the field being typed around it waits for (an
