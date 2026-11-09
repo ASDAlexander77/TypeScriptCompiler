@@ -894,11 +894,15 @@ namespace own_signature
             // assigns, which a closure captures by copy too, or a copy the enclosing closure's box
             // holds: the object is the caller's, which no box can own. A closure that does not escape
             // borrows it, as it did the cell; one stored into a field of `this` is a back-reference;
-            // any other one is inference's error
+            // any other one is inference's error - unless the closure is kept itself (stored into a
+            // field, a global, an array, or given to a call that keeps it): then it owns the parameter,
+            // as a field it is stored into would, and the callers give it up (spec 76). Not the
+            // member's `this`, which its callers cannot give to an object the object owns.
             if (auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
                 propertyRefOp && isBorrowableCapture(used) && closureOfBox(propertyRefOp->getOperand(0)))
             {
-                return false;
+                return storeOp.getValue() == used && parameterRead(used) && !isMemberThis(used) &&
+                       keepsClosure(propertyRefOp->getOperand(0));
             }
 
             // ...or a bound method of `this` stored into a field of `this`: it borrows the object
@@ -967,6 +971,32 @@ namespace own_signature
         return false;
     }
 
+    bool OwnershipSignaturePass::keepsClosure(mlir::Value box)
+    {
+        auto boundOp = closureOfBox(box);
+        if (!boundOp || isBackReferenceBox(box))
+        {
+            return false;
+        }
+
+        auto kept = false;
+        forEachUse(boundOp.getResult(), [&](mlir::Operation *use, mlir::Value used) { kept = kept || keeps(use, used); });
+        return kept;
+    }
+
+    int32_t OwnershipSignaturePass::parameterOfCell(mlir_ts::VariableOp cellOp)
+    {
+        auto argument = cellOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(cellOp.getInitializer())
+                                                : mlir::BlockArgument();
+        if (!cellOp.getCaptured().value_or(false) || isOwningVariable(cellOp) || !argument ||
+            !argument.getOwner()->isEntryBlock() || !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()))
+        {
+            return -1;
+        }
+
+        return static_cast<int32_t>(argument.getArgNumber());
+    }
+
     llvm::SmallVector<int32_t> OwnershipSignaturePass::localOwnedParams(mlir_ts::FuncOp funcOp)
     {
         llvm::SmallVector<int32_t> owned;
@@ -1004,6 +1034,27 @@ namespace own_signature
                             kept = kept || keeps(use, used);
                         });
                     }
+                }
+            }
+
+            // the parameter's cell, given to a closure that is kept: the closure owns the cell, and
+            // the value in it, so the function keeps the parameter (spec 76)
+            for (auto *argumentUser : argument.getUsers())
+            {
+                auto cellOp = mlir::dyn_cast<mlir_ts::VariableOp>(argumentUser);
+                if (kept || !cellOp || parameterOfCell(cellOp) != static_cast<int32_t>(argument.getArgNumber()) ||
+                    !own_facts::ownsHeap(cellOp.getLoc(), argument.getType()))
+                {
+                    continue;
+                }
+
+                for (auto *cellUser : cellOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(cellUser);
+                    auto propertyRefOp = storeOp && storeOp.getValue() == cellOp.getResult()
+                                             ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                             : mlir_ts::PropertyRefOp();
+                    kept = kept || (propertyRefOp && keepsClosure(propertyRefOp->getOperand(0)));
                 }
             }
 

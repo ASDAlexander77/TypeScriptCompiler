@@ -297,11 +297,29 @@ namespace own_inference
             // reads the slot again for the box's field), the box of a closure that escapes - a
             // parameter nothing assigns is captured by copy, and its cell used to be refused the same
             // way (decideEscaping)
+            // the box's field is named after what it captures, with or without `--di`
+            std::string captured;
             auto isBoxFill = [&](mlir::Operation *user) {
                 auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
                 auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
                                              : mlir_ts::PropertyRefOp();
-                return propertyRefOp && closureOfBox(propertyRefOp.getObjectRef()) && user->getLoc() == op->getLoc();
+                if (!propertyRefOp || !closureOfBox(propertyRefOp.getObjectRef()) || user->getLoc() != op->getLoc())
+                {
+                    return false;
+                }
+
+                auto boxType = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getObjectRef().getType());
+                auto tupleType = boxType ? mlir::dyn_cast<mlir_ts::TupleType>(boxType.getElementType()) : mlir_ts::TupleType();
+                auto position = propertyRefOp.getPosition();
+                if (tupleType && position < tupleType.size())
+                {
+                    if (auto fieldName = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFieldInfo(position).id))
+                    {
+                        captured = fieldName.getValue().str();
+                    }
+                }
+
+                return true;
             };
             auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op);
             auto retainedRead = retainOp ? retainOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
@@ -311,8 +329,17 @@ namespace own_inference
             });
             if (boxFill)
             {
-                op->emitError("a closure that escapes owns what it captures, but -mm=own cannot move this variable "
-                              "into it: its value is the caller's");
+                auto diag = op->emitError("a closure that escapes owns what it captures, but -mm=own cannot move ");
+                if (captured.empty())
+                {
+                    diag << "this variable";
+                }
+                else
+                {
+                    diag << "'" << captured << "'";
+                }
+
+                diag << " into it: its value is the caller's";
                 return true;
             }
 

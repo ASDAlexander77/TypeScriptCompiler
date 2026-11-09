@@ -1,5 +1,6 @@
 // A closure stored into a field of `this` that captures something besides `this` (a parameter) is no
-// back-reference (spec 70): an escaping closure owns what it captures, and the parameter is the caller's.
+// back-reference (spec 70): an escaping closure owns what it captures. The method keeps the parameter
+// (spec 76), but `this` is the caller's, which no object it owns can own.
 class Item {
     n: number = 2;
 }

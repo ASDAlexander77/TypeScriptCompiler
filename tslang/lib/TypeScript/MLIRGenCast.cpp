@@ -2184,6 +2184,16 @@ namespace mlirgen
                 return unwrappedValue;
             }
 
+            // a class object or null: the value, or null when there is none (`<T>data` of a `T |
+            // undefined`). One select, not a branch: under -mm=own the result is a view of the optional,
+            // the same block or none (spec 77), where a merge of two branches would hide whose it is
+            if (type == optType.getElementType() && isa<mlir_ts::ClassType>(type))
+            {
+                auto valueOrDefault = builder.create<mlir_ts::ValueOrDefaultOp>(location, type, value);
+                valueOrDefault->setAttr(EXPLICIT_CAST_ATTR_NAME, builder.getUnitAttr());
+                return V(valueOrDefault);
+            }
+
             // optional to value cast(when we change types)
             auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), value);
 

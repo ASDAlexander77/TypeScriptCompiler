@@ -863,6 +863,11 @@ class OwnershipInferencePass
     // objects holds, that nothing sees after the move but its ends, and that is not taken from twice
     // (specs 64, 65)?
     bool namedFieldTakeOf(mlir::Operation *read, mlir::Operation *retain, mlir_ts::PropertyRefOp field, FieldTake &take);
+    // ...or is `kept` rc's retain of `read`, a read of a field or an element of any object, whose
+    // taker the place is refilled before (spec 77): `[data, this.data] = [this.data, data]`. The
+    // refill's release, which would free what was read, hands it over to the taker. `refill` is that
+    // release; nothing but reads and stores of locals runs between the read and the taker.
+    bool refilledFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take, mlir::Operation *&refill);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
     // Does `store` put `value`, a string read out of a place, into another place with no retain of

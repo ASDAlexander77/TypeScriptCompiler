@@ -39,6 +39,10 @@
 // retain nobody performed and free live memory.
 #define OWNED_RESULT_ATTR_NAME "__owned_result"
 
+// On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
+// it, so its lowering does not warn that an optional value is read as it is.
+#define EXPLICIT_CAST_ATTR_NAME "__explicit_cast"
+
 // -mm=own only, set by OwnershipInferencePass for the lowering. On a `ts.Release` of an array: the
 // array borrowed its elements (the array a rest parameter is given), so its release frees the
 // array and not them.

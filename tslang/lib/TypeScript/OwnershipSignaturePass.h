@@ -985,6 +985,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // is a borrow, the second a borrowed result.
     static bool keeps(mlir::Operation *user, mlir::Value used);
 
+    // Is the closure over `box` kept (keeps, through views), and no back-reference (spec 70)? Then
+    // it owns what its box holds of the function's parameters: the function keeps them (spec 76).
+    static bool keepsClosure(mlir::Value box);
+
+    // The parameter whose cell `cellOp` is - a captured local made of it - or -1.
+    static int32_t parameterOfCell(mlir_ts::VariableOp cellOp);
+
     // The parameters the body keeps (spec 2.4, owned-by-callee): a read of the parameter's slot -
     // never assigned - that something keeps. A generator that says `@keeps` keeps too each parameter
     // whose cell its state's box holds (paramsCapturedIntoState, spec 38).

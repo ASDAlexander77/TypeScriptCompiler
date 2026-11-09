@@ -6252,7 +6252,10 @@ struct ValueOrDefaultOpLowering : public TsLlvmPattern<mlir_ts::ValueOrDefaultOp
     {
         auto loc = valueOrDefaultOp->getLoc();
 
-        valueOrDefaultOp->emitWarning("casting from optional (undefined) value");
+        if (!valueOrDefaultOp->hasAttr(EXPLICIT_CAST_ATTR_NAME))
+        {
+            valueOrDefaultOp->emitWarning("casting from optional (undefined) value");
+        }
 
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());

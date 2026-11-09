@@ -905,6 +905,34 @@ namespace own_inference
             }
         }
 
+        // ...or out of a place refilled before the taker has what it held (spec 77): `[data, this.data]
+        // = [this.data, data]`. The refill's release would free it: the value is handed over instead,
+        // and the refill leaves nothing of it in the place.
+        mlir::Operation *refill = nullptr;
+        if (!take.taker && kept && !countedHandle && !backReference && refilledFieldTakeOf(read, kept, take, refill))
+        {
+            takenOps.insert(take.retain);
+            takenOps.insert(take.taker);
+            kept = walk();
+            takenOps.clear();
+            auto usedAfter = llvm::any_of(uses, [&](auto &use) {
+                return use.op != take.taker && use.op != take.retain && reachableAfter(take.taker, use.op, use.kills);
+            });
+            if (kept || letKept || usedAfter)
+            {
+                take = {};
+                refill = nullptr;
+                kept = walk();
+            }
+            else
+            {
+                bookkeeping.push_back(take.retain);
+                bookkeeping.push_back(refill);
+                toErase.insert(bookkeeping.begin(), bookkeeping.end());
+                return true;
+            }
+        }
+
         if (take.taker)
         {
             bookkeeping.push_back(take.retain);
@@ -1264,6 +1292,120 @@ namespace own_inference
         take.taker = taker;
         take.field = field.getResult();
         take.release = release;
+        return true;
+    }
+
+    bool OwnershipInferencePass::refilledFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take,
+                                                     mlir::Operation *&refill)
+    {
+        // a read of a field or an element, of any object: what the place held goes to the taker, the
+        // place is given another value before that, and its release then frees nothing anyone keeps.
+        // Not a string, which is copied where it is kept (spec 22), nor a handle, which is counted.
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+        auto place = loadOp ? loadOp.getReference() : mlir::Value();
+        if (!place || !mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place.getDefiningOp()) ||
+            isCopyableValueAt(read, loadOp.getType()) || isHandle(loadOp.getResult()))
+        {
+            return false;
+        }
+
+        // rc's retain of the read, in its block
+        mlir_ts::RetainOp retainOp;
+        for (auto *user : loadOp->getUsers())
+        {
+            if (auto found = mlir::dyn_cast<mlir_ts::RetainOp>(user); found && found->getBlock() == read->getBlock())
+            {
+                if (retainOp)
+                {
+                    return false;
+                }
+
+                retainOp = found;
+            }
+        }
+
+        auto *taker = retainOp ? takerOf(retainOp, loadOp.getResult()) : nullptr;
+        if (!taker || (kept != retainOp && kept != taker) || taker->getBlock() != read->getBlock())
+        {
+            return false;
+        }
+
+        // the taker: a store into a local that owns what it holds, or into a place
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(taker);
+        auto slot = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto intoLocal = slot && isOwningVariable(slot) && !slot.getCaptured().value_or(false);
+        if (!storeOp || storeOp.getValue() != loadOp.getResult() || (!intoLocal && !isPlace(storeOp.getReference())))
+        {
+            return false;
+        }
+
+        // From the read to the taker, in order: rc's retain, then the place's release right before a
+        // store into it - the refill - and nothing but reads, counts and stores of locals besides
+        // (no call, which might read the place or drop the object).
+        auto *refillRelease = static_cast<mlir::Operation *>(nullptr);
+        auto retained = false;
+        for (auto *op = read->getNextNode(); op && op != taker; op = op->getNextNode())
+        {
+            if (op == retainOp.getOperation())
+            {
+                retained = true;
+                continue;
+            }
+
+            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op); releaseSlotOp && releaseSlotOp.getSlot() == place)
+            {
+                auto refillStore = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(op->getNextNode());
+                if (refillRelease || !retained || !refillStore || refillStore.getReference() != place)
+                {
+                    return false;
+                }
+
+                refillRelease = op;
+                continue;
+            }
+
+            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+            {
+                // a local's own release (the taker's assignment), never of the place's object
+                auto local = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+                auto objectRead = rootOf(place.getDefiningOp()->getOperand(0)).getDefiningOp<mlir_ts::LoadOp>();
+                if (!local || local.getCaptured().value_or(false) ||
+                    (objectRead && objectRead.getReference() == local.getResult()))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (auto innerStore = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+            {
+                auto local = innerStore.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                if (innerStore.getReference() != place && !local)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainOp, mlir_ts::PropertyRefOp, mlir_ts::ConstantOp>(op) || isView(op))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        if (!refillRelease)
+        {
+            return false;
+        }
+
+        take.retain = retainOp;
+        take.taker = taker;
+        take.field = place;
+        refill = refillRelease;
         return true;
     }
 
