@@ -76,3 +76,232 @@ Regression tests `tslang/test/tester/tests/00tslang_issue_37.ts`, `00tslang_issu
 
 Still open from 38: a symbol made at run time can't be a property key (`obj[sym]`). Fields are laid out at
 compile time, so a symbol needs a run-time value and a way to look a key up. It has not been tried.
+
+### `-mm=own` limits found in the default library, 2026-11-09 (items 39-42)
+
+Found while adding `Worker` and making `JSON.stringify` work under `-mm=own` in the default library
+(TypeScriptCompilerDefaultLib PRs #80-#85). The library works around each one, and its README names
+them as `-mm=own` limits; each needs a compiler change to go away. Every repro below is a complete
+file, run with `tslang --nowarn -mm=own --emit=jit file.ts` and again with `-mm=gc`, on Windows x64,
+tslang commit 2fffc119 (release build of 2026-11-09 17:35), against the default library at
+TypeScriptCompilerDefaultLib 916cd07. Each compiles and runs under `-mm=gc`, with the output given.
+
+#### 39. A method can't say it gives its receiver back owned, so a chain from a new value can't be returned or kept by a callee
+
+A method that returns `this` so calls can be chained (`JsonValue.set`, `JsonValue.push`) can only be
+declared `@lends("this")` for another module: its result borrows the value it was called on. A chain
+that starts from a new value (`JsonValue.newObject().set(...)`) has no owner but that borrow. Kept in a
+local it compiles now; returned, or given to a parameter that is kept, it is an error.
+
+```typescript
+// JsonValue is in the default library, another module: its set() and push() are declared
+// @lends("this") (they return `this`, so a chain can go on), and that is all a caller knows of them.
+
+// returning a chain from a new value: under -mm=own "'this value' borrows the result of
+// 'JsonValue.set' and cannot be stored, returned or captured"
+function person(): JsonValue {
+    return JsonValue.newObject().set("name", JsonValue.ofString("Ann")).set("age", JsonValue.ofNumber(30));
+}
+
+function main() {
+    // compiles under -mm=own: a chain kept in a local
+    const a = JsonValue.newObject().set("a", JsonValue.ofNumber(1));
+    print(a.stringify());
+
+    print(person().stringify());
+
+    // a chain given to a parameter that is kept (set's `value`): the same error
+    const b = JsonValue.newObject();
+    b.set("list", JsonValue.newArray().push(JsonValue.ofNumber(1)).push(JsonValue.ofNumber(2)));
+    print(b.stringify());
+}
+```
+
+`-mm=own`:
+
+```text
+39_chain_receiver.ts:7:5: error: 'this value' borrows the result of 'JsonValue.set' and cannot be stored, returned or captured
+    return JsonValue.newObject().set("name", JsonValue.ofString("Ann")).set("age", JsonValue.ofNumber(30));
+    ^
+39_chain_receiver.ts:19:5: error: 'this value' borrows the result of 'JsonValue.push' and cannot be stored, returned or captured
+    b.set("list", JsonValue.newArray().push(JsonValue.ofNumber(1)).push(JsonValue.ofNumber(2)));
+    ^
+```
+
+`-mm=gc`: `{"a":1}`, `{"name":"Ann","age":30}`, `{"list":[1,2]}`.
+
+To do: a way to declare that a method returns its receiver (`return this` on every path), so that
+called on a value the caller owns, or on a temporary, the result is that value, owned by whoever owned
+the receiver, rather than a borrow of it. Something like `@returnsThis` / `@lends("this")` that a
+temporary receiver turns into a move. Then the default library's `tests/json.ts` can drop its
+`__MEMORY_MODEL__ != "own"` branch (`chained()`), and `toJSON()` can return a chain.
+
+#### 40. Once an arrow captures anything, an arrow inside it can't capture the outer arrow's parameter
+
+An arrow given a parameter (`self`) stores a second arrow that captures `self`. That compiles under
+`-mm=own`, until the outer arrow also captures something from its own enclosing function. Then the
+inner arrow's capture of `self` is refused. It is the shape of the default library's `Worker`:
+`new Worker((self) => { self.onmessage = (e) => self.postMessage(...); })`. A worker whose function
+uses state shared with the creating thread can't also post from its handler (the library's README and
+`docs/worker-design.md` name the limit; `tests/worker_terminate.ts` tests the two shapes apart).
+
+```typescript
+class Scope {
+    handler: () => void;
+    count: int;
+
+    constructor() {
+        this.handler = () => {};
+        this.count = 0;
+    }
+}
+
+function run(body: (self: Scope) => void) {
+    const scope = new Scope();
+    body(scope);
+    scope.handler();
+    print(scope.count);
+}
+
+function main() {
+    const shared = new Shared(new Int32Array(1));
+
+    // compiles under -mm=own and prints 1: the outer arrow captures nothing
+    run((self: Scope) => {
+        self.handler = () => {
+            self.count++;
+        };
+    });
+
+    // the same, once the outer arrow captures something: under -mm=own
+    // "a closure that escapes owns what it captures, but -mm=own cannot move this variable into it:
+    // its value is the caller's", at the inner arrow
+    run((self: Scope) => {
+        const counter = shared;
+        Atomics.add(counter.value, 0, 1);
+        self.handler = () => {
+            self.count++;
+        };
+    });
+}
+```
+
+`-mm=own`:
+
+```text
+40_closure_param_capture.ts:34:24: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: its value is the caller's
+        self.handler = () => {
+                       ^
+```
+
+`-mm=gc`: `1`, `1`.
+
+To do: the inner arrow captures `self` the same way in both calls, and `self` is the outer arrow's
+parameter in both; what the outer arrow captures should not change whose `self` is. The error also
+does not name the variable (item 32 made it name a captured variable in other cases).
+
+#### 41. An arrow kept in a field can't capture a parameter, and `@keeps` can't say that it does
+
+A constructor that keeps an arrow capturing one of its parameters is refused ("its value is the
+caller's"), and `@keeps("body")`, which would make the caller give `body` up, is refused too: the
+compiler finds that the constructor keeps nothing, although the arrow it stores takes `body` with it.
+The default library hit this starting a `Worker`'s thread with `Thread.spawn(() => run(body, ...))` in
+its constructor; it now keeps a `WorkerStart` object holding `body` (as `ThreadHandle` keeps its
+`ThreadStart`) and starts the thread natively.
+
+```typescript
+class Holder {
+    run: () => int;
+
+    constructor(body: (n: int) => int) {
+        // the arrow is kept in a field and captures the parameter `body`
+        this.run = (): int => body(2);
+    }
+}
+
+function main() {
+    const h = new Holder((n: int): int => n * 21);
+    print(h.run());
+}
+```
+
+`-mm=own`:
+
+```text
+41_keeps_closure_capture.ts:6:20: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: its value is the caller's
+        this.run = (): int => body(2);
+                   ^
+41_keeps_closure_capture.ts:6:9: note: the closure escapes here
+        this.run = (): int => body(2);
+        ^
+```
+
+With `@keeps("body")` on the constructor (and `@final export class Holder`):
+
+```text
+41b_keeps_rejected.ts:6:5: error: '@keeps' of 'Holder.constructor' names 'body', but its body keeps nothing
+    @keeps("body")
+    ^
+```
+
+`-mm=gc`: `42`.
+
+To do: count a parameter captured by an escaping closure as kept, both when inferring what a function
+keeps and when checking `@keeps`, so the closure owns it (the caller moves the argument in).
+
+#### 42. A class instance can't be taken out of a `T | undefined` field
+
+Exchanging a field with a local (`[data, this.data] = [this.data, data]`), the way the own-model guide
+says to take a value out of a place, works for a string but not for a class instance in a field typed
+`T | undefined`. The default library wanted a queue item holding either a message or an error; it now
+queues the event objects themselves (`MessageEvent<Out> | ErrorEvent`) so nothing has to come out of a
+field.
+
+```typescript
+class Item {
+    constructor(public n: number) {}
+}
+
+// a slot a value is put into and later taken back out of, by exchanging it with a local
+class Slot<T> {
+    constructor(public data: T | undefined) {}
+
+    take(): T {
+        let data: T | undefined = undefined;
+        [data, this.data] = [this.data, data];
+        return <T>data;
+    }
+}
+
+function main() {
+    // compiles under -mm=own and prints "a"
+    const text = new Slot<string>("a");
+    print(text.take());
+
+    // the same for a class instance: under -mm=own
+    // "'this value' borrows a field and cannot be stored, returned or captured"
+    const item = new Slot<Item>(new Item(1));
+    print(item.take().n);
+}
+```
+
+`-mm=own`:
+
+```text
+42_move_out_of_union_field.ts:11:29: error: 'this value' borrows a field and cannot be stored, returned or captured
+        [data, this.data] = [this.data, data];
+                            ^
+42_move_out_of_union_field.ts:11:9: error: 'this value' borrows an element and cannot be stored, returned or captured
+        [data, this.data] = [this.data, data];
+        ^
+42_move_out_of_union_field.ts:12:9: error: 'this value' is merged from several branches (`?:`, `&&`, `||`, `??`, a loop); -mm=own cannot prove which one owns it yet
+        return <T>data;
+        ^
+```
+
+The same file with only the `Slot<string>` lines compiles under `-mm=own` and prints `a`.
+`-mm=gc`: `a`, `1`.
+
+To do: the exchange of a union-typed field with a local should move the value out for a class
+instance as it does for a string, and the `<T>` cast of a `T | undefined` local that holds it should
+not count as a merge of branches.
