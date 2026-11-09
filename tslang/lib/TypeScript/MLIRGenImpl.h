@@ -3162,6 +3162,11 @@ class MLIRGenImpl
                 }
                 else if (type != init.getType())
                 {
+                    if (mlir::failed(checkStringNumberAssignment(loc(initializer), init.getType(), type)))
+                    {
+                        return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                    }
+
                     auto result = cast(loc(initializer), type, init, genContext);
                     if (result.failed())
                     {
@@ -3201,6 +3206,57 @@ class MLIRGenImpl
 #endif
 
         return std::make_tuple(type, init, typeProvided);
+    }
+
+    // a string, or a number of any width, as TypeScript sees it: what a value of each converts to
+    // silently is a type error there, and here
+    enum class StringOrNumber
+    {
+        Neither,
+        String,
+        Number
+    };
+
+    StringOrNumber stringOrNumber(mlir::Type type)
+    {
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            type = literalType.getElementType();
+        }
+
+        // not a `char`: a byte, given a number (a buffer's element) as readily as made a string (`s[0]`)
+        if (isa<mlir_ts::StringType>(type))
+        {
+            return StringOrNumber::String;
+        }
+
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            return intType.getWidth() > 1 ? StringOrNumber::Number : StringOrNumber::Neither;
+        }
+
+        if (isa<mlir_ts::NumberType, mlir::IndexType, mlir::FloatType>(type))
+        {
+            return StringOrNumber::Number;
+        }
+
+        return StringOrNumber::Neither;
+    }
+
+    // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
+    // they hid a mistake - "x" became 0. A union, `any` or an enum on either side is left to the cast.
+    mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType)
+    {
+        auto from = stringOrNumber(valueType);
+        auto to = stringOrNumber(destType);
+        if (from == StringOrNumber::Neither || to == StringOrNumber::Neither || from == to)
+        {
+            return mlir::success();
+        }
+
+        emitError(location) << "type '" << to_print(valueType) << "' is not assignable to type '"
+                            << to_print(destType) << "'";
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
@@ -7092,6 +7148,20 @@ class MLIRGenImpl
         }
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
+
+        // the type the place takes: a variable a test narrowed takes any its declaration allows, a field
+        // a subclass declared again the one it declared (DECLARED_FIELD_VIEW_ATTR_NAME)
+        auto placeType = leftExpressionValue.getType();
+        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+        {
+            placeType = safeCastOp.getValue().getType();
+        }
+
+        if (rightExpressionValue && mlir::failed(checkStringNumberAssignment(location, rightExpressionValue.getType(), placeType)))
+        {
+            return mlir::failure();
+        }
 
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {

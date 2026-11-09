@@ -618,6 +618,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_implements_field.ts")
 tslang_add_test(NAME test-compile-00-class-cast-undeclared-interface-dispatch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_undeclared_interface_dispatch.ts")
 tslang_add_test(NAME test-compile-00-class-redeclared-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_redeclared_field.ts")
+tslang_add_test(NAME test-compile-00-assign-string-number COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assign_string_number.ts")
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
@@ -1285,8 +1286,11 @@ tslang_add_test(NAME test-jit-00-class-cast-undeclared-interface-dispatch COMMAN
 tslang_add_test(NAME test-jit-own-00-class-cast-undeclared-interface-dispatch COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_undeclared_interface_dispatch.ts")
 tslang_add_test(NAME test-compile-own-00-class-cast-undeclared-interface-dispatch COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_undeclared_interface_dispatch.ts")
 tslang_add_test(NAME test-jit-00-class-redeclared-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_redeclared_field.ts")
+tslang_add_test(NAME test-jit-00-assign-string-number COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assign_string_number.ts")
 tslang_add_test(NAME test-jit-own-00-class-redeclared-field COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_redeclared_field.ts")
+tslang_add_test(NAME test-jit-own-00-assign-string-number COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00assign_string_number.ts")
 tslang_add_test(NAME test-compile-own-00-class-redeclared-field COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_redeclared_field.ts")
+tslang_add_test(NAME test-compile-own-00-assign-string-number COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00assign_string_number.ts")
 tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
@@ -1867,6 +1871,15 @@ add_test(NAME test-compile-ref-element-layout-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/ref_element_layout_error.ts")
 set_tests_properties(test-compile-ref-element-layout-error PROPERTIES PASS_REGULAR_EXPRESSION "a reference to number can't be used as a reference to f32"
                                                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...a string given to a number, or a number to a string, is an error (TS2322)
+add_test(NAME test-compile-assign-string-to-number-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_string_to_number_error.ts")
+set_tests_properties(test-compile-assign-string-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "type '\"x\"' is not assignable to type 'number'"
+                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-assign-number-to-string-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_number_to_string_error.ts")
+set_tests_properties(test-compile-assign-number-to-string-error PROPERTIES PASS_REGULAR_EXPRESSION "type '5' is not assignable to type 'string'"
+                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class extending a class value known at run time only is an error
 add_test(NAME test-compile-mixin-runtime-base-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")
@@ -2428,6 +2441,7 @@ set(TSLANG_CORPUS
     00class_accessor_implements_field.ts
     00class_cast_undeclared_interface_dispatch.ts
     00class_redeclared_field.ts
+    00assign_string_number.ts
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00conditional_record_literal_temporary.ts
@@ -6172,7 +6186,7 @@ endforeach()
 # - --di: a global filled at run time (a class extending a -shared import) had calls with no location
 # - -mm=own read --di's records of a const as uses (own_interface_getter_read, own_immortal_keepers,
 #   00nullable_interface_to_interface, stack-promotion/to_any)
-foreach(debug_test 00null_interface_to_interface 00class_values 00class_accessor_implements_field 00class_cast_undeclared_interface_dispatch 00class_redeclared_field
+foreach(debug_test 00null_interface_to_interface 00class_values 00class_accessor_implements_field 00class_cast_undeclared_interface_dispatch 00class_redeclared_field 00assign_string_number
                    00try_in_catch_with_finally 00using_dispose_throws)
     tslang_add_test(NAME test-jit-debug-${debug_test} COMMAND test-runner -jit -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
     tslang_add_test(NAME test-compile-debug-${debug_test} COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
