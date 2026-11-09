@@ -1031,6 +1031,30 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
     }
 };
 
+// The results of an indexer's `set`, which a class may declare as a method returning something
+// (`set(key, value): this`): the call made for `obj[key] = value` has them too, unused, so that the
+// call agrees with the function it calls.
+static mlir::SmallVector<mlir::Type> indexSetterResults(mlir::Type setterType)
+{
+    if (auto funcType = mlir::dyn_cast<mlir_ts::FunctionType>(setterType))
+    {
+        return llvm::to_vector(funcType.getResults());
+    }
+
+    if (auto boundFuncType = mlir::dyn_cast<mlir_ts::BoundFunctionType>(setterType))
+    {
+        return llvm::to_vector(boundFuncType.getResults());
+    }
+
+    return {};
+}
+
+static mlir::SmallVector<mlir::Type> indexSetterResults(mlir::Operation *from, mlir::FlatSymbolRefAttr setter)
+{
+    auto funcOp = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(from, setter);
+    return funcOp ? indexSetterResults(funcOp.getFunctionType()) : mlir::SmallVector<mlir::Type>{};
+}
+
 struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessorOp>
 {
     using TsPattern<mlir_ts::ThisIndexAccessorOp>::TsPattern;
@@ -1047,8 +1071,9 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
                 return mlir::failure();
             }
 
+            auto setterResults = indexSetterResults(thisIndexAccessorOp, thisIndexAccessorOp.getSetAccessorAttr());
             createCall<mlir_ts::CallOp>(rewriter, thisIndexAccessorOp, loc, thisIndexAccessorOp.getSetAccessor().value(),
-                mlir::TypeRange{}, mlir::ValueRange{thisIndexAccessorOp.getThisVal(), 
+                mlir::TypeRange{setterResults}, mlir::ValueRange{thisIndexAccessorOp.getThisVal(),
                     thisIndexAccessorOp.getIndex(), thisIndexAccessorOp.getSetValue()});
         }
 
@@ -1092,7 +1117,8 @@ struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndir
                 return mlir::failure();
             }
 
-            createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectIndexAccessorOp, loc, TypeRange{}, thisIndirectIndexAccessorOp.getSetAccessor(),
+            auto setterResults = indexSetterResults(thisIndirectIndexAccessorOp.getSetAccessor().getType());
+            createCall<mlir_ts::CallIndirectOp>(rewriter, thisIndirectIndexAccessorOp, loc, TypeRange{setterResults}, thisIndirectIndexAccessorOp.getSetAccessor(),
                 mlir::ValueRange{thisIndirectIndexAccessorOp.getThisVal(), 
                     thisIndirectIndexAccessorOp.getIndex(), thisIndirectIndexAccessorOp.getSetValue()});
         }
@@ -1209,7 +1235,7 @@ struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundInd
             auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectIndexAccessorOp.getSetAccessor());
             auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectIndexAccessorOp.getSetAccessor());
 
-            createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectIndexAccessorOp, loc, TypeRange{}, methodOp, mlir::ValueRange{thisOp, 
+            createCall<mlir_ts::CallIndirectOp>(rewriter, boundIndirectIndexAccessorOp, loc, TypeRange{funcType.getResults()}, methodOp, mlir::ValueRange{thisOp,
                     boundIndirectIndexAccessorOp.getIndex(), boundIndirectIndexAccessorOp.getSetValue()});
         }
 

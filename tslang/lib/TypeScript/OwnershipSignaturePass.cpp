@@ -185,10 +185,12 @@ namespace own_signature
 
         findOpen(module);
         // the `@lends("this")` a result type `this` implies, on a function only this module calls: its
-        // callers go by its body, as for any other function here (spec 78)
+        // callers go by its body, as for any other function here (spec 78). Not when the function says
+        // what it keeps (`@keeps`): it then says what its callers give and get, and `this` is part of it.
         for (auto &entry : functions)
         {
-            if (entry.second->hasAttr(OWN_IMPLIED_LENDS_ATTR_NAME) && !entry.second.isDeclaration() && !open.contains(entry.second))
+            if (entry.second->hasAttr(OWN_IMPLIED_LENDS_ATTR_NAME) && !entry.second.isDeclaration() &&
+                !open.contains(entry.second) && !entry.second->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
             {
                 entry.second->removeAttr(OWN_DECLARED_LENDS_ATTR_NAME);
             }

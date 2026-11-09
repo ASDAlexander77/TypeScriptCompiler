@@ -95,3 +95,15 @@ the variable. 42 (`[data, this.data] = [this.data, data]` did not move a class i
 every model, and `<T>data` of such a local is a view of it. Regression tests
 `tslang/test/tester/own/own_chain_returns_this.ts`, `own_closure_keeps_param.ts`,
 `own_swap_local_field.ts`, `own_err_this_result_other.ts` and `own_err_closure_kept_param_used.ts`.
+
+Item 43, found on 2026-11-09 while giving the default library's `JsonValue` an indexer
+(TypeScriptCompilerDefaultLib PR #86), is fixed. 43 (`bag[key] = value` on a class imported from a
+library, whose indexer's `set` is `@keeps("value")`: the caller freed the value `set` kept, so it was
+freed twice and the program hung at exit under `-mm=own`): the indexer's accessors of such a class are
+looked up by name, and the ownership passes now take that call for a call of `set`, with its declared
+`@keeps` and `@lends`. The crash of tslang.exe with `JsonValue`'s indexer was another bug, under every
+model: the call made for `obj[key] = value` had no result even when `set` returns one, as `JsonValue.set`
+does, so it disagreed with the function it calls and lowering to LLVM crashed now and then; it has the
+setter's result now. Also, a method returning `this` that says what it keeps (`@keeps`) is no longer
+told to say `@lends` too. Regression tests `tslang/test/tester/tests/import_class_keeps_indexer.ts`
+(with `export_class_keeps_indexer.ts`) and `00class_indexer_set_result.ts`.

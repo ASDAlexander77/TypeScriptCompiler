@@ -255,6 +255,23 @@ namespace own_signature
         return true;
     }
 
+    mlir::StringAttr OwnershipSignaturePass::searchedSymbol(mlir::Operation *def)
+    {
+        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
+        auto searchOp = castOp ? castOp.getIn().getDefiningOp<mlir_ts::SearchForAddressOfSymbolOp>()
+                               : mlir_ts::SearchForAddressOfSymbolOp();
+        auto nameOp = searchOp ? searchOp->getOperand(0).getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+        auto name = nameOp ? mlir::dyn_cast<mlir::StringAttr>(nameOp.getValue()) : mlir::StringAttr();
+        if (!name)
+        {
+            return {};
+        }
+
+        // only a function this module declares: its type is the one the call is made with
+        auto funcOp = functions.lookup(name.getValue());
+        return funcOp ? funcOp.getSymNameAttr() : mlir::StringAttr();
+    }
+
     OwnershipSignaturePass::Callees OwnershipSignaturePass::resolve(mlir::Operation *op)
     {
         Callees callees;
@@ -337,6 +354,13 @@ namespace own_signature
         else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::SymbolRefOp>(def))
         {
             identifier = refOp.getIdentifierAttr().getAttr();
+        }
+        else if (auto symbol = searchedSymbol(def))
+        {
+            // `ts.Cast(ts.SearchForAddressOfSymbol("C.set"))`: the indexer of a class imported from
+            // a library, whose accessors are looked up by name (issue 43); that function, as a call
+            // of `C.set` through its object
+            identifier = symbol;
         }
         else if (isInstanceOfSlot(def))
         {
