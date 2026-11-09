@@ -665,6 +665,7 @@ tslang_add_test(NAME test-compile-00-class-iterator-super COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-class-symbol-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_symbol_iterator.ts")
 tslang_add_test(NAME test-compile-00-class-indexer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer.ts")
 tslang_add_test(NAME test-compile-00-class-indexer-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer_super.ts")
+tslang_add_test(NAME test-compile-00-class-indexer-string-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer_string_key.ts")
 tslang_add_test(NAME test-compile-00-class-from-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_from_tuple.ts")
 tslang_add_test(NAME test-compile-00-class-access-control COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_access_control.ts")
 tslang_add_test(NAME test-compile-00-class-protected-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_protected_constr.ts")
@@ -1337,6 +1338,7 @@ tslang_add_test(NAME test-jit-00-class-iterator-super COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-class-symbol-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_symbol_iterator.ts")
 tslang_add_test(NAME test-jit-00-class-indexer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer.ts")
 tslang_add_test(NAME test-jit-00-class-indexer-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer_super.ts")
+tslang_add_test(NAME test-jit-00-class-indexer-string-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer_string_key.ts")
 tslang_add_test(NAME test-jit-00-class-from-tuple COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_from_tuple.ts")
 tslang_add_test(NAME test-jit-00-class-access-control COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_access_control.ts")
 tslang_add_test(NAME test-jit-00-class-protected-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_protected_constr.ts")
@@ -1776,6 +1778,14 @@ foreach(class_value_mm rc none own)
     tslang_add_test(NAME test-jit-00-class-values-${class_value_mm} COMMAND test-runner -jit -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_values.ts")
     # ...and of a shared library's classes
     tslang_add_test(NAME test-jit-shared-export-import-class-values-${class_value_mm} COMMAND test-runner -jit -shared -mm=${class_value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_values.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_values.ts")
+endforeach()
+# `obj["name"]` of a class with a string indexer goes to its get/set unless "name" is a member:
+# in one file under own (gc, rc and none run it above and in the corpus), and across a shared
+# library's boundary under gc, rc and own
+tslang_add_test(NAME test-jit-00-class-indexer-string-key-own COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_indexer_string_key.ts")
+foreach(string_indexer_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-class-string-indexer-${string_indexer_mm} COMMAND test-runner -shared -mm=${string_indexer_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_string_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_string_indexer.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-class-string-indexer-${string_indexer_mm} COMMAND test-runner -jit -shared -mm=${string_indexer_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_string_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_string_indexer.ts")
 endforeach()
 # ...and of @cpp classes implemented here (their vtables C++'s), under every memory model
 tslang_add_test(NAME test-compile-00-cpp-class-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_class_values.ts")
@@ -2476,6 +2486,7 @@ set(TSLANG_CORPUS
     00class_generic.ts
     00class_iface.ts
     00class_indexer_super.ts
+    00class_indexer_string_key.ts
     00class_indexer.ts
     00class_iterator_super.ts
     00class_iterator.ts

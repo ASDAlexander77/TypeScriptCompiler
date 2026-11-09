@@ -1316,6 +1316,57 @@ namespace mlirgen
         return mlir::Value();
     }
 
+    // Whether `name` is a field, method, accessor or static member of the class or of a base class:
+    // what `obj["name"]` reaches before a string indexer does.
+    static bool classHasMember(ClassInfo::TypePtr classInfo, mlir::StringRef name)
+    {
+        auto id = MLIRHelper::TupleFieldName(name, classInfo->classType.getContext());
+        if (classInfo->getStaticFieldIndex(id) >= 0 || classInfo->getMethodIndex(name) >= 0
+            || classInfo->getGenericMethodIndex(name) >= 0 || classInfo->getAccessorIndex(name) >= 0)
+        {
+            return true;
+        }
+
+        auto storageClass = cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+        if (storageClass.getIndex(id) >= 0)
+        {
+            return true;
+        }
+
+        for (auto &baseClass : classInfo->baseClasses)
+        {
+            if (classHasMember(baseClass, name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether the class, or a base class, declares `[key: string]: T`.
+    static bool classHasStringIndexer(ClassInfo::TypePtr classInfo)
+    {
+        for (auto &indexInfo : classInfo->indexes)
+        {
+            if (indexInfo.indexSignature && indexInfo.indexSignature.getNumInputs() > 0
+                && isa<mlir_ts::StringType>(indexInfo.indexSignature.getInput(0)))
+            {
+                return true;
+            }
+        }
+
+        for (auto &baseClass : classInfo->baseClasses)
+        {
+            if (classHasStringIndexer(baseClass))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
@@ -1418,10 +1469,15 @@ namespace mlirgen
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                if (isa<mlir::StringAttr>(attr))
+                if (auto nameAttr = dyn_cast<mlir::StringAttr>(attr))
                 {
-                    // TODO: implement '[string]' access here
-                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                    // `obj["name"]` is the member `name`, as in TypeScript; only a key that names no
+                    // member, of a class whose indexer takes a string, is the indexer's key
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    if (!classInfo || classHasMember(classInfo, nameAttr.getValue()) || !classHasStringIndexer(classInfo))
+                    {
+                        return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                    }
                 }
             }
 
