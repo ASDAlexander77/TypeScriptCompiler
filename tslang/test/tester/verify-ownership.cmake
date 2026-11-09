@@ -59,7 +59,9 @@ set(not_compilable_alone
     # an error by design (test-compile-ref-element-layout-error)
     ref_element_layout_error.ts
     # an error by design (test-compile-cdecl-closure-error)
-    cdecl_closure_error.ts)
+    cdecl_closure_error.ts
+    # an error by design (test-compile-computed-name-failed-error)
+    computed_name_failed_error.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

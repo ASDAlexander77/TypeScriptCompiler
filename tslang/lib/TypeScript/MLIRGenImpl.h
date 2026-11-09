@@ -15414,6 +15414,9 @@ class MLIRGenImpl
 
     std::pair<mlir::Attribute, mlir::LogicalResult> getNameFromComputedPropertyName(Node name, const GenContext &genContext);
 
+    // The well-known symbol `expression` names (`Symbol.iterator`), empty for anything else
+    StringRef wellKnownSymbolName(Node expression);
+
     mlir::Attribute TupleFieldName(Node name, const GenContext &genContext);
 
     std::pair<bool, mlir::LogicalResult> getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,

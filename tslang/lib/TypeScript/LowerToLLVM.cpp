@@ -2107,6 +2107,12 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // `Symbol.iterator` is a compile-time name: nothing at run time can hold one yet
+        if (isa<mlir_ts::SymbolType>(constantOp.getType()))
+        {
+            return constantOp.emitError("a symbol has no value at run time yet: it can only be a property name or the operand of typeof");
+        }
+
         // load address of const string
         auto type = constantOp.getType();
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))

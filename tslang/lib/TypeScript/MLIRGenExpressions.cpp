@@ -1121,6 +1121,16 @@ namespace mlirgen
         auto expressionValue = V(result);
 
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
+
+        // `Symbol.iterator`, where the program or a library declares a `Symbol` without that member:
+        // still the language's own (TSLANG_ISSUES 38)
+        if (auto wellKnown = wellKnownSymbolName(propertyAccessExpression);
+            !wellKnown.empty() && !isa<mlir_ts::SymbolType>(expressionValue.getType()) &&
+            !evaluateProperty(location, expressionValue, wellKnown.str(), genContext))
+        {
+            return V(builder.create<mlir_ts::ConstantOp>(location, getSymbolType(), builder.getStringAttr(wellKnown)));
+        }
+
         auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression)).copy(stringAllocator);
 
         auto fieldResult = mlirGenPropertyAccessExpression(location, expressionValue, namePtr,

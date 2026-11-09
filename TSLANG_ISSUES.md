@@ -60,3 +60,19 @@ can reach the call is defined in the module and none returns a borrow of its arg
 gives back its argument or what it captured is still refused. Regression tests
 `tslang/test/tester/tests/00tslang_issues_31_33.ts` and `tslang/test/tester/own/own_err_capture_*.ts`,
 `own_err_callback_result_*.ts`.
+
+Items 37 and 38, found on 2026-11-08 while trying to add JavaScript's `Symbol` to the default library:
+37 (a function named `Symbol` crashed the compiler, even when nothing called it): the default library's
+`[Symbol.toPrimitive]` and the like then named a member the function hasn't got, and the failed computed
+name was read as if it had a value. A failed computed name is now the error it is, and see 38. 38 (a
+declared `Symbol` hid the built-in one): `[Symbol.iterator]` and the other well-known names are recognized
+in a computed name before `Symbol` is resolved, so a `Symbol` declared as a function or a class leaves them
+working. As a value, `Symbol.iterator` stays the built-in one unless the declared `Symbol` has that member.
+`typeof Symbol.iterator` gives `"symbol"`. Printing a symbol, or storing one in a variable that is used at
+run time, is now a compile error that says so; it was an internal error before. A library can now declare
+`Symbol`, so `Symbol("x")`, `Symbol.for`, `Symbol.keyFor`, `description` and `toString` are library work.
+Regression tests `tslang/test/tester/tests/00tslang_issue_37.ts`, `00tslang_issue_38.ts`,
+`symbol_value_error.ts` and `computed_name_failed_error.ts`.
+
+Still open from 38: a symbol made at run time can't be a property key (`obj[sym]`). Fields are laid out at
+compile time, so a symbol needs a run-time value and a way to look a key up. It has not been tried.
