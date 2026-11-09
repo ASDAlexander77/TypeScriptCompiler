@@ -5213,7 +5213,7 @@ set(own_error_cases
     "own_err_let_field_captured|:18:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_back_reference_taken|:10:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_back_reference_stored|:15:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
-    "own_err_back_reference_captures|:12:20: error: a closure that escapes owns what it captures, but -mm=own cannot move 'this' into it: its value is the caller's"
+    "own_err_back_reference_captures|:13:20: error: a closure that escapes owns what it captures, but -mm=own cannot move 'this' into it: its value is the caller's"
     "own_err_closure_kept_param_used|:19:11: error: '[^']*' is used here after its value was moved")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)

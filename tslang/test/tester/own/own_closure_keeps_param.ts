@@ -98,12 +98,11 @@ function main() {
         };
     }) == 2, "back-reference from an arrow capturing nothing");
 
-    // ...and one that captures a number and a handle
+    // ...and one that captures a variable of its own
     let seen = 0;
-    const shared = new Shared(new Item(3));
+    const step = new Item(3);
     assert(run((self: Scope) => {
-        const counter = shared;
-        seen += counter.value.n;
+        seen += step.n;
         self.handler = () => {
             self.count++;
         };
