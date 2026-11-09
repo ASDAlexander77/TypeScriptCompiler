@@ -5699,7 +5699,8 @@ a method typed with its class that returns `this` has it; families must agree on
 **Saying it.** A method whose result type is `this` says it: MLIRGen marks it
 (`ts.own_declared_returns_this`) and implies `@lends("this")` (`ts.own_implied_lends`). A function only
 this module calls drops the implied `@lends` (its callers go by its body; a declared one would want
-every other fact declared too). A body is held to it: one that returns another object of the type
+every other fact declared too), unless it says what it keeps (`@keeps`): it then declares its callers'
+side, and the implied `@lends` is part of it. A body is held to it: one that returns another object of the type
 (`clone(): this { return <this>new A() }`, valid TypeScript) is an error under own. A declaration
 (`lib.d.ts`) has no body, so its `: this` is what callers know, and the `-shared` declaration printer
 writes `: this` for such a method. There is no decorator: `: this` is the one way.
@@ -5709,3 +5710,16 @@ call sees the one before it): a call with the fact whose argument is fresh, that
 keep, and that nothing uses after the call but its releases in the same block, loses those releases,
 and its result is `__own_fresh_result` - the temporary, now the result's to release. On an object
 someone owns the result stays a borrow, bounded by it.
+
+## 79. An indexer of a class from a library, 2026-11-09
+
+`obj[key] = value` on a class with an indexer calls its `set`. For a class imported from a library
+(`isDynamicImport`) the accessor is looked up by name: the call goes through
+`ts.Cast(ts.SearchForAddressOfSymbol("C.set"))`, which the signature pass did not resolve, so the call
+had no facts and the caller freed what a `@keeps` `set` kept (TSLANG_ISSUES 43: a double free, a hang
+at exit). `searchedSymbol` resolves such a callee to the function the module declares by that name,
+and its declared `@keeps` and `@lends` apply, as to `obj.set(key, value)`.
+
+Found with it, under every model: the call lowered for an indexer's `set` had no result, also when
+`set` returns one (`set(key, value): this`), so the call disagreed with the function it calls and the
+lowering to LLVM crashed now and then. It has the setter's results now, unused.

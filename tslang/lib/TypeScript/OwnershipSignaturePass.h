@@ -675,6 +675,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // its `__own_no_drops`.
     bool addImportedByAddress(mlir::Value callee, Callees &callees);
 
+    // `ts.Cast(ts.SearchForAddressOfSymbol(name))` of a constant name this module declares a
+    // function by: that function's symbol
+    mlir::StringAttr searchedSymbol(mlir::Operation *def);
+
     Callees resolve(mlir::Operation *op);
 
     // The function value a call goes through: a method of a class, virtual or not, a symbol, or
