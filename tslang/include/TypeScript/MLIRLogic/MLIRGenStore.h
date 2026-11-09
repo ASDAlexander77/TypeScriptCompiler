@@ -177,6 +177,8 @@ struct MethodInfo
     uint64_t ownLendsMask = 0;
     // `@record` (OWN_DECLARED_RECORD_ATTR_NAME): what `@lends` names, the result is a record of
     bool ownRecord = false;
+    // the result is `this`, the object itself (OWN_DECLARED_RETURNS_THIS_ATTR_NAME, own spec 78)
+    bool ownReturnsThis = false;
     // `@immortalizes` (OWN_DECLARED_IMMORTALIZES_ATTR_NAME), as a mask like `@lends`'s, of 32 bits
     uint32_t ownImmortalizesMask = 0;
 };

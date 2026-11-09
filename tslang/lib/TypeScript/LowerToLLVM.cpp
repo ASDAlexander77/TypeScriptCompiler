@@ -2403,7 +2403,9 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             // read by -mm=own only
             if (name == OWN_DECLARED_NO_DROPS_ATTR_NAME || name == OWN_DECLARED_KEEPS_ATTR_NAME ||
                 name == OWN_DECLARED_BORROWS_ATTR_NAME || name == OWN_DECLARED_LENDS_ATTR_NAME ||
-                name == OWN_DECLARED_RECORD_ATTR_NAME || name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME ||
+                name == OWN_DECLARED_RECORD_ATTR_NAME || name == OWN_DECLARED_RETURNS_THIS_ATTR_NAME ||
+                name == OWN_IMPLIED_LENDS_ATTR_NAME ||
+                name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME ||
                 name == OWN_DECLARED_IMMORTALIZES_ATTR_NAME || name == OWN_DECLARED_COPIES_ATTR_NAME ||
                 name == OWN_CANNOT_SHARE_ATTR_NAME) {
                 continue;
@@ -6252,7 +6254,10 @@ struct ValueOrDefaultOpLowering : public TsLlvmPattern<mlir_ts::ValueOrDefaultOp
     {
         auto loc = valueOrDefaultOp->getLoc();
 
-        valueOrDefaultOp->emitWarning("casting from optional (undefined) value");
+        if (!valueOrDefaultOp->hasAttr(EXPLICIT_CAST_ATTR_NAME))
+        {
+            valueOrDefaultOp->emitWarning("casting from optional (undefined) value");
+        }
 
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());

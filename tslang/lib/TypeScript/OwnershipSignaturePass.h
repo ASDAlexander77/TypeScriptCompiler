@@ -450,6 +450,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool record = false;
         // the record is a tuple that owns nothing (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME)
         bool unboxed = false;
+        // the result is the one argument it borrows, itself (OWN_RESULT_ITSELF_ATTR_NAME, spec 78)
+        bool itself = false;
 
         bool empty() const
         {
@@ -458,7 +460,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         bool operator==(const Facts &other) const
         {
-            return borrows == other.borrows && owned == other.owned && record == other.record && unboxed == other.unboxed;
+            return borrows == other.borrows && owned == other.owned && record == other.record && unboxed == other.unboxed &&
+                   itself == other.itself;
         }
 
         bool operator!=(const Facts &other) const
@@ -911,7 +914,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<int32_t> borrows;
         bool record = false;
         bool unboxed = false;
+        // every value returned is the parameter it borrows, read as it is (spec 78)
+        bool itself = false;
     };
+
+    // Is `value` parameter `index` itself: the argument, or a read of its slot, seen through views?
+    static bool isParameterItself(mlir::Value value, int32_t index);
+
+    // A call whose result is its argument itself (OWN_RESULT_ITSELF_ATTR_NAME), given a temporary
+    // the caller owns and uses no more after the call but to release it: the result is the
+    // temporary, the caller's own. The temporary's releases go, and the call's result is fresh
+    // (spec 78): `JsonValue.newObject().set(...).set(...)` returned or kept.
+    void transferTemporaryReceivers();
 
     // What the function's result borrows (spec 2.4, 32): the one parameter every heap value it returns
     // is a borrow of, or, when every such value is a borrowing record, the parameters the records
@@ -984,6 +998,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // it in turn? A local that holds it, and the result it is returned as, do not count: the first
     // is a borrow, the second a borrowed result.
     static bool keeps(mlir::Operation *user, mlir::Value used);
+
+    // Is the closure over `box` kept (keeps, through views), and no back-reference (spec 70)? Then
+    // it owns what its box holds of the function's parameters: the function keeps them (spec 76).
+    static bool keepsClosure(mlir::Value box);
+
+    // The parameter whose cell `cellOp` is - a captured local made of it - or -1.
+    static int32_t parameterOfCell(mlir_ts::VariableOp cellOp);
 
     // The parameters the body keeps (spec 2.4, owned-by-callee): a read of the parameter's slot -
     // never assigned - that something keeps. A generator that says `@keeps` keeps too each parameter

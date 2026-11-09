@@ -50,6 +50,10 @@ namespace mlir_ts = mlir::typescript;
 // nothing it gets back; the record is bounded by the arguments named as a boxed one is, and its
 // releases, and those of the locals that hold it, give nothing back (spec 36).
 #define OWN_RESULT_RECORD_UNBOXED_ATTR_NAME "__own_result_record_unboxed"
+// Beside OWN_RESULT_BORROWS_ATTR_NAME naming one argument: the result is that argument itself, on
+// every path (`return this`). Given a temporary the caller owns no more after the call, the result is
+// the caller's own (spec 78).
+#define OWN_RESULT_ITSELF_ATTR_NAME "__own_result_itself"
 // On the local an object literal of tuple type is built in, when it is an unboxed borrowing record
 // (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME): the fields it borrows.
 #define OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME "__own_record_unboxed_fields"
@@ -352,8 +356,10 @@ inline llvm::SmallVector<mlir::Value> valuesStoredInto(mlir_ts::VariableOp varOp
 // printed into a string) or boxes (into `any`) makes a new block and is not one.
 inline bool isView(mlir::Operation *op)
 {
+    // (`ts.ValueOrDefault` of a class: the optional's object, or null - the same block or none, spec 77)
     if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
-                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op))
+                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op) ||
+        (mlir::isa_and_nonnull<mlir_ts::ValueOrDefaultOp>(op) && mlir::isa<mlir_ts::ClassType>(op->getResult(0).getType())))
     {
         return true;
     }
@@ -1468,7 +1474,23 @@ inline mlir::BlockArgument parameterRead(mlir::Value value)
 inline bool isMemberThis(mlir::Value value)
 {
     auto argument = parameterRead(value);
-    return argument && argument.getArgNumber() == 0 && mlir::isa<mlir_ts::ClassType>(argument.getType());
+    if (!argument || !mlir::isa<mlir_ts::ClassType>(argument.getType()))
+    {
+        return false;
+    }
+
+    // a closure's body takes its box first (a reference to the tuple of what it captures): its first
+    // parameter is the one after it, so an arrow that captures something and fills a field of the
+    // object it is given is the same back-reference as one that captures nothing (spec 75)
+    auto *block = argument.getOwner();
+    auto first = 0u;
+    if (argument.getArgNumber() > 0 && block->getNumArguments() > 1)
+    {
+        auto boxType = mlir::dyn_cast<mlir_ts::RefType>(block->getArgument(0).getType());
+        first = boxType && mlir::isa<mlir_ts::TupleType>(boxType.getElementType()) ? 1 : 0;
+    }
+
+    return argument.getArgNumber() == first;
 }
 
 // A copy a closure's own box holds, read out of it (the box is the closure body's first argument): the

@@ -5641,3 +5641,71 @@ which needs no `--di`. MLIRGen records where a closure first uses each capture
 (`PassResult::outerVariableUses`) and puts it on the closure (`__capture_uses`, under own only); the
 errors about a capture point there. The fill and its retain keep the arrow's location, so debug info
 never holds a location from another function's scope.
+
+## 75. A back-reference from an arrow that captures, 2026-11-09
+
+An arrow given an object stores a closure over that object into one of its fields (spec 70's
+back-reference: the field owns the closure, the box borrows the object). The rule asked for the
+member's `this`, the function's first parameter of a class type. A closure body takes its box first
+(a reference to the tuple of what it captures), so once the outer arrow captured anything its object
+parameter was second and the inner closure was taken for one that owns a parameter it cannot
+(TSLANG_ISSUES 40). `isMemberThis` now skips a first argument that is a reference to a tuple: the
+outer arrow's own captures do not change whose its parameter is.
+
+## 76. A closure kept owns the parameters it captures, 2026-11-09
+
+An escaping closure owns what it captures; a parameter's value is the caller's, so a closure that
+captured one was refused (spec 16) unless it was a back-reference. When the closure itself is kept
+- stored into a field, a global or an array, or given to a call that keeps it (`keeps`, through views) -
+and is no back-reference, the function keeps each parameter its box holds, captured by copy or in a
+cell (`keepsClosure`, `localOwnedParams`): its callers move the argument in, as they do for one stored
+into a field, and `@keeps` may say so (TSLANG_ISSUES 41). The cell then moves into the box as a kept
+parameter's does (decideEscaping). Not the member's `this`, which the object the closure goes into
+would own. A closure returned still cannot capture a parameter: its result would be a fact (a result
+that owns a parameter) callers have no way to be told.
+
+The error for a capture that still cannot move names it, from the box's field (`'this'`, `'c'`).
+
+## 77. A local exchanged with a place, 2026-11-09
+
+`[data, this.data] = [this.data, data]` was built through an array literal: the field's value, read
+out of it, was a borrow stored into the array (TSLANG_ISSUES 42). MLIRGen now writes an exchange of a
+local that owns what it holds and a field or an element of the same type as two reads, both counted,
+then the place given the local's value and the local given the place's, each store releasing what
+its storage held (`mlirGenSwapWithLocal`), under every model. The place goes first: rc's counts stay
+whole, and own sees the place's release, right before the store that refills it, as the hand-over of
+the value read to the local: `refilledFieldTakeOf` takes a read whose one taker comes after the
+refill, with nothing but reads, counts and stores of locals between (no call, no release of the
+object's local), erases rc's retain and the refill's release, and the read is the local's. A string
+is copied instead (spec 22). The local's old value moves into the place as any `let` moves into a
+field, and the local's assignment after it is a kill (spec 24).
+
+`<T>data` of a `T | undefined` with T a class was `HasValue ? Value : null`, a merge own could not
+follow. It is now one `ts.ValueOrDefault` (marked as an explicit cast, so it does not warn), which is a
+view: the optional's object or none.
+
+## 78. A method that returns its receiver, 2026-11-09
+
+A method that returns `this` so calls chain (`set(k, v).set(k2, v2)`) has a result that borrows its
+receiver. Called on a temporary (`JsonValue.newObject().set(...)`), that borrow had no owner but the
+temporary, released at the end of the statement, so the chain could not be returned or kept
+(TSLANG_ISSUES 39). `@lends("this")` cannot mean more: `at()` and `get()` lend an element.
+
+**The fact.** `__own_result_itself`, beside `__own_result_borrows` naming one argument: the result is
+that argument itself on every path - each returned value is the parameter or a read of its unassigned
+slot, through views, never `null` (`isParameterItself`). The signature pass infers it from a body, so
+a method typed with its class that returns `this` has it; families must agree on it as on the rest.
+
+**Saying it.** A method whose result type is `this` says it: MLIRGen marks it
+(`ts.own_declared_returns_this`) and implies `@lends("this")` (`ts.own_implied_lends`). A function only
+this module calls drops the implied `@lends` (its callers go by its body; a declared one would want
+every other fact declared too). A body is held to it: one that returns another object of the type
+(`clone(): this { return <this>new A() }`, valid TypeScript) is an error under own. A declaration
+(`lib.d.ts`) has no body, so its `: this` is what callers know, and the `-shared` declaration printer
+writes `: this` for such a method. There is no decorator: `: this` is the one way.
+
+**The call.** After the facts settle (`transferTemporaryReceivers`, in program order so a chain's next
+call sees the one before it): a call with the fact whose argument is fresh, that the callee does not
+keep, and that nothing uses after the call but its releases in the same block, loses those releases,
+and its result is `__own_fresh_result` - the temporary, now the result's to release. On an object
+someone owns the result stays a borrow, bounded by it.

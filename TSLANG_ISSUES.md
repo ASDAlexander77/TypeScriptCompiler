@@ -76,3 +76,22 @@ Regression tests `tslang/test/tester/tests/00tslang_issue_37.ts`, `00tslang_issu
 
 Still open from 38: a symbol made at run time can't be a property key (`obj[sym]`). Fields are laid out at
 compile time, so a symbol needs a run-time value and a way to look a key up. It has not been tried.
+
+Items 39-42, `-mm=own` limits found in the default library on 2026-11-09 (TypeScriptCompilerDefaultLib
+PRs #80-#85), are fixed. 39 (a chain from a new value, `JsonValue.newObject().set(...).set(...)`, could
+not be returned or kept): a method whose result type is `this` returns the object it is called on, and
+called on a temporary the caller owns, its result is that object, the caller's to keep. `: this` says
+it, with no decorator, and implies `@lends("this")`; under `-mm=own` a body that returns another object
+of the type is an error. A method typed with its class that returns `this` on every path works the same
+within its module; for another module, `: this` is how a declaration says it (the `-shared` declaration
+printer writes it). The default library's `set` and `push` return `this` now, and `tests/json.ts` runs
+its chains under every model. 40 (an arrow that captures something could not store a closure over its
+object parameter into a field of that object): it is a back-reference as it is from an arrow that
+captures nothing. 41 (a closure kept in a field could not capture a parameter, and `@keeps` could not
+say it did): a closure that is kept owns the parameters it captures, so the function keeps them and its
+callers give them up; `@keeps("body")` is accepted. The error for a capture that still cannot move names
+the variable. 42 (`[data, this.data] = [this.data, data]` did not move a class instance out of a
+`T | undefined` field): an exchange of a local and a field or an element hands each value over under
+every model, and `<T>data` of such a local is a view of it. Regression tests
+`tslang/test/tester/own/own_chain_returns_this.ts`, `own_closure_keeps_param.ts`,
+`own_swap_local_field.ts`, `own_err_this_result_other.ts` and `own_err_closure_kept_param_used.ts`.

@@ -67,7 +67,8 @@ namespace own_signature
             // what the declaration says of its parameters described the body that is gone: nothing
             // calls the stub, so nothing needs it
             for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
-                               OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_IMMORTALIZES_ATTR_NAME})
+                               OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_RETURNS_THIS_ATTR_NAME,
+                               OWN_IMPLIED_LENDS_ATTR_NAME, OWN_DECLARED_IMMORTALIZES_ATTR_NAME})
             {
                 funcOp->removeAttr(name);
             }
@@ -183,6 +184,15 @@ namespace own_signature
         });
 
         findOpen(module);
+        // the `@lends("this")` a result type `this` implies, on a function only this module calls: its
+        // callers go by its body, as for any other function here (spec 78)
+        for (auto &entry : functions)
+        {
+            if (entry.second->hasAttr(OWN_IMPLIED_LENDS_ATTR_NAME) && !entry.second.isDeclaration() && !open.contains(entry.second))
+            {
+                entry.second->removeAttr(OWN_DECLARED_LENDS_ATTR_NAME);
+            }
+        }
         // before the facts: a value kept for good is immortal, which keeps nothing of its owner
         findKeepers(module);
         decideKeptForGood(module);
@@ -196,6 +206,7 @@ namespace own_signature
         findYieldedFields(module);
         findImportedStates(module);
         checkDeclared();
+        transferTemporaryReceivers();
 
         for (auto &call : calls)
         {
@@ -574,6 +585,34 @@ namespace own_signature
                 continue;
             }
 
+            // a method whose result type is `this` (spec 78): it lends its `this` alone, and a body here
+            // returns that object, as it is, on every path
+            if (funcOp->hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME))
+            {
+                auto inputs = funcOp.getFunctionType().getInputs();
+                auto lends = declaredLends(funcOp);
+                // (no `@lends` left: the one the result type implied, dropped for a function only this module calls)
+                if ((!lends.empty() && (lends.size() != 1 || lends.front() != 0)) || inputs.empty() ||
+                    !mlir::isa<mlir_ts::ClassType>(inputs.front()) ||
+                    funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME))
+                {
+                    funcOp.emitError("'") << funcOp.getSymName()
+                                          << "' returns 'this', so it lends 'this' alone: '@" LENDS_DECORATOR
+                                             "' cannot name another parameter, nor '@" RECORD_DECORATOR "' be said";
+                    signalPassFailure();
+                    continue;
+                }
+
+                if (!funcOp.isDeclaration() && !factsLocal.lookup(funcOp).itself)
+                {
+                    funcOp.emitError("'") << funcOp.getSymName()
+                                          << "' has the result type 'this', but its body returns something else than the "
+                                             "object it is called on, on some path; -mm=own takes 'this' for that object";
+                    signalPassFailure();
+                    continue;
+                }
+            }
+
             if (declaresCallerFacts(funcOp))
             {
                 auto local = factsLocal.lookup(funcOp);
@@ -700,7 +739,7 @@ namespace own_signature
                 }
 
                 for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
-                                   OWN_DECLARED_RECORD_ATTR_NAME})
+                                   OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_RETURNS_THIS_ATTR_NAME})
                 {
                     if (funcOp->hasAttr(name) != declaring->hasAttr(name) || declared(funcOp, name) != declared(declaring, name))
                     {
@@ -810,10 +849,108 @@ namespace own_signature
 
         if (found >= 0)
         {
-            return {{found}, false};
+            ResultBorrows result{{found}, false};
+            auto returned = returnedValues(funcOp);
+            result.itself = !returned.empty() && llvm::all_of(returned, [&](mlir::Value value) { return isParameterItself(value, found); });
+            return result;
         }
 
         return {};
+    }
+
+    void OwnershipSignaturePass::transferTemporaryReceivers()
+    {
+        // in the order of the program, so a chain's next call sees the one before it fresh; the
+        // releases go once every call is decided (a walk must not erase what it has yet to visit)
+        llvm::SmallVector<mlir::Operation *> candidates;
+        getOperation().walk([&](mlir::Operation *op) {
+            if (op->hasAttr(OWN_RESULT_ITSELF_ATTR_NAME) && op->getNumResults() == 1 && resultBorrowsAll(op).size() == 1)
+            {
+                candidates.push_back(op);
+            }
+        });
+
+        llvm::SetVector<mlir::Operation *> erased;
+        for (auto *op : candidates)
+        {
+            // a temporary: made fresh, not kept by the callee, given to nothing after the call but
+            // its releases
+            auto args = callArgs(op);
+            auto index = resultBorrowsAll(op).front();
+            if (index < 0 || static_cast<size_t>(index) >= args.size() || llvm::is_contained(ownedParams(op), index))
+            {
+                continue;
+            }
+
+            // a method called through the object's vtable or by its symbol: the object it is bound to
+            auto receiver = args[index];
+            if (auto object = boundThis(receiver); object && mlir::isa<mlir_ts::ClassType>(object.getType()))
+            {
+                receiver = object;
+            }
+
+            // the caller's own: fresh, or what a call that borrows nothing returns (another module's
+            // `JsonValue.newObject()`), which the caller releases
+            auto *producer = receiver.getDefiningOp();
+            auto owned = isFresh(receiver) ||
+                         (producer && isCall(producer) && resultBorrowsAll(producer).empty() && !isRecordResult(producer));
+            if (!owned)
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Operation *> releases;
+            auto temporary = llvm::all_of(receiver.getUsers(), [&](mlir::Operation *user) {
+                if (user == op)
+                {
+                    return true;
+                }
+
+                if (mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() == op->getBlock() && op->isBeforeInBlock(user))
+                {
+                    releases.push_back(user);
+                    return true;
+                }
+
+                // a use before the call, whose own uses are before it too or the call itself (rc's
+                // header of a new object, the method bound to it)
+                std::function<bool(mlir::Operation *, int)> before = [&](mlir::Operation *other, int depth) {
+                    return depth < 4 && other->getBlock() == op->getBlock() && other->isBeforeInBlock(op) &&
+                           llvm::all_of(other->getUsers(), [&](mlir::Operation *use) { return use == op || before(use, depth + 1); });
+                };
+                return before(user, 0);
+            });
+            if (!temporary)
+            {
+                continue;
+            }
+
+            // the result is the temporary itself: its releases are the result's to make
+            erased.insert(releases.begin(), releases.end());
+            op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+            op->removeAttr(OWN_RESULT_ITSELF_ATTR_NAME);
+            op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(op->getContext()));
+        }
+
+        for (auto *release : erased)
+        {
+            release->erase();
+        }
+    }
+
+    bool OwnershipSignaturePass::isParameterItself(mlir::Value value, int32_t index)
+    {
+        auto root = rootOf(value);
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root))
+        {
+            return argument.getOwner()->isEntryBlock() && mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) &&
+                   static_cast<int32_t>(argument.getArgNumber()) == index;
+        }
+
+        auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto position = -1;
+        return varOp && isParameterSlot(varOp, position) && position == index;
     }
 
     int32_t OwnershipSignaturePass::mixedReturnParam(mlir_ts::FuncOp funcOp)
@@ -894,11 +1031,15 @@ namespace own_signature
             // assigns, which a closure captures by copy too, or a copy the enclosing closure's box
             // holds: the object is the caller's, which no box can own. A closure that does not escape
             // borrows it, as it did the cell; one stored into a field of `this` is a back-reference;
-            // any other one is inference's error
+            // any other one is inference's error - unless the closure is kept itself (stored into a
+            // field, a global, an array, or given to a call that keeps it): then it owns the parameter,
+            // as a field it is stored into would, and the callers give it up (spec 76). Not the
+            // member's `this`, which its callers cannot give to an object the object owns.
             if (auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
                 propertyRefOp && isBorrowableCapture(used) && closureOfBox(propertyRefOp->getOperand(0)))
             {
-                return false;
+                return storeOp.getValue() == used && parameterRead(used) && !isMemberThis(used) &&
+                       keepsClosure(propertyRefOp->getOperand(0));
             }
 
             // ...or a bound method of `this` stored into a field of `this`: it borrows the object
@@ -967,6 +1108,32 @@ namespace own_signature
         return false;
     }
 
+    bool OwnershipSignaturePass::keepsClosure(mlir::Value box)
+    {
+        auto boundOp = closureOfBox(box);
+        if (!boundOp || isBackReferenceBox(box))
+        {
+            return false;
+        }
+
+        auto kept = false;
+        forEachUse(boundOp.getResult(), [&](mlir::Operation *use, mlir::Value used) { kept = kept || keeps(use, used); });
+        return kept;
+    }
+
+    int32_t OwnershipSignaturePass::parameterOfCell(mlir_ts::VariableOp cellOp)
+    {
+        auto argument = cellOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(cellOp.getInitializer())
+                                                : mlir::BlockArgument();
+        if (!cellOp.getCaptured().value_or(false) || isOwningVariable(cellOp) || !argument ||
+            !argument.getOwner()->isEntryBlock() || !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()))
+        {
+            return -1;
+        }
+
+        return static_cast<int32_t>(argument.getArgNumber());
+    }
+
     llvm::SmallVector<int32_t> OwnershipSignaturePass::localOwnedParams(mlir_ts::FuncOp funcOp)
     {
         llvm::SmallVector<int32_t> owned;
@@ -1004,6 +1171,27 @@ namespace own_signature
                             kept = kept || keeps(use, used);
                         });
                     }
+                }
+            }
+
+            // the parameter's cell, given to a closure that is kept: the closure owns the cell, and
+            // the value in it, so the function keeps the parameter (spec 76)
+            for (auto *argumentUser : argument.getUsers())
+            {
+                auto cellOp = mlir::dyn_cast<mlir_ts::VariableOp>(argumentUser);
+                if (kept || !cellOp || parameterOfCell(cellOp) != static_cast<int32_t>(argument.getArgNumber()) ||
+                    !own_facts::ownsHeap(cellOp.getLoc(), argument.getType()))
+                {
+                    continue;
+                }
+
+                for (auto *cellUser : cellOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(cellUser);
+                    auto propertyRefOp = storeOp && storeOp.getValue() == cellOp.getResult()
+                                             ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                             : mlir_ts::PropertyRefOp();
+                    kept = kept || (propertyRefOp && keepsClosure(propertyRefOp->getOperand(0)));
                 }
             }
 
@@ -1108,6 +1296,7 @@ namespace own_signature
                     facts.borrows = std::move(result.borrows);
                     facts.record = result.record;
                     facts.unboxed = result.unboxed;
+                    facts.itself = result.itself;
                     facts.owned = localOwnedParams(entry.second);
                     // what the body takes into something on every path; a parameter it returns on
                     // some paths only is kept too, and released on the others (spec 33)
@@ -1140,6 +1329,8 @@ namespace own_signature
                         lends.erase(std::unique(lends.begin(), lends.end()), lends.end());
                         facts.borrows = lends;
                         facts.record = calleesDeclare(call.callees, OWN_DECLARED_RECORD_ATTR_NAME);
+                        facts.itself = lends.size() == 1 && !facts.record &&
+                                       calleesDeclare(call.callees, OWN_DECLARED_RETURNS_THIS_ATTR_NAME);
                     }
                 }
 
@@ -1192,6 +1383,11 @@ namespace own_signature
                               (entry.second.isDeclaration() ? entry.second->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME)
                                                             : local.record && local.borrows == said.borrows);
                 said.unboxed = said.record && !entry.second.isDeclaration() && local.unboxed;
+                // the result is the object itself: a declaration's result type `this` says so, a body
+                // here shows it (checkDeclared holds a body to its `: this`)
+                said.itself = said.borrows.size() == 1 && !said.record &&
+                              (entry.second.isDeclaration() ? entry.second->hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME)
+                                                            : local.itself && local.borrows == said.borrows);
                 if (factsThroughInterface(entry.second, said))
                 {
                     continue;
@@ -1298,10 +1494,16 @@ namespace own_signature
         op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
         op->removeAttr(OWN_RESULT_RECORD_ATTR_NAME);
         op->removeAttr(OWN_RESULT_RECORD_UNBOXED_ATTR_NAME);
+        op->removeAttr(OWN_RESULT_ITSELF_ATTR_NAME);
         op->removeAttr(OWN_PARAMS_ATTR_NAME);
         if (!facts.borrows.empty())
         {
             op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, facts.borrows));
+            if (facts.itself && facts.borrows.size() == 1 && !facts.record)
+            {
+                op->setAttr(OWN_RESULT_ITSELF_ATTR_NAME, mlir::UnitAttr::get(context));
+            }
+
             if (facts.record)
             {
                 op->setAttr(OWN_RESULT_RECORD_ATTR_NAME, mlir::UnitAttr::get(context));

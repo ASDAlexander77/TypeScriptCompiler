@@ -39,6 +39,10 @@
 // retain nobody performed and free live memory.
 #define OWNED_RESULT_ATTR_NAME "__owned_result"
 
+// On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
+// it, so its lowering does not warn that an optional value is read as it is.
+#define EXPLICIT_CAST_ATTR_NAME "__explicit_cast"
+
 // -mm=own only, set by OwnershipInferencePass for the lowering. On a `ts.Release` of an array: the
 // array borrowed its elements (the array a rest parameter is given), so its release frees the
 // array and not them.
@@ -376,6 +380,15 @@
 // that returns such a record has to say it. A unit attribute on the FuncOp.
 #define RECORD_DECORATOR "record"
 #define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
+// A method whose result type is `this`: it returns the object it is called on, on every path, not
+// another of its type nor a borrow of something in it. Called on a value the caller owns no more
+// after the call - a temporary - the result is that value, the caller's to own (own spec 78). A unit
+// attribute on the FuncOp, set by MLIRGen beside OWN_DECLARED_LENDS_ATTR_NAME naming `this`.
+#define OWN_DECLARED_RETURNS_THIS_ATTR_NAME "ts.own_declared_returns_this"
+// Beside OWN_DECLARED_LENDS_ATTR_NAME: no `@lends` said it, the result type `this` did. For a function
+// no other module calls, -mm=own goes by its body and drops it (a declared `@lends` would want every
+// other fact declared too).
+#define OWN_IMPLIED_LENDS_ATTR_NAME "ts.own_implied_lends"
 // `@copies`: inside this function -mm=own may copy an array whose elements own nothing where it cannot
 // prove one owner (own spec 71), as it copies a string anywhere. A copy of an array can be told from
 // the array - a change to one is not a change to the other - so only a function that says so makes

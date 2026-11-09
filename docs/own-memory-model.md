@@ -219,6 +219,30 @@ function main() {
 6 2
 ```
 
+A closure kept - stored into a field, a global or an array, or given to a function that keeps it -
+owns the parameters it captures, so the function keeps them and its callers give them up, as for a
+parameter stored into a field. A closure stored into a field of the object it captures is a
+back-reference instead: it borrows that object.
+
+```typescript
+class Holder {
+    run: () => number;
+
+    constructor(body: (n: number) => number) {
+        this.run = () => body(2);      // the closure is kept, and owns body
+    }
+}
+
+function main() {
+    const h = new Holder((n: number) => n * 21);
+    print(h.run());
+}
+```
+
+```text
+42
+```
+
 A closure kept for good, in an array that is only ever pushed onto, is covered by
 [`@immortalizes`](#immortalizes).
 
@@ -440,6 +464,40 @@ function main() {
 
 `@lends` with one name is a plain borrow. With several, the result is a record that borrows each
 of them, and it needs [`@record`](#record).
+
+### A method that returns `this`
+
+A method whose result type is `this` returns the object it is called on, so calls chain. It lends
+`this` without saying `@lends("this")`, and the compiler checks that the body returns `this` on every
+path (one that returns another object of the type is an error under own). Called on an object the
+caller owns no more after the call - a new one - the result is that object, the caller's to keep:
+a chain from a new value can be returned, stored or given to a function that keeps it. A method of
+a class only this module uses may say the class instead of `this`; its body shows the same.
+
+```typescript
+export class Bag {
+    items: number[] = [];
+
+    add(n: number): this {
+        this.items.push(n);
+        return this;
+    }
+}
+
+function filled(): Bag {
+    return new Bag().add(1).add(2);     // the new Bag, given back
+}
+
+function main() {
+    const b = filled();
+    b.add(3);                           // on b: a borrow of it, used in place
+    print(b.items.length);
+}
+```
+
+```text
+3
+```
 
 ### `@record`
 
@@ -744,8 +802,10 @@ a reference gives it back on every path out of a function.
   or build the result from copies.
 - `reverse` and `sort` work on arrays of numbers, strings and class instances. They exchange
   elements with `[a[i], a[j]] = [a[j], a[i]]`, which moves nothing; swap two elements or two fields
-  the same way in your own code. A swap through a local (`let t = a[i]; a[i] = a[j]; a[j] = t`)
-  gives an object in `t` a second owner, which is an error. A callback your function only calls,
+  the same way in your own code. To take a value out of a place, exchange it with a local:
+  `let v: T | undefined = undefined; [v, this.f] = [this.f, v]` leaves the place holding what the
+  local held and the local owning what the place held. A swap through a local (`let t = a[i];
+  a[i] = a[j]; a[j] = t`) gives an object in `t` a second owner, which is an error. A callback your function only calls,
   tests (`compare && compare(a, b)`), hands on to another function (as `sort` hands its comparison
   to a helper), names again (`const g = f`) or captures in a closure that calls it (`a.forEach((v)
   => f(v))`, also kept in a local) is known by the functions its callers pass. So is one stored in

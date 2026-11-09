@@ -3759,6 +3759,29 @@ class MLIRGenImpl
             }
         });
 
+        // A method whose result type is `this` returns the object it is called on, as it is: it lends
+        // its `this` (`@lends("this")` without saying so), and -mm=own holds a body to it (own spec 78).
+        auto hasAttr = [&](StringRef name) {
+            return llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == name; });
+        };
+        auto returnsThisType = functionLikeDeclarationBaseAST->type && functionLikeDeclarationBaseAST->type == SyntaxKind::ThisType;
+        // (a method's `this` is its first parameter, by that name: `@lends("this")` finds it so)
+        auto isMethod = funcType && !funcType.getInputs().empty() && mlir::isa<mlir_ts::ClassType>(funcType.getInputs().front()) &&
+                        (funcType.getInputs().size() == params.size() + 1 || (!params.empty() && params.front()->getName() == "this"));
+        if (mlir::succeeded(result) && returnsThisType && isMethod)
+        {
+            if (!hasAttr(OWN_DECLARED_LENDS_ATTR_NAME))
+            {
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_LENDS_ATTR_NAME), builder.getDenseI32ArrayAttr({0})});
+                attrs.push_back({builder.getStringAttr(OWN_IMPLIED_LENDS_ATTR_NAME), builder.getUnitAttr()});
+            }
+
+            if (!hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME))
+            {
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME), builder.getUnitAttr()});
+            }
+        }
+
         return result;
     }
 
@@ -7699,6 +7722,48 @@ class MLIRGenImpl
         return reference;
     }
 
+    // The slot of a local a target names, when an exchange with a place may write it as an assignment
+    // does: a local of this function that owns what it holds - not a captured one, whose cell another
+    // frame may read, nor a global.
+    mlir::Value swappableLocal(mlir::Value targetValue)
+    {
+        auto loadOp = targetValue.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!varOp || varOp.getCaptured().value_or(false) || !isOwningSlot(loadOp.getLoc(), varOp.getResult()))
+        {
+            return mlir::Value();
+        }
+
+        return varOp.getResult();
+    }
+
+    // `[local, place] = [place, local]`: both values are read and counted first, then the place is
+    // given the local's value and the local the place's, each store releasing what its storage held,
+    // as an assignment does. Built through an array literal, the place's value would be read out of
+    // it (under -mm=own a borrow, which may not be stored) and the literal would own a second
+    // reference to it. The place is written first: its release frees nothing the local is given,
+    // which -mm=own sees as the place handing its value over to the local (spec 77).
+    void mlirGenSwapWithLocal(mlir::Location location, mlir::Value local, mlir::Value place)
+    {
+        auto placeValue = builder.create<mlir_ts::LoadOp>(location, mlir::cast<mlir_ts::RefType>(place.getType()).getElementType(), place);
+        auto localValue = builder.create<mlir_ts::LoadOp>(location, mlir::cast<mlir_ts::RefType>(local.getType()).getElementType(), local);
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        if (mth.ownsHeapMemory(location, placeValue.getType()))
+        {
+            builder.create<mlir_ts::RetainOp>(location, placeValue);
+            builder.create<mlir_ts::RetainOp>(location, localValue);
+            builder.create<mlir_ts::ReleaseSlotOp>(location, place);
+        }
+
+        builder.create<mlir_ts::StoreOp>(location, localValue, place);
+        if (mth.ownsHeapMemory(location, placeValue.getType()))
+        {
+            builder.create<mlir_ts::ReleaseSlotOp>(location, local);
+        }
+
+        builder.create<mlir_ts::StoreOp>(location, placeValue, local);
+    }
+
     // `[p, q] = [q, p]` of two elements or fields: an exchange, which moves nothing. Built through
     // an array literal, each value would be read out of its place (under -mm=own a borrow, which
     // may not be stored) and the literal would own a second reference to it. Only a statement's,
@@ -7732,7 +7797,22 @@ class MLIRGenImpl
 
         auto firstPlace = swappablePlace(V(first));
         auto secondPlace = swappablePlace(V(second));
-        if (!firstPlace || !secondPlace || firstPlace.getType() != secondPlace.getType())
+        if (!firstPlace || !secondPlace)
+        {
+            // a local and a place: `[data, this.data] = [this.data, data]`
+            auto local = firstPlace ? swappableLocal(V(second)) : swappableLocal(V(first));
+            auto place = firstPlace ? firstPlace : secondPlace;
+            if (local && place && local.getType() == place.getType() && isOwningSlot(location, place))
+            {
+                mlirGenSwapWithLocal(location, local, place);
+                swapped = true;
+            }
+
+            // otherwise the reads are dead: the assignment reads the places again
+            return mlir::success();
+        }
+
+        if (firstPlace.getType() != secondPlace.getType())
         {
             // the reads are dead: the assignment reads the places again
             return mlir::success();
@@ -14457,6 +14537,7 @@ class MLIRGenImpl
                 }
 
                 methodInfo.ownRecord = funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+                methodInfo.ownReturnsThis = funcOp->hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME);
 
                 methodInfo.ownImmortalizesMask = 0;
                 if (auto immortalizes = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_IMMORTALIZES_ATTR_NAME))
