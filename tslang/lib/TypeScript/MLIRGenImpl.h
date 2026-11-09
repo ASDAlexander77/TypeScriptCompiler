@@ -3759,6 +3759,29 @@ class MLIRGenImpl
             }
         });
 
+        // A method whose result type is `this` returns the object it is called on, as it is: it lends
+        // its `this` (`@lends("this")` without saying so), and -mm=own holds a body to it (own spec 78).
+        auto hasAttr = [&](StringRef name) {
+            return llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == name; });
+        };
+        auto returnsThisType = functionLikeDeclarationBaseAST->type && functionLikeDeclarationBaseAST->type == SyntaxKind::ThisType;
+        // (a method's `this` is its first parameter, by that name: `@lends("this")` finds it so)
+        auto isMethod = funcType && !funcType.getInputs().empty() && mlir::isa<mlir_ts::ClassType>(funcType.getInputs().front()) &&
+                        (funcType.getInputs().size() == params.size() + 1 || (!params.empty() && params.front()->getName() == "this"));
+        if (mlir::succeeded(result) && returnsThisType && isMethod)
+        {
+            if (!hasAttr(OWN_DECLARED_LENDS_ATTR_NAME))
+            {
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_LENDS_ATTR_NAME), builder.getDenseI32ArrayAttr({0})});
+                attrs.push_back({builder.getStringAttr(OWN_IMPLIED_LENDS_ATTR_NAME), builder.getUnitAttr()});
+            }
+
+            if (!hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME))
+            {
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME), builder.getUnitAttr()});
+            }
+        }
+
         return result;
     }
 
@@ -14514,6 +14537,7 @@ class MLIRGenImpl
                 }
 
                 methodInfo.ownRecord = funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+                methodInfo.ownReturnsThis = funcOp->hasAttr(OWN_DECLARED_RETURNS_THIS_ATTR_NAME);
 
                 methodInfo.ownImmortalizesMask = 0;
                 if (auto immortalizes = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_IMMORTALIZES_ATTR_NAME))

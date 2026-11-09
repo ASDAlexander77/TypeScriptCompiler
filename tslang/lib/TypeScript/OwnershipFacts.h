@@ -50,6 +50,10 @@ namespace mlir_ts = mlir::typescript;
 // nothing it gets back; the record is bounded by the arguments named as a boxed one is, and its
 // releases, and those of the locals that hold it, give nothing back (spec 36).
 #define OWN_RESULT_RECORD_UNBOXED_ATTR_NAME "__own_result_record_unboxed"
+// Beside OWN_RESULT_BORROWS_ATTR_NAME naming one argument: the result is that argument itself, on
+// every path (`return this`). Given a temporary the caller owns no more after the call, the result is
+// the caller's own (spec 78).
+#define OWN_RESULT_ITSELF_ATTR_NAME "__own_result_itself"
 // On the local an object literal of tuple type is built in, when it is an unboxed borrowing record
 // (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME): the fields it borrows.
 #define OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME "__own_record_unboxed_fields"

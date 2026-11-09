@@ -450,6 +450,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool record = false;
         // the record is a tuple that owns nothing (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME)
         bool unboxed = false;
+        // the result is the one argument it borrows, itself (OWN_RESULT_ITSELF_ATTR_NAME, spec 78)
+        bool itself = false;
 
         bool empty() const
         {
@@ -458,7 +460,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         bool operator==(const Facts &other) const
         {
-            return borrows == other.borrows && owned == other.owned && record == other.record && unboxed == other.unboxed;
+            return borrows == other.borrows && owned == other.owned && record == other.record && unboxed == other.unboxed &&
+                   itself == other.itself;
         }
 
         bool operator!=(const Facts &other) const
@@ -911,7 +914,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<int32_t> borrows;
         bool record = false;
         bool unboxed = false;
+        // every value returned is the parameter it borrows, read as it is (spec 78)
+        bool itself = false;
     };
+
+    // Is `value` parameter `index` itself: the argument, or a read of its slot, seen through views?
+    static bool isParameterItself(mlir::Value value, int32_t index);
+
+    // A call whose result is its argument itself (OWN_RESULT_ITSELF_ATTR_NAME), given a temporary
+    // the caller owns and uses no more after the call but to release it: the result is the
+    // temporary, the caller's own. The temporary's releases go, and the call's result is fresh
+    // (spec 78): `JsonValue.newObject().set(...).set(...)` returned or kept.
+    void transferTemporaryReceivers();
 
     // What the function's result borrows (spec 2.4, 32): the one parameter every heap value it returns
     // is a borrow of, or, when every such value is a borrowing record, the parameters the records

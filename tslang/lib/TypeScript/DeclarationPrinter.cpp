@@ -286,7 +286,8 @@ namespace typescript
         }
     }
 
-    void MLIRDeclarationPrinter::printMethod(bool isStatic, StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType)
+    void MLIRDeclarationPrinter::printMethod(bool isStatic, StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType,
+                                             bool returnsThis)
     {
         if (isStatic)
         {
@@ -297,7 +298,12 @@ namespace typescript
 
         printParams(params, thisType);
 
-        if (returnType)
+        // `: this` - the object the method is called on (own spec 78), which the class would not say
+        if (returnType && returnsThis && !isStatic)
+        {
+            os << " : this";
+        }
+        else if (returnType)
         {
             os << " : ";
             print(returnType);
@@ -798,7 +804,7 @@ namespace typescript
                 StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first,
                 funcType.getParams(),
                 funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type(),
-                thisTypeOf(method.isStatic, funcType.getParams()));
+                thisTypeOf(method.isStatic, funcType.getParams()), method.ownReturnsThis);
 
             newline();
         }
