@@ -3162,7 +3162,7 @@ class MLIRGenImpl
                 }
                 else if (type != init.getType())
                 {
-                    if (mlir::failed(checkStringNumberAssignment(loc(initializer), init.getType(), type)))
+                    if (mlir::failed(checkStringNumberAssignment(loc(initializer), init.getType(), type, genContext)))
                     {
                         return {mlir::Type(), mlir::Value(), TypeProvided::No};
                     }
@@ -3243,13 +3243,32 @@ class MLIRGenImpl
         return StringOrNumber::Neither;
     }
 
-    // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
-    // they hid a mistake - "x" became 0. A union, `any` or an enum on either side is left to the cast.
-    mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType)
+    // In a function an untyped parameter made generic (getParameterGenericTypeName), instantiated for the
+    // types of its arguments: TypeScript has that parameter `any`, which takes and gives anything -
+    // `function f(r) { return parseFloat(r); }` called with a number is no mistake there
+    bool untypedParametersInScope(const GenContext &genContext)
+    {
+        return llvm::any_of(genContext.typeParamsWithArgs,
+                            [](auto &entry) { return entry.getKey().starts_with("TGenParam_"); });
+    }
+
+    // a string given where a number is wanted, or a number where a string is (checkStringNumberAssignment)
+    bool isStringNumberMismatch(mlir::Type valueType, mlir::Type destType, const GenContext &genContext)
     {
         auto from = stringOrNumber(valueType);
         auto to = stringOrNumber(destType);
-        if (from == StringOrNumber::Neither || to == StringOrNumber::Neither || from == to)
+        // a partial resolve may stand in a call's first overload for the one it will pick (an @cpp
+        // class's `write(s32)` for `write(string)`): the full pass checks the one picked
+        return from != StringOrNumber::Neither && to != StringOrNumber::Neither && from != to
+               && !untypedParametersInScope(genContext) && !genContext.allowPartialResolve;
+    }
+
+    // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
+    // they hid a mistake - "x" became 0. A union, `any` or an enum on either side is left to the cast.
+    mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType,
+                                                    const GenContext &genContext)
+    {
+        if (!isStringNumberMismatch(valueType, destType, genContext))
         {
             return mlir::success();
         }
@@ -7158,7 +7177,7 @@ class MLIRGenImpl
             placeType = safeCastOp.getValue().getType();
         }
 
-        if (rightExpressionValue && mlir::failed(checkStringNumberAssignment(location, rightExpressionValue.getType(), placeType)))
+        if (rightExpressionValue && mlir::failed(checkStringNumberAssignment(location, rightExpressionValue.getType(), placeType, genContext)))
         {
             return mlir::failure();
         }
@@ -10919,6 +10938,15 @@ class MLIRGenImpl
 
             if (value.getType() != argTypeDestFuncType)
             {
+                // `f("7")` for `f(n: number)`, or a number for a string: an error, as in TypeScript (TS2345),
+                // as an assignment of one to the other is (checkStringNumberAssignment)
+                if (isStringNumberMismatch(value.getType(), argTypeDestFuncType, genContext))
+                {
+                    emitError(location) << "argument of type '" << to_print(value.getType())
+                                        << "' is not assignable to parameter of type '" << to_print(argTypeDestFuncType) << "'";
+                    return mlir::failure();
+                }
+
                 // A closure or a bound method is a function and the value it runs with (its captures,
                 // its `this`); a plain function type parameter - a C callback (@cdecl, TSLANG_ISSUES 29)
                 // - is only a code pointer, and the cast drops the value: the function would read its

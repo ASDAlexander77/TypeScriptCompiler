@@ -1880,6 +1880,10 @@ add_test(NAME test-compile-assign-number-to-string-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_number_to_string_error.ts")
 set_tests_properties(test-compile-assign-number-to-string-error PROPERTIES PASS_REGULAR_EXPRESSION "type '5' is not assignable to type 'string'"
                                                                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-argument-string-to-number-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_string_to_number_error.ts")
+set_tests_properties(test-compile-argument-string-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type '\"7\"' is not assignable to parameter of type 'number'"
+                                                                           FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class extending a class value known at run time only is an error
 add_test(NAME test-compile-mixin-runtime-base-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")

@@ -1,12 +1,26 @@
 // What a string or a number may still be given, now that a string given to a number (or back) is an
-// error (assign_*_error.ts): what TypeScript allows.
+// error (assign_*_error.ts, argument_*_error.ts): what TypeScript allows.
 
 enum E {
     A,
     B
 }
 
+// an untyped parameter is `any` in TypeScript: given a number, it may still go where a string is
+// wanted (tslang makes the function generic in it, and instantiates it for a number)
+function circumference(r) {
+    return parseFloat(r) * 2;
+}
+
+// a string or a number goes to a parameter of a union of both
+function show(v: number | string) {
+    return "" + v;
+}
+
 function main() {
+    assert(circumference(1.5) == 3 && circumference("2.5") == 5, "an untyped parameter");
+    assert(show(1) == "1" && show("a") == "a", "a union parameter");
+
     // a variable a test narrowed takes anything its declaration allows
     let u: number | string = 1;
     if (typeof u === "number") {

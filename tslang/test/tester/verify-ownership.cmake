@@ -61,6 +61,8 @@ set(not_compilable_alone
     # errors by design (test-compile-assign-string-to-number-error, test-compile-assign-number-to-string-error)
     assign_string_to_number_error.ts
     assign_number_to_string_error.ts
+    # an error by design (test-compile-argument-string-to-number-error)
+    argument_string_to_number_error.ts
     # an error by design (test-compile-cdecl-closure-error)
     cdecl_closure_error.ts
     # an error by design (test-compile-computed-name-failed-error)
