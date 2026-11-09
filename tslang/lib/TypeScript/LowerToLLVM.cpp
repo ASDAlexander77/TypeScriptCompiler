@@ -3273,7 +3273,6 @@ static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, Conversion
 
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
-    LLVMCodeHelper ch(op, rewriter, typeConverter, compileOptions);
 
     auto loc = rewriter.getUnknownLoc();
     auto ptrType = th.getPtrType();
@@ -3296,6 +3295,10 @@ static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, Conversion
 
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
         loc, name, th.getFunctionType(ptrType, {ptrType, ptrType, wordType}), LLVM::Linkage::Internal);
+
+    // anchored at the function, not at `op`: what it builds takes the anchor's location, and one in
+    // the function that asked for the vtable is a debug location in a foreign subprogram (--di)
+    LLVMCodeHelper ch(funcOp, rewriter, typeConverter, compileOptions);
 
     auto *entryBlock = funcOp.addEntryBlock(rewriter);
     auto vtable = entryBlock->getArgument(0);
@@ -5670,6 +5673,39 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
     }
 };
 
+// The file, line and column `loc` names, without the scope (a function's subprogram) or call site
+// around it; null when it names none (an unknown location)
+static mlir::FileLineColLoc fileLocationOf(mlir::Location loc)
+{
+    if (auto fileLoc = mlir::dyn_cast<mlir::FileLineColLoc>(loc))
+    {
+        return fileLoc;
+    }
+
+    if (auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(loc))
+    {
+        return fileLocationOf(nameLoc.getChildLoc());
+    }
+
+    if (auto callSiteLoc = mlir::dyn_cast<mlir::CallSiteLoc>(loc))
+    {
+        return fileLocationOf(callSiteLoc.getCaller());
+    }
+
+    if (auto fusedLoc = mlir::dyn_cast<mlir::FusedLoc>(loc))
+    {
+        for (auto inner : fusedLoc.getLocations())
+        {
+            if (auto fileLoc = fileLocationOf(inner))
+            {
+                return fileLoc;
+            }
+        }
+    }
+
+    return mlir::FileLineColLoc();
+}
+
 struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 {
     using TsLlvmPattern<mlir_ts::GlobalOp>::TsLlvmPattern;
@@ -5793,6 +5829,37 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             // precedent as setDISubProgramTypesToFormOp's bodiless-declaration handling above.
             auto initFuncOp = lch.createFunctionFromRegion(mlir::UnknownLoc::get(rewriter.getContext()), name,
                                                            globalOp.getInitializerRegion(), globalOp.getSymName());
+
+            // ...but with --di DIScopeForLLVMFuncOp still gives it a subprogram, and a call in it to a
+            // function with a body (an inlinable one) then had no location: the LLVM dialect's
+            // verifier rejected the module (a class extending a -shared import, whose vtable is filled
+            // at run time). One plain place in the file for all of it - no other function's scope, so
+            // the subprogram the pass makes is its own.
+            if (tsLlvmContext->compileOptions.generateDebugInfo)
+            {
+                auto fileLoc = fileLocationOf(globalOp.getLoc());
+                if (!fileLoc)
+                {
+                    fileLoc = fileLocationOf(globalOp->getParentOfType<ModuleOp>().getLoc());
+                }
+
+                if (fileLoc)
+                {
+                    initFuncOp->walk([&](mlir::Operation *nested) {
+                        nested->setLoc(fileLoc);
+                        for (auto &region : nested->getRegions())
+                        {
+                            for (auto &block : region)
+                            {
+                                for (auto arg : block.getArguments())
+                                {
+                                    arg.setLoc(fileLoc);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
 
             // an immortal global (own spec 25): its one store, here, marks the block it is given
             if (globalOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME))

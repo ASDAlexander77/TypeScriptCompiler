@@ -604,6 +604,21 @@ namespace own_inference
         });
     }
 
+    // A pure op only --di's records of a const's value use, directly or through more such ops: there
+    // for the debugger alone, and without --di dead and erased - the narrowed `a` of `typeof a ==
+    // "class" ? 1 : 0`, an Unbox of the `any`. It takes nothing.
+    static bool onlyDebugged(mlir::Operation *op, int depth = 0)
+    {
+        if (depth > 4 || op->getNumResults() == 0 || !mlir::isPure(op))
+        {
+            return false;
+        }
+
+        return llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::DebugVariableOp>(user) || onlyDebugged(user, depth + 1);
+        });
+    }
+
     bool OwnershipInferencePass::checkValueMoves(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
         // Nothing to move: a number owns no block, and a string literal is the immortal global,
@@ -634,7 +649,7 @@ namespace own_inference
         llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> notReads;
         llvm::SmallVector<mlir::Operation *> releases;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
-            if (mlir::isa<mlir_ts::RetainOp>(user))
+            if (mlir::isa<mlir_ts::RetainOp>(user) || onlyDebugged(user))
             {
                 return;
             }
@@ -877,7 +892,9 @@ namespace own_inference
         llvm::DenseMap<mlir::Operation *, mlir::Value> readOf;
         llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> merges;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
-            if (mlir::isa<mlir_ts::RetainOp>(user))
+            // nor --di's record of a const's value: it names the value to the debugger and reads
+            // nothing, so it is no use after a move either (`const s: Sized | null = b`)
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user) || onlyDebugged(user))
             {
                 return;
             }

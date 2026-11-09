@@ -76,6 +76,12 @@ namespace own_inference
 
         for (auto *user : value.getUsers())
         {
+            // --di's record of a const's value (`const x = i.item`) only names it to the debugger
+            if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+            {
+                continue;
+            }
+
             if (block && user->getBlock() != block)
             {
                 return false;

@@ -1160,10 +1160,12 @@ llvm::Expected<llvm::orc::JITTargetMachineBuilder> getJitTargetMachineBuilder()
         return tmBuilderOrError.takeError();
     }
 
-    if (enableOpt.getValue())
-    {
-        tmBuilderOrError->setCodeGenOptLevel((llvm::CodeGenOptLevel) optLevel.getValue());
-    }
+    // Unoptimized as an object file is (obj.cpp): left alone, the builder's own default optimized the
+    // machine code of an --opt_level=0 / --di run. Its block placement then put part of a Win64 catch
+    // funclet (a rethrow) ahead of the funclet's entry, inside its parent's range, and the rethrow
+    // went uncaught (00using_dispose_throws.ts, a `using` in a `for`).
+    tmBuilderOrError->setCodeGenOptLevel(enableOpt.getValue() ? (llvm::CodeGenOptLevel) optLevel.getValue()
+                                                              : llvm::CodeGenOptLevel::None);
 
     return tmBuilderOrError;
 }
@@ -1543,10 +1545,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         engineOptions.enableObjectDump = true;
         engineOptions.enableGDBNotificationListener = !enableOpt;
         engineOptions.sharedLibPaths = sharedLibPaths;
-        if (enableOpt.getValue())
-        {
-            engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
-        }
+        // as getJitTargetMachineBuilder: the object dumped is the one a run makes
+        engineOptions.jitCodeGenOptLevel =
+            enableOpt.getValue() ? (llvm::CodeGenOptLevel) optLevel.getValue() : llvm::CodeGenOptLevel::None;
 
         auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
         if (!maybeEngine)

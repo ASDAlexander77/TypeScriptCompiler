@@ -6147,3 +6147,28 @@ foreach(stack_mm rc own)
                          PROPERTIES PASS_REGULAR_EXPRESSION "llvm\\.call @tsrel_[0-9]+\\(%[0-9]+\\) : \\(!llvm\\.ptr\\) -> \\(\\)[\r\n]+ +%[0-9]+ = llvm\\.mlir\\.zero : !llvm\\.ptr[\r\n]+ +llvm\\.store"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# Debug-built programs (-noopt: --di --opt_level=0), which a Release build's suite otherwise runs only
+# with TSLANG_TEST_PROGRAMS=debug (CI does). Each failed so before its fix; optimization had hidden it:
+# - --di: the vtable-remap helper took the caller's debug location (00null_interface_to_interface)
+# - an abstract class's interface vtable named its bodiless abstract methods (00class_values,
+#   00class_accessor_implements_field)
+# - Win64: the code after a try nested in a catch had no funclet bundle (00try_in_catch_with_finally)
+# - the JIT optimized an -O0 program's machine code, and a catch funclet's rethrow left it
+#   (00using_dispose_throws)
+# - --di: a global filled at run time (a class extending a -shared import) had calls with no location
+# - -mm=own read --di's records of a const as uses (own_interface_getter_read, own_immortal_keepers,
+#   00nullable_interface_to_interface, stack-promotion/to_any)
+foreach(debug_test 00null_interface_to_interface 00class_values 00class_accessor_implements_field
+                   00try_in_catch_with_finally 00using_dispose_throws)
+    tslang_add_test(NAME test-jit-debug-${debug_test} COMMAND test-runner -jit -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
+    tslang_add_test(NAME test-compile-debug-${debug_test} COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
+endforeach()
+tslang_add_test(NAME test-compile-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+tslang_add_test(NAME test-jit-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+foreach(debug_own_test own/own_interface_getter_read own/own_immortal_keepers tests/00nullable_interface_to_interface
+                       stack-promotion/to_any)
+    get_filename_component(debug_own_name ${debug_own_test} NAME)
+    tslang_add_test(NAME test-jit-debug-own-${debug_own_name} COMMAND test-runner -jit -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
+    tslang_add_test(NAME test-compile-debug-own-${debug_own_name} COMMAND test-runner -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
+endforeach()

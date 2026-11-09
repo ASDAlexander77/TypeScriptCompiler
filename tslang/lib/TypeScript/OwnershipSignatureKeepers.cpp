@@ -95,6 +95,12 @@ namespace own_signature
 
                 for (auto *addressUser : addressOfOp->getUsers())
                 {
+                    // --di's record of a `for...of` over it names it to the debugger, and reads nothing
+                    if (mlir::isa<mlir_ts::DebugVariableOp>(addressUser))
+                    {
+                        continue;
+                    }
+
                     // in a function, which decideKeptForGood looks at: not a global's region
                     if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(addressUser);
                         pushOp && pushOp.getOp() == addressOfOp.getResult() &&
