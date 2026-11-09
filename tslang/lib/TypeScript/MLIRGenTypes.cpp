@@ -2577,8 +2577,19 @@ namespace mlirgen
     {
         if (name == SyntaxKind::ComputedPropertyName)
         {
+            // what a `Symbol` declared in the program or a library can't change (TSLANG_ISSUES 38)
+            if (auto wellKnown = wellKnownSymbolName(name.as<ComputedPropertyName>()->expression); !wellKnown.empty())
+            {
+                return {builder.getStringAttr(wellKnown), mlir::success()};
+            }
+
             MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
+            if (result.failed_or_no_value())
+            {
+                return {mlir::Attribute(), mlir::failure()};
+            }
+
             auto value = V(result);
             LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
             auto attr = mcl.ExtractAttr(value);
@@ -2591,6 +2602,29 @@ namespace mlirgen
         }
 
         return {mlir::Attribute(), mlir::success()};
+    }
+
+    StringRef MLIRGenImpl::wellKnownSymbolName(Node expression)
+    {
+        if (expression != SyntaxKind::PropertyAccessExpression)
+        {
+            return StringRef();
+        }
+
+        auto access = expression.as<PropertyAccessExpression>();
+        if (access->expression != SyntaxKind::Identifier ||
+            MLIRHelper::getName(access->expression.as<Identifier>()) != "Symbol")
+        {
+            return StringRef();
+        }
+
+        auto name = MLIRHelper::getName(access->name, stringAllocator);
+        auto isWellKnown = llvm::is_contained(
+            std::initializer_list<StringRef>{SYMBOL_ITERATOR, SYMBOL_ASYNC_ITERATOR, SYMBOL_HAS_INSTANCE, SYMBOL_TO_PRIMITIVE,
+                                             SYMBOL_TO_STRING_TAG, SYMBOL_DISPOSE, "asyncDispose", "isConcatSpreadable", "match",
+                                             "matchAll", "replace", "search", "species", "split", "unscopables"},
+            name);
+        return isWellKnown ? name : StringRef();
     }
 
     mlir::Attribute MLIRGenImpl::TupleFieldName(Node name, const GenContext &genContext)

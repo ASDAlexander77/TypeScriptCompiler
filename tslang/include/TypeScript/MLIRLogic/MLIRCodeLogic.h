@@ -2458,8 +2458,7 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Symbol(mlir_ts::SymbolType symbol)
     {
-        auto symbOp = builder.create<mlir_ts::ConstantOp>(
-            location, builder.getNoneType(), mlir::StringAttr::get(builder.getContext(), name));
+        auto symbOp = builder.create<mlir_ts::ConstantOp>(location, symbol, mlir::StringAttr::get(builder.getContext(), name));
 
         return symbOp;
     }

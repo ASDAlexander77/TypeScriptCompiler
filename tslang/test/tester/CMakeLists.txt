@@ -1801,6 +1801,21 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-30-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-30-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
 endforeach()
+# TSLANG_ISSUES 37, 38: a program declares its own Symbol, as a function or as a class
+foreach(issues_mm gc rc none own)
+    foreach(symbol_test 00tslang_issue_37 00tslang_issue_38)
+        tslang_add_test(NAME test-jit-${symbol_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${symbol_test}.ts")
+        tslang_add_test(NAME test-compile-${symbol_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${symbol_test}.ts")
+    endforeach()
+endforeach()
+add_test(NAME test-compile-symbol-value-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/symbol_value_error.ts")
+set_tests_properties(test-compile-symbol-value-error PROPERTIES PASS_REGULAR_EXPRESSION "a symbol has no value at run time yet"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-computed-name-failed-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
+set_tests_properties(test-compile-computed-name-failed-error PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'x'"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG_ISSUES 31, 33: a const Shared<T> in several closures; a callback's result stored in a field
 foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issues-31-33-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_31_33.ts")
