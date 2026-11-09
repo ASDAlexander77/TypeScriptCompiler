@@ -20,8 +20,26 @@ env:
   LIBATOMIC_OPS_VERSION: "7.10.0"
 
 jobs:
+  # One DefaultLib commit for the whole run: every package builds its default library from it, and
+  # the test jobs run its tests, so they cannot straddle a push to DefaultLib made during the run.
+  defaultlib_commit:
+    name: Pick the Default Library commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Resolve the commit
+        id: sha
+        shell: bash
+        run: |
+          sha=$(git ls-remote https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git refs/heads/main | cut -f1)
+          if [ -z "$sha" ]; then echo "could not resolve TypeScriptCompilerDefaultLib main"; exit 1; fi
+          echo "Default Library commit: $sha" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
   build_on_windows:
     name: Create/Upload Release Asset (Windows)
+    needs: defaultlib_commit
     runs-on: windows-2025-vs2026
     steps:
       - name: Checkout code
@@ -154,7 +172,13 @@ jobs:
       - name: Clone Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}
-        run: if (!(Test-Path -Path ".\TypeScriptCompilerDefaultLib")) { git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git }
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          if (!(Test-Path -Path ".\TypeScriptCompilerDefaultLib")) { git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C TypeScriptCompilerDefaultLib checkout --detach $env:DEFAULTLIB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         shell: pwsh
 
       - name: Build Default Library
@@ -188,25 +212,8 @@ jobs:
         run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
         shell: pwsh
 
-      # Every memory model the library is built for, each in its own pwsh: tests.ps1 reads the
-      # library paths once, at its start. All of them run before a failure fails the step.
-      - name: Test Default Library
-        continue-on-error: false
-        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
-        env:
-          TOOL_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/bin
-          GC_LIB_PATH: ${{github.workspace}}/__build/gc/msbuild/x64/release/${{ env.BUILD_TYPE }}
-          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
-          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
-        run: |
-          $failed = @()
-          foreach ($model in "gc", "rc", "none", "own") {
-            Write-Host "=== -mm=$model ==="
-            pwsh -NoProfile -File .\tests.ps1 -Model $model
-            if ($LASTEXITCODE -ne 0) { $failed += $model }
-          }
-          if ($failed.Count -gt 0) { Write-Host "Failed models: $($failed -join ', ')"; exit 1 }
-        shell: pwsh
+      # The Default Library's own tests run in test_defaultlib_windows, one job per memory model,
+      # against the package this job uploads.
 
       # Android (API 29, arm64-v8a, armeabi-v7a and x86_64): the collector, the async runtime and the default
       # library, cross-built with the runner's Android NDK by the same scripts a developer runs.
@@ -291,6 +298,7 @@ jobs:
   
   build_on_linux:
     name: Create/Upload Release Asset (${{ matrix.os }})
+    needs: defaultlib_commit
 
     # One package per Ubuntu release: each is built, tested and packaged on that release, so its
     # binaries match that release's glibc and libstdc++.
@@ -408,7 +416,12 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}
         shell: sh
-        run: if [ ! -d "./TypeScriptCompilerDefaultLib" ]; then git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git; fi
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          set -e
+          if [ ! -d "./TypeScriptCompilerDefaultLib" ]; then git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git; fi
+          git -C TypeScriptCompilerDefaultLib checkout --detach "$DEFAULTLIB_SHA"
 
       - name: Build Default Library
         continue-on-error: false
@@ -431,24 +444,7 @@ jobs:
           TSLANG_REQUIRE_DEFAULT_LIB: 1
         run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
 
-      # Every memory model, as on Windows: all of them run before a failure fails the step.
-      - name: Test Default Library
-        continue-on-error: false
-        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
-        shell: sh
-        env:
-          TOOL_PATH: ${{github.workspace}}/__build/tslang/ninja/release/bin
-          GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
-          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
-          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
-        run: |
-          chmod +x ./tests.sh
-          failed=""
-          for model in gc rc none own; do
-            echo "=== -mm=$model ==="
-            ./tests.sh "$model" || failed="$failed $model"
-          done
-          if [ -n "$failed" ]; then echo "Failed models:$failed"; exit 1; fi
+      # As on Windows: the Default Library's own tests run in test_defaultlib_linux.
 
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
@@ -484,8 +480,119 @@ jobs:
           path: ${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz
           retention-days: 1
 
+  # The Default Library's tests, one job per memory model so the models run side by side, as in
+  # TypeScriptCompilerDefaultLib's tests.yml. Each job tests the package its build job uploaded:
+  # the compiler and its libraries side by side, and the default library built into it, which goes
+  # to the DefaultLib checkout's __build (tests.ps1 always looks for it there).
+  test_defaultlib_windows:
+    name: Test Default Library (Windows, -mm=${{ matrix.model }})
+    needs: [defaultlib_commit, build_on_windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [gc, rc, none, own]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 120
+    env:
+      # All four together: tests.ps1 honours the library paths only alongside TOOL_PATH.
+      TOOL_PATH: ${{ github.workspace }}\__tslang
+      GC_LIB_PATH: ${{ github.workspace }}\__tslang
+      LLVM_LIB_PATH: ${{ github.workspace }}\__tslang
+      TSLANG_LIB_PATH: ${{ github.workspace }}\__tslang
+    steps:
+      - name: Clone Default Library
+        shell: pwsh
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C TypeScriptCompilerDefaultLib checkout --detach $env:DEFAULTLIB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v4
+        with:
+          name: tslang-windows-asset
+
+      - name: Unpack the package
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "${{ env.ASSET_NAME }}-windows-x64.zip" -DestinationPath $env:TOOL_PATH
+          Remove-Item "${{ env.ASSET_NAME }}-windows-x64.zip"
+          Get-ChildItem $env:TOOL_PATH
+          New-Item -ItemType Directory -Force -Path TypeScriptCompilerDefaultLib\__build | Out-Null
+          Move-Item -Path (Join-Path $env:TOOL_PATH 'defaultlib') -Destination TypeScriptCompilerDefaultLib\__build\defaultlib -ErrorAction Stop
+          & (Join-Path $env:TOOL_PATH 'tslang.exe') --version
+
+      # In its own pwsh: tests.ps1 reads the library paths once, at its start.
+      - name: Test Default Library (-mm=${{ matrix.model }})
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/TypeScriptCompilerDefaultLib
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          pwsh -NoProfile -File .\tests.ps1 -Model $env:MODEL
+          exit $LASTEXITCODE
+
+  # Each Ubuntu package is tested on the release it was built for.
+  test_defaultlib_linux:
+    name: Test Default Library (${{ matrix.os }}, -mm=${{ matrix.model }})
+    needs: [defaultlib_commit, build_on_linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
+        model: [gc, rc, none, own]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      TOOL_PATH: ${{ github.workspace }}/__tslang
+      GC_LIB_PATH: ${{ github.workspace }}/__tslang
+      LLVM_LIB_PATH: ${{ github.workspace }}/__tslang
+      TSLANG_LIB_PATH: ${{ github.workspace }}/__tslang
+    steps:
+      - name: Install dependencies
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: Clone Default Library
+        shell: bash
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          set -e
+          git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+          git -C TypeScriptCompilerDefaultLib checkout --detach "$DEFAULTLIB_SHA"
+
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v4
+        with:
+          name: tslang-${{ matrix.os }}-asset
+
+      - name: Unpack the package
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$TOOL_PATH"
+          tar -xzf "${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz" -C "$TOOL_PATH"
+          rm "${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz"
+          ls "$TOOL_PATH"
+          mkdir -p TypeScriptCompilerDefaultLib/__build
+          mv "$TOOL_PATH/defaultlib" TypeScriptCompilerDefaultLib/__build/defaultlib
+          "$TOOL_PATH/tslang" --version
+
+      - name: Test Default Library (-mm=${{ matrix.model }})
+        shell: bash
+        working-directory: ${{ github.workspace }}/TypeScriptCompilerDefaultLib
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          chmod +x ./tests.sh
+          ./tests.sh "$MODEL"
+
   create_release:
-    needs: [build_on_windows, build_on_linux]
+    needs: [build_on_windows, build_on_linux, test_defaultlib_windows, test_defaultlib_linux]
     name: Create Release
     runs-on: ubuntu-latest
     steps:

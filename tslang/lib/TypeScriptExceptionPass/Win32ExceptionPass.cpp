@@ -229,9 +229,16 @@ struct Win32ExceptionPassCode
                 catchRegion->end = &I;
                 endOfCatch = false;
 
-                // the region it was nested in carries on
+                // the region it was nested in carries on, from this very instruction: a try inside
+                // a catch clause returns into the enclosing catch, and what follows it there
+                // (`step(8)` after the nested try) is that catch's code. Skipped, a call there got
+                // no funclet bundle, and LLVM turned it into `unreachable` - a trap once the inliner
+                // did not happen to fold the call away first (-O0).
                 closeRegion();
-                continue;
+                if (!catchRegion)
+                {
+                    continue;
+                }
             }
 
             if (auto *II = dyn_cast<InvokeInst>(&I))
@@ -472,6 +479,16 @@ struct Win32ExceptionPassCode
                 if (!newCallBase)
                 {
                     newCallBase = CallBase::Create(callBase, opBundle, callBase->getIterator());
+                }
+
+                // the first call of a catch after a try nested in it is also that try's catch's end
+                // (the catchret goes before it): every region's `end` follows the call
+                for (auto &other : catchRegionsWorkSet)
+                {
+                    if (&other != &catchRegion && other.end == callBase)
+                    {
+                        other.end = newCallBase;
+                    }
                 }
 
                 callBase->replaceAllUsesWith(newCallBase);

@@ -36,7 +36,9 @@ class D implements I {
     return flag ? new D(x) : null;
 }
 
-function read(i: I): number {
+// not `read`: a function is a global symbol, and on Linux one named like libc's took the
+// collector's own `read()` calls
+function readOf(i: I): number {
     if (i === null) {
         return -1;
     }
@@ -77,10 +79,10 @@ function main() {
     assert(call(nu) == -2, "a method of undefined throws");
     assert(call(mkC(true, 5)) == 50, "a method of a class object");
 
-    assert(read(mkC(true, 4)) == 44, "an argument");
-    assert(read(mkC(false, 4)) == -1, "a null argument");
-    assert(read(mkD(true, 5)) == 505, "an argument of a class naming the interface");
-    assert(read(mkD(false, 5)) == -1, "a null argument of a class naming the interface");
+    assert(readOf(mkC(true, 4)) == 44, "an argument");
+    assert(readOf(mkC(false, 4)) == -1, "a null argument");
+    assert(readOf(mkD(true, 5)) == 505, "an argument of a class naming the interface");
+    assert(readOf(mkD(false, 5)) == -1, "a null argument of a class naming the interface");
 
     // compared by the object
     const c = new C(6);

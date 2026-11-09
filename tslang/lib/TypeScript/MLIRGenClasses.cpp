@@ -3768,7 +3768,12 @@ genContext);
     mlir::LogicalResult MLIRGenImpl::mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                    const GenContext &genContext)
     {
-        if (newClassPtr->isDeclaration)
+        // No instance of an abstract class carries its vtable, and that vtable's interface slots are
+        // null (mlirGenClassVirtualTable), so the class's own interface vtables are never read: an
+        // interface value of one of its instances is made from the instance's class. Built anyway, one
+        // named the abstract methods, which have no body - a link error wherever optimization did not
+        // drop the unread global first (-O0). Same in mlirGenClassHeritageClauseImplements.
+        if (newClassPtr->isDeclaration || newClassPtr->isAbstract)
         {
             return mlir::success();
         }
@@ -3808,7 +3813,8 @@ genContext);
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     assert(interfaceInfo);
-                    if (!newClassPtr->isDeclaration)
+                    // an abstract class's are never read (mlirGenClassBaseInterfaces)
+                    if (!newClassPtr->isDeclaration && !newClassPtr->isAbstract)
                     {
                         success = !failed(mlirGenClassVirtualTableDefinitionForInterface(
                             loc(implementingType), newClassPtr, interfaceInfo, genContext));

@@ -86,17 +86,42 @@ auto jitRun = false;
 auto sharedLib = false;
 auto sharedLibCompileTime = false;
 auto gctorsAsMethod = false;
+// How the test programs are built: optimized, or with debug info and no optimization. By default as
+// test-runner itself is built; TSLANG_TEST_PROGRAMS=release or =debug picks one whatever the build,
+// so a Release compiler's suite can also run with debug programs (CI runs both, side by side).
+// The two keep apart cached scripts (jit/compile vs jitd/compiled), which embed these flags.
 #ifndef COMPILE_DEBUG
 auto opt = true;
-auto tslang_opt = std::string("--opt --opt_level=3 --no-default-lib");
-#define JIT_NAME "jit"
-#define COMPILE_NAME "compile"
 #else
 auto opt = false;
-auto tslang_opt = std::string("--di --opt_level=0 --no-default-lib");
-#define JIT_NAME "jitd"
-#define COMPILE_NAME "compiled"
 #endif
+// the options readParams adds (-mm=, -x86's triple, ...); main puts the build's options before them
+auto tslang_opt = std::string();
+
+void selectProgramBuild()
+{
+    if (auto programs = getenv("TSLANG_TEST_PROGRAMS"))
+    {
+        if (std::string(programs) == "release")
+        {
+            opt = true;
+        }
+        else if (std::string(programs) == "debug")
+        {
+            opt = false;
+        }
+        else if (*programs)
+        {
+            throw std::runtime_error(std::string("TSLANG_TEST_PROGRAMS must be release or debug, not ") + programs);
+        }
+    }
+}
+
+// after readParams: -noopt may have turned opt off
+std::string programBuildOptions()
+{
+    return opt ? "--opt --opt_level=3 --no-default-lib" : "--di --opt_level=0 --no-default-lib";
+}
 
 auto fastMath = false;
 auto memoryModel = std::string("");
@@ -193,12 +218,12 @@ std::string sharedHeapMarkerOpt()
 
 std::string jitBatName()
 {
-    return std::string(JIT_NAME) + optVariantSuffix() + BAT_NAME;
+    return std::string(opt ? "jit" : "jitd") + optVariantSuffix() + BAT_NAME;
 }
 
 std::string compileBatName()
 {
-    return std::string(COMPILE_NAME) + optVariantSuffix() + BAT_NAME;
+    return std::string(opt ? "compile" : "compiled") + optVariantSuffix() + BAT_NAME;
 }
 
 void createJitBatchFile()
@@ -886,7 +911,9 @@ int main(int argc, char **argv)
     try
     {
         std::vector<std::string> files;
+        selectProgramBuild();
         readParams(argc, argv, files);
+        tslang_opt = programBuildOptions() + tslang_opt;
         if (files.size() == 1)
         {
             createBatchFile();
