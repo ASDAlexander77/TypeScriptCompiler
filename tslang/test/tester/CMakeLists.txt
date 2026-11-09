@@ -1737,6 +1737,8 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 
 # shared libs tests (exports/imports)
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+tslang_add_test(NAME test-compile-shared-export-import-redeclared-field COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
+tslang_add_test(NAME test-jit-shared-export-import-redeclared-field COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
 # a @final class across the boundary: direct calls from the importer, compiled and under the JIT
 # own: the importer owns what the generator method's next() gives it (isIteratorNext)
 foreach(final_mm gc rc own)

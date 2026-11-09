@@ -190,8 +190,30 @@ namespace mlirgen
                 return value;
             }
 
-            return ClassMembersAccess(location, objectValue, classType.getName().getValue(), name, 
+            auto value = ClassMembersAccess(location, objectValue, classType.getName().getValue(), name,
                 false, argument, accessingFromLevel, genContext);
+
+            // a base's field this class (or one between) declared again with a type of its own: the
+            // base's slot, seen as that type. Stores see through the SafeCastOp to the slot
+            // (mlirGenSaveLogicOneItem), as they do for a narrowed field
+            if (value && value.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()))
+                {
+                    if (auto readType = classFieldReadType(classInfo, name); readType && readType != value.getType())
+                    {
+                        auto castValue = castToNarrowedType(location, value, readType, genContext);
+                        if (!castValue)
+                        {
+                            return mlir::Value();
+                        }
+
+                        return V(builder.create<mlir_ts::SafeCastOp>(location, readType, castValue, value));
+                    }
+                }
+            }
+
+            return value;
         };
 
         auto classAccess = [&](mlir_ts::ClassType classType) {

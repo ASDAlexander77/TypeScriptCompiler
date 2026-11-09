@@ -13645,6 +13645,20 @@ class MLIRGenImpl
 
     mlir::Type baseFieldType(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId);
 
+    mlir::Type classFieldReadType(ClassInfo::TypePtr classInfo, mlir::StringRef name);
+
+    // a field read as the type a subclass declared it again with (classFieldReadType) is the read of
+    // the base's slot, cast: the slot is that read's
+    mlir::Value slotOfFieldRead(mlir::Value fieldValue)
+    {
+        if (auto safeCastOp = fieldValue.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            return safeCastOp.getValue();
+        }
+
+        return fieldValue;
+    }
+
     bool redeclaresBaseField(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId, mlir::Type type);
 
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
@@ -14024,6 +14038,73 @@ class MLIRGenImpl
                 return mlir::success();
             },
             funcGenContext, 1/*to skip This*/);
+    }
+
+    // `<name>(this) { return this.<fieldName>; }` or `<name>(this, p0) { this.<fieldName> = p0; }`, `this`
+    // opaque: the getter and the setter an interface's field reaches a class's field through when it
+    // is not stored as the interface has it - a base's field the class declared again with a type of
+    // its own (redeclaresBaseField), read and written as that type
+    mlir_ts::FunctionType generateSynthFieldAccessor(mlir::Location location, mlir::Type thisType, StringRef fieldName,
+                                                     StringRef name, mlir::Type fieldType, bool setter,
+                                                     const GenContext &genContext)
+    {
+        auto funcType = setter
+            ? getFunctionType({getOpaqueType(), fieldType}, {}, false)
+            : getFunctionType({getOpaqueType()}, {fieldType}, false);
+        if (theModule.lookupSymbol<mlir_ts::FuncOp>(name))
+        {
+            return funcType;
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        GenContext funcGenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.thisType = thisType;
+        funcGenContext.thisClassType = dyn_cast<mlir_ts::ClassType>(thisType);
+        funcGenContext.disableSpreadParams = true;
+
+        auto result = mlirGenFunctionBody(
+            location, fieldName, name, funcType,
+            [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
+                auto funcOp = genContext.funcOp;
+                auto opaqueThis = funcOp.getBody().front().getArgument(0);
+                auto thisValue = builder.create<mlir_ts::CastOp>(location, thisType, opaqueThis);
+                auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisType, location);
+                DECLARE(thisDecl, thisValue);
+
+                NodeFactory nf(NodeFactoryFlags::None);
+                auto fieldAccess = nf.createPropertyAccessExpression(
+                    nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(stows(fieldName.str())));
+                if (setter)
+                {
+                    auto assign = nf.createBinaryExpression(fieldAccess, nf.createToken(SyntaxKind::EqualsToken),
+                                                            nf.createIdentifier(S("p0")));
+                    return mlir::failed(mlirGen(nf.createExpressionStatement(assign), genContext))
+                        ? mlir::failure() : mlir::success();
+                }
+
+                auto value = mlirGen(fieldAccess, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(value);
+                auto castToRet = cast(location, fieldType, V(value), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(castToRet);
+                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                if (!retVarInfo.second)
+                {
+                    return mlir::failure();
+                }
+
+                // built op by op, so the retain a `return` performs is repeated here (as in
+                // generateSynthMethodToCallField)
+                auto returnValue = V(castToRet);
+                mlirGenRetainCaptured(location, mlir::ValueRange{returnValue});
+                builder.create<mlir_ts::ReturnValOp>(location, returnValue, retVarInfo.first);
+                return mlir::success();
+            },
+            funcGenContext, 1/*to skip This*/);
+
+        return mlir::failed(result) ? mlir_ts::FunctionType() : funcType;
     }
 
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,

@@ -1991,8 +1991,8 @@ namespace mlirgen
 
     // `class Leaf extends Base { id: number = 3; }` with Base's own `id: number`: one property, as in
     // TypeScript - Leaf's initializer writes Base's field (`this.id = 3` finds it), and a read through
-    // Base's type sees it. A field of its own would leave Base's at 1. A field typed otherwise keeps a
-    // slot of its own (read through Base it is still Base's); `#id` is a name of each class.
+    // Base's type sees it. A field of its own would leave Base's at 1. A field typed otherwise is the
+    // same slot, read through Leaf as Leaf's type; `#id` is a name of each class.
     mlir::Type MLIRGenImpl::baseFieldType(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId)
     {
         if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId); strAttr && strAttr.getValue().starts_with("#"))
@@ -2016,7 +2016,50 @@ namespace mlirgen
     bool MLIRGenImpl::redeclaresBaseField(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId, mlir::Type type)
     {
         auto baseType = baseFieldType(newClassPtr, fieldId);
-        return baseType && baseType == type;
+        if (!baseType || !type)
+        {
+            return false;
+        }
+
+        if (baseType == type)
+        {
+            return true;
+        }
+
+        // a type of its own (`v: number` over `v: number | string`, `owner: Dog` over `owner: Animal`):
+        // still the base's slot, read through this class as this type (classFieldReadType)
+        auto strAttr = dyn_cast<mlir::StringAttr>(fieldId);
+        if (!strAttr)
+        {
+            return false;
+        }
+
+        newClassPtr->redeclaredFieldTypes[strAttr.getValue()] = type;
+        return true;
+    }
+
+    // the type a field read through `classInfo` has: the one a class from it up to the field's own
+    // declared it again with, if one did (redeclaresBaseField)
+    mlir::Type MLIRGenImpl::classFieldReadType(ClassInfo::TypePtr classInfo, mlir::StringRef name)
+    {
+        auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
+        for (auto current = classInfo; current;
+             current = current->baseClasses.empty() ? ClassInfo::TypePtr() : current->baseClasses.front())
+        {
+            if (auto found = current->redeclaredFieldTypes.find(name); found != current->redeclaredFieldTypes.end())
+            {
+                return found->second;
+            }
+
+            // the field's own class: no narrower type above it
+            if (auto storageClass = dyn_cast<mlir_ts::ClassStorageType>(current->classType.getStorageType());
+                storageClass && storageClass.getIndex(fieldId) >= 0)
+            {
+                return mlir::Type();
+            }
+        }
+
+        return mlir::Type();
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
@@ -3372,6 +3415,47 @@ genContext);
                     return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
                 }
 
+                // a base's field this class declared again with the interface's type (`v: number` over
+                // `v: number | string`): stored as the base has it, so the slot names a getter and a
+                // setter that read and write it as that type
+                if (found && fieldType != foundField.type && !isConditional && accessorName &&
+                    classFieldReadType(newClassPtr, accessorName.getValue()) == fieldType)
+                {
+                    // `owner: Dog` over `owner: Animal`: a reference either way, read in place
+                    if (isa<mlir_ts::ClassType>(fieldType) && isa<mlir_ts::ClassType>(foundField.type))
+                    {
+                        return {foundField, mlir::success()};
+                    }
+
+                    if (llvm::none_of(accessorsForFields, [&](auto &accessorsForField) { return accessorsForField.id == id; }))
+                    {
+                        auto accessorOf = [&](bool setter) {
+                            auto funcName = concat(interfaceVTableNameForClass(newClassPtr, newInterfacePtr),
+                                                   accessorName.getValue(), setter ? "set" : "get");
+                            MethodInfo methodInfo{};
+                            methodInfo.funcType = generateSynthFieldAccessor(location, newClassPtr->classType,
+                                                                             accessorName.getValue(), funcName,
+                                                                             fieldType, setter, genContext);
+                            methodInfo.name = funcName.str();
+                            methodInfo.funcName = funcName.str();
+                            methodInfo.virtualIndex = -1;
+                            methodInfo.accessLevel = mlir_ts::AccessLevel::Public;
+                            return methodInfo;
+                        };
+
+                        auto getter = accessorOf(false);
+                        auto setter = accessorOf(true);
+                        if (!getter.funcType || !setter.funcType)
+                        {
+                            return {emptyFieldInfo, mlir::failure()};
+                        }
+
+                        accessorsForFields.push_back({id, getter, setter});
+                    }
+
+                    return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
+                }
+
                 // a class's `v?: T` is stored as optional<T>; the interface's `v?: T` reads it by its flag
                 // (a tagged slot, see isStoredAsOptional below)
                 auto optionalStorage = found && isConditional && isa<mlir_ts::OptionalType>(foundField.type)
@@ -3584,7 +3668,7 @@ genContext);
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, id, genContext);
-                        auto fieldRef = fieldValue ? mcl.GetReferenceFromValue(location, fieldValue) : mlir::Value();
+                        auto fieldRef = fieldValue ? mcl.GetReferenceFromValue(location, slotOfFieldRead(V(fieldValue))) : mlir::Value();
                         if (!fieldRef)
                         {
                             emitError(location) << "can't find reference for field: " << id
@@ -3842,7 +3926,7 @@ genContext);
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
-                        auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
+                        auto fieldRef = mcl.GetReferenceFromValue(location, slotOfFieldRead(V(fieldValue)));
                         if (!fieldRef)
                         {
                             emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id
