@@ -730,6 +730,44 @@ class MLIRGenImpl
     {
         auto location = loc(blockAST);
 
+        // a constructor's field initializers run once `super(...)` has returned, as in TypeScript:
+        // before it, the base's constructor would set a field the subclass declares again
+        // (`id = 3` over Base's `id = 1`) back to its own value
+        auto isSuperCall = [](Statement statement) {
+            if (statement != SyntaxKind::ExpressionStatement)
+            {
+                return false;
+            }
+
+            auto expression = statement.as<ExpressionStatement>()->expression;
+            return expression == SyntaxKind::CallExpression
+                && expression.as<CallExpression>()->expression == SyntaxKind::SuperKeyword;
+        };
+
+        if (genContext.generatedStatements.size() > 0)
+        {
+            for (auto [index, statement] : llvm::enumerate(blockAST->statements))
+            {
+                if ((int)index < skipStatements || !isSuperCall(statement))
+                {
+                    continue;
+                }
+
+                // the statements up to the call, then the initializers, then the rest
+                clearState(blockAST->statements);
+                for (auto before = (size_t)std::max(skipStatements, 0); before <= index; before++)
+                {
+                    if (failed(mlirGen(blockAST->statements[before], genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                skipStatements = (int)index + 1;
+                break;
+            }
+        }
+
         if (genContext.generatedStatements.size() > 0)
         {
             // we need to process it only once (to prevent it processing in nested functions with body)
@@ -13604,6 +13642,10 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext, bool last);
     bool readsOnlyTypedFields(Node initializer, ArrayRef<mlir_ts::FieldInfo> fields, const llvm::StringSet<> &untyped);
+
+    mlir::Type baseFieldType(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId);
+
+    bool redeclaresBaseField(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId, mlir::Type type);
 
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext);

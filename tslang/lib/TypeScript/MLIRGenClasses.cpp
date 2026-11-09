@@ -1989,7 +1989,37 @@ namespace mlirgen
         return mlir::success();
     }
 
-    mlir::LogicalResult MLIRGenImpl::mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    // `class Leaf extends Base { id: number = 3; }` with Base's own `id: number`: one property, as in
+    // TypeScript - Leaf's initializer writes Base's field (`this.id = 3` finds it), and a read through
+    // Base's type sees it. A field of its own would leave Base's at 1. A field typed otherwise keeps a
+    // slot of its own (read through Base it is still Base's); `#id` is a name of each class.
+    mlir::Type MLIRGenImpl::baseFieldType(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId)
+    {
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId); strAttr && strAttr.getValue().starts_with("#"))
+        {
+            return mlir::Type();
+        }
+
+        for (auto &baseClass : newClassPtr->baseClasses)
+        {
+            auto found = false;
+            auto baseField = baseClass->findField(fieldId, found);
+            if (found)
+            {
+                return baseField.accessLevel != mlir_ts::AccessLevel::Private ? baseField.type : mlir::Type();
+            }
+        }
+
+        return mlir::Type();
+    }
+
+    bool MLIRGenImpl::redeclaresBaseField(ClassInfo::TypePtr newClassPtr, mlir::Attribute fieldId, mlir::Type type)
+    {
+        auto baseType = baseFieldType(newClassPtr, fieldId);
+        return baseType && baseType == type;
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
         auto accessLevel = getAccessLevel(propertyDeclaration);
@@ -2042,6 +2072,16 @@ namespace mlirgen
 
         auto hasType = !!propertyDeclaration->type;
 
+        // `id = 5` over Base's `id: number`: typed as Base's field, as TypeScript has it, not as the
+        // literal - the one property Base's field is
+        if (!hasType && !isAccessor)
+        {
+            if (auto baseType = baseFieldType(newClassPtr, fieldId))
+            {
+                type = baseType;
+            }
+        }
+
         LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << " access level: " << accessLevel);
         if (mth.isNoneType(type))
         {
@@ -2077,7 +2117,10 @@ namespace mlirgen
 #endif
         }
 
-        fieldInfos.push_back({fieldId, type, false, accessLevel});
+        if (isAccessor || !redeclaresBaseField(newClassPtr, fieldId, type))
+        {
+            fieldInfos.push_back({fieldId, type, false, accessLevel});
+        }
 
         // add accessor methods
         if (isAccessor)
@@ -2298,6 +2341,11 @@ namespace mlirgen
             }
 
             LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
+
+            if (redeclaresBaseField(newClassPtr, fieldId, type))
+            {
+                continue;
+            }
 
             fieldInfos.push_back(
             {
