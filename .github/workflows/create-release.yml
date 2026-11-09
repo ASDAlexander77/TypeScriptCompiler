@@ -591,8 +591,23 @@ jobs:
           chmod +x ./tests.sh
           ./tests.sh "$MODEL"
 
+  # The build jobs above test release programs. The debug ones (TSLANG_TEST_PROGRAMS=debug: debug
+  # info, no optimization), as a pull request's CI runs them: its own workflows, those legs only.
+  test_debug_programs_windows:
+    name: Debug programs (Windows)
+    uses: ./.github/workflows/cmake-test-release-win.yml
+    with:
+      programs: '["debug"]'
+
+  test_debug_programs_linux:
+    name: Debug programs (Linux)
+    uses: ./.github/workflows/cmake-test-release-linux.yml
+    with:
+      programs: '["debug"]'
+
   create_release:
-    needs: [build_on_windows, build_on_linux, test_defaultlib_windows, test_defaultlib_linux]
+    needs: [build_on_windows, build_on_linux, test_defaultlib_windows, test_defaultlib_linux,
+            test_debug_programs_windows, test_debug_programs_linux]
     name: Create Release
     runs-on: ubuntu-latest
     steps:

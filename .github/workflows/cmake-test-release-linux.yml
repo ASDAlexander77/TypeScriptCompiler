@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+  # create-release.yml runs the debug-program legs before it publishes a release
+  workflow_call:
+    inputs:
+      programs:
+        description: JSON list of the kinds of test program to run (release, debug)
+        type: string
+        default: '["release", "debug"]'
   schedule:
     # 8:30 and 18:30 UTC:
 #    - cron:  '30 8,18 * * *'
@@ -27,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        programs: [release, debug]
+        programs: ${{ fromJSON(inputs.programs || '["release", "debug"]') }}
         kind: [exe, jit]
     runs-on: ubuntu-22.04
 
