@@ -15,6 +15,8 @@
 #include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Path.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -105,19 +107,55 @@ class OwnershipRoutineLogic
         return loc;
     }
 
+    // The module's source file, line 1: where a routine goes when the op that made it has no location
+    // of its own (a global's initializer filled at run time is built at none). Unknown, the routine is
+    // the "dropping the location" case above: a subprogram from DIScopeForLLVMFuncOpPass, and its calls
+    // into the other routines at no location - which the verifier rejects.
+    static mlir::Location moduleFileLocation(mlir::LLVM::LLVMFuncOp funcOp)
+    {
+        auto module = funcOp->getParentOfType<mlir::ModuleOp>();
+        if (!module)
+        {
+            return mlir::UnknownLoc::get(funcOp->getContext());
+        }
+
+        if (auto fileLoc = module->getLoc()->findInstanceOf<mlir::FileLineColLoc>())
+        {
+            return mlir::FileLineColLoc::get(fileLoc.getFilename(), 1, 1);
+        }
+
+        if (auto unit = module->getLoc()->findInstanceOf<mlir::FusedLocWith<mlir::LLVM::DICompileUnitAttr>>())
+        {
+            if (auto file = unit.getMetadata().getFile())
+            {
+                llvm::SmallString<256> path(file.getDirectory().getValue());
+                llvm::sys::path::append(path, file.getName().getValue());
+                return mlir::FileLineColLoc::get(funcOp->getContext(), path, 1, 1);
+            }
+        }
+
+        return mlir::UnknownLoc::get(funcOp->getContext());
+    }
+
     static void dropDebugLocations(mlir::LLVM::LLVMFuncOp funcOp)
     {
-        funcOp->setLoc(plainLocation(funcOp->getLoc()));
-        funcOp->walk([](mlir::Operation *nested) { nested->setLoc(plainLocation(nested->getLoc())); });
+        auto fallback = moduleFileLocation(funcOp);
+        auto plainOrFile = [&](mlir::Location loc) {
+            auto plain = plainLocation(loc);
+            return mlir::isa<mlir::UnknownLoc>(plain) ? fallback : plain;
+        };
+
+        funcOp->setLoc(plainOrFile(funcOp->getLoc()));
+        funcOp->walk([&](mlir::Operation *nested) { nested->setLoc(plainOrFile(nested->getLoc())); });
 
         // Block arguments carry locations of their own, and walking operations does not reach
         // them. They become phis, so leaving them alone leaves the routine with
         // `%11 = phi i64 ..., !dbg !39` naming the user function's scope - the same "wrong
         // subprogram" complaint, arriving from the one place the operation walk cannot see.
-        funcOp->walk([](mlir::Block *block) {
+        funcOp->walk([&](mlir::Block *block) {
             for (auto arg : block->getArguments())
             {
-                arg.setLoc(plainLocation(arg.getLoc()));
+                arg.setLoc(plainOrFile(arg.getLoc()));
             }
         });
     }
