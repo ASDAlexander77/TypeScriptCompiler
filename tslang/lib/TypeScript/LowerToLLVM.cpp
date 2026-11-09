@@ -9563,25 +9563,28 @@ static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOp
         return;
     }
 
-    // A call inside the module would be left calling a signature that no longer matches. Nothing
-    // generates one today - `main` is the entry point, and top-level code that needs to run before
-    // it becomes a global constructor - but a silent type mismatch is not the failure to risk.
-    auto hasInternalCaller = false;
+    // A call inside the module - a script's top-level `main();`, run by a global constructor -
+    // calls the new signature and drops the code. Left `void @main()` for such a module, the C
+    // runtime read the exit code from whatever the last call left in the register: 6, from
+    // printing "done.\n", once -O0 kept it (gc_malloc_cse_o3.ts).
+    SmallVector<LLVM::CallOp> internalCalls;
     m.walk([&](LLVM::CallOp callOp) {
         if (callOp.getCallee() && callOp.getCallee().value() == MAIN_ENTRY_NAME)
         {
-            hasInternalCaller = true;
+            internalCalls.push_back(callOp);
         }
     });
-
-    if (hasInternalCaller)
-    {
-        return;
-    }
 
     mlir::OpBuilder builder(funcOp);
     auto i32Type = builder.getI32Type();
     funcOp.setFunctionType(LLVM::LLVMFunctionType::get(i32Type, {}, false));
+
+    for (auto callOp : internalCalls)
+    {
+        mlir::OpBuilder callBuilder(callOp);
+        callBuilder.create<LLVM::CallOp>(callOp.getLoc(), funcOp, mlir::ValueRange{});
+        callOp.erase();
+    }
 
     SmallVector<LLVM::ReturnOp> returns;
     funcOp.walk([&](LLVM::ReturnOp returnOp) {

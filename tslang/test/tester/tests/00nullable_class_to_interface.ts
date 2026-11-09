@@ -40,7 +40,9 @@ class D implements I {
     return flag ? mk(x) : null;
 }
 
-function read(i: I | null): number {
+// not `read`: a function is a global symbol, and on Linux one named like libc's took the
+// collector's own `read()` calls
+function readOf(i: I | null): number {
     if (i === null) {
         return -1;
     }
@@ -70,7 +72,7 @@ function assigned(flag: boolean) {
     let opt: I | null = null;
     const c = maybe(flag, 8);
     opt = c;
-    return read(opt);
+    return readOf(opt);
 }
 
 function churn() {
@@ -85,7 +87,7 @@ function held(flag: boolean) {
     const opt: I | null = c;
     c = null;
     churn();
-    return read(opt);
+    return readOf(opt);
 }
 
 let G: I | null = maybe(true, 12);
@@ -101,11 +103,11 @@ function main() {
     assert(held(false) == -1, "a held null");
 
     churn();
-    assert(read(G) == 132, "a global");
+    assert(readOf(G) == 132, "a global");
     assert(H === null, "a null global");
     G = maybe(true, 13);
     churn();
-    assert(read(G) == 143, "a global reassigned");
+    assert(readOf(G) == 143, "a global reassigned");
 
     assert(conditional(true) == 55, "a conditional, class side");
     assert(conditional(false) == -1, "a conditional, null side");
@@ -113,8 +115,8 @@ function main() {
     assert(constConditional(true) == 6, "a const, class side");
     assert(constConditional(false) == -1, "a const, null side");
 
-    assert(read(maybe(true, 3)) == 33, "an argument");
-    assert(read(maybe(false, 3)) == -1, "a null argument");
+    assert(readOf(maybe(true, 3)) == 33, "an argument");
+    assert(readOf(maybe(false, 3)) == -1, "a null argument");
 
     const v = viewed(maybe(true, 4));
     assert(v !== null && v.x == 4 && v.get() == 40, "a returned value");
@@ -123,8 +125,8 @@ function main() {
     assert(assigned(true) == 88, "an assignment");
     assert(assigned(false) == -1, "a null assignment");
 
-    assert(read(maybeD(true, 2)) == 202, "a class implementing the interface");
-    assert(read(maybeD(false, 2)) == -1, "a null of a class implementing the interface");
+    assert(readOf(maybeD(true, 2)) == 202, "a class implementing the interface");
+    assert(readOf(maybeD(false, 2)) == -1, "a null of a class implementing the interface");
     const d: I | null = maybeD(true, 3);
     assert(d !== null && d.get() == 300, "a const of a class implementing the interface");
 

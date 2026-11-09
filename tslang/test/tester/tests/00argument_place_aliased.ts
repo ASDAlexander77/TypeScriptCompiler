@@ -43,29 +43,31 @@ function churn() {
 const HG = new H();
 let G = new H();
 
-function read(a: N, b: number) {
+// not `read`: a function is a global symbol, and on Linux one named like libc's took the
+// collector's own `read()` calls
+function readOf(a: N, b: number) {
     churn();
     return a.x + a.v.x;
 }
 
 // a parameter that is the const global
 function fieldOfConstGlobal(p: H, x: number) {
-    return read((p.n = mk(x), p.n), (HG.n = mk(0), 0));
+    return readOf((p.n = mk(x), p.n), (HG.n = mk(0), 0));
 }
 
 // a parameter that is the global
 function fieldOfGlobal(p: H, x: number) {
-    return read((p.n = mk(x), p.n), (G.n = mk(0), 0));
+    return readOf((p.n = mk(x), p.n), (G.n = mk(0), 0));
 }
 
 // two parameters that are one object
 function fieldOfParameter(p: H, q: H, x: number) {
-    return read((p.n = mk(x), p.n), (q.n = mk(0), 0));
+    return readOf((p.n = mk(x), p.n), (q.n = mk(0), 0));
 }
 
 // an element, through another parameter that is the same array
 function elementOfParameter(a: N[], b: N[], x: number) {
-    return read((a[0] = mk(x), a[0]), (b[0] = mk(0), 0));
+    return readOf((a[0] = mk(x), a[0]), (b[0] = mk(0), 0));
 }
 
 function main() {

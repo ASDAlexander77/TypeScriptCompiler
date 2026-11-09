@@ -23,7 +23,7 @@ jobs:
   build:
     # One job per kind of test program, side by side, as on Windows: release or debug programs
     # (TSLANG_TEST_PROGRAMS - test-runner), built to an executable or run under the JIT.
-    name: Build and test (${{ matrix.programs }} programs, ${{ matrix.kind }})
+    name: Build and test (Ubuntu 22.04, ${{ matrix.programs }} programs, ${{ matrix.kind }})
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +130,7 @@ jobs:
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
 
     # The JIT tests are the ones named test-jit-*; every other test is the exe leg's.
-    - name: Test (${{ matrix.programs }} programs, ${{ matrix.kind }})
+    - name: Test (Ubuntu 22.04, ${{ matrix.programs }} programs, ${{ matrix.kind }})
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tslang/ninja/release
       shell: sh

@@ -26,7 +26,7 @@ jobs:
     # One job per kind of test program, side by side: optimized (release) or with debug info and no
     # optimization (debug, TSLANG_TEST_PROGRAMS - test-runner), and built to an executable or run
     # under the JIT. Each job builds the compiler itself; its tests are a quarter of the suite.
-    name: Build and test (${{ matrix.programs }} programs, ${{ matrix.kind }})
+    name: Build and test (Windows, ${{ matrix.programs }} programs, ${{ matrix.kind }})
     strategy:
       fail-fast: false
       matrix:
@@ -149,7 +149,7 @@ jobs:
       shell: pwsh
 
     # The JIT tests are the ones named test-jit-*; every other test is the exe leg's.
-    - name: Test (${{ matrix.programs }} programs, ${{ matrix.kind }})
+    - name: Test (Windows, ${{ matrix.programs }} programs, ${{ matrix.kind }})
       working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
       env:
         TSLANG_TEST_PROGRAMS: ${{ matrix.programs }}
