@@ -228,14 +228,15 @@ function testNaN() {
 }
 
 function testUnaryPlus() {
-    function testOne(v: number) {
+    // a union: a string or a boolean given to a number is an error; unary plus converts what it is given
+    function testOne(v: number | string | boolean) {
         assert(+v + 1 == 2, "t1");
     }
-    function testZero(v: number) {
+    function testZero(v: number | string | boolean | null) {
         print("v:" + v);
         assert(+v + 1 == 1, "t0");
     }
-    function test35(v: number) {
+    function test35(v: number | string) {
         assert(+v + 1 == 4.5, "t35");
     }
     testOne(1);

@@ -5,22 +5,23 @@
 
 const NAMES = ["down", "off", "point", "tilt"];
 
-// stands for console.log: the rest array holds what it is given and lets go of it on return
-function log(...parts: string[]) {
+// stands for console.log: the rest array holds what it is given and lets go of it on return. Not
+// named `log`: the default library declares C's `log(x: number)`, which a call would reach instead
+function logParts(...parts: string[]) {
     print(parts[0]);
 }
 
 class Hud {
     message: string = "";
     show(text: string) {
-        log(text);
+        logParts(text);
         this.message = text;
     }
 }
 
 let kept = "";
 function keep(text: string) {
-    log(text);
+    logParts(text);
     kept = text;
 }
 

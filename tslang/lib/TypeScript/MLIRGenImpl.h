@@ -3162,6 +3162,11 @@ class MLIRGenImpl
                 }
                 else if (type != init.getType())
                 {
+                    if (mlir::failed(checkStringNumberAssignment(loc(initializer), init.getType(), type, genContext)))
+                    {
+                        return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                    }
+
                     auto result = cast(loc(initializer), type, init, genContext);
                     if (result.failed())
                     {
@@ -3201,6 +3206,76 @@ class MLIRGenImpl
 #endif
 
         return std::make_tuple(type, init, typeProvided);
+    }
+
+    // a string, or a number of any width, as TypeScript sees it: what a value of each converts to
+    // silently is a type error there, and here
+    enum class StringOrNumber
+    {
+        Neither,
+        String,
+        Number
+    };
+
+    StringOrNumber stringOrNumber(mlir::Type type)
+    {
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            type = literalType.getElementType();
+        }
+
+        // not a `char`: a byte, given a number (a buffer's element) as readily as made a string (`s[0]`)
+        if (isa<mlir_ts::StringType>(type))
+        {
+            return StringOrNumber::String;
+        }
+
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            return intType.getWidth() > 1 ? StringOrNumber::Number : StringOrNumber::Neither;
+        }
+
+        if (isa<mlir_ts::NumberType, mlir::IndexType, mlir::FloatType>(type))
+        {
+            return StringOrNumber::Number;
+        }
+
+        return StringOrNumber::Neither;
+    }
+
+    // In a function an untyped parameter made generic (getParameterGenericTypeName), instantiated for the
+    // types of its arguments: TypeScript has that parameter `any`, which takes and gives anything -
+    // `function f(r) { return parseFloat(r); }` called with a number is no mistake there
+    bool untypedParametersInScope(const GenContext &genContext)
+    {
+        return llvm::any_of(genContext.typeParamsWithArgs,
+                            [](auto &entry) { return entry.getKey().starts_with("TGenParam_"); });
+    }
+
+    // a string given where a number is wanted, or a number where a string is (checkStringNumberAssignment)
+    bool isStringNumberMismatch(mlir::Type valueType, mlir::Type destType, const GenContext &genContext)
+    {
+        auto from = stringOrNumber(valueType);
+        auto to = stringOrNumber(destType);
+        // a partial resolve may stand in a call's first overload for the one it will pick (an @cpp
+        // class's `write(s32)` for `write(string)`): the full pass checks the one picked
+        return from != StringOrNumber::Neither && to != StringOrNumber::Neither && from != to
+               && !untypedParametersInScope(genContext) && !genContext.allowPartialResolve;
+    }
+
+    // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
+    // they hid a mistake - "x" became 0. A union, `any` or an enum on either side is left to the cast.
+    mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType,
+                                                    const GenContext &genContext)
+    {
+        if (!isStringNumberMismatch(valueType, destType, genContext))
+        {
+            return mlir::success();
+        }
+
+        emitError(location) << "type '" << to_print(valueType) << "' is not assignable to type '"
+                            << to_print(destType) << "'";
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
@@ -7093,6 +7168,20 @@ class MLIRGenImpl
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
+        // the type the place takes: a variable a test narrowed takes any its declaration allows, a field
+        // a subclass declared again the one it declared (DECLARED_FIELD_VIEW_ATTR_NAME)
+        auto placeType = leftExpressionValue.getType();
+        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+        {
+            placeType = safeCastOp.getValue().getType();
+        }
+
+        if (rightExpressionValue && mlir::failed(checkStringNumberAssignment(location, rightExpressionValue.getType(), placeType, genContext)))
+        {
+            return mlir::failure();
+        }
+
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {
             if (isa<mlir_ts::CharType>(rightExpressionValue.getType()))
@@ -10849,6 +10938,15 @@ class MLIRGenImpl
 
             if (value.getType() != argTypeDestFuncType)
             {
+                // `f("7")` for `f(n: number)`, or a number for a string: an error, as in TypeScript (TS2345),
+                // as an assignment of one to the other is (checkStringNumberAssignment)
+                if (isStringNumberMismatch(value.getType(), argTypeDestFuncType, genContext))
+                {
+                    emitError(location) << "argument of type '" << to_print(value.getType())
+                                        << "' is not assignable to parameter of type '" << to_print(argTypeDestFuncType) << "'";
+                    return mlir::failure();
+                }
+
                 // A closure or a bound method is a function and the value it runs with (its captures,
                 // its `this`); a plain function type parameter - a C callback (@cdecl, TSLANG_ISSUES 29)
                 // - is only a code pointer, and the cast drops the value: the function would read its
