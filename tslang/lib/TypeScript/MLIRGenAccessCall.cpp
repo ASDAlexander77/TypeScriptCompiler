@@ -1344,13 +1344,28 @@ namespace mlirgen
         return false;
     }
 
-    // Whether the class, or a base class, declares `[key: string]: T`.
+    // Whether the class, or a base class, declares an indexer a string key goes to: `[key: string]: T`,
+    // or `[key: number | string]: T`.
     static bool classHasStringIndexer(ClassInfo::TypePtr classInfo)
     {
+        auto takesString = [](mlir::Type keyType) {
+            if (isa<mlir_ts::StringType>(keyType))
+            {
+                return true;
+            }
+
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(keyType))
+            {
+                return llvm::any_of(unionType.getTypes(), [](mlir::Type type) { return isa<mlir_ts::StringType>(type); });
+            }
+
+            return false;
+        };
+
         for (auto &indexInfo : classInfo->indexes)
         {
             if (indexInfo.indexSignature && indexInfo.indexSignature.getNumInputs() > 0
-                && isa<mlir_ts::StringType>(indexInfo.indexSignature.getInput(0)))
+                && takesString(indexInfo.indexSignature.getInput(0)))
             {
                 return true;
             }
