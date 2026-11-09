@@ -66,6 +66,10 @@ class NumberHolder extends Holder {
 class Below extends NumberHolder {
 }
 
+class PlainNumber {
+    v: number = 0;
+}
+
 interface HasNumber {
     v: number;
 }
@@ -100,6 +104,16 @@ function narrowed() {
     assert(withDog.owner.bark() == "woof", "an interface wanting the subclass's class type");
     withDog.owner = new Dog();
     assert(n.owner.bark() == "woof", "a write of an object through that interface");
+
+    // a value of another type is given as a `number` field of the subclass's own would be: converted
+    // to a number, then stored. Stored as it was, the union slot held a string the subclass read as
+    // a number (the string's address)
+    const plain = new PlainNumber();
+    const wide: any = "12";
+    plain.v = wide;
+    n.v = wide;
+    assert(n.v == plain.v, "a value of another type, as a number field takes it");
+    assert(typeof h.v == "number", "stored as a number in the base's slot");
 
     const below = new Below();
     assert(below.v + 1 == 4, "a class below the one that narrowed it");

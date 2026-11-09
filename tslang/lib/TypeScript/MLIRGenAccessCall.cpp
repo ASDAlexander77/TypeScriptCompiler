@@ -208,7 +208,9 @@ namespace mlirgen
                             return mlir::Value();
                         }
 
-                        return V(builder.create<mlir_ts::SafeCastOp>(location, readType, castValue, value));
+                        auto viewOp = builder.create<mlir_ts::SafeCastOp>(location, readType, castValue, value);
+                        viewOp->setAttr(DECLARED_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+                        return V(viewOp);
                     }
                 }
             }

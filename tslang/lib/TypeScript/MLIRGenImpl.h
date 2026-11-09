@@ -7141,6 +7141,18 @@ class MLIRGenImpl
         // TODO: logic to support safe cast
         if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
         {
+            // a field a subclass declared again with a type of its own takes a value of that type,
+            // then stored as the base's slot has it: `n.v = "x"` with `v: number` over
+            // `v: number | string` is the number a `number` field would have been given
+            if (safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+            {
+                syncSavingValue(safeCastOp.getType());
+                if (!savingValue)
+                {
+                    return mlir::failure();
+                }
+            }
+
             leftExpressionValueBeforeCast = safeCastOp.getValue();
         }
 
@@ -7469,7 +7481,9 @@ class MLIRGenImpl
         // after `s.kind === "sq"`, `s = { kind: "ci", r: 1 }` is an `Sq | Ci`, and typed as the narrowed
         // `Sq` it became a `{ kind: "sq", r }` that was never stored
         auto receiverType = leftExpressionValue.getType();
-        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>())
+        // - but a field a subclass declared again takes one of the type it declared (DECLARED_FIELD_VIEW_ATTR_NAME)
+        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
         {
             receiverType = safeCastOp.getValue().getType();
         }

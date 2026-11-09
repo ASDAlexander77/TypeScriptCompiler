@@ -435,6 +435,11 @@
 // vtable. The slot holds the method the reference names, which
 // -mm=own calls the way it calls that module's function: its `__own_no_drops` applies.
 #define FINAL_RECEIVER_ATTR_NAME "__final_receiver"
+// On a `ts.SafeCast`: a base's field read through a subclass that declared it again with a type of
+// its own (`v: number` over `v: number | string`). A store through it is of that declared type, as a
+// store to a field of the subclass's own would be - unlike a variable a test narrowed, which may
+// still be given anything its declaration allows
+#define DECLARED_FIELD_VIEW_ATTR_NAME "__declared_field_view"
 // the old name of @cpp, an error now: unknown, it would leave the class an ordinary one
 #define CPP_VTABLE_OLD_NAME "cppvtable"
 // A @cpp method's C++ return type has a destructor or a copy constructor (see
