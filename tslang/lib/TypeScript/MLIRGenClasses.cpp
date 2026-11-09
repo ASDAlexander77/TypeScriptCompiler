@@ -2992,6 +2992,94 @@ genContext);
         return mlir::failure();
     }
 
+    // A function with the method's own signature, `this` first, that calls the method through the vtable of
+    // the object it is given: the override of the object's class, as a call `this.m(...)` would. For an
+    // interface vtable built from a static type (mlirGenClassVirtualTableDefinitionForInterface).
+    mlir::Value MLIRGenImpl::virtualDispatchThunk(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                  MethodInfo &methodInfo, mlir::StringRef thunkName,
+                                                  const GenContext &genContext)
+    {
+        auto funcType = methodInfo.funcType;
+        if (!funcType || funcType.getInputs().empty())
+        {
+            return mlir::Value();
+        }
+
+        if (!theModule.lookupSymbol(thunkName))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+
+            // compiler glue with no source to step through, as fewerParametersThunk's
+            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, funcType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            // ...but with --di a subprogram of its own, its body scoped under it (fewerParametersThunk). From
+            // the file, line and column alone: `location` is a cast's, and what stripMetadata leaves of it
+            // can still carry the scope of the function the cast is in - LLVM then rejected the module
+            // (a !dbg in another function's subprogram). The module's file where it has none: a vtable
+            // filled at run time (a -shared import's class) is built at no location, and a call in a
+            // function with a subprogram must have one.
+            DITableScopeT debugFuncScope(debugScope);
+            auto fileLoc = location->findInstanceOf<mlir::FileLineColLoc>();
+            if (!fileLoc)
+            {
+                fileLoc = mlir::FileLineColLoc::get(builder.getStringAttr(mainSourceFileName), 1, 1);
+            }
+
+            if (compileOptions.generateDebugInfo && fileLoc)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                mlir::Location plainLocation = fileLoc;
+
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, thunkName, thunkName, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            auto results = funcType.getResults();
+            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto entryOp = builder.create<mlir_ts::EntryOp>(
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
+
+            // the method in the slot the object's own vtable has for it
+            auto thisValue = entryBlock.getArgument(0);
+            auto vtableAccess = mlirGenPropertyAccessExpression(noLocation, thisValue, VTABLE_NAME, genContext);
+            if (!vtableAccess)
+            {
+                emitError(location) << "class '" << newClassPtr->fullName << "' missing 'virtual table'";
+                funcOp.erase();
+                return mlir::Value();
+            }
+
+            auto callee = builder.create<mlir_ts::VirtualSymbolRefOp>(
+                noLocation, funcType, V(vtableAccess), builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), methodInfo.funcName));
+            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee, entryBlock.getArguments());
+            if (hasResult)
+            {
+                // handed on as `return this.m(x)` hands it: owned, and taken over by the return
+                if (mth.ownsHeapMemory(noLocation, results.front()))
+                {
+                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+
+            builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
+
+            theModule.push_back(funcOp);
+        }
+
+        return builder.create<mlir_ts::SymbolRefOp>(location, funcType,
+                                                    mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+    }
+
     std::pair<mlir::LogicalResult, MethodInfo *> MLIRGenImpl::findErasedGenericMethod(mlir::Location location,
                                                                                     ClassInfo::TypePtr classInfo,
                                                                                     mlir::StringRef name,
@@ -3744,7 +3832,25 @@ genContext);
                         // "not a link-time constant, resolve at runtime" situation
                         // mlirGenClassVirtualTableDefinition already handles for its own
                         // (non-interface) vtable slots, just not previously mirrored here.
-                        auto methodValueRef = methodSymbolValue(location, methodOrField.methodInfo, genContext);
+                        // A class that does not declare the interface (a structural cast, `const n: Named = k`):
+                        // this vtable is built once, from the static type, and made for any object of it -
+                        // a subclass's too. A virtual method's slot dispatches through the object's own
+                        // vtable, then: named directly, an override was never called (Base's `title` for a
+                        // Derived), and an abstract method was a symbol with no body. A class declaring the
+                        // interface has a vtable of its own for each class, read from the object.
+                        auto &methodInfo = methodOrField.methodInfo;
+                        std::function<bool(ClassInfo::TypePtr)> declares = [&](ClassInfo::TypePtr cls) {
+                            return cls->getImplementIndex(newInterfacePtr->fullName) >= 0 ||
+                                   llvm::any_of(cls->baseClasses, declares);
+                        };
+                        auto dispatches = !declares(newClassPtr) && !methodInfo.isStatic &&
+                                          (methodInfo.isVirtual || methodInfo.isAbstract) && methodInfo.virtualIndex >= 0;
+                        auto methodValueRef =
+                            dispatches
+                                ? virtualDispatchThunk(location, newClassPtr, methodInfo,
+                                                       concat(fullClassInterfaceVTableFieldName, methodInfo.name, "dispatch"),
+                                                       genContext)
+                                : methodSymbolValue(location, methodInfo, genContext);
                         if (!methodValueRef)
                         {
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};

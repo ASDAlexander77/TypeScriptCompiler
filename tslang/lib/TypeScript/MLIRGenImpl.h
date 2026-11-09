@@ -13761,6 +13761,9 @@ class MLIRGenImpl
                                                               InterfaceInfo::TypePtr newInterfacePtr,
                                                               const GenContext &genContext);
 
+    mlir::Value virtualDispatchThunk(mlir::Location location, ClassInfo::TypePtr newClassPtr, MethodInfo &methodInfo,
+                                     mlir::StringRef thunkName, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in,
             mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext,
             mlir::Value vtableStorage = mlir::Value());
