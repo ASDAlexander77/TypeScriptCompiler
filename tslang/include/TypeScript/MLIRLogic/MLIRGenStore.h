@@ -809,6 +809,9 @@ struct ClassInfo
     // their types as a discovery pass found them, by field name: the full pass lays the fields out
     // before it declares the members, so it can't type them itself
     llvm::StringMap<mlir::Type> fieldTypesFromMembers;
+    // a base's field this class declares again with a type of its own (`v: number` over Base's
+    // `v: number | string`): one slot, the base's; read through this class it is of this type
+    llvm::StringMap<mlir::Type> redeclaredFieldTypes;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 

@@ -621,6 +621,18 @@ namespace typescript
             newline();
         }
 
+        // a base's field this class declares again with a type of its own: the base's slot, not one of
+        // this storage's, but the importer reads it through this class as that type (redeclaresBaseField)
+        for (auto &redeclared : classType->redeclaredFieldTypes)
+        {
+            os.indent(4);
+            printAsFieldName(mlir::StringAttr::get(classType->classType.getContext(), redeclared.getKey()));
+            os << ": ";
+            print(redeclared.getValue());
+            os << ";";
+            newline();
+        }
+
         // `this` of an instance method of a @value class is the value (the slot `new` made, in the
         // constructor), not the class: it is the first parameter, which the importer adds again
         auto thisTypeOf = [&](bool isStatic, ArrayRef<mlir::Type> params) -> mlir::Type {
