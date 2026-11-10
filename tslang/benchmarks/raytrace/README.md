@@ -26,6 +26,35 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
+## Results 2026-11-10: Linux
+
+Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz); main d78c735 with the collector's
+allocations declared `noalias`. `bench.ps1` is for Windows, so the same builds were made and timed
+by hand: median of 15 runs, taken in turn so that the machine's drift falls on every build alike.
+Every build prints the same checksum. The machine is shared, so a few percent either way is noise.
+
+| Build | Median | vs C++ idiomatic |
+|---|---|---|
+| tslang gc | 128 ms | 1.2x |
+| tslang rc | 238 ms | 2.3x |
+| tslang none | 123 ms | 1.2x |
+| tslang own | 130 ms | 1.3x |
+| Rust idiomatic | 164 ms | 1.6x |
+| Rust Rc-boxed | 398 ms | 3.8x |
+| C++ idiomatic (clang) | 103 ms | 1x |
+| C++ shared_ptr (clang) | 571 ms | 5.5x |
+
+The ratios are against the C++ port here, because the Rust idiomatic port is 1.6x slower than it
+on this machine, where on Windows the two are within 10% of each other. Built with
+`-C target-cpu=native` the Rust port takes 109 ms, and the same flag does not change the C++ port;
+what the baseline x86-64 Rust build loses the time to was not looked into. The tslang builds
+target the baseline CPU too.
+
+Under `--emit=jit` with the JIT cache warm, the times are the executables' plus the compiler's
+start-up (about 13 ms): the JIT's code for this benchmark is the executable's, and the same before
+and after the optimizer was given the host's CPU (d78c735) - there are no loops here for it to
+vectorize. `../numeric` is the benchmark that shows that change.
+
 ## Results 2026-10-31: parameters captured by copy, direct method calls, null without a tag
 
 Release, Windows 11 x64, the same machine; main 1cd17c33 against the same tree with each change
