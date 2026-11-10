@@ -220,6 +220,21 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     // each call is treated as returning a distinct, non-aliasing pointer.
     void markAsAllocatorIfNeeded(StringRef newName, LLVM::LLVMFuncOp funcOp)
     {
+        // No other pointer reaches the block an allocation returns, nor the one a resize returns:
+        // `noalias`, which LLVM gives malloc's and realloc's results by their names and cannot give
+        // these. An array is a header holding the pointer to its elements, and without this a
+        // store to an element might have written the header, so every loop over an array loaded
+        // the elements' pointer again on each iteration and none of them was vectorized - the
+        // numeric benchmark ran 2 to 5 times slower under gc than under the other models.
+        if (newName == "GC_malloc" || newName == "GC_malloc_atomic" || newName == "GC_memalign" ||
+            newName == "GC_malloc_uncollectable" || newName == "GC_realloc")
+        {
+            if (funcOp.getNumResults() > 0)
+            {
+                funcOp.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(), mlir::UnitAttr::get(funcOp->getContext()));
+            }
+        }
+
         if (newName != "GC_malloc" && newName != "GC_malloc_atomic" && newName != "GC_memalign" &&
             newName != "GC_malloc_uncollectable")
         {

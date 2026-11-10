@@ -36,32 +36,50 @@ them one by one. A JIT figure includes the compiler's start-up, about 13 ms here
 
 ## Results 2026-11-10
 
-Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz, AVX2); main d78c735. Median of 9 runs
-after a warm-up, ms; every build prints the same check values. The machine is shared, so a few
-percent either way is noise.
+Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz, AVX2); main d78c735 with the collector's
+allocations declared `noalias` (below). Median of 9 runs after a warm-up, ms; every build prints
+the same check values. The machine is shared, so a few percent either way is noise.
 
 | Build | saxpy | triad | stencil | dot | matmul | hash |
 |---|---|---|---|---|---|---|
-| tslang gc | 190.5 | 225.3 | 206.9 | 94.1 | 91.2 | 220.4 |
-| tslang rc | 84.0 | 94.2 | 96.6 | 92.5 | 28.0 | 43.4 |
-| tslang none | 92.3 | 100.7 | 101.5 | 94.0 | 23.8 | 44.8 |
-| tslang own | 89.0 | 97.3 | 94.6 | 96.3 | 23.3 | 44.1 |
-| tslang gc (jit) | 172.9 | 189.7 | 223.7 | 105.5 | 102.7 | 220.2 |
-| tslang rc (jit) | 86.7 | 84.0 | 97.0 | 104.5 | 32.8 | 50.4 |
-| tslang none (jit) | 82.4 | 85.3 | 111.7 | 105.6 | 23.0 | 45.2 |
-| tslang own (jit) | 86.2 | 92.8 | 103.0 | 102.9 | 22.4 | 44.2 |
-| Rust | 73.0 | 82.6 | 103.6 | 96.5 | 21.2 | 46.6 |
-| C++ (clang) | 66.4 | 72.4 | 107.2 | 92.9 | 31.5 | 43.4 |
+| tslang gc | 85.5 | 93.3 | 97.5 | 93.2 | 23.2 | 44.6 |
+| tslang rc | 97.9 | 95.0 | 98.8 | 98.1 | 28.7 | 44.7 |
+| tslang none | 88.7 | 93.8 | 97.3 | 93.6 | 23.2 | 43.8 |
+| tslang own | 87.1 | 94.7 | 97.3 | 96.5 | 26.7 | 48.0 |
+| tslang gc (jit) | 101.2 | 93.4 | 118.6 | 106.9 | 32.6 | 57.2 |
+| tslang rc (jit) | 91.4 | 86.9 | 96.4 | 108.2 | 33.3 | 42.0 |
+| tslang none (jit) | 84.0 | 88.7 | 104.0 | 104.3 | 22.4 | 46.1 |
+| tslang own (jit) | 90.9 | 91.0 | 108.0 | 103.3 | 25.6 | 48.5 |
+| Rust | 68.2 | 76.0 | 103.4 | 94.9 | 20.6 | 44.4 |
+| C++ (clang) | 69.0 | 75.2 | 107.4 | 93.5 | 30.1 | 42.8 |
 
-- rc, none and own are within about 1.2x of Rust and C++ on every kernel, and level with them on
-  stencil, dot, matmul and hash. Their loops are vectorized (SSE2 in an executable, which targets
-  the baseline x86-64 as the Rust and C++ builds do).
-- **gc is 2 to 5 times slower than the other models on every kernel but dot.** Its executable has
-  no packed floating-point instruction at all: none of the loops is vectorized, where the same
-  source under none has them. dot is the same in every build because nothing vectorizes it. Why
-  the gc build's loops stay scalar has not been looked into.
+- The four memory models are level with each other, and level with Rust and C++ on stencil, dot,
+  matmul and hash. On saxpy and triad tslang takes about 1.25x as long as the two ports. All of
+  them vectorize these loops for SSE2: an executable targets the baseline x86-64, as the Rust and
+  C++ builds do.
 - dot is level across all ten rows: a strict floating-point reduction runs one addition at a time
   everywhere. `--fast-math` is what would change it.
+- The JIT rows generate the same loops for the host's CPU (below) and carry the compiler's
+  start-up. The gc and none objects the JIT caches hold the same number of vector instructions;
+  what makes the gc row slower than the none row here was not looked into.
+
+### gc before its allocations were `noalias`
+
+An array is a header holding the pointer to its elements. Under rc, none and own the header and
+the elements come from `malloc` and `realloc`, whose results LLVM knows by name to be blocks no
+other pointer reaches. Under gc they come from `GC_malloc` and `GC_realloc`, which were declared
+without that, so a store to an element might have written the header: every loop loaded the
+elements' pointer again on each iteration, and none of them was vectorized. GCPass now declares
+the results of the collector's allocation functions `noalias`.
+
+| Build | saxpy | triad | stencil | dot | matmul | hash |
+|---|---|---|---|---|---|---|
+| tslang gc, d78c735 | 190.5 | 225.3 | 206.9 | 94.1 | 91.2 | 220.4 |
+| tslang gc, with `noalias` | 85.5 | 93.3 | 97.5 | 93.2 | 23.2 | 44.6 |
+
+Before the change the gc executable had no packed floating-point instruction; after it, its
+optimized LLVM IR has as many vector operations as the none build's. The ray tracer in
+`../raytrace` is unchanged by it (gc 123 ms before, 128 ms after, within that run's noise).
 
 ### The JIT before and after the optimizer was given the host's CPU
 

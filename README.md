@@ -791,6 +791,27 @@ calling methods nothing overrides directly, and testing a union for null without
 still pays for retains and releases in the inner loops. The benchmark's README has every step and
 the earlier results.
 
+Loops over arrays are measured by [tslang/benchmarks/numeric](tslang/benchmarks/numeric/README.md):
+six kernels over flat arrays of 4096 elements, with Rust and C++ ports (release build, Ubuntu 24.04
+x64 on a 4-core cloud VM, median of 9 runs, ms, measured 2026-11-10).
+
+| build | saxpy | triad | stencil | dot | matmul | hash |
+| --- | --- | --- | --- | --- | --- | --- |
+| `-mm=gc` | 85.5 | 93.3 | 97.5 | 93.2 | 23.2 | 44.6 |
+| `-mm=rc` | 97.9 | 95.0 | 98.8 | 98.1 | 28.7 | 44.7 |
+| `-mm=none` | 88.7 | 93.8 | 97.3 | 93.6 | 23.2 | 43.8 |
+| `-mm=own` | 87.1 | 94.7 | 97.3 | 96.5 | 26.7 | 48.0 |
+| Rust (`Vec<f64>`, iterators) | 68.2 | 76.0 | 103.4 | 94.9 | 20.6 | 44.4 |
+| C++ (`std::vector`, clang -O3) | 69.0 | 75.2 | 107.4 | 93.5 | 30.1 | 42.8 |
+
+Here the memory model does not matter: the loops allocate nothing, and all four models vectorize
+them. tslang is level with Rust and C++ on four of the kernels and takes about 1.25x as long on
+saxpy and triad. Under `--emit=jit` the loops are vectorized for the host's CPU (AVX2 on that
+machine) rather than the baseline x86-64 an executable targets, which made saxpy, triad, matmul
+and hash 15-25% faster than the JIT of the release before it. The same ray tracer on that Linux
+machine takes 128 ms under `-mm=gc`, 123 under `-mm=none`, 130 under `-mm=own` and 238 under
+`-mm=rc`, against 103 ms for the C++ port; the benchmarks' READMEs have the full tables.
+
 ### `-mm=own`
 
 `-mm=own` works the way Rust's borrow checker does. Every heap block has exactly one owner: a
