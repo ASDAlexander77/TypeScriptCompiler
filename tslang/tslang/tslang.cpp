@@ -116,7 +116,7 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
 cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations (on by default with --emit=jit, unless --opt_level=0 or --di; --opt=false turns it off)"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3), cl::cat(TypeScriptCompilerCategory)};
-cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level, with --opt: 0 - optimize for speed at --opt_level, 1 - for size (-Os), 2 - for minimal size (-Oz)"), cl::ZeroOrMore, cl::value_desc("0-2"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
 
 // dump obj
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically. (used in --emit=jit)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,

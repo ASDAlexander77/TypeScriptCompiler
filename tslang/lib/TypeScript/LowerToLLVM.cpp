@@ -2380,7 +2380,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             LLVMRTTIHelperVC rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
             rttih.setPersonality(newFuncOp);
 
-            funcAttrs.push_back(ATTR("noinline"));
+            // Only where Win32ExceptionPass rewrites the function's landing pads into funclets:
+            // that rewrite is per function and is not made to survive the function's body being
+            // copied into another. Itanium landing pads are what LLVM's inliner is written for,
+            // so elsewhere a function is not kept out of line for having a `try` or a `using`.
+            if (tsLlvmContext->compileOptions.isWindows)
+            {
+                funcAttrs.push_back(ATTR("noinline"));
+            }
         }
 
         // copy attributes over
