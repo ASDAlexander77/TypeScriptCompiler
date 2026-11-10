@@ -26,6 +26,33 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
+## Results 2026-11-10: Windows
+
+Release, Windows 11 x64, the machine of the 10-31 run; main d64978ed, and the same tree with the
+heap's release and resize declared not to capture their block (see `../numeric`). `bench.ps1`,
+median of 9 runs after a warm-up; every build prints the same checksum.
+
+| Build | main | release does not capture | vs Rust idiomatic (57 ms) |
+|---|---|---|---|
+| tslang gc | 74.4 ms | 74.1 ms | 1.3x |
+| tslang gc, `--no-stack-promotion` | 159.3 ms | 155.2 ms | |
+| tslang rc | 117.5 ms | 114.2 ms | 2.0x |
+| tslang none | 78.2 ms | 73.2 ms | 1.3x |
+| tslang own | 77.5 ms | 76.4 ms | 1.3x |
+| Rust idiomatic | 57.2 ms | 57.2 ms | 1x |
+| Rust Rc-boxed | 528.7 ms | 502.6 ms | 8.8x |
+| C++ idiomatic (clang) | 52.7 ms | 51.6 ms | 0.9x |
+| C++ idiomatic (MSVC) | 71.6 ms | 71.2 ms | 1.2x |
+| C++ shared_ptr (clang) | 858.4 ms | 844.0 ms | 14.8x |
+| C++ shared_ptr (MSVC) | 911.3 ms | 910.2 ms | 16x |
+
+- Against 10-31 (gc 71, rc 110, none 70, own 77) the four models are within a few percent; Rust
+  and C++ also measured 4-5% slower than then.
+- gc now depends on stack promotion: without it gc takes twice as long, where on 10-24 the flag
+  changed it by 2% or less. Under rc and own the flag changes nothing, under none 10 ms. Not
+  looked into.
+- The heap change is for loops over arrays; here it moves the models by no more than the noise.
+
 ## Results 2026-11-10: Linux
 
 Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz); main d78c735 with the collector's
