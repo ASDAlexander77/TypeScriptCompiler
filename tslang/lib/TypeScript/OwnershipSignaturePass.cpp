@@ -891,6 +891,12 @@ namespace own_signature
                 receiver = object;
             }
 
+            // ...seen through its views: `same(new A())` to an `A | null` parameter is given
+            // `<A | null>new A()`, and the releases to take over are the object's. Judged on the
+            // view, whose only user is the call, the result was made fresh while the object's own
+            // release stayed: freed twice (TSLANG 46).
+            receiver = rootOf(receiver);
+
             // the caller's own: fresh, or what a call that borrows nothing returns (another module's
             // `JsonValue.newObject()`), which the caller releases
             auto *producer = receiver.getDefiningOp();
@@ -901,6 +907,21 @@ namespace own_signature
                 continue;
             }
 
+            // a release after the call: in its block, or in one only the call leads to (a condition
+            // after it, `x instanceof A`, splits the function's blocks) where the result is released
+            // too, so the result's release is there to take the temporary's place
+            mlir::DominanceInfo dominance(op->getParentOfType<mlir_ts::FuncOp>());
+            auto releasedAfter = [&](mlir::Operation *user) {
+                if (user->getBlock() == op->getBlock())
+                {
+                    return op->isBeforeInBlock(user);
+                }
+
+                return dominance.properlyDominates(op, user) && llvm::any_of(op->getResult(0).getUsers(), [&](mlir::Operation *use) {
+                           return mlir::isa<mlir_ts::ReleaseOp>(use) && use->getBlock() == user->getBlock();
+                       });
+            };
+
             llvm::SmallVector<mlir::Operation *> releases;
             auto temporary = llvm::all_of(receiver.getUsers(), [&](mlir::Operation *user) {
                 if (user == op)
@@ -908,7 +929,7 @@ namespace own_signature
                     return true;
                 }
 
-                if (mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() == op->getBlock() && op->isBeforeInBlock(user))
+                if (mlir::isa<mlir_ts::ReleaseOp>(user) && releasedAfter(user))
                 {
                     releases.push_back(user);
                     return true;

@@ -2138,6 +2138,19 @@ namespace mlirgen
             mlir::Type baseType;
             if (!toAny && mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
+                // widened to a union that has every member of this one (`flag && a && b` widens
+                // `null | boolean | A` to `null | boolean | A | B`): the value keeps its tag and its
+                // bytes, which the lowering carries over; tested at run time by `___cast` instead,
+                // its result was a new value that -mm=own took for one stored (TSLANG 45)
+                if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(type))
+                {
+                    auto resTypes = resUnionType.getTypes();
+                    if (llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return llvm::is_contained(resTypes, member); }))
+                    {
+                        return std::nullopt;
+                    }
+                }
+
                 if (auto result = castFromNullableUnion(location, type, value, unionType, genContext))
                 {
                     return *result;

@@ -332,6 +332,15 @@ namespace own_signature
         if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(def))
         {
             identifier = refOp.getIdentifierAttr().getAttr();
+            // a class's `..instanceOf`, called through its vtable (`___cast` tests an instance so):
+            // the compiler's own in every class, which destroys nothing, as the `.instanceOf` slot
+            // read below - whoever overrides it, an exported class's too (TSLANG 45)
+            if (identifier.getValue().ends_with("..instanceOf"))
+            {
+                callees.known = true;
+                callees.instanceOf = true;
+                return;
+            }
             // a @final receiver's slot holds the method named: no family, one function
             if (!refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
             {
