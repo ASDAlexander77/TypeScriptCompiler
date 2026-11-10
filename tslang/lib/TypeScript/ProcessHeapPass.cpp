@@ -154,15 +154,23 @@ class ProcessHeapPass : public mlir::PassWrapper<ProcessHeapPass, ModulePass>
                                                       LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
         funcOp.setMemoryEffectsAttr(memoryEffects);
 
-        // and no other pointer reaches the block, as `noalias` says of malloc's result
+        // and no other pointer reaches the block, as `noalias` says of malloc's and realloc's result.
+        // Without it on realloc, a store into a grown array's elements might have written the
+        // array's header, so a loop over the elements loaded their pointer again on every
+        // iteration and was not vectorized.
         if (!takesBlock && funcOp.getNumResults() > 0)
         {
             funcOp.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(), mlir::UnitAttr::get(context));
         }
 
+        // A release or a resize does not keep the block it is given, as LLVM declares free's and
+        // realloc's (`captures(none)`). Without it, an object whose release is on any path of a
+        // function counts as escaped there, so under rc and own a header that a function may
+        // release was assumed reachable through its own elements, with the same effect on loops.
         if (takesBlock && funcOp.getNumArguments() > 0)
         {
             funcOp.setArgAttr(0, LLVM::LLVMDialect::getAllocatedPointerAttrName(), mlir::UnitAttr::get(context));
+            funcOp.setArgAttr(0, LLVM::LLVMDialect::getNoCaptureAttrName(), mlir::UnitAttr::get(context));
         }
 
         auto entry = [&](llvm::StringRef key, llvm::StringRef value) {

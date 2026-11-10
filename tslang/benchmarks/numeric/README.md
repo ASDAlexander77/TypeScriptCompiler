@@ -34,7 +34,42 @@ TSLANG=<path to tslang> bash tslang/benchmarks/numeric/bench.sh
 With a kernel's name as its argument a program runs only that kernel, which is how `bench.sh` times
 them one by one. A JIT figure includes the compiler's start-up, about 13 ms here.
 
-## Results 2026-11-10
+## Results 2026-11-10: Windows
+
+Release, Windows 11 x64; main d64978ed, and the same tree with the heap's release and resize
+declared not to capture their block (below). `bench.sh` runs under Git Bash; the lib paths
+(`TSLANG_LIB_PATH`, `GC_LIB_PATH`, `LLVM_LIB_PATH`) point at the build tree. Median of 15 runs
+after a warm-up, ms; every build prints the same check values. The "after" rows are one run, in
+which Rust too was about 10% slower than in the "before" run: compare a row with the Rust row of
+its own run.
+
+| Build | saxpy | triad | stencil | dot | matmul | hash |
+|---|---|---|---|---|---|---|
+| tslang gc | 87.3 | 112.3 | 97.3 | 96.7 | 57.3 | 66.8 |
+| tslang rc | 130.9 | 150.4 | 146.7 | 94.5 | 84.9 | 157.7 |
+| tslang none | 88.1 | 112.7 | 92.2 | 94.2 | 60.9 | 67.0 |
+| tslang own | 88.7 | 114.2 | 93.3 | 94.7 | 59.4 | 160.0 |
+| Rust | 85.9 | 98.4 | 97.1 | 95.0 | 55.5 | 66.8 |
+| C++ (clang) | 133.4 | 145.9 | 143.5 | 93.3 | 75.2 | 157.8 |
+| tslang rc, release does not capture | 92.3 | 117.8 | 102.2 | 103.6 | 68.5 | 75.1 |
+| tslang own, release does not capture | 99.9 | 121.4 | 108.2 | 103.2 | 68.7 | 75.0 |
+| Rust, the same run | 93.8 | 106.6 | 107.1 | 109.4 | 64.0 | 76.1 |
+
+- On Windows, under every memory model but gc, `malloc`, `realloc` and `free` become the process
+  heap's `__tslang_heap_*` helpers (ProcessHeapPass). LLVM declares the C `free` and `realloc` not
+  to capture the block they are given; the helpers did not say so. A header that a function may
+  release on any path then counted as escaped, so a store to the elements might have written it,
+  and the loop loaded the elements' pointer again on every iteration. The rc executable had 8
+  packed floating-point and integer instructions, against 234-282 for gc, none, own and Rust, and
+  own's `hash` loop was not vectorized either. Linux does not run the pass. Declared `captures(none)`, rc and
+  own are level with Rust on every kernel.
+- `noalias` on the resize's result, which LLVM also says of `realloc`, vectorizes a few more loops
+  under none, but crashes five array tests (0xC0000409); it is left out.
+- The C++ port is about twice as slow here as on Linux (82 packed instructions): clang with the
+  MSVC standard library does not vectorize most of its loops. That is the port's build, not a
+  baseline to compare with.
+
+## Results 2026-11-10: Linux
 
 Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz, AVX2); main d78c735 with the collector's
 allocations declared `noalias` (below). Median of 9 runs after a warm-up, ms; every build prints
