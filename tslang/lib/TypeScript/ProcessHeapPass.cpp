@@ -123,7 +123,11 @@ class ProcessHeapPass : public mlir::PassWrapper<ProcessHeapPass, ModulePass>
         }
         else if (name == PROCESS_HEAP_REALLOC)
         {
-            allocKind = (1 << 1) | (1 << 3);
+            // not Uninitialized: the block keeps its contents up to the old size, and LLVM
+            // declares realloc `allockind("realloc")` alone. Said uninitialized, a load from the
+            // grown block - an array's first element after a splice - could fold to undef once the
+            // result was also `noalias`
+            allocKind = 1 << 1;
             takesBlock = true;
         }
         else if (name == PROCESS_HEAP_FREE)
@@ -158,7 +162,7 @@ class ProcessHeapPass : public mlir::PassWrapper<ProcessHeapPass, ModulePass>
         // Without it on realloc, a store into a grown array's elements might have written the
         // array's header, so a loop over the elements loaded their pointer again on every
         // iteration and was not vectorized.
-        if (!takesBlock && funcOp.getNumResults() > 0)
+        if (funcOp.getNumResults() > 0)
         {
             funcOp.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(), mlir::UnitAttr::get(context));
         }
