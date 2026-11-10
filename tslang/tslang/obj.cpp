@@ -38,7 +38,8 @@ extern cl::opt<std::string> outputFilename;
 std::string getDefaultOutputFileName(enum Action);
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
+namespace llvm { class TargetMachine; }
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
@@ -229,7 +230,9 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
 
     llvm::CodeGenOptLevel OLvl;
     // TODO: finish it, optimization
-    if (auto Level = llvm::CodeGenOpt::parseLevel(enableOpt ? mapToLevel(optLevel) : '0')) 
+    // optimizing for size generates code as -O2 does, whatever the speed level: clang's -Os and -Oz
+    auto codeGenLevel = !enableOpt ? '0' : (sizeLevel > 0 && optLevel > 0) ? '2' : mapToLevel(optLevel);
+    if (auto Level = llvm::CodeGenOpt::parseLevel(codeGenLevel)) 
     {
         OLvl = *Level;
     } 
@@ -287,7 +290,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         return retCode;
     }
 
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, Target.get());
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";

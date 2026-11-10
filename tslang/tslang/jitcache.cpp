@@ -68,7 +68,7 @@ std::unique_ptr<mlir::MLIRContext> createMLIRContext();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::StringRef, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions &);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions &);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 llvm::Error addEntryThunk(llvm::Module &, llvm::StringRef);
 
 #define JIT_CACHE_FORMAT "tslang-jit-cache 1"
@@ -600,7 +600,7 @@ class JitUnitBuilder
         llvmModule->setDataLayout(tm->createDataLayout());
         llvmModule->setTargetTriple(tm->getTargetTriple());
 
-        auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, options);
+        auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, options, tm.get());
         if (auto err = optPipeline(llvmModule.get()))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";

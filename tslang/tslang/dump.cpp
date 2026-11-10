@@ -32,7 +32,8 @@ extern cl::opt<std::string> outputFilename;
 std::string getDefaultOutputFileName(enum Action);
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
+namespace llvm { class TargetMachine; }
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
 int dumpAST()
 {
@@ -76,7 +77,8 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions,
+                                      /*targetMachine=*/nullptr);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";

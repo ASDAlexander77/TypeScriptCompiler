@@ -205,7 +205,9 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             {
                 optPM.addPass(mlir::createCSEPass());
             }
-            pm.addPass(mlir::createLoopInvariantCodeMotionPass());
+            // No MLIR loop-invariant code motion: it moves code out of ops with
+            // LoopLikeOpInterface, and the lowering above has already turned every While,
+            // DoWhile and For into branches. LLVM's LICM does the work.
             // Not under --di: stripping left every function a subprogram and every call no
             // location, which the LLVM dialect's verifier rejects for a call it could inline
             if (!compileOptions.generateDebugInfo)
@@ -317,13 +319,17 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
         return llvm::OptimizationLevel::O0;
 
     case 1:
-        return llvm::OptimizationLevel::O1;
-
     case 2:
+    case 3:
+        // A size level is a pipeline of its own, as clang's -Os and -Oz are: it replaces the
+        // speed level rather than being read only beside --opt_level=2. The default level is 3,
+        // so `--opt --size_level=2` used to be a plain -O3.
         switch (sizeLevel)
         {
         case 0:
-            return llvm::OptimizationLevel::O2;
+            return optLevel == 1   ? llvm::OptimizationLevel::O1
+                   : optLevel == 2 ? llvm::OptimizationLevel::O2
+                                   : llvm::OptimizationLevel::O3;
 
         case 1:
             return llvm::OptimizationLevel::Os;
@@ -332,10 +338,35 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
             return llvm::OptimizationLevel::Oz;
         }
         break;
-    case 3:
-        return llvm::OptimizationLevel::O3;
     }
     return std::nullopt;
+}
+
+// --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
+// vectorizer, the unroller and the backend all ask the function whether it is optimized for
+// size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
+static void applySizeAttributes(llvm::Module &m, llvm::OptimizationLevel level)
+{
+    auto minSize = level == llvm::OptimizationLevel::Oz;
+    if (!minSize && level != llvm::OptimizationLevel::Os)
+    {
+        return;
+    }
+
+    for (auto &func : m)
+    {
+        // `optnone` and the size attributes exclude each other (the verifier rejects the pair)
+        if (func.isDeclaration() || func.hasFnAttribute(llvm::Attribute::OptimizeNone))
+        {
+            continue;
+        }
+
+        func.addFnAttr(llvm::Attribute::OptimizeForSize);
+        if (minSize)
+        {
+            func.addFnAttr(llvm::Attribute::MinSize);
+        }
+    }
 }
 
 // --fast-math: relax IEEE-754 strictness the same way clang's
@@ -394,11 +425,15 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             applyFastMathFlags(*m);
         }
 
-        // Every caller hands in a null TargetMachine, which leaves the -O2/-O3
-        // cost model without target information: no vector registers are known,
-        // so LoopVectorize/SLP never consider vectorization profitable. Build a
-        // TargetMachine from the module triple (honoring -mcpu/-mattr) so the
-        // optimization pipeline sees the real target.
+        applySizeAttributes(*m, *ol);
+
+        // Without a TargetMachine the -O2/-O3 cost model has no target information: no vector
+        // registers are known, so LoopVectorize/SLP never consider vectorization profitable.
+        // A caller that generates the code hands in the machine it generates it with, so the
+        // cost model and the code generator agree on the CPU - the JIT's is the host's, which
+        // -mcpu/-mattr (empty unless given) do not name. Only a caller with no machine of its
+        // own (--emit=llvm, --emit=bc) gets one built here from the module triple and
+        // -mcpu/-mattr.
         std::unique_ptr<llvm::TargetMachine> ownedTargetMachine;
         auto *effectiveTargetMachine = targetMachine;
         if (!effectiveTargetMachine)
@@ -491,20 +526,21 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
     };
 }
 
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel, CompileOptions &compileOptions)
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel, CompileOptions &compileOptions,
+                                                          llvm::TargetMachine *targetMachine)
 {
 #ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0,
         /*sizeLevel=*/enableOpt ? sizeLevel : 0,
-        /*targetMachine=*/nullptr,
+        targetMachine,
         compileOptions);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0,
         /*sizeLevel=*/enableOpt ? sizeLevel : 0,
-        /*targetMachine=*/nullptr);
+        targetMachine);
 #endif
 
     return optPipeline;

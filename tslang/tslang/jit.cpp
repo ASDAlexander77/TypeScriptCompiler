@@ -89,7 +89,8 @@ std::string makeAbsolutePath(std::string);
 std::string getExecutablePath(const char *);
 
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
+namespace llvm { class TargetMachine; }
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
 using MlirRunnerInitFn = void (*)(llvm::StringMap<void *> &);
 using MlirRunnerDestroyFn = void (*)();
@@ -1525,8 +1526,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
-
     if (auto result = prepareJitProcess(compileOptions, /*nativeImage=*/false))
     {
         return result;
@@ -1540,8 +1539,28 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         mlir::SmallVector<mlir::StringRef> sharedLibPaths;
         sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
 
+        // The engine makes its own machine for the host; the optimizer is given one like it, so
+        // its cost model is the host's too. With none it builds a machine from -mcpu/-mattr.
+        std::unique_ptr<llvm::TargetMachine> dumpTargetMachine;
+        if (auto tmBuilderOrError = getJitTargetMachineBuilder())
+        {
+            if (auto tmOrError = tmBuilderOrError->createTargetMachine())
+            {
+                dumpTargetMachine = std::move(*tmOrError);
+            }
+            else
+            {
+                llvm::consumeError(tmOrError.takeError());
+            }
+        }
+        else
+        {
+            llvm::consumeError(tmBuilderOrError.takeError());
+        }
+
         mlir::ExecutionEngineOptions engineOptions;
-        engineOptions.transformer = optPipeline;
+        engineOptions.transformer =
+            getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, dumpTargetMachine.get());
         engineOptions.enableObjectDump = true;
         engineOptions.enableGDBNotificationListener = !enableOpt;
         engineOptions.sharedLibPaths = sharedLibPaths;
@@ -1620,6 +1639,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     llvmModule->setDataLayout((*tmOrError)->createDataLayout());
     llvmModule->setTargetTriple((*tmOrError)->getTargetTriple());
 
+    // the host's machine, which is what the JIT compiles with: the optimizer's cost model has to
+    // be for the CPU the code is generated for
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, tmOrError->get());
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
