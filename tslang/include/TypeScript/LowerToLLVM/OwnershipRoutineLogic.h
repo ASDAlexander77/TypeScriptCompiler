@@ -724,8 +724,26 @@ class OwnershipRoutineLogic
         return ss.str();
     }
 
+    // The one retain routine of every type whose value is a reference to a counted block of its own -
+    // string, class and object instances, a Shared<T> handle, an "any" box: buildRetainBody takes one
+    // more reference to the block and nothing else for each of them, so they share it. Sharing it is
+    // what lets a retain or release through an interface's tag see, by comparing the descriptor's
+    // retain slot with this routine, that `this` is such a block (interfaceThisIsPlainBlock).
+    static constexpr const char *PLAIN_BLOCK_RETAIN_ROUTINE = "__tslang_retain_block_slot";
+
+    static bool isPlainBlockType(mlir::Type type)
+    {
+        return isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::SharedType>(type) ||
+               isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type);
+    }
+
     std::string getRetainRoutineName(mlir::Type type)
     {
+        if (isPlainBlockType(type))
+        {
+            return PLAIN_BLOCK_RETAIN_ROUTINE;
+        }
+
         std::stringstream ss;
         ss << "tsret_" << (size_t)hash_value(type);
         return ss.str();
@@ -1317,16 +1335,180 @@ class OwnershipRoutineLogic
                                                         ArrayRef<LLVM::GEPArg>{INTERFACE_VTABLE_TYPE_SLOT});
             auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
             emitIfNonNull(tagValue, [&]() {
-                if (retaining)
+                // Under rc what an interface holds is nearly always a class or object instance, a
+                // block counted the plain way, and then the count is changed here rather than through
+                // the descriptor's routine: an indirect call LLVM can neither inline nor cancel
+                // against its pair. The ray tracer's `Intersection { thing }` was retained and
+                // released through it on every hit.
+                if (!compileOptions.isRefCounted())
                 {
-                    retainViaDescriptor(tagValue, thisSlot);
+                    if (retaining)
+                    {
+                        retainViaDescriptor(tagValue, thisSlot);
+                    }
+                    else
+                    {
+                        releaseViaDescriptor(tagValue, thisSlot);
+                    }
+
+                    return;
                 }
-                else
-                {
-                    releaseViaDescriptor(tagValue, thisSlot);
-                }
+
+                auto isPlain = interfaceThisIsPlainBlock(tagValue);
+                emitIfElse(
+                    isPlain,
+                    [&]() {
+                        auto thisValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, thisSlot);
+                        if (retaining)
+                        {
+                            emitIncRef(thisValue);
+                        }
+                        else
+                        {
+                            emitReleasePlainBlock(tagValue, thisValue);
+                        }
+                    },
+                    [&]() {
+                        if (retaining)
+                        {
+                            retainViaDescriptor(tagValue, copyToSlot(rewriter.create<LLVM::LoadOp>(loc, ptrTy, thisSlot)));
+                        }
+                        else
+                        {
+                            releaseViaDescriptor(tagValue, copyToSlot(rewriter.create<LLVM::LoadOp>(loc, ptrTy, thisSlot)));
+                        }
+                    });
             });
         });
+    }
+
+    // Does the descriptor `tagValue` points at retain with PLAIN_BLOCK_RETAIN_ROUTINE - is what its
+    // type's values point at a block counted the plain way (isPlainBlockType)? The release routine of
+    // such a type is "drop one reference, and destroy and free the block when it was the last"
+    // (buildBody), so emitReleasePlainBlock can drop one that is not the last itself.
+    mlir::Value interfaceThisIsPlainBlock(mlir::Value tagValue)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+
+        ensurePlainBlockRetainRoutine();
+
+        auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
+        auto retainPtrSlot =
+            rewriter.create<LLVM::GEPOp>(loc, ptrTy, TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RETAIN});
+        auto retainFn = rewriter.create<LLVM::LoadOp>(loc, ptrTy, retainPtrSlot);
+        auto plainRetain = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, PLAIN_BLOCK_RETAIN_ROUTINE);
+        return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, retainFn, plainRetain);
+    }
+
+    void ensurePlainBlockRetainRoutine()
+    {
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(PLAIN_BLOCK_RETAIN_ROUTINE))
+        {
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+            loc, PLAIN_BLOCK_RETAIN_ROUTINE, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+        emitIncRef(rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), entryBlock->getArgument(0)));
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+        dropDebugLocations(funcOp);
+    }
+
+    // Drops one reference to `payloadPtr`, a block counted the plain way whose type's descriptor is
+    // `tagValue`: a reference that is not the block's last, on a block only this thread holds, is a
+    // decrement here; the last one, a shared or an immortal block, or any block under --atomic-rc goes
+    // to the descriptor's release routine, which decides the same thing again and destroys the block
+    // when it has to.
+    void emitReleasePlainBlock(mlir::Value tagValue, mlir::Value payloadPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+
+        auto loc = op->getLoc();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        emitIfNonNull(payloadPtr, [&]() {
+            if (compileOptions.atomicRefCounts())
+            {
+                releaseViaDescriptor(tagValue, copyToSlot(payloadPtr));
+                return;
+            }
+
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+            auto count = emitCountLoad(loc, llvmIndexType, blockPtr);
+            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            // a shared or an immortal word is negative, and so is not greater than one
+            auto notLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, count, one);
+            emitIfElse(
+                notLast,
+                [&]() {
+                    rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one),
+                                                   blockPtr);
+                },
+                [&]() { releaseViaDescriptor(tagValue, copyToSlot(payloadPtr)); });
+        });
+    }
+
+    // A slot of its own holding `value`, for a routine that takes the storage of a value: given the
+    // address of a field instead, a value a function keeps in registers would be spilled whole to
+    // the stack around the call. The alloca goes to the entry block of the function being built.
+    mlir::Value copyToSlot(mlir::Value value)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        mlir::Value slot;
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            auto *entryBlock = &rewriter.getInsertionBlock()->getParent()->front();
+            rewriter.setInsertionPointToStart(entryBlock);
+            auto count = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(1));
+            slot = rewriter.create<LLVM::AllocaOp>(loc, th.getPtrType(), value.getType(), count);
+        }
+
+        rewriter.create<LLVM::StoreOp>(loc, value, slot);
+        return slot;
+    }
+
+    // Runs `thenBody` when `condition` holds and `elseBody` when it does not, and leaves the insertion
+    // point on the continuation.
+    void emitIfElse(mlir::Value condition, llvm::function_ref<void()> thenBody, llvm::function_ref<void()> elseBody)
+    {
+        auto loc = op->getLoc();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        auto *elseBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        thenBody();
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(elseBlock);
+        elseBody();
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
     }
 
     // Body of the capture-box routines: they take the storage holding the box pointer, like
