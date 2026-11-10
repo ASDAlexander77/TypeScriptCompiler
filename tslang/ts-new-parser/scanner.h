@@ -316,20 +316,20 @@ class Scanner
     auto getPositionOfLineAndCharacter(SourceFileLike sourceFile, number line, number character, bool allowEdits = true) -> number;
 
     /* @internal */
-    auto computePositionOfLineAndCharacter(std::vector<number> lineStarts, number line, number character, string debugText,
+    auto computePositionOfLineAndCharacter(const std::vector<number> &lineStarts, number line, number character, const string &debugText,
                                            bool allowEdits = true) -> number;
 
     /* @internal */
-    auto getLineStarts(SourceFileLike sourceFile) -> std::vector<number>;
+    auto getLineStarts(SourceFileLike sourceFile) -> const std::vector<number> &;
 
     /* @internal */
-    auto computeLineAndCharacterOfPosition(std::vector<number> lineStarts, number position) -> LineAndCharacter;
+    auto computeLineAndCharacterOfPosition(const std::vector<number> &lineStarts, number position) -> LineAndCharacter;
 
     /**
      * @internal
      * We assume the first line starts at position 0 and 'position' is non-negative.
      */
-    auto computeLineOfPosition(std::vector<number> lineStarts, number position, number lowerBound = 0) -> number;
+    auto computeLineOfPosition(const std::vector<number> &lineStarts, number position, number lowerBound = 0) -> number;
 
     /** @internal */
     auto getLinesBetweenPositions(SourceFileLike sourceFile, number pos1, number pos2);
@@ -632,7 +632,7 @@ class Scanner
     auto appendIfCommentDirective(std::vector<CommentDirective> commentDirectives, string text, regex commentDirectiveRegEx,
                                   pos_type lineStart) -> std::vector<CommentDirective>;
 
-    auto getDirectiveFromComment(string &text, regex commentDirectiveRegEx) -> CommentDirectiveType;
+    auto getDirectiveFromComment(string &text, const regex &commentDirectiveRegEx) -> CommentDirectiveType;
 
     auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
 

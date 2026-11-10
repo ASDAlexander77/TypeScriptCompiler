@@ -1168,7 +1168,7 @@ auto Scanner::getPositionOfLineAndCharacter(SourceFileLike sourceFile, number li
 }
 
 /* @internal */
-auto Scanner::computePositionOfLineAndCharacter(std::vector<number> lineStarts, number line, number character, string debugText,
+auto Scanner::computePositionOfLineAndCharacter(const std::vector<number> &lineStarts, number line, number character, const string &debugText,
                                                 bool allowEdits) -> number
 {
     if (line < 0 || line >= lineStarts.size())
@@ -1209,7 +1209,7 @@ auto Scanner::computePositionOfLineAndCharacter(std::vector<number> lineStarts, 
 }
 
 /* @internal */
-auto Scanner::getLineStarts(SourceFileLike sourceFile) -> std::vector<number>
+auto Scanner::getLineStarts(SourceFileLike sourceFile) -> const std::vector<number> &
 {
     if (!sourceFile->lineMap.empty())
     {
@@ -1225,7 +1225,7 @@ auto Scanner::getLineStarts(SourceFileLike sourceFile) -> std::vector<number>
 }
 
 /* @internal */
-auto Scanner::computeLineAndCharacterOfPosition(std::vector<number> lineStarts, number position) -> LineAndCharacter
+auto Scanner::computeLineAndCharacterOfPosition(const std::vector<number> &lineStarts, number position) -> LineAndCharacter
 {
     auto lineNumber = computeLineOfPosition(lineStarts, position);
     return LineAndCharacter({lineNumber, position - lineStarts[lineNumber]});
@@ -1235,7 +1235,7 @@ auto Scanner::computeLineAndCharacterOfPosition(std::vector<number> lineStarts, 
  * @internal
  * We assume the first line starts at position 0 and 'position' is non-negative.
  */
-auto Scanner::computeLineOfPosition(std::vector<number> lineStarts, number position, number lowerBound) -> number
+auto Scanner::computeLineOfPosition(const std::vector<number> &lineStarts, number position, number lowerBound) -> number
 {
     auto lineNumber = binarySearch<number, number>(lineStarts, position, &identity<number>, &compareValues<number>, lowerBound);
     if (lineNumber < 0)
@@ -1258,7 +1258,7 @@ auto Scanner::getLinesBetweenPositions(SourceFileLike sourceFile, number pos1, n
 {
     if (pos1 == pos2)
         return 0;
-    auto lineStarts = getLineStarts(sourceFile);
+    const auto &lineStarts = getLineStarts(sourceFile);
     auto lower = std::min(pos1, pos2);
     auto isNegative = lower == pos2;
     auto upper = isNegative ? pos1 : pos2;
@@ -1541,17 +1541,30 @@ auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::funct
 
 regex Scanner::shebangTriviaRegex = regex(S("^#!.*"));
 
+// `^#!.*` can only match at the start of the text, but regex_search still tries it at every
+// position of the file. Asking for the two characters first keeps the regex for the files that
+// do start with a shebang.
+static auto startsWithShebang(const string &text) -> boolean
+{
+    return text.size() >= 2 && text[0] == S('#') && text[1] == S('!');
+}
+
 /*@internal*/
 auto Scanner::isShebangTrivia(string &text, number pos) -> boolean
 {
     // Shebangs check must only be done at the start of the file
     debug(pos == 0);
-    return regex_search(text, shebangTriviaRegex);
+    return startsWithShebang(text) && regex_search(text, shebangTriviaRegex);
 }
 
 /*@internal*/
 auto Scanner::scanShebangTrivia(string &text, number pos) -> number
 {
+    if (!startsWithShebang(text))
+    {
+        return pos;
+    }
+
     auto words_begin = sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
     auto words_end = sregex_iterator();
     for (auto i = words_begin; i != words_end; ++i)
@@ -1593,6 +1606,11 @@ auto Scanner::getTrailingCommentRanges(string &text, pos_type pos) -> std::vecto
 /** Optionally, get the shebang */
 auto Scanner::getShebang(string &text) -> string
 {
+    if (!startsWithShebang(text))
+    {
+        return string();
+    }
+
     auto words_begin = sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
     auto words_end = sregex_iterator();
     for (auto i = words_begin; i != words_end; ++i)
@@ -3198,8 +3216,14 @@ auto Scanner::appendIfCommentDirective(std::vector<CommentDirective> commentDire
     return commentDirectives;
 }
 
-auto Scanner::getDirectiveFromComment(string &text, regex commentDirectiveRegEx) -> CommentDirectiveType
+auto Scanner::getDirectiveFromComment(string &text, const regex &commentDirectiveRegEx) -> CommentDirectiveType
 {
+    // both directive patterns need an '@'; most comments have none
+    if (text.find(S('@')) == string::npos)
+    {
+        return CommentDirectiveType::Undefined;
+    }
+
     auto words_begin = sregex_iterator(text.begin(), text.end(), commentDirectiveRegEx);
     auto words_end = sregex_iterator();
     if (words_begin == words_end)
