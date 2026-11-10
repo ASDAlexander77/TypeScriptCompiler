@@ -765,35 +765,54 @@ what to do about it, and **[docs/own-memory-model.md](docs/own-memory-model.md)*
 
 ### Performance
 
+**Compared with Rust:** under `-mm=own`, tslang matches Rust on numeric array loops and runs
+within about 1.35x of idiomatic Rust on an object-heavy ray tracer, about 6.6x faster than the
+same program written with Rust's `Rc` for every object. Put shortly: within 1.1-1.4x of idiomatic
+Rust, and on par for tight array loops. These are two benchmarks of our own, measured on Windows
+x64; on the ray tracer the remaining gap is in code generation (calls through interfaces, structs
+returned through memory), not in memory management, since `-mm=own` runs within a few percent of
+`-mm=none`, which frees nothing.
+
 The ray tracer benchmark in [tslang/benchmarks/raytrace](tslang/benchmarks/raytrace/README.md)
-(`raytrace.ts` at 512x512; release build, Windows 11 x64, median of 7 runs; the tslang rows measured
-2026-10-31, the Rust and C++ rows 2026-10-21 on the same machine) against Rust and C++ ports of the
-same code. The benchmark's copy marks `Vector` and `Color` as `@value` classes and `Ray` and
-`Intersection` as `@value` interfaces, so they are structs passed by value rather than heap
-objects; `-mm=own` builds `rtbench_own.ts`, the same program with the shared surfaces as
-`Shared<T>` handles.
+(`raytrace.ts` at 512x512; release build, Windows 11 x64, median of 9 runs, measured 2026-11-10)
+against Rust and C++ ports of the same code. The benchmark's copy marks `Vector` and `Color` as
+`@value` classes and `Ray` and `Intersection` as `@value` interfaces, so they are structs passed by
+value rather than heap objects; `-mm=own` builds `rtbench_own.ts`, the same program with the
+shared surfaces as `Shared<T>` handles.
 
 | build | time | vs Rust (values) |
 | --- | --- | --- |
-| `-mm=gc` | 71 ms | 1.3x slower |
-| `-mm=none` | 70 ms | 1.3x slower |
-| `-mm=own` | 77 ms | 1.4x slower |
-| `-mm=rc` | 110 ms | 2.0x slower |
-| Rust, values (`Copy` vectors and colors) | 55 ms | |
-| C++, values (clang -O3 / MSVC /O2) | 51 / 69 ms | |
-| Rust, every object in an `Rc` | 492 ms | 8.9x slower |
-| C++, every object in a `shared_ptr` (clang / MSVC) | 830 / 899 ms | 15x slower |
+| `-mm=gc` | 73 ms | 1.3x slower |
+| `-mm=none` | 73 ms | 1.3x slower |
+| `-mm=own` | 76 ms | 1.35x slower |
+| `-mm=rc` | 96 ms | 1.7x slower |
+| Rust, values (`Copy` vectors and colors) | 56 ms | |
+| C++, values (clang -O3 / MSVC /O2) | 52 / 70 ms | |
+| Rust, every object in an `Rc` | 500 ms | 8.9x slower |
+| C++, every object in a `shared_ptr` (clang / MSVC) | 834 / 908 ms | 15x slower |
 
 On 2026-10-21, before `@value`, every vector and color the program computed was a heap object and
 the same benchmark took 1298 ms under `-mm=gc` and 599 ms under `-mm=rc`; `@value` took it to 255
 and 172 ms. The rest of the gain came from capturing parameters by copy instead of in heap cells,
 calling methods nothing overrides directly, and testing a union for null without a tag. `-mm=rc`
 still pays for retains and releases in the inner loops. The benchmark's README has every step and
-the earlier results.
+the earlier results. `-mm=rc` went from 110 to 96 ms when retains and releases through an
+interface began changing the count inline; what it still pays over the other models is counting
+itself, not thread safety (atomics are only used for blocks shared between threads).
 
 Loops over arrays are measured by [tslang/benchmarks/numeric](tslang/benchmarks/numeric/README.md):
-six kernels over flat arrays of 4096 elements, with Rust and C++ ports (release build, Ubuntu 24.04
-x64 on a 4-core cloud VM, median of 9 runs, ms, measured 2026-11-10).
+six kernels over flat arrays of 4096 elements, with Rust and C++ ports. On Windows 11 x64 (release
+build, median of 15 runs, ms, measured 2026-11-10):
+
+| build | saxpy | triad | stencil | dot | matmul | hash |
+| --- | --- | --- | --- | --- | --- | --- |
+| `-mm=gc` | 87.8 | 107.9 | 92.5 | 91.6 | 53.8 | 64.6 |
+| `-mm=rc` | 86.2 | 114.4 | 93.9 | 94.8 | 56.7 | 65.5 |
+| `-mm=none` | 88.1 | 112.6 | 95.1 | 92.6 | 53.4 | 62.7 |
+| `-mm=own` | 85.6 | 111.8 | 94.1 | 91.2 | 53.8 | 62.3 |
+| Rust (`Vec<f64>`, iterators) | 77.0 | 93.5 | 94.7 | 93.5 | 52.0 | 65.4 |
+
+On Ubuntu 24.04 x64 (a 4-core cloud VM, median of 9 runs, ms, measured 2026-11-10):
 
 | build | saxpy | triad | stencil | dot | matmul | hash |
 | --- | --- | --- | --- | --- | --- | --- |

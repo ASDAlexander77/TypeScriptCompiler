@@ -63,8 +63,23 @@ its own run.
   packed floating-point and integer instructions, against 234-282 for gc, none, own and Rust, and
   own's `hash` loop was not vectorized either. Linux does not run the pass. Declared `captures(none)`, rc and
   own are level with Rust on every kernel.
-- `noalias` on the resize's result, which LLVM also says of `realloc`, vectorizes a few more loops
-  under none, but crashes five array tests (0xC0000409); it is left out.
+- The resize's result is `noalias` too, as LLVM says of `realloc`. That first broke five array
+  tests: the resize was declared `allockind("realloc,uninitialized")`, and with the result fresh
+  LLVM read the grown block's old elements as undefined (`b[0]` after a splice). LLVM declares
+  `realloc` `allockind("realloc")` alone, and so does the helper now. A later, quieter run with
+  both changes, ms:
+
+| Build | saxpy | triad | stencil | dot | matmul | hash |
+|---|---|---|---|---|---|---|
+| tslang gc | 87.8 | 107.9 | 92.5 | 91.6 | 53.8 | 64.6 |
+| tslang rc | 86.2 | 114.4 | 93.9 | 94.8 | 56.7 | 65.5 |
+| tslang none | 88.1 | 112.6 | 95.1 | 92.6 | 53.4 | 62.7 |
+| tslang own | 85.6 | 111.8 | 94.1 | 91.2 | 53.8 | 62.3 |
+| Rust | 77.0 | 93.5 | 94.7 | 93.5 | 52.0 | 65.4 |
+
+  The four models are level with each other, and with Rust except on saxpy and triad (1.1-1.2x).
+  The triad loop is vectorized, unrolled twice and checks once per call that the three arrays do
+  not overlap, which Rust's `&mut` does not need; the rest of that difference was not looked into.
 - The C++ port is about twice as slow here as on Linux (82 packed instructions): clang with the
   MSVC standard library does not vectorize most of its loops. That is the port's build, not a
   baseline to compare with.
