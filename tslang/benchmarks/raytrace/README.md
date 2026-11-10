@@ -53,6 +53,36 @@ median of 9 runs after a warm-up; every build prints the same checksum.
   looked into.
 - The heap change is for loops over arrays; here it moves the models by no more than the noise.
 
+### rc: an interface's count changed inline
+
+A sampling profile of the rc build (the program's main thread sampled every 0.2 ms, 20 runs,
+symbols from a `--di` build), with each function's share scaled by `pow_fma`'s, which does the same
+work under every model, put rc's extra time in `Sphere.intersect` (+17 ms against none), the inlined
+`addLight` closure that holds `testRay` and `intersections` (+16 ms), the out-of-line retain and
+release routines (+17 ms) and `traceRay` (+7 ms). Most of it was one thing: an `Intersection`
+holds an interface, `thing`, and an interface is retained and released through the type descriptor
+its vtable names - vtable, tag, descriptor, then an indirect call LLVM can neither inline nor pair
+with its counterpart. `Sphere.intersect` retained `thing` that way on every hit, and spilled the
+80-byte result to the stack to give the routine its address.
+
+Every type whose value is a reference to a block counted the plain way (class and object literal
+instances, strings, `any` boxes, `Shared<T>`) now shares one retain routine, and under rc a retain
+through an interface whose descriptor names that routine adds one to the count inline; a release
+takes one off inline when it is not the last reference on a block only this thread holds. The last
+reference, shared and immortal blocks and every other kind still go through the descriptor.
+
+| Build | before | interface count inline |
+|---|---|---|
+| tslang rc | 110-114 ms | 95.9 ms |
+| tslang gc, none, own | 71-76 ms | 73.1, 73.3, 75.8 ms |
+
+What is left of rc's extra time is counting itself: `scene.things` is retained on every iteration
+of `intersections` (the read of an interface's field is owned, since the slot may hold a getter's
+cell), and `closestInter = inter` copies a reference that `inter` gives up at the end of the
+iteration, where a move would do. Hoisting `scene.things` out of the loop by hand saves about 8 ms.
+Cancelling `return x`'s retain against the local's release, tried as a pass, measured nothing: with
+both halves inline LLVM already folds them.
+
 ## Results 2026-11-10: Linux
 
 Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.1 GHz); main d78c735 with the collector's
