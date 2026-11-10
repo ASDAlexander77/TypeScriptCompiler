@@ -107,3 +107,38 @@ does, so it disagreed with the function it calls and lowering to LLVM crashed no
 setter's result now. Also, a method returning `this` that says what it keeps (`@keeps`) is no longer
 told to say `@lends` too. Regression tests `tslang/test/tester/tests/import_class_keeps_indexer.ts`
 (with `export_class_keeps_indexer.ts`) and `00class_indexer_set_result.ts`.
+
+Items 44 and 45, found on 2026-11-10 in native_ts_graphics' `examples/nri/variable_shading_nri.ts`, are
+fixed. 44 (`flag && a && b` of two classes in a namespace threw "Can't cast from union type"): the helpers
+a cast makes from source (`___cast`, `___unbox`, `___unbox_interface`, `___check_tuple`, `___bin_op_*`,
+`___union_eq_*`) are declared in the root namespace, but the one made for the cast before was erased
+from the namespace of the code asking for the new one, and from the root only when that code was outside
+every namespace. In a namespace the old `___cast`, made for `null | boolean | A`, stayed and was
+instantiated for `null | boolean | A | B`, so a `B` reached its `throw`. The old helper is now erased from
+the root namespace, where the new one is declared. 45 (`-mm=own` refused `flag && a && b` of two classes,
+in a namespace or not: "borrows the result of '___cast<...>'"): the second `&&` widened `null | boolean |
+A` to `null | boolean | A | B` through a `___cast` call, whose result own took for a value stored. A union
+widened to one that has all its members is now a plain cast, the value keeping its tag and its bytes, as
+the lowering already did for it. With that, `!this.flag && texture && descriptor` in a method of an
+exported class (every class in a namespace is) was still refused, "borrows a field but is used here
+after it may be released or overwritten": `___cast` tests an instance with its class's `..instanceOf`,
+called through the vtable, and for a class another module may extend own took that call for one that
+may destroy anything. A class's `..instanceOf` is the compiler's own, which destroys nothing, called
+through the vtable as through the `.instanceOf` slot. Regression tests
+`tslang/test/tester/tests/00tslang_issue_44.ts` and `00tslang_issue_45.ts`, under every model.
+
+Item 46, found on 2026-11-10 while testing 45, is fixed. 46 (`-mm=own`: a function that returns its
+union parameter, given a new object, freed it twice; the exe hung or crashed at exit, while the JIT run
+passed). `function same(v: A | null): A | null { return v; }` called as `same(new A())`, and as much
+with `boolean | A`, `null | boolean | A` widened to `null | boolean | A | B`, or a named object no longer
+used. On v0.0-pre-alpha121 too: its exe exits with 0xC0000374 (heap corruption). A call whose result is
+its argument itself (spec 78) takes a temporary over: the temporary's releases go and the result is the
+caller's own. The argument here is `<A | null>new A()`, a view, and the check looked at the view's users,
+which hold no release: the result was made the caller's own while the object's release stayed. The
+temporary is the object behind its views now. And the object's release may be in another block of the
+function (a condition after the call, `x instanceof A`, splits it): one the call leads to, where the
+result is released too, counts as after it. With the result left a borrow when the object is used after
+the call, `x instanceof A` of the borrowed union was refused ("borrows ... and cannot be stored"), as it
+was of a field read (`const x = this.f; x instanceof A`) before: the object seen as an opaque pointer,
+whose vtable is read for its class's `.instanceOf`, is a test that keeps nothing, as for an owned value.
+Regression test `tslang/test/tester/tests/00tslang_issue_46.ts`, JIT and compiled, under every model.

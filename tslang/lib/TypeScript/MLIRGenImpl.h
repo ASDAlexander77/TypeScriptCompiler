@@ -16684,27 +16684,6 @@ class MLIRGenImpl
                                                                                                                        \
     return false;
 
-#define removeLogic(S)                                                                                                 \
-    MLIRNamespaceGuard ng(currentNamespace);                                                                           \
-    do                                                                                                                 \
-    {                                                                                                                  \
-        auto res = currentNamespace->S.count(name);                                                                    \
-        if (res > 0)                                                                                                   \
-        {                                                                                                              \
-            currentNamespace->S.erase(name.str());                                                                    \
-            return true;                                                                                               \
-        }                                                                                                              \
-                                                                                                                       \
-        if (!currentNamespace->isFunctionNamespace)                                                                    \
-        {                                                                                                              \
-            return false;                                                                                              \
-        }                                                                                                              \
-                                                                                                                       \
-        currentNamespace = currentNamespace->parentNamespace;                                                          \
-    } while (true);                                                                                                    \
-                                                                                                                       \
-    return false;    
-
     auto getNamespaceByFullName(StringRef fullName) -> NamespaceInfo::TypePtr
     {
         return fullNamespacesMap.lookup(fullName);
@@ -16756,10 +16735,13 @@ class MLIRGenImpl
         existLogic(genericFunctionMap);
     }
 
+    // the helpers made from source (`___cast`, `___unbox`, ...) are declared by parsePartialStatements
+    // in the root namespace, wherever the code that asks for one is: the one made before is erased
+    // there, or code in a namespace would get it back for another type (TSLANG 44)
     auto removeGenericFunctionMap(StringRef name) -> bool
     {
-        removeLogic(genericFunctionMap);
-    }    
+        return rootNamespace->genericFunctionMap.erase(name);
+    }
 
     auto getGlobalsNamespaceFullName() -> llvm::StringRef
     {

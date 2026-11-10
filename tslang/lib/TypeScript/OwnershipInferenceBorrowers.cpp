@@ -452,6 +452,16 @@ namespace own_inference
                         continue;
                     }
 
+                    // `u instanceof A` of a borrowed union (spec 61): the object as an opaque pointer,
+                    // whose vtable is read for its class's `.instanceOf` - a test that keeps nothing
+                    // (isBorrow), not a view whose vtable read would keep it (TSLANG 46)
+                    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                        castOp && mlir::isa<mlir_ts::ClassType>(castOp.getIn().getType()) &&
+                        mlir::isa<mlir_ts::OpaqueType>(castOp.getType()) && isBorrow(user, pending.value))
+                    {
+                        continue;
+                    }
+
                     llvm::SmallVector<mlir::Value> same;
                     llvm::SmallVector<mlir::Operation *, 2> renewedAt;
                     if (passesOn(use, same, &renewedAt))

@@ -1835,6 +1835,16 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-30-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-30-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
 endforeach()
+# TSLANG_ISSUES 44: a cast helper made for code in a namespace is not the one made for the cast before
+# TSLANG_ISSUES 45: a union widened to one with all its members is a plain cast; -mm=own takes an
+# exported class's `..instanceOf` for a call that destroys nothing
+# TSLANG_ISSUES 46: a function returning its union parameter, given a new object, freed it twice
+foreach(issues_mm gc rc none own)
+    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46)
+        tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+        tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+    endforeach()
+endforeach()
 # TSLANG_ISSUES 37, 38: a program declares its own Symbol, as a function or as a class
 foreach(issues_mm gc rc none own)
     foreach(symbol_test 00tslang_issue_37 00tslang_issue_38)
