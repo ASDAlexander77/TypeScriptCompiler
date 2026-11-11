@@ -40,6 +40,8 @@
 #endif
 
 #include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Operator.h"
@@ -79,6 +81,7 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
 extern cl::opt<bool> ownSkipInference;
+extern cl::opt<std::string> mainFuncName;
 extern cl::opt<bool> noStackPromotion;
 extern cl::opt<bool> noBorrowFactsExport;
 extern cl::opt<unsigned> stackPromotionMaxObject;
@@ -342,6 +345,101 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
     return std::nullopt;
 }
 
+// A C math function has two results: its value, and `errno` when the argument is out of its
+// domain. TypeScript has no `errno` (`Math.sqrt(-1)` is NaN and nothing else), so a call of one,
+// whether the default library's or a program's own `declare function sqrt(v: number): number`,
+// is the LLVM intrinsic, as clang's -fno-math-errno and rustc make it. As a libm call that may
+// write `errno` it kept loads from being hoisted over it, counted as a call against inlining the
+// function around it, and `sqrt` kept a branch to the library for a negative argument.
+static void applyNoMathErrno(llvm::Module &m)
+{
+    llvm::TargetLibraryInfoImpl tlii(llvm::Triple(m.getTargetTriple()));
+    llvm::TargetLibraryInfo tli(tlii);
+
+    for (auto &func : m)
+    {
+        llvm::LibFunc libFunc;
+        if (!func.isDeclaration() || func.isIntrinsic() || !tli.getLibFunc(func, libFunc))
+        {
+            continue;
+        }
+
+        auto intrinsic = llvm::Intrinsic::not_intrinsic;
+        switch (libFunc)
+        {
+        case llvm::LibFunc_sqrt: case llvm::LibFunc_sqrtf: intrinsic = llvm::Intrinsic::sqrt; break;
+        case llvm::LibFunc_pow: case llvm::LibFunc_powf: intrinsic = llvm::Intrinsic::pow; break;
+        case llvm::LibFunc_exp: case llvm::LibFunc_expf: intrinsic = llvm::Intrinsic::exp; break;
+        case llvm::LibFunc_exp2: case llvm::LibFunc_exp2f: intrinsic = llvm::Intrinsic::exp2; break;
+        case llvm::LibFunc_log: case llvm::LibFunc_logf: intrinsic = llvm::Intrinsic::log; break;
+        case llvm::LibFunc_log2: case llvm::LibFunc_log2f: intrinsic = llvm::Intrinsic::log2; break;
+        case llvm::LibFunc_log10: case llvm::LibFunc_log10f: intrinsic = llvm::Intrinsic::log10; break;
+        case llvm::LibFunc_sin: case llvm::LibFunc_sinf: intrinsic = llvm::Intrinsic::sin; break;
+        case llvm::LibFunc_cos: case llvm::LibFunc_cosf: intrinsic = llvm::Intrinsic::cos; break;
+        case llvm::LibFunc_floor: case llvm::LibFunc_floorf: intrinsic = llvm::Intrinsic::floor; break;
+        case llvm::LibFunc_ceil: case llvm::LibFunc_ceilf: intrinsic = llvm::Intrinsic::ceil; break;
+        case llvm::LibFunc_trunc: case llvm::LibFunc_truncf: intrinsic = llvm::Intrinsic::trunc; break;
+        case llvm::LibFunc_round: case llvm::LibFunc_roundf: intrinsic = llvm::Intrinsic::round; break;
+        case llvm::LibFunc_rint: case llvm::LibFunc_rintf: intrinsic = llvm::Intrinsic::rint; break;
+        case llvm::LibFunc_nearbyint: case llvm::LibFunc_nearbyintf: intrinsic = llvm::Intrinsic::nearbyint; break;
+        case llvm::LibFunc_fabs: case llvm::LibFunc_fabsf: intrinsic = llvm::Intrinsic::fabs; break;
+        default: continue;
+        }
+
+        // a use that is not a direct call (the function's address is taken) keeps the function
+        llvm::SmallVector<llvm::CallInst *, 8> calls;
+        for (auto *user : func.users())
+        {
+            auto *call = llvm::dyn_cast<llvm::CallInst>(user);
+            if (call && call->getCalledOperand() == &func && call->getFunctionType() == func.getFunctionType()
+                && !call->isMustTailCall())
+            {
+                calls.push_back(call);
+            }
+        }
+
+        if (calls.empty())
+        {
+            continue;
+        }
+
+        auto *intrinsicFunc = llvm::Intrinsic::getOrInsertDeclaration(&m, intrinsic, {func.getReturnType()});
+        for (auto *call : calls)
+        {
+            llvm::SmallVector<llvm::Value *, 2> args(call->args());
+            auto *newCall = llvm::CallInst::Create(intrinsicFunc, args, "", call->getIterator());
+            newCall->setDebugLoc(call->getDebugLoc());
+            newCall->setTailCallKind(call->getTailCallKind());
+            newCall->copyFastMathFlags(call);
+            newCall->takeName(call);
+            call->replaceAllUsesWith(newCall);
+            call->eraseFromParent();
+        }
+    }
+}
+
+// An executable built with --opt: a function no other module can name (not `export`ed, not the
+// entry point) is internal, as a `static` C function and a Rust function that is not `pub` are.
+// The inliner then knows every caller: a function with one call left is inlined whatever its
+// size and its body dropped, which is how the ray tracer's `shade` and `getNaturalColor` end up
+// inside `traceRay`. A library's object, a shared library and JIT modules are loaded beside other
+// modules that find functions by name, and stay as they were.
+static void internalizeModulePrivateFunctions(llvm::Module &m)
+{
+    for (auto &func : m)
+    {
+        if (func.isDeclaration() || !func.hasExternalLinkage() || func.hasDLLExportStorageClass()
+            || func.getName() == MAIN_ENTRY_NAME || func.getName() == mainFuncName.getValue()
+            || func.hasFnAttribute("export") || func.hasFnAttribute(DLL_EXPORT) || func.hasFnAttribute(DLL_NAME)
+            || func.hasSection())
+        {
+            continue;
+        }
+
+        func.setLinkage(llvm::GlobalValue::InternalLinkage);
+    }
+}
+
 // --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
 // vectorizer, the unroller and the backend all ask the function whether it is optimized for
 // size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
@@ -425,6 +523,13 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             applyFastMathFlags(*m);
         }
 
+        applyNoMathErrno(*m);
+
+        if (compileOptions.isExecutable && *ol != llvm::OptimizationLevel::O0)
+        {
+            internalizeModulePrivateFunctions(*m);
+        }
+
         applySizeAttributes(*m, *ol);
 
         // Without a TargetMachine the -O2/-O3 cost model has no target information: no vector
@@ -453,7 +558,18 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         llvm::CGSCCAnalysisManager cgam;
         llvm::ModuleAnalysisManager mam;
 
-        llvm::PassBuilder pb(effectiveTargetMachine);
+        // The inliner's threshold at the highest speed level is the one LLVM keeps for functions
+        // with an inline hint (325, what clang gives every C++ function defined in its class), not
+        // the plain 250: a TypeScript program is small methods and functions over small values.
+        // The ray tracer's `intersections` (cost 285; its Rust twin 245 against rustc's 275) was
+        // left as a call in each ray's loop, with every live number spilled around it.
+        llvm::PipelineTuningOptions pto;
+        if (*ol == llvm::OptimizationLevel::O3)
+        {
+            pto.InlinerThreshold = 325;
+        }
+
+        llvm::PassBuilder pb(effectiveTargetMachine, pto);
 
         pb.registerModuleAnalyses(mam);
         pb.registerCGSCCAnalyses(cgam);

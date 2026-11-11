@@ -377,22 +377,43 @@ class ArrayLayout : public LLVMCodeHelperBase
                                             ArrayRef<LLVM::GEPArg>{0, index});
     }
 
+    // The header a null array is read through: { null, 0, 0 }, one constant per module. A read
+    // picks it with a select and then loads the field with no branch. A branch around the load
+    // ("null ? 0 : header->length") left the load conditional, so a loop over an array could not
+    // hoist the array's length and data out: both were tested for null and loaded again on every
+    // iteration.
+    mlir::Value emptyHeader()
+    {
+        StringRef name = "__ts_empty_array";
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<mlir::ModuleOp>();
+        if (!parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+            auto global = rewriter.create<LLVM::GlobalOp>(rewriter.getUnknownLoc(), headerType(), /*isConstant=*/true,
+                                                          LLVM::Linkage::Internal, name, mlir::Attribute{});
+            rewriter.setInsertionPointToStart(rewriter.createBlock(&global.getInitializerRegion()));
+            mlir::Value zero = rewriter.create<LLVM::ZeroOp>(rewriter.getUnknownLoc(), headerType());
+            rewriter.create<LLVM::ReturnOp>(rewriter.getUnknownLoc(), ValueRange{zero});
+        }
+
+        return rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), name);
+    }
+
     mlir::Value loadOrZero(mlir::Value header, mlir::Type fieldType, int32_t index)
     {
         TypeHelper th(rewriter);
-        CodeLogicHelper clh(op, rewriter);
         auto loc = op->getLoc();
-        auto isSet = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, header,
-                                                   rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
-        return clh.conditionalExpressionLowering(
-            loc, fieldType, isSet,
-            [&](OpBuilder &, Location) -> mlir::Value {
-                return rewriter.create<LLVM::LoadOp>(
-                    loc, fieldType,
-                    rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), headerType(), header,
-                                                 ArrayRef<LLVM::GEPArg>{0, index}));
-            },
-            [&](OpBuilder &, Location) -> mlir::Value { return rewriter.create<LLVM::ZeroOp>(loc, fieldType); });
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, header,
+                                                    rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+        mlir::Value readHeader = rewriter.create<LLVM::SelectOp>(loc, isNull, emptyHeader(), header);
+        return rewriter.create<LLVM::LoadOp>(
+            loc, fieldType,
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), headerType(), readHeader,
+                                         ArrayRef<LLVM::GEPArg>{0, index}));
     }
 };
 
