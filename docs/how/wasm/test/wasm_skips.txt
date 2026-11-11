@@ -11,9 +11,6 @@ internals.ts                    # inline_asm with x86 instructions
 fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
 
 # compiler gaps on wasm, each to be fixed and taken off this list
-00generator3.ts wasm64          # wasm-ld: invalid data relocation for an object literal's generator method `next`
-01iterator.ts wasm64            # wasm-ld: invalid data relocation for an object literal's generator method `next`
-00owned_generator_locals.ts wasm64 # wasm-ld: invalid data relocation for a generator's `next` (under none)
 path.ts                         # a field of Readonly<Path> read through Maybe<...> is read wrong: the loop never ends
 
 # fails natively under the same model too (not run natively under it by ctest)
