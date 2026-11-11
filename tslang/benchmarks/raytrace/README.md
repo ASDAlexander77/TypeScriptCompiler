@@ -131,6 +131,33 @@ path is threaded to its result before the select exists.
   loads all six numbers of the light, where Rust reads the color only when the point is lit; and
   two of the ray's numbers live on the stack in the shadow loop. None was measured by itself.
 
+### Selects over a phi made branches again
+
+Part 1 of [docs/raytrace-rust-parity.md](../../../docs/raytrace-rust-parity.md): `intersections`
+does `if (dist < closest) { index = i; closest = dist; }`, which SimplifyCFG makes selects before
+`Thing.intersect` is inlined into the loop. A miss then arrives as the constant `Infinity`, for
+which the test is false, and still ran the minimum. A pass of our own, after a function's callees
+are inlined, turns a select back into a branch when its condition compares a phi of the same block
+and is decided for one of the phi's constants; jump threading, run next, sends those predecessors
+past it. A miss now goes to the next thing, as in the Rust build.
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (50.4 ms) |
+|---|---|---|---|
+| tslang gc | 53 ms | 50.4 ms | 1.00x |
+| tslang rc | 57 ms | 53.0 ms | 1.05x |
+| tslang none | 53 ms | 50.0 ms | 0.99x |
+| tslang own | 53 ms | 50.0 ms | 0.99x |
+
+- Instructions executed under none: 650 million to 606 million; Rust executes 604 million.
+- `rtbench.ts` and `../numeric` take the same time as before, and the test suite passes.
+- Sinking the loads of `const light = lights[i]` to where the color is used (LLVM's sink pass at
+  the end of the pipeline) changed neither the instruction count nor the time, and is not in.
+- rc: `const things = scene.things` retains the array and releases it at the end of every
+  `intersections` call, 2.2 million times a frame (711 million instructions against 606 million).
+  Without the alias it is worse: every `scene.things` in the loop is retained (934 million, 65 ms).
+
 ## Results 2026-11-10: Windows
 
 Release, Windows 11 x64, the machine of the 10-31 run; main d64978ed, and the same tree with the

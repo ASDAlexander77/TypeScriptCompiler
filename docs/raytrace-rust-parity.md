@@ -1,10 +1,9 @@
-# The ray tracer against Rust: what is left
+# The ray tracer against Rust: where it stands and what is left
 
 `tslang/benchmarks/raytrace/rtbench_static.ts` is the ray tracer written without interfaces and
 closures; `rust/src/bin/static_dispatch.rs` beside it is the Rust program it mirrors (`enum Thing`,
 `enum Surface`, `match`). This note says where the two stand, what was done to get there, and what
-is still between them. The benchmark's [README](../tslang/benchmarks/raytrace/README.md) has every
-measurement.
+is left. The benchmark's [README](../tslang/benchmarks/raytrace/README.md) has every measurement.
 
 ## Where it stands
 
@@ -13,22 +12,21 @@ few percent either way is noise on this machine.
 
 | Build | Time | vs Rust |
 |---|---|---|
-| tslang gc, none, own | 53 ms | 1.06x |
-| tslang rc | 57 ms | 1.14x |
-| Rust, enums and `match` | 50 ms | 1x |
+| tslang gc | 50.4 ms | 1.00x |
+| tslang none, own | 50.0 ms | 0.99x |
+| tslang rc | 53.0 ms | 1.05x |
+| Rust, enums and `match` | 50.4 ms | 1x |
 
-Instructions executed (callgrind), under `-mm=none`: tslang 650 million, Rust 604 million. Without
-the math library, whose `floor` and `fmod` Rust compiles in and tslang calls in libm, the
-program's own code is about 540 million in tslang against 480 million in Rust with its SLP
-vectorizer off (which does not change Rust's time).
+Instructions executed (callgrind), under `-mm=none`: tslang 606 million, Rust 604 million.
 
-Not measured: Windows, and any machine but this one.
+Under gc, none and own the program takes the time of the Rust one. Under rc it does not (part 1
+below). Not measured: Windows, and any machine but this one.
 
 ## What was done
 
-Five changes to the optimizer, all in `tslang/tslang/transform.cpp` except the first
+Six changes to the optimizer, all in `tslang/tslang/transform.cpp` except the first
 (`include/TypeScript/LowerToLLVM/ArrayLayout.h`). Together they took the benchmark from 60 to
-53 ms.
+50 ms.
 
 | Change | Why |
 |---|---|
@@ -37,87 +35,60 @@ Five changes to the optimizer, all in `tslang/tslang/transform.cpp` except the f
 | `--emit=exe` with `--opt` makes functions that are not exported internal | The inliner inlines a function with one call left whatever its size |
 | The inliner's threshold at `--opt_level=3` is 325 | `intersections` cost 285 against 250 and stayed a call in every ray's loop |
 | SROA and jump threading run before the first SimplifyCFG (levels 2 and 3) | A miss's `dist === 0 ? Infinity : dist` became a select that jump threading does not unfold |
+| A select whose condition compares a phi and is decided for one of the phi's constants is made a branch, then jump threading (levels 2 and 3, after a function's callees are inlined) | The caller's `if (dist < closest)` was selects before `intersect` was inlined, so a miss still ran the minimum |
 
 Open questions about these, none of them checked:
 
 - The threshold of 325 applies to every program at `--opt_level=3`. Its effect on code size and
-  compile time of a large program was not measured. With 250 the benchmark takes about 57 ms.
-- The early SROA and jump threading run on every function at levels 2 and 3. Compile time was not
-  measured.
+  compile time of a large program was not measured.
+- The early SROA and jump threading, and the select pass with its jump threading, run on every
+  function at levels 2 and 3. Compile time was not measured.
 - Internal functions: the rule is "not `export`ed, not the entry point, no section, in an
   executable". The test suite passes; a program whose other objects call a function of the main
   module by name without `export` would no longer link.
+- The select pass makes a branch of a select that the processor may have predicted worse than it
+  computed the select. It fires only where a predecessor's constant decides the condition, and the
+  branch that is left for the other predecessors is given back to SimplifyCFG. No program but
+  these two benchmarks was timed with it.
 
 ## What is left
 
-Counting executed instructions per block against the Rust build (how: below) puts nearly all of
-the difference in the loop over the things, which runs 9 million times a frame: 13 instructions a
-thing in the shadow loop and 15 in the primary loop, against 8 and 7 in Rust. The rest is a few
-instructions per shadow ray (54 against 44) and per shaded point (127 against 113). None of the
-parts below was measured by itself, and the estimates of what each is worth are instruction
-counts, not times.
+### 1. `-mm=rc`: the array of things is retained on every ray
 
-### 1. The caller's minimum still runs on a miss
+`const things = scene.things` in `intersections` takes a reference: the array's count goes up at
+the top of the function and down at the end, through a release routine that is not inlined, 2.2
+million times a frame. That is the 3 ms rc is behind (711 million instructions against 606
+million). Using `scene.things` in the loop instead retains it on every use and is worse (934
+million, 65 ms).
 
-`intersections` does `if (dist < closest) { index = i; closest = dist; }`. SimplifyCFG turns it
-into selects (`minsd`, and `ucomisd` + `cmova` for the index) before `Thing.intersect` is inlined
-into the loop. After inlining, a miss arrives as the constant `Infinity`, for which the test is
-false, but jump threading does not thread a constant through a select whose other operand is not
-a constant. So a miss still runs the minimum, reloads the constant `Infinity` and copies a
-register: 3 to 6 instructions a thing, about 30 million a frame, and `closest` is carried from one
-iteration to the next through `minsd`.
+The retain is there because a call in the loop could assign `scene.things` and so free the array
+under the alias. Here nothing can: once `Thing.intersect` is inlined the loop is arithmetic. What
+it would take: dropping a retain and its release when nothing between them can release or store
+(a pass over the LLVM IR after inlining, as Objective-C's ARC optimizer does), or the same proof
+in the ownership inference, from the callee's facts ("writes no field"), before lowering.
 
-What it would take, one of:
+### 2. Differences that are still there and cost nothing measured
 
-- keep the caller's `if` a branch until its callee is inlined (SimplifyCFG's folding of a
-  two-entry phi, off in the pipeline's first run), then let jump threading and the later
-  SimplifyCFG decide. `--two-entry-phi-node-folding-threshold=0` on the command line did not
-  change the code, so the select is made somewhere else; which pass makes it was not found;
-- a pass of our own, after inlining, that unfolds a select over a phi with a floating-point
-  constant among its values.
+With the instruction counts level, these are no longer a gap, but the code still differs from
+Rust's in them:
 
-Writing a miss as `number | undefined` in the benchmark (Rust's `Option<f64>`) does not avoid
-this: the flag becomes a phi of `true`/`false` feeding the same selects.
+- `Thing[]` holds pointers, one load more a thing than Rust's `Vec<Thing>`. `@value class Thing`
+  puts the things in the array itself and measured no faster: each element is loaded whole, all
+  six fields, before the shape is tested.
+- `const light = lights[i]` loads all six numbers of the light at the top of the iteration, where
+  Rust reads the color only for a point the light reaches. Sinking the loads with LLVM's sink pass
+  changed nothing.
+- LLVM's SLP vectorizer packs two of a vector's three components in the Rust build and does not
+  fire in tslang's. Turning it off in Rust does not change Rust's time.
+- `let i = 0` is a 32-bit counter beside a 64-bit induction variable. With `let i: index = 0` the
+  program executes more instructions and takes the same time.
 
-### 2. Things are pointers in the array
+### 3. The benchmark with interfaces
 
-`Thing[]` holds pointers to class instances, so each thing costs one load more than Rust's
-`Vec<Thing>`, and the hit thing is loaded again for shading. Rust with `Vec<Box<Thing>>` is 3 ms
-slower than with `Vec<Thing>`, which is the size of what is left.
-
-`@value class Thing` puts the things in the array itself and compiles today, but measured no
-faster: each element is then loaded as one aggregate, all six fields, before the shape is tested.
-What it would take: an element of an array of `@value` records read field by field where only
-fields are used (`things[i].intersect(ray)` with `intersect` inlined), instead of copied whole.
-
-### 3. `const light = lights[i]` copies the light
-
-The same copy, seen in the shadow loop: all six numbers of the light are loaded at the top of the
-iteration and the three of its color are stored on the stack, where Rust reads the color only for
-a point the light reaches. About 9 instructions a shadow ray, 14 million a frame. The fix is the
-one of part 2: a `const` bound to an element of a `@value` array that nothing writes can be read
-in place.
-
-### 4. Two of the ray's numbers live on the stack in the shadow loop
-
-x86-64 has 16 vector registers and none of them survives a call. The shadow loop keeps the point,
-the direction, the normal, the reflected direction and the color so far alive, and two numbers end
-up on the stack (`subsd 0x10(%rsp), %xmm7` in the sphere test). Rust's SLP vectorizer packs two of
-a vector's three components into one register, which leaves it room. In tslang SLP does not fire
-on this code at all (no packed instruction in the binary). Why was not looked into; a guess is
-that a `@value` argument arrives as separate scalars (`{ double, double, double }` by value) where
-Rust's arrives as a pointer whose two first fields load as one vector.
-
-### 5. `-mm=rc` is 4 ms behind the other models
-
-Not looked into. The program allocates nothing per ray, so it is counting: probably the things
-read out of the array and the scene's arrays.
-
-### Not a cost: the 32-bit loop counter
-
-`let i = 0` is an `s32`, sign-extended beside a 64-bit induction variable (2 instructions a
-thing). With `let i: index = 0` the program executes more instructions (661 million against 650
-million) and takes the same time.
+`rtbench.ts` (interfaces, closures) is unchanged by all this at 84 ms under gc, none and own, 1.7x
+the static version. Its costs are the calls through `Thing` and `Surface` and the `addLight`
+closure; see the benchmark's README. The Rust port written the same way (`dyn Thing`) takes
+112 ms here.
 
 ## How to measure
 
@@ -149,5 +120,5 @@ LLVM's hidden options are accepted on tslang's command line (`--help-hidden`), w
 way to try a threshold.
 
 One comparison to keep in mind: the Rust port written as `rtbench_static.ts` is, a miss as
-`f64::INFINITY` and the thing by its index, takes 73 ms. Part of what is left is the form of the
-source, which costs Rust more than it costs tslang.
+`f64::INFINITY` and the thing by its index, takes 73 ms: the form costs Rust more than it costs
+tslang.

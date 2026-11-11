@@ -768,7 +768,7 @@ what to do about it, and **[docs/own-memory-model.md](docs/own-memory-model.md)*
 **Compared with Rust:** under `-mm=own`, tslang matches Rust on numeric array loops and runs
 within about 1.35x of idiomatic Rust on an object-heavy ray tracer, about 6.6x faster than the
 same program written with Rust's `Rc` for every object. Written without interfaces and closures,
-as Rust code with enums is, the ray tracer runs within 6% of that Rust code under `-mm=own`,
+as Rust code with enums is, the ray tracer takes the same time as that Rust code under `-mm=own`,
 `-mm=gc` and `-mm=none` (measured on Linux x64). Put shortly: within 1.1-1.4x of idiomatic
 Rust, and on par for tight array loops. These are two benchmarks of our own, measured on Windows
 x64; on the ray tracer the remaining gap is in code generation (calls through interfaces, structs
@@ -810,19 +810,22 @@ and `match` is (`rtbench_static.ts`: a thing is one `@final` class with a shape 
 
 | build | time | vs Rust (enums) |
 | --- | --- | --- |
-| `-mm=gc` | 53 ms | 1.06x slower |
-| `-mm=none` | 53 ms | 1.06x slower |
-| `-mm=own` | 53 ms | 1.06x slower |
-| `-mm=rc` | 57 ms | 1.14x slower |
+| `-mm=gc` | 50 ms | the same |
+| `-mm=none` | 50 ms | the same |
+| `-mm=own` | 50 ms | the same |
+| `-mm=rc` | 53 ms | 1.05x slower |
 | Rust, enums and `match` | 50 ms | |
-| Rust, `dyn Thing` (the port above) | 113 ms | |
+| Rust, `dyn Thing` (the port above) | 112 ms | |
 
-With nothing called through a vtable or a function value the memory models run alike, and tslang
-is within 6% of Rust. It was 1.2x (60 ms) before five changes to the optimizer made for this
-benchmark: an array's length and data are read without a branch on null, a C math function is the
-LLVM intrinsic (TypeScript has no `errno`), `--emit=exe` makes functions that are not exported
-internal, the inliner's threshold at `--opt_level=3` is 325, and jump threading runs before the
-first SimplifyCFG. What is still between tslang and Rust here, and what each part would take, is in
+With nothing called through a vtable or a function value the memory models run alike, and under
+`-mm=gc`, `-mm=none` and `-mm=own` tslang takes the time of the Rust program and executes as many
+instructions (606 million against 604 million). It was 1.2x (60 ms) before six changes to the
+optimizer made for this benchmark: an array's length and data are read without a branch on null, a
+C math function is the LLVM intrinsic (TypeScript has no `errno`), `--emit=exe` makes functions
+that are not exported internal, the inliner's threshold at `--opt_level=3` is 325, jump threading
+runs before the first SimplifyCFG, and a select over a phi with a constant is made a branch again
+once its function's callees are inlined. `-mm=rc` still retains and releases the array of things
+on every ray. The steps and what is left are in
 [docs/raytrace-rust-parity.md](docs/raytrace-rust-parity.md).
 
 Loops over arrays are measured by [tslang/benchmarks/numeric](tslang/benchmarks/numeric/README.md):

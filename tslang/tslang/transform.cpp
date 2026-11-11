@@ -52,6 +52,8 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/JumpThreading.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -442,6 +444,122 @@ static void internalizeModulePrivateFunctions(llvm::Module &m)
     }
 }
 
+// A select whose condition compares a phi of the same block, when the comparison is decided for
+// one of the phi's constant values: made a branch again, which jump threading (run next) threads
+// for the predecessors that bring those constants. SimplifyCFG turns `if (d < closest) { closest =
+// d; index = i; }` into selects before the function computing `d` is inlined; once it is, a path
+// on which `d` is Infinity still runs them, and jump threading unfolds a select only over integer
+// constants compared with a constant.
+struct UnfoldSelectOverPhiPass : llvm::PassInfoMixin<UnfoldSelectOverPhiPass>
+{
+    static llvm::CmpInst *decidedCompare(llvm::SelectInst *select, const llvm::DataLayout &dl)
+    {
+        auto *block = select->getParent();
+        auto *cmp = llvm::dyn_cast<llvm::CmpInst>(select->getCondition());
+        if (!cmp || cmp->getParent() != block || !select->getType()->isSingleValueType())
+        {
+            return nullptr;
+        }
+
+        auto *phi = llvm::dyn_cast<llvm::PHINode>(cmp->getOperand(0));
+        auto phiIsLhs = true;
+        if (!phi || phi->getParent() != block)
+        {
+            phi = llvm::dyn_cast<llvm::PHINode>(cmp->getOperand(1));
+            phiIsLhs = false;
+        }
+
+        if (!phi || phi->getParent() != block)
+        {
+            return nullptr;
+        }
+
+        for (unsigned i = 0, e = phi->getNumIncomingValues(); i != e; ++i)
+        {
+            auto *constant = llvm::dyn_cast<llvm::Constant>(phi->getIncomingValue(i));
+            if (!constant)
+            {
+                continue;
+            }
+
+            auto *other = cmp->getOperand(phiIsLhs ? 1 : 0)->DoPHITranslation(block, phi->getIncomingBlock(i));
+            auto *lhs = phiIsLhs ? static_cast<llvm::Value *>(constant) : other;
+            auto *rhs = phiIsLhs ? other : static_cast<llvm::Value *>(constant);
+            if (auto *folded = llvm::simplifyCmpInst(cmp->getPredicate(), lhs, rhs, {dl}))
+            {
+                if (llvm::isa<llvm::ConstantInt>(folded))
+                {
+                    return cmp;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    llvm::PreservedAnalyses run(llvm::Function &func, llvm::FunctionAnalysisManager &)
+    {
+        auto &dl = func.getDataLayout();
+        auto changed = false;
+        llvm::SmallVector<llvm::SelectInst *, 8> candidates;
+        for (auto &block : func)
+        {
+            for (auto &inst : block)
+            {
+                auto *select = llvm::dyn_cast<llvm::SelectInst>(&inst);
+                if (select && decidedCompare(select, dl))
+                {
+                    candidates.push_back(select);
+                    break;
+                }
+            }
+        }
+
+        for (auto *first : candidates)
+        {
+            auto *block = first->getParent();
+            auto *cmp = llvm::cast<llvm::CmpInst>(first->getCondition());
+
+            // every select on that comparison whose operands are computed before the first one
+            llvm::SmallVector<llvm::SelectInst *, 4> selects;
+            for (auto it = first->getIterator(), end = block->end(); it != end; ++it)
+            {
+                auto *select = llvm::dyn_cast<llvm::SelectInst>(&*it);
+                if (!select || select->getCondition() != cmp || !select->getType()->isSingleValueType())
+                {
+                    continue;
+                }
+
+                auto before = [&](llvm::Value *value) {
+                    auto *inst = llvm::dyn_cast<llvm::Instruction>(value);
+                    return !inst || inst->getParent() != block || inst->comesBefore(first);
+                };
+                if (before(select->getTrueValue()) && before(select->getFalseValue()))
+                {
+                    selects.push_back(select);
+                }
+            }
+
+            auto *thenTerminator = llvm::SplitBlockAndInsertIfThen(cmp, first->getIterator(), /*Unreachable=*/false);
+            auto *thenBlock = thenTerminator->getParent();
+            auto *tail = first->getParent();
+            for (auto *select : selects)
+            {
+                auto *phi = llvm::PHINode::Create(select->getType(), 2, "", tail->begin());
+                phi->addIncoming(select->getTrueValue(), thenBlock);
+                phi->addIncoming(select->getFalseValue(), block);
+                phi->takeName(select);
+                select->replaceAllUsesWith(phi);
+                select->eraseFromParent();
+            }
+
+            changed = true;
+        }
+
+        return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
 // --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
 // vectorizer, the unroller and the backend all ask the function whether it is optimized for
 // size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
@@ -592,6 +710,16 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         });
 
 
+        // after a function's callees are inlined into it
+        pb.registerScalarOptimizerLateEPCallback([](llvm::FunctionPassManager &fpm, llvm::OptimizationLevel level) {
+            if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
+            {
+                return;
+            }
+
+            fpm.addPass(UnfoldSelectOverPhiPass());
+            fpm.addPass(llvm::JumpThreadingPass());
+        });
         pb.registerModuleAnalyses(mam);
         pb.registerCGSCCAnalyses(cgam);
         pb.registerFunctionAnalyses(fam);
