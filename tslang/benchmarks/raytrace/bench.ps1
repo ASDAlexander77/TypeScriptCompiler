@@ -1,6 +1,7 @@
 # Builds rtbench.ts under every memory model (with and without stack promotion; -mm=own builds its
-# copy rtbench_own.ts) and the Rust and C++ ports, checks that they all print the same checksum,
-# then times each one: a warm-up run and $Runs timed runs, reporting min/median/max wall time.
+# copy rtbench_own.ts), rtbench_static.ts under every memory model and the Rust and C++ ports,
+# checks that they all print the same checksum, then times each one: a warm-up run and $Runs timed
+# runs, reporting min/median/max wall time.
 #
 #   pwsh tslang/benchmarks/raytrace/bench.ps1 [-Tslang <path to tslang.exe>] [-Runs 7]
 param(
@@ -26,9 +27,18 @@ foreach ($mm in "gc", "rc", "none", "own") {
     }
 }
 
+foreach ($mm in "gc", "rc", "none", "own") {
+    $name = "tslang $mm, static"
+    $exe = Join-Path $out "rtbs_$mm.exe"
+    & $Tslang --emit=exe --opt --opt_level=3 --no-default-lib "--mm=$mm" "$PSScriptRoot\rtbench_static.ts" -o $exe 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { "{0,-22} does not compile (exit {1})" -f $name, $LASTEXITCODE; continue }
+    $bins += @{ n = $name; p = $exe }
+}
+
 Push-Location "$PSScriptRoot\rust"
 try { cargo build --release --quiet; if ($LASTEXITCODE -ne 0) { throw "cargo build failed" } } finally { Pop-Location }
 $bins += @{ n = "rust idiomatic"; p = "$PSScriptRoot\rust\target\release\idiomatic.exe" }
+$bins += @{ n = "rust static"; p = "$PSScriptRoot\rust\target\release\static_dispatch.exe" }
 $bins += @{ n = "rust Rc-boxed"; p = "$PSScriptRoot\rust\target\release\boxed.exe" }
 
 # C++: clang++ -O3 from PATH, and MSVC /O2 through the newest Visual Studio's vcvars64
