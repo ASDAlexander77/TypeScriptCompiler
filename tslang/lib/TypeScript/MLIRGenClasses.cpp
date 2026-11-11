@@ -3171,6 +3171,109 @@ genContext);
                                                     mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
     }
 
+    // A slot of a class's vtable whose type has another arity than the override it calls (see
+    // VirtualMethodOrInterfaceVTableInfo::slotType): a function of the slot's type that calls the override
+    // with the arguments it takes - the slot's, as many as the override has, then for a parameter the slot
+    // does not have `undefined` (an optional one) or an empty array (the rest). Called with the slot's
+    // arguments, the override itself would read them where it does not expect them; natively it got away
+    // with that, wasm's call_indirect checks the signature and traps.
+    mlir::Value MLIRGenImpl::virtualSlotAdapterThunk(mlir::Location location, mlir::StringRef calleeName,
+                                                     mlir_ts::FunctionType calleeType, mlir_ts::FunctionType thunkType,
+                                                     const GenContext &genContext)
+    {
+        auto thunkName = (calleeName + ".slot" + std::to_string(thunkType.getNumInputs())).str();
+        if (!theModule.lookupSymbol(thunkName))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+
+            // compiler glue, as virtualDispatchThunk's: with --di a subprogram of its own at the file's
+            // place, never the scope of the function `location` is in
+            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            DITableScopeT debugFuncScope(debugScope);
+            auto fileLoc = location->findInstanceOf<mlir::FileLineColLoc>();
+            if (!fileLoc)
+            {
+                fileLoc = mlir::FileLineColLoc::get(builder.getStringAttr(mainSourceFileName), 1, 1);
+            }
+
+            if (compileOptions.generateDebugInfo && fileLoc)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                mlir::Location plainLocation = fileLoc;
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, thunkName, thunkName, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            auto results = calleeType.getResults();
+            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto entryOp = builder.create<mlir_ts::EntryOp>(
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
+
+            SmallVector<mlir::Value, 4> operands;
+            for (auto [index, paramType] : llvm::enumerate(calleeType.getInputs()))
+            {
+                if (index < entryBlock.getNumArguments())
+                {
+                    mlir::Value argument = entryBlock.getArgument(index);
+                    if (argument.getType() != paramType)
+                    {
+                        auto castResult = cast(noLocation, paramType, argument, genContext);
+                        if (castResult.failed_or_no_value())
+                        {
+                            funcOp.erase();
+                            return mlir::Value();
+                        }
+
+                        argument = V(castResult);
+                    }
+
+                    operands.push_back(argument);
+                }
+                else if (isa<mlir_ts::OptionalType>(paramType))
+                {
+                    operands.push_back(builder.create<mlir_ts::OptionalUndefOp>(noLocation, paramType));
+                }
+                else if (calleeType.isVarArg() && index + 1 == calleeType.getNumInputs() && isa<mlir_ts::ArrayType>(paramType))
+                {
+                    operands.push_back(builder.create<mlir_ts::CreateArrayOp>(noLocation, paramType, mlir::ValueRange{}));
+                }
+                else
+                {
+                    operands.push_back(builder.create<mlir_ts::UndefOp>(noLocation, paramType));
+                }
+            }
+
+            auto callee = builder.create<mlir_ts::SymbolRefOp>(noLocation, calleeType,
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName));
+            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee, operands);
+            if (hasResult)
+            {
+                // handed on as `return this.m(x)` hands it: owned, and taken over by the return
+                if (mth.ownsHeapMemory(noLocation, results.front()))
+                {
+                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+
+            builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
+
+            theModule.push_back(funcOp);
+        }
+
+        return builder.create<mlir_ts::SymbolRefOp>(location, thunkType,
+                                                    mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+    }
+
     std::pair<mlir::LogicalResult, MethodInfo *> MLIRGenImpl::findErasedGenericMethod(mlir::Location location,
                                                                                     ClassInfo::TypePtr classInfo,
                                                                                     mlir::StringRef name,
@@ -4298,6 +4401,16 @@ genContext);
                             }
 
                             methodOrFieldNameRef = V(castResult);
+                        }
+                        else if (!vtRecord.isStaticField && vtRecord.adaptTo)
+                        {
+                            // an override of another arity than the slot: a thunk of the slot's type
+                            methodOrFieldNameRef = virtualSlotAdapterThunk(
+                                location, symbolName, vtRecord.adaptTo, vtRecord.methodInfo.funcType, genContext);
+                            if (!methodOrFieldNameRef)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                            }
                         }
                         else
                         {
