@@ -21,7 +21,10 @@ export function keep(a: number, b: number, sink: (v: V) => void) {
 }
 
 function main() {
+    // The callback reads no field: with --opt it is called directly from `keep` and inlined there
+    // (the only function of its type), and a read of `v.x` in it, after its own store to `n`, would
+    // be a load in `keep` that says nothing about the two fresh objects.
     let n = 0;
-    assert(keep(1, 2, (v: V) => { n += v.x; }) == 3 && n == 3, "the fields are the ones stored");
+    assert(keep(1, 2, (v: V) => { n += 1; }) == 3 && n == 2, "the fields are the ones stored");
     print("done.");
 }

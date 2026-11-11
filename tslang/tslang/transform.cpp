@@ -53,6 +53,7 @@
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/JumpThreading.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/CallPromotionUtils.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -870,6 +871,91 @@ struct RcPairEliminationPass : llvm::PassInfoMixin<RcPairEliminationPass>
     }
 };
 
+// A call through a function value (an interface's method, a callback) whose type only a few
+// functions of the module have, among those whose address is taken: the call tests the pointer
+// against each and calls it directly, and the call through the pointer is left for anything else.
+// The direct calls are what the inliner and every pass after it can see through; a ray tracer's
+// `thing.intersect(ray)` becomes "a sphere? a plane?" with both bodies in the loop, as a `switch`
+// over the kind of thing would be. Nothing is assumed about who else may supply a pointer.
+struct SpeculativeDirectCallPass : llvm::PassInfoMixin<SpeculativeDirectCallPass>
+{
+    static constexpr unsigned MaxTargets = 4;
+
+    llvm::PreservedAnalyses run(llvm::Module &m, llvm::ModuleAnalysisManager &)
+    {
+        llvm::DenseMap<llvm::FunctionType *, llvm::SmallVector<llvm::Function *, 4>> targetsOf;
+        for (auto &func : m)
+        {
+            // not the runtime's own routines (a type's release, its descriptor's callbacks), whose
+            // addresses are taken too and whose types can be a callback's
+            auto name = func.getName();
+            if (name.starts_with("tsrel") || name.starts_with("tsret") || name.starts_with("__ts") || name.starts_with("ts_"))
+            {
+                continue;
+            }
+
+            if (!func.isDeclaration() && !func.isVarArg() && func.hasAddressTaken()
+                && !func.hasFnAttribute(llvm::Attribute::NoInline) && !func.hasFnAttribute(llvm::Attribute::OptimizeNone))
+            {
+                targetsOf[func.getFunctionType()].push_back(&func);
+            }
+        }
+
+        // the larger function first: a stub (an interface's method for a null object, an empty
+        // callback) is the one least often called
+        for (auto &entry : targetsOf)
+        {
+            llvm::stable_sort(entry.second, [](llvm::Function *a, llvm::Function *b) {
+                return a->getInstructionCount() > b->getInstructionCount();
+            });
+        }
+
+        llvm::SmallVector<llvm::CallInst *, 32> calls;
+        for (auto &func : m)
+        {
+            if (func.hasFnAttribute(llvm::Attribute::OptimizeNone))
+            {
+                continue;
+            }
+
+            for (auto &inst : llvm::instructions(func))
+            {
+                auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+                if (call && call->isIndirectCall() && !call->isMustTailCall() && !call->isInlineAsm())
+                {
+                    calls.push_back(call);
+                }
+            }
+        }
+
+        auto changed = false;
+        for (auto *call : calls)
+        {
+            auto found = targetsOf.find(call->getFunctionType());
+            if (found == targetsOf.end() || found->second.size() > MaxTargets)
+            {
+                continue;
+            }
+
+            llvm::CallBase *indirect = call;
+            for (auto *target : found->second)
+            {
+                if (target->getCallingConv() != indirect->getCallingConv() || !llvm::isLegalToPromote(*indirect, target))
+                {
+                    continue;
+                }
+
+                // the direct call goes into the "then" block; what is returned is it, and the
+                // call through the pointer stays in the "else" block for the next target
+                llvm::promoteCallWithIfThenElse(*indirect, target);
+                changed = true;
+            }
+        }
+
+        return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
 // --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
 // vectorizer, the unroller and the backend all ask the function whether it is optimized for
 // size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
@@ -1012,6 +1098,11 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
             {
                 return;
+            }
+
+            if (level == llvm::OptimizationLevel::O3)
+            {
+                pm.addPass(SpeculativeDirectCallPass());
             }
 
             if (refCounted)

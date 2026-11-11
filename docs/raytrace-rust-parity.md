@@ -26,7 +26,7 @@ Not measured: Windows, and any machine but this one.
 
 ## What was done
 
-Seven changes to the optimizer, all in `tslang/tslang/transform.cpp` except the first
+Seven changes to the optimizer for the static version, all in `tslang/tslang/transform.cpp` except the first
 (`include/TypeScript/LowerToLLVM/ArrayLayout.h`). Together they took the benchmark from 60 to
 50 ms.
 
@@ -91,10 +91,47 @@ them:
 
 ### 3. The benchmark with interfaces
 
-`rtbench.ts` (interfaces, closures) is unchanged by all this at 84 ms under gc, none and own, 1.7x
-the static version, and 119 ms under rc. Its costs are the calls through `Thing` and `Surface` and the `addLight`
-closure; see the benchmark's README. The Rust port written the same way (`dyn Thing`) takes
-112 ms here.
+`rtbench.ts` (interfaces, closures) against the ports written the same way (`dyn Thing`,
+`std::unique_ptr<Thing>`), the same machine and day:
+
+| Build | Time |
+|---|---|
+| tslang gc | 77 ms |
+| tslang none | 78 ms |
+| tslang own | 82 ms |
+| tslang rc | 111 ms |
+| Rust idiomatic | 116 ms |
+| C++ idiomatic (clang) | 70 ms |
+
+Two more changes got it there from 84 ms (119 under rc): a call through a function value first
+tries, as direct calls, the few functions of the module that have its type
+(`SpeculativeDirectCallPass`, `--opt_level=3`), and null of a `@value` type with a pointer writes
+only its pointers (`CastLogicHelper::nullOfValueType`).
+
+Every model is ahead of the Rust port here, but the Rust port is slow on this machine for the
+instructions it executes (900 million; the C++ port 828 million in 70 ms; tslang none 1148
+million). On Windows the Rust and C++ ports were level at 57 and 52 ms with tslang at 73 to
+77 ms, and nothing in this note was measured there. Take the C++ port as the target: tslang is
+1.1x of it under gc and none, 1.6x under rc.
+
+What is left, from the disassembly of the `addLight` closure, none of it measured apart:
+
+- `scene.things` is read again on every iteration, through the `Scene` interface: the call kept
+  for "any other function" may write anywhere, so nothing is hoisted over it. It would take
+  knowing that no other function can be there: every class that implements `Thing` is in the
+  module and `Thing` is not exported, the same closed world that already makes a class's method
+  call direct. Then the kept call is unreachable and the loop is the static version's.
+- The pointer is compared with `Thing.null.intersect`, the method of a null `Thing`, as with the
+  sphere's and the plane's: one compare a thing.
+- `intersect` returns `Intersection | null` through memory, 80 bytes with the optional's flag,
+  and its caller tests it there.
+- rc: an `Intersection` holds a `Thing`, counted when it is copied, and the `addLight` closure's
+  captures are counted. 33 ms over the other models; the alias pass above does not apply (the
+  loop calls through a pointer). The benchmark's README (2026-11-10, "rc") has the counts.
+- Open questions for the direct-call pass: it adds up to four tests and calls at every call
+  through a pointer of a matching type, so code grows; candidates are chosen by LLVM function
+  type alone, so an unrelated function of the same type is tried too; the order is by size. No
+  program but the benchmarks was timed with it, and compile time was not measured.
 
 ## How to measure
 

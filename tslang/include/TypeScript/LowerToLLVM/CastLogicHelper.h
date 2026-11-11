@@ -48,6 +48,48 @@ class CastLogicHelper
     bool external;
 
   public:
+    // null of a @value type that holds null in a pointer of its own: every pointer in it null, and
+    // its numbers left undefined. Nothing reads a null's numbers (null is asked of the pointer), and
+    // with every field zeroed a function returning null stored the whole record - the ray tracer's
+    // `intersect` wrote nine words for a miss where the null takes two.
+    mlir::Value nullOfValueType(mlir::Type llvmType)
+    {
+        mlir::Value value = rewriter.create<LLVM::UndefOp>(loc, llvmType);
+        llvm::SmallVector<int64_t> path;
+        std::function<void(mlir::Type)> clearPointers = [&](mlir::Type type) {
+            if (auto structType = dyn_cast<LLVM::LLVMStructType>(type))
+            {
+                for (auto [index, field] : llvm::enumerate(structType.getBody()))
+                {
+                    path.push_back(index);
+                    clearPointers(field);
+                    path.pop_back();
+                }
+            }
+            else if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
+            {
+                for (unsigned index = 0; index < arrayType.getNumElements(); index++)
+                {
+                    path.push_back(index);
+                    clearPointers(arrayType.getElementType());
+                    path.pop_back();
+                }
+            }
+            else if (isa<LLVM::LLVMPointerType>(type))
+            {
+                value = rewriter.create<LLVM::InsertValueOp>(loc, value, rewriter.create<LLVM::ZeroOp>(loc, type), path);
+            }
+        };
+
+        if (!isa<LLVM::LLVMStructType>(llvmType))
+        {
+            return rewriter.create<LLVM::ZeroOp>(loc, llvmType);
+        }
+
+        clearPointers(llvmType);
+        return value;
+    }
+
     CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter, compileOptions), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
           compileOptions(compileOptions), external(false)
@@ -743,7 +785,7 @@ class CastLogicHelper
                     // (MLIRTypeHelper::getValueNullNiche): T with every field zeroed, that pointer too
                     if (isa<mlir_ts::NullType>(inType) && isa<mlir_ts::ValueType>(baseType))
                     {
-                        return rewriter.create<LLVM::ZeroOp>(loc, tch.convertType(baseType));
+                        return nullOfValueType(tch.convertType(baseType));
                     }
 
                     return cast(in, inType, tch.convertType(inType), baseType, tch.convertType(baseType));

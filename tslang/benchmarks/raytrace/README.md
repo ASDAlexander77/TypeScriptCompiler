@@ -180,6 +180,47 @@ field keeps the pair (`test/tester/tests/00rc_local_alias_no_count.ts`).
 Instructions executed under rc: 711 million to 622 million. `rtbench.ts` under rc is unchanged
 (119 ms): its counts are on interfaces and closures, which this does not reach.
 
+### `rtbench.ts`, with interfaces: direct calls tried first, and a null that writes less
+
+The same day and machine, `bench.sh`, 21 rounds. Two changes for the version with interfaces and
+closures:
+
+- A call through a function value (an interface's method, a callback) whose type at most four
+  functions of the module have, among those whose address is taken, first tests the pointer
+  against each and calls it directly; the call through the pointer is kept for anything else
+  (`--opt_level=3`, before the inliner). `thing.intersect(ray)` becomes "a sphere's? a plane's?"
+  with both bodies inlined in the loop, and `reduce`'s callback, the surfaces' functions and
+  `getPoint`'s closures are called directly as well. Nothing is assumed about who else may supply
+  a pointer. The runtime's own routines (`tsrel...`, `tsret...`) are not candidates.
+- null of a `@value` type that holds null in a pointer (`Intersection | null`) is its pointers
+  null and its numbers undefined, not every field zeroed: a miss in `intersect` stored nine words
+  where two say it.
+
+| Build, `rtbench.ts` | before | null writes less | and direct calls | vs Rust idiomatic (116 ms) | vs C++ idiomatic (70 ms) |
+|---|---|---|---|---|---|
+| tslang gc | 84 ms | | 77 ms | 0.66x | 1.10x |
+| tslang rc | 119 ms | 118 ms | 111 ms | 0.96x | 1.59x |
+| tslang none | 83 ms | 81 ms | 78 ms | 0.68x | 1.12x |
+| tslang own | 87 ms | | 82 ms | 0.71x | 1.17x |
+
+- Instructions executed under none: 1305 million, 1252 million with the smaller null, 1148
+  million with the direct calls; the C++ port executes 828 million and the Rust port 900 million.
+- On this machine the Rust port with `dyn Thing` is slow for its instruction count (116 ms; the
+  C++ port 70 ms), as in the Linux table of 2026-11-10, so "against Rust" is met here by every
+  model, and the C++ port is the one still ahead. On Windows the two ports are level (57 and
+  52 ms on 2026-11-10, tslang 73 to 77 ms); nothing here was run on Windows.
+- What the loop over the things still does that the C++ port's does not, read from the
+  disassembly of the `addLight` closure (23 instructions a thing beside the sphere's arithmetic)
+  and not measured apart: `scene.things` is read again through the `Scene` interface on every
+  iteration (the field's offset from the vtable, the array's header and data), because the call
+  kept for "anything else" may write anywhere; each thing is an interface, two words and a load
+  of its vtable's slot; the pointer is compared with `Thing`'s method for a null object as well
+  as the sphere's and the plane's; and `intersect`'s result comes back through memory with the
+  optional's flag.
+- `test/tester/tests/00fresh_objects_folded.ts`: its callback no longer reads `v.x`. The callback
+  is now inlined into `keep`, where that read was a load the test's check took for one of the
+  fresh objects' fields.
+
 ## Results 2026-11-10: Windows
 
 Release, Windows 11 x64, the machine of the 10-31 run; main d64978ed, and the same tree with the
