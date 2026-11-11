@@ -253,7 +253,12 @@
 // the class has none, plus this bit - the sign bit, which an offset never has (a symbol plus a constant, so it
 // is relocated as any address). A load through it calls the getter with `this`, and a store the setter
 // (LoadOpLowering, StoreOpLowering). On a 32-bit target this holds for a cell below 2 GB.
-#define INTERFACE_ACCESSOR_CELL_TAG(sizeBits) (1ULL << ((sizeBits) - 1))
+// On wasm32 it is bit 30 instead: a wasm object keeps a relocation's addend as a signed 32-bit LEB, and the
+// sign bit added to an address is out of its range ("LEB is outside Varint32 range", in wasm-ld and in any
+// reader of the object). A wasm32 program's static data is at the bottom of its linear memory, far below 1 GB,
+// and no offset into an object reaches 1 GB either.
+#define INTERFACE_ACCESSOR_CELL_TAG(sizeBits, isWasm) \
+    ((isWasm) && (sizeBits) == 32 ? (1ULL << 30) : (1ULL << ((sizeBits) - 1)))
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it
 #define INTERFACE_OPTIONAL_WRITE_ATTR "__optional_write"
