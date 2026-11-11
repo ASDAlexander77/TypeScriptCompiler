@@ -15,16 +15,59 @@ and `Ray` and `Intersection` `@value` interfaces (see "Results 2026-10-24: `@val
   tslang produces, so the gap between a language's two ports is the cost of allocation alone.
   `Rc` counts are plain integers; `shared_ptr` counts are atomic.
 
+`rtbench_static.ts` and `rust/src/bin/static_dispatch.rs` are the same ray tracer with static
+dispatch only, the TypeScript written the way the Rust is (see "Results 2026-11-11"):
+
+- Rust: `enum Thing` and `enum Surface` with a `match` in each method, no `dyn Thing` and no
+  function pointers; free functions, and a `for` loop over the lights.
+- tslang: no interfaces and no closures. A thing is one `@final` class with a `shape` tag and a
+  `switch`, a surface is an enum, `Vector`, `Color`, `Ray`, `Light` and `Hit` are `@value` classes.
+  One file builds under every memory model.
+
 Run (needs a Release tslang and cargo; clang++ on PATH and Visual Studio are used when present):
 
 ```
 pwsh tslang/benchmarks/raytrace/bench.ps1
+TSLANG=<path to tslang> bash tslang/benchmarks/raytrace/bench.sh
 ```
 
 - tslang: `--emit=exe --opt --opt_level=3 --no-default-lib --mm=<model>` (`--no-default-lib`
   because the file declares its own `sqrt`/`floor`/`pow`/`fabs`); `-mm=own` builds `rtbench_own.ts`
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
+
+## Results 2026-11-11: static dispatch (Linux)
+
+Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.3 GHz); main 864dab4, built against the
+official LLVM 22.1.8 package; Rust 1.97.0, clang 18.1.3. `bench.sh`: a warm-up, then 15 rounds in
+which every build runs once; median wall time. Every build prints the same checksum. The machine is
+shared, so a few percent either way is noise.
+
+| Build | `rtbench.ts` | `rtbench_static.ts` | vs Rust static |
+|---|---|---|---|
+| tslang gc | 87 ms | 60 ms | 1.2x |
+| tslang rc | 123 ms | 62 ms | 1.2x |
+| tslang none | 89 ms | 61 ms | 1.2x |
+| tslang own | 91 ms | 60 ms | 1.2x |
+| Rust static (`static_dispatch.rs`) | | 51 ms | 1x |
+| Rust idiomatic (`dyn Thing`) | 116 ms | | 2.3x |
+| C++ idiomatic (clang) | 70 ms | | 1.4x |
+
+- Without interfaces and closures the four memory models run alike: nothing is counted or
+  allocated per ray, so rc loses its extra time (123 to 62 ms).
+- tslang is within 1.2x of the Rust port written the same way, and 1.4x faster than its own
+  interface version.
+- Under `-mm=own` a `@value` class cannot hold a borrowed element of an array (`new Hit(thing,
+  dist)` is "borrows an element and cannot be stored, returned or captured"), so `Hit` names the
+  thing by its index in `scene.things`. Under none, holding the reference instead measured 2 ms
+  faster.
+- What is left, from callgrind (804 million instructions against Rust's 598 million) and the
+  disassembly of `intersections`, which has half of them; none of it measured separately:
+  `intersections` is not inlined into its callers, where Rust inlines everything into `trace_ray`;
+  the array is tested for null and its length and data pointer are loaded again on every iteration;
+  and `sqrt` is libm's, whose call for a negative argument makes the function spill the ray's six
+  numbers on entry. Making `Thing` a `@value` class (the things inline in the array, as in Rust's
+  `Vec<Thing>`) or reading `things.length` once before the loop changed nothing.
 
 ## Results 2026-11-10: Windows
 

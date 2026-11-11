@@ -3,8 +3,9 @@
 // and no closures, so nothing is called through a vtable or a function value. A thing is one
 // @final class with a `shape` tag and a `switch` (Rust's `enum Thing` and `match`), a surface is
 // an enum, Vector, Color, Ray, Light and Hit are @value classes, the ray tracer's methods are free
-// functions and the lights are added up in a `for` loop. The same file builds under every memory
-// model, and the scene, the arithmetic and the checksum (38837369) are rtbench.ts's.
+// functions and the lights are added up in a `for` loop. A miss is the distance Infinity where the
+// Rust port has `None`. The same file builds under every memory model, and the scene, the
+// arithmetic and the checksum (38837369) are rtbench.ts's.
 // print() shows the sum with 6 significant digits, so the low digits are printed separately.
 declare function sqrt(v: number): number;
 declare function floor(v: number): number;
@@ -22,8 +23,8 @@ class Vector {
     static dot(v1: Vector, v2: Vector) { return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z; }
     static mag(v: Vector) { return sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
     static norm(v: Vector) {
-        let mag = Vector.mag(v);
-        let div = (mag === 0) ? Infinity : 1.0 / mag;
+        const mag = Vector.mag(v);
+        const div = (mag === 0) ? Infinity : 1.0 / mag;
         return Vector.times(div, v);
     }
     static cross(v1: Vector, v2: Vector) {
@@ -69,7 +70,7 @@ class Camera {
     public up: Vector;
 
     constructor(public pos: Vector, lookAt: Vector) {
-        let down = new Vector(0.0, -1.0, 0.0);
+        const down = new Vector(0.0, -1.0, 0.0);
         this.forward = Vector.norm(Vector.minus(lookAt, this.pos));
         this.right = Vector.times(1.5, Vector.norm(Vector.cross(this.forward, down)));
         this.up = Vector.times(1.5, Vector.norm(Vector.cross(this.forward, this.right)));
@@ -145,11 +146,11 @@ class Thing {
     intersect(ray: Ray): number {
         switch (this.shape) {
             case Shape.Sphere: {
-                let eo = Vector.minus(this.v, ray.start);
-                let v = Vector.dot(eo, ray.dir);
+                const eo = Vector.minus(this.v, ray.start);
+                const v = Vector.dot(eo, ray.dir);
                 let dist = 0.0;
                 if (v >= 0) {
-                    let disc = this.k - (Vector.dot(eo, eo) - v * v);
+                    const disc = this.k - (Vector.dot(eo, eo) - v * v);
                     if (disc >= 0) {
                         dist = v - sqrt(disc);
                     }
@@ -157,7 +158,7 @@ class Thing {
                 return dist === 0 ? Infinity : dist;
             }
             default: {
-                let denom = Vector.dot(this.v, ray.dir);
+                const denom = Vector.dot(this.v, ray.dir);
                 if (denom > 0) {
                     return Infinity;
                 }
@@ -173,11 +174,12 @@ class Scene {
     }
 }
 
-// What a ray hit first: the thing and the distance to it. A ray that hit nothing has
-// dist === Infinity (and `thing` is then the scene's first thing, not to be used).
+// What a ray hit first: the thing, as its index in the scene's things, and the distance to it. A
+// ray that hit nothing has dist === Infinity. (The Rust port holds a `&Thing`; under -mm=own a
+// @value class cannot hold a borrowed element of an array, and an index needs no lifetime.)
 @value
 class Hit {
-    constructor(public readonly thing: Thing, public readonly dist: number) {
+    constructor(public readonly index: number, public readonly dist: number) {
     }
 }
 
@@ -186,17 +188,16 @@ const maxDepth = 5;
 function intersections(ray: Ray, scene: Scene): Hit {
     const things = scene.things;
     let closest = Infinity;
-    let closestThing = things[0];
+    let index = 0;
     for (let i = 0; i < things.length; i++) {
-        const thing = things[i];
-        const dist = thing.intersect(ray);
+        const dist = things[i].intersect(ray);
         if (dist < closest) {
-            closestThing = thing;
+            index = i;
             closest = dist;
         }
     }
 
-    return new Hit(closestThing, closest);
+    return new Hit(index, closest);
 }
 
 function traceRay(ray: Ray, scene: Scene, depth: number): Color {
@@ -209,7 +210,7 @@ function traceRay(ray: Ray, scene: Scene, depth: number): Color {
 }
 
 function shade(hit: Hit, ray: Ray, scene: Scene, depth: number): Color {
-    const thing = hit.thing;
+    const thing = scene.things[hit.index];
     const d = ray.dir;
     const pos = Vector.plus(Vector.times(hit.dist, d), ray.start);
     const normal = thing.normal(pos);
@@ -260,7 +261,7 @@ function legalize(d: number) {
 
 function render(scene: Scene, screenWidth: number, screenHeight: number): number {
     const camera = scene.camera;
-    let sum = 0;
+    let sum: number = 0;
     for (let y = 0; y < screenHeight; y++) {
         for (let x = 0; x < screenWidth; x++) {
             const color = traceRay(new Ray(camera.pos, getPoint(x, y, camera, screenWidth, screenHeight)), scene, 0);
