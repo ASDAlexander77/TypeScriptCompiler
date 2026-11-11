@@ -10,9 +10,6 @@ internals.ts                    # inline_asm with x86 instructions
 00cppvtable_hidden_return.ts    # a @cpp class returning a struct needs the MSVC or a 64-bit Itanium ABI (excluded on i686 too)
 fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
 
-# compiler gaps on wasm, each to be fixed and taken off this list
-path.ts                         # a field of Readonly<Path> read through Maybe<...> is read wrong: the loop never ends
-
 # fails natively under the same model too (not run natively under it by ctest)
 01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)
 00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)

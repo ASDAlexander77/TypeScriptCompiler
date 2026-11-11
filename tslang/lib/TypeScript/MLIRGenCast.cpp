@@ -2210,7 +2210,10 @@ namespace mlirgen
             // not the default of its union (a zeroed value, read as null or as T's fields) - below
             auto missingValueToString =
                 isa<mlir_ts::StringType>(type) && MLIRTypeHelper::getMissingValueElement(optType);
-            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString)
+            // ...nor its truth: the default of a union is zeroed, its type "undefined", and that is
+            // not null, so `while (curr)` over a `null | { ... }` that has none was true (below, a
+            // missing value is false)
+            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString && !isa<mlir_ts::BooleanType>(type))
             {
                 auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
                 CAST_A(unwrappedValue, location, type, val, genContext);
