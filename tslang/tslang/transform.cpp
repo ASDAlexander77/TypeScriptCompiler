@@ -871,6 +871,49 @@ struct RcPairEliminationPass : llvm::PassInfoMixin<RcPairEliminationPass>
     }
 };
 
+// wasm: a load or a store whose address is a function (at any constant offset) is on a path that never runs.
+// SpeculativeDirectCallPass tests a function value against every function of its type, and inlines each
+// one under its test; in a test the program never passes - IntIter's loop asking "is it foo3's `next`?" -
+// what the inlined body reads through its `this` is, once the optimizer knows the pointer is the function,
+// a read of the function's own address. Natively that is a read of code nobody makes; on wasm, where code is
+// not in the linear memory, it is a relocation no linker resolves (wasm-ld: "invalid data relocation"). Such
+// an access is undefined anyway: a load gives poison, and a store is dropped.
+struct WasmFunctionDataAccessPass : llvm::PassInfoMixin<WasmFunctionDataAccessPass>
+{
+    static bool isFunctionAddress(llvm::Value *pointer)
+    {
+        return llvm::isa<llvm::Function>(llvm::getUnderlyingObject(pointer));
+    }
+
+    llvm::PreservedAnalyses run(llvm::Function &func, llvm::FunctionAnalysisManager &)
+    {
+        llvm::SmallVector<llvm::Instruction *, 4> accesses;
+        for (auto &inst : llvm::instructions(func))
+        {
+            if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&inst); load && isFunctionAddress(load->getPointerOperand()))
+            {
+                accesses.push_back(load);
+            }
+            else if (auto *store = llvm::dyn_cast<llvm::StoreInst>(&inst); store && isFunctionAddress(store->getPointerOperand()))
+            {
+                accesses.push_back(store);
+            }
+        }
+
+        for (auto *access : accesses)
+        {
+            if (!access->getType()->isVoidTy())
+            {
+                access->replaceAllUsesWith(llvm::PoisonValue::get(access->getType()));
+            }
+
+            access->eraseFromParent();
+        }
+
+        return accesses.empty() ? llvm::PreservedAnalyses::all() : llvm::PreservedAnalyses::none();
+    }
+};
+
 // A call through a function value (an interface's method, a callback) whose type only a few
 // functions of the module have, among those whose address is taken: the call tests the pointer
 // against each and calls it directly, and the call through the pointer is left for anything else.
@@ -1274,6 +1317,11 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
         else
             mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
+
+        if (compileOptions.isWasm && *ol != llvm::OptimizationLevel::O0)
+        {
+            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(WasmFunctionDataAccessPass()));
+        }
 
 #ifdef SAVE_VIA_PASS
         std::unique_ptr<llvm::ToolOutputFile> FDOut;
