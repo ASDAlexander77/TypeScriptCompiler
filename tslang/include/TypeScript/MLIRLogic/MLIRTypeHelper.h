@@ -250,8 +250,46 @@ class MLIRTypeHelper
     static mlir::Type getMissingValueType(mlir_ts::ValueType valueType)
     {
         mlir::SmallVector<mlir::Type> members{valueType, mlir_ts::NullType::get(valueType.getContext())};
-        std::sort(members.begin(), members.end(), [](auto i, auto j) { return i.getAsOpaquePointer() < j.getAsOpaquePointer(); });
+        sortUnionMembers(members);
         return mlir_ts::OptionalType::get(mlir_ts::UnionType::get(valueType.getContext(), members));
+    }
+
+    // The one order of a union's members, so `A | B` and `B | A` are one type. By the members'
+    // printed text, which is the same in every compiler run: a declaration written out by one run
+    // (the default library's) has to match the type another run makes of its source. The address
+    // of a type, used before, differs between runs. Members that print alike are ordered by
+    // address, as they cannot be told apart in text anyway.
+    static void sortUnionMembers(mlir::SmallVectorImpl<mlir::Type> &members)
+    {
+        if (members.size() < 2)
+        {
+            return;
+        }
+
+        mlir::SmallVector<std::pair<std::string, mlir::Type>> keyed;
+        keyed.reserve(members.size());
+        for (auto member : members)
+        {
+            std::string text;
+            llvm::raw_string_ostream os(text);
+            member.print(os);
+            os.flush();
+            keyed.emplace_back(std::move(text), member);
+        }
+
+        std::sort(keyed.begin(), keyed.end(), [](const auto &a, const auto &b) {
+            if (a.first != b.first)
+            {
+                return a.first < b.first;
+            }
+
+            return a.second.getAsOpaquePointer() < b.second.getAsOpaquePointer();
+        });
+
+        for (size_t i = 0; i < members.size(); i++)
+        {
+            members[i] = keyed[i].second;
+        }
     }
 
     // Where null of a @value type T is in T itself: the index path, into T's storage, of a pointer no
@@ -3874,7 +3912,7 @@ class MLIRTypeHelper
             newTypes.push_back(type);
         }
 
-        std::sort (newTypes.begin(), newTypes.end(), [](auto i, auto j) { return (i.getAsOpaquePointer() < j.getAsOpaquePointer()); });
+        sortUnionMembers(newTypes);
 
         return isUndefined 
             ? mlir::Type(mlir_ts::OptionalType::get(mlir_ts::UnionType::get(context, newTypes))) 
@@ -4145,6 +4183,37 @@ class MLIRTypeHelper
         return false;
     }
 
+    // `valueType` when `literalType` is an object literal (a tuple) with its fields, by name and in
+    // order, each converting without loss (`{ at: 6 }`'s s32 to Num's number). Kept apart in a union,
+    // the two have one tag ("object") but not one layout, and a field read from the union takes
+    // the first member's: right or wrong by the members' order.
+    mlir_ts::ValueType literalConvertsToValueType(mlir::Type literalType, mlir::Type valueTypeIn)
+    {
+        auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(valueTypeIn);
+        if (!valueType)
+        {
+            return mlir_ts::ValueType();
+        }
+
+        auto storage = dyn_cast<mlir_ts::TupleType>(stripValueType(valueType));
+        auto literal = dyn_cast_or_null<mlir_ts::TupleType>(convertConstTupleTypeToTupleType(literalType));
+        if (!storage || !literal || storage.getFields().size() != literal.getFields().size())
+        {
+            return mlir_ts::ValueType();
+        }
+
+        for (auto [from, to] : llvm::zip(literal.getFields(), storage.getFields()))
+        {
+            auto fromType = stripLiteralType(from.type);
+            if (from.id != to.id || !(fromType == to.type || canWideTypeWithoutDataLoss(fromType, to.type)))
+            {
+                return mlir_ts::ValueType();
+            }
+        }
+
+        return valueType;
+    }
+
     mlir::Type mergeType(mlir::Location location, mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;
@@ -4176,6 +4245,19 @@ class MLIRTypeHelper
         {
             merged = true;
             return currentType;
+        }
+
+        // an object literal of a @value type's fields is that type: `n ?? { at: 6 }` is `Num`
+        if (auto valueType = literalConvertsToValueType(currentType, existType))
+        {
+            merged = true;
+            return valueType;
+        }
+
+        if (auto valueType = literalConvertsToValueType(existType, currentType))
+        {
+            merged = true;
+            return valueType;
         }
 
         // in case of merging integer types with sign/no sign

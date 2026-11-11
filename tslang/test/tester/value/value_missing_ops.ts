@@ -56,6 +56,11 @@ function main() {
     const fallback: Mark = { at: 7, owner: new Owner(7) };
     assert((mark(-1) ?? fallback).at == 7);
     assert((num(-1) ?? num(4)).at == 4 && (num(5) ?? { at: 6 }).at == 5);
+    // a literal of Num's fields beside a Num is a Num: kept as a union of the two, a field was read
+    // as the first member's layout, and got 0 when the literal (s32 fields) was ordered first
+    const five: Num = { at: 5 };
+    const pick = five.at > 0;
+    assert((pick ? five : { at: 6 }).at == 5 && (five || { at: 6 }).at == 5, "a literal beside a Num");
     const nothing: Mark | undefined = undefined;
     assert((nothing ?? fallback).at == 7);
 
