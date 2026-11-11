@@ -298,6 +298,7 @@ tslang_add_test(NAME test-compile-00-funcs-vararg COMMAND test-runner "${PROJECT
 tslang_add_test(NAME test-compile-00-declare-function-twice COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-compile-00-function-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-compile-00-class-override-arity COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_override_arity.ts")
+tslang_add_test(NAME test-compile-00-bound-method-wider-callback COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_wider_callback.ts")
 tslang_add_test(NAME test-compile-00-gc-allocations-distinct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
 tslang_add_test(NAME test-compile-00-assert-message COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
@@ -978,6 +979,7 @@ tslang_add_test(NAME test-jit-00-funcs-vararg COMMAND test-runner -jit "${PROJEC
 tslang_add_test(NAME test-jit-00-declare-function-twice COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-jit-00-function-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-jit-00-class-override-arity COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_override_arity.ts")
+tslang_add_test(NAME test-jit-00-bound-method-wider-callback COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_wider_callback.ts")
 tslang_add_test(NAME test-jit-00-gc-allocations-distinct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
 tslang_add_test(NAME test-jit-00-assert-message COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
 tslang_add_test(NAME test-jit-01-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
@@ -2596,6 +2598,7 @@ set(TSLANG_CORPUS
     00funcs_vararg.ts
     00function_overloads.ts
     00class_override_arity.ts
+    00bound_method_wider_callback.ts
     00gc_allocations_distinct.ts
     00assert_message.ts
     00funcs.ts

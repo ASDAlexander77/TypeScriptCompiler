@@ -15448,6 +15448,8 @@ class MLIRGenImpl
     mlir::Type interfaceMemberFitting(mlir_ts::UnionType unionType, mlir::Type valueType);
 
     mlir::Value fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type);
+    mlir::Value boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
+                                            const GenContext &genContext);
 
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here
