@@ -623,6 +623,7 @@ tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND te
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-rc-interface-count-inline COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_interface_count_inline.ts")
+tslang_add_test(NAME test-compile-00-rc-local-alias-no-count COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_local_alias_no_count.ts")
 tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-conditional-nested-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-generic-callback-closure-late-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_callback_closure_late_class.ts")
@@ -1299,6 +1300,7 @@ tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-r
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-rc-interface-count-inline COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_interface_count_inline.ts")
+tslang_add_test(NAME test-jit-00-rc-local-alias-no-count COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_local_alias_no_count.ts")
 tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-conditional-nested-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-generic-callback-closure-late-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_callback_closure_late_class.ts")
@@ -2480,6 +2482,7 @@ set(TSLANG_CORPUS
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00rc_interface_count_inline.ts
+    00rc_local_alias_no_count.ts
     00conditional_record_literal_temporary.ts
     00conditional_nested_record_literal_temporary.ts
     00generic_callback_closure_late_class.ts

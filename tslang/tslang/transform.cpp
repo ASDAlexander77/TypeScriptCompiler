@@ -54,6 +54,10 @@
 #include "llvm/Transforms/Scalar/JumpThreading.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/ADT/SmallBitVector.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -560,6 +564,312 @@ struct UnfoldSelectOverPhiPass : llvm::PassInfoMixin<UnfoldSelectOverPhiPass>
     }
 };
 
+// -mm=rc: `const things = scene.things` retains the array and releases it when the local ends.
+// The count protects the alias from a release of what it names, and nothing between the two can
+// release anything when the function, and every function it calls, stores only into its own
+// locals and calls nothing that could: then the retain and the release go. They are the
+// out-of-line routines `tsret_<type>(slot)` and `tsrel_<type>(slot)` at this point, before the
+// inliner opens them, and the pair is found by its slot: an alloca stored to once, with one retain
+// and, on every path after it, one release. The ray tracer's `intersections` paid this pair on
+// every ray.
+struct RcPairEliminationPass : llvm::PassInfoMixin<RcPairEliminationPass>
+{
+    struct Info
+    {
+        bool neutral = true;
+        llvm::SmallBitVector written;
+    };
+
+    llvm::DenseMap<const llvm::Function *, Info> infos;
+
+    static bool isCountCall(const llvm::Instruction &inst, llvm::StringRef prefix, llvm::StringRef *type = nullptr)
+    {
+        auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        if (!callee || !callee->getName().starts_with(prefix) || call->arg_size() != 1)
+        {
+            return false;
+        }
+
+        if (type)
+        {
+            *type = callee->getName().substr(prefix.size());
+        }
+
+        return true;
+    }
+
+    // a store through `pointer`: into a local (true), into what a parameter points to (true, and
+    // the parameter is marked), anywhere else (false)
+    static bool localWrite(const llvm::Value *pointer, Info &info)
+    {
+        auto *base = llvm::getUnderlyingObject(pointer);
+        if (llvm::isa<llvm::AllocaInst>(base))
+        {
+            return true;
+        }
+
+        if (auto *arg = llvm::dyn_cast<llvm::Argument>(base))
+        {
+            info.written.set(arg->getArgNo());
+            return true;
+        }
+
+        return false;
+    }
+
+    // whether `func` changes no count and no memory but its locals and what its marked parameters
+    // point to, leaving out the instructions in `ignored`
+    Info scan(const llvm::Function &func, const llvm::SmallPtrSetImpl<const llvm::Instruction *> &ignored)
+    {
+        Info info;
+        info.written.resize(func.arg_size());
+        for (auto &inst : llvm::instructions(func))
+        {
+            if (ignored.contains(&inst))
+            {
+                continue;
+            }
+
+            if (auto *store = llvm::dyn_cast<llvm::StoreInst>(&inst))
+            {
+                if (store->isVolatile() || !localWrite(store->getPointerOperand(), info))
+                {
+                    info.neutral = false;
+                }
+            }
+            else if (auto *call = llvm::dyn_cast<llvm::CallInst>(&inst))
+            {
+                auto *callee = call->getCalledFunction();
+                if (!callee || call->isInlineAsm())
+                {
+                    info.neutral = false;
+                }
+                else if (auto *transfer = llvm::dyn_cast<llvm::MemIntrinsic>(call))
+                {
+                    if (transfer->isVolatile() || !localWrite(transfer->getRawDest(), info))
+                    {
+                        info.neutral = false;
+                    }
+                }
+                else if (callee->isDeclaration())
+                {
+                    if (!callee->onlyReadsMemory() && !(callee->isIntrinsic() && !call->mayWriteToMemory()))
+                    {
+                        info.neutral = false;
+                    }
+                }
+                else
+                {
+                    auto found = infos.find(callee);
+                    if (found == infos.end() || !found->second.neutral || callee->isVarArg()
+                        || callee->arg_size() != call->arg_size())
+                    {
+                        info.neutral = false;
+                    }
+                    else
+                    {
+                        for (auto index : found->second.written.set_bits())
+                        {
+                            if (!localWrite(call->getArgOperand(index), info))
+                            {
+                                info.neutral = false;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (llvm::isa<llvm::InvokeInst, llvm::CallBrInst, llvm::ResumeInst, llvm::LandingPadInst,
+                               llvm::CatchSwitchInst, llvm::CleanupPadInst, llvm::CatchPadInst>(&inst)
+                     || inst.mayWriteToMemory())
+            {
+                info.neutral = false;
+            }
+
+            if (!info.neutral)
+            {
+                break;
+            }
+        }
+
+        return info;
+    }
+
+    // the retain and the releases of `slot`, when they pair on every path
+    static bool pairedCalls(llvm::AllocaInst *slot, llvm::SmallVectorImpl<llvm::Instruction *> &calls)
+    {
+        llvm::StoreInst *theStore = nullptr;
+        llvm::StringRef type;
+        auto retains = 0;
+        for (auto *user : slot->users())
+        {
+            auto *inst = llvm::dyn_cast<llvm::Instruction>(user);
+            llvm::StringRef callType;
+            if (auto *store = llvm::dyn_cast_or_null<llvm::StoreInst>(inst))
+            {
+                if (theStore || store->getPointerOperand() != slot || store->getValueOperand() == slot)
+                {
+                    return false;
+                }
+
+                theStore = store;
+            }
+            else if (inst && (isCountCall(*inst, "tsret_", &callType) || isCountCall(*inst, "tsrel_", &callType)))
+            {
+                if (!type.empty() && type != callType)
+                {
+                    return false;
+                }
+
+                type = callType;
+                retains += isCountCall(*inst, "tsret_") ? 1 : 0;
+                calls.push_back(inst);
+            }
+            else if (!llvm::isa_and_nonnull<llvm::LoadInst>(inst))
+            {
+                return false;
+            }
+        }
+
+        if (!theStore || retains != 1 || calls.size() < 2)
+        {
+            return false;
+        }
+
+        // per block: whether the reference is held on entry; every predecessor has to agree
+        auto *func = slot->getFunction();
+        llvm::DenseMap<const llvm::BasicBlock *, bool> heldAt;
+        llvm::SmallVector<const llvm::BasicBlock *, 16> worklist;
+        heldAt[&func->getEntryBlock()] = false;
+        worklist.push_back(&func->getEntryBlock());
+        while (!worklist.empty())
+        {
+            auto *block = worklist.pop_back_val();
+            auto held = heldAt[block];
+            for (auto &inst : *block)
+            {
+                if (&inst == theStore)
+                {
+                    if (held)
+                    {
+                        return false;
+                    }
+                }
+                else if (llvm::is_contained(calls, &inst))
+                {
+                    auto retain = isCountCall(inst, "tsret_");
+                    if (retain == held)
+                    {
+                        return false;
+                    }
+
+                    held = retain;
+                }
+                else if (llvm::isa<llvm::ReturnInst>(inst) && held)
+                {
+                    return false;
+                }
+            }
+
+            for (auto *successor : llvm::successors(block))
+            {
+                auto inserted = heldAt.try_emplace(successor, held);
+                if (inserted.second)
+                {
+                    worklist.push_back(successor);
+                }
+                else if (inserted.first->second != held)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    llvm::PreservedAnalyses run(llvm::Module &m, llvm::ModuleAnalysisManager &)
+    {
+        auto erased = false;
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+
+            // from "every function is neutral" down to what holds
+            infos.clear();
+            llvm::SmallPtrSet<const llvm::Instruction *, 1> none;
+            for (auto &func : m)
+            {
+                if (!func.isDeclaration())
+                {
+                    infos[&func].written.resize(func.arg_size());
+                }
+            }
+
+            for (auto settled = false; !settled;)
+            {
+                settled = true;
+                for (auto &func : m)
+                {
+                    if (func.isDeclaration())
+                    {
+                        continue;
+                    }
+
+                    auto &known = infos[&func];
+                    auto info = known.neutral ? scan(func, none) : known;
+                    if (info.neutral != known.neutral || info.written != known.written)
+                    {
+                        known = info;
+                        settled = false;
+                    }
+                }
+            }
+
+            for (auto &func : m)
+            {
+                if (func.isDeclaration())
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<llvm::Instruction *, 8> calls;
+                for (auto &inst : func.getEntryBlock())
+                {
+                    if (auto *slot = llvm::dyn_cast<llvm::AllocaInst>(&inst))
+                    {
+                        llvm::SmallVector<llvm::Instruction *, 4> slotCalls;
+                        if (pairedCalls(slot, slotCalls))
+                        {
+                            calls.append(slotCalls.begin(), slotCalls.end());
+                        }
+                    }
+                }
+
+                if (calls.empty())
+                {
+                    continue;
+                }
+
+                llvm::SmallPtrSet<const llvm::Instruction *, 8> ignored(calls.begin(), calls.end());
+                if (!scan(func, ignored).neutral)
+                {
+                    continue;
+                }
+
+                for (auto *call : calls)
+                {
+                    call->eraseFromParent();
+                }
+
+                changed = erased = true;
+            }
+        }
+
+        return erased ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
 // --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
 // vectorizer, the unroller and the backend all ask the function whether it is optimized for
 // size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
@@ -697,10 +1007,16 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         // caller does with the result. Threaded first, such a path goes straight to its result
         // (the ray tracer's misses to the loop's next thing). SROA first: the values are in
         // allocas until then.
-        pb.registerPipelineStartEPCallback([](llvm::ModulePassManager &pm, llvm::OptimizationLevel level) {
+        auto refCounted = compileOptions.isRefCounted();
+        pb.registerPipelineStartEPCallback([refCounted](llvm::ModulePassManager &pm, llvm::OptimizationLevel level) {
             if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
             {
                 return;
+            }
+
+            if (refCounted)
+            {
+                pm.addPass(RcPairEliminationPass());
             }
 
             llvm::FunctionPassManager fpm;

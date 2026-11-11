@@ -12,19 +12,21 @@ few percent either way is noise on this machine.
 
 | Build | Time | vs Rust |
 |---|---|---|
-| tslang gc | 50.4 ms | 1.00x |
-| tslang none, own | 50.0 ms | 0.99x |
-| tslang rc | 53.0 ms | 1.05x |
-| Rust, enums and `match` | 50.4 ms | 1x |
+| tslang gc | 50.5 ms | 1.02x |
+| tslang rc | 50.6 ms | 1.02x |
+| tslang none | 49.6 ms | 1.00x |
+| tslang own | 49.5 ms | 1.00x |
+| Rust, enums and `match` | 49.6 ms | 1x |
 
-Instructions executed (callgrind), under `-mm=none`: tslang 606 million, Rust 604 million.
+Instructions executed (callgrind): tslang 606 million under `-mm=none` and 622 million under
+`-mm=rc`, Rust 604 million.
 
-Under gc, none and own the program takes the time of the Rust one. Under rc it does not (part 1
-below). Not measured: Windows, and any machine but this one.
+Under every memory model the program takes the time of the Rust one, within this machine's noise.
+Not measured: Windows, and any machine but this one.
 
 ## What was done
 
-Six changes to the optimizer, all in `tslang/tslang/transform.cpp` except the first
+Seven changes to the optimizer, all in `tslang/tslang/transform.cpp` except the first
 (`include/TypeScript/LowerToLLVM/ArrayLayout.h`). Together they took the benchmark from 60 to
 50 ms.
 
@@ -36,6 +38,7 @@ Six changes to the optimizer, all in `tslang/tslang/transform.cpp` except the fi
 | The inliner's threshold at `--opt_level=3` is 325 | `intersections` cost 285 against 250 and stayed a call in every ray's loop |
 | SROA and jump threading run before the first SimplifyCFG (levels 2 and 3) | A miss's `dist === 0 ? Infinity : dist` became a select that jump threading does not unfold |
 | A select whose condition compares a phi and is decided for one of the phi's constants is made a branch, then jump threading (levels 2 and 3, after a function's callees are inlined) | The caller's `if (dist < closest)` was selects before `intersect` was inlined, so a miss still ran the minimum |
+| `-mm=rc`: a retain of a local and its release on every path are removed when the function and everything it calls store only into locals and can release nothing (before the inliner) | `const things = scene.things` was counted up and down on every ray |
 
 Open questions about these, none of them checked:
 
@@ -51,26 +54,29 @@ Open questions about these, none of them checked:
   branch that is left for the other predecessors is given back to SimplifyCFG. No program but
   these two benchmarks was timed with it.
 
+- The rc pass trusts its own reading of what a function can do: a store is local when LLVM's
+  `getUnderlyingObject` finds an alloca or a parameter, a callee is safe when it is defined in the
+  module and passes the same test, or is a declaration that only reads memory. It finds the pair
+  by the names `tsret_` and `tsrel_`. The test suite passes and
+  `00rc_local_alias_no_count.ts` covers a callee that releases the array; nothing else checks it,
+  and an object shared between threads and released by another thread while the alias is in use
+  is not considered (the function's caller holds a reference to the owner in the case measured).
+
 ## What is left
 
-### 1. `-mm=rc`: the array of things is retained on every ray
+Nothing in time, on this benchmark and this machine. What follows is what still differs.
 
-`const things = scene.things` in `intersections` takes a reference: the array's count goes up at
-the top of the function and down at the end, through a release routine that is not inlined, 2.2
-million times a frame. That is the 3 ms rc is behind (711 million instructions against 606
-million). Using `scene.things` in the loop instead retains it on every use and is worse (934
-million, 65 ms).
+### 1. rc counts that the alias pass does not reach
 
-The retain is there because a call in the loop could assign `scene.things` and so free the array
-under the alias. Here nothing can: once `Thing.intersect` is inlined the loop is arithmetic. What
-it would take: dropping a retain and its release when nothing between them can release or store
-(a pass over the LLVM IR after inlining, as Objective-C's ARC optimizer does), or the same proof
-in the ownership inference, from the callee's facts ("writes no field"), before lowering.
+The pass removes a pair only around code that can release nothing. `rtbench.ts` (interfaces,
+closures) under rc is unchanged at 119 ms against 84 ms for the other models: its counts are on
+interface values and closure cells, and its loop calls through `Thing`, which the pass cannot see
+through. The benchmark's README has what those counts are.
 
 ### 2. Differences that are still there and cost nothing measured
 
-With the instruction counts level, these are no longer a gap, but the code still differs from
-Rust's in them:
+With the instruction counts level, these are no gap, but the code still differs from Rust's in
+them:
 
 - `Thing[]` holds pointers, one load more a thing than Rust's `Vec<Thing>`. `@value class Thing`
   puts the things in the array itself and measured no faster: each element is loaded whole, all
@@ -86,7 +92,7 @@ Rust's in them:
 ### 3. The benchmark with interfaces
 
 `rtbench.ts` (interfaces, closures) is unchanged by all this at 84 ms under gc, none and own, 1.7x
-the static version. Its costs are the calls through `Thing` and `Surface` and the `addLight`
+the static version, and 119 ms under rc. Its costs are the calls through `Thing` and `Surface` and the `addLight`
 closure; see the benchmark's README. The Rust port written the same way (`dyn Thing`) takes
 112 ms here.
 

@@ -158,6 +158,28 @@ past it. A miss now goes to the next thing, as in the Rust build.
   `intersections` call, 2.2 million times a frame (711 million instructions against 606 million).
   Without the alias it is worse: every `scene.things` in the loop is retained (934 million, 65 ms).
 
+### rc: a local alias that needs no count
+
+`const things = scene.things` retained the array and released it at the end of every
+`intersections` call. The count keeps the array alive should something release it under the alias;
+here nothing can. Under `-mm=rc`, before the inliner runs, a retain of a local and its release on
+every path are now removed when the function, and every function it calls, stores only into its
+own locals (or what a parameter given a local points to) and calls nothing that could release:
+`tsret_<type>(slot)` and `tsrel_<type>(slot)` on a slot stored to once. A callee that assigns the
+field keeps the pair (`test/tester/tests/00rc_local_alias_no_count.ts`).
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (49.6 ms) |
+|---|---|---|---|
+| tslang gc | 50.4 ms | 50.5 ms | 1.02x |
+| tslang rc | 53.0 ms | 50.6 ms | 1.02x |
+| tslang none | 50.0 ms | 49.6 ms | 1.00x |
+| tslang own | 50.0 ms | 49.5 ms | 1.00x |
+
+Instructions executed under rc: 711 million to 622 million. `rtbench.ts` under rc is unchanged
+(119 ms): its counts are on interfaces and closures, which this does not reach.
+
 ## Results 2026-11-10: Windows
 
 Release, Windows 11 x64, the machine of the 10-31 run; main d64978ed, and the same tree with the
