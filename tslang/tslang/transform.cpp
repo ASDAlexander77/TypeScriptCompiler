@@ -50,6 +50,8 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/JumpThreading.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -570,6 +572,25 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         }
 
         llvm::PassBuilder pb(effectiveTargetMachine, pto);
+        // Jump threading before the pipeline's first SimplifyCFG. `let d = 0; if (..) d = ..;
+        // return d === 0 ? Infinity : d` reaches that pass as a phi of constants and a test of it;
+        // SimplifyCFG makes the test a select, and jump threading later unfolds a select only over
+        // integer constants, so a path that knew its answer still ran the select and what the
+        // caller does with the result. Threaded first, such a path goes straight to its result
+        // (the ray tracer's misses to the loop's next thing). SROA first: the values are in
+        // allocas until then.
+        pb.registerPipelineStartEPCallback([](llvm::ModulePassManager &pm, llvm::OptimizationLevel level) {
+            if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
+            {
+                return;
+            }
+
+            llvm::FunctionPassManager fpm;
+            fpm.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
+            fpm.addPass(llvm::JumpThreadingPass());
+            pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
+        });
+
 
         pb.registerModuleAnalyses(mam);
         pb.registerCGSCCAnalyses(cgam);

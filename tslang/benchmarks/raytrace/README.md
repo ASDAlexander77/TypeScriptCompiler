@@ -99,11 +99,35 @@ inliner's remarks put the gap in four things, each now changed in the compiler:
   functions together took 59 ms to 57; the inliner's threshold on top of them, to 54.
 - `../numeric`'s six kernels take the same time with the old and the new compiler (within 1%), and
   the test suite passes.
-- What is left, read from the disassembly and not fixed: a miss is the distance `Infinity`, which
-  LLVM computes with selects that a miss still runs through (writing the sphere's test with early
-  returns in a scratch copy took 1.4 ms off); `let i = 0` is a 32-bit counter, sign-extended on
-  every iteration beside a 64-bit one; and Rust adds two of a vector's three components at a time
-  (SLP), which turned off changed its time by less than 1%.
+
+### Jump threading before the first SimplifyCFG
+
+Counting executed instructions per block (callgrind) against the Rust build put most of what was
+left on one path: a sphere the ray misses. `intersect` ends `return dist === 0 ? Infinity : dist`
+with `dist` a phi of constants on the miss paths; the pipeline's first SimplifyCFG makes the test a
+select, and LLVM's jump threading later unfolds a select only over integer constants. A miss ran 8
+instructions of select and then the caller's comparison, where Rust's goes straight to the next
+thing. The pipeline now starts with SROA and jump threading (at `--opt_level` 2 and 3), so such a
+path is threaded to its result before the select exists.
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (50 ms) |
+|---|---|---|---|
+| tslang gc | 55 ms | 53 ms | 1.06x |
+| tslang rc | 60 ms | 57 ms | 1.14x |
+| tslang none | 55 ms | 53 ms | 1.06x |
+| tslang own | 55 ms | 53 ms | 1.06x |
+
+- Instructions executed under none: 679 million to 650 million (Rust 604 million, 647 million with
+  its SLP vectorizer off, which does not change its time). `rtbench.ts` and `../numeric` take the
+  same time as before, and the test suite passes.
+- The 32-bit loop counter named above as a cost is not one: with `let i: index = 0` the program
+  executes more instructions (661 million) and takes the same time.
+- The Rust port written as this file is, a miss as `f64::INFINITY` and the thing by its index,
+  takes 73 ms: the form costs Rust more than it costs tslang.
+- What is left is spread out, a few instructions in every block: the caller's `minsd` still runs
+  on a miss; the things are pointers in the array, one load more each; `const light = lights[i]`
+  loads all six numbers of the light, where Rust reads the color only when the point is lit; and
+  two of the ray's numbers live on the stack in the shadow loop. None was measured by itself.
 
 ## Results 2026-11-10: Windows
 
