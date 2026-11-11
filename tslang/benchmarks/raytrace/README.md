@@ -61,13 +61,49 @@ shared, so a few percent either way is noise.
   dist)` is "borrows an element and cannot be stored, returned or captured"), so `Hit` names the
   thing by its index in `scene.things`. Under none, holding the reference instead measured 2 ms
   faster.
-- What is left, from callgrind (804 million instructions against Rust's 598 million) and the
-  disassembly of `intersections`, which has half of them; none of it measured separately:
-  `intersections` is not inlined into its callers, where Rust inlines everything into `trace_ray`;
-  the array is tested for null and its length and data pointer are loaded again on every iteration;
-  and `sqrt` is libm's, whose call for a negative argument makes the function spill the ray's six
-  numbers on entry. Making `Thing` a `@value` class (the things inline in the array, as in Rust's
-  `Vec<Thing>`) or reading `things.length` once before the loop changed nothing.
+- Making `Thing` a `@value` class (the things inline in the array, as in Rust's `Vec<Thing>`) or
+  reading `things.length` once before the loop changed nothing.
+
+### The optimizer: array reads, math calls, internal functions, the inliner
+
+callgrind (804 million instructions against Rust's 598 million), the optimized IR and the
+inliner's remarks put the gap in four things, each now changed in the compiler:
+
+- An array's length and data were read as `header == null ? 0 : header->field`, a branch around
+  the load, so the loop in `intersections` tested the array for null and loaded both again on every
+  iteration. They are now loaded through a select between the header and one constant empty
+  header, with no branch, and a loop hoists them.
+- `sqrt` was libm's, which may write `errno`: a call that kept loads from being hoisted over it and
+  a branch to the library for a negative argument. A call of a C math function (`sqrt`, `pow`,
+  `floor`, ...) is now the LLVM intrinsic, as under clang's `-fno-math-errno` and in Rust.
+- Every function had external linkage. With `--opt`, `--emit=exe` now makes a function that is not
+  exported internal, so one with a single call left is inlined whatever its size: `shade`,
+  `getNaturalColor` and `getReflectionColor` end up inside `traceRay`, as in the Rust build.
+- `intersections` cost the inliner 285 against a threshold of 250 and stayed a call in each ray's
+  loop, with every live number spilled around it (its Rust twin costs 245 against rustc's 275).
+  The threshold at `--opt_level=3` is now 325, the one LLVM keeps for functions with an inline
+  hint.
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build | before | after | vs Rust static (51 ms) |
+|---|---|---|---|
+| tslang gc, `rtbench_static.ts` | 60 ms | 55 ms | 1.07x |
+| tslang rc, `rtbench_static.ts` | 62 ms | 60 ms | 1.18x |
+| tslang none, `rtbench_static.ts` | 61 ms | 55 ms | 1.08x |
+| tslang own, `rtbench_static.ts` | 60 ms | 55 ms | 1.08x |
+| tslang gc, none, own, `rtbench.ts` | 87, 89, 91 ms | 85, 84, 87 ms | |
+| tslang rc, `rtbench.ts` | 123 ms | 126 ms | |
+
+- One at a time, under none (medians of 21 runs): the array reads, the math calls and internal
+  functions together took 59 ms to 57; the inliner's threshold on top of them, to 54.
+- `../numeric`'s six kernels take the same time with the old and the new compiler (within 1%), and
+  the test suite passes.
+- What is left, read from the disassembly and not fixed: a miss is the distance `Infinity`, which
+  LLVM computes with selects that a miss still runs through (writing the sphere's test with early
+  returns in a scratch copy took 1.4 ms off); `let i = 0` is a 32-bit counter, sign-extended on
+  every iteration beside a 64-bit one; and Rust adds two of a vector's three components at a time
+  (SLP), which turned off changed its time by less than 1%.
 
 ## Results 2026-11-10: Windows
 
