@@ -4015,7 +4015,9 @@ genContext);
                         auto cellAddress = builder.create<mlir_ts::CastOp>(location, ptrIntType, cellRef);
                         auto tagValue = builder.create<mlir_ts::ConstantOp>(
                             location, ptrIntType,
-                            builder.getIntegerAttr(ptrIntType, llvm::APInt::getSignMask(compileOptions.sizeBits())));
+                            builder.getIntegerAttr(ptrIntType, llvm::APInt(compileOptions.sizeBits(),
+                                                                           INTERFACE_ACCESSOR_CELL_TAG(compileOptions.sizeBits(),
+                                                                                                       compileOptions.isWasm))));
                         auto taggedValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
                             location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), cellAddress, tagValue);
                         auto slotValue = builder.create<mlir_ts::CastOp>(

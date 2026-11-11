@@ -597,7 +597,7 @@ struct InterfaceAccessorCell
     mlir::Value thisVal;
     mlir::Value slotValue;
     mlir::Type intPtrType;
-    unsigned sizeBits;
+    llvm::APInt tag;
 
     static std::optional<InterfaceAccessorCell> of(mlir::Value reference, ConversionPatternRewriter &rewriter,
                                                    const CompileOptions &compileOptions)
@@ -621,9 +621,13 @@ struct InterfaceAccessorCell
         auto sizeBits = compileOptions.sizeBits();
         auto intPtrType = rewriter.getIntegerType(sizeBits);
         auto slotValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, slotPtr);
+        // tagged: the tag bit set (on most targets the sign bit, so this is `slot < 0`)
+        auto tag = llvm::APInt(sizeBits, INTERFACE_ACCESSOR_CELL_TAG(sizeBits, compileOptions.isWasm));
+        auto tagValue = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, tag));
         auto zero = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, 0));
-        auto isCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, slotValue, zero);
-        return InterfaceAccessorCell{isCell, thisVal, slotValue, intPtrType, static_cast<unsigned>(sizeBits)};
+        auto tagBit = rewriter.create<LLVM::AndOp>(loc, intPtrType, slotValue, tagValue);
+        auto isCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagBit, zero);
+        return InterfaceAccessorCell{isCell, thisVal, slotValue, intPtrType, tag};
     }
 
     // the block a load or a store in a `try` unwinds to: the AccessorUnwindEdgeOp after it says
@@ -665,9 +669,8 @@ struct InterfaceAccessorCell
     mlir::Value accessor(mlir::Location loc, ConversionPatternRewriter &rewriter, int index)
     {
         TypeHelper th(rewriter);
-        auto tag = rewriter.create<LLVM::ConstantOp>(
-            loc, intPtrType, rewriter.getIntegerAttr(intPtrType, llvm::APInt::getSignMask(sizeBits)));
-        auto cellInt = rewriter.create<LLVM::SubOp>(loc, intPtrType, slotValue, tag);
+        auto tagValue = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, tag));
+        auto cellInt = rewriter.create<LLVM::SubOp>(loc, intPtrType, slotValue, tagValue);
         auto cellAddr = rewriter.create<LLVM::IntToPtrOp>(loc, th.getPtrType(), cellInt.getResult());
         auto cellLLVMType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getPtrType(), th.getPtrType()}, false);
         auto accessorPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), cellLLVMType, cellAddr,
