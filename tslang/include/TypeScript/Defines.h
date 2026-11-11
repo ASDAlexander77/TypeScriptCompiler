@@ -212,6 +212,12 @@
 // on the global of an interface's null vtable (mlirGenNullInterfaceVTable): a null interface is seen
 // through it, and nothing implements the interface by it
 #define NULL_INTERFACE_VTABLE_ATTR_NAME "__null_interface_vtable"
+// `@final interface I`: on a vtable made for I and on a read of one of I's methods, the name of I.
+// Every vtable an I can have is a global of this module that carries it.
+#define FINAL_INTERFACE_ATTR_NAME "__final_interface"
+// in LLVM IR: the element type of the GEP of such a read is the struct `ts.final:<I>`, and each
+// of I's vtables has a global `ts.final:<I>:<vtable>` holding its address (SpeculativeDirectCallPass)
+#define FINAL_INTERFACE_IR_PREFIX "ts.final:"
 // on the C++ runtime's type_info vtable a `throw`'s exception tables name (`??_7type_info@@6B@`,
 // `_ZTVN10__cxxabiv1...`): a foreign global, but no program value is ever read out of it or stored into it
 #define EH_TYPE_INFO_ATTR_NAME "__eh_type_info"

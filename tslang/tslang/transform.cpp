@@ -877,9 +877,92 @@ struct RcPairEliminationPass : llvm::PassInfoMixin<RcPairEliminationPass>
 // The direct calls are what the inliner and every pass after it can see through; a ray tracer's
 // `thing.intersect(ray)` becomes "a sphere? a plane?" with both bodies in the loop, as a `switch`
 // over the kind of thing would be. Nothing is assumed about who else may supply a pointer.
+//
+// A method of a `@final` interface is the exception: the compiler has refused everything but a
+// class of this module as its implementer, and marked the read of the method and every vtable
+// made for the interface (FINAL_INTERFACE_IR_PREFIX). There the functions tried are exactly those
+// in the method's slot of those vtables, and the last of them is called without a test: no call
+// through the pointer is left.
 struct SpeculativeDirectCallPass : llvm::PassInfoMixin<SpeculativeDirectCallPass>
 {
     static constexpr unsigned MaxTargets = 4;
+
+    // the vtables of each @final interface, from the globals that name them
+    static llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> finalInterfaceVTables(llvm::Module &m)
+    {
+        llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> vtablesOf;
+        for (auto &global : m.globals())
+        {
+            auto name = global.getName();
+            if (!name.consume_front(FINAL_INTERFACE_IR_PREFIX))
+            {
+                continue;
+            }
+
+            auto interfaceName = name.split(':').first;
+            auto *vtable = global.hasInitializer()
+                               ? llvm::dyn_cast<llvm::GlobalVariable>(global.getInitializer()->stripPointerCasts())
+                               : nullptr;
+            // a null entry: the interface has a vtable that cannot be read here
+            vtablesOf[interfaceName].push_back(vtable);
+        }
+
+        return vtablesOf;
+    }
+
+    // The functions a call of a @final interface's method can reach, when `callee` is such a read
+    // and every vtable of the interface holds a function of the call's type in the slot.
+    static bool finalInterfaceTargets(llvm::CallBase &call,
+                                      const llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> &vtablesOf,
+                                      llvm::SmallVectorImpl<llvm::Function *> &targets)
+    {
+        // the method is called out of the {method, this} pair it was bound into
+        auto *callee = call.getCalledOperand();
+        if (auto *extract = llvm::dyn_cast<llvm::ExtractValueInst>(callee))
+        {
+            callee = llvm::FindInsertedValue(extract->getAggregateOperand(), extract->getIndices());
+        }
+
+        auto *load = llvm::dyn_cast_or_null<llvm::LoadInst>(callee);
+        auto *gep = load ? llvm::dyn_cast<llvm::GetElementPtrInst>(load->getPointerOperand()) : nullptr;
+        auto *slotType = gep ? llvm::dyn_cast<llvm::StructType>(gep->getSourceElementType()) : nullptr;
+        if (!slotType || !slotType->hasName() || !slotType->getName().starts_with(FINAL_INTERFACE_IR_PREFIX)
+            || gep->getNumIndices() != 1)
+        {
+            return false;
+        }
+
+        auto *slot = llvm::dyn_cast<llvm::ConstantInt>(gep->getOperand(1));
+        auto found = vtablesOf.find(slotType->getName().drop_front(llvm::StringRef(FINAL_INTERFACE_IR_PREFIX).size()));
+        if (!slot || found == vtablesOf.end())
+        {
+            return false;
+        }
+
+        for (auto *vtable : found->second)
+        {
+            // a vtable filled when the program starts has no initializer to read
+            if (!vtable || !vtable->hasDefinitiveInitializer())
+            {
+                return false;
+            }
+
+            auto *element = vtable->getInitializer()->getAggregateElement((unsigned)slot->getZExtValue());
+            auto *target = element ? llvm::dyn_cast<llvm::Function>(element->stripPointerCasts()) : nullptr;
+            if (!target || target->getFunctionType() != call.getFunctionType()
+                || target->getCallingConv() != call.getCallingConv() || !llvm::isLegalToPromote(call, target))
+            {
+                return false;
+            }
+
+            if (!llvm::is_contained(targets, target))
+            {
+                targets.push_back(target);
+            }
+        }
+
+        return !targets.empty() && targets.size() <= MaxTargets;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &m, llvm::ModuleAnalysisManager &)
     {
@@ -928,9 +1011,31 @@ struct SpeculativeDirectCallPass : llvm::PassInfoMixin<SpeculativeDirectCallPass
             }
         }
 
+        auto vtablesOf = finalInterfaceVTables(m);
+
         auto changed = false;
         for (auto *call : calls)
         {
+            llvm::SmallVector<llvm::Function *, 4> finalTargets;
+            if (!vtablesOf.empty() && finalInterfaceTargets(*call, vtablesOf, finalTargets))
+            {
+                // the larger function first, as below; the last one, the least likely, is what is
+                // left when the pointer is none of the others
+                llvm::stable_sort(finalTargets, [](llvm::Function *a, llvm::Function *b) {
+                    return a->getInstructionCount() > b->getInstructionCount();
+                });
+
+                llvm::CallBase *indirect = call;
+                for (auto *target : llvm::ArrayRef(finalTargets).drop_back())
+                {
+                    llvm::promoteCallWithIfThenElse(*indirect, target);
+                }
+
+                llvm::promoteCall(*indirect, finalTargets.back());
+                changed = true;
+                continue;
+            }
+
             auto found = targetsOf.find(call->getFunctionType());
             if (found == targetsOf.end() || found->second.size() > MaxTargets)
             {

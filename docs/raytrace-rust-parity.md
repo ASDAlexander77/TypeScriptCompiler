@@ -111,18 +111,26 @@ only its pointers (`CastLogicHelper::nullOfValueType`).
 Every model is ahead of the Rust port here, but the Rust port is slow on this machine for the
 instructions it executes (900 million; the C++ port 828 million in 70 ms; tslang none 1148
 million). On Windows the Rust and C++ ports were level at 57 and 52 ms with tslang at 73 to
-77 ms, and nothing in this note was measured there. Take the C++ port as the target: tslang is
-1.1x of it under gc and none, 1.6x under rc.
+77 ms, and nothing in this note was measured there. Take the C++ port as the target: tslang was
+1.1x of it under gc and none, 1.6x under rc, with these two changes.
 
-What is left, from the disassembly of the `addLight` closure, none of it measured apart:
+A third change since: `@final interface Thing`. `@final` on an interface says only classes of
+this module implement it; the compiler refuses everything else that could make a value of it (an
+object literal, another interface's value, `any`, an extending interface, `export`, an exported
+class), and a call of its method is then exactly the functions in the vtables the module made:
+the last is called without a test and no call through a pointer is left. `rtbench.ts` takes
+70.7 ms under gc and 70.8 under none (from 75.5; the C++ port 68 to 73 ms in a noisy run of the
+same hour), 105.5 under rc (from 111.6). gc and none are at the C++ port within this machine's
+noise; rc is about 1.5x of it.
 
-- `scene.things` is read again on every iteration, through the `Scene` interface: the call kept
-  for "any other function" may write anywhere, so nothing is hoisted over it. It would take
-  knowing that no other function can be there: every class that implements `Thing` is in the
-  module and `Thing` is not exported, the same closed world that already makes a class's method
-  call direct. Then the kept call is unreachable and the loop is the static version's.
-- The pointer is compared with `Thing.null.intersect`, the method of a null `Thing`, as with the
-  sphere's and the plane's: one compare a thing.
+What is left, from the disassembly of the `addLight` closure before `@final`, none of it measured
+apart:
+
+- Done by `@final interface Thing`: the call kept for "any other function", which made
+  `scene.things` be read again on every iteration, and the compare with the null `Thing`'s method.
+- `@final` is the source saying it. The compiler could find the same for an interface that is not
+  exported, in an executable, with no annotation; that is not done. `Surface` and `Scene`, made
+  from object literals, cannot be `@final`.
 - `intersect` returns `Intersection | null` through memory, 80 bytes with the optional's flag,
   and its caller tests it there.
 - rc: an `Intersection` holds a `Thing`, counted when it is copied, and the `addLight` closure's

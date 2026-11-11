@@ -180,6 +180,37 @@ field keeps the pair (`test/tester/tests/00rc_local_alias_no_count.ts`).
 Instructions executed under rc: 711 million to 622 million. `rtbench.ts` under rc is unchanged
 (119 ms): its counts are on interfaces and closures, which this does not reach.
 
+### `rtbench.ts`: `@final interface Thing`, no call through a pointer left
+
+`@final` on an interface says that only classes of this module implement it. The compiler refuses
+what could bring a vtable it did not make (a cast from an object literal, from another interface's
+value or from `any`; an interface that extends it; `export`; an exported or declared class that
+implements it), so a call of one of its methods is one of the functions in that method's slot of
+the vtables the module made for it. With `--opt_level=3`, when those are at most four, the call
+tests the pointer against all but the last and calls the last without a test: the call through
+the pointer that the section below keeps "for anything else" is gone. In `rtbench.ts` the things
+are tested for the sphere's and the plane's `intersect`, and what is left is the null `Thing`'s,
+which throws.
+
+The same day and machine. Two measurements, 21 rounds each, because the second was noisy (every
+build's maximum was 1.4 to 1.6 times its minimum):
+
+| Build, `rtbench.ts` | before | `@final interface Thing`, quiet run | noisy run (`bench.sh`): min, median |
+|---|---|---|---|
+| tslang gc | 75.6 ms | 70.7 ms | 69.9, 74.9 ms |
+| tslang none | 75.4 ms | 70.8 ms | 69.6, 72.0 ms |
+| tslang rc | 111.6 ms | 105.5 ms | 98.5, 108.0 ms |
+| tslang own | | | 73.9, 88.8 ms |
+| C++ idiomatic (clang) | | | 67.9, 73.3 ms |
+| Rust idiomatic | | | 110.0, 117.4 ms |
+
+- gc and none are level with the C++ port within this machine's noise; rc is still about 1.5x of
+  it (the counts on `Intersection` copies and closure captures, below). own was not in the quiet
+  run, and its median in the noisy one says little.
+- `Surface` and `Scene` are made from object literals in this program, so they cannot be `@final`.
+- More than four implementers: nothing is done for the call, not even the tests of the section
+  below, which has the same limit. Not measured on any other program; nothing run on Windows.
+
 ### `rtbench.ts`, with interfaces: direct calls tried first, and a null that writes less
 
 The same day and machine, `bench.sh`, 21 rounds. Two changes for the version with interfaces and

@@ -7286,8 +7286,28 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         // the vtable starts with its header, the implementer's type tag and `.instanceOf` - see
         // INTERFACE_VTABLE_HEADER_SLOTS
-        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
-            loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
+        mlir::Value methodOrFieldPtr;
+        if (auto finalInterface = interfaceSymbolRefOp->getAttrOfType<mlir::StringAttr>(FINAL_INTERFACE_ATTR_NAME))
+        {
+            // a method of a @final interface: the same read of the slot, the vtable indexed as an
+            // array of a struct named for the interface, which tells SpeculativeDirectCallPass that
+            // the vtable is one of that interface's (FINAL_INTERFACE_IR_PREFIX)
+            auto slotType = LLVM::LLVMStructType::getIdentified(
+                rewriter.getContext(), (llvm::Twine(FINAL_INTERFACE_IR_PREFIX) + finalInterface.getValue()).str());
+            if (!slotType.isInitialized())
+            {
+                (void)slotType.setBody({th.getPtrType()}, false);
+            }
+
+            auto index = clh.createI32ConstantOf(interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
+            auto slotPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), slotType, vtable, ValueRange{index});
+            methodOrFieldPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), slotPtr);
+        }
+        else
+        {
+            methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
+                loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
+        }
 
         // a write of a function-typed field (`h.f = g`, not optional): the class field a tagged slot's cell
         // names, or null where nothing can be written - a method's cell (field offset -1), or an untagged
@@ -9891,9 +9911,46 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);
 
+    // the vtables of @final interfaces (FINAL_INTERFACE_ATTR_NAME), noted before their globals are
+    // replaced
+    SmallVector<std::pair<std::string, std::string>> finalInterfaceVTables;
+    for (auto globalOp : m.getOps<mlir_ts::GlobalOp>())
+    {
+        if (auto finalInterface = globalOp->getAttrOfType<mlir::StringAttr>(FINAL_INTERFACE_ATTR_NAME))
+        {
+            finalInterfaceVTables.push_back({finalInterface.getValue().str(), globalOp.getSymName().str()});
+        }
+    }
+
     if (failed(applyFullConversion(m, target, std::move(patterns))))
     {
         signalPassFailure();
+    }
+
+    // For each, a global named for the interface and the vtable that holds the vtable's address:
+    // how SpeculativeDirectCallPass finds every vtable the interface has (FINAL_INTERFACE_IR_PREFIX).
+    // Nothing else reads it.
+    for (auto &[interfaceName, vtableName] : finalInterfaceVTables)
+    {
+        auto markerName = (llvm::Twine(FINAL_INTERFACE_IR_PREFIX) + interfaceName + ":" + vtableName).str();
+        if (m.lookupSymbol(markerName))
+        {
+            continue;
+        }
+
+        OpBuilder builder(m.getBodyRegion());
+        builder.setInsertionPointToEnd(m.getBody());
+        auto loc = m.getLoc();
+        auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+        auto marker = builder.create<LLVM::GlobalOp>(loc, ptrType, true, LLVM::Linkage::Internal, markerName, mlir::Attribute());
+        auto *block = new mlir::Block();
+        marker.getInitializerRegion().push_back(block);
+        builder.setInsertionPointToStart(block);
+        // null, should the vtable not be a global: the pass then knows it cannot read every vtable
+        mlir::Value address = m.lookupSymbol<LLVM::GlobalOp>(vtableName)
+                                  ? mlir::Value(builder.create<LLVM::AddressOfOp>(loc, ptrType, vtableName))
+                                  : mlir::Value(builder.create<LLVM::ZeroOp>(loc, ptrType));
+        builder.create<LLVM::ReturnOp>(loc, mlir::ValueRange{address});
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << m << "\n";);

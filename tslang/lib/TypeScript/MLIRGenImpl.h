@@ -9892,6 +9892,16 @@ class MLIRGenImpl
             erasedGenericCallees[interfaceSymbolRefValue.getOperation()] = methodInfo->genericSignature;
         }
 
+        // a @final interface: the method is one of those in the vtables this module made for it
+        if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(interfaceValue.getType()))
+        {
+            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            if (interfaceInfo && interfaceInfo->isFinal)
+            {
+                interfaceSymbolRefValue->setAttr(FINAL_INTERFACE_ATTR_NAME, builder.getStringAttr(interfaceInfo->fullName));
+            }
+        }
+
         return interfaceSymbolRefValue;
     }    
 

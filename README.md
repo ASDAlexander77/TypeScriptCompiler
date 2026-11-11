@@ -820,7 +820,9 @@ and `match` is (`rtbench_static.ts`: a thing is one `@final` class with a shape 
 On the same machine the version with interfaces above (`rtbench.ts`) takes 77 ms under `-mm=gc`,
 78 under `-mm=none`, 82 under `-mm=own` and 111 under `-mm=rc`, against 116 ms for the Rust port
 with `dyn Thing` and 70 ms for the C++ port: a call through an interface or a callback now first
-tries, as direct calls, the few functions of the module it can be.
+tries, as direct calls, the few functions of the module it can be. With `@final interface Thing`
+(only classes of this module implement it) no call through a pointer is left, and it takes 71 ms
+under `-mm=gc` and `-mm=none`, the C++ port's time, and 106 ms under `-mm=rc`.
 
 With nothing called through a vtable or a function value the four memory models run alike, and
 tslang takes the time of the Rust program (under `-mm=none` it executes 606 million instructions

@@ -667,6 +667,13 @@ that can run TypeScript code (one that takes a callback).
 of type `C` is a direct call, with no vtable lookup
 ([design](../tslang/docs/superpowers/specs/2026-10-19-final-classes-design.md)).
 
+`@final interface I`: only classes of this module implement `I`. A value of type `I` is made from
+a class object or null and nothing else: a cast from an object literal, from another interface's
+value or from `any` is an error, as are an interface that extends `I`, `export` on `I`, and an
+exported or declared class that implements it. In return, with `--opt_level=3` a call of one of
+`I`'s methods that at most four functions can be is those functions called directly, with no call
+through a pointer left.
+
 Under `-mm=own` it matters more. A method of an exported class that is not `@final` may be
 overridden in another module, by a method that frees anything; the compiler cannot see that
 method, so a call of it ends every borrow the caller holds, and its result is not known to be

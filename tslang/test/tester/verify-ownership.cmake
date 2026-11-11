@@ -54,6 +54,9 @@ set(not_compilable_alone
     class_local_capture_error.ts
     class_field_capture_error.ts
     cpp_class_value_error.ts
+    final_interface_export_error.ts
+    final_interface_extends_error.ts
+    final_interface_object_error.ts
     # an error by design (test-compile-mixin-runtime-base-error)
     mixin_runtime_base_error.ts
     # an error by design (test-compile-ref-element-layout-error)

@@ -1311,6 +1311,23 @@ namespace mlirgen
                 return V(newInterface);
             }
 
+            // a @final interface is made only from a class object (above) or null: an object
+            // literal, another interface's value or an `any` would bring a vtable that is not one
+            // of those the module made for it
+            if (!genContext.allowPartialResolve
+                && (isa<mlir_ts::ConstTupleType, mlir_ts::TupleType, mlir_ts::ObjectType, mlir_ts::AnyType,
+                        mlir_ts::UnknownType, mlir_ts::OpaqueType>(valueType)
+                    || (isa<mlir_ts::InterfaceType>(valueType) && valueType != type)))
+            {
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                if (interfaceInfo && interfaceInfo->isFinal)
+                {
+                    emitError(location) << "type '" << to_print(valueType) << "' can't be cast to @" FINAL_DECORATOR
+                                        << " interface '" << interfaceInfo->name << "': only a class object can";
+                    return mlir::failure();
+                }
+            }
+
             // tuple to interface
             if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
             {

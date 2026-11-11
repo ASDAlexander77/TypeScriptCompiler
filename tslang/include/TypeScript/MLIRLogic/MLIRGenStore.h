@@ -329,7 +329,11 @@ struct InterfaceInfo
     // MLIRGenImpl::getValueTypeOfInterfaceIfLaidOut)
     bool membersResolved;
 
-    InterfaceInfo() : hasNew(false), isValue(false), membersResolved(false)
+    // `@final`: only classes of this module implement it, so every vtable its values can have is
+    // known when the module is compiled (see FINAL_INTERFACE_ATTR_NAME)
+    bool isFinal;
+
+    InterfaceInfo() : hasNew(false), isValue(false), membersResolved(false), isFinal(false)
     {
     }
 

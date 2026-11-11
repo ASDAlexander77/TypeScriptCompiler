@@ -116,6 +116,9 @@ interface Surface {
     roughness: number;
 }
 
+// @final: only classes of this file implement Thing, so `thing.intersect(ray)` is the sphere's or
+// the plane's method (or null's), called directly, and no call through a pointer is left
+@final
 interface Thing {
     intersect(ray: Ray): Intersection | null;
     normal(pos: Vector): Vector;
