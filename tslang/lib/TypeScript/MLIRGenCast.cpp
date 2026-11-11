@@ -3,6 +3,9 @@
 #include "MLIRGenImpl.h"
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/xxhash.h"
+
 // the RTTI helper undefines it on the way out
 #undef DEBUG_TYPE
 #define DEBUG_TYPE "mlir"
@@ -2454,6 +2457,160 @@ namespace mlirgen
                                                     mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
     }
 
+    // A bound method given as a function type that takes more parameters than the method does, the extra ones
+    // first: `call_func(user.sayHi, user)` where `call_func` takes `(o: object) => void` (an object parameter
+    // first is taken as a `this` when the types are matched). The function value is called with its `this` and
+    // every argument the type says - `sayHi(user, user)` - which natively the method got away with, and which
+    // wasm's call_indirect checks against the signature and traps on. What the method's `this` is, and the method
+    // itself, are known only at run time (read from a field, `user.sayHi`), so the adapter cannot name it: the
+    // bound method goes into a box, as a closure's captures do - the box and the adapter bound to it are again two
+    // words, as a bound method's `this` and its function are - and the adapter calls the method with its `this`
+    // and the last arguments, as many as the method takes. Null where it is not that.
+    mlir::Value MLIRGenImpl::boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
+                                                         const GenContext &genContext)
+    {
+        // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
+        // says so where it is given; an adapter would only add an error of its own, without a place in the source
+        auto boundType = dyn_cast<mlir_ts::BoundFunctionType>(value.getType());
+        if (compileOptions.memoryModel == MemoryModelOwn || !boundType
+            || !isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type))
+        {
+            return mlir::Value();
+        }
+
+        auto methodType = mth.GetFunctionType(boundType);
+        auto destType = mth.GetFunctionType(type);
+        if (!methodType || !destType || methodType.getNumInputs() == 0 || methodType.isVarArg() || methodType.isCVarArg()
+            || destType.isVarArg() || destType.isCVarArg())
+        {
+            return mlir::Value();
+        }
+
+        // the method's own parameters, after its `this`, are the type's last ones
+        auto ownParams = methodType.getNumInputs() - 1;
+        if (destType.getNumInputs() <= ownParams)
+        {
+            return mlir::Value();
+        }
+
+        auto isVoid = [](mlir::TypeRange results) {
+            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+        };
+
+        if (!(methodType.getResults() == destType.getResults()
+              || (isVoid(methodType.getResults()) && isVoid(destType.getResults()))))
+        {
+            return mlir::Value();
+        }
+
+        auto thisType = methodType.getInput(0);
+        // the bound method itself, its `this` and its function: a bound method keeps its receiver as every
+        // memory model expects one to (under rc a reference to it, with the receiver's own type tag)
+        SmallVector<mlir_ts::FieldInfo> fields{
+            {MLIRHelper::TupleFieldName("method", builder.getContext()), boundType, false, mlir_ts::AccessLevel::Public}};
+        auto boxStorageType = mlir_ts::TupleType::get(builder.getContext(), fields);
+        auto boxType = mlir_ts::RefType::get(boxStorageType);
+
+        SmallVector<mlir::Type> thunkInputs{boxType};
+        thunkInputs.append(destType.getInputs().begin(), destType.getInputs().end());
+        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), false);
+
+        // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
+        std::string typesText;
+        llvm::raw_string_ostream typesStream(typesText);
+        typesStream << methodType << "|" << thunkType;
+        auto thunkName = ".bound_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
+        if (!theModule.lookupSymbol(thunkName))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+
+            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            // with --di a subprogram of its own at the file's place, as virtualSlotAdapterThunk's
+            DITableScopeT debugFuncScope(debugScope);
+            auto fileLoc = location->findInstanceOf<mlir::FileLineColLoc>();
+            if (!fileLoc)
+            {
+                fileLoc = mlir::FileLineColLoc::get(builder.getStringAttr(mainSourceFileName), 1, 1);
+            }
+
+            if (compileOptions.generateDebugInfo && fileLoc)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                mlir::Location plainLocation = fileLoc;
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, thunkName, thunkName, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            auto results = methodType.getResults();
+            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto entryOp = builder.create<mlir_ts::EntryOp>(
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
+
+            auto box = entryBlock.getArgument(0);
+            auto boundRef = builder.create<mlir_ts::PropertyRefOp>(noLocation, mlir_ts::RefType::get(boundType), box,
+                                                                   builder.getI32IntegerAttr(0));
+            auto bound = builder.create<mlir_ts::LoadOp>(noLocation, boundType, boundRef);
+            SmallVector<mlir::Value, 4> operands{builder.create<mlir_ts::GetThisOp>(noLocation, thisType, bound)};
+            auto firstOwn = entryBlock.getNumArguments() - ownParams;
+            for (auto index = 0u; index < ownParams; index++)
+            {
+                mlir::Value argument = entryBlock.getArgument(firstOwn + index);
+                auto paramType = methodType.getInput(index + 1);
+                if (argument.getType() != paramType)
+                {
+                    auto castResult = cast(noLocation, paramType, argument, genContext);
+                    if (castResult.failed_or_no_value())
+                    {
+                        funcOp.erase();
+                        return mlir::Value();
+                    }
+
+                    argument = V(castResult);
+                }
+
+                operands.push_back(argument);
+            }
+
+            auto method = builder.create<mlir_ts::GetMethodOp>(noLocation, methodType, bound);
+            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, method, operands);
+            if (hasResult)
+            {
+                // handed on as `return f(x)` hands it: owned, and taken over by the return
+                if (mth.ownsHeapMemory(noLocation, results.front()))
+                {
+                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+
+            builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
+
+            theModule.push_back(funcOp);
+        }
+
+        // the box is the adapter's own, as a closure's capture box is (resolveFunctionWithCapture): it holds a
+        // reference to the bound method of its own, released with the box
+        mlirGenRetainCaptured(location, mlir::ValueRange{value});
+        auto boxValue = builder.create<mlir_ts::CaptureOp>(location, boxType, mlir::ValueRange{value});
+        auto thunkRef = builder.create<mlir_ts::SymbolRefOp>(location, thunkType,
+                                                             mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+        auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(thunkType),
+                                                                           boxValue, thunkRef);
+        boundFuncVal->setAttr(OWNS_CAPTURE_ATTR_NAME, builder.getUnitAttr());
+        builder.create<mlir_ts::RetainOp>(location, boundFuncVal);
+        boundFuncVal->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        return boundFuncVal;
+    }
+
     mlir::LogicalResult MLIRGenImpl::verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value &value, mlir::Type &valueType, const GenContext &genContext)
     {
         if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
@@ -2511,6 +2668,12 @@ namespace mlirgen
                 {
                     emitFunctionTypeMismatch(location, valueType, type, test);
                     return mlir::failure();
+                }
+
+                if (auto adapter = boundMethodWiderTypeAdapter(location, value, type, genContext))
+                {
+                    value = adapter;
+                    valueType = adapter.getType();
                 }
             }
         }
