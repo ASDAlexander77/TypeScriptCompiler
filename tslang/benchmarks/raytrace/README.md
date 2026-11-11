@@ -124,6 +124,8 @@ path is threaded to its result before the select exists.
   executes more instructions (661 million) and takes the same time.
 - The Rust port written as this file is, a miss as `f64::INFINITY` and the thing by its index,
   takes 73 ms: the form costs Rust more than it costs tslang.
+- [docs/raytrace-rust-parity.md](../../../docs/raytrace-rust-parity.md) lists what is left and what
+  each part would take.
 - What is left is spread out, a few instructions in every block: the caller's `minsd` still runs
   on a miss; the things are pointers in the array, one load more each; `const light = lights[i]`
   loads all six numbers of the light, where Rust reads the color only when the point is lit; and
