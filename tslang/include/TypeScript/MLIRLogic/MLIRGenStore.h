@@ -207,6 +207,14 @@ struct VirtualMethodOrInterfaceVTableInfo
     StaticFieldInfo staticFieldInfo;
     bool isStaticField;
     bool isInterfaceVTable;
+    // A method's slot: the type of the method that made it, which every call through it is made with
+    // (a call through the class that declared it). An override of another arity has a slot of its own,
+    // and this one then holds a thunk of this type calling it (adaptTo): called with the arguments the
+    // slot's type says, the override would read them where it does not expect them, and wasm's
+    // call_indirect traps on the signature.
+    mlir_ts::FunctionType slotType;
+    // the override's own type when the slot holds a thunk calling it (methodInfo.funcName); null otherwise
+    mlir_ts::FunctionType adaptTo;
 };
 
 struct AccessorInfo
@@ -981,11 +989,21 @@ struct ClassInfo
         // find_if searched both kinds through methodInfo.name).
         llvm::StringMap<size_t> methodSlots;
         llvm::StringMap<size_t> interfaceSlots;
-        getVirtualTable(vtable, methodSlots, interfaceSlots);
+        llvm::StringMap<llvm::SmallVector<size_t, 1>> methodSlotsOfArity;
+        getVirtualTable(vtable, methodSlots, interfaceSlots, methodSlotsOfArity);
+    }
+
+    // the same parameters and results as far as a call through a slot goes: `this` aside (a class of
+    // its own in each), as many of each
+    static bool sameSlotArity(mlir_ts::FunctionType slotType, mlir_ts::FunctionType funcType)
+    {
+        return slotType.getNumInputs() == funcType.getNumInputs() && slotType.getNumResults() == funcType.getNumResults()
+               && slotType.isVarArg() == funcType.isVarArg();
     }
 
     void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo, 1> &vtable,
-                         llvm::StringMap<size_t> &methodSlots, llvm::StringMap<size_t> &interfaceSlots)
+                         llvm::StringMap<size_t> &methodSlots, llvm::StringMap<size_t> &interfaceSlots,
+                         llvm::StringMap<llvm::SmallVector<size_t, 1>> &methodSlotsOfArity)
     {
         // in static class I don't want to have virtual table
         if (isStatic)
@@ -995,7 +1013,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            base->getVirtualTable(vtable, methodSlots, interfaceSlots);
+            base->getVirtualTable(vtable, methodSlots, interfaceSlots, methodSlotsOfArity);
         }
 
         // `.instanceOf` is slot 0 of every class vtable: an object reached with no static type (an
@@ -1053,7 +1071,57 @@ struct ClassInfo
 #endif
 
             auto it = methodSlots.find(method.name);
-            if (it != methodSlots.end())
+            if (it != methodSlots.end() && !isCppVTable && method.funcType && methodSlotsOfArity.contains(method.name))
+            {
+                // an override: every slot of the name calls it, each through its own type. One of the
+                // same arity takes it as it is; one of another (`get()` overridden by `get(scale?)`,
+                // `foo(x, y, ...z)` by `foo()`) a thunk; and with none of its arity it has a slot of
+                // its own, which calls made through its class use.
+                auto &slots = methodSlotsOfArity[method.name];
+                auto ownSlot = -1;
+                for (auto index : slots)
+                {
+                    auto &record = vtable[index];
+                    auto slotType = record.slotType ? record.slotType : record.methodInfo.funcType;
+                    record.methodInfo.funcName = method.funcName;
+                    record.methodInfo.isAbstract = method.isAbstract;
+                    if (!slotType || sameSlotArity(slotType, method.funcType))
+                    {
+                        record.methodInfo.funcType = method.funcType;
+                        record.adaptTo = mlir_ts::FunctionType();
+                        ownSlot = index;
+                    }
+                    else
+                    {
+                        // the thunk: the override's `this`, the slot's parameters and the override's results
+                        llvm::SmallVector<mlir::Type> inputs;
+                        inputs.push_back(method.funcType.getNumInputs() > 0 ? method.funcType.getInput(0) : slotType.getInput(0));
+                        inputs.append(slotType.getInputs().begin() + 1, slotType.getInputs().end());
+                        record.methodInfo.funcType = mlir_ts::FunctionType::get(
+                            method.funcType.getContext(), inputs, method.funcType.getResults(), slotType.isVarArg());
+                        record.adaptTo = method.funcType;
+                    }
+                }
+
+                method.isVirtual = true;
+                if (ownSlot >= 0)
+                {
+                    method.virtualIndex = ownSlot;
+                    it->second = ownSlot;
+                }
+                else
+                {
+                    method.virtualIndex = vtable.size();
+                    it->second = vtable.size();
+                    slots.push_back(vtable.size());
+                    VirtualMethodOrInterfaceVTableInfo record{method, false};
+                    // a field of its own name in the vtable's tuple, beside the slot of the other arity
+                    record.methodInfo.name = method.name + ".args" + std::to_string(method.funcType.getNumInputs());
+                    record.slotType = method.funcType;
+                    vtable.push_back(record);
+                }
+            }
+            else if (it != methodSlots.end())
             {
                 // found method - override the inherited slot (name and type together:
                 // the overriding function's type must win over the inherited one)
@@ -1128,7 +1196,14 @@ struct ClassInfo
             {
                 method.virtualIndex = vtable.size();
                 methodSlots[method.name] = vtable.size();
-                vtable.push_back({method, false});
+                if (!isCppVTable && method.funcType)
+                {
+                    methodSlotsOfArity[method.name].push_back(vtable.size());
+                }
+
+                VirtualMethodOrInterfaceVTableInfo record{method, false};
+                record.slotType = method.funcType;
+                vtable.push_back(record);
             }
         }
 

@@ -11,9 +11,7 @@ internals.ts                    # inline_asm with x86 instructions
 fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
 
 # compiler gaps on wasm, each to be fixed and taken off this list
-00function_overloads.ts         # an override with another arity fills a vtable slot: wasm's call_indirect checks the signature (trap)
 00object_func2.ts               # a function called through a pointer of another signature: wasm's call_indirect traps
-callWithSpread.ts               # a function called through a pointer of another signature: wasm's call_indirect traps
 00class_accessor_implements_field.ts wasm32 # interface accessor cell tag (address + 0x80000000) folded into an i32.const: wasm-ld "LEB is outside Varint32 range"
 00interface_field_getter_owned.ts wasm32    # interface accessor cell tag (address + 0x80000000) folded into an i32.const: wasm-ld "LEB is outside Varint32 range"
 00class_accessor_increment.ts wasm32        # the same accessor cell tag (--di --opt_level=0 programs)
