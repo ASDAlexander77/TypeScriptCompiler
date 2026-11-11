@@ -4,6 +4,7 @@
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Object/Wasm.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
@@ -118,6 +119,36 @@ static void readCStringSymbolsOf(const ObjectFile &objFile, Symbols symbols, Str
 
         if (!name->starts_with(prefix))
         {
+            continue;
+        }
+
+        // A wasm data symbol is an offset into its data segment. Its section is the whole DATA
+        // section, whose contents begin with the segments' headers, so the offset below would read
+        // the wrong bytes: an own program linked with a wasm default library got none of its
+        // borrow facts.
+        if (auto *wasmObj = dyn_cast<WasmObjectFile>(&objFile))
+        {
+            const auto &wasmSymbol = wasmObj->getWasmSymbol(symbol);
+            if (!wasmSymbol.isTypeData() || wasmSymbol.isUndefined())
+            {
+                continue;
+            }
+
+            auto segmentIndex = wasmSymbol.Info.DataRef.Segment;
+            if (segmentIndex >= wasmObj->dataSegments().size())
+            {
+                continue;
+            }
+
+            auto segment = wasmObj->dataSegments()[segmentIndex].Data.Content;
+            auto offset = wasmSymbol.Info.DataRef.Offset;
+            if (offset >= segment.size())
+            {
+                continue;
+            }
+
+            StringRef text(reinterpret_cast<const char *>(segment.data()) + offset, segment.size() - offset);
+            result.push_back({name->str(), text.substr(0, text.find(char(0))).str()});
             continue;
         }
 

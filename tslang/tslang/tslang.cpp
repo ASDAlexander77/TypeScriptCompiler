@@ -529,6 +529,18 @@ int main(int argc, char **argv)
 
     auto compileOptions = prepareOptions();
 
+    // The collector has no wasm build, so a wasm program under gc would import GC_malloc and the
+    // rest from a host that has none - and the link would first fail on a default library that is
+    // never built for it, an error that names a folder rather than the cause.
+    if (compileOptions.isWasm && compileOptions.needsGCRuntime()
+        && (emitAction == Action::BuildExe || emitAction == Action::BuildDll))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "-mm=gc (the default) is not available for " << compileOptions.moduleTargetTriple
+            << ": the garbage collector has no wasm build. Use -mm=rc, -mm=own or -mm=none.\n";
+        return 1;
+    }
+
     if (!prepareDefaultLib(compileOptions))
     {
         return 0;

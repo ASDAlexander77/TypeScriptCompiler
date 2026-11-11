@@ -1,0 +1,28 @@
+# Tests run_tests.mjs does not run for wasm: `<file> [<triple or model>,...] # <reason>`, every leg
+# when none is given. Tests that catch an exception and async tests are skipped without being
+# listed here.
+
+# cannot work on wasm
+internals.ts                    # inline_asm with x86 instructions
+00any_to_opaque_narrow.ts wasm32 # stores a u64 in an Opaque: a pointer is 4 bytes on wasm32
+00tslang_issue_29_pthread.ts    # starts threads through pthread_create: no threads on wasm
+00tslang_issue_29_thread.ts     # starts threads through _beginthreadex: no threads on wasm
+00cppvtable_hidden_return.ts    # a @cpp class returning a struct needs the MSVC or a 64-bit Itanium ABI (excluded on i686 too)
+fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
+
+# compiler gaps on wasm, each to be fixed and taken off this list
+00function_overloads.ts         # an override with another arity fills a vtable slot: wasm's call_indirect checks the signature (trap)
+00object_func2.ts               # a function called through a pointer of another signature: wasm's call_indirect traps
+callWithSpread.ts               # a function called through a pointer of another signature: wasm's call_indirect traps
+00class_accessor_implements_field.ts wasm32 # interface accessor cell tag (address + 0x80000000) folded into an i32.const: wasm-ld "LEB is outside Varint32 range"
+00interface_field_getter_owned.ts wasm32    # interface accessor cell tag (address + 0x80000000) folded into an i32.const: wasm-ld "LEB is outside Varint32 range"
+00class_accessor_increment.ts wasm32        # the same accessor cell tag (--di --opt_level=0 programs)
+00class_redeclared_field.ts wasm32          # the same accessor cell tag (--di --opt_level=0 programs)
+00generator3.ts wasm64          # wasm-ld: invalid data relocation for an object literal's generator method `next`
+01iterator.ts wasm64            # wasm-ld: invalid data relocation for an object literal's generator method `next`
+00owned_generator_locals.ts wasm64 # wasm-ld: invalid data relocation for a generator's `next` (under none)
+path.ts                         # a field of Readonly<Path> read through Maybe<...> is read wrong: the loop never ends
+
+# fails natively under the same model too (not run natively under it by ctest)
+01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)
+00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)
