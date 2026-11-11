@@ -40,6 +40,8 @@
 #endif
 
 #include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Operator.h"
@@ -48,6 +50,15 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/JumpThreading.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/CallPromotionUtils.h"
+#include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/ADT/SmallBitVector.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -79,6 +90,7 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
 extern cl::opt<bool> ownSkipInference;
+extern cl::opt<std::string> mainFuncName;
 extern cl::opt<bool> noStackPromotion;
 extern cl::opt<bool> noBorrowFactsExport;
 extern cl::opt<unsigned> stackPromotionMaxObject;
@@ -342,6 +354,713 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
     return std::nullopt;
 }
 
+// A C math function has two results: its value, and `errno` when the argument is out of its
+// domain. TypeScript has no `errno` (`Math.sqrt(-1)` is NaN and nothing else), so a call of one,
+// whether the default library's or a program's own `declare function sqrt(v: number): number`,
+// is the LLVM intrinsic, as clang's -fno-math-errno and rustc make it. As a libm call that may
+// write `errno` it kept loads from being hoisted over it, counted as a call against inlining the
+// function around it, and `sqrt` kept a branch to the library for a negative argument.
+static void applyNoMathErrno(llvm::Module &m)
+{
+    llvm::TargetLibraryInfoImpl tlii(llvm::Triple(m.getTargetTriple()));
+    llvm::TargetLibraryInfo tli(tlii);
+
+    for (auto &func : m)
+    {
+        llvm::LibFunc libFunc;
+        if (!func.isDeclaration() || func.isIntrinsic() || !tli.getLibFunc(func, libFunc))
+        {
+            continue;
+        }
+
+        auto intrinsic = llvm::Intrinsic::not_intrinsic;
+        switch (libFunc)
+        {
+        case llvm::LibFunc_sqrt: case llvm::LibFunc_sqrtf: intrinsic = llvm::Intrinsic::sqrt; break;
+        case llvm::LibFunc_pow: case llvm::LibFunc_powf: intrinsic = llvm::Intrinsic::pow; break;
+        case llvm::LibFunc_exp: case llvm::LibFunc_expf: intrinsic = llvm::Intrinsic::exp; break;
+        case llvm::LibFunc_exp2: case llvm::LibFunc_exp2f: intrinsic = llvm::Intrinsic::exp2; break;
+        case llvm::LibFunc_log: case llvm::LibFunc_logf: intrinsic = llvm::Intrinsic::log; break;
+        case llvm::LibFunc_log2: case llvm::LibFunc_log2f: intrinsic = llvm::Intrinsic::log2; break;
+        case llvm::LibFunc_log10: case llvm::LibFunc_log10f: intrinsic = llvm::Intrinsic::log10; break;
+        case llvm::LibFunc_sin: case llvm::LibFunc_sinf: intrinsic = llvm::Intrinsic::sin; break;
+        case llvm::LibFunc_cos: case llvm::LibFunc_cosf: intrinsic = llvm::Intrinsic::cos; break;
+        case llvm::LibFunc_floor: case llvm::LibFunc_floorf: intrinsic = llvm::Intrinsic::floor; break;
+        case llvm::LibFunc_ceil: case llvm::LibFunc_ceilf: intrinsic = llvm::Intrinsic::ceil; break;
+        case llvm::LibFunc_trunc: case llvm::LibFunc_truncf: intrinsic = llvm::Intrinsic::trunc; break;
+        case llvm::LibFunc_round: case llvm::LibFunc_roundf: intrinsic = llvm::Intrinsic::round; break;
+        case llvm::LibFunc_rint: case llvm::LibFunc_rintf: intrinsic = llvm::Intrinsic::rint; break;
+        case llvm::LibFunc_nearbyint: case llvm::LibFunc_nearbyintf: intrinsic = llvm::Intrinsic::nearbyint; break;
+        case llvm::LibFunc_fabs: case llvm::LibFunc_fabsf: intrinsic = llvm::Intrinsic::fabs; break;
+        default: continue;
+        }
+
+        // a use that is not a direct call (the function's address is taken) keeps the function
+        llvm::SmallVector<llvm::CallInst *, 8> calls;
+        for (auto *user : func.users())
+        {
+            auto *call = llvm::dyn_cast<llvm::CallInst>(user);
+            if (call && call->getCalledOperand() == &func && call->getFunctionType() == func.getFunctionType()
+                && !call->isMustTailCall())
+            {
+                calls.push_back(call);
+            }
+        }
+
+        if (calls.empty())
+        {
+            continue;
+        }
+
+        auto *intrinsicFunc = llvm::Intrinsic::getOrInsertDeclaration(&m, intrinsic, {func.getReturnType()});
+        for (auto *call : calls)
+        {
+            llvm::SmallVector<llvm::Value *, 2> args(call->args());
+            auto *newCall = llvm::CallInst::Create(intrinsicFunc, args, "", call->getIterator());
+            newCall->setDebugLoc(call->getDebugLoc());
+            newCall->setTailCallKind(call->getTailCallKind());
+            newCall->copyFastMathFlags(call);
+            newCall->takeName(call);
+            call->replaceAllUsesWith(newCall);
+            call->eraseFromParent();
+        }
+    }
+}
+
+// An executable built with --opt: a function no other module can name (not `export`ed, not the
+// entry point) is internal, as a `static` C function and a Rust function that is not `pub` are.
+// The inliner then knows every caller: a function with one call left is inlined whatever its
+// size and its body dropped, which is how the ray tracer's `shade` and `getNaturalColor` end up
+// inside `traceRay`. A library's object, a shared library and JIT modules are loaded beside other
+// modules that find functions by name, and stay as they were.
+static void internalizeModulePrivateFunctions(llvm::Module &m)
+{
+    for (auto &func : m)
+    {
+        if (func.isDeclaration() || !func.hasExternalLinkage() || func.hasDLLExportStorageClass()
+            || func.getName() == MAIN_ENTRY_NAME || func.getName() == mainFuncName.getValue()
+            || func.hasFnAttribute("export") || func.hasFnAttribute(DLL_EXPORT) || func.hasFnAttribute(DLL_NAME)
+            || func.hasSection())
+        {
+            continue;
+        }
+
+        func.setLinkage(llvm::GlobalValue::InternalLinkage);
+    }
+}
+
+// A select whose condition compares a phi of the same block, when the comparison is decided for
+// one of the phi's constant values: made a branch again, which jump threading (run next) threads
+// for the predecessors that bring those constants. SimplifyCFG turns `if (d < closest) { closest =
+// d; index = i; }` into selects before the function computing `d` is inlined; once it is, a path
+// on which `d` is Infinity still runs them, and jump threading unfolds a select only over integer
+// constants compared with a constant.
+struct UnfoldSelectOverPhiPass : llvm::PassInfoMixin<UnfoldSelectOverPhiPass>
+{
+    static llvm::CmpInst *decidedCompare(llvm::SelectInst *select, const llvm::DataLayout &dl)
+    {
+        auto *block = select->getParent();
+        auto *cmp = llvm::dyn_cast<llvm::CmpInst>(select->getCondition());
+        if (!cmp || cmp->getParent() != block || !select->getType()->isSingleValueType())
+        {
+            return nullptr;
+        }
+
+        auto *phi = llvm::dyn_cast<llvm::PHINode>(cmp->getOperand(0));
+        auto phiIsLhs = true;
+        if (!phi || phi->getParent() != block)
+        {
+            phi = llvm::dyn_cast<llvm::PHINode>(cmp->getOperand(1));
+            phiIsLhs = false;
+        }
+
+        if (!phi || phi->getParent() != block)
+        {
+            return nullptr;
+        }
+
+        for (unsigned i = 0, e = phi->getNumIncomingValues(); i != e; ++i)
+        {
+            auto *constant = llvm::dyn_cast<llvm::Constant>(phi->getIncomingValue(i));
+            if (!constant)
+            {
+                continue;
+            }
+
+            auto *other = cmp->getOperand(phiIsLhs ? 1 : 0)->DoPHITranslation(block, phi->getIncomingBlock(i));
+            auto *lhs = phiIsLhs ? static_cast<llvm::Value *>(constant) : other;
+            auto *rhs = phiIsLhs ? other : static_cast<llvm::Value *>(constant);
+            if (auto *folded = llvm::simplifyCmpInst(cmp->getPredicate(), lhs, rhs, {dl}))
+            {
+                if (llvm::isa<llvm::ConstantInt>(folded))
+                {
+                    return cmp;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    llvm::PreservedAnalyses run(llvm::Function &func, llvm::FunctionAnalysisManager &)
+    {
+        auto &dl = func.getDataLayout();
+        auto changed = false;
+        llvm::SmallVector<llvm::SelectInst *, 8> candidates;
+        for (auto &block : func)
+        {
+            for (auto &inst : block)
+            {
+                auto *select = llvm::dyn_cast<llvm::SelectInst>(&inst);
+                if (select && decidedCompare(select, dl))
+                {
+                    candidates.push_back(select);
+                    break;
+                }
+            }
+        }
+
+        for (auto *first : candidates)
+        {
+            auto *block = first->getParent();
+            auto *cmp = llvm::cast<llvm::CmpInst>(first->getCondition());
+
+            // every select on that comparison whose operands are computed before the first one
+            llvm::SmallVector<llvm::SelectInst *, 4> selects;
+            for (auto it = first->getIterator(), end = block->end(); it != end; ++it)
+            {
+                auto *select = llvm::dyn_cast<llvm::SelectInst>(&*it);
+                if (!select || select->getCondition() != cmp || !select->getType()->isSingleValueType())
+                {
+                    continue;
+                }
+
+                auto before = [&](llvm::Value *value) {
+                    auto *inst = llvm::dyn_cast<llvm::Instruction>(value);
+                    return !inst || inst->getParent() != block || inst->comesBefore(first);
+                };
+                if (before(select->getTrueValue()) && before(select->getFalseValue()))
+                {
+                    selects.push_back(select);
+                }
+            }
+
+            auto *thenTerminator = llvm::SplitBlockAndInsertIfThen(cmp, first->getIterator(), /*Unreachable=*/false);
+            auto *thenBlock = thenTerminator->getParent();
+            auto *tail = first->getParent();
+            for (auto *select : selects)
+            {
+                auto *phi = llvm::PHINode::Create(select->getType(), 2, "", tail->begin());
+                phi->addIncoming(select->getTrueValue(), thenBlock);
+                phi->addIncoming(select->getFalseValue(), block);
+                phi->takeName(select);
+                select->replaceAllUsesWith(phi);
+                select->eraseFromParent();
+            }
+
+            changed = true;
+        }
+
+        return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
+// -mm=rc: `const things = scene.things` retains the array and releases it when the local ends.
+// The count protects the alias from a release of what it names, and nothing between the two can
+// release anything when the function, and every function it calls, stores only into its own
+// locals and calls nothing that could: then the retain and the release go. They are the
+// out-of-line routines `tsret_<type>(slot)` and `tsrel_<type>(slot)` at this point, before the
+// inliner opens them, and the pair is found by its slot: an alloca stored to once, with one retain
+// and, on every path after it, one release. The ray tracer's `intersections` paid this pair on
+// every ray.
+struct RcPairEliminationPass : llvm::PassInfoMixin<RcPairEliminationPass>
+{
+    struct Info
+    {
+        bool neutral = true;
+        llvm::SmallBitVector written;
+    };
+
+    llvm::DenseMap<const llvm::Function *, Info> infos;
+
+    static bool isCountCall(const llvm::Instruction &inst, llvm::StringRef prefix, llvm::StringRef *type = nullptr)
+    {
+        auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+        auto *callee = call ? call->getCalledFunction() : nullptr;
+        if (!callee || !callee->getName().starts_with(prefix) || call->arg_size() != 1)
+        {
+            return false;
+        }
+
+        if (type)
+        {
+            *type = callee->getName().substr(prefix.size());
+        }
+
+        return true;
+    }
+
+    // a store through `pointer`: into a local (true), into what a parameter points to (true, and
+    // the parameter is marked), anywhere else (false)
+    static bool localWrite(const llvm::Value *pointer, Info &info)
+    {
+        auto *base = llvm::getUnderlyingObject(pointer);
+        if (llvm::isa<llvm::AllocaInst>(base))
+        {
+            return true;
+        }
+
+        if (auto *arg = llvm::dyn_cast<llvm::Argument>(base))
+        {
+            info.written.set(arg->getArgNo());
+            return true;
+        }
+
+        return false;
+    }
+
+    // whether `func` changes no count and no memory but its locals and what its marked parameters
+    // point to, leaving out the instructions in `ignored`
+    Info scan(const llvm::Function &func, const llvm::SmallPtrSetImpl<const llvm::Instruction *> &ignored)
+    {
+        Info info;
+        info.written.resize(func.arg_size());
+        for (auto &inst : llvm::instructions(func))
+        {
+            if (ignored.contains(&inst))
+            {
+                continue;
+            }
+
+            if (auto *store = llvm::dyn_cast<llvm::StoreInst>(&inst))
+            {
+                if (store->isVolatile() || !localWrite(store->getPointerOperand(), info))
+                {
+                    info.neutral = false;
+                }
+            }
+            else if (auto *call = llvm::dyn_cast<llvm::CallInst>(&inst))
+            {
+                auto *callee = call->getCalledFunction();
+                if (!callee || call->isInlineAsm())
+                {
+                    info.neutral = false;
+                }
+                else if (auto *transfer = llvm::dyn_cast<llvm::MemIntrinsic>(call))
+                {
+                    if (transfer->isVolatile() || !localWrite(transfer->getRawDest(), info))
+                    {
+                        info.neutral = false;
+                    }
+                }
+                else if (callee->isDeclaration())
+                {
+                    if (!callee->onlyReadsMemory() && !(callee->isIntrinsic() && !call->mayWriteToMemory()))
+                    {
+                        info.neutral = false;
+                    }
+                }
+                else
+                {
+                    auto found = infos.find(callee);
+                    if (found == infos.end() || !found->second.neutral || callee->isVarArg()
+                        || callee->arg_size() != call->arg_size())
+                    {
+                        info.neutral = false;
+                    }
+                    else
+                    {
+                        for (auto index : found->second.written.set_bits())
+                        {
+                            if (!localWrite(call->getArgOperand(index), info))
+                            {
+                                info.neutral = false;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (llvm::isa<llvm::InvokeInst, llvm::CallBrInst, llvm::ResumeInst, llvm::LandingPadInst,
+                               llvm::CatchSwitchInst, llvm::CleanupPadInst, llvm::CatchPadInst>(&inst)
+                     || inst.mayWriteToMemory())
+            {
+                info.neutral = false;
+            }
+
+            if (!info.neutral)
+            {
+                break;
+            }
+        }
+
+        return info;
+    }
+
+    // the retain and the releases of `slot`, when they pair on every path
+    static bool pairedCalls(llvm::AllocaInst *slot, llvm::SmallVectorImpl<llvm::Instruction *> &calls)
+    {
+        llvm::StoreInst *theStore = nullptr;
+        llvm::StringRef type;
+        auto retains = 0;
+        for (auto *user : slot->users())
+        {
+            auto *inst = llvm::dyn_cast<llvm::Instruction>(user);
+            llvm::StringRef callType;
+            if (auto *store = llvm::dyn_cast_or_null<llvm::StoreInst>(inst))
+            {
+                if (theStore || store->getPointerOperand() != slot || store->getValueOperand() == slot)
+                {
+                    return false;
+                }
+
+                theStore = store;
+            }
+            else if (inst && (isCountCall(*inst, "tsret_", &callType) || isCountCall(*inst, "tsrel_", &callType)))
+            {
+                if (!type.empty() && type != callType)
+                {
+                    return false;
+                }
+
+                type = callType;
+                retains += isCountCall(*inst, "tsret_") ? 1 : 0;
+                calls.push_back(inst);
+            }
+            else if (!llvm::isa_and_nonnull<llvm::LoadInst>(inst))
+            {
+                return false;
+            }
+        }
+
+        if (!theStore || retains != 1 || calls.size() < 2)
+        {
+            return false;
+        }
+
+        // per block: whether the reference is held on entry; every predecessor has to agree
+        auto *func = slot->getFunction();
+        llvm::DenseMap<const llvm::BasicBlock *, bool> heldAt;
+        llvm::SmallVector<const llvm::BasicBlock *, 16> worklist;
+        heldAt[&func->getEntryBlock()] = false;
+        worklist.push_back(&func->getEntryBlock());
+        while (!worklist.empty())
+        {
+            auto *block = worklist.pop_back_val();
+            auto held = heldAt[block];
+            for (auto &inst : *block)
+            {
+                if (&inst == theStore)
+                {
+                    if (held)
+                    {
+                        return false;
+                    }
+                }
+                else if (llvm::is_contained(calls, &inst))
+                {
+                    auto retain = isCountCall(inst, "tsret_");
+                    if (retain == held)
+                    {
+                        return false;
+                    }
+
+                    held = retain;
+                }
+                else if (llvm::isa<llvm::ReturnInst>(inst) && held)
+                {
+                    return false;
+                }
+            }
+
+            for (auto *successor : llvm::successors(block))
+            {
+                auto inserted = heldAt.try_emplace(successor, held);
+                if (inserted.second)
+                {
+                    worklist.push_back(successor);
+                }
+                else if (inserted.first->second != held)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    llvm::PreservedAnalyses run(llvm::Module &m, llvm::ModuleAnalysisManager &)
+    {
+        auto erased = false;
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+
+            // from "every function is neutral" down to what holds
+            infos.clear();
+            llvm::SmallPtrSet<const llvm::Instruction *, 1> none;
+            for (auto &func : m)
+            {
+                if (!func.isDeclaration())
+                {
+                    infos[&func].written.resize(func.arg_size());
+                }
+            }
+
+            for (auto settled = false; !settled;)
+            {
+                settled = true;
+                for (auto &func : m)
+                {
+                    if (func.isDeclaration())
+                    {
+                        continue;
+                    }
+
+                    auto &known = infos[&func];
+                    auto info = known.neutral ? scan(func, none) : known;
+                    if (info.neutral != known.neutral || info.written != known.written)
+                    {
+                        known = info;
+                        settled = false;
+                    }
+                }
+            }
+
+            for (auto &func : m)
+            {
+                if (func.isDeclaration())
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<llvm::Instruction *, 8> calls;
+                for (auto &inst : func.getEntryBlock())
+                {
+                    if (auto *slot = llvm::dyn_cast<llvm::AllocaInst>(&inst))
+                    {
+                        llvm::SmallVector<llvm::Instruction *, 4> slotCalls;
+                        if (pairedCalls(slot, slotCalls))
+                        {
+                            calls.append(slotCalls.begin(), slotCalls.end());
+                        }
+                    }
+                }
+
+                if (calls.empty())
+                {
+                    continue;
+                }
+
+                llvm::SmallPtrSet<const llvm::Instruction *, 8> ignored(calls.begin(), calls.end());
+                if (!scan(func, ignored).neutral)
+                {
+                    continue;
+                }
+
+                for (auto *call : calls)
+                {
+                    call->eraseFromParent();
+                }
+
+                changed = erased = true;
+            }
+        }
+
+        return erased ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
+// A call through a function value (an interface's method, a callback) whose type only a few
+// functions of the module have, among those whose address is taken: the call tests the pointer
+// against each and calls it directly, and the call through the pointer is left for anything else.
+// The direct calls are what the inliner and every pass after it can see through; a ray tracer's
+// `thing.intersect(ray)` becomes "a sphere? a plane?" with both bodies in the loop, as a `switch`
+// over the kind of thing would be. Nothing is assumed about who else may supply a pointer.
+//
+// A method of a `@final` interface is the exception: the compiler has refused everything but a
+// class of this module as its implementer, and marked the read of the method and every vtable
+// made for the interface (FINAL_INTERFACE_IR_PREFIX). There the functions tried are exactly those
+// in the method's slot of those vtables, and the last of them is called without a test: no call
+// through the pointer is left.
+struct SpeculativeDirectCallPass : llvm::PassInfoMixin<SpeculativeDirectCallPass>
+{
+    static constexpr unsigned MaxTargets = 4;
+
+    // the vtables of each @final interface, from the globals that name them
+    static llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> finalInterfaceVTables(llvm::Module &m)
+    {
+        llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> vtablesOf;
+        for (auto &global : m.globals())
+        {
+            auto name = global.getName();
+            if (!name.consume_front(FINAL_INTERFACE_IR_PREFIX))
+            {
+                continue;
+            }
+
+            auto interfaceName = name.split(':').first;
+            auto *vtable = global.hasInitializer()
+                               ? llvm::dyn_cast<llvm::GlobalVariable>(global.getInitializer()->stripPointerCasts())
+                               : nullptr;
+            // a null entry: the interface has a vtable that cannot be read here
+            vtablesOf[interfaceName].push_back(vtable);
+        }
+
+        return vtablesOf;
+    }
+
+    // The functions a call of a @final interface's method can reach, when `callee` is such a read
+    // and every vtable of the interface holds a function of the call's type in the slot.
+    static bool finalInterfaceTargets(llvm::CallBase &call,
+                                      const llvm::StringMap<llvm::SmallVector<llvm::GlobalVariable *, 4>> &vtablesOf,
+                                      llvm::SmallVectorImpl<llvm::Function *> &targets)
+    {
+        // the method is called out of the {method, this} pair it was bound into
+        auto *callee = call.getCalledOperand();
+        if (auto *extract = llvm::dyn_cast<llvm::ExtractValueInst>(callee))
+        {
+            callee = llvm::FindInsertedValue(extract->getAggregateOperand(), extract->getIndices());
+        }
+
+        auto *load = llvm::dyn_cast_or_null<llvm::LoadInst>(callee);
+        auto *gep = load ? llvm::dyn_cast<llvm::GetElementPtrInst>(load->getPointerOperand()) : nullptr;
+        auto *slotType = gep ? llvm::dyn_cast<llvm::StructType>(gep->getSourceElementType()) : nullptr;
+        if (!slotType || !slotType->hasName() || !slotType->getName().starts_with(FINAL_INTERFACE_IR_PREFIX)
+            || gep->getNumIndices() != 1)
+        {
+            return false;
+        }
+
+        auto *slot = llvm::dyn_cast<llvm::ConstantInt>(gep->getOperand(1));
+        auto found = vtablesOf.find(slotType->getName().drop_front(llvm::StringRef(FINAL_INTERFACE_IR_PREFIX).size()));
+        if (!slot || found == vtablesOf.end())
+        {
+            return false;
+        }
+
+        for (auto *vtable : found->second)
+        {
+            // a vtable filled when the program starts has no initializer to read
+            if (!vtable || !vtable->hasDefinitiveInitializer())
+            {
+                return false;
+            }
+
+            auto *element = vtable->getInitializer()->getAggregateElement((unsigned)slot->getZExtValue());
+            auto *target = element ? llvm::dyn_cast<llvm::Function>(element->stripPointerCasts()) : nullptr;
+            if (!target || target->getFunctionType() != call.getFunctionType()
+                || target->getCallingConv() != call.getCallingConv() || !llvm::isLegalToPromote(call, target))
+            {
+                return false;
+            }
+
+            if (!llvm::is_contained(targets, target))
+            {
+                targets.push_back(target);
+            }
+        }
+
+        return !targets.empty() && targets.size() <= MaxTargets;
+    }
+
+    llvm::PreservedAnalyses run(llvm::Module &m, llvm::ModuleAnalysisManager &)
+    {
+        llvm::DenseMap<llvm::FunctionType *, llvm::SmallVector<llvm::Function *, 4>> targetsOf;
+        for (auto &func : m)
+        {
+            // not the runtime's own routines (a type's release, its descriptor's callbacks), whose
+            // addresses are taken too and whose types can be a callback's
+            auto name = func.getName();
+            if (name.starts_with("tsrel") || name.starts_with("tsret") || name.starts_with("__ts") || name.starts_with("ts_"))
+            {
+                continue;
+            }
+
+            if (!func.isDeclaration() && !func.isVarArg() && func.hasAddressTaken()
+                && !func.hasFnAttribute(llvm::Attribute::NoInline) && !func.hasFnAttribute(llvm::Attribute::OptimizeNone))
+            {
+                targetsOf[func.getFunctionType()].push_back(&func);
+            }
+        }
+
+        // the larger function first: a stub (an interface's method for a null object, an empty
+        // callback) is the one least often called
+        for (auto &entry : targetsOf)
+        {
+            llvm::stable_sort(entry.second, [](llvm::Function *a, llvm::Function *b) {
+                return a->getInstructionCount() > b->getInstructionCount();
+            });
+        }
+
+        llvm::SmallVector<llvm::CallInst *, 32> calls;
+        for (auto &func : m)
+        {
+            if (func.hasFnAttribute(llvm::Attribute::OptimizeNone))
+            {
+                continue;
+            }
+
+            for (auto &inst : llvm::instructions(func))
+            {
+                auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+                if (call && call->isIndirectCall() && !call->isMustTailCall() && !call->isInlineAsm())
+                {
+                    calls.push_back(call);
+                }
+            }
+        }
+
+        auto vtablesOf = finalInterfaceVTables(m);
+
+        auto changed = false;
+        for (auto *call : calls)
+        {
+            llvm::SmallVector<llvm::Function *, 4> finalTargets;
+            if (!vtablesOf.empty() && finalInterfaceTargets(*call, vtablesOf, finalTargets))
+            {
+                // the larger function first, as below; the last one, the least likely, is what is
+                // left when the pointer is none of the others
+                llvm::stable_sort(finalTargets, [](llvm::Function *a, llvm::Function *b) {
+                    return a->getInstructionCount() > b->getInstructionCount();
+                });
+
+                llvm::CallBase *indirect = call;
+                for (auto *target : llvm::ArrayRef(finalTargets).drop_back())
+                {
+                    llvm::promoteCallWithIfThenElse(*indirect, target);
+                }
+
+                llvm::promoteCall(*indirect, finalTargets.back());
+                changed = true;
+                continue;
+            }
+
+            auto found = targetsOf.find(call->getFunctionType());
+            if (found == targetsOf.end() || found->second.size() > MaxTargets)
+            {
+                continue;
+            }
+
+            llvm::CallBase *indirect = call;
+            for (auto *target : found->second)
+            {
+                if (target->getCallingConv() != indirect->getCallingConv() || !llvm::isLegalToPromote(*indirect, target))
+                {
+                    continue;
+                }
+
+                // the direct call goes into the "then" block; what is returned is it, and the
+                // call through the pointer stays in the "else" block for the next target
+                llvm::promoteCallWithIfThenElse(*indirect, target);
+                changed = true;
+            }
+        }
+
+        return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
+    }
+};
+
 // --size_level: the pipeline's level alone decides little - the inliner's thresholds, the
 // vectorizer, the unroller and the backend all ask the function whether it is optimized for
 // size. clang marks every function `optsize` under -Os and `optsize minsize` under -Oz.
@@ -425,6 +1144,13 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             applyFastMathFlags(*m);
         }
 
+        applyNoMathErrno(*m);
+
+        if (compileOptions.isExecutable && *ol != llvm::OptimizationLevel::O0)
+        {
+            internalizeModulePrivateFunctions(*m);
+        }
+
         applySizeAttributes(*m, *ol);
 
         // Without a TargetMachine the -O2/-O3 cost model has no target information: no vector
@@ -453,8 +1179,59 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         llvm::CGSCCAnalysisManager cgam;
         llvm::ModuleAnalysisManager mam;
 
-        llvm::PassBuilder pb(effectiveTargetMachine);
+        // The inliner's threshold at the highest speed level is the one LLVM keeps for functions
+        // with an inline hint (325, what clang gives every C++ function defined in its class), not
+        // the plain 250: a TypeScript program is small methods and functions over small values.
+        // The ray tracer's `intersections` (cost 285; its Rust twin 245 against rustc's 275) was
+        // left as a call in each ray's loop, with every live number spilled around it.
+        llvm::PipelineTuningOptions pto;
+        if (*ol == llvm::OptimizationLevel::O3)
+        {
+            pto.InlinerThreshold = 325;
+        }
 
+        llvm::PassBuilder pb(effectiveTargetMachine, pto);
+        // Jump threading before the pipeline's first SimplifyCFG. `let d = 0; if (..) d = ..;
+        // return d === 0 ? Infinity : d` reaches that pass as a phi of constants and a test of it;
+        // SimplifyCFG makes the test a select, and jump threading later unfolds a select only over
+        // integer constants, so a path that knew its answer still ran the select and what the
+        // caller does with the result. Threaded first, such a path goes straight to its result
+        // (the ray tracer's misses to the loop's next thing). SROA first: the values are in
+        // allocas until then.
+        auto refCounted = compileOptions.isRefCounted();
+        pb.registerPipelineStartEPCallback([refCounted](llvm::ModulePassManager &pm, llvm::OptimizationLevel level) {
+            if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
+            {
+                return;
+            }
+
+            if (level == llvm::OptimizationLevel::O3)
+            {
+                pm.addPass(SpeculativeDirectCallPass());
+            }
+
+            if (refCounted)
+            {
+                pm.addPass(RcPairEliminationPass());
+            }
+
+            llvm::FunctionPassManager fpm;
+            fpm.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
+            fpm.addPass(llvm::JumpThreadingPass());
+            pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
+        });
+
+
+        // after a function's callees are inlined into it
+        pb.registerScalarOptimizerLateEPCallback([](llvm::FunctionPassManager &fpm, llvm::OptimizationLevel level) {
+            if (level != llvm::OptimizationLevel::O2 && level != llvm::OptimizationLevel::O3)
+            {
+                return;
+            }
+
+            fpm.addPass(UnfoldSelectOverPhiPass());
+            fpm.addPass(llvm::JumpThreadingPass());
+        });
         pb.registerModuleAnalyses(mam);
         pb.registerCGSCCAnalyses(cgam);
         pb.registerFunctionAnalyses(fam);

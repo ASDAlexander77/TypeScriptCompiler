@@ -623,6 +623,8 @@ tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND te
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-compile-00-rc-interface-count-inline COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_interface_count_inline.ts")
+tslang_add_test(NAME test-compile-00-rc-local-alias-no-count COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_local_alias_no_count.ts")
+tslang_add_test(NAME test-compile-00-final-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00final_interface.ts")
 tslang_add_test(NAME test-compile-00-conditional-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-conditional-nested-record-literal-temporary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-compile-00-generic-callback-closure-late-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_callback_closure_late_class.ts")
@@ -1299,6 +1301,8 @@ tslang_add_test(NAME test-jit-00-object-literal-contextual-lambda COMMAND test-r
 tslang_add_test(NAME test-jit-own-00-object-literal-contextual-lambda COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-jit-00-interface-field-getter-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
 tslang_add_test(NAME test-jit-00-rc-interface-count-inline COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_interface_count_inline.ts")
+tslang_add_test(NAME test-jit-00-rc-local-alias-no-count COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_local_alias_no_count.ts")
+tslang_add_test(NAME test-jit-00-final-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00final_interface.ts")
 tslang_add_test(NAME test-jit-00-conditional-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-conditional-nested-record-literal-temporary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_nested_record_literal_temporary.ts")
 tslang_add_test(NAME test-jit-00-generic-callback-closure-late-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_callback_closure_late_class.ts")
@@ -1808,6 +1812,19 @@ add_test(NAME test-compile-cpp-class-value-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/cpp_class_value_error.ts")
 set_tests_properties(test-compile-cpp-class-value-error PROPERTIES PASS_REGULAR_EXPRESSION "the @cpp class 'Native' can't be used as a value: its objects are made by C\\+\\+"
                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# `@final interface`: what could bring a vtable the module did not make is refused
+add_test(NAME test-compile-final-interface-object-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_interface_object_error.ts")
+set_tests_properties(test-compile-final-interface-object-error PROPERTIES PASS_REGULAR_EXPRESSION "can't be cast to @final interface 'Shape': only a class object can"
+                                                                       FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-final-interface-extends-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_interface_extends_error.ts")
+set_tests_properties(test-compile-final-interface-extends-error PROPERTIES PASS_REGULAR_EXPRESSION "interface 'Solid' cannot extend 'Shape': it is @final"
+                                                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-final-interface-export-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_interface_export_error.ts")
+set_tests_properties(test-compile-final-interface-export-error PROPERTIES PASS_REGULAR_EXPRESSION "@final interface 'Shape' cannot be exported"
+                                                                       FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class whose constructor takes other arguments than its base's is no value of the base's type
 add_test(NAME test-compile-class-value-constructor-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_value_constructor_error.ts")
@@ -2480,6 +2497,8 @@ set(TSLANG_CORPUS
     00object_literal_contextual_lambda.ts
     00interface_field_getter_owned.ts
     00rc_interface_count_inline.ts
+    00rc_local_alias_no_count.ts
+    00final_interface.ts
     00conditional_record_literal_temporary.ts
     00conditional_nested_record_literal_temporary.ts
     00generic_callback_closure_late_class.ts

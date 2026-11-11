@@ -687,6 +687,10 @@ namespace mlirgen
         if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(vtableName))
         {
             globalOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
+            if (newInterfacePtr->isFinal)
+            {
+                globalOp->setAttr(FINAL_INTERFACE_ATTR_NAME, builder.getStringAttr(newInterfacePtr->fullName));
+            }
         }
 
         return resolveFullNameIdentifier(location, vtableName, true, genContext);
@@ -1135,6 +1139,11 @@ namespace mlirgen
                 {
                     newInterfacePtr->isValue = true;
                 }
+
+                if (decoratorName == FINAL_DECORATOR)
+                {
+                    newInterfacePtr->isFinal = true;
+                }
             });
         }
 
@@ -1202,6 +1211,15 @@ namespace mlirgen
             else if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(ifaceType.getType()))
             {
                 baseInterfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            }
+
+            // a value of the extending interface would be a value of the @final one, with a vtable
+            // made for the extending one
+            if (baseInterfaceInfo && baseInterfaceInfo->isFinal)
+            {
+                emitError(loc(extendsType)) << "interface '" << newInterfacePtr->name << "' cannot extend '"
+                                            << baseInterfaceInfo->name << "': it is @" FINAL_DECORATOR;
+                return mlir::failure();
             }
 
             // a value has no base layout to widen, and an interface that is not a value is seen
@@ -1395,6 +1413,21 @@ namespace mlirgen
         newInterfacePtr->assignCanonicalVirtualIndexes();
 
         newInterfacePtr->membersResolved = true;
+
+        // @final says every implementer is in this module: another module can be told nothing by
+        // a declaration, and a @value interface has no vtable to name an implementer
+        if (newInterfacePtr->isFinal)
+        {
+            StringRef reason = newInterfacePtr->isValue ? "@" VALUE_DECORATOR
+                               : getExportModifier(interfaceDeclarationAST) ? "exported"
+                               : declarationMode || hasModifier(interfaceDeclarationAST, SyntaxKind::DeclareKeyword) ? "a declaration"
+                               : "";
+            if (!reason.empty())
+            {
+                emitError(location) << "@" FINAL_DECORATOR " interface '" << newInterfacePtr->name << "' cannot be " << reason;
+                return mlir::failure();
+            }
+        }
 
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))

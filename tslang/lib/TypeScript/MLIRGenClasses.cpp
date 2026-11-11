@@ -3244,6 +3244,16 @@ genContext);
 
         MLIRCodeLogic mcl(builder, compileOptions);
 
+        // a @final interface's vtables are all in this module: a class another module has, or can
+        // extend, would bring one of its own
+        if (newInterfacePtr->isFinal &&
+            (newClassPtr->isExport || newClassPtr->isImport || newClassPtr->isDeclaration || newClassPtr->isDynamicImport))
+        {
+            emitError(location) << "class '" << newClassPtr->name << "' cannot implement @" FINAL_DECORATOR " interface '"
+                                << newInterfacePtr->name << "': the class is exported or declared";
+            return mlir::failure();
+        }
+
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
         // TODO: ...
@@ -3999,6 +4009,14 @@ genContext);
                 return TypeValueInitType{virtTuple, vtableValue, TypeProvided::Yes};
             },
             genContext);
+
+        if (registeredType && newInterfacePtr->isFinal)
+        {
+            if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(fullClassInterfaceVTableFieldName))
+            {
+                globalOp->setAttr(FINAL_INTERFACE_ATTR_NAME, builder.getStringAttr(newInterfacePtr->fullName));
+            }
+        }
 
         return registeredType ? mlir::success() : mlir::failure();
     }

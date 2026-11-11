@@ -15,16 +15,242 @@ and `Ray` and `Intersection` `@value` interfaces (see "Results 2026-10-24: `@val
   tslang produces, so the gap between a language's two ports is the cost of allocation alone.
   `Rc` counts are plain integers; `shared_ptr` counts are atomic.
 
+`rtbench_static.ts` and `rust/src/bin/static_dispatch.rs` are the same ray tracer with static
+dispatch only, the TypeScript written the way the Rust is (see "Results 2026-11-11"):
+
+- Rust: `enum Thing` and `enum Surface` with a `match` in each method, no `dyn Thing` and no
+  function pointers; free functions, and a `for` loop over the lights.
+- tslang: no interfaces and no closures. A thing is one `@final` class with a `shape` tag and a
+  `switch`, a surface is an enum, `Vector`, `Color`, `Ray`, `Light` and `Hit` are `@value` classes.
+  One file builds under every memory model.
+
 Run (needs a Release tslang and cargo; clang++ on PATH and Visual Studio are used when present):
 
 ```
 pwsh tslang/benchmarks/raytrace/bench.ps1
+TSLANG=<path to tslang> bash tslang/benchmarks/raytrace/bench.sh
 ```
 
 - tslang: `--emit=exe --opt --opt_level=3 --no-default-lib --mm=<model>` (`--no-default-lib`
   because the file declares its own `sqrt`/`floor`/`pow`/`fabs`); `-mm=own` builds `rtbench_own.ts`
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
+
+## Results 2026-11-11: static dispatch (Linux)
+
+Release, Ubuntu 24.04 x64, a 4-core cloud VM (Xeon 2.3 GHz); main 864dab4, built against the
+official LLVM 22.1.8 package; Rust 1.97.0, clang 18.1.3. `bench.sh`: a warm-up, then 15 rounds in
+which every build runs once; median wall time. Every build prints the same checksum. The machine is
+shared, so a few percent either way is noise.
+
+| Build | `rtbench.ts` | `rtbench_static.ts` | vs Rust static |
+|---|---|---|---|
+| tslang gc | 87 ms | 60 ms | 1.2x |
+| tslang rc | 123 ms | 62 ms | 1.2x |
+| tslang none | 89 ms | 61 ms | 1.2x |
+| tslang own | 91 ms | 60 ms | 1.2x |
+| Rust static (`static_dispatch.rs`) | | 51 ms | 1x |
+| Rust idiomatic (`dyn Thing`) | 116 ms | | 2.3x |
+| C++ idiomatic (clang) | 70 ms | | 1.4x |
+
+- Without interfaces and closures the four memory models run alike: nothing is counted or
+  allocated per ray, so rc loses its extra time (123 to 62 ms).
+- tslang is within 1.2x of the Rust port written the same way, and 1.4x faster than its own
+  interface version.
+- Under `-mm=own` a `@value` class cannot hold a borrowed element of an array (`new Hit(thing,
+  dist)` is "borrows an element and cannot be stored, returned or captured"), so `Hit` names the
+  thing by its index in `scene.things`. Under none, holding the reference instead measured 2 ms
+  faster.
+- Making `Thing` a `@value` class (the things inline in the array, as in Rust's `Vec<Thing>`) or
+  reading `things.length` once before the loop changed nothing.
+
+### The optimizer: array reads, math calls, internal functions, the inliner
+
+callgrind (804 million instructions against Rust's 598 million), the optimized IR and the
+inliner's remarks put the gap in four things, each now changed in the compiler:
+
+- An array's length and data were read as `header == null ? 0 : header->field`, a branch around
+  the load, so the loop in `intersections` tested the array for null and loaded both again on every
+  iteration. They are now loaded through a select between the header and one constant empty
+  header, with no branch, and a loop hoists them.
+- `sqrt` was libm's, which may write `errno`: a call that kept loads from being hoisted over it and
+  a branch to the library for a negative argument. A call of a C math function (`sqrt`, `pow`,
+  `floor`, ...) is now the LLVM intrinsic, as under clang's `-fno-math-errno` and in Rust.
+- Every function had external linkage. With `--opt`, `--emit=exe` now makes a function that is not
+  exported internal, so one with a single call left is inlined whatever its size: `shade`,
+  `getNaturalColor` and `getReflectionColor` end up inside `traceRay`, as in the Rust build.
+- `intersections` cost the inliner 285 against a threshold of 250 and stayed a call in each ray's
+  loop, with every live number spilled around it (its Rust twin costs 245 against rustc's 275).
+  The threshold at `--opt_level=3` is now 325, the one LLVM keeps for functions with an inline
+  hint.
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build | before | after | vs Rust static (51 ms) |
+|---|---|---|---|
+| tslang gc, `rtbench_static.ts` | 60 ms | 55 ms | 1.07x |
+| tslang rc, `rtbench_static.ts` | 62 ms | 60 ms | 1.18x |
+| tslang none, `rtbench_static.ts` | 61 ms | 55 ms | 1.08x |
+| tslang own, `rtbench_static.ts` | 60 ms | 55 ms | 1.08x |
+| tslang gc, none, own, `rtbench.ts` | 87, 89, 91 ms | 85, 84, 87 ms | |
+| tslang rc, `rtbench.ts` | 123 ms | 126 ms | |
+
+- One at a time, under none (medians of 21 runs): the array reads, the math calls and internal
+  functions together took 59 ms to 57; the inliner's threshold on top of them, to 54.
+- `../numeric`'s six kernels take the same time with the old and the new compiler (within 1%), and
+  the test suite passes.
+
+### Jump threading before the first SimplifyCFG
+
+Counting executed instructions per block (callgrind) against the Rust build put most of what was
+left on one path: a sphere the ray misses. `intersect` ends `return dist === 0 ? Infinity : dist`
+with `dist` a phi of constants on the miss paths; the pipeline's first SimplifyCFG makes the test a
+select, and LLVM's jump threading later unfolds a select only over integer constants. A miss ran 8
+instructions of select and then the caller's comparison, where Rust's goes straight to the next
+thing. The pipeline now starts with SROA and jump threading (at `--opt_level` 2 and 3), so such a
+path is threaded to its result before the select exists.
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (50 ms) |
+|---|---|---|---|
+| tslang gc | 55 ms | 53 ms | 1.06x |
+| tslang rc | 60 ms | 57 ms | 1.14x |
+| tslang none | 55 ms | 53 ms | 1.06x |
+| tslang own | 55 ms | 53 ms | 1.06x |
+
+- Instructions executed under none: 679 million to 650 million (Rust 604 million, 647 million with
+  its SLP vectorizer off, which does not change its time). `rtbench.ts` and `../numeric` take the
+  same time as before, and the test suite passes.
+- The 32-bit loop counter named above as a cost is not one: with `let i: index = 0` the program
+  executes more instructions (661 million) and takes the same time.
+- The Rust port written as this file is, a miss as `f64::INFINITY` and the thing by its index,
+  takes 73 ms: the form costs Rust more than it costs tslang.
+- [docs/raytrace-rust-parity.md](../../../docs/raytrace-rust-parity.md) lists what is left and what
+  each part would take.
+- What is left is spread out, a few instructions in every block: the caller's `minsd` still runs
+  on a miss; the things are pointers in the array, one load more each; `const light = lights[i]`
+  loads all six numbers of the light, where Rust reads the color only when the point is lit; and
+  two of the ray's numbers live on the stack in the shadow loop. None was measured by itself.
+
+### Selects over a phi made branches again
+
+Part 1 of [docs/raytrace-rust-parity.md](../../../docs/raytrace-rust-parity.md): `intersections`
+does `if (dist < closest) { index = i; closest = dist; }`, which SimplifyCFG makes selects before
+`Thing.intersect` is inlined into the loop. A miss then arrives as the constant `Infinity`, for
+which the test is false, and still ran the minimum. A pass of our own, after a function's callees
+are inlined, turns a select back into a branch when its condition compares a phi of the same block
+and is decided for one of the phi's constants; jump threading, run next, sends those predecessors
+past it. A miss now goes to the next thing, as in the Rust build.
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (50.4 ms) |
+|---|---|---|---|
+| tslang gc | 53 ms | 50.4 ms | 1.00x |
+| tslang rc | 57 ms | 53.0 ms | 1.05x |
+| tslang none | 53 ms | 50.0 ms | 0.99x |
+| tslang own | 53 ms | 50.0 ms | 0.99x |
+
+- Instructions executed under none: 650 million to 606 million; Rust executes 604 million.
+- `rtbench.ts` and `../numeric` take the same time as before, and the test suite passes.
+- Sinking the loads of `const light = lights[i]` to where the color is used (LLVM's sink pass at
+  the end of the pipeline) changed neither the instruction count nor the time, and is not in.
+- rc: `const things = scene.things` retains the array and releases it at the end of every
+  `intersections` call, 2.2 million times a frame (711 million instructions against 606 million).
+  Without the alias it is worse: every `scene.things` in the loop is retained (934 million, 65 ms).
+
+### rc: a local alias that needs no count
+
+`const things = scene.things` retained the array and released it at the end of every
+`intersections` call. The count keeps the array alive should something release it under the alias;
+here nothing can. Under `-mm=rc`, before the inliner runs, a retain of a local and its release on
+every path are now removed when the function, and every function it calls, stores only into its
+own locals (or what a parameter given a local points to) and calls nothing that could release:
+`tsret_<type>(slot)` and `tsrel_<type>(slot)` on a slot stored to once. A callee that assigns the
+field keeps the pair (`test/tester/tests/00rc_local_alias_no_count.ts`).
+
+`bench.sh`, 21 rounds, the same machine:
+
+| Build, `rtbench_static.ts` | before | after | vs Rust static (49.6 ms) |
+|---|---|---|---|
+| tslang gc | 50.4 ms | 50.5 ms | 1.02x |
+| tslang rc | 53.0 ms | 50.6 ms | 1.02x |
+| tslang none | 50.0 ms | 49.6 ms | 1.00x |
+| tslang own | 50.0 ms | 49.5 ms | 1.00x |
+
+Instructions executed under rc: 711 million to 622 million. `rtbench.ts` under rc is unchanged
+(119 ms): its counts are on interfaces and closures, which this does not reach.
+
+### `rtbench.ts`: `@final interface Thing`, no call through a pointer left
+
+`@final` on an interface says that only classes of this module implement it. The compiler refuses
+what could bring a vtable it did not make (a cast from an object literal, from another interface's
+value or from `any`; an interface that extends it; `export`; an exported or declared class that
+implements it), so a call of one of its methods is one of the functions in that method's slot of
+the vtables the module made for it. With `--opt_level=3`, when those are at most four, the call
+tests the pointer against all but the last and calls the last without a test: the call through
+the pointer that the section below keeps "for anything else" is gone. In `rtbench.ts` the things
+are tested for the sphere's and the plane's `intersect`, and what is left is the null `Thing`'s,
+which throws.
+
+The same day and machine. Two measurements, 21 rounds each, because the second was noisy (every
+build's maximum was 1.4 to 1.6 times its minimum):
+
+| Build, `rtbench.ts` | before | `@final interface Thing`, quiet run | noisy run (`bench.sh`): min, median |
+|---|---|---|---|
+| tslang gc | 75.6 ms | 70.7 ms | 69.9, 74.9 ms |
+| tslang none | 75.4 ms | 70.8 ms | 69.6, 72.0 ms |
+| tslang rc | 111.6 ms | 105.5 ms | 98.5, 108.0 ms |
+| tslang own | | | 73.9, 88.8 ms |
+| C++ idiomatic (clang) | | | 67.9, 73.3 ms |
+| Rust idiomatic | | | 110.0, 117.4 ms |
+
+- gc and none are level with the C++ port within this machine's noise; rc is still about 1.5x of
+  it (the counts on `Intersection` copies and closure captures, below). own was not in the quiet
+  run, and its median in the noisy one says little.
+- `Surface` and `Scene` are made from object literals in this program, so they cannot be `@final`.
+- More than four implementers: nothing is done for the call, not even the tests of the section
+  below, which has the same limit. Not measured on any other program; nothing run on Windows.
+
+### `rtbench.ts`, with interfaces: direct calls tried first, and a null that writes less
+
+The same day and machine, `bench.sh`, 21 rounds. Two changes for the version with interfaces and
+closures:
+
+- A call through a function value (an interface's method, a callback) whose type at most four
+  functions of the module have, among those whose address is taken, first tests the pointer
+  against each and calls it directly; the call through the pointer is kept for anything else
+  (`--opt_level=3`, before the inliner). `thing.intersect(ray)` becomes "a sphere's? a plane's?"
+  with both bodies inlined in the loop, and `reduce`'s callback, the surfaces' functions and
+  `getPoint`'s closures are called directly as well. Nothing is assumed about who else may supply
+  a pointer. The runtime's own routines (`tsrel...`, `tsret...`) are not candidates.
+- null of a `@value` type that holds null in a pointer (`Intersection | null`) is its pointers
+  null and its numbers undefined, not every field zeroed: a miss in `intersect` stored nine words
+  where two say it.
+
+| Build, `rtbench.ts` | before | null writes less | and direct calls | vs Rust idiomatic (116 ms) | vs C++ idiomatic (70 ms) |
+|---|---|---|---|---|---|
+| tslang gc | 84 ms | | 77 ms | 0.66x | 1.10x |
+| tslang rc | 119 ms | 118 ms | 111 ms | 0.96x | 1.59x |
+| tslang none | 83 ms | 81 ms | 78 ms | 0.68x | 1.12x |
+| tslang own | 87 ms | | 82 ms | 0.71x | 1.17x |
+
+- Instructions executed under none: 1305 million, 1252 million with the smaller null, 1148
+  million with the direct calls; the C++ port executes 828 million and the Rust port 900 million.
+- On this machine the Rust port with `dyn Thing` is slow for its instruction count (116 ms; the
+  C++ port 70 ms), as in the Linux table of 2026-11-10, so "against Rust" is met here by every
+  model, and the C++ port is the one still ahead. On Windows the two ports are level (57 and
+  52 ms on 2026-11-10, tslang 73 to 77 ms); nothing here was run on Windows.
+- What the loop over the things still does that the C++ port's does not, read from the
+  disassembly of the `addLight` closure (23 instructions a thing beside the sphere's arithmetic)
+  and not measured apart: `scene.things` is read again through the `Scene` interface on every
+  iteration (the field's offset from the vtable, the array's header and data), because the call
+  kept for "anything else" may write anywhere; each thing is an interface, two words and a load
+  of its vtable's slot; the pointer is compared with `Thing`'s method for a null object as well
+  as the sphere's and the plane's; and `intersect`'s result comes back through memory with the
+  optional's flag.
+- `test/tester/tests/00fresh_objects_folded.ts`: its callback no longer reads `v.x`. The callback
+  is now inlined into `keep`, where that read was a load the test's check took for one of the
+  fresh objects' fields.
 
 ## Results 2026-11-10: Windows
 
