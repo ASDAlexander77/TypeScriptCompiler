@@ -361,7 +361,11 @@ jobs:
         continue-on-error: false
         shell: sh
         # zlib, zstd and libxml2: the official LLVM package's CMake targets link against them.
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev zlib1g-dev libzstd-dev libxml2-dev
+        # Public resolvers: the runner's own DNS sometimes fails on the Ubuntu mirrors ("Temporary
+        # failure resolving 'azure.archive.ubuntu.com'") while every other host resolves.
+        run: |
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' | sudo tee /etc/resolv.conf > /dev/null
+          sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y ninja-build libcurl4-openssl-dev zlib1g-dev libzstd-dev libxml2-dev
 
   #    - name: Install Clang 12
   #      continue-on-error: false
@@ -554,7 +558,10 @@ jobs:
     steps:
       - name: Install dependencies
         shell: bash
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+        # Public resolvers: see "Install Ninja" above.
+        run: |
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' | sudo tee /etc/resolv.conf > /dev/null
+          sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y libcurl4-openssl-dev
 
       - name: Clone Default Library
         shell: bash
