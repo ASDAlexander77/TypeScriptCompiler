@@ -91,6 +91,16 @@ the test is listed as NATIVE and not counted as a failure: it is something `-mm=
 yet. Native ctest runs only a few tests under own, but the whole corpus under none and rc, so under
 those two models every wasm compile error counts as a failure.
 
+## In CI
+
+Every pull request runs both suites on wasm32 and wasm64 under none, rc and own, on Windows and
+Linux: the exe leg of each build job, with its kind of program (release, or `--debug`), against a
+wasm default library that job builds from TypeScriptCompilerDefaultLib's main with the compiler it
+just built (`.github/workflows/cmake-test-release-*.yml`). A release builds the wasm default library
+into each package and tests the package's compiler, `wasm-ld` and library the same way, release and
+debug (`test_wasm_*` in `create-release.yml`). CI passes `--require-run`: on Node 24, which wasm64
+needs, a test that is only compiled fails.
+
 ## In a browser
 
 Put the `.wasm` files in `wasm\`, serve this folder over HTTP (e.g. `npx http-server .`) and open

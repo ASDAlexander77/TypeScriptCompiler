@@ -159,4 +159,41 @@ jobs:
         LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
         TSLANG_TEST_PROGRAMS: ${{ matrix.programs }}
         KIND: ${{ matrix.kind }}
+
+    # wasm32 and wasm64, as in the Windows workflow: the exe legs only, each with its kind of program,
+    # against the wasm default library built here by this compiler.
+    - name: Set up Node (wasm tests)
+      if: matrix.kind == 'exe'
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Build wasm Default Library (${{ matrix.programs }})
+      if: matrix.kind == 'exe'
+      working-directory: ${{github.workspace}}
+      shell: bash
+      env:
+        TOOL_PATH: ${{github.workspace}}/__build/tslang/ninja/release/bin
+        LLVM_AR: ${{github.workspace}}/3rdParty/llvm/release/bin/llvm-ar
+        MODE: ${{ matrix.programs }}
+      run: |
+        set -e
+        git clone --depth 1 https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+        bash ./TypeScriptCompilerDefaultLib/scripts/build_wasm.sh "wasm32 wasm64" "$MODE"
+
+    - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
+      if: matrix.kind == 'exe'
+      working-directory: ${{github.workspace}}/docs/how/wasm/test
+      shell: bash
+      env:
+        MODE: ${{ matrix.programs }}
+      run: |
+        # wasm-ld, which tslang links a wasm program with
+        export PATH="${{github.workspace}}/3rdParty/llvm/release/bin:$PATH"
+        debug=""; if [ "$MODE" = debug ]; then debug=--debug; fi
+        code=0
+        node run_tests.mjs --tslang=${{github.workspace}}/__build/tslang/ninja/release/bin/tslang \
+          --default-lib-repo=${{github.workspace}}/TypeScriptCompilerDefaultLib --require-run -j4 $debug || code=$?
+        if [ $code -ne 0 ]; then cat out/results.txt; fi
+        exit $code
       

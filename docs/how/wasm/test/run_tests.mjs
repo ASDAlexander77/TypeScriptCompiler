@@ -19,6 +19,7 @@
 //   -j<n>                      tests at a time (default: the number of CPUs)
 //   --out=<dir>                where the .wasm files and results.txt go (default: ./out)
 //   --timeout=<seconds>        per program run (default: 60)
+//   --require-run              a test compiled but not run (wasm64 before Node 24) fails (CI)
 //   filter                     a regular expression the test's file name has to match
 //
 // The tester's tests are the single-file ones its CMakeLists.txt runs (`test-compile-*`): the others
@@ -57,6 +58,7 @@ for (const arg of process.argv.slice(2))
     else if ((m = /^-j(\d+)$/.exec(arg))) options.jobs = Number(m[1]);
     else if ((m = /^--out=(.+)$/.exec(arg))) options.out = path.resolve(m[1]);
     else if ((m = /^--timeout=(\d+)$/.exec(arg))) options.timeout = Number(m[1]);
+    else if (arg === "--require-run") options.requireRun = true;
     else if (!arg.startsWith("-")) options.filter = new RegExp(arg);
     else { console.error(`unknown option ${arg}`); process.exit(2); }
 }
@@ -223,7 +225,8 @@ const runOne = async ({ leg, file, outDir }) =>
 
     if (!canRun(leg))
     {
-        return { leg: leg.name, file, status: "BUILT", detail: `compiled; not run: ${leg.triple} needs Node 24 or later (this is ${process.version})` };
+        return { leg: leg.name, file, status: options.requireRun ? "FAIL" : "BUILT",
+                 detail: `compiled; not run: ${leg.triple} needs Node 24 or later (this is ${process.version})` };
     }
 
     const stdinFile = source.replace(/\.ts$/, ".stdin");

@@ -215,6 +215,20 @@ jobs:
       # The Default Library's own tests run in test_defaultlib_windows, one job per memory model,
       # against the package this job uploads.
 
+      # wasm32 and wasm64 (release and debug, -mm=rc, none and own) into the same tree, so the
+      # package carries them: defaultlib/lib/<wasm32|wasm64>/unknown/unknown/unknown/<mode>/<mm>.
+      # They are tested in test_wasm_windows, against the package.
+      - name: Build wasm Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/bin
+          LLVM_AR: ${{github.workspace}}/3rdParty/llvm/x64/release/bin/llvm-ar.exe
+        run: |
+          .\scripts\build_wasm.bat
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
       # Android (API 29, arm64-v8a, armeabi-v7a and x86_64): the collector, the async runtime and the default
       # library, cross-built with the runner's Android NDK by the same scripts a developer runs.
       # tslang links for Android through the NDK too (--android-ndk-path / ANDROID_NDK_HOME).
@@ -455,6 +469,17 @@ jobs:
 
       # As on Windows: the Default Library's own tests run in test_defaultlib_linux.
 
+      # As on Windows: wasm32 and wasm64 into the package's default-library tree, tested in
+      # test_wasm_linux.
+      - name: Build wasm Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        shell: bash
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/ninja/release/bin
+          LLVM_AR: ${{github.workspace}}/3rdParty/llvm/release/bin/llvm-ar
+        run: bash ./scripts/build_wasm.sh
+
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
@@ -607,6 +632,127 @@ jobs:
           chmod +x ./tests.sh
           ./tests.sh "$MODEL"
 
+  # wasm32 and wasm64 (docs/how/wasm/test), against each package: its tslang, the wasm-ld beside it
+  # and its wasm default library. The tester's tests and the default library's, under -mm=none, rc
+  # and own, each program run under Node with the JavaScript host; one job per kind of program.
+  # wasm64 needs Node 24; --require-run fails a test that is only compiled.
+  test_wasm_windows:
+    name: Test wasm (Windows, ${{ matrix.programs }} programs)
+    needs: [defaultlib_commit, build_on_windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        programs: [release, debug]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    env:
+      TOOL_PATH: ${{ github.workspace }}\__tslang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Clone Default Library
+        shell: pwsh
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C TypeScriptCompilerDefaultLib checkout --detach $env:DEFAULTLIB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v4
+        with:
+          name: tslang-windows-asset
+
+      - name: Unpack the package
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "${{ env.ASSET_NAME }}-windows-x64.zip" -DestinationPath $env:TOOL_PATH
+          Remove-Item "${{ env.ASSET_NAME }}-windows-x64.zip"
+          New-Item -ItemType Directory -Force -Path TypeScriptCompilerDefaultLib\__build | Out-Null
+          Move-Item -Path (Join-Path $env:TOOL_PATH 'defaultlib') -Destination TypeScriptCompilerDefaultLib\__build\defaultlib -ErrorAction Stop
+          & (Join-Path $env:TOOL_PATH 'tslang.exe') --version
+
+      - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/docs/how/wasm/test
+        env:
+          MODE: ${{ matrix.programs }}
+        run: |
+          $runArgs = @("--tslang=$(Join-Path $env:TOOL_PATH 'tslang.exe')",
+                       "--default-lib-repo=${{ github.workspace }}\TypeScriptCompilerDefaultLib", "--require-run", "-j4")
+          if ($env:MODE -eq 'debug') { $runArgs += '--debug' }
+          node run_tests.mjs @runArgs
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { Get-Content out\results.txt }
+          exit $code
+
+  test_wasm_linux:
+    name: Test wasm (${{ matrix.os }}, ${{ matrix.programs }} programs)
+    needs: [defaultlib_commit, build_on_linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
+        programs: [release, debug]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      TOOL_PATH: ${{ github.workspace }}/__tslang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Clone Default Library
+        shell: bash
+        env:
+          DEFAULTLIB_SHA: ${{ needs.defaultlib_commit.outputs.sha }}
+        run: |
+          set -e
+          git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+          git -C TypeScriptCompilerDefaultLib checkout --detach "$DEFAULTLIB_SHA"
+
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v4
+        with:
+          name: tslang-${{ matrix.os }}-asset
+
+      - name: Unpack the package
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$TOOL_PATH"
+          tar -xzf "${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz" -C "$TOOL_PATH"
+          rm "${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz"
+          mkdir -p TypeScriptCompilerDefaultLib/__build
+          mv "$TOOL_PATH/defaultlib" TypeScriptCompilerDefaultLib/__build/defaultlib
+          "$TOOL_PATH/tslang" --version
+
+      - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
+        shell: bash
+        working-directory: ${{ github.workspace }}/docs/how/wasm/test
+        env:
+          MODE: ${{ matrix.programs }}
+        run: |
+          debug=""; if [ "$MODE" = debug ]; then debug=--debug; fi
+          code=0
+          node run_tests.mjs --tslang="$TOOL_PATH/tslang" \
+            --default-lib-repo=${{ github.workspace }}/TypeScriptCompilerDefaultLib --require-run -j4 $debug || code=$?
+          if [ $code -ne 0 ]; then cat out/results.txt; fi
+          exit $code
+
   # The build jobs above test release programs. The debug ones (TSLANG_TEST_PROGRAMS=debug: debug
   # info, no optimization), as a pull request's CI runs them: its own workflows, those legs only.
   test_debug_programs_windows:
@@ -623,7 +769,7 @@ jobs:
 
   create_release:
     needs: [build_on_windows, build_on_linux, test_defaultlib_windows, test_defaultlib_linux,
-            test_debug_programs_windows, test_debug_programs_linux]
+            test_wasm_windows, test_wasm_linux, test_debug_programs_windows, test_debug_programs_linux]
     name: Create Release
     runs-on: ubuntu-latest
     steps:
