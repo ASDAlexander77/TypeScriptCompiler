@@ -67,13 +67,16 @@ function main() {
 
     // an accessor is one key; a value field named like an accessor's storage is its own name (the accessor
     // comes after the value fields, not where it is written)
-    let accessors = "";
+    let accessorKeys = 0;
+    let found = 0;
     for (const key in { v: 3, get x() { return 1; }, set x(n: number) { }, get_started: true }) {
-        accessors += "," + key;
+        accessorKeys++;
+        if (key == "v" || key == "x" || key == "get_started") {
+            found++;
+        }
     }
 
-    assert(accessors.length == ",v,x,get_started".length && accessors.indexOf(",x") >= 0
-        && accessors.indexOf(",get_started") >= 0, "accessors and get_ names");
+    assert(accessorKeys == 3 && found == 3, "accessors and get_ names");
 
     // the body is made once for each field: an arrow function in it is one for each too
     let captured = "";
