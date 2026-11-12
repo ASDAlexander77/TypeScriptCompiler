@@ -1,0 +1,157 @@
+name: Test - Android (emulator)
+
+# The tester's tests and the default library's, built for x86_64 Android (API 29) under -mm=gc, rc,
+# none and own with a Windows package's compiler and Android libraries, and run on an x86_64 Android
+# emulator (tslang/test/android/run_tests.mjs). The package ships Android's libraries only for
+# Windows, so Windows builds the programs and Linux, which has KVM, runs the emulator.
+#
+# create-release.yml calls it with the package it has just built (package: artifact). A pull request
+# that changes the runner, and a manual run, test the latest published release's package.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "artifact: this run's tslang-windows-asset; release: the latest published release's Windows package"
+        type: string
+        default: release
+      defaultlib_sha:
+        description: the TypeScriptCompilerDefaultLib commit the package's default library was built from (default its main)
+        type: string
+        default: ''
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tslang/test/android/**'
+      - 'tslang/test/suites.mjs'
+      - '.github/workflows/test-android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android tests (x86_64)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    env:
+      TOOL_PATH: ${{ github.workspace }}\__tslang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Clone Default Library
+        shell: pwsh
+        env:
+          DEFAULTLIB_SHA: ${{ inputs.defaultlib_sha }}
+        run: |
+          git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:DEFAULTLIB_SHA) {
+            git -C TypeScriptCompilerDefaultLib checkout --detach $env:DEFAULTLIB_SHA
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Download the package (this run's)
+        if: inputs.package == 'artifact'
+        uses: actions/download-artifact@v4
+        with:
+          name: tslang-windows-asset
+
+      - name: Download the package (the latest release's)
+        if: inputs.package != 'artifact'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Unpack the package
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Filter '*-windows-x64.zip' | Select-Object -First 1
+          Write-Host "package: $($zip.Name)"
+          Expand-Archive -Path $zip.FullName -DestinationPath $env:TOOL_PATH
+          Remove-Item $zip.FullName
+          New-Item -ItemType Directory -Force -Path TypeScriptCompilerDefaultLib\__build | Out-Null
+          Move-Item -Path (Join-Path $env:TOOL_PATH 'defaultlib') -Destination TypeScriptCompilerDefaultLib\__build\defaultlib -ErrorAction Stop
+          & (Join-Path $env:TOOL_PATH 'tslang.exe') --version
+
+      - name: Build the tests for x86_64 Android
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/tslang/test/android
+        run: |
+          $ndk = if ($env:ANDROID_NDK_LATEST_HOME) { $env:ANDROID_NDK_LATEST_HOME } else { $env:ANDROID_NDK_HOME }
+          if (-not $ndk) { Write-Error "no Android NDK on this runner (ANDROID_NDK_LATEST_HOME / ANDROID_NDK_HOME)"; exit 1 }
+          node run_tests.mjs --build "--tslang=$(Join-Path $env:TOOL_PATH 'tslang.exe')" `
+            "--default-lib-repo=${{ github.workspace }}\TypeScriptCompilerDefaultLib" `
+            "--android-lib=$(Join-Path $env:TOOL_PATH 'android\x86_64\lib')" "--android-ndk-path=$ndk" -j4
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { Get-Content out\results.txt -ErrorAction SilentlyContinue }
+          tar -czf android-tests.tgz -C out .
+          exit $code
+
+      - name: Upload the tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tests
+          path: tslang/test/android/android-tests.tgz
+          retention-days: 1
+
+  run:
+    name: Run Android tests (x86_64 emulator, API 29)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download the tests
+        uses: actions/download-artifact@v4
+        with:
+          name: android-tests
+          path: tslang/test/android
+
+      - name: Unpack the tests
+        working-directory: ${{ github.workspace }}/tslang/test/android
+        shell: bash
+        run: mkdir -p out && tar -xzf android-tests.tgz -C out && rm android-tests.tgz && du -sh out
+
+      # the emulator needs KVM, which the runner has but does not open to its user
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          cores: 4
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: cd tslang/test/android && node run_tests.mjs --run --adb=adb || { cat out/results.txt; exit 1; }
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: tslang/test/android/out/results.txt
+          retention-days: 7
+          if-no-files-found: ignore
