@@ -167,3 +167,47 @@ jobs:
         $filter = if ($env:KIND -eq 'jit') { '-R' } else { '-E' }
         ctest -j8 -C ${{ env.BUILD_TYPE }} $filter '^test-jit' -T test --output-on-failure
       shell: pwsh
+
+    # wasm32 and wasm64 (tslang/test/wasm): the tester's tests and the default library's, under
+    # -mm=none, rc and own, each program run under Node with the JavaScript host. The exe legs only,
+    # each with its kind of program (release: --opt; debug: --di --opt_level=0), against the wasm
+    # default library built here by this compiler from TypeScriptCompilerDefaultLib's main.
+    # wasm64 needs Node 24 (64-bit tables); --require-run fails a test that is only compiled.
+    - name: Set up Node (wasm tests)
+      if: matrix.kind == 'exe'
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Build wasm Default Library (${{ matrix.programs }})
+      if: matrix.kind == 'exe'
+      working-directory: ${{github.workspace}}
+      env:
+        TOOL_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/bin
+        LLVM_AR: ${{github.workspace}}/3rdParty/llvm/x64/release/bin/llvm-ar.exe
+        MODE: ${{ matrix.programs }}
+      run: |
+        git clone --depth 1 https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        foreach ($arch in 'wasm32', 'wasm64') {
+          & .\TypeScriptCompilerDefaultLib\scripts\build_wasm.bat $arch $env:MODE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+      shell: pwsh
+
+    - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
+      if: matrix.kind == 'exe'
+      working-directory: ${{github.workspace}}/tslang/test/wasm
+      env:
+        MODE: ${{ matrix.programs }}
+      run: |
+        # wasm-ld, which tslang links a wasm program with
+        $env:PATH = "${{github.workspace}}\3rdParty\llvm\x64\release\bin;$env:PATH"
+        $runArgs = @("--tslang=${{github.workspace}}\__build\tslang\msbuild\x64\release\bin\tslang.exe",
+                     "--default-lib-repo=${{github.workspace}}\TypeScriptCompilerDefaultLib", "--require-run", "-j4")
+        if ($env:MODE -eq 'debug') { $runArgs += '--debug' }
+        node run_tests.mjs @runArgs
+        $code = $LASTEXITCODE
+        if ($code -ne 0) { Get-Content out\results.txt }
+        exit $code
+      shell: pwsh

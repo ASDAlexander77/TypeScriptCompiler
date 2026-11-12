@@ -37,6 +37,58 @@ export class UncaughtThrow extends Error
 // memory section or, for a program that starts threads, of its `env.memory` import (a shared memory
 // the host makes, and passes to each thread's worker). The C++ exception tag the module imports
 // carries a pointer, an i64 in a memory64 (wasm64) module.
+// Writes all of text to fd with Node's fs. A pipe Node made non-blocking (stdout under a parent
+// that reads it, as run_tests.mjs and CI do) takes part of a write, or none (EAGAIN) while it is
+// full: write the rest once it drains, as a C library's blocking write would.
+export function writeAllSync(fs, fd, text)
+{
+    const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
+    let wait;
+    for (let off = 0; off < bytes.length;)
+    {
+        try
+        {
+            off += fs.writeSync(fd, bytes, off, bytes.length - off);
+        }
+        catch (e)
+        {
+            if (e?.code !== "EAGAIN") throw e;
+            Atomics.wait(wait ??= new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
+        }
+    }
+}
+
+// A program's output under Node, buffered as a C library buffers stdout into a pipe: a program
+// that prints a line at a time (00stack_test prints two million) would otherwise make a write
+// call per line, too slow on a busy CI runner. stdout is written out at 64 KB, before anything
+// goes to stderr, by flush() (the host calls it before it blocks or reads stdin) and at the end.
+export function bufferedOutput(fs)
+{
+    let pending = [], size = 0;
+    const flush = () =>
+    {
+        if (size === 0) return;
+        const text = pending.join("");
+        pending = [];
+        size = 0;
+        writeAllSync(fs, 1, text);
+    };
+    const write = (fd, text) =>
+    {
+        if (fd === 2)
+        {
+            flush();
+            writeAllSync(fs, 2, text);
+            return;
+        }
+
+        pending.push(text);
+        size += text.length;
+        if (size >= 65536) flush();
+    };
+    return { write, flush };
+}
+
 export function memoryOf(bytes)
 {
     const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength);
@@ -88,6 +140,8 @@ export function createHost(options = {})
 {
     const args = options.args ?? ["program.wasm"];
     const write = options.write ?? ((fd, text) => (fd === 2 ? console.error : console.log)(text));
+    // writes out what write() holds back: before the thread blocks or reads stdin
+    const flush = options.flush ?? (() => { });
     const node = options.node; // { fs, process } under Node
 
     let instance;
@@ -107,8 +161,23 @@ export function createHost(options = {})
     const N = (v) => Number(v);
     const P = (v) => (is64 ? BigInt(v) : v);
 
-    const u8 = () => new Uint8Array(memory.buffer);
-    const dv = () => new DataView(memory.buffer);
+    // The memory's bytes, up to date. When another thread has grown a shared memory, this thread's
+    // memory.buffer lags until its isolate handles the grow (the wasm code sees the new size at
+    // once, JavaScript does not), and a block another thread just allocated can lie past its end:
+    // memory.grow(0) brings it up to date. Every address a program holds is below the heap's top
+    // (its stacks and thread blocks are heap blocks too), so a view that ends before the top is stale.
+    const buffer = () =>
+    {
+        let b = memory.buffer;
+        if (sharedMemory && heap && new DataView(b).getFloat64(heap + 8, true) > b.byteLength)
+        {
+            memory.grow(is64 ? 0n : 0);
+            b = memory.buffer;
+        }
+        return b;
+    };
+    const u8 = () => new Uint8Array(buffer());
+    const dv = () => new DataView(buffer());
 
     const utf8Decoder = new TextDecoder("utf-8");
     const utf8Encoder = new TextEncoder();
@@ -165,7 +234,7 @@ export function createHost(options = {})
 
     const ensure = (end) =>
     {
-        const have = memory.buffer.byteLength;
+        const have = buffer().byteLength;
         if (end <= have) return;
         const pages = Math.ceil((end - have) / 65536);
         memory.grow(is64 ? BigInt(pages) : pages);
@@ -281,6 +350,7 @@ export function createHost(options = {})
     // thread) a busy wait
     const sleepFor = (millis) =>
     {
+        flush();
         try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, millis); return; } catch { }
         const end = Date.now() + millis;
         while (Date.now() < end) { }
@@ -292,11 +362,12 @@ export function createHost(options = {})
         const index = address / ArrayType.BYTES_PER_ELEMENT;
         if (sharedMemory)
         {
-            const result = Atomics.wait(new ArrayType(memory.buffer), index, expected, timeout);
+            flush();
+            const result = Atomics.wait(new ArrayType(buffer()), index, expected, timeout);
             return result === "ok" ? 0 : result === "not-equal" ? 1 : 2;
         }
 
-        if (new ArrayType(memory.buffer)[index] !== expected) return 1;
+        if (new ArrayType(buffer())[index] !== expected) return 1;
         if (timeout === Infinity) throw new Error("Atomics.wait would wait forever: this program starts no thread to wake it");
         sleepFor(timeout);
         return 2;
@@ -796,6 +867,7 @@ export function createHost(options = {})
         if (stdinBuffer.pos >= stdinBuffer.bytes.length)
         {
             if (stdinBuffer.eof || !node) return -1;
+            flush();
             const chunk = new Uint8Array(65536);
             let n = 0;
             try { n = node.fs.readSync(0, chunk, 0, chunk.length, null); } catch (e) { if (e.code === "EAGAIN") return stdinByte(); if (e.code !== "EOF") n = 0; }
@@ -1083,7 +1155,8 @@ export function createHost(options = {})
         tslang_thread_join: (handle) =>
         {
             const control = N(handle);
-            const i32 = new Int32Array(memory.buffer, control, 3);
+            const i32 = new Int32Array(buffer(), control, 3);
+            if (Atomics.load(i32, 0) === 0) flush();
             while (Atomics.load(i32, 0) === 0) Atomics.wait(i32, 0, 0);
             const ended = i32[1], code = i32[2];
             const thread = threads.get(control);
@@ -1101,7 +1174,7 @@ export function createHost(options = {})
         tslang_atomics_wait32: (address, expected, timeoutMs) => atomicsWait(Int32Array, N(address), expected, timeoutMs),
         tslang_atomics_wait64: (address, expected, timeoutMs) => atomicsWait(BigInt64Array, N(address), expected, timeoutMs),
         tslang_atomics_notify: (address, count) =>
-            sharedMemory ? Atomics.notify(new Int32Array(memory.buffer), N(address) / 4, count < 0 ? undefined : count) : 0,
+            sharedMemory ? Atomics.notify(new Int32Array(buffer()), N(address) / 4, count < 0 ? undefined : count) : 0,
         time: (p) => { const t = BigInt(Math.floor(Date.now() / 1000)); if (N(p) !== 0) dv().setBigInt64(N(p), t, true); return t; },
         tslang_wasm_now: () => Date.now(),
         tslang_wasm_timezone: () => standardOffset(new Date().getFullYear()) * 60,
@@ -1315,7 +1388,7 @@ export function createHost(options = {})
     {
         attach(inst);
         findHeap();
-        const i32 = new Int32Array(memory.buffer, control, 3);
+        const i32 = new Int32Array(buffer(), control, 3);
         let ended = THREAD_RETURNED, code = 0;
         try
         {
@@ -1340,6 +1413,8 @@ export function createHost(options = {})
         }
         finally
         {
+            // what the thread printed is out before join returns
+            flush();
             i32[1] = ended;
             i32[2] = code;
             Atomics.store(i32, 0, 1);

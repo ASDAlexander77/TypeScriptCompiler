@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import process from "node:process";
 import worker_threads from "node:worker_threads";
-import { createHost, UncaughtThrow } from "./host.mjs";
+import { createHost, UncaughtThrow, bufferedOutput } from "./host.mjs";
 
 const file = process.argv[2];
 if (!file)
@@ -16,10 +16,12 @@ if (!file)
     process.exit(2);
 }
 
+const output = bufferedOutput(fs);
 const host = createHost({
     args: process.argv.slice(2),
     node: { fs, process, worker_threads, os },
-    write: (fd, text) => fs.writeSync(fd, text),
+    write: output.write,
+    flush: output.flush,
 });
 
 let code;
@@ -32,14 +34,15 @@ catch (e)
 {
     if (e instanceof UncaughtThrow)
     {
-        fs.writeSync(2, "Uncaught exception\n");
+        output.write(2, "Uncaught exception\n");
     }
     else
     {
-        fs.writeSync(2, `${e?.stack ?? e}\n`);
+        output.write(2, `${e?.stack ?? e}\n`);
     }
 
     code = 1;
 }
 
+output.flush();
 process.exitCode = code & 0xff;
