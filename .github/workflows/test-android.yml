@@ -67,7 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
+          # every release is a pre-release, and GitHub's "latest" leaves those out: take the newest
+          $tag = gh release list --repo ${{ github.repository }} --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'
+          if ($LASTEXITCODE -ne 0 -or -not $tag) { Write-Error "no published release"; exit 1 }
+          Write-Host "release: $tag"
+          gh release download $tag --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Unpack the package
