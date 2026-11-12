@@ -5,8 +5,10 @@
 #                 (Android executables must be PIE): a constant's address is RIP-relative, where
 #                 the static default for x86_64 Linux takes it as an absolute immediate;
 #               - a triple without an API level, and no NDK, are refused with an error that says so.
-# MODE=link     links an executable and a shared library for x86_64 Android with the real default
-#               library, collector and async runtime, through the NDK. Prints SKIPPED (CTest then
+# MODE=link     links an executable and a shared library for each ABI a release ships (arm64-v8a,
+#               armeabi-v7a, x86_64) under each memory model (gc, rc, none, own), with the real
+#               default library, collector and async runtime, through the NDK, and checks each is an
+#               ELF file for that ABI's machine. Prints SKIPPED (CTest then
 #               reports it skipped) unless ANDROID_NDK_HOME and the Android builds of those are
 #               there: scripts/build_gc_release_android.bat, scripts/build_tslang_runtime_release_
 #               android.bat, and TypeScriptCompilerDefaultLib's scripts/build_android.bat (its
@@ -90,34 +92,45 @@ if(MODE STREQUAL "codegen")
 
     message(STATUS "Android code is position independent; a missing API level or NDK is refused")
 elseif(MODE STREQUAL "link")
-    set(abi x86_64)
-    set(triple x86_64-linux-android29)
-    set(gc_lib "${REPO_DIR}/3rdParty/gc/android/${abi}/release/lib")
-    set(runtime_lib "${REPO_DIR}/__build/tslang-runtime/release/android/${abi}")
+    # each ABI a release ships, as one flat list: <abi>;<triple>;<ELF e_machine: the two bytes at
+    # offset 18, little endian, as file(READ ... HEX) gives them>
+    set(abis
+        "arm64-v8a;aarch64-linux-android29;b700"
+        "armeabi-v7a;armv7a-linux-androideabi29;2800"
+        "x86_64;x86_64-linux-android29;3e00")
+    # every memory model: each has its own default library, and links differently (gc: the
+    # collector; rc, none, own: no collector, the default library's own releases or none)
+    set(link_models gc rc none own)
     if(DEFINED ENV{TSLANG_ANDROID_DEFAULT_LIB_PATH})
         set(default_lib "$ENV{TSLANG_ANDROID_DEFAULT_LIB_PATH}")
     else()
         set(default_lib "${REPO_DIR}/../TypeScriptCompilerDefaultLib/__build")
     endif()
-    # the one default-library tree, every target in it; tslang names each model's folder. gc, and
-    # own, whose default library is built for Android too: what it links differs from gc's (no
-    # collector, the default library's own releases)
-    set(link_models gc own)
-    foreach(mm ${link_models})
-        execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=lib -mm=${mm} -mtriple=${triple}
-            OUTPUT_VARIABLE default_lib_subdir_${mm}
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            COMMAND_ERROR_IS_FATAL ANY)
+
+    # the one default-library tree, every target in it; tslang names each target's and model's folder
+    set(required)
+    foreach(abi arm64-v8a armeabi-v7a x86_64)
+        list(FIND abis ${abi} at)
+        math(EXPR at_triple "${at} + 1")
+        math(EXPR at_machine "${at} + 2")
+        list(GET abis ${at_triple} triple_${abi})
+        list(GET abis ${at_machine} machine_${abi})
+        set(gc_lib_${abi} "${REPO_DIR}/3rdParty/gc/android/${abi}/release/lib")
+        set(runtime_lib_${abi} "${REPO_DIR}/__build/tslang-runtime/release/android/${abi}")
+        list(APPEND required "${gc_lib_${abi}}/libgc.a" "${runtime_lib_${abi}}/libTypeScriptAsyncRuntime.a")
+        foreach(mm ${link_models})
+            execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=lib -mm=${mm} -mtriple=${triple_${abi}}
+                OUTPUT_VARIABLE subdir
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                COMMAND_ERROR_IS_FATAL ANY)
+            list(APPEND required "${default_lib}/${subdir}/libTypeScriptDefaultLib.a")
+        endforeach()
     endforeach()
 
     if("$ENV{ANDROID_NDK_HOME}" STREQUAL "")
         message("SKIPPED: ANDROID_NDK_HOME is not set")
         return()
     endif()
-    set(required "${gc_lib}/libgc.a" "${runtime_lib}/libTypeScriptAsyncRuntime.a")
-    foreach(mm ${link_models})
-        list(APPEND required "${default_lib}/${default_lib_subdir_${mm}}/libTypeScriptDefaultLib.a")
-    endforeach()
     foreach(file ${required})
         if(NOT EXISTS "${file}")
             message("SKIPPED: ${file} is not built")
@@ -125,24 +138,30 @@ elseif(MODE STREQUAL "link")
         endif()
     endforeach()
 
-    set(libs "--default-lib-path=${default_lib}" "--gc-lib-path=${gc_lib}" "--tslang-lib-path=${runtime_lib}")
-    set(binaries)
-    foreach(mm ${link_models})
-        run("--emit=exe -mm=${mm} for ${triple}" TRUE
-            "${TSLANG}" --emit=exe --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o app-${mm})
-        run("--emit=dll -mm=${mm} for ${triple}" TRUE
-            "${TSLANG}" --emit=dll --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o libapp-${mm}.so)
-        list(APPEND binaries app-${mm} libapp-${mm}.so)
+    foreach(abi arm64-v8a armeabi-v7a x86_64)
+        set(triple ${triple_${abi}})
+        set(libs "--default-lib-path=${default_lib}" "--gc-lib-path=${gc_lib_${abi}}" "--tslang-lib-path=${runtime_lib_${abi}}")
+        foreach(mm ${link_models})
+            set(exe app-${abi}-${mm})
+            set(dll libapp-${abi}-${mm}.so)
+            run("--emit=exe -mm=${mm} for ${triple}" TRUE
+                "${TSLANG}" --emit=exe --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o ${exe})
+            run("--emit=dll -mm=${mm} for ${triple}" TRUE
+                "${TSLANG}" --emit=dll --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o ${dll})
+            foreach(binary ${exe} ${dll})
+                file(READ "${WORK_DIR}/${binary}" magic LIMIT 4 HEX)
+                if(NOT magic STREQUAL "7f454c46")
+                    message(FATAL_ERROR "${binary} is not an ELF file")
+                endif()
+                file(READ "${WORK_DIR}/${binary}" machine OFFSET 18 LIMIT 2 HEX)
+                if(NOT machine STREQUAL "${machine_${abi}}")
+                    message(FATAL_ERROR "${binary} is an ELF file for machine 0x${machine} (little endian), not ${abi}'s")
+                endif()
+            endforeach()
+        endforeach()
     endforeach()
 
-    foreach(binary ${binaries})
-        file(READ "${WORK_DIR}/${binary}" magic LIMIT 4 HEX)
-        if(NOT magic STREQUAL "7f454c46")
-            message(FATAL_ERROR "${binary} is not an ELF file")
-        endif()
-    endforeach()
-
-    message(STATUS "an executable and a shared library linked for ${triple}, under ${link_models}")
+    message(STATUS "an executable and a shared library linked for arm64-v8a, armeabi-v7a and x86_64, under ${link_models}")
 else()
     message(FATAL_ERROR "MODE must be codegen or link, not '${MODE}'")
 endif()
