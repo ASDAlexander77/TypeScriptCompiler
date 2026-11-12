@@ -209,7 +209,7 @@ class OwnershipRoutineLogic
         }
 
         std::stringstream nameStream;
-        nameStream << "tsrelrec_" << (size_t)hash_value(type);
+        nameStream << "tsrelrec_" << MLIRHelper::hashOfType(type);
         for (auto index : borrowed)
         {
             nameStream << "_" << index;
@@ -586,7 +586,7 @@ class OwnershipRoutineLogic
         }
 
         std::stringstream nameStream;
-        nameStream << "tsshr_" << (size_t)hash_value(type);
+        nameStream << "tsshr_" << MLIRHelper::hashOfType(type);
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -627,7 +627,7 @@ class OwnershipRoutineLogic
         }
 
         std::stringstream nameStream;
-        nameStream << "tsshrbox_" << (size_t)hash_value(captureRefType);
+        nameStream << "tsshrbox_" << MLIRHelper::hashOfType(captureRefType);
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -720,7 +720,7 @@ class OwnershipRoutineLogic
     std::string getRoutineName(mlir::Type type)
     {
         std::stringstream ss;
-        ss << "tsrel_" << (size_t)hash_value(type);
+        ss << "tsrel_" << MLIRHelper::hashOfType(type);
         return ss.str();
     }
 
@@ -745,7 +745,7 @@ class OwnershipRoutineLogic
         }
 
         std::stringstream ss;
-        ss << "tsret_" << (size_t)hash_value(type);
+        ss << "tsret_" << MLIRHelper::hashOfType(type);
         return ss.str();
     }
 
@@ -766,7 +766,7 @@ class OwnershipRoutineLogic
         }
 
         std::stringstream nameStream;
-        nameStream << prefix.str() << (size_t)hash_value(type);
+        nameStream << prefix.str() << MLIRHelper::hashOfType(type);
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -1518,7 +1518,7 @@ class OwnershipRoutineLogic
                                        bool holdsNothing = false, bool borrowsContents = false)
     {
         std::stringstream nameStream;
-        nameStream << prefix.str() << (size_t)hash_value(captureRefType);
+        nameStream << prefix.str() << MLIRHelper::hashOfType(captureRefType);
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
