@@ -29,6 +29,16 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 // only the hooks: GC_enable_threads and the collector calls are in AsyncGCThreadsCommon.inc
 #include "TypeScript/AsyncGCThreads.h"
 
@@ -299,11 +309,48 @@ namespace
 
 } // namespace
 
+// Whether the process is exiting on Windows. ExitProcess terminates every other thread - the pool's
+// workers too - and only then runs the DLLs' detach code, a DLL's static destructors among them.
+// A static library's destructors run earlier, from `exit`, while the workers still run; and off
+// Windows they always do.
+static bool processIsExiting()
+{
+#ifdef _WIN32
+    using ShutdownInProgressFn = BOOLEAN(NTAPI *)();
+    static auto shutdownInProgress = reinterpret_cast<ShutdownInProgressFn>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlDllShutdownInProgress"));
+    return shutdownInProgress != nullptr && shutdownInProgress();
+#else
+    return false;
+#endif
+}
+
+// The default per-process instance of an async runtime, destroyed with the module.
+//
+// Except while the process exits on Windows (processIsExiting): its workers are gone then,
+// terminated wherever they were, a task half done, a lock held. A runtime in a DLL - a `--emit=dll`
+// library, the JIT's TypeScriptRuntime.dll - would wait in ~AsyncRuntime for a task no thread will
+// finish, and the process never ends. A host hung so now and then: the worker running the last
+// task woke the thread awaiting it before it counted the task done, and the host returned from
+// main in between. Leaving the runtime alone loses nothing - the process is going away.
+struct DefaultAsyncRuntime
+{
+    std::unique_ptr<AsyncRuntime> runtime = std::make_unique<AsyncRuntime>();
+
+    ~DefaultAsyncRuntime()
+    {
+        if (processIsExiting())
+        {
+            (void)runtime.release();
+        }
+    }
+};
+
 // Returns the default per-process instance of an async runtime.
 static std::unique_ptr<AsyncRuntime> &getDefaultAsyncRuntimeInstance()
 {
-    static auto runtime = std::make_unique<AsyncRuntime>();
-    return runtime;
+    static DefaultAsyncRuntime instance;
+    return instance.runtime;
 }
 
 static void resetDefaultAsyncRuntime()
