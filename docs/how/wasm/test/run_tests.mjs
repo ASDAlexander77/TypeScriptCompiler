@@ -24,7 +24,7 @@
 // The tester's tests are the single-file ones its CMakeLists.txt runs (`test-compile-*`): the others
 // in the folder are multi-file tests, tests that expect a compile error, or not run at all.
 //
-// Skipped, and listed as such: async tests (no async runtime for wasm), threads (none on wasm), the
+// Skipped, and listed as such: threads (none on wasm), the
 // default library's tests marked "// gc only", "// linux only" or (under own) "// not own", and the
 // tests in wasm_skips.txt, each with its reason.
 //
@@ -150,7 +150,6 @@ const skipReason = (suite, file, source, leg) =>
 
     const marked = suite.marker?.(source, leg);
     if (marked) return marked;
-    if (/\basync\b|\bawait\b|\bPromise\b/.test(source)) return "async: the async runtime (TypeScriptAsyncRuntime) has no wasm build";
     if (/\bThread\.spawn\b|\bnew Worker\b|\bAtomics\.wait\b/.test(source)) return "threads: none on wasm";
     return null;
 };
