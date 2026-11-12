@@ -60,6 +60,7 @@ CompileOptions prepareOptions()
     compileOptions.isWindows = TheTriple.isKnownWindowsMSVCEnvironment();
     compileOptions.isAndroid = TheTriple.isAndroid();
     compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
+    compileOptions.wasmExceptions = compileOptions.isWasm && !TheTriple.isOSEmscripten();
     compileOptions.targetInfo = TargetInfo::fromTriple(
         TheTriple, llvm::Triple(llvm::sys::getDefaultTargetTriple()));
     compileOptions.isExecutable = emitAction == Action::BuildExe;

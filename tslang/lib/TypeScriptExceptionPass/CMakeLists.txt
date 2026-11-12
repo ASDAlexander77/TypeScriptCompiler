@@ -8,6 +8,7 @@ add_llvm_library(TypeScriptExceptionPass
   Win32ExceptionPass.cpp
   LandingPadFixPass.cpp
   CxxThrowCallingConvPass.cpp
+  WasmExceptionPass.cpp
 
   ADDITIONAL_HEADER_DIRS
 

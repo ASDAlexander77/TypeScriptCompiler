@@ -30,6 +30,9 @@ struct CompileOptions
     bool isWindows;
     // Bionic has its own assert entry points (__assert/__assert2), not glibc's __assert_fail
     bool isAndroid = false;
+    // wasm32/wasm64 other than Emscripten: try/catch is wasm exception handling (the
+    // exception-handling feature), its landing pads made funclets by WasmExceptionPass
+    bool wasmExceptions = false;
     bool isExecutable;
     bool isDLL;
 

@@ -225,8 +225,22 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
         //llvmModule->setPIELevel(llvm::PIELevel::Level::Large);
     }
 
-    auto CPUStr = llvm::codegen::getCPUStr(), 
+    auto CPUStr = llvm::codegen::getCPUStr(),
          FeaturesStr = llvm::codegen::getFeaturesStr();
+
+    // wasm (not Emscripten): try/catch is wasm exception handling - see WasmExceptionPass. The
+    // backend takes it from -wasm-enable-eh (which picks the wasm exception model), and the
+    // instructions from the exception-handling feature.
+    if (TheTriple.isWasm() && !TheTriple.isOSEmscripten())
+    {
+        auto &registeredOptions = llvm::cl::getRegisteredOptions();
+        if (auto it = registeredOptions.find("wasm-enable-eh"); it != registeredOptions.end())
+        {
+            static_cast<llvm::cl::opt<bool> *>(it->second)->setValue(true);
+        }
+
+        FeaturesStr += FeaturesStr.empty() ? "+exception-handling" : ",+exception-handling";
+    }
 
     llvm::CodeGenOptLevel OLvl;
     // TODO: finish it, optimization
@@ -243,7 +257,14 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     }
 
     InitializeOptions(TheTriple);
-    Target = std::unique_ptr<llvm::TargetMachine>(TheTarget->createTargetMachine(
+    // before the target machine is made: its MCAsmInfo takes the exception model from here, and
+    // with none the code generator lowers every invoke to a call (see wasm-enable-eh above)
+    if (TheTriple.isWasm() && !TheTriple.isOSEmscripten())
+    {
+        Options.ExceptionModel = llvm::ExceptionHandling::Wasm;
+    }
+
+    Target =std::unique_ptr<llvm::TargetMachine>(TheTarget->createTargetMachine(
           TheTriple, CPUStr, FeaturesStr, Options, RM, CM, OLvl));
     assert(Target && "Could not allocate target machine!");
 

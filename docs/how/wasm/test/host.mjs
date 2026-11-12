@@ -11,7 +11,7 @@
 // tslang's `long`) is an i64 on both and so always a BigInt.
 //
 //   const host = createHost({ args, write, node });
-//   const { instance } = await WebAssembly.instantiate(bytes, host.imports);
+//   const instance = await host.instantiate(bytes);
 //   const exitCode = host.run(instance);
 
 export class ExitSignal extends Error
@@ -23,7 +23,7 @@ export class ExitSignal extends Error
     }
 }
 
-// a C++ exception nothing caught: on wasm try/catch does not catch yet, so every throw ends here
+// a C++ exception nothing caught: run() turns the WebAssembly.Exception that left main into this
 export class UncaughtThrow extends Error
 {
     constructor(objectAddress)
@@ -31,6 +31,25 @@ export class UncaughtThrow extends Error
         super("uncaught exception");
         this.objectAddress = objectAddress;
     }
+}
+
+// Whether a module's memory is a memory64 one (wasm64): the limits flags of its memory section.
+// The C++ exception tag the module imports carries a pointer, an i64 there.
+export function isMemory64(bytes)
+{
+    const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength);
+    let p = 8;
+    const leb = () => { let r = 0, scale = 1, c; do { c = b[p++]; r += (c & 0x7f) * scale; scale *= 128; } while (c & 0x80); return r; };
+    while (p < b.length)
+    {
+        const id = b[p++];
+        const size = leb();
+        const end = p + size;
+        if (id === 5 && leb() > 0) return (b[p] & 0x04) !== 0;
+        p = end;
+    }
+
+    return false;
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -45,6 +64,12 @@ export function createHost(options = {})
     let instance;
     let memory;
     let is64 = false;
+
+    // C++ exceptions (see __cxa_throw): the module's tag, made by instantiate(); each thrown object's
+    // type_info and handler count; the exceptions being handled, innermost last
+    let cppExceptionTag;
+    const exceptions = new Map();
+    const handled = [];
 
     const N = (v) => Number(v);
     const P = (v) => (is64 ? BigInt(v) : v);
@@ -563,11 +588,18 @@ export function createHost(options = {})
     const setResult = (bytes) => { resultBytes = typeof bytes === "string" ? utf8Encoder.encode(bytes) : bytes; return resultBytes.length; };
     const fsFail = (e, op, path, dest) =>
     {
-        const code = e?.code ?? "EIO";
-        const text = (e?.message ?? String(e)).replace(/^[A-Z]+: /, "").replace(/, .*$/, "");
+        // Node words a few errors of its own (fs.rmSync of a directory: ERR_FS_EISDIR, "Path is a
+        // directory: rm returned EISDIR (is a directory) ..."): the system error is in them
+        const nodeError = /^ERR_FS_(E[A-Z]+)$/.exec(e?.code ?? "");
+        const code = nodeError ? nodeError[1] : (e?.code ?? "EIO");
+        const text = nodeError
+            ? (/\(([^)]*)\)/.exec(e.message)?.[1] ?? e.message)
+            : (e?.message ?? String(e)).replace(/^[A-Z]+: /, "").replace(/, .*$/, "");
         setResult(`${code}: ${text}, ${op}${path !== undefined ? ` '${path}'` : ""}${dest !== undefined ? ` -> '${dest}'` : ""}`);
         return -1;
     };
+    const validEnvName = (name) => name.length > 0 && !name.includes("=");
+    const invalidEnvName = (op, name) => { setResult(`EINVAL: invalid argument, ${op} '${name}'`); return -1; };
     const needNode = (what) => { if (!node) throw new Error(`${what} needs the Node host`); };
 
     let stdinLine = new Uint8Array(0);
@@ -693,10 +725,59 @@ export function createHost(options = {})
             return n;
         },
 
-        // C++ exceptions: nothing catches them on wasm yet
+        // C++ exceptions, as a C++ runtime keeps them. A throw is a WebAssembly.Exception of the
+        // module's __cpp_exception tag carrying the thrown object's address; tslang's catches
+        // (WasmExceptionPass) catch that tag, ask here for the type_info the object was thrown with,
+        // and begin and end handling it here.
         __cxa_allocate_exception: (size) => P(malloc(size)),
         __cxa_free_exception: (p) => free(p),
-        __cxa_throw: (object) => { throw new UncaughtThrow(N(object)); },
+        // As libc++abi does it: an exception being handled has a handler count, negative once it
+        // is rethrown. A catch of the exception already innermost does not stack it again, and the
+        // last end of a catch destroys it unless it was rethrown, when it lives on to its next catch.
+        __cxa_throw: (object, type) =>
+        {
+            exceptions.set(N(object), { type, handlers: 0 });
+            throw new WebAssembly.Exception(cppExceptionTag, [object]);
+        },
+        __tslang_wasm_exception_type: (object) => exceptions.get(N(object))?.type ?? P(0),
+        __cxa_begin_catch: (object) =>
+        {
+            const exception = exceptions.get(N(object));
+            if (exception)
+            {
+                exception.handlers = Math.abs(exception.handlers) + 1;
+                if (handled[handled.length - 1] !== N(object)) handled.push(N(object));
+            }
+
+            return object;
+        },
+        __cxa_current_exception_type: () => (handled.length ? exceptions.get(handled[handled.length - 1])?.type : undefined) ?? P(0),
+        __cxa_end_catch: () =>
+        {
+            if (!handled.length) return;
+            const object = handled[handled.length - 1];
+            const exception = exceptions.get(object);
+            if (exception.handlers < 0)
+            {
+                if (++exception.handlers === 0) handled.pop();
+                return;
+            }
+
+            if (--exception.handlers === 0)
+            {
+                handled.pop();
+                exceptions.delete(object);
+                free(object);
+            }
+        },
+        __cxa_rethrow: () =>
+        {
+            if (!handled.length) throw new Error("rethrow with no exception being handled");
+            const object = handled[handled.length - 1];
+            const exception = exceptions.get(object);
+            exception.handlers = -exception.handlers;
+            throw new WebAssembly.Exception(cppExceptionTag, [P(object)]);
+        },
         __assert_fail: (msg, file, line, fn) => { throw new Error(`Assertion failed: ${readStr(msg)}, file ${readStr(file)}, line ${line}`); },
         abort: () => { throw new Error("abort()"); },
         exit: (code) => { throw new ExitSignal(code); },
@@ -805,8 +886,19 @@ export function createHost(options = {})
         tslang_process_argc: () => args.length,
         tslang_process_argv: (i) => (i < 0 || i >= args.length ? -1 : setResult(args[i])),
         tslang_process_getenv: (name) => { const v = node?.process.env[readStr(name)]; return v === undefined ? -1 : setResult(v); },
-        tslang_process_setenv: (name, value) => { if (node) node.process.env[readStr(name)] = readStr(value); return 0; },
-        tslang_process_unsetenv: (name) => { if (node) delete node.process.env[readStr(name)]; return 0; },
+        // a name that is empty or has an '=' is EINVAL, as the C++ wrappers say it (setenv's own error)
+        tslang_process_setenv: (name, value) =>
+        {
+            if (!validEnvName(readStr(name))) return invalidEnvName("setenv", readStr(name));
+            if (node) node.process.env[readStr(name)] = readStr(value);
+            return 0;
+        },
+        tslang_process_unsetenv: (name) =>
+        {
+            if (!validEnvName(readStr(name))) return invalidEnvName("unsetenv", readStr(name));
+            if (node) delete node.process.env[readStr(name)];
+            return 0;
+        },
         tslang_process_env_count: () => { entries = node ? Object.entries(node.process.env).map(([k, v]) => `${k}=${v}`) : []; return entries.length; },
         tslang_process_cwd: () => setResult(node ? node.process.cwd() : "/"),
         tslang_process_chdir: (path) => { needNode("process.chdir"); try { node.process.chdir(readStr(path)); return 0; } catch (e) { return fsFail(e, "chdir", readStr(path)); } },
@@ -898,9 +990,20 @@ export function createHost(options = {})
         catch (e)
         {
             if (e instanceof ExitSignal) return e.code;
+            if (cppExceptionTag && e instanceof WebAssembly.Exception && e.is(cppExceptionTag)) throw new UncaughtThrow(N(e.getArg(cppExceptionTag, 0)));
             throw e;
         }
     };
 
-    return { imports, run, env };
+    // Instantiates a module with these imports. The C++ exception tag it imports is made here, its
+    // parameter a pointer: an i32, or an i64 in a memory64 module.
+    const instantiate = async (bytes) =>
+    {
+        cppExceptionTag = new WebAssembly.Tag({ parameters: [isMemory64(bytes) ? "i64" : "i32"] });
+        env.__cpp_exception = cppExceptionTag;
+        const { instance } = await WebAssembly.instantiate(bytes, imports);
+        return instance;
+    };
+
+    return { imports, run, instantiate, env };
 }

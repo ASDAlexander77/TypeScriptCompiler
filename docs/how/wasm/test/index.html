@@ -31,7 +31,7 @@
             let status;
             try
             {
-                const { instance } = await WebAssembly.instantiateStreaming(fetch(path), host.imports);
+                const instance = await host.instantiate(await (await fetch(path)).arrayBuffer());
                 status = `exit code ${host.run(instance)}`;
             }
             catch (e)
