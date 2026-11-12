@@ -262,7 +262,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         shell: pwsh
 
-      # An executable and a shared library linked for x86_64 Android with what was just built;
+      # An executable and a shared library linked with what was just built, for each ABI the package
+      # ships (arm64-v8a, armeabi-v7a, x86_64) under each memory model (gc, rc, none, own);
       # test-compile-android-link skips when the libraries are missing, so require them here.
       - name: Test Compiler for Android
         continue-on-error: false
