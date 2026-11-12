@@ -167,6 +167,62 @@ export function createHost(options = {})
         return p;
     };
 
+    // a C function pointer is an index into the function table, which is a table64 - an i64 index,
+    // a BigInt - in a wasm64 module
+    const functionAt = (p) => instance.exports.__indirect_function_table.get(is64 ? BigInt(p) : N(p));
+
+    // ---- the async runtime: MLIR's (mlirAsyncRuntime*), on the one thread a wasm program has ----
+    //
+    // The native runtime (TypeScriptAsyncRuntime, lib/AsyncRuntimeCommon.inc) runs an async task -
+    // mlirAsyncRuntimeExecute, a coroutine's resume - on a thread pool, and blocks a thread that
+    // awaits until what it awaits is ready. Here a task goes on a queue, and a blocking await runs
+    // the queue until what it awaits is ready; main's end runs what is left. What happens when a
+    // token, value or group becomes ready is as native: its awaiters run right there. Tokens, values
+    // and groups are blocks of this heap (their addresses are the handles the program holds) with
+    // reference counts; a value's storage is a block of its own.
+    const asyncObjects = new Map();
+    const asyncTasks = [];
+    const callResume = (handle, resume) => functionAt(resume)(handle);
+    const runAsyncTask = () => { const task = asyncTasks.shift(); task(); };
+    const createAsync = (object) => { const p = malloc(8); asyncObjects.set(p, object); return p; };
+    const asyncObject = (p) =>
+    {
+        const object = asyncObjects.get(N(p));
+        if (!object) throw new Error(`async runtime: ${N(p)} is not a live token, value or group`);
+        return object;
+    };
+    const dropAsyncRef = (p, count) =>
+    {
+        const object = asyncObject(p);
+        object.refs -= count;
+        if (object.refs > 0) return;
+        asyncObjects.delete(N(p));
+        if (object.storage) free(object.storage);
+        free(N(p));
+    };
+    // available or error, its awaiters run; the reference kept for the task that completes it goes
+    const completeAsync = (p, error) =>
+    {
+        const object = asyncObject(p);
+        object.ready = true;
+        object.error = error;
+        const awaiters = object.awaiters.splice(0);
+        for (const awaiter of awaiters) awaiter();
+        dropAsyncRef(p, 1);
+    };
+    const awaitAsync = (isReady) =>
+    {
+        while (!isReady())
+        {
+            if (!asyncTasks.length) throw new Error("async runtime: an await nothing will complete (no task left to run)");
+            runAsyncTask();
+        }
+    };
+    const awaitAsyncAndExecute = (isReady, awaiters, handle, resume) =>
+    {
+        if (isReady()) callResume(handle, resume); else awaiters.push(() => callResume(handle, resume));
+    };
+
     // ---- printf ----
 
     // C's %e: at least two exponent digits
@@ -679,7 +735,7 @@ export function createHost(options = {})
         qsort: (base, count, size, compare) =>
         {
             base = N(base); count = N(count); size = N(size);
-            const cmp = instance.exports.__indirect_function_table.get(N(compare));
+            const cmp = functionAt(compare);
             const items = [];
             for (let i = 0; i < count; i++) items.push(u8().slice(base + i * size, base + (i + 1) * size));
             // each pair is compared in two scratch blocks, as C's qsort hands out pointers into the array
@@ -723,6 +779,76 @@ export function createHost(options = {})
             const m = u8();
             for (; n < count; n++) { const c = stdinByte(); if (c < 0) break; m[N(buffer) + n] = c; }
             return n;
+        },
+
+        // the async runtime (see createAsync)
+        mlirAsyncRuntimeCreateToken: () => P(createAsync({ refs: 2, ready: false, error: false, awaiters: [] })),
+        mlirAsyncRuntimeCreateValue: (size) =>
+        {
+            const storage = malloc(Math.max(N(size), 1));
+            return P(createAsync({ refs: 2, ready: false, error: false, awaiters: [], storage }));
+        },
+        mlirAsyncRuntimeCreateGroup: (size) => P(createAsync({ refs: 1, pending: N(size), errors: 0, rank: 0, awaiters: [] })),
+        mlirAsyncRuntimeAddTokenToGroup: (tokenPtr, groupPtr) =>
+        {
+            const token = asyncObject(tokenPtr);
+            const group = asyncObject(groupPtr);
+            const rank = group.rank++;
+            group.pending++;
+            const onTokenReady = () =>
+            {
+                if (token.error) group.errors++;
+                if (--group.pending === 0) for (const awaiter of group.awaiters.splice(0)) awaiter();
+            };
+            if (token.ready)
+            {
+                onTokenReady();
+            }
+            else
+            {
+                group.refs++;
+                token.awaiters.push(() => { onTokenReady(); dropAsyncRef(groupPtr, 1); });
+            }
+
+            return BigInt(rank);
+        },
+        mlirAsyncRuntimeAddRef: (p, count) => { asyncObject(p).refs += Number(count); },
+        mlirAsyncRuntimeDropRef: (p, count) => dropAsyncRef(p, Number(count)),
+        mlirAsyncRuntimeEmplaceToken: (p) => completeAsync(p, false),
+        mlirAsyncRuntimeEmplaceValue: (p) => completeAsync(p, false),
+        mlirAsyncRuntimeSetTokenError: (p) => completeAsync(p, true),
+        mlirAsyncRuntimeSetValueError: (p) => completeAsync(p, true),
+        mlirAsyncRuntimeIsTokenError: (p) => (asyncObject(p).error ? 1 : 0),
+        mlirAsyncRuntimeIsValueError: (p) => (asyncObject(p).error ? 1 : 0),
+        mlirAsyncRuntimeIsGroupError: (p) => (asyncObject(p).errors > 0 ? 1 : 0),
+        mlirAsyncRuntimeAwaitToken: (p) => { const token = asyncObject(p); awaitAsync(() => token.ready); },
+        mlirAsyncRuntimeAwaitValue: (p) => { const value = asyncObject(p); awaitAsync(() => value.ready); },
+        mlirAsyncRuntimeAwaitAllInGroup: (p) => { const group = asyncObject(p); awaitAsync(() => group.pending === 0); },
+        mlirAsyncRuntimeGetValueStorage: (p) => P(asyncObject(p).storage),
+        mlirAsyncRuntimeExecute: (handle, resume) => { asyncTasks.push(() => callResume(handle, resume)); },
+        mlirAsyncRuntimeAwaitTokenAndExecute: (p, handle, resume) =>
+        {
+            const token = asyncObject(p);
+            awaitAsyncAndExecute(() => token.ready, token.awaiters, handle, resume);
+        },
+        mlirAsyncRuntimeAwaitValueAndExecute: (p, handle, resume) =>
+        {
+            const value = asyncObject(p);
+            awaitAsyncAndExecute(() => value.ready, value.awaiters, handle, resume);
+        },
+        mlirAsyncRuntimeAwaitAllInGroupAndExecute: (p, handle, resume) =>
+        {
+            const group = asyncObject(p);
+            awaitAsyncAndExecute(() => group.pending === 0, group.awaiters, handle, resume);
+        },
+        // (the misspelling is MLIR's)
+        mlirAsyncRuntimGetNumWorkerThreads: () => 1n,
+        mlirAsyncRuntimePrintCurrentThreadId: () => write(1, "Current thread id: 0\n"),
+        // a coroutine frame; this heap's blocks are 16-byte aligned, and frames ask for less
+        aligned_alloc: (alignment, size) =>
+        {
+            if (N(alignment) > ALIGN) throw new Error(`aligned_alloc: an alignment of ${N(alignment)} (the heap gives ${ALIGN})`);
+            return P(malloc(N(size)));
         },
 
         // C++ exceptions, as a C++ runtime keeps them. A throw is a WebAssembly.Exception of the
@@ -798,6 +924,15 @@ export function createHost(options = {})
         srand: () => { },
 
         // time
+        // sleep(ms) blocks, as on the other targets: Atomics.wait where the thread may block (Node),
+        // else (a browser's main thread) a busy wait
+        std_this_thread_sleep_for: (ms) =>
+        {
+            const millis = N(ms);
+            try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, millis); return; } catch { }
+            const end = Date.now() + millis;
+            while (Date.now() < end) { }
+        },
         time: (p) => { const t = BigInt(Math.floor(Date.now() / 1000)); if (N(p) !== 0) dv().setBigInt64(N(p), t, true); return t; },
         tslang_wasm_now: () => Date.now(),
         tslang_wasm_timezone: () => standardOffset(new Date().getFullYear()) * 60,
@@ -984,6 +1119,9 @@ export function createHost(options = {})
             {
                 code = inst.exports.main();
             }
+
+            // async tasks nothing awaited still run, as the native runtime's threads would run them
+            while (asyncTasks.length) runAsyncTask();
 
             return typeof code === "number" ? code : (typeof code === "bigint" ? Number(code) : 0);
         }

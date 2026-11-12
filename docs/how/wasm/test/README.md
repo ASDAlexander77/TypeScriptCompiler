@@ -37,6 +37,14 @@ module: a pointer, i32 or i64. The host also keeps what a C++ runtime would: `__
 `WebAssembly.Exception` of that tag, and it tracks each exception's type and the exceptions being
 handled. A JS exception (`exit()`, a failed assert) is not of that tag, so no `catch` sees it.
 
+## Async
+
+`async`/`await` and `Promise` lower to MLIR's async runtime (`mlirAsyncRuntime*`). The host
+implements it on the program's one thread: an `async` call queues its task, and a blocking
+`await` runs queued tasks until what it waits for is ready. `run()` runs the tasks still queued
+when `main` returns. `sleep(ms)` blocks: `Atomics.wait` in Node, a busy wait on a browser's main
+thread.
+
 ## The tests
 
     node run_tests.mjs [--suite=tester,defaultlib] [--triple=wasm32,wasm64] [--mm=none,rc,own] [--debug] [-j<n>] [filter]
@@ -53,7 +61,6 @@ and every failure are written to `out/results.txt`.
 
 Some tests are skipped, each with its reason:
 
-- async tests (the async runtime has no wasm build)
 - tests that use threads
 - default-library tests marked `// gc only`, `// linux only`, or (under own) `// not own`
 - the tests in [wasm_skips.txt](wasm_skips.txt)

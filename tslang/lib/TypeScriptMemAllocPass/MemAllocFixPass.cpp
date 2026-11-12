@@ -102,6 +102,19 @@ namespace ts
 
         for (auto f : removeSet)
         {
+            // still called - the async lowering frees a coroutine's frame with `free` itself: the
+            // calls go to the ts_ function that becomes it below, or, with none, keep this one
+            if (!f->use_empty())
+            {
+                auto *tsFunction = M.getFunction(("ts_" + f->getName()).str());
+                if (!tsFunction || tsFunction->getFunctionType() != f->getFunctionType())
+                {
+                    continue;
+                }
+
+                f->replaceAllUsesWith(tsFunction);
+            }
+
             LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC removing: " << *f;);
             MadeChange = true;
             f->eraseFromParent();
