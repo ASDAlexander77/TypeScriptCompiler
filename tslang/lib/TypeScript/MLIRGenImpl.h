@@ -14050,7 +14050,7 @@ class MLIRGenImpl
     StringRef interfaceVTableNameForObject(mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr)
     {
         std::stringstream ss;
-        ss << hash_value(objectType);
+        ss << MLIRHelper::hashOfType(objectType);
 
         return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
     }

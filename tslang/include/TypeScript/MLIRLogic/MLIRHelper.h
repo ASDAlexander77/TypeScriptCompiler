@@ -207,6 +207,17 @@ class MLIRHelper
         return getCallSiteLocation(callee.getDefiningOp()->getLoc(), caller, enable);
     }
 
+    // A hash of a type for a symbol's name: of its text, as MLIR prints it. hash_value(type) hashes
+    // the type's storage address, weakly mixed: names made from it were different in every run, and
+    // two types could meet in one name - and so share a type descriptor or a release routine.
+    static uint64_t hashOfType(mlir::Type type)
+    {
+        std::string text;
+        llvm::raw_string_ostream os(text);
+        os << type;
+        return llvm::xxh3_64bits(text);
+    }
+
     static void getAnonymousNameStep(std::stringstream &ssName, mlir::Location loc)
     {
         mlir::TypeSwitch<mlir::LocationAttr>(loc)
