@@ -6020,9 +6020,9 @@ if (NOT WIN32)
 endif()
 
 # An exception nothing catches ends a JIT run with an error that says what was thrown (a class by its
-# name), not with LLVM's crash handler reporting a crash of the compiler. Windows only: that is where
-# the JIT catches it.
-if (WIN32)
+# name), not with LLVM's crash handler reporting a crash of the compiler. Windows and Linux: there the JIT
+# and an executable's runtime say it (TypeScript/UncaughtException.h).
+if (WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
     set(uncaught_expected_throw_string "error: uncaught exception: not caught")
     set(uncaught_expected_throw_class "error: uncaught exception: Failure")
     set(uncaught_expected_throw_number "error: uncaught exception: 2.5")

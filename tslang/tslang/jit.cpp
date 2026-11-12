@@ -663,6 +663,36 @@ using JitEntryThunkFn = int (*)(int, char **);
 #ifdef _WIN32
 // What an uncaught exception threw, said after "uncaught exception: ", or empty
 static char uncaughtDescription[512];
+#elif defined(TSLANG_DESCRIBES_UNCAUGHT)
+static std::terminate_handler runtimeTerminateHandler;
+
+// An exception nothing in the program catches, on Linux: the C++ runtime calls std::terminate() where it was
+// thrown. Said as on Windows (runJit), and the run ends with exit code 1 - not in abort(), which LLVM's crash
+// handler reported as a crash of the compiler.
+[[noreturn]] static void reportUncaughtInJit()
+{
+    char description[512];
+    if (!typescript::describeCurrentException(description, sizeof(description)))
+    {
+        if (runtimeTerminateHandler)
+        {
+            runtimeTerminateHandler();
+        }
+
+        abort();
+    }
+
+    fflush(stdout);
+    auto &os = llvm::WithColor::error(llvm::errs(), "tslang") << "uncaught exception";
+    if (description[0])
+    {
+        os << ": " << description;
+    }
+
+    os << "\n";
+    os.flush();
+    _exit(1);
+}
 #endif
 
 // Calls the program's entry point; false when an exception nothing in the program catches came
@@ -684,6 +714,11 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
     {
         return false;
     }
+#elif defined(TSLANG_DESCRIBES_UNCAUGHT)
+    runtimeTerminateHandler = std::set_terminate(reportUncaughtInJit);
+    exitCode = entryThunk(argc, argv);
+    std::set_terminate(runtimeTerminateHandler);
+    return true;
 #else
     exitCode = entryThunk(argc, argv);
     return true;

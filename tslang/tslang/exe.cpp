@@ -490,15 +490,11 @@ static bool resolveWindowsLibPath(const llvm::Triple &triple, std::string &path,
     return checkWindowsBinaryMachine(triple, lib);
 }
 
-// A library tslang builds on Windows links with `-include:__tslang_heap_shared`, which the runtime
-// (TypeScriptAsyncRuntime.lib) defines since #784. A runtime older than that failed every
-// --emit=dll with a bare "unresolved external symbol __tslang_heap_shared" (TSLANG_ISSUES 36): say
-// which runtime it is and that it is older than the compiler. `path` is the directory the link
-// takes the runtime from (resolveWindowsLibPath has made it the x86 one for x86); a runtime not
-// found there is the linker's to report.
-// Whether the runtime in `path` (TypeScriptAsyncRuntime.lib) defines `symbol`: its archive's symbol table names
-// it (x86 decorates it with one more underscore). None when there is no runtime there to read.
-static std::optional<bool> runtimeDefines(llvm::StringRef path, llvm::StringRef symbol)
+// Whether the runtime in `path` (`archive`: TypeScriptAsyncRuntime.lib, libTypeScriptAsyncRuntime.a) defines
+// `symbol`: its archive's symbol table names it (x86 decorates it with one more underscore). None when there is no
+// runtime there to read.
+static std::optional<bool> runtimeDefines(llvm::StringRef path, llvm::StringRef symbol,
+                                          llvm::StringRef archive = "TypeScriptAsyncRuntime.lib")
 {
     if (path.empty())
     {
@@ -506,7 +502,7 @@ static std::optional<bool> runtimeDefines(llvm::StringRef path, llvm::StringRef 
     }
 
     llvm::SmallString<256> lib(path);
-    llvm::sys::path::append(lib, "TypeScriptAsyncRuntime.lib");
+    llvm::sys::path::append(lib, archive);
     auto buffer = llvm::MemoryBuffer::getFile(lib, /*IsText=*/false, /*RequiresNullTerminator=*/false);
     if (!buffer)
     {
@@ -516,6 +512,12 @@ static std::optional<bool> runtimeDefines(llvm::StringRef path, llvm::StringRef 
     return (*buffer)->getBuffer().contains(symbol);
 }
 
+// A library tslang builds on Windows links with `-include:__tslang_heap_shared`, which the runtime
+// (TypeScriptAsyncRuntime.lib) defines since #784. A runtime older than that failed every
+// --emit=dll with a bare "unresolved external symbol __tslang_heap_shared" (TSLANG_ISSUES 36): say
+// which runtime it is and that it is older than the compiler. `path` is the directory the link
+// takes the runtime from (resolveWindowsLibPath has made it the x86 one for x86); a runtime not
+// found there is the linker's to report.
 static bool checkRuntimeSharesHeap(llvm::StringRef path)
 {
     if (runtimeDefines(path, "__tslang_heap_shared").value_or(true))
@@ -1028,7 +1030,10 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         // An executable says what an exception nothing catches threw, as the JIT does, instead of ending
         // with no word (TypeScriptAsyncRuntime/UncaughtException.cpp). A runtime older than that has no
         // such file, and its program ends as it did.
-        reportUncaught = !shared && winX86OrX64 && runtimeDefines(tslangLibPath, "__tslang_report_uncaught").value_or(false);
+        auto linuxExe = !shared && os == llvm::Triple::Linux && !android;
+        reportUncaught = (!shared && winX86OrX64 && runtimeDefines(tslangLibPath, "__tslang_report_uncaught").value_or(false))
+                         || (linuxExe && runtimeDefines(tslangLibPath, "__tslang_report_uncaught",
+                                                        "libTypeScriptAsyncRuntime.a").value_or(false));
 
         tslangLibPathOpt = getLibsPathOpt(tslangLibPath);
         if (!tslangLibPathOpt.empty())
@@ -1152,6 +1157,18 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
             args.push_back("-Wl,--no-whole-archive");
         }
 
+        // An executable says what an exception nothing catches threw, as the JIT does
+        // (TypeScriptAsyncRuntime/UncaughtException.cpp): ahead of the runtime, so the GNU linker takes the file
+        if (reportUncaught && win)
+        {
+            args.push_back(arch == llvm::Triple::x86 ? "-Wl,-include:___tslang_report_uncaught"
+                                                     : "-Wl,-include:__tslang_report_uncaught");
+        }
+        else if (reportUncaught)
+        {
+            args.push_back("-Wl,-u,__tslang_report_uncaught");
+        }
+
         args.push_back("-lTypeScriptAsyncRuntime");
 
         // A library says it allocates from the program's heap (`__tslang_heap_shared`, with the
@@ -1164,11 +1181,6 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
                                                      : "-Wl,-include:__tslang_heap_shared");
         }
 
-        if (reportUncaught)
-        {
-            args.push_back(arch == llvm::Triple::x86 ? "-Wl,-include:___tslang_report_uncaught"
-                                                     : "-Wl,-include:__tslang_report_uncaught");
-        }
     }
 
     if (!win && !wasm)
