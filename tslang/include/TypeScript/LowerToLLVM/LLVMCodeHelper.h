@@ -366,7 +366,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // keyed by the concrete type rather than by the name: every class reports the name
         // "class", but each needs its own record, which is the point of having one at all
         std::stringstream varName;
-        varName << "td_" << (size_t)hash_value(type) << variant.str() << "_" << name;
+        varName << "td_" << MLIRHelper::hashOfType(type) << variant.str() << "_" << name;
 
         TypeConverterHelper tch(typeConverter);
         auto blockWordType = getHeapBlockWordType();
