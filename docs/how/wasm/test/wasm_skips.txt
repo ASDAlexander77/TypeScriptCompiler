@@ -1,6 +1,5 @@
 # Tests run_tests.mjs does not run for wasm: `<file> [<triple or model>,...] # <reason>`, every leg
-# when none is given. Tests that catch an exception and async tests are skipped without being
-# listed here.
+# when none is given. Async tests and tests that use threads are skipped without being listed here.
 
 # cannot work on wasm
 internals.ts                    # inline_asm with x86 instructions
