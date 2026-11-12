@@ -6,7 +6,8 @@ name: Test - Android (emulator)
 # Windows, so Windows builds the programs and Linux, which has KVM, runs the emulator.
 #
 # create-release.yml calls it with the package it has just built (package: artifact). A pull request
-# that changes the runner, and a manual run, test the latest published release's package.
+# that changes the runner, and a manual run, test the latest published release's package, with that
+# release's tester tests.
 
 on:
   workflow_call:
@@ -72,6 +73,12 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $tag) { Write-Error "no published release"; exit 1 }
           Write-Host "release: $tag"
           gh release download $tag --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # that release's compiler with that release's tests: a test added since checks a fix it
+          # does not have. The runner and its skips stay this commit's - they are what is tested.
+          git fetch --depth=1 origin tag $tag
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout $tag -- tslang/test/tester/tests tslang/test/tester/CMakeLists.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Unpack the package
