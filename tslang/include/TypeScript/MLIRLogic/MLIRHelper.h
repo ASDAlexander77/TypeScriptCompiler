@@ -251,6 +251,11 @@ class MLIRHelper
             });        
     }
 
+    // Set while one piece of source is generated more than once in one function - the body of a `for...in`
+    // over an object literal's fields, once for each field (MLIRGenImpl::mlirGen(ts::Block)): a name made
+    // from a location (an arrow function's, an object literal's type's) is then one for each copy.
+    static inline thread_local std::string anonymousNameCopy;
+
     static std::string getAnonymousName(mlir::Location loc, const char *prefix, StringRef fullNamesapceName)
     {
         // auto calculate name
@@ -259,6 +264,7 @@ class MLIRHelper
             ssName << fullNamesapceName.str() << ".";
         ssName << prefix;
         getAnonymousNameStep(ssName, loc);
+        ssName << anonymousNameCopy;
         return ssName.str();
     }
 

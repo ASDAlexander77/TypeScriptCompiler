@@ -65,5 +65,24 @@ function main() {
 
     assert(withMethod.length == 2, "a method is a field too");
 
+    // an accessor is one key; a value field named like an accessor's storage is its own name (the accessor
+    // comes after the value fields, not where it is written)
+    let accessors = "";
+    for (const key in { v: 3, get x() { return 1; }, set x(n: number) { }, get_started: true }) {
+        accessors += "," + key;
+    }
+
+    assert(accessors.length == ",v,x,get_started".length && accessors.indexOf(",x") >= 0
+        && accessors.indexOf(",get_started") >= 0, "accessors and get_ names");
+
+    // the body is made once for each field: an arrow function in it is one for each too
+    let captured = "";
+    for (const key in person) {
+        const keyOf = () => key;
+        captured += keyOf();
+    }
+
+    assert(captured == "nameagenested", "an arrow function in the body");
+
     print("done.");
 }

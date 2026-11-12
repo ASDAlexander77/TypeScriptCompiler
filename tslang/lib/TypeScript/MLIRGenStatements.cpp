@@ -173,6 +173,36 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ts::Block blockAST, const GenContext &genContext, int skipStatements)
     {
+        // one field's copy of a `for...in` body (mlirGen(ForInStatement)): its arrow functions and the like are its
+        // own, named for its key, which its first statement sets
+        if ((blockAST->internalFlags & InternalFlags::ForInFieldCopy) == InternalFlags::ForInFieldCopy)
+        {
+            auto copyName = std::string(".k");
+            auto keyStatement = blockAST->statements.front();
+            Expression keyLiteral = undefined;
+            if (keyStatement == SyntaxKind::VariableStatement)
+            {
+                keyLiteral = keyStatement.as<VariableStatement>()->declarationList->declarations.front()->initializer;
+            }
+            else if (keyStatement == SyntaxKind::ExpressionStatement)
+            {
+                keyLiteral = keyStatement.as<ExpressionStatement>()->expression.as<BinaryExpression>()->right;
+            }
+
+            if (keyLiteral == SyntaxKind::StringLiteral)
+            {
+                copyName += convertWideToUTF8(keyLiteral.as<ts::StringLiteral>()->text);
+            }
+
+            MLIRValueGuard<std::string> copyGuard(MLIRHelper::anonymousNameCopy);
+            MLIRHelper::anonymousNameCopy += copyName;
+
+            blockAST->internalFlags &= ~InternalFlags::ForInFieldCopy;
+            auto result = mlirGen(blockAST, genContext, skipStatements);
+            blockAST->internalFlags |= InternalFlags::ForInFieldCopy;
+            return result;
+        }
+
         // A `using` here needs disposal on the unwind path too, and only a TryOp has a
         // landing pad to run that from - see mlirGenBlockWithUnwindCleanup and
         // blockDeclaresUsing. Most blocks qualify: a function's own body, an if/loop body, a
@@ -1053,7 +1083,10 @@ namespace mlirgen
             if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
             {
                 key = name.getValue().str();
-                if (key.size() > 4 && (StringRef(key).starts_with("get_") || StringRef(key).starts_with("set_")))
+                // an accessor is a function field named get_x / set_x; a value field may be named so too
+                auto isAccessor = isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(field.type)
+                    && key.size() > 4 && (StringRef(key).starts_with("get_") || StringRef(key).starts_with("set_"));
+                if (isAccessor)
                 {
                     key = key.substr(4);
                 }
@@ -1139,7 +1172,9 @@ namespace mlirgen
                 statements.push_back(forInStatementAST->statement);
                 auto isThisField = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::EqualsEqualsEqualsToken),
                                                              nf.createNumericLiteral(stows(std::to_string(index))));
-                chain = nf.createIfStatement(isThisField, nf.createBlock(statements), chain);
+                auto fieldBlock = nf.createBlock(statements);
+                fieldBlock->internalFlags |= InternalFlags::ForInFieldCopy;
+                chain = nf.createIfStatement(isThisField, fieldBlock, chain);
             }
 
             NodeArray<ts::Statement> body;
