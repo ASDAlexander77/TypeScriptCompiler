@@ -14,9 +14,21 @@ using namespace PatternMatch;
 struct ExportFixPassCode
 {
     bool isWindowsMSVCEnvironment;
+    bool isWasm;
 
-    ExportFixPassCode(bool isWindowsMSVCEnvironment) : isWindowsMSVCEnvironment(isWindowsMSVCEnvironment)
+    ExportFixPassCode(bool isWindowsMSVCEnvironment, bool isWasm)
+        : isWindowsMSVCEnvironment(isWindowsMSVCEnvironment), isWasm(isWasm)
     {
+    }
+
+    // wasm: an exported function names itself an export of the module (.export_name), as the
+    // DLLExport storage class does on Windows. A wasm program is linked without --export-all, which
+    // kept every default-library function alive (exe.cpp), so this is what keeps the 'export'ed
+    // ones reachable from the host.
+    void exportFromWasm(Function &F)
+    {
+        if (isWasm && !F.isDeclaration() && !F.hasFnAttribute("wasm-export-name"))
+            F.addFnAttr("wasm-export-name", F.getName());
     }
 
     bool runOnFunction(Function &F)
@@ -43,6 +55,7 @@ struct ExportFixPassCode
             // set DLLExport
             if (isWindowsMSVCEnvironment)
                 F.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
+            exportFromWasm(F);
             MadeChange = true;
         }
 
@@ -63,6 +76,7 @@ struct ExportFixPassCode
             // set DLLExport
             if (isWindowsMSVCEnvironment)
                 F.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
+            exportFromWasm(F);
             MadeChange = true;
         }
 
@@ -128,7 +142,7 @@ namespace ts
 {
     llvm::PreservedAnalyses ExportFixPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM)
     {
-        ExportFixPassCode LPF{isWindowsMSVCEnvironment};
+        ExportFixPassCode LPF{isWindowsMSVCEnvironment, isWasm};
         bool MadeChange = false;
 
         for (auto &G : M.globals())

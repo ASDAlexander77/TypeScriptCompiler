@@ -10,9 +10,11 @@ namespace ts
     {
     private:
         bool isWindowsMSVCEnvironment;
+        bool isWasm;
 
     public:
-        ExportFixPass(bool isWindowsMSVCEnvironment) : isWindowsMSVCEnvironment(isWindowsMSVCEnvironment) {
+        ExportFixPass(bool isWindowsMSVCEnvironment, bool isWasm = false)
+            : isWindowsMSVCEnvironment(isWindowsMSVCEnvironment), isWasm(isWasm) {
         }
 
         llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM);
