@@ -23,6 +23,7 @@
 
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/xxhash.h"
 
 #define DEBUG_TYPE "llvm"
 
@@ -40,18 +41,19 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     {
     }
 
+    // The name of the global that holds a constant: `prefix` and a hash of the constant's text - its
+    // type and elements, as MLIR prints them. A global is shared by every constant with the same
+    // name, so the name has to follow the content. hash_value of an attribute or a type hashes its
+    // address: weakly mixed, two arrays' names were often only a few hundred apart and could meet,
+    // handing one constant array another's data, and they changed from one run to the next.
     std::string calc_hash_value(ArrayAttr &arrayAttr, mlir::Type llvmType, const char *prefix) const
     {
-        auto opHash = 0ULL;
-        opHash ^= hash_value(llvmType) + 0x9e3779b9 + (opHash << 6) + (opHash >> 2);
-        for (auto item : arrayAttr)
-        {
-            opHash ^= hash_value(item) + 0x9e3779b9 + (opHash << 6) + (opHash >> 2);
-        }
+        std::string text;
+        llvm::raw_string_ostream os(text);
+        os << llvmType << '|' << arrayAttr;
 
-        // calculate name;
         std::stringstream vecVarName;
-        vecVarName << prefix << opHash;
+        vecVarName << prefix << llvm::xxh3_64bits(text);
 
         return vecVarName.str();
     }
@@ -436,7 +438,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     std::string getGlobalArrayName(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
     {
         std::stringstream ss;
-        ss << "a_" << size;
+        // the size apart from the hash: "a_2" + "11..." and "a_21" + "1..." were the same name
+        ss << "a_" << size << "_";
         return calc_hash_value(arrayAttr, originalElementType, ss.str().c_str());
     }
 
