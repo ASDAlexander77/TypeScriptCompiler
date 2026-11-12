@@ -6,6 +6,7 @@
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 
 #include <deque>
 #include "llvm/Support/Debug.h"
@@ -44,8 +45,10 @@ struct GenericFunctionInfo
     SourceFile sourceFile;
     StringRef fileName;
 
-    bool processing;
-    bool processed;
+    // the instances being generated, by full name: a call of one of them from its own body (or from an
+    // instance it calls) is recursion and takes its type; any other instance can still be made then
+    llvm::StringSet<> processing;
+    bool processed = false;
 
     // declared inside a function, whose locals its body may read; otherwise an instantiation sees no
     // local of the function it is instantiated from (MLIRGenImpl::isolateGeneratedBodies)

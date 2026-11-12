@@ -2518,6 +2518,7 @@ set(TSLANG_CORPUS
     00class_constructor_overloads.ts
     00callback_result_ignored.ts
     00generic_default_no_inference.ts
+    00generic_instance_from_instance.ts
     00promise_type.ts
     00class_deconst.ts
     00class_def_constr.ts
@@ -2578,6 +2579,7 @@ set(TSLANG_CORPUS
     00for_await_yield.ts
     00for_await.ts
     00for_in.ts
+    00for_in_fields.ts
     00for_infinite_result.ts
     00for_of.ts
     00for.ts
@@ -4833,6 +4835,18 @@ tslang_add_test(NAME test-compile-own-00-const-interface-of-local COMMAND test-r
 # A local given its own value keeps it under own: `n = n` stores nothing.
 tslang_add_test(NAME test-jit-own-00-self-assign COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
 tslang_add_test(NAME test-compile-own-00-self-assign COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
+
+# for...in over an object literal or a tuple walks the fields of its type, and an instance of a generic
+# function makes other instances of it while it is being made (JSON.stringify of an object literal or of
+# nested arrays). rc and none run them from TSLANG_CORPUS.
+tslang_add_test(NAME test-compile-00-for-in-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_fields.ts")
+tslang_add_test(NAME test-compile-own-00-for-in-fields COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_fields.ts")
+tslang_add_test(NAME test-jit-00-for-in-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_fields.ts")
+tslang_add_test(NAME test-jit-own-00-for-in-fields COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_fields.ts")
+tslang_add_test(NAME test-compile-00-generic-instance-from-instance COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
+tslang_add_test(NAME test-compile-own-00-generic-instance-from-instance COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
+tslang_add_test(NAME test-jit-00-generic-instance-from-instance COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
+tslang_add_test(NAME test-jit-own-00-generic-instance-from-instance COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.

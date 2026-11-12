@@ -252,6 +252,17 @@ class MLIRCodeLogic
                 fieldIndex = intAttr.getValue().getSExtValue();;
                 notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
             }
+            // `t["1"]`, as `for (const k in t)` gives it: the position of a field that has no name
+            else if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
+            {
+                unsigned position;
+                if (!strAttr.getValue().getAsInteger(10, position) && position < tupleType.size()
+                    && !isa_and_nonnull<mlir::StringAttr>(tupleType.getFieldInfo(position).id))
+                {
+                    fieldIndex = position;
+                    notFound = false;
+                }
+            }
         }
 
         if (notFound)

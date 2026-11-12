@@ -570,7 +570,10 @@ enum class InternalFlags : number
     GeneratorDoneValue = 1 << 14,
     // an object literal a variable declared with no type is given (`const o = { w: ... }`): its this-free arrows
     // are closures (markClosureMembers)
-    UntypedVariableInitializer = 1 << 15
+    UntypedVariableInitializer = 1 << 15,
+    // the body of a `for...in` over an object literal's fields made for one field: its first statement gives
+    // the key, which names what it makes from a location (MLIRHelper::anonymousNameCopy)
+    ForInFieldCopy = 1 << 16
 };
 
 ENUM_OPS(InternalFlags)

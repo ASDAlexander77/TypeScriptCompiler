@@ -1,11 +1,9 @@
 function main() {
-    /* 
-   const object : { name: string, age: number } = { name: "foo", age: 10.0 };
+    const record: { name: string, age: number } = { name: "foo", age: 10.0 };
 
-   for (const property in object) {
-     print(`${property}: ${object[property]}`);
-   }
-	*/
+    for (const property in record) {
+        print(`${property}: ${record[property]}`);
+    }
 
     const object = [10, 20, 30];
 

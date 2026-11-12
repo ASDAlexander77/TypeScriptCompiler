@@ -5382,6 +5382,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ForStatement forStatementAST, const GenContext &genContext);
 
+    // the keys `for...in` walks in an object literal's or a tuple's type (MLIRGenStatements.cpp)
+    static bool forInFieldKeys(mlir::Type type, SmallVector<std::string> &keys);
+
     mlir::LogicalResult mlirGen(ForInStatement forInStatementAST, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenES3(ForOfStatement forOfStatementAST, mlir::Value exprValue,
@@ -6457,6 +6460,15 @@ class MLIRGenImpl
 
         if (auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>())        
         {
+            // every key `for...in` walks in an object literal or a tuple, the position of an unnamed field too
+            SmallVector<std::string> fieldKeys;
+            auto keyAttr = dyn_cast<mlir::StringAttr>(constantOp.getValue());
+            if (keyAttr && forInFieldKeys(rightExpressionValue.getType(), fieldKeys)
+                && llvm::is_contained(fieldKeys, keyAttr.getValue().str()))
+            {
+                return mlirGenBooleanValue(loc(binaryExpressionAST->right), true);
+            }
+
             auto hasField = !!mth.getFieldTypeByFieldName(rightExpressionValue.getType(), constantOp.getValue());
             return mlirGenBooleanValue(loc(binaryExpressionAST->right), hasField);
         }
