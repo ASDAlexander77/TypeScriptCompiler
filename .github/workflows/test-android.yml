@@ -153,17 +153,26 @@ jobs:
           echo "$sdk/emulator" >> "$GITHUB_PATH"
           echo "$sdk/platform-tools" >> "$GITHUB_PATH"
 
+      # Every wait has a limit, and the emulator ending is noticed: `adb wait-for-device` alone
+      # waited for an emulator that had already exited until the job's own limit.
       - name: Start the emulator
         shell: bash
         run: |
+          ls -l /dev/kvm
+          emulator -accel-check || true
+          adb start-server > /dev/null 2>&1
           nohup emulator -avd tslang_api29_x86_64 -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -memory 4096 -cores 4 -accel on > emulator.log 2>&1 &
-          adb wait-for-device
+            -gpu swiftshader_indirect -memory 4096 -cores 4 -accel on < /dev/null > emulator.log 2>&1 &
+          pid=$!
           for i in $(seq 1 120); do
-            [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && { echo "booted after about $((i * 5)) s"; exit 0; }
+            if ! kill -0 $pid 2>/dev/null; then
+              wait $pid; echo "the emulator exited (code $?) before it booted:"; cat emulator.log; exit 1
+            fi
+            booted=$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            [ "$booted" = 1 ] && { echo "booted after about $((i * 5)) s"; adb devices; exit 0; }
             sleep 5
           done
-          echo "the emulator did not boot in 10 minutes"; tail -50 emulator.log; exit 1
+          echo "the emulator did not boot in 10 minutes:"; adb devices; tail -100 emulator.log; exit 1
 
       - name: Run the tests on the emulator
         working-directory: ${{ github.workspace }}/tslang/test/android
@@ -180,6 +189,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-test-results
-          path: tslang/test/android/out/results.txt
+          path: |
+            tslang/test/android/out/results.txt
+            emulator.log
           retention-days: 7
           if-no-files-found: ignore
