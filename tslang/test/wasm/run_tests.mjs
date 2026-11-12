@@ -40,7 +40,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, "../../../..");
+const repo = path.resolve(here, "../../..");
 
 const options = {
     suite: ["tester", "defaultlib"], triple: ["wasm32", "wasm64"], mm: ["none", "rc", "own"], debug: false,

@@ -632,7 +632,7 @@ jobs:
           chmod +x ./tests.sh
           ./tests.sh "$MODEL"
 
-  # wasm32 and wasm64 (docs/how/wasm/test), against each package: its tslang, the wasm-ld beside it
+  # wasm32 and wasm64 (tslang/test/wasm), against each package: its tslang, the wasm-ld beside it
   # and its wasm default library. The tester's tests and the default library's, under -mm=none, rc
   # and own, each program run under Node with the JavaScript host; one job per kind of program.
   # wasm64 needs Node 24; --require-run fails a test that is only compiled.
@@ -682,7 +682,7 @@ jobs:
 
       - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
         shell: pwsh
-        working-directory: ${{ github.workspace }}/docs/how/wasm/test
+        working-directory: ${{ github.workspace }}/tslang/test/wasm
         env:
           MODE: ${{ matrix.programs }}
         run: |
@@ -742,7 +742,7 @@ jobs:
 
       - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
         shell: bash
-        working-directory: ${{ github.workspace }}/docs/how/wasm/test
+        working-directory: ${{ github.workspace }}/tslang/test/wasm
         env:
           MODE: ${{ matrix.programs }}
         run: |

@@ -183,7 +183,7 @@ jobs:
 
     - name: Test wasm32 and wasm64 (${{ matrix.programs }} programs)
       if: matrix.kind == 'exe'
-      working-directory: ${{github.workspace}}/docs/how/wasm/test
+      working-directory: ${{github.workspace}}/tslang/test/wasm
       shell: bash
       env:
         MODE: ${{ matrix.programs }}
