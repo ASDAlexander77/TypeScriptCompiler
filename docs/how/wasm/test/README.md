@@ -27,6 +27,16 @@ uncaught exception.
 wasm64 needs Node 24 or later. LLVM gives a wasm64 module 64-bit tables, which older V8 cannot
 instantiate.
 
+## Exceptions
+
+`try`/`catch` and `finally` are wasm exception handling (the `exception-handling` feature, in every
+current browser and Node). The tslang compiler's `WasmExceptionPass` turns each landing pad into a
+catch of the C++ exception tag, `__cpp_exception`, which the module imports. The host creates the
+tag, so instantiate through `host.instantiate(bytes)`, which reads the tag's parameter type from the
+module: a pointer, i32 or i64. The host also keeps what a C++ runtime would: `__cxa_throw` throws a
+`WebAssembly.Exception` of that tag, and it tracks each exception's type and the exceptions being
+handled. A JS exception (`exit()`, a failed assert) is not of that tag, so no `catch` sees it.
+
 ## The tests
 
     node run_tests.mjs [--suite=tester,defaultlib] [--triple=wasm32,wasm64] [--mm=none,rc,own] [--debug] [-j<n>] [filter]
@@ -43,7 +53,6 @@ and every failure are written to `out/results.txt`.
 
 Some tests are skipped, each with its reason:
 
-- tests that catch an exception (`try`/`catch` does not catch on wasm yet; a throw ends the program)
 - async tests (the async runtime has no wasm build)
 - tests that use threads
 - default-library tests marked `// gc only`, `// linux only`, or (under own) `// not own`

@@ -1,6 +1,5 @@
 # Tests run_tests.mjs does not run for wasm: `<file> [<triple or model>,...] # <reason>`, every leg
-# when none is given. Tests that catch an exception and async tests are skipped without being
-# listed here.
+# when none is given. Async tests and tests that use threads are skipped without being listed here.
 
 # cannot work on wasm
 internals.ts                    # inline_asm with x86 instructions
@@ -9,6 +8,7 @@ internals.ts                    # inline_asm with x86 instructions
 00tslang_issue_29_thread.ts     # starts threads through _beginthreadex: no threads on wasm
 00cppvtable_hidden_return.ts    # a @cpp class returning a struct needs the MSVC or a 64-bit Itanium ABI (excluded on i686 too)
 fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
+json.ts none                    # (default library) builds a 100000-character string a character at a time: -mm=none frees none of the ~5 GB, more than a wasm memory holds
 
 # fails natively under the same model too (not run natively under it by ctest)
 01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)

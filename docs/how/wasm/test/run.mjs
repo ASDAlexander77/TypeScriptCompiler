@@ -23,7 +23,7 @@ const host = createHost({
 let code;
 try
 {
-    const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), host.imports);
+    const instance = await host.instantiate(fs.readFileSync(file));
     code = host.run(instance);
 }
 catch (e)
