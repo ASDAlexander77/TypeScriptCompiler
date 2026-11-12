@@ -6,7 +6,8 @@ name: Test - Android (emulator)
 # Windows, so Windows builds the programs and Linux, which has KVM, runs the emulator.
 #
 # create-release.yml calls it with the package it has just built (package: artifact). A pull request
-# that changes the runner, and a manual run, test the latest published release's package.
+# that changes the runner, and a manual run, test the latest published release's package, with that
+# release's tester tests.
 
 on:
   workflow_call:
@@ -73,6 +74,12 @@ jobs:
           Write-Host "release: $tag"
           gh release download $tag --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # that release's compiler with that release's tests: a test added since checks a fix it
+          # does not have. The runner and its skips stay this commit's - they are what is tested.
+          git fetch --depth=1 origin tag $tag
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout $tag -- tslang/test/tester/tests tslang/test/tester/CMakeLists.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Unpack the package
         shell: pwsh
@@ -111,6 +118,11 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    # one place for avdmanager to make the AVD and the emulator to find it: left to themselves the
+    # runner's command-line tools made it where the emulator does not look ("Unknown AVD name")
+    env:
+      ANDROID_USER_HOME: ${{ github.workspace }}/__android
+      ANDROID_AVD_HOME: ${{ github.workspace }}/__android/avd
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -149,7 +161,9 @@ jobs:
           sdkmanager=$sdk/cmdline-tools/latest/bin/sdkmanager
           yes | $sdkmanager --licenses > /dev/null || true
           $sdkmanager --install "emulator" "platform-tools" "system-images;android-29;default;x86_64" > /dev/null
+          mkdir -p "$ANDROID_AVD_HOME"
           echo no | $sdk/cmdline-tools/latest/bin/avdmanager create avd --force -n tslang_api29_x86_64 -k "system-images;android-29;default;x86_64"
+          $sdk/emulator/emulator -list-avds | grep -x tslang_api29_x86_64 || { echo "the emulator does not see the AVD:"; ls -R "$ANDROID_USER_HOME"; exit 1; }
           echo "$sdk/emulator" >> "$GITHUB_PATH"
           echo "$sdk/platform-tools" >> "$GITHUB_PATH"
 
