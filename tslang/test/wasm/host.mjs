@@ -62,31 +62,37 @@ export function writeAllSync(fs, fd, text)
 // that prints a line at a time (00stack_test prints two million) would otherwise make a write
 // call per line, too slow on a busy CI runner. stdout is written out at 64 KB, before anything
 // goes to stderr, by flush() (the host calls it before it blocks or reads stdin) and at the end.
+// write() takes text, writeBytes() the program's bytes as they are (binary output: a length
+// prefix, a byte of 0x80 and up that is not UTF-8).
 export function bufferedOutput(fs)
 {
     let pending = [], size = 0;
+    const encoder = new TextEncoder();
     const flush = () =>
     {
         if (size === 0) return;
-        const text = pending.join("");
+        const chunks = pending.map((c) => (typeof c === "string" ? encoder.encode(c) : c));
         pending = [];
         size = 0;
-        writeAllSync(fs, 1, text);
+        const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+        let off = 0;
+        for (const c of chunks) { all.set(c, off); off += c.length; }
+        writeAllSync(fs, 1, all);
     };
-    const write = (fd, text) =>
+    const write = (fd, data) =>
     {
         if (fd === 2)
         {
             flush();
-            writeAllSync(fs, 2, text);
+            writeAllSync(fs, 2, data);
             return;
         }
 
-        pending.push(text);
-        size += text.length;
+        pending.push(data);
+        size += data.length;
         if (size >= 65536) flush();
     };
-    return { write, flush };
+    return { write, writeBytes: write, flush };
 }
 
 export function memoryOf(bytes)
@@ -180,6 +186,8 @@ export function createHost(options = {})
     const dv = () => new DataView(buffer());
 
     const utf8Decoder = new TextDecoder("utf-8");
+    // the program's bytes, unchanged where the writer takes bytes (Node); as text where it takes text
+    const writeBytes = options.writeBytes ?? ((fd, bytes) => write(fd, utf8Decoder.decode(bytes)));
     const utf8Encoder = new TextEncoder();
 
     const cstrEnd = (p) => { const m = u8(); while (m[p] !== 0) p++; return p; };
@@ -962,8 +970,8 @@ export function createHost(options = {})
         puts: (p) => { write(1, readStr(p) + "\n"); return 1; },
         putchar: (c) => { write(1, String.fromCharCode(c)); return c; },
         fflush: () => 0,
-        stdio_write: (fd, s, count) => { if (count > 0) write(fd === 2 ? 2 : 1, utf8Decoder.decode(bytesOf(N(s), count))); },
-        stdio_write_bytes: (fd, s, count) => { if (count > 0) write(fd === 2 ? 2 : 1, utf8Decoder.decode(bytesOf(N(s), count))); return Math.max(0, count); },
+        stdio_write: (fd, s, count) => { if (count > 0) writeBytes(fd === 2 ? 2 : 1, bytesOf(N(s), count)); },
+        stdio_write_bytes: (fd, s, count) => { if (count > 0) writeBytes(fd === 2 ? 2 : 1, bytesOf(N(s), count)); return Math.max(0, count); },
         stdio_read_line: () =>
         {
             const bytes = [];

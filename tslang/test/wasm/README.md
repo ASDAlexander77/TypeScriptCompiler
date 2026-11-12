@@ -24,6 +24,11 @@ an error for a wasm triple, because the collector has no wasm build. Pass `-mm` 
 The exit code is the program's own (`main`'s result, or `exit()`'s argument), or 1 for a trap or an
 uncaught exception.
 
+Under Node, `stdio_write` and `stdio_write_bytes` write the program's bytes as they are, so binary
+output (a Native Messaging host's length prefix, say) comes out unchanged, and `stdio_read` reads
+stdin's bytes. A host made with a `write` of its own and no `writeBytes` (the browser page) gets
+the bytes as UTF-8 text.
+
 wasm64 needs Node 24 or later. LLVM gives a wasm64 module 64-bit tables, which older V8 cannot
 instantiate.
 
