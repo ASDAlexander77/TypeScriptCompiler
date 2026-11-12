@@ -4,7 +4,9 @@
 // uncaught exception. A wasm64 program needs Node's memory64 support, on by default from Node 24
 // and behind --experimental-wasm-memory64 before it (run_tests.mjs passes it).
 import fs from "node:fs";
+import os from "node:os";
 import process from "node:process";
+import worker_threads from "node:worker_threads";
 import { createHost, UncaughtThrow } from "./host.mjs";
 
 const file = process.argv[2];
@@ -16,7 +18,7 @@ if (!file)
 
 const host = createHost({
     args: process.argv.slice(2),
-    node: { fs, process },
+    node: { fs, process, worker_threads, os },
     write: (fd, text) => fs.writeSync(fd, text),
 });
 

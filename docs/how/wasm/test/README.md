@@ -40,10 +40,32 @@ handled. A JS exception (`exit()`, a failed assert) is not of that tag, so no `c
 ## Async
 
 `async`/`await` and `Promise` lower to MLIR's async runtime (`mlirAsyncRuntime*`). The host
-implements it on the program's one thread: an `async` call queues its task, and a blocking
+implements it on each thread: an `async` call queues its task, and a blocking
 `await` runs queued tasks until what it waits for is ready. `run()` runs the tasks still queued
 when `main` returns. `sleep(ms)` blocks: `Atomics.wait` in Node, a busy wait on a browser's main
 thread.
+
+## Threads
+
+`Thread.spawn` and `Worker` run under Node. A program that starts a thread (one that calls
+`tslang_thread_spawn`) is linked with `--shared-memory --import-memory`: the host makes the shared
+memory, and starts each thread in a Node worker ([thread.mjs](thread.mjs)) that instantiates the same
+compiled module on it, with a stack and thread-local storage of its own. `join` waits on the
+thread's control block with `Atomics.wait`; `Atomics.wait` and `Atomics.notify` work across
+threads. A program that starts no thread keeps an unshared memory, so it still runs in a browser
+that is not cross-origin isolated.
+
+What this needs from the compiler and the default library:
+
+- Every wasm object is compiled with the `atomics` and `bulk-memory` features, which a shared memory
+  requires of everything linked into it. Rebuild the default library's wasm archives after updating.
+- The heap lives in the module's memory behind a lock, since one thread frees what another allocated.
+- On wasm32 a heap block's header is 8 bytes, not 4, so a payload of 64-bit elements is 8-aligned:
+  a real 64-bit atomic traps on an address that is not.
+
+Not in a browser: a browser does not let its main thread block in `join`, and shares memory only on
+a cross-origin-isolated page. Each thread has its own JS host, so what the host keeps (open regular
+expression matches, async tasks, C++ exceptions in flight) stays on the thread that made it.
 
 ## The tests
 
@@ -61,7 +83,6 @@ and every failure are written to `out/results.txt`.
 
 Some tests are skipped, each with its reason:
 
-- tests that use threads
 - default-library tests marked `// gc only`, `// linux only`, or (under own) `// not own`
 - the tests in [wasm_skips.txt](wasm_skips.txt)
 

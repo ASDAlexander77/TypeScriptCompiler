@@ -367,8 +367,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         varName << "td_" << (size_t)hash_value(type) << variant.str() << "_" << name;
 
         TypeConverterHelper tch(typeConverter);
-        auto llvmIndexType = tch.convertType(th.getIndexType());
-        auto recordType = TypeDescriptorLogic::getRecordType(rewriter, llvmIndexType);
+        auto blockWordType = getHeapBlockWordType();
+        auto recordType = TypeDescriptorLogic::getRecordType(rewriter, blockWordType);
         auto nameArrayType = th.getArrayType(th.getI8Type(), name.length() + 1);
         auto descriptorType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {recordType, nameArrayType}, false);
 
@@ -414,7 +414,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             // immortal block header - see TYPE_DESCR_BLOCK_HEADER
             setStructValue(loc, recordValue,
                            rewriter.create<LLVM::ConstantOp>(
-                               loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                               loc, blockWordType, rewriter.getIntegerAttr(blockWordType, HEAP_BLOCK_IMMORTAL)),
                            TYPE_DESCR_BLOCK_HEADER);
 
             mlir::Value descriptorValue = rewriter.create<LLVM::UndefOp>(loc, descriptorType);
@@ -620,7 +620,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 // packed, because the header has to sit exactly one word in front of the data:
                 // an unpacked struct pads to the data's own alignment, and a vector of three
                 // i32 wants sixteen bytes, which would put the header two words back instead
-                auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, dataType},
+                auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {getHeapBlockWordType(), dataType},
                                                                   /*isPacked=*/true);
                 global = rewriter.create<LLVM::GlobalOp>(loc, blockType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
@@ -629,8 +629,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 mlir::Value blockVal = rewriter.create<LLVM::UndefOp>(loc, blockType);
                 blockVal = rewriter.create<LLVM::InsertValueOp>(
                     loc, blockVal,
-                    rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
-                                                      rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                    rewriter.create<LLVM::ConstantOp>(loc, getHeapBlockWordType(),
+                                                      rewriter.getIntegerAttr(getHeapBlockWordType(), HEAP_BLOCK_IMMORTAL)),
                     MLIRHelper::getStructIndex(rewriter, 0));
 
                 mlir::Value dataVal = isDense

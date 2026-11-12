@@ -1253,14 +1253,14 @@ class OwnershipRoutineLogic
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc(), compileOptions);
 
         auto loc = op->getLoc();
 
         auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
         auto releasePtrSlot =
             rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
-                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         TypeDescriptorLogic::getRecordType(rewriter, rewriter.getIntegerType(compileOptions.heapBlockHeaderBytes() * 8)),
                                          recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RELEASE});
         auto releaseFn = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), releasePtrSlot);
 
@@ -1390,7 +1390,7 @@ class OwnershipRoutineLogic
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc(), compileOptions);
 
         auto loc = op->getLoc();
         auto ptrTy = th.getPtrType();
@@ -1399,7 +1399,7 @@ class OwnershipRoutineLogic
 
         auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
         auto retainPtrSlot =
-            rewriter.create<LLVM::GEPOp>(loc, ptrTy, TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+            rewriter.create<LLVM::GEPOp>(loc, ptrTy, TypeDescriptorLogic::getRecordType(rewriter, rewriter.getIntegerType(compileOptions.heapBlockHeaderBytes() * 8)),
                                          recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RETAIN});
         auto retainFn = rewriter.create<LLVM::LoadOp>(loc, ptrTy, retainPtrSlot);
         auto plainRetain = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, PLAIN_BLOCK_RETAIN_ROUTINE);
@@ -1824,14 +1824,14 @@ class OwnershipRoutineLogic
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc(), compileOptions);
 
         auto loc = op->getLoc();
 
         auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
         auto retainPtrSlot =
             rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
-                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         TypeDescriptorLogic::getRecordType(rewriter, rewriter.getIntegerType(compileOptions.heapBlockHeaderBytes() * 8)),
                                          recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RETAIN});
         auto retainFn = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), retainPtrSlot);
 
@@ -2135,14 +2135,14 @@ class OwnershipRoutineLogic
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc(), compileOptions);
 
         auto loc = op->getLoc();
 
         auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
         auto routinePtrSlot =
             rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
-                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         TypeDescriptorLogic::getRecordType(rewriter, rewriter.getIntegerType(compileOptions.heapBlockHeaderBytes() * 8)),
                                          recordPtr, ArrayRef<LLVM::GEPArg>{0, descriptorSlot});
         auto routine = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), routinePtrSlot);
 

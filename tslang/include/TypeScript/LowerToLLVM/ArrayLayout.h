@@ -309,7 +309,7 @@ class ArrayLayout : public LLVMCodeHelperBase
             mlir::Type globalType = headerType();
             if (withWord)
             {
-                globalType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, headerType()},
+                globalType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {getHeapBlockWordType(), headerType()},
                                                               /*isPacked=*/true);
             }
 
@@ -343,8 +343,8 @@ class ArrayLayout : public LLVMCodeHelperBase
                 globalVal = rewriter.create<LLVM::UndefOp>(loc, globalType);
                 globalVal = rewriter.create<LLVM::InsertValueOp>(
                     loc, globalVal,
-                    rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
-                                                      rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                    rewriter.create<LLVM::ConstantOp>(loc, getHeapBlockWordType(),
+                                                      rewriter.getIntegerAttr(getHeapBlockWordType(), HEAP_BLOCK_IMMORTAL)),
                     MLIRHelper::getStructIndex(rewriter, 0));
                 globalVal = rewriter.create<LLVM::InsertValueOp>(loc, globalVal, headerVal,
                                                                  MLIRHelper::getStructIndex(rewriter, 1));
