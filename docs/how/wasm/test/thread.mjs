@@ -6,14 +6,14 @@ import fs from "node:fs";
 import os from "node:os";
 import process from "node:process";
 import worker_threads from "node:worker_threads";
-import { createHost } from "./host.mjs";
+import { createHost, writeAllSync } from "./host.mjs";
 
 const { module, memory, memoryType, args, ...thread } = worker_threads.workerData;
 
 const host = createHost({
     args,
     node: { fs, process, worker_threads, os },
-    write: (fd, text) => fs.writeSync(fd, text),
+    write: (fd, text) => writeAllSync(fs, fd, text),
 });
 
 try
@@ -23,7 +23,7 @@ try
 catch (e)
 {
     // the thread did not start (runThread reports what ends a started one): join must still wake
-    fs.writeSync(2, `${e?.stack ?? e}\n`);
+    writeAllSync(fs, 2, `${e?.stack ?? e}\n`);
     const control = new Int32Array(memory.buffer, thread.control, 3);
     control[1] = 2;
     Atomics.store(control, 0, 1);

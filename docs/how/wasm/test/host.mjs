@@ -37,6 +37,27 @@ export class UncaughtThrow extends Error
 // memory section or, for a program that starts threads, of its `env.memory` import (a shared memory
 // the host makes, and passes to each thread's worker). The C++ exception tag the module imports
 // carries a pointer, an i64 in a memory64 (wasm64) module.
+// Writes all of text to fd with Node's fs. A pipe Node made non-blocking (stdout under a parent
+// that reads it, as run_tests.mjs and CI do) takes part of a write, or none (EAGAIN) while it is
+// full: write the rest once it drains, as a C library's blocking write would.
+export function writeAllSync(fs, fd, text)
+{
+    const bytes = typeof text === "string" ? new TextEncoder().encode(text) : text;
+    let wait;
+    for (let off = 0; off < bytes.length;)
+    {
+        try
+        {
+            off += fs.writeSync(fd, bytes, off, bytes.length - off);
+        }
+        catch (e)
+        {
+            if (e?.code !== "EAGAIN") throw e;
+            Atomics.wait(wait ??= new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
+        }
+    }
+}
+
 export function memoryOf(bytes)
 {
     const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength);

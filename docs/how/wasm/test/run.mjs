@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import process from "node:process";
 import worker_threads from "node:worker_threads";
-import { createHost, UncaughtThrow } from "./host.mjs";
+import { createHost, UncaughtThrow, writeAllSync } from "./host.mjs";
 
 const file = process.argv[2];
 if (!file)
@@ -19,7 +19,7 @@ if (!file)
 const host = createHost({
     args: process.argv.slice(2),
     node: { fs, process, worker_threads, os },
-    write: (fd, text) => fs.writeSync(fd, text),
+    write: (fd, text) => writeAllSync(fs, fd, text),
 });
 
 let code;
@@ -32,11 +32,11 @@ catch (e)
 {
     if (e instanceof UncaughtThrow)
     {
-        fs.writeSync(2, "Uncaught exception\n");
+        writeAllSync(fs, 2, "Uncaught exception\n");
     }
     else
     {
-        fs.writeSync(2, `${e?.stack ?? e}\n`);
+        writeAllSync(fs, 2, `${e?.stack ?? e}\n`);
     }
 
     code = 1;
