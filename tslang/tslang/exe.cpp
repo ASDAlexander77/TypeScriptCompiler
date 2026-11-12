@@ -29,6 +29,8 @@
 
 #include "link.h"
 
+#include <optional>
+
 namespace cl = llvm::cl;
 
 extern cl::opt<enum Action> emitAction;
@@ -494,11 +496,13 @@ static bool resolveWindowsLibPath(const llvm::Triple &triple, std::string &path,
 // which runtime it is and that it is older than the compiler. `path` is the directory the link
 // takes the runtime from (resolveWindowsLibPath has made it the x86 one for x86); a runtime not
 // found there is the linker's to report.
-static bool checkRuntimeSharesHeap(llvm::StringRef path)
+// Whether the runtime in `path` (TypeScriptAsyncRuntime.lib) defines `symbol`: its archive's symbol table names
+// it (x86 decorates it with one more underscore). None when there is no runtime there to read.
+static std::optional<bool> runtimeDefines(llvm::StringRef path, llvm::StringRef symbol)
 {
     if (path.empty())
     {
-        return true;
+        return std::nullopt;
     }
 
     llvm::SmallString<256> lib(path);
@@ -506,15 +510,21 @@ static bool checkRuntimeSharesHeap(llvm::StringRef path)
     auto buffer = llvm::MemoryBuffer::getFile(lib, /*IsText=*/false, /*RequiresNullTerminator=*/false);
     if (!buffer)
     {
-        return true;
+        return std::nullopt;
     }
 
-    // the archive's symbol table names it (x86 decorates it with one more underscore)
-    if ((*buffer)->getBuffer().contains("__tslang_heap_shared"))
+    return (*buffer)->getBuffer().contains(symbol);
+}
+
+static bool checkRuntimeSharesHeap(llvm::StringRef path)
+{
+    if (runtimeDefines(path, "__tslang_heap_shared").value_or(true))
     {
         return true;
     }
 
+    llvm::SmallString<256> lib(path);
+    llvm::sys::path::append(lib, "TypeScriptAsyncRuntime.lib");
     llvm::WithColor::error(llvm::errs(), "tslang")
         << "the TypeScript runtime " << lib << " is older than this tslang: it has no __tslang_heap_shared, "
         << "which a library (--emit=dll) links with. Point --tslang-lib-path (or TSLANG_LIB_PATH) at the "
@@ -758,6 +768,7 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
 
     auto isTslangLibNeeded = true;
     auto useMimalloc = false;
+    auto reportUncaught = false;
 
     auto os = TheTriple.getOS();
     auto arch = TheTriple.getArch();
@@ -1014,6 +1025,11 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
             return 1;
         }
 
+        // An executable says what an exception nothing catches threw, as the JIT does, instead of ending
+        // with no word (TypeScriptAsyncRuntime/UncaughtException.cpp). A runtime older than that has no
+        // such file, and its program ends as it did.
+        reportUncaught = !shared && winX86OrX64 && runtimeDefines(tslangLibPath, "__tslang_report_uncaught").value_or(false);
+
         tslangLibPathOpt = getLibsPathOpt(tslangLibPath);
         if (!tslangLibPathOpt.empty())
         {
@@ -1146,6 +1162,12 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         {
             args.push_back(arch == llvm::Triple::x86 ? "-Wl,-include:___tslang_heap_shared"
                                                      : "-Wl,-include:__tslang_heap_shared");
+        }
+
+        if (reportUncaught)
+        {
+            args.push_back(arch == llvm::Triple::x86 ? "-Wl,-include:___tslang_report_uncaught"
+                                                     : "-Wl,-include:__tslang_report_uncaught");
         }
     }
 

@@ -6037,6 +6037,30 @@ if (WIN32)
                                  PROPERTIES PASS_REGULAR_EXPRESSION "${uncaught_expected_${uncaught_name}}"
                                             FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
         endforeach()
+
+        # and an executable says it too, under every model, with and without --opt (uncaught-exe.cmake)
+        foreach(uncaught_model gc rc none own)
+            foreach(uncaught_opt opt noopt)
+                if (uncaught_opt STREQUAL "opt")
+                    set(uncaught_opt_flags "--opt;--opt_level=3")
+                else()
+                    set(uncaught_opt_flags "--opt_level=0")
+                endif()
+                set(uncaught_test test-compile-${uncaught_model}-${uncaught_opt}-uncaught-${uncaught_name})
+                add_test(NAME ${uncaught_test}
+                         COMMAND ${CMAKE_COMMAND}
+                                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/uncaught/${uncaught_name}.ts"
+                                 "-DMODEL=${uncaught_model}"
+                                 "-DEXPECT=${uncaught_expected_${uncaught_name}}"
+                                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${uncaught_test}"
+                                 "-DGC_LIB=${TEST_GC_LIBDIR}"
+                                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                                 "-DOPT=${uncaught_opt_flags}"
+                                 -P "${CMAKE_CURRENT_SOURCE_DIR}/uncaught-exe.cmake")
+            endforeach()
+        endforeach()
     endforeach()
 endif()
 
