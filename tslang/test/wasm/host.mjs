@@ -58,6 +58,37 @@ export function writeAllSync(fs, fd, text)
     }
 }
 
+// A program's output under Node, buffered as a C library buffers stdout into a pipe: a program
+// that prints a line at a time (00stack_test prints two million) would otherwise make a write
+// call per line, too slow on a busy CI runner. stdout is written out at 64 KB, before anything
+// goes to stderr, by flush() (the host calls it before it blocks or reads stdin) and at the end.
+export function bufferedOutput(fs)
+{
+    let pending = [], size = 0;
+    const flush = () =>
+    {
+        if (size === 0) return;
+        const text = pending.join("");
+        pending = [];
+        size = 0;
+        writeAllSync(fs, 1, text);
+    };
+    const write = (fd, text) =>
+    {
+        if (fd === 2)
+        {
+            flush();
+            writeAllSync(fs, 2, text);
+            return;
+        }
+
+        pending.push(text);
+        size += text.length;
+        if (size >= 65536) flush();
+    };
+    return { write, flush };
+}
+
 export function memoryOf(bytes)
 {
     const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength);
@@ -109,6 +140,8 @@ export function createHost(options = {})
 {
     const args = options.args ?? ["program.wasm"];
     const write = options.write ?? ((fd, text) => (fd === 2 ? console.error : console.log)(text));
+    // writes out what write() holds back: before the thread blocks or reads stdin
+    const flush = options.flush ?? (() => { });
     const node = options.node; // { fs, process } under Node
 
     let instance;
@@ -317,6 +350,7 @@ export function createHost(options = {})
     // thread) a busy wait
     const sleepFor = (millis) =>
     {
+        flush();
         try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, millis); return; } catch { }
         const end = Date.now() + millis;
         while (Date.now() < end) { }
@@ -328,6 +362,7 @@ export function createHost(options = {})
         const index = address / ArrayType.BYTES_PER_ELEMENT;
         if (sharedMemory)
         {
+            flush();
             const result = Atomics.wait(new ArrayType(buffer()), index, expected, timeout);
             return result === "ok" ? 0 : result === "not-equal" ? 1 : 2;
         }
@@ -832,6 +867,7 @@ export function createHost(options = {})
         if (stdinBuffer.pos >= stdinBuffer.bytes.length)
         {
             if (stdinBuffer.eof || !node) return -1;
+            flush();
             const chunk = new Uint8Array(65536);
             let n = 0;
             try { n = node.fs.readSync(0, chunk, 0, chunk.length, null); } catch (e) { if (e.code === "EAGAIN") return stdinByte(); if (e.code !== "EOF") n = 0; }
@@ -1120,6 +1156,7 @@ export function createHost(options = {})
         {
             const control = N(handle);
             const i32 = new Int32Array(buffer(), control, 3);
+            if (Atomics.load(i32, 0) === 0) flush();
             while (Atomics.load(i32, 0) === 0) Atomics.wait(i32, 0, 0);
             const ended = i32[1], code = i32[2];
             const thread = threads.get(control);
@@ -1376,6 +1413,8 @@ export function createHost(options = {})
         }
         finally
         {
+            // what the thread printed is out before join returns
+            flush();
             i32[1] = ended;
             i32[2] = code;
             Atomics.store(i32, 0, 1);
