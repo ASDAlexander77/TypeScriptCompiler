@@ -311,9 +311,14 @@ jobs:
           path: ${{ env.ASSET_NAME }}-windows-x64.zip
           retention-days: 1          
   
+  # The Linux packages' wasm-ld, built without libxml2 - see build-wasm-ld.yml
+  build_wasm_ld:
+    name: wasm-ld
+    uses: ./.github/workflows/build-wasm-ld.yml
+
   build_on_linux:
     name: Create/Upload Release Asset (${{ matrix.os }})
-    needs: defaultlib_commit
+    needs: [defaultlib_commit, build_wasm_ld]
 
     # One package per Ubuntu release: each is built, tested and packaged on that release, so its
     # binaries match that release's glibc and libstdc++.
@@ -481,6 +486,12 @@ jobs:
           LLVM_AR: ${{github.workspace}}/3rdParty/llvm/release/bin/llvm-ar
         run: bash ./scripts/build_wasm.sh
 
+      - name: Download wasm-ld
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-ld-linux
+          path: ${{github.workspace}}/__wasm-ld
+
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
@@ -495,7 +506,9 @@ jobs:
           cp ./gc/ninja/release/libgc.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptMimalloc.a ./__stage/
-          cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
+          # not the LLVM package's, which needs libxml2.so.2 (not on Ubuntu 26.04): build-wasm-ld.yml's
+          cp ../__wasm-ld/wasm-ld ./__stage/
+          chmod +x ./__stage/wasm-ld
           # Add the default library as a whole tree so its per-target, per-build, per-memory-model
           # subfolders are preserved:
           # defaultlib/{dll,lib}/<arch>/<vendor>/<os>/<env>/{debug,release}/{gc,rc,none},

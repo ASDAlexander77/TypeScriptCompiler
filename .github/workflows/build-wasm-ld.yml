@@ -1,0 +1,98 @@
+name: Build - wasm-ld
+
+# The wasm-ld the Linux packages ship: lld built from LLVM's source for WebAssembly only, without
+# libxml2 or zlib, with libstdc++ linked in. The official LLVM package's wasm-ld needs libxml2.so.2,
+# which Ubuntu 26.04 no longer has (libxml2 2.14 is libxml2.so.16), so it did not start there; lld
+# uses libxml2 only to merge Windows manifests. Built on the oldest Ubuntu a package is built for, so
+# that its C library is old enough for every one of them.
+#
+# create-release.yml calls it; a run on main (workflow_dispatch) leaves the build in the cache,
+# where a release's run finds it. A pull request that changes this file builds it once.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-wasm-ld.yml'
+
+env:
+  # the LLVM the compiler is built with (LLVM_FULL_VERSION in create-release.yml)
+  LLVM_FULL_VERSION: "22.1.8"
+
+jobs:
+  build:
+    name: Build wasm-ld (no libxml2)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache wasm-ld
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: __wasm-ld
+          key: wasm-ld-${{ env.LLVM_FULL_VERSION }}-${{ hashFiles('.github/workflows/build-wasm-ld.yml') }}
+
+      - name: Install Ninja
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y ninja-build && exit 0
+            echo "apt-get failed (attempt $i), retrying in 30 s"; sleep 30
+          done
+          exit 1
+
+      - name: Download LLVM's source
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -e
+          name=llvm-project-${LLVM_FULL_VERSION}.src
+          curl -L --fail --retry 3 -o $name.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_FULL_VERSION}/$name.tar.xz
+          # lld and what it builds with
+          tar -xJf $name.tar.xz $name/llvm $name/lld $name/cmake $name/third-party $name/libunwind
+          rm $name.tar.xz
+          mv $name llvm-src
+
+      - name: Build lld
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -e
+          cmake -G Ninja -S llvm-src/llvm -B llvm-build -Wno-dev \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_PROJECTS=lld \
+            -DLLVM_TARGETS_TO_BUILD=WebAssembly \
+            -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_BINDINGS=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+          cmake --build llvm-build --target lld -j 4
+          mkdir -p __wasm-ld
+          # lld picks its linker by the name it is run as
+          cp llvm-build/bin/lld __wasm-ld/wasm-ld
+          strip __wasm-ld/wasm-ld
+
+      # what it needs to start: the C library only
+      - name: Check wasm-ld
+        shell: bash
+        run: |
+          set -e
+          readelf -d __wasm-ld/wasm-ld | grep NEEDED
+          if readelf -d __wasm-ld/wasm-ld | grep NEEDED | grep -v -E 'libc\.so|libm\.so|ld-linux'; then
+            echo "wasm-ld needs more than the C library"; exit 1
+          fi
+          __wasm-ld/wasm-ld --version
+          ls -l __wasm-ld/wasm-ld
+
+      - name: Upload wasm-ld
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-ld-linux
+          path: __wasm-ld/wasm-ld
+          retention-days: 1
