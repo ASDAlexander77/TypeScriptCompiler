@@ -1,11 +1,11 @@
 # Tests run_tests.mjs does not run for wasm: `<file> [<triple or model>,...] # <reason>`, every leg
-# when none is given. Tests that use threads are skipped without being listed here.
+# when none is given.
 
 # cannot work on wasm
 internals.ts                    # inline_asm with x86 instructions
 00any_to_opaque_narrow.ts wasm32 # stores a u64 in an Opaque: a pointer is 4 bytes on wasm32
-00tslang_issue_29_pthread.ts    # starts threads through pthread_create: no threads on wasm
-00tslang_issue_29_thread.ts     # starts threads through _beginthreadex: no threads on wasm
+00tslang_issue_29_pthread.ts    # starts threads through pthread_create: the host starts them only through Thread.spawn
+00tslang_issue_29_thread.ts     # starts threads through _beginthreadex: the host starts them only through Thread.spawn
 00cppvtable_hidden_return.ts    # a @cpp class returning a struct needs the MSVC or a 64-bit Itanium ABI (excluded on i686 too)
 fetch.ts                        # (default library) fetch(): the host has no network, so the request throws
 json.ts none                    # (default library) builds a 100000-character string a character at a time: -mm=none frees none of the ~5 GB, more than a wasm memory holds

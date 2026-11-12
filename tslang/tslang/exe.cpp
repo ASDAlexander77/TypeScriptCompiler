@@ -1279,6 +1279,15 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         {
             removeCommandArgs(c.get(), {"crt1.o", "-lc", "clang_rt.builtins"});
             addCommandArgs(c.get(), {"--no-entry", "--export-all", "--allow-undefined"});
+            if (compileOptions.wasmThreads)
+            {
+                // threads: each runs the module in a worker of its own, on the one memory, which the host
+                // makes and passes in; a shared memory needs a maximum (4 GB, 16 GB for memory64: V8's
+                // limits). A worker sets its own stack, through __stack_pointer.
+                addCommandArgs(c.get(), {"--shared-memory", "--import-memory",
+                                         arch == llvm::Triple::wasm64 ? "--max-memory=17179869184" : "--max-memory=4294967296",
+                                         "--export=__stack_pointer"});
+            }
         }
     }
 

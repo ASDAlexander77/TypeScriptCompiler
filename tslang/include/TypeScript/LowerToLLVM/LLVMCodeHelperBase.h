@@ -300,14 +300,15 @@ class LLVMCodeHelperBase
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // packed: the payload starts right after the header word, where a heap block's does
-        auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, llvmStorageType},
+        auto wordType = getHeapBlockWordType();
+        auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {wordType, llvmStorageType},
                                                           /*isPacked=*/true);
         auto blockPtr = Alloca(blockType, 1);
         // what malloc guarantees a heap block, so the payload's alignment is the same as on the heap
         cast<LLVM::AllocaOp>(blockPtr.getDefiningOp()).setAlignment(2 * getHeapBlockHeaderSize());
 
         rewriter.create<LLVM::StoreOp>(
-            loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+            loc, rewriter.create<LLVM::ConstantOp>(loc, wordType, rewriter.getIntegerAttr(wordType, HEAP_BLOCK_IMMORTAL)),
             blockPtr);
         auto payloadPtr = getPayloadPtrFromBlockPtr(loc, blockPtr, llvmIndexType);
         rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, llvmStorageType), payloadPtr);
@@ -338,7 +339,14 @@ class LLVMCodeHelperBase
     // moving - sits behind ENABLE_TYPED_GC and was retired in §9.2, before the header existed.
     unsigned getHeapBlockHeaderSize()
     {
-        return compileOptions.sizeBits() / 8;
+        return compileOptions.heapBlockHeaderBytes();
+    }
+
+    // the integer that fills the header in a static block's layout: the count word, padded to the
+    // header's size (wasm32), all ones for HEAP_BLOCK_IMMORTAL
+    mlir::Type getHeapBlockWordType()
+    {
+        return rewriter.getIntegerType(getHeapBlockHeaderSize() * 8);
     }
 
     mlir::Value createHeapBlockHeaderSizeConstant(mlir::Location loc, mlir::Type llvmIndexType, bool negated = false)

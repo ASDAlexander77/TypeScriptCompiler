@@ -2,6 +2,7 @@
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEDESCRIPTORLOGIC_H_
 
 #include "TypeScript/Config.h"
+#include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptOps.h"
 
@@ -25,24 +26,26 @@ class TypeDescriptorLogic
     TypeConverterHelper &tch;
     TypeHelper th;
     Location loc;
+    const CompileOptions &compileOptions;
 
   public:
-    TypeDescriptorLogic(PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
-        : rewriter(rewriter), tch(tch), th(rewriter), loc(loc)
+    TypeDescriptorLogic(PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, const CompileOptions &compileOptions)
+        : rewriter(rewriter), tch(tch), th(rewriter), loc(loc), compileOptions(compileOptions)
     {
     }
 
-    // { i32 kind, i32 layout, ptr release, ptr retain, index blockHeader }
-    static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type llvmIndexType)
+    // { i32 kind, i32 layout, ptr release, ptr retain, ptr share, blockHeader }: the block header
+    // an integer of CompileOptions::heapBlockHeaderBytes, the index width but 8 bytes on wasm32
+    static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type blockWordType)
     {
         auto i32Ty = builder.getI32Type();
         auto ptrTy = LLVM::LLVMPointerType::get(builder.getContext());
-        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, llvmIndexType}, false);
+        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, blockWordType}, false);
     }
 
     LLVM::LLVMStructType getRecordType()
     {
-        return getRecordType(rewriter, tch.convertType(th.getIndexType()));
+        return getRecordType(rewriter, rewriter.getIntegerType(compileOptions.heapBlockHeaderBytes() * 8));
     }
 
     // Size of the record, and therefore the distance from a tag back to it. The name is a

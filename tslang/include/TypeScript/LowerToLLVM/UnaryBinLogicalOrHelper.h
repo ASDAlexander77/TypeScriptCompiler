@@ -144,7 +144,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             loc, tagValue.getType(), toh.typeDescriptorValue(loc, mlir_ts::UndefinedType::get(builder.getContext())));
         auto readTag = builder.create<LLVM::SelectOp>(loc, tagIsSet, tagValue, undefinedTag);
         TypeConverterHelper tch(&typeConverter);
-        TypeDescriptorLogic tdl(builder, tch, loc);
+        TypeDescriptorLogic tdl(builder, tch, loc, compileOptions);
         auto isNull = tdl.isKind(readTag, TYPE_KIND_NULL);
         auto trueValue = builder.create<LLVM::ConstantOp>(loc, isNull.getType(), builder.getBoolAttr(true));
         return builder.create<StdIOpTy>(loc, v1, isNull, trueValue);

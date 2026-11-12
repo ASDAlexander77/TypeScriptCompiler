@@ -24,9 +24,8 @@
 // The tester's tests are the single-file ones its CMakeLists.txt runs (`test-compile-*`): the others
 // in the folder are multi-file tests, tests that expect a compile error, or not run at all.
 //
-// Skipped, and listed as such: threads (none on wasm), the
-// default library's tests marked "// gc only", "// linux only" or (under own) "// not own", and the
-// tests in wasm_skips.txt, each with its reason.
+// Skipped, and listed as such: the default library's tests marked "// gc only", "// linux only" or
+// (under own) "// not own", and the tests in wasm_skips.txt, each with its reason.
 //
 // Under -mm=own, a test that does not compile for wasm is compiled once more for the host
 // (--emit=obj): if that fails too, the failure is not wasm's - what -mm=own cannot prove yet - and it
@@ -150,7 +149,6 @@ const skipReason = (suite, file, source, leg) =>
 
     const marked = suite.marker?.(source, leg);
     if (marked) return marked;
-    if (/\bThread\.spawn\b|\bnew Worker\b|\bAtomics\.wait\b/.test(source)) return "threads: none on wasm";
     return null;
 };
 

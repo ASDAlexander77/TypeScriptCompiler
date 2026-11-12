@@ -26,6 +26,16 @@ struct CompileOptions
     {
         return static_cast<int>(targetInfo.pointerBits);
     }
+
+    // The bytes every heap block reserves in front of its payload (Defines.h, HEAP_BLOCK_IMMORTAL):
+    // one index-sized word, the count - but 8 on wasm32, so that a payload is 8-aligned there. A
+    // 64-bit atomic (Atomics on a BigInt64Array) traps on an address that is not, and the count, an
+    // i32, is the first half. A cross-module contract: modules and the default library built with
+    // a compiler that disagrees on it cannot be linked together.
+    int heapBlockHeaderBytes() const
+    {
+        return isWasm && sizeBits() == 32 ? 8 : sizeBits() / 8;
+    }
     bool isWasm;
     bool isWindows;
     // Bionic has its own assert entry points (__assert/__assert2), not glibc's __assert_fail
@@ -33,6 +43,9 @@ struct CompileOptions
     // wasm32/wasm64 other than Emscripten: try/catch is wasm exception handling (the
     // exception-handling feature), its landing pads made funclets by WasmExceptionPass
     bool wasmExceptions = false;
+    // a wasm program (not Emscripten) that starts threads: its memory is imported and shared, which
+    // the host's workers instantiate the module with (set when the module calls tslang_thread_spawn)
+    bool wasmThreads = false;
     bool isExecutable;
     bool isDLL;
 

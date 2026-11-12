@@ -239,7 +239,11 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
             static_cast<llvm::cl::opt<bool> *>(it->second)->setValue(true);
         }
 
+        // Threads share the module's memory: a program that starts one is linked with a shared memory
+        // (see exe.cpp), which every object in it - the default library's too - must allow, by having
+        // real atomics and passive data segments. Atomics work on an unshared memory as well.
         FeaturesStr += FeaturesStr.empty() ? "+exception-handling" : ",+exception-handling";
+        FeaturesStr += ",+atomics,+bulk-memory";
     }
 
     llvm::CodeGenOptLevel OLvl;
@@ -316,6 +320,12 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
+    }
+
+    // a wasm program that starts a thread (Thread.spawn, new Worker) is linked with a shared memory
+    if (compileOptions.wasmExceptions && llvmModule->getFunction("tslang_thread_spawn"))
+    {
+        compileOptions.wasmThreads = true;
     }
 
     //

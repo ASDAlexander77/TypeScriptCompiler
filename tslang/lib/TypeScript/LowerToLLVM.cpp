@@ -1267,7 +1267,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
         if (mlir::isa<mlir_ts::AnyType>(op.getIn().getType()))
         {
             AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
-            TypeDescriptorLogic tdl(rewriter, tch, loc);
+            TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
             auto boxCopy = clh.conditionalExpressionLowering(
                 loc, i8PtrTy, isSet(in),
                 [&](OpBuilder &, Location) -> mlir::Value {
@@ -1583,7 +1583,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         // two strings compare by their text: their payload is a pointer, and comparing its bytes
         // made two equal strings unequal unless they were the same literal
         TypeConverterHelper tch(getTypeConverter());
-        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto bothStrings = rewriter.create<LLVM::AndOp>(loc, tdl.isKind(al.getTypeOfAny(op1), TYPE_KIND_STRING),
                                                         tdl.isKind(al.getTypeOfAny(op2), TYPE_KIND_STRING));
         return clh.conditionalExpressionLowering(
@@ -1795,7 +1795,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         // name "number". The descriptor behind every tag carries the category directly, so
         // this is one load and one compare rather than a chain of strcmps -- and it covers
         // every numeric width rather than the nine that were spelled out here before.
-        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto isKind = [&](mlir::Value tag, int kind) { return tdl.isKind(tag, kind); };
 
         LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
@@ -1930,7 +1930,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
             auto tag2 = al.getTypeOfAny(op2);
 
             // two numbers compare by value for every operator, whichever widths they were boxed with
-            TypeDescriptorLogic tdl(rewriter, tch, loc);
+            TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
             auto bothNumbers = rewriter.create<LLVM::AndOp>(loc, tdl.isKind(tag1, TYPE_KIND_NUMBER),
                                                             tdl.isKind(tag2, TYPE_KIND_NUMBER));
             return clh.conditionalExpressionLowering(
@@ -1948,7 +1948,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         // null pointer is undefined; otherwise the tag's kind says. Loosely, undefined and null
         // equal each other and nothing else; strictly, each equals only itself.
         auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
-        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto kindOf = [&](mlir::Value anyValue) {
             auto isNullPtr = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, anyValue, nullPtr);
             return clh.conditionalExpressionLowering(
@@ -8087,7 +8087,7 @@ struct IsTupleOfLayoutOpLowering : public TsLlvmPattern<mlir_ts::IsTupleOfLayout
         TypeConverterHelper tch(getTypeConverter());
 
         AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
-        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto layout = tdl.getLayoutFromTag(al.getTypeOfAny(transformed.getValue()));
         auto expected = rewriter.create<LLVM::ConstantOp>(
             loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)TypeOfOpHelper::layoutIdOf(op.getLayoutType())));
@@ -8108,7 +8108,7 @@ struct IsTypeTagOfOpLowering : public TsLlvmPattern<mlir_ts::IsTypeTagOfOp>
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
-        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto layout = tdl.getLayoutFromTag(transformed.getTag());
         auto expected = rewriter.create<LLVM::ConstantOp>(
             loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)TypeOfOpHelper::layoutIdOf(op.getType())));

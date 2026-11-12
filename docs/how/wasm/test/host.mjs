@@ -33,23 +33,52 @@ export class UncaughtThrow extends Error
     }
 }
 
-// Whether a module's memory is a memory64 one (wasm64): the limits flags of its memory section.
-// The C++ exception tag the module imports carries a pointer, an i64 there.
-export function isMemory64(bytes)
+// A module's memory: { is64, imported, shared, initial, maximum } (pages), from the limits of its
+// memory section or, for a program that starts threads, of its `env.memory` import (a shared memory
+// the host makes, and passes to each thread's worker). The C++ exception tag the module imports
+// carries a pointer, an i64 in a memory64 (wasm64) module.
+export function memoryOf(bytes)
 {
     const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength);
     let p = 8;
     const leb = () => { let r = 0, scale = 1, c; do { c = b[p++]; r += (c & 0x7f) * scale; scale *= 128; } while (c & 0x80); return r; };
+    const skipName = () => { const n = leb(); p += n; };
+    const limits = (imported) =>
+    {
+        const flags = b[p++];
+        const initial = leb();
+        const maximum = flags & 0x01 ? leb() : undefined;
+        return { is64: (flags & 0x04) !== 0, shared: (flags & 0x02) !== 0, imported, initial, maximum };
+    };
     while (p < b.length)
     {
         const id = b[p++];
         const size = leb();
         const end = p + size;
-        if (id === 5 && leb() > 0) return (b[p] & 0x04) !== 0;
+        if (id === 2)
+        {
+            for (let count = leb(); count > 0; count--)
+            {
+                skipName();
+                skipName();
+                const kind = b[p++];
+                if (kind === 2) return limits(true);
+                if (kind === 0) leb();                      // a function: its type
+                else if (kind === 1) { p++; limits(false); } // a table: its element type, limits
+                else if (kind === 3) p += 2;                // a global: its type, mutability
+                else if (kind === 4) { p++; leb(); }        // a tag: its attribute, type
+            }
+        }
+        if (id === 5 && leb() > 0) return limits(false);
         p = end;
     }
 
-    return false;
+    return { is64: false, shared: false, imported: false, initial: 0, maximum: undefined };
+}
+
+export function isMemory64(bytes)
+{
+    return memoryOf(bytes).is64;
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -64,6 +93,10 @@ export function createHost(options = {})
     let instance;
     let memory;
     let is64 = false;
+    // a program that starts threads: its memory is shared, and its compiled module goes to each
+    // thread's worker
+    let sharedMemory = false;
+    let compiledModule;
 
     // C++ exceptions (see __cxa_throw): the module's tag, made by instantiate(); each thrown object's
     // type_info and handler count; the exceptions being handled, innermost last
@@ -82,7 +115,8 @@ export function createHost(options = {})
 
     const cstrEnd = (p) => { const m = u8(); while (m[p] !== 0) p++; return p; };
     const bytesOf = (p, n) => u8().slice(p, p + n);
-    const readStr = (p) => { p = N(p); return p === 0 ? "" : utf8Decoder.decode(u8().subarray(p, cstrEnd(p))); };
+    // a browser's TextDecoder takes no view of a SharedArrayBuffer: a copy of the bytes then
+    const readStr = (p) => { p = N(p); if (p === 0) return ""; const view = u8().subarray(p, cstrEnd(p)); return utf8Decoder.decode(sharedMemory ? view.slice() : view); };
     // one char per byte: the regex wrappers count positions in bytes, as std::cmatch does over a char*
     const readLatin1 = (p) => { p = N(p); let s = ""; const m = u8(); for (let e = cstrEnd(p); p < e; p++) s += String.fromCharCode(m[p]); return s; };
     const latin1Bytes = (s) => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0xff; return b; };
@@ -99,11 +133,35 @@ export function createHost(options = {})
     const writeStrZ = (p, s, max) => writeBytesZ(p, utf8Encoder.encode(s), max);
 
     // ---- the heap: free lists per 16-byte size class above a bump pointer, the memory grown as needed ----
+    //
+    // All of it lives in the module's memory, from __heap_base on, so that the threads, each a worker
+    // with a host of its own, share it: one thread frees what another allocated. A lock (an Atomics
+    // compare-exchange, which works on an unshared memory too) guards it. At `heap`:
+    //   +0 the lock (i32); +8 the top (f64); +16 the free lists of blocks of 16, 32, ... SMALL bytes,
+    //   then of larger blocks (f64 heads).
+    // A block has a 16-byte header: MAGIC (u32) while it is given out, its size in 16-byte units (u32),
+    // and, while it is free, the next free block (f64). A free block's own bytes are left as they were,
+    // as a C heap's mostly are.
 
     const ALIGN = 16;
-    let heapTop = 0;
-    const sizes = new Map();
-    const freeLists = new Map();
+    const SMALL = 4096;
+    const MAGIC = 0x7a5f11ed;
+    const HEADER = 16;
+    let heap = 0;
+    const topAt = () => heap + 8;
+    const headAt = (size) => heap + 16 + 8 * (size <= SMALL ? size / ALIGN - 1 : SMALL / ALIGN);
+    const HEAP_CONTROL = 16 + 8 * (SMALL / ALIGN + 1);
+
+    const lockHeap = () =>
+    {
+        const i32 = new Int32Array(memory.buffer, heap, 1);
+        for (let spins = 0; Atomics.compareExchange(i32, 0, 0, 1) !== 0; spins++)
+        {
+            if (spins > 100) try { Atomics.wait(i32, 0, 1, 1); } catch { }
+        }
+    };
+    const unlockHeap = () => { const i32 = new Int32Array(memory.buffer, heap, 1); Atomics.store(i32, 0, 0); if (sharedMemory) Atomics.notify(i32, 0, 1); };
+    const withHeap = (f) => { lockHeap(); try { return f(); } finally { unlockHeap(); } };
 
     const ensure = (end) =>
     {
@@ -113,36 +171,77 @@ export function createHost(options = {})
         memory.grow(is64 ? BigInt(pages) : pages);
     };
 
-    const malloc = (size) =>
+    // run() makes the heap of a program; a thread's host only finds it
+    const findHeap = () => { heap = Math.ceil(Number(instance.exports.__heap_base.value) / ALIGN) * ALIGN; };
+    const initHeap = () =>
+    {
+        findHeap();
+        ensure(heap + HEAP_CONTROL);
+        u8().fill(0, heap, heap + HEAP_CONTROL);
+        dv().setFloat64(topAt(), heap + HEAP_CONTROL, true);
+    };
+
+    const blockSize = (p, what) =>
+    {
+        const d = dv();
+        if (d.getUint32(p - HEADER, true) !== MAGIC) throw new Error(`${what} of ${p}: not a block the heap gave out`);
+        return d.getUint32(p - HEADER + 4, true) * ALIGN;
+    };
+
+    const malloc = (size) => withHeap(() =>
     {
         size = Math.max(ALIGN, Math.ceil(N(size) / ALIGN) * ALIGN);
-        const list = freeLists.get(size);
-        let p;
-        if (list && list.length)
+        const d = dv();
+        let p = 0;
+        if (size <= SMALL)
         {
-            p = list.pop();
+            const head = headAt(size);
+            p = d.getFloat64(head, true);
+            if (p) d.setFloat64(head, d.getFloat64(p - 8, true), true);
         }
         else
         {
-            p = heapTop;
-            heapTop += size;
-            ensure(heapTop);
+            // first fit, among the large blocks no more than twice the size
+            for (let link = headAt(size), q = d.getFloat64(link, true); q; link = q - 8, q = d.getFloat64(q - 8, true))
+            {
+                const has = d.getUint32(q - HEADER + 4, true) * ALIGN;
+                if (has >= size && has <= 2 * size)
+                {
+                    d.setFloat64(link, d.getFloat64(q - 8, true), true);
+                    p = q;
+                    size = has;
+                    break;
+                }
+            }
         }
 
-        sizes.set(p, size);
+        if (!p)
+        {
+            const top = d.getFloat64(topAt(), true);
+            p = top + HEADER;
+            ensure(p + size);
+            dv().setFloat64(topAt(), p + size, true);
+        }
+
+        const e = dv();
+        e.setUint32(p - HEADER, MAGIC, true);
+        e.setUint32(p - HEADER + 4, size / ALIGN, true);
         return p;
-    };
+    });
 
     const free = (p) =>
     {
         p = N(p);
         if (p === 0) return;
-        const size = sizes.get(p);
-        if (size === undefined) throw new Error(`free of ${p}: not a block the heap gave out`);
-        sizes.delete(p);
-        let list = freeLists.get(size);
-        if (!list) freeLists.set(size, list = []);
-        list.push(p);
+        withHeap(() =>
+        {
+            const size = blockSize(p, "free");
+            const d = dv();
+            d.setUint32(p - HEADER, 0, true);
+            const head = headAt(size);
+            d.setFloat64(p - 8, d.getFloat64(head, true), true);
+            d.setFloat64(head, p, true);
+        });
     };
 
     const realloc = (p, size) =>
@@ -150,8 +249,7 @@ export function createHost(options = {})
         p = N(p);
         size = N(size);
         if (p === 0) return malloc(size);
-        const old = sizes.get(p);
-        if (old === undefined) throw new Error(`realloc of ${p}: not a block the heap gave out`);
+        const old = blockSize(p, "realloc");
         if (size <= old) return p;
         const q = malloc(size);
         u8().copyWithin(q, p, p + old);
@@ -170,6 +268,39 @@ export function createHost(options = {})
     // a C function pointer is an index into the function table, which is a table64 - an i64 index,
     // a BigInt - in a wasm64 module
     const functionAt = (p) => instance.exports.__indirect_function_table.get(is64 ? BigInt(p) : N(p));
+
+    // ---- threads (see tslang_thread_spawn, runThread) ----
+
+    const THREAD_STACK = 1 << 20;
+    const THREAD_RETURNED = 0, THREAD_EXITED = 1, THREAD_FAILED = 2;
+    let moduleMemoryType;
+    // each started thread not yet joined: its worker, stack and thread-local storage, by control block
+    const threads = new Map();
+
+    // a blocking sleep: Atomics.wait where the thread may block (Node), else (a browser's main
+    // thread) a busy wait
+    const sleepFor = (millis) =>
+    {
+        try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, millis); return; } catch { }
+        const end = Date.now() + millis;
+        while (Date.now() < end) { }
+    };
+
+    const atomicsWait = (ArrayType, address, expected, timeoutMs) =>
+    {
+        const timeout = Number.isNaN(timeoutMs) ? Infinity : Math.max(0, timeoutMs);
+        const index = address / ArrayType.BYTES_PER_ELEMENT;
+        if (sharedMemory)
+        {
+            const result = Atomics.wait(new ArrayType(memory.buffer), index, expected, timeout);
+            return result === "ok" ? 0 : result === "not-equal" ? 1 : 2;
+        }
+
+        if (new ArrayType(memory.buffer)[index] !== expected) return 1;
+        if (timeout === Infinity) throw new Error("Atomics.wait would wait forever: this program starts no thread to wake it");
+        sleepFor(timeout);
+        return 2;
+    };
 
     // ---- the async runtime: MLIR's (mlirAsyncRuntime*), on the one thread a wasm program has ----
     //
@@ -926,13 +1057,51 @@ export function createHost(options = {})
         // time
         // sleep(ms) blocks, as on the other targets: Atomics.wait where the thread may block (Node),
         // else (a browser's main thread) a busy wait
-        std_this_thread_sleep_for: (ms) =>
+        std_this_thread_sleep_for: (ms) => sleepFor(N(ms)),
+
+        // threads (Thread.spawn, Worker): each a worker running the module on the program's shared
+        // memory - see runThread. Under Node only: a browser could not block its main thread in join.
+        tslang_thread_spawn: (entry, arg) =>
         {
-            const millis = N(ms);
-            try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, millis); return; } catch { }
-            const end = Date.now() + millis;
-            while (Date.now() < end) { }
+            if (!node?.worker_threads) throw new Error("threads need the Node host (its worker_threads)");
+            if (!sharedMemory) throw new Error("a thread needs a shared memory: this module was not linked for threads");
+            const control = malloc(16);
+            u8().fill(0, control, control + 16);
+            const stack = malloc(THREAD_STACK);
+            const tlsSize = N(instance.exports.__tls_size?.value ?? 0);
+            const tls = tlsSize ? malloc(tlsSize) : 0;
+            const worker = new node.worker_threads.Worker(new URL("./thread.mjs", import.meta.url), {
+                workerData: {
+                    module: compiledModule, memory, memoryType: moduleMemoryType, args,
+                    entry: N(entry), arg: N(arg), control, stackTop: stack + THREAD_STACK, tls,
+                },
+            });
+            worker.unref();
+            threads.set(control, { worker, stack, tls });
+            return P(control);
         },
+        tslang_thread_join: (handle) =>
+        {
+            const control = N(handle);
+            const i32 = new Int32Array(memory.buffer, control, 3);
+            while (Atomics.load(i32, 0) === 0) Atomics.wait(i32, 0, 0);
+            const ended = i32[1], code = i32[2];
+            const thread = threads.get(control);
+            threads.delete(control);
+            if (thread) { free(thread.stack); free(thread.tls); }
+            free(control);
+            // exit() on a thread ends the program, as it does natively; a trap ends it too
+            if (ended === THREAD_EXITED) throw new ExitSignal(code);
+            if (ended === THREAD_FAILED) throw new Error("a thread failed (its error is above)");
+        },
+        tslang_thread_hardware_concurrency: () => node?.os?.availableParallelism?.() ?? globalThis.navigator?.hardwareConcurrency ?? 1,
+
+        // Atomics.wait / notify: 0 "ok", 1 "not-equal", 2 "timed-out". On an unshared memory nothing
+        // else runs: a wait sees the value, then sleeps out its timeout.
+        tslang_atomics_wait32: (address, expected, timeoutMs) => atomicsWait(Int32Array, N(address), expected, timeoutMs),
+        tslang_atomics_wait64: (address, expected, timeoutMs) => atomicsWait(BigInt64Array, N(address), expected, timeoutMs),
+        tslang_atomics_notify: (address, count) =>
+            sharedMemory ? Atomics.notify(new Int32Array(memory.buffer), N(address) / 4, count < 0 ? undefined : count) : 0,
         time: (p) => { const t = BigInt(Math.floor(Date.now() / 1000)); if (N(p) !== 0) dv().setBigInt64(N(p), t, true); return t; },
         tslang_wasm_now: () => Date.now(),
         tslang_wasm_timezone: () => standardOffset(new Date().getFullYear()) * 60,
@@ -1086,12 +1255,17 @@ export function createHost(options = {})
         }),
     };
 
-    const run = (inst) =>
+    const attach = (inst) =>
     {
         instance = inst;
-        memory = inst.exports.memory;
+        memory = inst.exports.memory ?? env.memory;
         is64 = typeof inst.exports.__heap_base?.value === "bigint";
-        heapTop = Math.ceil(Number(inst.exports.__heap_base.value) / ALIGN) * ALIGN;
+    };
+
+    const run = (inst) =>
+    {
+        attach(inst);
+        initHeap();
 
         try
         {
@@ -1133,15 +1307,70 @@ export function createHost(options = {})
         }
     };
 
-    // Instantiates a module with these imports. The C++ exception tag it imports is made here, its
-    // parameter a pointer: an i32, or an i64 in a memory64 module.
-    const instantiate = async (bytes) =>
+    // A thread, in its worker (thread.mjs): the module's function `entry` called with `arg` on a stack
+    // and thread-local storage of its own, the program's heap found where run() made it. Whatever
+    // ends it, the thread's control block says so, and join() wakes: [0] done, [1] how it ended
+    // (THREAD_*), [2] the exit code.
+    const runThread = (inst, { entry, arg, control, stackTop, tls }) =>
     {
-        cppExceptionTag = new WebAssembly.Tag({ parameters: [isMemory64(bytes) ? "i64" : "i32"] });
-        env.__cpp_exception = cppExceptionTag;
-        const { instance } = await WebAssembly.instantiate(bytes, imports);
-        return instance;
+        attach(inst);
+        findHeap();
+        const i32 = new Int32Array(memory.buffer, control, 3);
+        let ended = THREAD_RETURNED, code = 0;
+        try
+        {
+            inst.exports.__stack_pointer.value = P(stackTop);
+            if (tls) inst.exports.__wasm_init_tls(P(tls));
+            functionAt(entry)(P(arg));
+            while (asyncTasks.length) runAsyncTask();
+        }
+        catch (e)
+        {
+            if (e instanceof ExitSignal)
+            {
+                ended = THREAD_EXITED;
+                code = e.code;
+            }
+            else
+            {
+                ended = THREAD_FAILED;
+                const uncaught = cppExceptionTag && e instanceof WebAssembly.Exception && e.is(cppExceptionTag);
+                write(2, uncaught ? "Uncaught exception (on a thread)\n" : `${e?.stack ?? e}\n`);
+            }
+        }
+        finally
+        {
+            i32[1] = ended;
+            i32[2] = code;
+            Atomics.store(i32, 0, 1);
+            Atomics.notify(i32, 0);
+        }
     };
 
-    return { imports, run, instantiate, env };
+    // Instantiates a module (its bytes, or compiled) with these imports. The C++ exception tag it
+    // imports is made here, its parameter a pointer: an i32, or an i64 in a memory64 module. A
+    // module that imports its memory starts threads: the memory is shared, made here for the
+    // program, or given (`memory`) for a thread's worker.
+    const instantiate = async (bytesOrModule, given = {}) =>
+    {
+        const isModule = bytesOrModule instanceof WebAssembly.Module;
+        const memoryType = isModule ? given.memoryType : memoryOf(bytesOrModule);
+        compiledModule = isModule ? bytesOrModule : await WebAssembly.compile(bytesOrModule);
+        cppExceptionTag = new WebAssembly.Tag({ parameters: [memoryType.is64 ? "i64" : "i32"] });
+        env.__cpp_exception = cppExceptionTag;
+        moduleMemoryType = memoryType;
+        if (memoryType.imported)
+        {
+            sharedMemory = memoryType.shared;
+            const pages = (n) => (memoryType.is64 ? BigInt(n) : n);
+            env.memory = given.memory ?? new WebAssembly.Memory({
+                initial: pages(memoryType.initial), maximum: pages(memoryType.maximum), shared: memoryType.shared,
+                ...(memoryType.is64 ? { address: "i64" } : {}),
+            });
+        }
+
+        return await WebAssembly.instantiate(compiledModule, imports);
+    };
+
+    return { imports, run, runThread, instantiate, env };
 }
