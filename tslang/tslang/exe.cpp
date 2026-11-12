@@ -1048,6 +1048,12 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
     {
         args.push_back("-luser32");
 
+        // Each function is a COMDAT of its own (obj.cpp), so the linker drops the ones nothing calls
+        // (/OPT:REF, its default without /DEBUG). It would also fold functions whose code is
+        // identical into one (/OPT:ICF), but two TypeScript functions are two values that must stay
+        // apart, so not that.
+        args.push_back("-Wl,-opt:noicf");
+
         // Link the static CRT (/MT[d]) to match the prebuilt static LLVM/MLIR libs,
         // the TypeScript runtime libs and gc.lib. Mixing the static and dynamic CRT
         // gives the generated program a separate heap/stdout buffer from those libs
@@ -1163,9 +1169,15 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
 
         if (shared)
         {
-            // something missing in .so compiling        
+            // something missing in .so compiling
             args.push_back("-Wl,--build-id");
         }
+
+        // Each function and global is in a section of its own (obj.cpp): drop the ones nothing
+        // reaches, as link.exe does by default. What a shared library exports, what the program
+        // exports for the libraries it loads (--export-dynamic-symbol) and what a shared library on
+        // the command line references (malloc from libc) all stay.
+        args.push_back("-Wl,--gc-sections");
 
         // TODO: review some options
         args.push_back("-frtti");
@@ -1278,7 +1290,23 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
         else
         {
             removeCommandArgs(c.get(), {"crt1.o", "-lc", "clang_rt.builtins"});
-            addCommandArgs(c.get(), {"--no-entry", "--export-all", "--allow-undefined"});
+            addCommandArgs(c.get(), {"--no-entry", "--allow-undefined"});
+            if (shared)
+            {
+                addCommandArgs(c.get(), {"--export-all"});
+            }
+            else
+            {
+                // A program exports what the host (tslang/test/wasm/host.mjs) starts it with, and the
+                // functions it marks 'export' (ExportFixPass names those). --export-all rooted every
+                // default-library function as well, so none of them was ever dropped: a program using
+                // a Map came out ten times as large.
+                addCommandArgs(c.get(), {"--export-table", "--export-if-defined=main",
+                                         "--export-if-defined=__main_void", "--export-if-defined=__original_main",
+                                         "--export-if-defined=__wasm_call_ctors", "--export-if-defined=__heap_base",
+                                         "--export-if-defined=__tls_size", "--export-if-defined=__wasm_init_tls"});
+            }
+
             if (compileOptions.wasmThreads)
             {
                 // threads: each runs the module in a worker of its own, on the one memory, which the host

@@ -1310,7 +1310,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         }
 
         llvm::Triple triple(m->getTargetTriple());
-        mpm.addPass(ts::ExportFixPass(triple.isWindowsMSVCEnvironment()));
+        mpm.addPass(ts::ExportFixPass(triple.isWindowsMSVCEnvironment(), triple.isWasm() && !triple.isOSEmscripten()));
 
         if (compileOptions.isWasm)
         {

@@ -261,6 +261,27 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     }
 
     InitializeOptions(TheTriple);
+
+    // Every function and global in a section of its own (a COMDAT on Windows), as clang does with
+    // -ffunction-sections -fdata-sections: the linker can then drop what a program never uses. Off,
+    // a module is one section, and a program that calls one default-library function linked all of
+    // lib.ts and, through its references, the RegExp, Date and HTTP wrappers too. --function-sections
+    // / --data-sections given on the command line still win.
+    auto &registeredOptions = llvm::cl::getRegisteredOptions();
+    auto notGiven = [&](llvm::StringRef name) {
+        auto it = registeredOptions.find(name);
+        return it == registeredOptions.end() || it->second->getNumOccurrences() == 0;
+    };
+    if (notGiven("function-sections"))
+    {
+        Options.FunctionSections = true;
+    }
+
+    if (notGiven("data-sections"))
+    {
+        Options.DataSections = true;
+    }
+
     // before the target machine is made: its MCAsmInfo takes the exception model from here, and
     // with none the code generator lowers every invoke to a call (see wasm-enable-eh above)
     if (TheTriple.isWasm() && !TheTriple.isOSEmscripten())
