@@ -21,6 +21,7 @@ const host = createHost({
     args: process.argv.slice(2),
     node: { fs, process, worker_threads, os },
     write: output.write,
+    writeBytes: output.writeBytes,
     flush: output.flush,
 });
 
