@@ -158,8 +158,10 @@ jobs:
       - name: Start the emulator
         shell: bash
         run: |
+          # bash runs with -e -o pipefail: the polls below fail until a device is up
+          set +e +o pipefail
           ls -l /dev/kvm
-          emulator -accel-check || true
+          emulator -accel-check
           adb start-server > /dev/null 2>&1
           nohup emulator -avd tslang_api29_x86_64 -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -memory 4096 -cores 4 -accel on < /dev/null > emulator.log 2>&1 &
