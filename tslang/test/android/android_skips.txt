@@ -1,0 +1,10 @@
+# Tests run_tests.mjs does not run on Android: `<file> [<abi or model>,...] # <reason>`, every leg
+# when none is given.
+
+# cannot work on Android
+00cppvtable_hidden_return.ts    # its hand-made vtable slots return a record the MSVC way: Windows only, as in ctest
+fetch.ts                        # (default library) fetch(): Android's default library has no HTTP (no libcurl in the NDK), so the request throws
+json.ts none                    # (default library) builds a 100000-character string a character at a time: -mm=none frees none of the ~5 GB
+
+# fails natively under the same model too (not run natively under it by ctest)
+00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)

@@ -768,9 +768,21 @@ jobs:
     with:
       programs: '["debug"]'
 
+  # x86_64 Android, against the Windows package (which ships Android's libraries): the tester's
+  # tests and the default library's, under every memory model, built with the package's compiler
+  # and run on an x86_64 emulator. The other ABIs are linked only (test-compile-android-link).
+  test_android:
+    name: Android emulator
+    needs: [defaultlib_commit, build_on_windows]
+    uses: ./.github/workflows/test-android.yml
+    with:
+      package: artifact
+      defaultlib_sha: ${{ needs.defaultlib_commit.outputs.sha }}
+
   create_release:
     needs: [build_on_windows, build_on_linux, test_defaultlib_windows, test_defaultlib_linux,
-            test_wasm_windows, test_wasm_linux, test_debug_programs_windows, test_debug_programs_linux]
+            test_wasm_windows, test_wasm_linux, test_debug_programs_windows, test_debug_programs_linux,
+            test_android]
     name: Create Release
     runs-on: ubuntu-latest
     steps:

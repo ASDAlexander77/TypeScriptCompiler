@@ -32,15 +32,14 @@
 // (--emit=obj): if that fails too, the failure is not wasm's - what -mm=own cannot prove yet - and it
 // is listed apart (NATIVE), not counted as a failure. ctest runs only a few tests under own natively;
 // it runs the whole corpus under none and rc, so there a wasm compile error is always a failure.
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { repo, makeSuites, loadSkips, skipReason, runProcess, lastLines, firstLines, report, runJobs } from "../suites.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, "../../..");
 
 const options = {
     suite: ["tester", "defaultlib"], triple: ["wasm32", "wasm64"], mm: ["none", "rc", "own"], debug: false,
@@ -77,94 +76,8 @@ options.tslang ??= [
 options.defaultLibRepo ??= path.resolve(repo, "../TypeScriptCompilerDefaultLib");
 const defaultLibPath = path.join(options.defaultLibRepo, "__build");
 
-// wasm_skips.txt: one test a line, `<file> [<triple or model>,...] # <reason>`. Triples and models
-// given limit it to those (wasm32,own: wasm32 under own); none given, every leg.
-const skips = new Map();
-const skipsFile = path.join(here, "wasm_skips.txt");
-if (fs.existsSync(skipsFile))
-{
-    for (const line of fs.readFileSync(skipsFile, "utf8").split(/\r?\n/))
-    {
-        const m = /^\s*([^#\s]+)(?:\s+([\w,]+))?\s*(?:#\s*(.*))?$/.exec(line);
-        if (!m) continue;
-        const only = m[2] ? m[2].split(",") : [];
-        skips.set(m[1], {
-            triples: only.filter((x) => x.startsWith("wasm")),
-            models: only.filter((x) => !x.startsWith("wasm")),
-            reason: m[3] ?? "listed in wasm_skips.txt",
-        });
-    }
-}
-
-// the single-file tests ctest runs: `tslang_add_test(NAME test-compile-... COMMAND test-runner [options] "<one file>")`
-const testerFiles = () =>
-{
-    const names = new Set();
-    const cmake = fs.readFileSync(path.join(repo, "tslang/test/tester/CMakeLists.txt"), "utf8");
-    const re = /tslang_add_test\(NAME test-compile-\S+ COMMAND test-runner((?: -[\w=-]+)*) ((?:"[^"]+"\s*)+)\)/g;
-    let m;
-    while ((m = re.exec(cmake)) !== null)
-    {
-        const testFiles = m[2].match(/"[^"]+"/g);
-        if (testFiles.length !== 1 || / -shared\b/.test(m[1])) continue;
-        names.add(testFiles[0].slice(1, -1).replace(/^.*\//, ""));
-    }
-
-    // a name built in CMake (`${arc_test}.ts`) is not a file
-    return [...names].filter((name) => fs.existsSync(path.join(repo, "tslang/test/tester/tests", name)));
-};
-
-const suites = {
-    tester: {
-        dir: path.join(repo, "tslang/test/tester/tests"),
-        files: testerFiles,
-        compileArgs: ["--no-default-lib"],
-        passed: (run) => run.code === 0 && (run.stdout + run.stderr).includes("done.") ? null
-            : run.code !== 0 ? `exit code ${run.code}` : "no 'done.' msg.",
-    },
-    defaultlib: {
-        dir: path.join(options.defaultLibRepo, "tests"),
-        files: () => fs.readdirSync(path.join(options.defaultLibRepo, "tests")).filter((f) => f.endsWith(".ts")),
-        compileArgs: ["--nowarn"],
-        cwd: options.defaultLibRepo,
-        marker: (source, leg) =>
-        {
-            const first = source.split(/\r?\n/, 1)[0];
-            if (first.startsWith("// gc only")) return "marked '// gc only'";
-            if (first.startsWith("// linux only")) return "marked '// linux only'";
-            if (first.startsWith("// not own") && leg.mm === "own") return "marked '// not own'";
-            return null;
-        },
-        passed: (run) => run.code !== 0 ? `exit code ${run.code}`
-            : !run.stdout.includes("ALL DONE") ? "no 'ALL DONE' marker"
-            : run.stderr.trim() ? "wrote to stderr" : null,
-    },
-};
-
-const skipReason = (suite, file, source, leg) =>
-{
-    const skip = skips.get(file);
-    if (skip && (!skip.triples.length || skip.triples.includes(leg.triple)) && (!skip.models.length || skip.models.includes(leg.mm)))
-    {
-        return skip.reason;
-    }
-
-    const marked = suite.marker?.(source, leg);
-    if (marked) return marked;
-    return null;
-};
-
-const runProcess = (command, args, { env, timeout, cwd, input } = {}) => new Promise((resolve) =>
-{
-    const child = spawn(command, args, { env: { ...process.env, ...env }, cwd, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
-    let stdout = "", stderr = "", timedOut = false;
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    if (input !== undefined) { child.stdin.on("error", () => { }); child.stdin.end(input); }
-    const timer = timeout ? setTimeout(() => { timedOut = true; child.kill(); }, timeout * 1000) : null;
-    child.on("error", (e) => { stderr += String(e); });
-    child.on("close", (code) => { if (timer) clearTimeout(timer); resolve({ code, stdout, stderr, timedOut }); });
-});
+const skips = loadSkips(path.join(here, "wasm_skips.txt"), (x) => x.startsWith("wasm"));
+const suites = makeSuites(options.defaultLibRepo);
 
 // the environment the compiler looks the default library up in, and nothing of the user's own lib paths
 const compileEnv = { DEFAULT_LIB_PATH: defaultLibPath, GC_LIB_PATH: "", LLVM_LIB_PATH: "", TSLANG_LIB_PATH: "" };
@@ -176,7 +89,8 @@ for (const suiteName of options.suite)
     if (!suites[suiteName]) { console.error(`unknown suite ${suiteName}: tester or defaultlib`); process.exit(2); }
     for (const triple of options.triple)
         for (const mm of options.mm)
-            legs.push({ suiteName, suite: suites[suiteName], triple, mm, name: `${suiteName}-${triple}-${mm}${options.debug ? "-debug" : ""}` });
+            legs.push({ suiteName, suite: suites[suiteName], target: triple, triple, mm, linux: false,
+                        name: `${suiteName}-${triple}-${mm}${options.debug ? "-debug" : ""}` });
 }
 
 const jobs = [];
@@ -189,7 +103,7 @@ for (const leg of legs)
     for (const file of files)
     {
         const source = fs.readFileSync(path.join(leg.suite.dir, file), "utf8");
-        const reason = skipReason(leg.suite, file, source, leg);
+        const reason = skipReason(skips, leg.suite, file, source, leg);
         if (reason) { results.push({ leg: leg.name, file, status: "SKIP", detail: reason }); continue; }
         jobs.push({ leg, file, outDir });
     }
@@ -201,7 +115,6 @@ const nodeMajor = Number(process.versions.node.split(".")[0]);
 const nodeFlags = nodeMajor < 24 ? ["--experimental-wasm-memory64"] : [];
 const canRun = (leg) => leg.triple !== "wasm64" || nodeMajor >= 24;
 const runner = path.join(here, "run.mjs");
-const lastLines = (text, n) => text.trim().split(/\r?\n/).slice(-n).join("\n");
 
 const runOne = async ({ leg, file, outDir }) =>
 {
@@ -212,7 +125,7 @@ const runOne = async ({ leg, file, outDir }) =>
         ...buildArgs, ...leg.suite.compileArgs, `-o=${wasm}`, source], { env: compileEnv, timeout: 300 });
     if (compiled.code !== 0 || !fs.existsSync(wasm))
     {
-        let detail = (compiled.stderr + compiled.stdout).trim().split(/\r?\n/).slice(0, 6).join("\n");
+        const detail = firstLines(compiled.stderr + compiled.stdout, 6);
         if (leg.mm !== "own") return { leg: leg.name, file, status: "COMPILE", detail };
 
         const obj = path.join(outDir, file.replace(/\.ts$/, ".native.o"));
@@ -220,7 +133,7 @@ const runOne = async ({ leg, file, outDir }) =>
             `-o=${obj}`, source], { env: compileEnv, timeout: 300 });
         fs.rmSync(obj, { force: true });
         if (native.code === 0) return { leg: leg.name, file, status: "COMPILE", detail };
-        return { leg: leg.name, file, status: "NATIVE", detail: "native: " + (native.stderr + native.stdout).trim().split(/\r?\n/).slice(0, 4).join("\n") };
+        return { leg: leg.name, file, status: "NATIVE", detail: "native: " + firstLines(native.stderr + native.stdout, 4) };
     }
 
     if (!canRun(leg))
@@ -239,43 +152,6 @@ const runOne = async ({ leg, file, outDir }) =>
     return { leg: leg.name, file, status: "PASS" };
 };
 
-let next = 0, finished = 0;
-const total = jobs.length;
-const worker = async () =>
-{
-    while (next < jobs.length)
-    {
-        const job = jobs[next++];
-        const result = await runOne(job);
-        results.push(result);
-        finished++;
-        if (["FAIL", "COMPILE", "TIMEOUT"].includes(result.status)) console.log(`[${finished}/${total}] ${result.status} ${result.leg} ${result.file}`);
-        else if (finished % 100 === 0) console.log(`[${finished}/${total}] ...`);
-    }
-};
-
-console.log(`tslang: ${options.tslang}\ndefault lib: ${defaultLibPath}\nlegs: ${legs.map((l) => l.name).join(", ")}; ${total} runs, ${results.length} skips`);
-await Promise.all(Array.from({ length: Math.max(1, options.jobs) }, worker));
-
-results.sort((a, b) => a.leg.localeCompare(b.leg) || a.file.localeCompare(b.file));
-const lines = [];
-for (const leg of legs)
-{
-    const mine = results.filter((r) => r.leg === leg.name);
-    const count = (s) => mine.filter((r) => r.status === s).length;
-    lines.push(`== ${leg.name}: ${count("PASS")} passed, ${count("FAIL") + count("COMPILE") + count("TIMEOUT")} failed (${count("COMPILE")} to compile, ${count("TIMEOUT")} timed out), ${count("SKIP")} skipped`
-        + (count("NATIVE") ? `, ${count("NATIVE")} do not compile natively under own either` : "")
-        + (count("BUILT") ? `, ${count("BUILT")} compiled but not run` : ""));
-}
-
-const report = [...lines, ""];
-for (const r of results.filter((r) => r.status !== "PASS"))
-{
-    report.push(`${r.status} ${r.leg} ${r.file}${r.detail ? "\n    " + r.detail.replace(/\n/g, "\n    ") : ""}`);
-}
-
-fs.mkdirSync(options.out, { recursive: true });
-fs.writeFileSync(path.join(options.out, "results.txt"), report.join("\n") + "\n");
-console.log(lines.join("\n"));
-console.log(`details: ${path.join(options.out, "results.txt")}`);
-process.exitCode = results.some((r) => ["FAIL", "COMPILE", "TIMEOUT"].includes(r.status)) ? 1 : 0;
+console.log(`tslang: ${options.tslang}\ndefault lib: ${defaultLibPath}\nlegs: ${legs.map((l) => l.name).join(", ")}; ${jobs.length} runs, ${results.length} skips`);
+await runJobs(jobs, options.jobs, runOne, results);
+process.exitCode = report(legs.map((l) => l.name), results, options.out);
