@@ -5443,6 +5443,11 @@ tslang_add_import_tests(import-chain-rtti-skipped "${PROJECT_SOURCE_DIR}/test/te
                         rtti_bottom rtti_middle rtti_top)
 tslang_add_test(NAME test-jit-import-chain-rtti-skipped
                 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/import-chain/rtti_skipped_import.ts")
+# The same with the modules named the other way round: a library's modules are declared in the order
+# its symbol table lists them (by name in a DLL), and one naming a class not declared yet is read again
+# after the others. The library is named after order_z_profiler, which order_m_state imports.
+tslang_add_import_tests(import-chain-decl-order "${PROJECT_SOURCE_DIR}/test/tester/import-chain" order_program
+                        order_z_profiler order_m_state order_a_saves)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
 # The library is named after nested_bottom, the first module, and holds nested_middle as well: the
 # program imports nested_middle as source and meets the library only inside it.
