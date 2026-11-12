@@ -6020,9 +6020,9 @@ if (NOT WIN32)
 endif()
 
 # An exception nothing catches ends a JIT run with an error that says what was thrown (a class by its
-# name), not with LLVM's crash handler reporting a crash of the compiler. Windows only: that is where
-# the JIT catches it.
-if (WIN32)
+# name), not with LLVM's crash handler reporting a crash of the compiler. Windows and Linux: there the JIT
+# and an executable's runtime say it (TypeScript/UncaughtException.h).
+if (WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
     set(uncaught_expected_throw_string "error: uncaught exception: not caught")
     set(uncaught_expected_throw_class "error: uncaught exception: Failure")
     set(uncaught_expected_throw_number "error: uncaught exception: 2.5")
@@ -6036,6 +6036,30 @@ if (WIN32)
             set_tests_properties(test-jit-${uncaught_model}-uncaught-${uncaught_name}
                                  PROPERTIES PASS_REGULAR_EXPRESSION "${uncaught_expected_${uncaught_name}}"
                                             FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
+        endforeach()
+
+        # and an executable says it too, under every model, with and without --opt (uncaught-exe.cmake)
+        foreach(uncaught_model gc rc none own)
+            foreach(uncaught_opt opt noopt)
+                if (uncaught_opt STREQUAL "opt")
+                    set(uncaught_opt_flags "--opt;--opt_level=3")
+                else()
+                    set(uncaught_opt_flags "--opt_level=0")
+                endif()
+                set(uncaught_test test-compile-${uncaught_model}-${uncaught_opt}-uncaught-${uncaught_name})
+                add_test(NAME ${uncaught_test}
+                         COMMAND ${CMAKE_COMMAND}
+                                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/uncaught/${uncaught_name}.ts"
+                                 "-DMODEL=${uncaught_model}"
+                                 "-DEXPECT=${uncaught_expected_${uncaught_name}}"
+                                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${uncaught_test}"
+                                 "-DGC_LIB=${TEST_GC_LIBDIR}"
+                                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                                 "-DOPT=${uncaught_opt_flags}"
+                                 -P "${CMAKE_CURRENT_SOURCE_DIR}/uncaught-exe.cmake")
+            endforeach()
         endforeach()
     endforeach()
 endif()
