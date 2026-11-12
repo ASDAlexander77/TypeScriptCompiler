@@ -1013,6 +1013,74 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // The keys `for...in` walks in a value of an object literal's or a tuple's type, in field order: a field's
+    // name, an unnamed field's position ("0", "1", ...) and an accessor's name once for its get_/set_ pair.
+    // False when the type has no fields known at compile time.
+    bool MLIRGenImpl::forInFieldKeys(mlir::Type type, SmallVector<std::string> &keys)
+    {
+        ArrayRef<mlir_ts::FieldInfo> fields;
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields = tupleType.getFields();
+        }
+        else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields = constTupleType.getFields();
+        }
+        else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            if (auto storageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+            {
+                fields = storageType.getFields();
+            }
+            else if (auto storageTuple = dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()))
+            {
+                fields = storageTuple.getFields();
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        for (auto [index, field] : llvm::enumerate(fields))
+        {
+            std::string key;
+            if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
+            {
+                key = name.getValue().str();
+                if (key.size() > 4 && (StringRef(key).starts_with("get_") || StringRef(key).starts_with("set_")))
+                {
+                    key = key.substr(4);
+                }
+            }
+            else if (auto position = dyn_cast_or_null<mlir::IntegerAttr>(field.id))
+            {
+                key = std::to_string(position.getValue().getSExtValue());
+            }
+            else if (!field.id)
+            {
+                key = std::to_string(index);
+            }
+            else
+            {
+                // a symbol-named field (`[Symbol.iterator]`) is not walked by for...in
+                continue;
+            }
+
+            if (std::find(keys.begin(), keys.end(), key) == keys.end())
+            {
+                keys.push_back(key);
+            }
+        }
+
+        return true;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(ForInStatement forInStatementAST, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -1020,6 +1088,68 @@ namespace mlirgen
         auto location = loc(forInStatementAST);
 
         NodeFactory nf(NodeFactoryFlags::None);
+
+        // An object literal or a tuple has no keys to find at run time: its fields are known from its type, so the
+        // loop is made for each of them, with the key a string literal, so that `obj[key]` in the body is that
+        // field, of its own type:
+        //   for (let .i = 0; .i < N; .i++) { if (.i == 0) { const key = "a"; body } else if (.i == 1) { ... } }
+        // The loop is still a loop, so `break` and `continue` keep their meaning.
+        SmallVector<std::string> fieldKeys;
+        if (forInFieldKeys(evaluate(forInStatementAST->expression, genContext), fieldKeys))
+        {
+            auto _i = nf.createIdentifier(S(".i"));
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
+
+            auto _o = nf.createIdentifier(S(".o"));
+            auto objectVar = nf.createVariableDeclaration(_o, undefined, undefined, forInStatementAST->expression);
+            objectVar->internalFlags |= InternalFlags::ForceConstRef;
+            declarations.push_back(objectVar);
+
+            auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+
+            auto count = nf.createNumericLiteral(stows(std::to_string(fieldKeys.size())));
+            auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), count);
+            auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+
+            // the key: the loop's own `const key` / `let key`, or a variable declared before the loop
+            auto initializer = forInStatementAST->initializer;
+            auto keyStatement = [&](std::string key) -> ts::Statement {
+                auto keyLiteral = nf.createStringLiteral(stows(key));
+                if (initializer == SyntaxKind::VariableDeclarationList)
+                {
+                    auto declList = initializer.as<VariableDeclarationList>();
+                    auto declared = declList->declarations.front();
+                    NodeArray<VariableDeclaration> keyDeclarations;
+                    keyDeclarations.push_back(
+                        nf.createVariableDeclaration(declared->name, undefined, declared->type, keyLiteral));
+                    return nf.createVariableStatement(
+                        undefined, nf.createVariableDeclarationList(keyDeclarations, declList->flags));
+                }
+
+                return nf.createExpressionStatement(nf.createBinaryExpression(
+                    initializer.as<Expression>(), nf.createToken(SyntaxKind::EqualsToken), keyLiteral));
+            };
+
+            ts::Statement chain = undefined;
+            for (auto index = (int)fieldKeys.size() - 1; index >= 0; index--)
+            {
+                NodeArray<ts::Statement> statements;
+                statements.push_back(keyStatement(fieldKeys[index]));
+                statements.push_back(forInStatementAST->statement);
+                auto isThisField = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::EqualsEqualsEqualsToken),
+                                                             nf.createNumericLiteral(stows(std::to_string(index))));
+                chain = nf.createIfStatement(isThisField, nf.createBlock(statements), chain);
+            }
+
+            NodeArray<ts::Statement> body;
+            if (chain)
+            {
+                body.push_back(chain);
+            }
+
+            return mlirGen(nf.createForStatement(initVars, cond, incr, nf.createBlock(body)), genContext);
+        }
 
         // init
         NodeArray<VariableDeclaration> declarations;

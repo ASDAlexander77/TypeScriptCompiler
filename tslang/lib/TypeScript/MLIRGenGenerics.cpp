@@ -1058,12 +1058,12 @@ namespace mlirgen
             genericTypeGenContext.typeParamsWithArgs[typeParam->getName()] = std::make_pair(typeParam, getAnyType());
         }
 
-        if (functionGenericTypeInfo->processing)
+        auto [anyFullName, anyName] = getNameOfFunction(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
+        if (functionGenericTypeInfo->processing.contains(anyFullName))
         {
-            auto [fullName, funcName] = getNameOfFunction(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
-            if (auto funcType = lookupFunctionTypeMap(fullName))
+            if (auto funcType = lookupFunctionTypeMap(anyFullName))
             {
-                return {mlir::success(), funcType, fullName};
+                return {mlir::success(), funcType, anyFullName};
             }
 
             emitError(location) << "can't instantiate '" << name << "' with 'any' while it is being instantiated";
@@ -1073,10 +1073,10 @@ namespace mlirgen
         mlir::OpBuilder::InsertionGuard guard(builder);
         builder.setInsertionPointToStart(theModule.getBody());
 
-        functionGenericTypeInfo->processing = true;
+        functionGenericTypeInfo->processing.insert(anyFullName);
         auto [result, funcOp, funcName, isGeneric] =
             mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
-        functionGenericTypeInfo->processing = false;
+        functionGenericTypeInfo->processing.erase(anyFullName);
         if (mlir::failed(result) || !funcOp)
         {
             return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -1244,11 +1244,12 @@ namespace mlirgen
 
             if (anyNamedGenericType == IsGeneric::False)
             {
-                if (functionGenericTypeInfo->processing)
+                // a call of the instance being made, from its own body: recursion, which takes the type it
+                // has so far. A call of another instance (`f<number>` from `f<number[]>`) makes that one.
+                auto [fullName, name] =
+                    getNameOfFunction(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
+                if (functionGenericTypeInfo->processing.contains(fullName))
                 {
-                    auto [fullName, name] =
-                        getNameOfFunction(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
-
                     auto funcType = lookupFunctionTypeMap(fullName);
                     if (funcType)
                     {
@@ -1263,11 +1264,20 @@ namespace mlirgen
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
+                // `f<T>` calling `f<T[]>` would make instances without end
+                if (functionGenericTypeInfo->processing.size() >= MAX_NESTED_GENERIC_INSTANCES)
+                {
+                    emitError(location) << "can't instantiate '" << functionGenericTypeInfo->name << "': more than "
+                                        << MAX_NESTED_GENERIC_INSTANCES
+                                        << " of its instances are being made at once, one calling the next";
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                }
+
                 // create new instance of function with TypeArguments
-                functionGenericTypeInfo->processing = true;
+                functionGenericTypeInfo->processing.insert(fullName);
                 auto [result, funcOp, funcName, isGeneric] =
                     mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
-                functionGenericTypeInfo->processing = false;
+                functionGenericTypeInfo->processing.erase(fullName);
                 if (mlir::failed(result))
                 {
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};

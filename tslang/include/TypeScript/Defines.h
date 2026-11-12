@@ -6,6 +6,8 @@
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define BUILTIN_FUNC_ATTR_NAME "__builtin"
 #define GENERIC_ATTR_NAME "__generic"
+// instances of one generic function being made at once, each called from the one before (MLIRGenGenerics.cpp)
+#define MAX_NESTED_GENERIC_INSTANCES 64
 #define ATOMIC_ATTR_NAME "__atomic"
 #define ORDERING_ATTR_NAME "__ordering"
 #define SYNCSCOPE_ATTR_NAME "__syncscope"
