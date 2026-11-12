@@ -67,7 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
+          # every release is a pre-release, and GitHub's "latest" leaves those out: take the newest
+          $tag = gh release list --repo ${{ github.repository }} --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'
+          if ($LASTEXITCODE -ne 0 -or -not $tag) { Write-Error "no published release"; exit 1 }
+          Write-Host "release: $tag"
+          gh release download $tag --repo ${{ github.repository }} --pattern '*-windows-x64.zip'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Unpack the package
@@ -135,17 +139,41 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # With the runner's Android SDK, not a marketplace action: the repository allows GitHub's
+      # own actions only.
+      - name: Install the emulator and an API 29 x86_64 system image
+        shell: bash
+        run: |
+          set -e
+          sdk=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
+          sdkmanager=$sdk/cmdline-tools/latest/bin/sdkmanager
+          yes | $sdkmanager --licenses > /dev/null || true
+          $sdkmanager --install "emulator" "platform-tools" "system-images;android-29;default;x86_64" > /dev/null
+          echo no | $sdk/cmdline-tools/latest/bin/avdmanager create avd --force -n tslang_api29_x86_64 -k "system-images;android-29;default;x86_64"
+          echo "$sdk/emulator" >> "$GITHUB_PATH"
+          echo "$sdk/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Start the emulator
+        shell: bash
+        run: |
+          nohup emulator -avd tslang_api29_x86_64 -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 4096 -cores 4 -accel on > emulator.log 2>&1 &
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && { echo "booted after about $((i * 5)) s"; exit 0; }
+            sleep 5
+          done
+          echo "the emulator did not boot in 10 minutes"; tail -50 emulator.log; exit 1
+
       - name: Run the tests on the emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          arch: x86_64
-          target: default
-          cores: 4
-          ram-size: 4096M
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: cd tslang/test/android && node run_tests.mjs --run --adb=adb || { cat out/results.txt; exit 1; }
+        working-directory: ${{ github.workspace }}/tslang/test/android
+        shell: bash
+        run: |
+          code=0
+          node run_tests.mjs --run --adb=adb || code=$?
+          if [ $code -ne 0 ]; then cat out/results.txt; fi
+          adb emu kill || true
+          exit $code
 
       - name: Keep the results
         if: always()
