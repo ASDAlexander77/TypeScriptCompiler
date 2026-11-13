@@ -30,7 +30,9 @@ function main() {
     assert(<u64><index>opaqueOf(<s32>0x1234) == 0x1234, "an s32 keeps its value");
     assert(<u64><index>opaqueOf(<u8>0xAB) == 0xAB, "a u8");
     assert(<u64><index>opaqueOf(<u16>0xABCD) == 0xABCD, "a u16");
-    assert(<u64><index>opaqueOf(<u64>0x123456789A) == 0x123456789A, "a u64 is all 8 bytes");
+    // a pointer holds what it has room for: all 8 bytes of a u64, or on a 32-bit target its low 4
+    const wide: u64 = sizeof<Opaque>() == 8 ? <u64>0x123456789A : <u64>0x3456789A;
+    assert(<u64><index>opaqueOf(<u64>0x123456789A) == wide, "a u64 is as many bytes as a pointer holds");
 
     print("done.");
 }
