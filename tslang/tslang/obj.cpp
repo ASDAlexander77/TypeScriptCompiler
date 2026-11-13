@@ -448,6 +448,22 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         return retCode;
     }
 
+    // 32-bit Windows: every function keeps its frame pointer. An uncaught exception's trace walks the chain
+    // of them (TypeScript/UncaughtStackTrace.h) - x86 has no unwind tables - and without one in a function
+    // its caller was missing from the trace; debuggers and profilers walk it too.
+    if (auto triple = llvm::Triple(llvmModule->getTargetTriple());
+        triple.getArch() == llvm::Triple::x86 && triple.isOSWindows())
+    {
+        llvmModule->setFramePointer(llvm::FramePointerKind::All);
+        for (auto &function : *llvmModule)
+        {
+            if (!function.isDeclaration())
+            {
+                function.addFnAttr("frame-pointer", "all");
+            }
+        }
+    }
+
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, Target.get());
     if (auto err = optPipeline(llvmModule.get()))
     {

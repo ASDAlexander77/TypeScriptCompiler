@@ -44,7 +44,9 @@
 #include "llvm/Support/ManagedStatic.h"
 
 #include "TypeScript/Defines.h"
-#include "TypeScript/UncaughtException.h"
+#include "TypeScript/UncaughtStackTrace.h"
+
+#include "llvm/Object/SymbolSize.h"
 
 #include "jitcache.h"
 
@@ -660,9 +662,115 @@ static void *jitSprintfS()
 
 using JitEntryThunkFn = int (*)(int, char **);
 
+#ifdef TSLANG_DESCRIBES_UNCAUGHT
+// The JIT'd functions, by where they were loaded: no module holds them, so an uncaught exception's trace
+// (TypeScript/UncaughtStackTrace.h) has their names from here. No source lines: the in-memory JIT's are
+// not read (--jit-native's DLL has them, from its PDB).
+class JitFrameNames : public llvm::JITEventListener
+{
+    struct Function
+    {
+        uint64_t start;
+        uint64_t size;
+        std::string name;
+    };
+
+    std::vector<Function> functions;
+
+    template <typename T> static bool take(llvm::Expected<T> expected, T &value)
+    {
+        if (!expected)
+        {
+            llvm::consumeError(expected.takeError());
+            return false;
+        }
+
+        value = *expected;
+        return true;
+    }
+
+  public:
+    void notifyObjectLoaded(ObjectKey, const llvm::object::ObjectFile &object,
+                            const llvm::RuntimeDyld::LoadedObjectInfo &loaded) override
+    {
+        for (auto &[symbol, size] : llvm::object::computeSymbolSizes(object))
+        {
+            llvm::object::SymbolRef::Type type;
+            llvm::StringRef name;
+            llvm::object::section_iterator section = object.section_end();
+            uint64_t address;
+            if (!take(symbol.getType(), type) || type != llvm::object::SymbolRef::ST_Function ||
+                !take(symbol.getName(), name) || !take(symbol.getSection(), section) ||
+                section == object.section_end() || !take(symbol.getAddress(), address) || size == 0)
+            {
+                continue;
+            }
+
+            if (auto load = loaded.getSectionLoadAddress(*section))
+            {
+                functions.push_back({load + (address - section->getAddress()), size, name.str()});
+            }
+        }
+    }
+
+    bool name(uintptr_t pc, typescript::UncaughtFrameName &frameName) const
+    {
+        for (auto &function : functions)
+        {
+            if (pc >= function.start && pc < function.start + function.size)
+            {
+                snprintf(frameName.function, sizeof(frameName.function), "%s", function.name.c_str());
+                return true;
+            }
+        }
+
+        return false;
+    }
+};
+
+static JitFrameNames jitFrameNames;
+
+static bool nameJitFrame(uintptr_t pc, typescript::UncaughtFrameName &name)
+{
+    return jitFrameNames.name(pc, name);
+}
+
+// The trace under "uncaught exception: ...": the program's frames, which end where tslang called it
+static void sayUncaughtJitStack(const uintptr_t *pcs, int count)
+{
+    typescript::UncaughtStackOptions options;
 #ifdef _WIN32
-// What an uncaught exception threw, said after "uncaught exception: ", or empty
+    options.host = GetModuleHandleW(nullptr);
+#else
+    options.host = &jitFrameNames; // the executable
+#endif
+    options.namer = nameJitFrame;
+    typescript::sayUncaughtStack(stderr, pcs, count, options);
+    fflush(stderr);
+}
+#endif
+
+#ifdef _WIN32
+// What an uncaught exception threw, said after "uncaught exception: ", or empty; and where it was thrown
 static char uncaughtDescription[512];
+static uintptr_t uncaughtPcs[typescript::uncaughtStackMaxFrames];
+static int uncaughtPcCount;
+
+// In the filter, while the throw is still on the stack (the first throw, for a rethrow from a `finally`)
+static int noteUncaughtInJit(EXCEPTION_POINTERS *pointers)
+{
+    auto *thrown = typescript::uncaught_stack::thrownFrom(pointers);
+    typescript::describeUncaught(thrown, uncaughtDescription, sizeof(uncaughtDescription));
+    uncaughtPcCount = typescript::uncaught_stack::walk(thrown->ContextRecord, uncaughtPcs, typescript::uncaughtStackMaxFrames);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// so that a rethrow from a `finally` is traced from the first throw (thrownFrom)
+static void noteThrowsOnce()
+{
+    static auto noting = (typescript::uncaught_stack::noteThrows(), true);
+    (void)noting;
+}
 #elif defined(TSLANG_DESCRIBES_UNCAUGHT)
 static std::terminate_handler runtimeTerminateHandler;
 
@@ -691,6 +799,11 @@ static std::terminate_handler runtimeTerminateHandler;
 
     os << "\n";
     os.flush();
+
+    // where the throw found no catch: still on the stack, under this handler and std::terminate()
+    uintptr_t pcs[typescript::uncaughtStackMaxFrames];
+    auto count = typescript::uncaught_stack::walk(pcs, typescript::uncaughtStackMaxFrames);
+    sayUncaughtJitStack(pcs, count);
     _exit(1);
 }
 #endif
@@ -703,13 +816,14 @@ static std::terminate_handler runtimeTerminateHandler;
 static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, int &exitCode)
 {
 #ifdef _WIN32
-    constexpr DWORD cxxExceptionCode = 0xE06D7363; // 'msc' | 0xE0000000
+    using typescript::uncaught_stack::cxxExceptionCode;
+    noteThrowsOnce();
     __try
     {
         exitCode = entryThunk(argc, argv);
         return true;
     }
-    __except (GetExceptionCode() == cxxExceptionCode ? (typescript::describeUncaught(GetExceptionInformation(), uncaughtDescription, sizeof(uncaughtDescription)), EXCEPTION_EXECUTE_HANDLER)
+    __except (GetExceptionCode() == cxxExceptionCode ? noteUncaughtInJit(GetExceptionInformation())
                                                      : EXCEPTION_CONTINUE_SEARCH)
     {
         return false;
@@ -1065,6 +1179,9 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
                     auto objectLayer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
                         session, [](const llvm::MemoryBuffer &) { return std::make_unique<JitSectionMemoryManager>(); });
 
+#ifdef TSLANG_DESCRIBES_UNCAUGHT
+                    objectLayer->registerJITEventListener(jitFrameNames);
+#endif
                     if (!enableOpt.getValue())
                     {
                         if (auto *gdbListener = llvm::JITEventListener::createGDBRegistrationListener())
@@ -1265,6 +1382,10 @@ static int runProgram(ProgramSymbolLookup lookup, llvm::ArrayRef<std::string> in
         }
 #endif
         os << "\n";
+        os.flush();
+#ifdef _WIN32
+        sayUncaughtJitStack(uncaughtPcs, uncaughtPcCount);
+#endif
         exitCode = 1;
     }
 
