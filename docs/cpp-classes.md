@@ -44,6 +44,8 @@ virtual only as in C++:
 
 | Method | What it is |
 | --- | --- |
+| `@virtual name(...): T;` | a C++ virtual method, whose slot the compiler numbers for the target (see "One binding for every target") |
+| `@destructor name(): void;` | the C++ virtual destructor: one slot under MSVC, two under the Itanium ABI; it can't be called |
 | `@slot(N) name(...): T;` | a C++ virtual method: slot N of the vtable, counted from 0 with the base classes' slots |
 | `name(...): T;` overriding a base class's `@slot` method | the same slot, as in C++ (`@slot` may be repeated, with the same number) |
 | `@linkname("symbol") name(...): T;` | a C++ non-virtual method, called by its (mangled) symbol as `symbol(this, args...)` |
@@ -61,6 +63,55 @@ reads the same. (A class whose virtual methods have bodies is the other way roun
 Fields declared on the class are the C++ object's fields after the vtable pointer, laid out like
 a tuple's.
 
+## One binding for every target: `@virtual`
+
+`@slot(N)` numbers are the target's: MSVC and the Itanium ABI (g++, clang on Linux, macOS,
+MinGW) lay out the same C++ class differently. With `@virtual`, the compiler numbers the slots
+itself, as the target's C++ compiler does, so one `.ts` file serves every target:
+
+```ts
+@cpp
+class Shape {                          // class Shape {
+    @destructor destroy(): void;       //     virtual ~Shape();
+    @virtual area(): s32;              //     virtual int area() = 0;
+    @virtual scale(by: s32): void;     //     virtual void scale(int by) = 0;
+    @virtual scale(by: f64): void;     //     virtual void scale(double by) = 0;
+}                                      // };
+
+@cpp
+class Circle extends Shape {           // class Circle : public Shape {
+    @virtual radius(): s32;            //     virtual int radius();
+    @virtual area(): s32;              //     int area() override;
+}                                      // };
+```
+
+| | MSVC | Itanium |
+| --- | --- | --- |
+| a base class's slots | first | first |
+| a virtual destructor | one slot (the scalar deleting destructor) | two slots (the complete and the deleting destructor) |
+| overloads of one name | together, where the first is declared, in reverse declaration order | in declaration order |
+| a method with the name and parameter types of a base class's virtual method | that method's slot (an override) | the same |
+
+Above, MSVC gives `Shape` the slots `~Shape` 0, `area` 1, `scale(double)` 2, `scale(int)` 3, and
+the Itanium ABI `~Shape` 0 and 1, `area` 2, `scale(int)` 3, `scale(double)` 4. `Circle.radius` is
+4 under MSVC and 5 under Itanium, and `Circle.area` keeps `Shape.area`'s slot on both.
+
+So a class using `@virtual` declares **every** virtual method it adds, in the C++ header's order,
+the protected and private ones too (a slot left out shifts the next ones); `tsbindgen
+--virtual-slots` writes it that way. The rules:
+
+- a class numbers its new virtual methods with `@virtual` or with `@slot(N)`, not both (an
+  override may still name its base class's slot with `@slot(N)`);
+- the base class's slots must all be known: its own virtual methods are `@virtual`, or it says
+  how many slots it has with `@vtablesize(N)` on the class (for a base bound by hand with
+  `@slot(N)`, which may leave slots out);
+- `@slot(N)` still works as before, and wins over `@virtual` on the same method: the escape for a
+  vtable no rule above describes.
+
+A `@cpp` class exported from a module carries its slots, its `@destructor` and its
+`@vtablesize(N)` in its declarations, so an importing module can extend it with `@virtual`
+methods of its own.
+
 ## Rules
 
 The compiler rejects anything that would add a slot, run code of its own, or ask the object what
@@ -69,9 +120,12 @@ errors and not warnings.
 
 | Not allowed | Why |
 | --- | --- |
-| a method without a body and without `@slot`, `@linkname` or `@cppname`, overriding nothing | it's neither a slot nor a symbol: a forgotten `@slot` |
-| an `abstract` method without `@slot` | it is virtual, so it needs its slot |
-| `@slot` on a method of an ordinary class | an ordinary class's vtable is tslang's own |
+| a method without a body and without `@virtual`, `@slot`, `@linkname` or `@cppname`, overriding nothing | it's neither a slot nor a symbol: a forgotten `@virtual` |
+| an `abstract` method without `@virtual` or `@slot` | it is virtual, so it needs its slot |
+| `@virtual`, `@destructor` or `@slot` on a method of an ordinary class, `@vtablesize` on one | an ordinary class's vtable is tslang's own |
+| new virtual methods with both `@virtual` and `@slot(N)` in one class | `@virtual` numbers every new slot of the class |
+| `@virtual` in a class extending one whose size isn't known (its slots are `@slot(N)`, without `@vtablesize(N)`) | the new slots would start at an unknown slot |
+| a call of a `@destructor` method | MSVC's slot is the deleting destructor, taking flags; the Itanium ABI's first destroys without freeing |
 | a constructor or a field initializer, in a class none of whose virtual methods has a body | the objects and their code are C++'s (see "Implementing C++ methods") |
 | static members, `get`/`set` accessors, `accessor` fields | they would take vtable slots |
 | `implements` | an implemented interface takes a slot |
@@ -106,9 +160,14 @@ counts it:
 clang computes for the target, and each non-virtual method's `@cppname` declaration (its
 `@linkname` symbol when `@cppname` can't spell it or mangles it otherwise) (README, "C++ classes"):
 `tsbindgen nvrhi.hpp --target x86_64-pc-windows-msvc --filter 'nvrhi::I*' -- -std=c++17`.
+With `--virtual-slots` it writes `@virtual` and `@destructor` instead of this target's `@slot(N)`,
+declaring the virtual methods that aren't public too: one binding for every target. A class with
+a virtual method it can't declare (a variadic one, one taking a type it can't map), and every class
+extending it, keeps this target's `@slot(N)`, with a comment saying why.
 Writing one by hand:
 
-- **Slot numbers.** Take them from the compiler, not by counting: MSVC prints a class's vtable
+- **Slot numbers.** Prefer `@virtual` (above), declaring every virtual method in the header's
+  order. For `@slot(N)`, take them from the compiler, not by counting: MSVC prints a class's vtable
   with `cl /c /Zs /d1reportSingleClassLayout<Name> file.cpp`; clang (Itanium) with
   `clang++ -S -emit-llvm -o /dev/null -Xclang -fdump-vtable-layouts file.cpp`, for a class whose
   vtable the file emits (it defines the first virtual method that isn't inline), where slot N is

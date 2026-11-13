@@ -6546,6 +6546,21 @@ class MLIRGenImpl
         return false;
     }
 
+    bool isCppDestructorMethod(mlir::Value funcRef)
+    {
+        if (auto virtualSymbolRef = funcRef.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            return cppDestructors.contains(virtualSymbolRef.getIdentifier());
+        }
+
+        if (auto symbolRef = funcRef.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return cppDestructors.contains(symbolRef.getIdentifier());
+        }
+
+        return false;
+    }
+
     // A @cpp class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
     // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
     // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
@@ -13734,6 +13749,9 @@ class MLIRGenImpl
 
     int getCppSlot(ClassElement classMember, const GenContext &genContext);
 
+    mlir::LogicalResult mlirGenClassCppVirtualSlots(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                                    ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
+
     bool isCppBaseSlot(ClassInfo::TypePtr classInfo, StringRef methodName);
 
     std::string getCppMethodName(ClassElement classMember, const GenContext &genContext);
@@ -14498,6 +14516,7 @@ class MLIRGenImpl
                     dllName
                 });
                 methodInfos.back().cppSlot = cppSlot;
+                methodInfos.back().isCppDestructor = isCppDestructor;
             }
             else
             {
@@ -14506,6 +14525,7 @@ class MLIRGenImpl
                 if (newClassPtr->isCppVTable)
                 {
                     methodInfos[methodIndex].cppSlot = cppSlot;
+                    methodInfos[methodIndex].isCppDestructor = isCppDestructor;
                     methodInfos[methodIndex].isVirtual = isAbstract || isVirtual;
                 }
                 if (!dllName.empty())
@@ -14672,6 +14692,7 @@ class MLIRGenImpl
         mlir_ts::AccessLevel accessLevel;
         // @slot(N) of a method of a @cpp class (MethodInfo::cppSlot)
         int cppSlot = -1;
+        bool isCppDestructor = false;
 
         mlir_ts::FuncOp funcOp;
     };
@@ -17450,6 +17471,10 @@ class MLIRGenImpl
     llvm::StringSet<> cppVTableHiddenReturnsBeforeThis;
     // the methods of @cpp classes (by function name), C++ methods
     llvm::StringSet<> cppVTableMethods;
+    // the @destructor methods of @cpp classes, by function name: a call of one is an error
+    llvm::StringSet<> cppDestructors;
+    // the slot mlirGenClassCppVirtualSlots gave a @virtual or @destructor method, by its declaration
+    llvm::DenseMap<const void *, int> cppVirtualSlots;
     // the methods of @cpp classes without a body: a slot one names in a class implementing C++
     // methods is null, as a pure virtual method's
     llvm::StringSet<> cppMethodsWithoutBody;

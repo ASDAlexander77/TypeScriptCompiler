@@ -19,6 +19,10 @@ struct PrintOptions
     std::string namespaceName; // --namespace: wrap in `namespace N { export ... }`, with @linkname
     std::string stripPrefix;   // --strip-prefix: removed from the TS names (needs a namespace)
     std::vector<std::string> headerLines; // printed first, each as a `//` comment
+    // --virtual-slots: a C++ class's virtual methods @virtual, its destructor @destructor, which
+    // tslang numbers for the target compiled for: one binding for every target. A class with a
+    // virtual method that can't be declared (or extending one) keeps this target's @slot(N).
+    bool virtualSlots = false;
 };
 
 struct PrintResult

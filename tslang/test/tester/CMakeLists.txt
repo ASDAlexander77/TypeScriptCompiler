@@ -4007,11 +4007,15 @@ set(cppvtable_errors
     "field_initializer|a field of a @cpp class can't have an initializer"
     "slot_old_name|@cppvtable is now @cpp, and a virtual method needs @slot\\(N\\)"
     "slot_missing|'second' has no @slot, so it isn't virtual"
-    "slot_abstract|the abstract method 'first' of a @cpp class needs @slot\\(N\\), its vtable slot"
+    "slot_abstract|the abstract method 'first' of a @cpp class needs @virtual or @slot\\(N\\), its vtable slot"
     "slot_conflict|@slot: 'second' and 'first' are both in slot 1"
     "slot_override|@slot: 'first' overrides slot 0 of a base class, not slot 2"
     "slot_argument|@slot takes the slot number, an integer from 0"
     "slot_plain_class|@slot is for a method of a @cpp class"
+    "virtual_destructor_call|a C\\+\\+ destructor \\(@destructor\\) can't be called"
+    "virtual_mixed_slot|the @cpp class 'Mixed' gives its new virtual methods both @virtual and @slot\\(N\\)"
+    "virtual_base_unknown|the @cpp class 'Extended' numbers its virtual methods with @virtual, but where they start isn't known"
+    "virtual_plain_class|@virtual is for a method of a @cpp class"
     "overload_no_match|no overload of 'write' takes these arguments \\(string\\). it has:"
     "overload_ambiguous|the call of 'write' is ambiguous: its arguments \\(s32, s32\\) fit more than one of:"
     "overload_override|'write' is overloaded in a base class: an override names the slot it overrides, @slot\\(N\\)"
@@ -4179,7 +4183,58 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESS
         set_tests_properties(test-${cppvtable_mm}-verify-ownership-cppvtable-abi
                              PROPERTIES FAIL_REGULAR_EXPRESSION "error:|warning:|Stack dump|Assertion failed")
     endforeach()
+    # One binding for both ABIs: tslang numbers the @virtual slots as the host's C++ compiler did
+    # (cppvtable/virtual_slots.ts)
+    foreach(cppvtable_mm none rc own)
+        add_test(NAME test-jit-cppvtable-virtual-slots-${cppvtable_mm}
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${cppvtable_mm}
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                         --shared-libs=$<TARGET_FILE:tslang_cppvtable_abi>
+                         "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_slots.ts")
+        set_tests_properties(test-jit-cppvtable-virtual-slots-${cppvtable_mm}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "done\."
+                                        FAIL_REGULAR_EXPRESSION "error:|Stack dump|Segmentation|Assertion failed")
+    endforeach()
 endif()
+
+# @virtual slots, numbered for each target whatever the host (the slots MSVC and clang give
+# abi_host.cpp's VirtualDerived): k(int) is grouped before k() under MSVC, last under the Itanium ABI
+add_test(NAME test-compile-cppvtable-virtual-slots-msvc
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=none -mtriple=x86_64-pc-windows-msvc
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_slots.ts" -o -)
+set_tests_properties(test-compile-cppvtable-virtual-slots-msvc
+                     PROPERTIES PASS_REGULAR_EXPRESSION "VirtualDerived.k#1\", index = 7 : i32"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-virtual-slots-itanium
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_slots.ts" -o -)
+set_tests_properties(test-compile-cppvtable-virtual-slots-itanium
+                     PROPERTIES PASS_REGULAR_EXPRESSION "VirtualDerived.k#1\", index = 11 : i32"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+# ...the destructor: one slot under MSVC (MSVC's over(int) in slot 2), two under Itanium (over(int, int) in 3)
+add_test(NAME test-compile-cppvtable-virtual-destructor-msvc
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=none -mtriple=x86_64-pc-windows-msvc
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_slots.ts" -o -)
+set_tests_properties(test-compile-cppvtable-virtual-destructor-msvc
+                     PROPERTIES PASS_REGULAR_EXPRESSION "VirtualBase.over#2\", index = 2 : i32"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-virtual-destructor-itanium
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_slots.ts" -o -)
+set_tests_properties(test-compile-cppvtable-virtual-destructor-itanium
+                     PROPERTIES PASS_REGULAR_EXPRESSION "VirtualBase.over, index = 3 : i32"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+# @vtablesize(N): a base class naming some slots by hand says where its slots end
+add_test(NAME test-compile-cppvtable-virtual-base-size
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/virtual_base_size.ts" -o -)
+set_tests_properties(test-compile-cppvtable-virtual-base-size
+                     PROPERTIES PASS_REGULAR_EXPRESSION "Extended.more, index = 6 : i32"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+# A @cpp class extending one another module exported: its size and destructor come through __decls
+foreach(virtual_mm gc own)
+    tslang_add_test(NAME test-compile-shared-export-import-virtual-slots-${virtual_mm} COMMAND test-runner -shared -mm=${virtual_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_virtual_slots.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_virtual_slots.ts")
+endforeach()
 
 # MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.
 add_test(NAME test-compile-cppvtable-thiscall-target

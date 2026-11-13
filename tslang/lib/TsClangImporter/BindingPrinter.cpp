@@ -239,6 +239,7 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
     };
 
     auto hasCppClass = false;
+    auto targetSlots = false; // a @cpp class printed with this target's @slot(N)
     for (int pass = 0; pass < groups; ++pass)
     {
         for (size_t index = 0; index < model.decls.size(); ++index)
@@ -270,6 +271,30 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
                 break;
             case DeclKind::CppClass: {
                 hasCppClass = true;
+                // @virtual needs every slot of the class and of its bases declared
+                std::string slotsReason;
+                for (auto *current = &decl; current && slotsReason.empty();)
+                {
+                    slotsReason = current->virtualSlotsReason;
+                    auto base = current->base;
+                    current = nullptr;
+                    for (auto &other : model.decls)
+                    {
+                        if (!base.empty() && other.key == base)
+                        {
+                            current = &other;
+                        }
+                    }
+                }
+
+                auto virtualSlots = options.virtualSlots && slotsReason.empty();
+                targetSlots |= !virtualSlots;
+                if (options.virtualSlots && !virtualSlots)
+                {
+                    line("// @slot numbers for this target only: " + slotsReason);
+                    result.warnings.push_back(decl.qualifiedName + " keeps this target's slots: " + slotsReason);
+                }
+
                 line("@cpp");
                 line(exported + "class " + tsName + (decl.base.empty() ? "" : " extends " + nameOf(decl.base)) +
                      " { // " + decl.qualifiedName);
@@ -286,6 +311,19 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
 
                 for (auto &method : decl.methods)
                 {
+                    // the destructor and the virtual methods that aren't public are slots, which
+                    // only @virtual has to declare
+                    if (!virtualSlots && (method.destructor || !method.access.empty()))
+                    {
+                        continue;
+                    }
+
+                    if (method.destructor)
+                    {
+                        member("@destructor " + method.name + "(): void;");
+                        continue;
+                    }
+
                     if (!method.skipReason.empty())
                     {
                         member("// skipped: " + method.cppName + " \xE2\x80\x94 " + method.skipReason);
@@ -307,7 +345,9 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
 
                     // a non-virtual method by its C++ declaration, which @cppname mangles for the
                     // target compiled for; by this target's symbol when it can't be spelled so
-                    auto decorator = method.slot >= 0 ? "@slot(" + std::to_string(method.slot) + ") "
+                    auto access = method.access.empty() ? std::string() : method.access + " ";
+                    auto decorator = virtualSlots && method.isVirtual ? "@virtual " + access
+                                     : method.slot >= 0 ? "@slot(" + std::to_string(method.slot) + ") "
                                      : method.cppDeclaration.empty()
                                          ? "@linkname(\"" + method.symbol + "\") "
                                          : "@cppname(\"" + method.cppDeclaration + "\") ";
@@ -402,8 +442,11 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
 
     if (hasCppClass)
     {
-        result.text += "// The @cpp classes are this target's C++ ABI (generate them again for another); compile with "
-                       "-mm=gc or -mm=none.\n";
+        result.text += targetSlots
+                           ? "// The @cpp classes are this target's C++ ABI (generate them again for another); compile with "
+                             "-mm=gc or -mm=none.\n"
+                           : "// tslang numbers the @cpp classes' slots for the target compiled for (@virtual); their fields "
+                             "are this target's layout. Compile with -mm=gc or -mm=none.\n";
     }
 
     if (!result.text.empty())

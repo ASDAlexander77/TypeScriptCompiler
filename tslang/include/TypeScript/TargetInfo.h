@@ -31,6 +31,9 @@ struct TargetInfo
     // MSVC C++ member functions are __thiscall on 32-bit x86 (`this` in ECX), not the plain C
     // convention a class method is called with, so a @cpp class can't call them.
     bool memberCallsUseThiscall = false;
+    // C++ vtables are laid out as MSVC lays them out (overloads grouped, one destructor slot), not as
+    // the Itanium ABI does (mlirGenClassCppVirtualSlots)
+    bool msvcVTableLayout = false;
 
     // MSVC returns a C++ record (struct, class) from an instance method through a hidden pointer,
     // passed after `this` and returned in turn (clang's MicrosoftCXXABI::classifyReturnType): the
@@ -80,6 +83,7 @@ struct TargetInfo
         info.supportsInProcessJit =
             target.getArch() == host.getArch() && target.getOS() == host.getOS();
         info.memberCallsUseThiscall = msvc && x86_32;
+        info.msvcVTableLayout = msvc;
         info.hiddenReturnPointerAfterThis = msvc;
         info.hiddenReturnPointerBeforeThis =
             !msvc && (target.getArch() == llvm::Triple::x86_64 || target.getArch() == llvm::Triple::aarch64);

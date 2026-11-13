@@ -286,3 +286,43 @@ TEST(CppClass, FilterByQualifiedName)
     auto out = generate(shapes, options, windowsTarget, {}, "c++").text;
     EXPECT_THAT(out, AllOf(HasSubstr("class Shape "), HasSubstr("class Circle extends Shape ")));
 }
+
+// --virtual-slots: the virtual methods @virtual, the destructor @destructor, the virtual methods
+// that aren't public declared too (each is a slot), in declaration order - which tslang numbers for
+// the target it compiles for, so the binding is the same text for every target
+TEST(CppClass, VirtualSlotsAreOneBindingForEveryTarget)
+{
+    tsbindgen::PrintOptions options;
+    options.virtualSlots = true;
+    auto windows = generate(shapes, options, windowsTarget, {}, "c++");
+    auto itanium = generate(shapes, options, linuxTarget, {}, "c++");
+    EXPECT_THAT(windows.text, HasSubstr("@cpp\nclass Shape { // geo::Shape\n"
+                                        "    @destructor destructor(): void;\n"
+                                        "    @virtual area(): s32;\n"
+                                        "    @virtual scale(by: s32): void;\n"
+                                        "    @virtual scale(by: f32): void;\n"
+                                        "    @virtual scale(by: f64): void;\n"
+                                        "    @virtual protected hidden(): void;\n"
+                                        "    @virtual last(): s32;\n"
+                                        "}\n"));
+    EXPECT_THAT(windows.text, HasSubstr("@cpp\nclass Circle extends Shape { // geo::Circle\n"
+                                        "    @virtual contains(other: Shape): boolean;\n"
+                                        "}\n"));
+    EXPECT_EQ(windows.text, itanium.text);
+}
+
+// ...but a class with a virtual method it can't declare, and a class extending it, keep this
+// target's @slot(N): a slot left out would shift the next ones
+TEST(CppClass, VirtualSlotsKeepTheTargetsSlotsWithASkippedVirtual)
+{
+    tsbindgen::PrintOptions options;
+    options.virtualSlots = true;
+    auto header = "class Log { public: virtual ~Log(); virtual void write(const char *format, ...); virtual int size(); };\n"
+                  "class FileLog : public Log { public: virtual int fd(); };\n";
+    auto out = generate(header, options, linuxTarget, {}, "c++");
+    EXPECT_THAT(out.text, HasSubstr("// @slot numbers for this target only: the virtual 'write' is skipped\n@cpp\nclass Log"));
+    EXPECT_THAT(out.text, HasSubstr("    @slot(3) size(): s32;\n"));
+    EXPECT_THAT(out.text, HasSubstr("    @slot(4) fd(): s32;\n"));
+    EXPECT_THAT(out.text, Not(HasSubstr("@virtual")));
+    EXPECT_THAT(out.warnings, Contains("Log keeps this target's slots: the virtual 'write' is skipped"));
+}

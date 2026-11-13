@@ -100,6 +100,13 @@ struct Method
     TsType result;
     bool nonTrivialReturn = false; // returns a record with a destructor or a copy constructor
     std::string skipReason;  // non-empty: left out, with a `// skipped:` line in its place
+    // a virtual method that adds a slot: printed @virtual with --virtual-slots (slot is the target's)
+    bool isVirtual = false;
+    // the virtual destructor that adds its slots, printed @destructor with --virtual-slots only
+    bool destructor = false;
+    // `protected` or `private`: a virtual method that isn't public, which only --virtual-slots
+    // declares (its slot shifts the next ones); empty for a public one
+    std::string access;
 };
 
 struct Decl
@@ -125,6 +132,9 @@ struct Decl
     std::string base;                    // CppClass: the key of the base class, or empty
     std::vector<Method> methods;         // CppClass: the methods it introduces, in declaration order
     std::string fieldsSkipReason;        // CppClass: non-empty when its fields aren't declared
+    // CppClass: why its slots can't be numbered with @virtual - a virtual method that adds a slot
+    // and can't be declared; empty when every one is in `methods`
+    std::string virtualSlotsReason;
 };
 
 struct HeaderModel

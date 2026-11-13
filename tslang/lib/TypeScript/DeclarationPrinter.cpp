@@ -490,6 +490,12 @@ namespace typescript
         {
             os << "@" CPP_VTABLE;
             newline();
+            // the importer's own @virtual methods, in a class extending this one, start after it
+            if (classType->cppVTableSize >= 0)
+            {
+                os << "@" CPP_VTABLE_SIZE "(" << classType->cppVTableSize << ")";
+                newline();
+            }
         }
 
         // an importer calls a @final class's methods directly and may not extend it
@@ -777,6 +783,12 @@ namespace typescript
                 os.indent(4);
                 os << "@" CPP_SLOT "(" << method.cppSlot << ")";
                 newline();
+                if (method.isCppDestructor)
+                {
+                    os.indent(4);
+                    os << "@" CPP_DESTRUCTOR;
+                    newline();
+                }
             }
 
             os.indent(4);
