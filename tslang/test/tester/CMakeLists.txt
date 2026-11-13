@@ -303,15 +303,16 @@ tslang_add_test(NAME test-compile-00-optional-union-truthiness COMMAND test-runn
 tslang_add_test(NAME test-compile-00-gc-allocations-distinct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
 tslang_add_test(NAME test-compile-00-assert-message COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
 tslang_add_test(NAME test-compile-00-wasm-no-bulk-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00wasm_no_bulk_copy.ts")
-# wasm: a copy or fill of a run-time size is plain loads and stores (V8 checks memory.copy and
-# memory.fill against a shared memory's size as this thread last saw it, see obj.cpp)
+# wasm: a copy or fill of a run-time size goes through __tslang_wasm_memmove/memset, whose one
+# memory.copy/memory.fill comes after memory.grow 0 when it reaches past memory.size (V8 checks them
+# against a shared memory's size as this thread last saw it, see obj.cpp)
 foreach(wasm_triple wasm32-unknown-unknown wasm64-unknown-unknown)
     add_test(NAME test-compile-wasm-no-bulk-copy-${wasm_triple}
              COMMAND $<TARGET_FILE:tslang> --emit=asm --no-default-lib -mm=none -mtriple=${wasm_triple}
                      "${PROJECT_SOURCE_DIR}/test/tester/tests/00wasm_no_bulk_copy.ts" -o -)
     set_tests_properties(test-compile-wasm-no-bulk-copy-${wasm_triple}
-                         PROPERTIES PASS_REGULAR_EXPRESSION "call[ \t]+__tslang_wasm_memmove"
-                                    FAIL_REGULAR_EXPRESSION "memory\\.copy|memory\\.fill|error:|Stack dump|Assertion failed")
+                         PROPERTIES PASS_REGULAR_EXPRESSION "call[ \t]+__tslang_wasm_memmove.*memory\\.grow"
+                                    FAIL_REGULAR_EXPRESSION "memory\\.copy.*memory\\.copy|memory\\.fill.*memory\\.fill|error:|Stack dump|Assertion failed")
 endforeach()
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 # printf is avaliable in JIT only, C has snprintf

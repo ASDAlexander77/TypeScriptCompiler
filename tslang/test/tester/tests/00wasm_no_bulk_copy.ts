@@ -1,6 +1,6 @@
-// wasm: a copy or fill whose size is known only at run time is plain loads and stores, not
-// memory.copy or memory.fill, which V8 checks against the shared memory's size as this thread last
-// saw it (test-compile-wasm-no-bulk-copy-* look at the assembly). Natively it just has to run.
+// wasm: a copy or fill whose size is known only at run time brings the memory's size up to date
+// before memory.copy or memory.fill, which V8 checks against the shared memory's size as this thread
+// last saw it (test-compile-wasm-no-bulk-copy-* look at the assembly). Natively it just has to run.
 function main() {
     const items: number[] = [];
     for (let i = 0; i < 100; i++) items.push(i);
