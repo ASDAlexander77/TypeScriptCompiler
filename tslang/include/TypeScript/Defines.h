@@ -474,6 +474,16 @@
 // @slot(N) on a method of a @cpp class: a C++ virtual method, slot N of the vtable (counted
 // from 0, a base class's slots included); a method without it isn't virtual (see MethodInfo::cppSlot)
 #define CPP_SLOT "slot"
+// @virtual on a method of a @cpp class: a C++ virtual method whose slot the compiler numbers for the
+// target's C++ ABI from the declaration order, as the C++ compiler does (mlirGenClassCppVirtualSlots).
+// Its class declares every virtual method of its own, in the C++ header's order.
+#define CPP_VIRTUAL "virtual"
+// @destructor on a method of a @cpp class: the C++ virtual destructor - one slot under MSVC, two under
+// the Itanium ABI. It can't be called: the two ABIs call it differently.
+#define CPP_DESTRUCTOR "destructor"
+// @vtablesize(N) on a @cpp class: its vtable has N slots, a base class's included, so a class extending
+// it numbers its @virtual methods from N. Written into __decls for a class whose size is known.
+#define CPP_VTABLE_SIZE "vtablesize"
 // The name of a C++ overload after the first one declared, `write#1` (see mlirGenClassCppOverloadNames)
 #define CPP_OVERLOAD_SEPARATOR "#"
 // On a call (CallIndirect, then CallInternal or Invoke): the index of the argument that is the hidden

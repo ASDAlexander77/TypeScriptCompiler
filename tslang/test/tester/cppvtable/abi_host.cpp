@@ -163,3 +163,43 @@ ABI_EXPORT int abi_is_storage(void *p, int index)
 {
     return p == &storage[index] ? 1 : 0;
 }
+
+// A hierarchy whose slots tslang numbers itself, for the target (virtual_slots.ts, @virtual): a
+// destructor, which is one slot under MSVC and two under the Itanium ABI, and overloads, which MSVC
+// groups where the first of them is declared, in reverse order. Every method says which it is.
+struct VirtualBase
+{
+    virtual int f() { return 1; }
+    virtual ~VirtualBase() {}
+    virtual int over(int a, int b) { return 100 + a + b; }
+    virtual int g() { return 2; }
+    virtual int over(double x) { return 200; }
+    virtual int over(int x) { return 300 + x; }
+    virtual int h() { return 3; }
+};
+
+struct VirtualDerived : VirtualBase
+{
+    virtual int k() { return 4; }
+    int over(double x) override { return 201; }
+    virtual int over(short x) { return 400 + x; }
+    virtual int m() { return 5; }
+    virtual int k(int x) { return 500 + x; }
+    ~VirtualDerived() override {}
+    int g() override { return 20; }
+};
+
+ABI_EXPORT VirtualDerived *virtual_derived()
+{
+    return new VirtualDerived();
+}
+
+ABI_EXPORT VirtualBase *virtual_base()
+{
+    return new VirtualBase();
+}
+
+ABI_EXPORT void virtual_delete(VirtualBase *object)
+{
+    delete object;
+}

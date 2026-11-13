@@ -172,6 +172,8 @@ struct MethodInfo
     // @slot(N): the vtable slot of a @cpp method, -1 without @slot (a non-virtual method, or
     // one overriding a base class's slot by name)
     int cppSlot = -1;
+    // @destructor: the C++ virtual destructor of a @cpp class, which can't be called
+    bool isCppDestructor = false;
     // a slot of a @cpp class's vtable that no method names (ClassInfo::getVirtualTable)
     bool isCppSlotGap = false;
     // `@keeps`, `@borrows`, `@lends` (OWN_DECLARED_KEEPS_ATTR_NAME): argument indices, `this` 0, for
@@ -893,6 +895,11 @@ struct ClassInfo
     // two @cpp methods in one slot, or an override's @slot not its base's: found by
     // getVirtualTable, which can't report it, and reported by its caller
     std::string cppSlotConflict;
+    // a @cpp class's vtable: its number of slots, a base class's included, when every one is known
+    // (its virtual methods are @virtual, or it says @vtablesize(N)), else -1; and the slot of its
+    // virtual destructor, its own or a base class's, -1 without one (mlirGenClassCppVirtualSlots)
+    int cppVTableSize = -1;
+    int cppDestructorSlot = -1;
     ProcessingStages processingAtEvaluation;
     ProcessingStages processing;
     // the module `processing` was reached in: a discovery module is thrown away with what it holds

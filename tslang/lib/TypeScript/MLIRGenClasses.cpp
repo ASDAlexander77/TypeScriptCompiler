@@ -229,6 +229,12 @@ namespace mlirgen
         // the base classes are known now, and no method has been named yet
         if (newClassPtr->isCppVTable)
         {
+            if (mlir::failed(mlirGenClassCppVirtualSlots(location, classDeclarationAST, newClassPtr, classGenContext)))
+            {
+                setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
+                return {mlir::failure(), ""};
+            }
+
             mlirGenClassCppOverloadNames(classDeclarationAST, newClassPtr, classGenContext);
         }
 
@@ -673,6 +679,11 @@ namespace mlirgen
         }
 
         cppVTableMethods.insert(funcName);
+        if (llvm::any_of(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName && method.isCppDestructor; }))
+        {
+            cppDestructors.insert(funcName);
+        }
+
         if (hasBody)
         {
             funcOp->setAttr(CPP_METHOD_ATTR_NAME, builder.getUnitAttr());
@@ -833,12 +844,21 @@ namespace mlirgen
                 }
             }
 
+            if (MLIRHelper::hasDecorator(classDeclarationAST, CPP_VTABLE_SIZE))
+            {
+                emitError(location) << "@" CPP_VTABLE_SIZE " is for a @" CPP_VTABLE " class";
+                return mlir::failure();
+            }
+
             for (auto &classMember : classDeclarationAST->members)
             {
-                if (MLIRHelper::hasDecorator(classMember, CPP_SLOT))
+                for (auto decorator : {CPP_SLOT, CPP_VIRTUAL, CPP_DESTRUCTOR})
                 {
-                    emitError(loc(classMember)) << "@" CPP_SLOT " is for a method of a @" CPP_VTABLE " class";
-                    return mlir::failure();
+                    if (MLIRHelper::hasDecorator(classMember, decorator))
+                    {
+                        emitError(loc(classMember)) << "@" << decorator << " is for a method of a @" CPP_VTABLE " class";
+                        return mlir::failure();
+                    }
                 }
             }
 
@@ -929,7 +949,7 @@ namespace mlirgen
                     if (hasModifier(classMember, SyntaxKind::AbstractKeyword))
                     {
                         error(memberLocation) << "the abstract method '" << cppOverloadedName(methodName) << "' of a @" CPP_VTABLE
-                                              << " class needs @" CPP_SLOT "(N), its vtable slot";
+                                              << " class needs @" CPP_VIRTUAL " or @" CPP_SLOT "(N), its vtable slot";
                     }
                     else if (!hasBody && !newClassPtr->isImport && !declarationMode)
                     {
@@ -941,8 +961,8 @@ namespace mlirgen
 
                         if (!hasLinkName)
                         {
-                            error(memberLocation) << "'" << cppOverloadedName(methodName) << "' has no @" CPP_SLOT ", so it isn't virtual: give a "
-                                                  << "C++ virtual method its slot, @" CPP_SLOT "(N), or a non-virtual one its "
+                            error(memberLocation) << "'" << cppOverloadedName(methodName) << "' has no @" CPP_SLOT ", so it isn't virtual: mark a "
+                                                  << "C++ virtual method @" CPP_VIRTUAL " or give it its slot, @" CPP_SLOT "(N), or a non-virtual one its "
                                                   << "symbol, @" LINK_NAME "(\"...\"), or its C++ declaration, @" CPP_NAME "(\"...\")";
                         }
                     }
@@ -986,15 +1006,33 @@ namespace mlirgen
         return failed ? mlir::failure() : mlir::success();
     }
 
-    // @slot(N) of a class member: N; -1 without @slot, -2 when its argument isn't a slot number
+    // The key of a class member in cppVirtualSlots: its node, whatever type it is seen as
+    static const void *cppMemberKey(Node member)
+    {
+        return member.operator->();
+    }
+
+    // @slot(N) of a class member: N; -1 without @slot, -2 when its argument isn't a slot number. A
+    // @virtual or @destructor method has the slot mlirGenClassCppVirtualSlots gave it (an explicit
+    // @slot wins), or -3 before it is given one.
     int MLIRGenImpl::getCppSlot(ClassElement classMember, const GenContext &genContext)
     {
         auto slot = -1;
+        auto numbered = false;
+        auto explicitSlot = false;
         iterateDecorators(classMember, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            if (name == CPP_VIRTUAL || name == CPP_DESTRUCTOR)
+            {
+                numbered = true;
+                return;
+            }
+
             if (name != CPP_SLOT)
             {
                 return;
             }
+
+            explicitSlot = true;
 
             unsigned value;
             if (args.size() != 1 || args.front().getAsInteger(10, value) || value > (unsigned)std::numeric_limits<int>::max())
@@ -1006,8 +1044,280 @@ namespace mlirgen
             slot = static_cast<int>(value);
         });
 
+        if (numbered && !explicitSlot)
+        {
+            auto it = cppVirtualSlots.find(cppMemberKey(classMember));
+            return it != cppVirtualSlots.end() ? it->second : -3;
+        }
+
         return slot;
     }
+    // @virtual and @destructor (CPP_VIRTUAL, CPP_DESTRUCTOR): the compiler numbers a @cpp class's
+    // virtual methods for the target as its C++ compiler does, so one binding serves every target.
+    // A base class's slots come first. Of this class's methods, one with the name and parameter
+    // types of a base class's virtual method overrides it, in its slot; the others are new slots,
+    // in declaration order, except that
+    // - under MSVC, overloads of one name are grouped where the first of them is declared, in
+    //   reverse declaration order, and the destructor is one slot (the scalar deleting destructor);
+    // - under the Itanium ABI, the destructor is two slots (the complete and the deleting one).
+    // The class declares all its virtual methods (a slot it leaves out shifts the next ones), so a
+    // class numbering its new methods with @slot(N) can't use @virtual too, and a base class's
+    // size must be known: its own methods are @virtual, or it says @vtablesize(N).
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVirtualSlots(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        auto msvc = compileOptions.targetInfo.msvcVTableLayout;
+
+        auto baseSize = 0;
+        auto baseDestructor = -1;
+        ClassInfo::TypePtr baseClass;
+        for (auto &base : newClassPtr->baseClasses)
+        {
+            baseClass = base;
+            baseSize = base->cppVTableSize;
+            baseDestructor = base->cppDestructorSlot;
+        }
+
+        // the base classes' virtual methods, by C++ name: what a method here may override
+        struct BaseSlot
+        {
+            int slot;
+            mlir::ArrayRef<mlir::Type> params;
+        };
+
+        llvm::StringMap<SmallVector<BaseSlot>> baseSlots;
+        std::function<void(ClassInfo::TypePtr)> collect = [&](ClassInfo::TypePtr classInfo) {
+            for (auto &base : classInfo->baseClasses)
+            {
+                for (auto &method : base->methods)
+                {
+                    auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+                    if (method.isStatic || method.cppSlot < 0 || method.isCppSlotGap || method.isCppDestructor || !funcType)
+                    {
+                        continue;
+                    }
+
+                    baseSlots[cppOverloadedName(method.name)].push_back(
+                        {method.cppSlot, funcType.getInputs().drop_front(funcType.getNumInputs() > 0 ? 1 : 0)});
+                }
+
+                collect(base);
+            }
+        };
+        collect(newClassPtr);
+
+        auto declaredSize = -1;
+        iterateDecorators(classDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            unsigned value;
+            if (name == CPP_VTABLE_SIZE)
+            {
+                declaredSize = args.size() == 1 && !args.front().getAsInteger(10, value) && value <= (unsigned)std::numeric_limits<int>::max()
+                    ? static_cast<int>(value) : -2;
+            }
+        });
+
+        if (declaredSize == -2)
+        {
+            emitError(location) << "@" CPP_VTABLE_SIZE " takes the number of slots, an integer from 0";
+            return mlir::failure();
+        }
+
+        struct NewSlot
+        {
+            ClassElement member;
+            std::string name;
+            bool destructor;
+        };
+
+        SmallVector<NewSlot> newSlots;
+        auto ownDestructor = -1;
+        auto slotsOfItsOwn = false;
+        auto failed = false;
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (classMember != SyntaxKind::MethodDeclaration || hasModifier(classMember, SyntaxKind::StaticKeyword))
+            {
+                continue;
+            }
+
+            auto memberLocation = loc(classMember);
+            auto methodDeclaration = classMember.as<MethodDeclaration>();
+            auto isVirtual = MLIRHelper::hasDecorator(classMember, CPP_VIRTUAL);
+            auto isDestructor = MLIRHelper::hasDecorator(classMember, CPP_DESTRUCTOR);
+            auto explicitSlot = -1;
+            auto hasSlot = false;
+            iterateDecorators(classMember, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                unsigned value;
+                if (name == CPP_SLOT)
+                {
+                    hasSlot = true;
+                    if (args.size() == 1 && !args.front().getAsInteger(10, value) && value <= (unsigned)std::numeric_limits<int>::max())
+                    {
+                        explicitSlot = static_cast<int>(value);
+                    }
+                }
+            });
+
+            if (isDestructor)
+            {
+                if (methodDeclaration->parameters.size() > 0)
+                {
+                    emitError(memberLocation) << "a C++ destructor (@" CPP_DESTRUCTOR ") takes no parameters";
+                    failed = true;
+                    continue;
+                }
+
+                if (hasSlot)
+                {
+                    // the destructor in a slot given by hand: an import's, or a binding for one target
+                    ownDestructor = explicitSlot;
+                    slotsOfItsOwn |= baseSize < 0 || explicitSlot >= baseSize;
+                }
+                else if (baseDestructor >= 0)
+                {
+                    // overriding the base class's
+                    cppVirtualSlots[cppMemberKey(classMember)] = baseDestructor;
+                }
+                else
+                {
+                    newSlots.push_back({classMember, "~", true});
+                }
+
+                continue;
+            }
+
+            if (hasSlot)
+            {
+                // a slot of its own, not one of a base class's
+                slotsOfItsOwn |= baseSize < 0 || explicitSlot >= baseSize;
+                continue;
+            }
+
+            if (!isVirtual)
+            {
+                continue;
+            }
+
+            auto name = cppOverloadedName(MLIRHelper::getName(methodDeclaration->name)).str();
+            auto it = baseSlots.find(name);
+            if (it != baseSlots.end())
+            {
+                // an override of the base class's method with these parameters
+                SmallVector<mlir::Type> params;
+                auto typed = true;
+                for (auto &parameter : methodDeclaration->parameters)
+                {
+                    auto type = parameter->type ? getType(parameter->type, genContext) : mlir::Type();
+                    typed &= static_cast<bool>(type);
+                    params.push_back(type);
+                }
+
+                if (!typed)
+                {
+                    emitError(memberLocation) << "'" << name << "' is a virtual method of a base class too: give every parameter "
+                                              << "its type, to tell whether this one overrides it";
+                    failed = true;
+                    continue;
+                }
+
+                auto overridden = llvm::find_if(it->second, [&](BaseSlot &base) { return base.params == mlir::ArrayRef<mlir::Type>(params); });
+                if (overridden != it->second.end())
+                {
+                    cppVirtualSlots[cppMemberKey(classMember)] = overridden->slot;
+                    continue;
+                }
+            }
+
+            newSlots.push_back({classMember, name, false});
+        }
+
+        if (failed)
+        {
+            return mlir::failure();
+        }
+
+        auto size = baseSize;
+        if (!newSlots.empty())
+        {
+            if (baseSize < 0)
+            {
+                emitError(location) << "the @" CPP_VTABLE " class '" << newClassPtr->fullName << "' numbers its virtual methods with @"
+                                    << CPP_VIRTUAL ", but where they start isn't known: its base class '"
+                                    << (baseClass ? baseClass->fullName : StringRef()) << "' names its slots with @" CPP_SLOT
+                                    "(N). Declare the base class's virtual methods with @" CPP_VIRTUAL " too, or give it @"
+                                    CPP_VTABLE_SIZE "(N)";
+                return mlir::failure();
+            }
+
+            if (slotsOfItsOwn)
+            {
+                emitError(location) << "the @" CPP_VTABLE " class '" << newClassPtr->fullName << "' gives its new virtual methods "
+                                    << "both @" CPP_VIRTUAL " and @" CPP_SLOT "(N): number them all with one or the other";
+                return mlir::failure();
+            }
+
+            SmallVector<NewSlot> ordered;
+            if (msvc)
+            {
+                // grouped by name where the first is declared, each group in reverse order
+                SmallVector<std::string> names;
+                for (auto &newSlot : newSlots)
+                {
+                    if (!llvm::is_contained(names, newSlot.name))
+                    {
+                        names.push_back(newSlot.name);
+                    }
+                }
+
+                for (auto &name : names)
+                {
+                    for (auto &newSlot : llvm::reverse(newSlots))
+                    {
+                        if (newSlot.name == name)
+                        {
+                            ordered.push_back(newSlot);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                ordered = newSlots;
+            }
+
+            for (auto &newSlot : ordered)
+            {
+                cppVirtualSlots[cppMemberKey(newSlot.member)] = size;
+                if (newSlot.destructor)
+                {
+                    ownDestructor = size;
+                }
+
+                size += newSlot.destructor && !msvc ? 2 : 1;
+            }
+        }
+        else if (slotsOfItsOwn)
+        {
+            size = -1;
+        }
+
+        if (declaredSize >= 0)
+        {
+            if (size >= 0 && declaredSize < size)
+            {
+                emitError(location) << "the @" CPP_VTABLE " class '" << newClassPtr->fullName << "' has " << size
+                                    << " slots, more than its @" CPP_VTABLE_SIZE "(" << declaredSize << ")";
+                return mlir::failure();
+            }
+
+            size = declaredSize;
+        }
+
+        newClassPtr->cppVTableSize = size;
+        newClassPtr->cppDestructorSlot = ownDestructor >= 0 ? ownDestructor : baseDestructor;
+        return mlir::success();
+    }
+
 
     // Whether a base class of a @cpp class has a virtual method named methodName: a method of the
     // class with that name overrides it, as in C++, without @slot of its own
@@ -4518,6 +4828,7 @@ genContext);
         if (newClassPtr->isCppVTable && !classMethodMemberInfo.isConstructor && !classMethodMemberInfo.isStatic)
         {
             classMethodMemberInfo.cppSlot = std::max(getCppSlot(classMember, genContext), -1);
+            classMethodMemberInfo.isCppDestructor = MLIRHelper::hasDecorator(classMember, CPP_DESTRUCTOR);
             classMethodMemberInfo.isVirtual = isCppVirtualMethod(newClassPtr, classMember, genContext);
             classMethodMemberInfo.isForceVirtual = classMethodMemberInfo.isVirtual;
         }

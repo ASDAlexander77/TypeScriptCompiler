@@ -759,12 +759,49 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
             usedNames.insert(field.name);
         }
 
+        auto uniqueName = [&](const std::string &cppName) {
+            auto name = escapeReserved(cppName);
+            for (auto suffix = 2; usedNames.count(name) && !methodNames.count(name); ++suffix)
+            {
+                name = escapeReserved(cppName) + "_" + std::to_string(suffix);
+            }
+
+            usedNames.insert(name);
+            methodNames.insert(name);
+            return name;
+        };
+
         for (auto *method : definition->methods())
         {
+            // a virtual method adding a slot: --virtual-slots numbers the class's slots from them all
+            auto addsSlot = method->isVirtual() && method->size_overridden_methods() == 0;
+            if (addsSlot && llvm::isa<clang::CXXDestructorDecl>(method))
+            {
+                Method bound;
+                bound.cppName = "~" + decl.name;
+                bound.name = uniqueName("destructor");
+                bound.isVirtual = true;
+                bound.destructor = true;
+                bound.result.name = "void";
+                decl.methods.push_back(std::move(bound));
+                continue;
+            }
+
+            if (addsSlot && (method->isImplicit() || method->isDeleted() ||
+                             llvm::isa<clang::CXXConversionDecl>(method) || method->isOverloadedOperator()))
+            {
+                if (decl.virtualSlotsReason.empty())
+                {
+                    decl.virtualSlotsReason = "the virtual '" + method->getNameAsString() + "' can't be declared";
+                }
+
+                continue;
+            }
+
             if (method->isImplicit() || method->isDeleted() || method->isStatic() ||
                 llvm::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl, clang::CXXConversionDecl>(method) ||
                 method->isOverloadedOperator() || method->getDescribedFunctionTemplate() ||
-                method->getAccess() != clang::AS_public ||
+                (method->getAccess() != clang::AS_public && !addsSlot) ||
                 (method->isVirtual() && method->size_overridden_methods() > 0))
             {
                 continue;
@@ -774,15 +811,19 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
             // by the arguments. A field of the name makes it `_2`, `_3`, ...
             Method bound;
             bound.cppName = method->getName().str();
-            bound.name = escapeReserved(bound.cppName);
-            for (auto suffix = 2; usedNames.count(bound.name) && !methodNames.count(bound.name); ++suffix)
+            bound.name = uniqueName(bound.cppName);
+            bound.isVirtual = addsSlot;
+            if (method->getAccess() != clang::AS_public)
             {
-                bound.name = escapeReserved(bound.cppName) + "_" + std::to_string(suffix);
+                bound.access = method->getAccess() == clang::AS_protected ? "protected" : "private";
             }
 
-            usedNames.insert(bound.name);
-            methodNames.insert(bound.name);
             mapMethod(bound, method);
+            if (addsSlot && !bound.skipReason.empty() && decl.virtualSlotsReason.empty())
+            {
+                decl.virtualSlotsReason = "the virtual '" + bound.cppName + "' is skipped";
+            }
+
             decl.methods.push_back(std::move(bound));
         }
 

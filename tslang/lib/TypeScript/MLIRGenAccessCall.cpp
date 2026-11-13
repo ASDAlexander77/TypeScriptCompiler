@@ -2812,6 +2812,15 @@ namespace mlirgen
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, genContext);
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
+                // MSVC's destructor slot is the deleting destructor, taking flags; the Itanium ABI's
+                // first one destroys without freeing: one call can't mean the same under both
+                if (isCppDestructorMethod(funcRefValue))
+                {
+                    emitError(location) << "a C++ destructor (@" CPP_DESTRUCTOR ") can't be called: release the object the way "
+                                        << "the C++ library does";
+                    return;
+                }
+
                 auto calledFuncType =
                     getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults(), calledBoundFuncType.isVarArg());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
