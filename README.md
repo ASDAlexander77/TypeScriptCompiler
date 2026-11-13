@@ -5,225 +5,29 @@ Powered by [![LLVM|MLIR](https://llvm.org/img/LLVM-Logo-Derivative-1.png)](https
 Developed by [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BBJ4SQYLA6D2L)
-
-A native ahead-of-time (AOT) and JIT compiler for **TypeScript**, built on **LLVM/MLIR**.
-It compiles `.ts` files directly to native executables, WebAssembly, or runs them
-on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
-
-## CI Status
-
 [![Test Build (Windows)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-win.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-win.yml)
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
-## Showcase: native_ts_graphics
+A native ahead-of-time (AOT) and JIT compiler for **TypeScript**, built on **LLVM/MLIR**.
+It compiles `.ts` files directly to native executables, shared libraries and WebAssembly, or runs
+them on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 
-**[native_ts_graphics](https://github.com/ASDAlexander77/native_ts_graphics)** is a set of real-time 3D graphics samples written in TypeScript and compiled to native code with tslang.
-
-- **25 samples**, TypeScript ports of NVIDIA's Donut samples on the [Donut](https://github.com/NVIDIA-RTX/Donut) rendering framework, on **Direct3D 12** and **Vulkan**: from `basic_triangle` and `deferred_shading` to ray tracing (`rt_reflections`, `rt_shadows`, `rt_particles`), meshlets, compute n-body, order-independent transparency, terrain tessellation, variable-rate shading and work graphs
-- **Mixed C++/TypeScript** through CMake: `.ts` files are a first-class CMake language (`TSLANG`), compiled with `tslang --emit=obj` and linked with the C++ code, with incremental rebuilds
-- Runs on **Windows** and **Android** (Vulkan, `arm64-v8a`, `armeabi-v7a` and `x86_64`): the Vulkan samples are packaged as APKs, with a script that builds the samples, starts an emulator and tests them
-- Choose the memory model at configure time: `-DTSLANG_MEMORY_MODEL=gc|rc|none`
-
-It is a good place to see how TypeScript code drives a native C++ framework: the samples call Donut through a C interop layer (`donut_interop.d.ts`) wrapped in TypeScript classes.
+**Targets:** Windows, Linux, Android (`arm64-v8a`, `armeabi-v7a`, `x86_64`), WebAssembly (`wasm32`, `wasm64`).
 
 ## Contents
 
-- [Showcase: native_ts_graphics](#showcase-native_ts_graphics)
-- [What's new](#whats-new)
-- [Roadmap](#roadmap)
-- [Demo](#demo)
-- [Try it online](#try-it)
-- [Example](#example)
-- [Running your code](#run-as-jit)
-  - [As JIT](#run-as-jit)
-  - [Debugging JIT code with GDB (Linux)](#debugging-jit-code-with-gdb-linux)
-  - [As a native executable](#compile-as-binary-executable)
-  - [For Android](#compile-for-android)
-  - [As WebAssembly](#compiling-as-wasm)
-- [C bindings with tsbindgen](#c-bindings-with-tsbindgen)
+- [Quick start](#quick-start)
 - [Memory models](#memory-models)
-  - [`-mm=own`](#-mmown) ([guide](docs/own-memory-model.md))
-- [Building from source](#build)
-  - [For Android](#build-for-android)
-- [Community](#chat-room)
-- [License](#license)
+- [Documentation](#documentation)
+- [Showcase: native_ts_graphics](#showcase-native_ts_graphics)
+- [Community](#community) · [License](#license) · [Contributing](#contributing)
 
-## What's new
+## Quick start
 
-- New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](#memory-models) and the [`-mm=own` guide](docs/own-memory-model.md)
-- **Android** targets (`arm64-v8a`, `armeabi-v7a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for all three ABIs. See [Compile for Android](#compile-for-android)
-- Implemented `try/catch` exception handling in the **JIT** on Windows (x64 SEH unwinding via a custom LLJIT runtime)
-- Migrared to **LLVM 22.1.8**
-- Migrated to **Visual Studio 2026** (Windows build chain)
-- JavaScript Built-in objects library [[Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/)]
+Download `tslang` from [Releases](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/),
+or [try it on Compiler Explorer](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D).
 
-- Visual Studio Code project
-
-```bat
-tslang --new Test1
-```
-
-- CMake project (mixed C++/TypeScript, `TSLANG` registered as a first-class CMake language)
-
-```bat
-tslang --cmake Test1
-```
-
-Generates a ready-to-build project (`CMakeLists.txt`, `CMakePresets.json`, `main.cpp`, sample `.ts` sources and the `cmake/` TSLANG language modules). Build it with:
-
-```bat
-cd Test1
-cmake --preset default && cmake --build --preset default
-```
-
-- Strict null checks
-
-```typescript
-let sn: string | null = null; // Ok
-let s: string = null; // error
-```
-
-- Improved `Template Literal Types`
-
-```typescript
-type Color = "red" | "green" | "blue";
-type HexColor<T extends Color> = `#${string}`;
-```
-
-- Public, private, and protected modifiers
-
-```typescript
-class Point {
-    private x: number;
-    #y: number;
-}
-
-const p = new Point();
-p.x // access error
-p.#y // error
-```
-
-- Class from Tuple
-
-```typescript
-class Point {
-    x: number;
-    y: number;
-}
-
-class Line {
-    constructor(public start: Point, public end: Point) { }
-}
-
-const l = new Line({ x: 0, y: 1 }, { x: 1.0, y: 2.0 });
-```
-
-- Compile-time `if`s
-
-```typescript
-function isArray<T extends unknown[]>(value: T): value is T {
-    return true;
-}
-
-function gen<T>(t: T)
-{
-    if (isArray(t))
-    {
-        return t.length.toString();
-    }
-
-    return "int";
-}
-
-const v1 = gen<i32>(23); // result: int
-const v2 = gen<string[]>([]); // result: 0
-```
-
-- Migrated to LLVM 19.1.3
-
-- Improved `generating debug information` — more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
-
-```bat
-tslang --di --opt_level=0 --emit=exe example.ts
-```
-
-- [More What's New entries on the wiki](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
-
-## Roadmap
-
-- [x] Migrating to LLVM 22.1.8
-- [x] Shared libraries
-- [x] JavaScript Built-in classes library
-
-## Demo
-
-[Releases](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
-
-See also [native_ts_graphics](#showcase-native_ts_graphics): D3D12/Vulkan graphics samples, including ray tracing, written in TypeScript and compiled with tslang.
-
-## Try it
-
-[Open the native example on Compiler Explorer](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
-
-## Chat Room
-
-Want to chat with other members of the TypeScriptCompiler community?
-
-- [GitHub Discussions](https://github.com/ASDAlexander77/TypeScriptCompiler/discussions) (preferred)
-- [![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) (legacy)
-
-## Example
-
-```typescript
-abstract class Department {
-    constructor(public name: string) {}
-
-    printName(): void {
-        print("Department name: " + this.name);
-    }
-
-    abstract printMeeting(): void; // must be implemented in derived classes
-}
-
-class AccountingDepartment extends Department {
-    constructor() {
-        super("Accounting and Auditing"); // constructors in derived classes must call super()
-    }
-
-    printMeeting(): void {
-        print("The Accounting Department meets each Monday at 10am.");
-    }
-
-    generateReports(): void {
-        print("Generating accounting reports...");
-    }
-}
-
-function main() {
-    let department: Department; // ok to create a reference to an abstract type
-    department = new AccountingDepartment(); // ok to create and assign a non-abstract subclass
-    department.printName();
-    department.printMeeting();
-    //department.generateReports(); // error: department is not of type AccountingDepartment, cannot access generateReports
-}
-```
-
-Run
-
-```bat
-tslang --emit=jit --opt --shared-libs=TypeScriptRuntime.dll example.ts
-```
-
-Result
-
-```text
-Department name: Accounting and Auditing
-The Accounting Department meets each Monday at 10am.
-```
-
-## Run as JIT
-
-File ``hello.ts``
+File `hello.ts`:
 
 ```typescript
 function main() {
@@ -231,518 +35,39 @@ function main() {
 }
 ```
 
-Build
+Run it with the JIT:
 
 ```bat
 tslang hello.ts
 ```
 
-Result
-
-```text
-Hello World!
-```
-
-### JIT cache
-
-The JIT compiles the program and each `.ts` module it imports into an object file of its own and
-keeps it in a `__jit` folder next to the source file. On the next run it loads those objects
-instead of compiling the files again, as long as nothing they were compiled from has changed: the
-file itself, the files it references or imports, `lib.d.ts`, the options, or the `tslang` build.
-An edited module is recompiled together with every file that imports it.
-
-```text
-hello.ts
-__jit/hello.ts.<hash>.o        the object
-__jit/hello.ts.<hash>.o.deps   what it was compiled from
-```
-
-- `--jit-cache-dir=<folder>` keeps all the objects in one folder instead;
-- `--jit-cache=false` turns the cache off: everything is compiled into one module on every run.
-
-A program whose imports form a cycle is compiled into one object. Its modules can't be compiled
-one by one, which is also true for `--emit=obj`.
-
-## Debugging JIT code with GDB (Linux)
-
-JIT-compiled TypeScript can be debugged at source level with GDB — breakpoints on `.ts` lines,
-stepping, and backtraces all work. The JIT registers every compiled object with the debugger via
-the standard [GDB JIT interface](https://sourceware.org/gdb/current/onlinedocs/gdb.html/JIT-Interface.html),
-so an attached GDB picks up the DWARF debug info at runtime.
-
-Two things are required:
-
-- pass `--di` so the compiler emits debug information;
-- run **without** `--opt` (JIT debug registration is only enabled when optimizations are off).
-
-```bash
-gdb --args tslang --di hello.ts
-(gdb) break hello.ts:2
-Make breakpoint pending on future shared library load? (y or [n]) y
-(gdb) run
-```
-
-The breakpoint stays *pending* until the JIT compiles and registers your code, then binds and stops
-with full source context:
-
-```text
-Thread 1 "tslang" hit Breakpoint 1, main () at hello.ts:2
-2           print("Hello World!");
-```
-
-From there the usual GDB commands work on the JIT'd frames: `next`, `step`, `info locals`, `bt`.
-
-Notes:
-
-- The `(No debugging symbols found in tslang)` warning at startup refers to the compiler binary
-  itself and is harmless — the debug info for *your* code arrives when the JIT registers it.
-- The `debugger;` TypeScript statement is also supported: it compiles to a debug trap instruction,
-  so execution stops exactly there when a debugger is attached. Without a debugger attached it
-  terminates the process with `SIGTRAP`, so remove it when you are done.
-- For LLDB, enable its JIT loader first: `settings set plugin.jit-loader.gdb enable`.
-
-## Compile as Binary Executable
-
-> Make sure you have download `tslang` from releases first.
-
-The compile process may use a few environment variables so the linker can find the
-runtime libraries, then invoke `tslang` with `--emit=exe`. **Edit the paths to match your
-checkout** — the `C:\dev\...` / `~/dev/...` values are only examples.
-
-| Variable | Points to |
-| --- | --- |
-| `GC_LIB_PATH` | Boehm GC library (the garbage collector) |
-| `LLVM_LIB_PATH` | Not needed any more: programs no longer link an LLVM library. Still accepted so older scripts keep working |
-| `TSLANG_LIB_PATH` | TSLANG runtime library |
-| `DEFAULT_LIB_PATH` | Default library |
-
-### Compile on Windows
-
-Build
+Or compile it to an executable (on Linux add `--relocation-model=pic`):
 
 ```bat
 tslang --emit=exe hello.ts
-```
-
-Run
-
-```text
 hello.exe
 ```
 
-Result
-
 ```text
 Hello World!
 ```
 
-### Compile on Linux (Ubuntu 20.04 and 22.04)
-
-Build
-
-```bash
-./tslang --emit=exe hello.ts --relocation-model=pic
-```
-
-Run
-
-```text
-./hello
-```
-
-Result
-
-```text
-Hello World!
-```
-
-## Compile for Android
-
-`tslang` cross-compiles for Android from a Windows host. It targets `arm64-v8a`
-(`-mtriple=aarch64-linux-android29`), `armeabi-v7a` (`-mtriple=armv7a-linux-androideabi29`) and
-`x86_64` (`-mtriple=x86_64-linux-android29`), and links
-through the Android NDK (tested with r29 and r30). The triple has to carry the API level, and 29
-is the lowest the default library supports. Point `--android-ndk-path` (or `ANDROID_NDK_HOME`) at
-the NDK.
-
-The Windows release zip carries the Android libraries for all three ABIs:
-
-| Library | Option |
-| --- | --- |
-| `android\<abi>\lib\libgc.a` | `--gc-lib-path=<zip>\android\<abi>\lib` (only under `-mm=gc`) |
-| `android\<abi>\lib\libTypeScriptAsyncRuntime.a` | `--tslang-lib-path=<zip>\android\<abi>\lib` |
-| `defaultlib\...` (the default library, beside the Windows one) | `--default-lib-path=<zip>` |
-
-To build them from source instead, see [Build for Android](#build-for-android).
-
-Build an executable for arm64-v8a:
+Start a new project:
 
 ```bat
-tslang --emit=exe -mtriple=aarch64-linux-android29 --opt ^
-    --android-ndk-path=C:\Android\android-ndk-r30 ^
-    --default-lib-path=<zip> ^
-    --gc-lib-path=<zip>\android\arm64-v8a\lib ^
-    --tslang-lib-path=<zip>\android\arm64-v8a\lib ^
-    hello.ts -o hello
+tslang --new Test1
 ```
 
-`--emit=dll` takes the same options and builds a shared library (`-o libhello.so`) for an app to
-load. Either way the output is one self-contained, position-independent binary: the default
-library, collector and libc++ are linked in statically, so it needs only Bionic's libc, libm and
-libdl. Android has no libcurl, so `fetch()` throws.
-
-Run it on a device or emulator. Run `chmod +x` because a file pushed from Windows is not executable:
+creates a Visual Studio Code project, and
 
 ```bat
-adb push hello /data/local/tmp/
-adb shell "chmod +x /data/local/tmp/hello && /data/local/tmp/hello"
+tslang --cmake Test1
 ```
 
-Result
+a CMake project for mixed C++/TypeScript (see [What's new](docs/whats-new.md) for building it).
 
-```text
-Hello World!
-```
-
-## Compiling as WASM
-
-### WASM build on Windows
-
-Build
-
-```bat
-tslang.exe --emit=exe -mm=none -mtriple=wasm32-unknown-unknown hello.ts
-```
-
-Run ``run.html``
-
-<details>
-<summary>Click to expand the full <code>run.html</code> WebAssembly loader</summary>
-
-```html
-<!DOCTYPE html>
-<html>
-
-<head></head>
-
-<body>
-    <script type="module">
-        let buffer;
-        let buffer32;
-        let buffer64;
-        let bufferF64;
-        let heap;
-
-        let heap_base, heap_end, stack_low, stack_high;
-
-        const allocated = [];
-
-        const allocatedSize = (addr) => {
-            return allocated["" + addr];
-        };
-
-        const setAllocatedSize = (addr, newSize) => {
-            allocated["" + addr] = newSize;
-        };
-
-        const expand = (addr, newSize) => {
-
-            const aligned_newSize = newSize + (4 - (newSize % 4))
-
-            const end = addr + allocatedSize(addr);
-            const newEnd = addr + aligned_newSize;
-
-            for (const allocatedAddr in allocated) {
-                const beginAllocatedAddr = parseInt(allocatedAddr);
-                const endAllocatedAddr = beginAllocatedAddr + allocated[allocatedAddr];
-                if (beginAllocatedAddr != addr && addr < endAllocatedAddr && newEnd > beginAllocatedAddr) {
-                    return false;
-                }
-            }
-
-            setAllocatedSize(addr, aligned_newSize);
-            if (addr + aligned_newSize > heap) heap = addr + aligned_newSize;
-            return true;
-        };
-
-        const endOf = (addr) => { while (buffer[addr] != 0) { addr++; if (addr > heap_end) throw "out of memory boundary"; }; return addr; };
-        const strOf = (addr) => String.fromCharCode(...buffer.slice(addr, endOf(addr)));
-        const copyStr = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; buffer[dst] = 0; return dst; };
-        const ncopy = (dst, src, count) => { while (count-- > 0) buffer[dst++] = buffer[src++]; return dst; };
-        const append = (dst, src) => copyStr(endOf(dst), src);
-        const cmp = (addrL, addrR) => { while (buffer[addrL] != 0) { if (buffer[addrL] != buffer[addrR]) break; addrL++; addrR++; } return buffer[addrL] - buffer[addrR]; };
-        const prn = (str, addr) => { for (let i = 0; i < str.length; i++) buffer[addr++] = str.charCodeAt(i); buffer[addr] = 0; return addr; };
-        const clear = (addr, size, val) => { for (let i = 0; i < size; i++) buffer[addr++] = val; };
-        const aligned_alloc = (size) => { 
-            const aligned_size = size + (4 - (size % 4)); 
-            if ((heap + aligned_size) > heap_end) throw "out of memory"; 
-            setAllocatedSize(heap, aligned_size); 
-            const heapCurrent = heap; 
-            heap += aligned_size; 
-            return heapCurrent; 
-        };
-        const free = (addr) => delete allocated["" + addr];
-        const realloc = (addr, size) => {
-            if (!expand(addr, size)) {
-                const newAddr = aligned_alloc(size);
-                ncopy(newAddr, addr, allocatedSize(addr));
-                free(addr);
-                return newAddr;
-            }
-
-            return addr;
-        }
-
-        const envObj = {
-            memory: new WebAssembly.Memory({ initial: 256 }),
-            table: new WebAssembly.Table({
-                initial: 0,
-                element: 'anyfunc',
-            }),
-            fmod: (arg1, arg2) => arg1 % arg2,
-            sqrt: (arg1) => Math.sqrt(arg1),
-            floor: (arg1) => Math.floor(arg1),
-            pow: (arg1, arg2) => Math.pow(arg1, arg2),
-            fabs: (arg1) => Math.abs(arg1),
-            _assert: (msg, file, line) => console.assert(false, strOf(msg), "| file:", strOf(file), "| line:", line, " DBG:", path),
-            puts: (arg) => output += strOf(arg) + '\n',
-            strcpy: copyStr,
-            strcat: append,
-            strcmp: cmp,
-            strlen: (addr) => endOf(addr) - addr,
-            malloc: aligned_alloc,
-            realloc: realloc,
-            free: free,
-            memset: (addr, size, val) => clear(addr, size, val),
-            atoi: (addr, rdx) => parseInt(strOf(addr), rdx),
-            atof: (addr) => parseFloat(strOf(addr)),
-            sprintf_s: (addr, sizeOfBuffer, format, ...args) => {
-                const formatStr = strOf(format);
-                switch (formatStr) {
-                    case "%d": prn(buffer32[args[0] >> 2].toString(), addr); break;
-                    case "%g": prn(bufferF64[args[0] >> 3].toString(), addr); break;
-                    case "%llu": prn(buffer64[args[0] >> 3].toString(), addr); break;
-                    default: throw "not implemented"; 
-                }
-
-                return 0;
-            },
-        }
-
-        const config = {
-            env: envObj,
-        };
-
-        WebAssembly.instantiateStreaming(fetch("./hello.wasm"), config)
-            .then(results => {
-                const { main, __wasm_call_ctors, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
-                buffer = new Uint8Array(results.instance.exports.memory.buffer);
-                buffer32 = new Uint32Array(results.instance.exports.memory.buffer);
-                buffer64 = new BigUint64Array(results.instance.exports.memory.buffer);
-                bufferF64 = new Float64Array(results.instance.exports.memory.buffer);
-                heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
-                try
-                {
-                    if (__wasm_call_ctors) __wasm_call_ctors();
-                    main();
-                }
-                catch (e)
-                {
-                    console.error(e);
-                }
-            });
-    </script>
-</body>
-
-</html>
-```
-
-</details>
-
-## C bindings with tsbindgen
-
-`tsbindgen` reads a C header (or `.c` file) with clang and prints the matching tslang declarations.
-
-```text
-tsbindgen <input.h|.c|.cpp> [options] [-- extra clang args]
-
-  -o out.ts          write to a file (default: stdout)
-  -I dir, -D name=v  include directories and macros, as for clang
-  --filter <glob>    emit the declarations whose C name matches (repeatable)
-  --namespace N      wrap the output in `namespace N`
-  --strip-prefix P   remove P from the TS names (needs --namespace)
-  --target triple    target triple (default: the host)
-```
-
-Given `simple.c`:
-
-```c
-#include <stdint.h>
-#define MAX_ITEMS 16
-typedef struct { int32_t x; int32_t y; } Point;
-int add(int a, int b) { return a + b; }
-static int helper(int a) { return a; }
-double dist(const Point *p);
-```
-
-`tsbindgen simple.c -o simple.ts` writes:
-
-```typescript
-const MAX_ITEMS = 16;
-type Point = [x: s32, y: s32];
-declare function add(a: s32, b: s32): s32;
-// skipped: helper — static function: no symbol to link against
-declare function dist(p: Reference<Point> | null): f64;
-```
-
-A pointer parameter or struct field is nullable (`| null`), as C lets it be null; a C++ reference (`const Point &`) and a result aren't.
-
-A C function taking a callback is declared `@cdecl`: its function-typed parameters are then C function pointers, given a function or an arrow that captures nothing (a closure or a bound method is a compile error):
-
-```typescript
-@cdecl declare function qsort(base: Opaque, count: u64, size: u64, compare: (a: Opaque, b: Opaque) => s32): void;
-```
-
-A struct is a named tuple with its fields where C puts them; tslang lays a nested tuple out in place, as C does a struct member:
-
-- **an array** `T x[N]` is a tuple of its elements, `x: [_0: T, _1: T, ...]` (tslang has no fixed-size array type; one of more than 1024 elements, or of unknown size, is skipped);
-- **a union** is its first member when that alone has the union's size and alignment (`union { void *p; uint64_t n; }` is `p: Opaque | null`), raw words otherwise (`union { char buf[16]; char *ptr; }` is `[_0: u64, _1: u64]`); an anonymous one is named after its first member, an anonymous struct's fields are the struct's own;
-- **a run of bitfields** is raw words over the bytes it uses, named after its first bitfield (`unsigned a : 1; unsigned b : 7;` is `a: [_0: u32]`): set and read the bits yourself;
-- a struct with an `alignas` alignment beyond its fields' (`DECLSPEC_ALIGN(16)`), or packed, is skipped.
-
-Include the result with `/// <reference path="simple.ts" />`, not `import`. Name it `.ts`, not `.d.ts`: a `.d.ts` file is read as declarations only, so its constants would have no value.
-
-### When nothing is emitted
-
-- **Declarations from `#include`d headers are emitted only with `--filter`.** Without it, only what the input file itself declares is printed; a file that only includes headers prints nothing but the warning `nothing to emit`. Pick what you need by name:
-
-  ```bat
-  tsbindgen inc.c --filter puts --filter printf
-  ```
-
-  ```typescript
-  declare function puts(_Buffer: string | null): s32;
-  @varargs declare function printf(_Format: string | null): s32;
-  ```
-
-- **`static` and `static inline` functions are skipped**: there is no symbol to link against.
-- **Function-like macros and macros that are not literals are skipped.**
-
-### "function without a prototype"
-
-```c
-extern int test_func();
-```
-
-gives `// skipped: test_func — function without a prototype`. Before C23, empty parentheses do not mean "no arguments": they leave the arguments unspecified, and clang parses C17 by default. Either write `(void)`:
-
-```c
-extern int test_func(void);
-```
-
-or, for a header you cannot change, parse it as C23 (everything after `--` goes to clang):
-
-```bat
-tsbindgen test.c -o test.ts -- -std=c23
-```
-
-Both give:
-
-```typescript
-declare function test_func(): s32;
-```
-
-### C++ headers
-
-`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh` and `.hxx` files are parsed as C++; a `.h` file is parsed as C, so a C++ header named `.h` needs `-x c++` after `--`:
-
-```bat
-tsbindgen mylib.h -o mylib.ts -- -x c++
-```
-
-Given `mylib.h`:
-
-```cpp
-#include <cstdint>
-namespace lib { class Widget { public: int size() const; }; int helper(int); }
-struct Point { int32_t x; int32_t y; };
-enum class Mode : int { A = 1, B = 2 };
-#ifdef __cplusplus
-extern "C" {
-#endif
-int add(int a, int b);
-double dist(const Point *p);
-#ifdef __cplusplus
-}
-#endif
-int cxx_only(int a);
-```
-
-it writes:
-
-```typescript
-// skipped: Widget — empty struct
-type Widget = Opaque;
-type Point = [x: s32, y: s32];
-enum Mode { A = 1, B = 2 }
-declare function add(a: s32, b: s32): s32;
-declare function dist(p: Reference<Point> | null): f64;
-```
-
-Structs, enums and `extern "C"` functions are emitted, and polymorphic classes (below). A struct or a class without virtual methods, in any namespace or class, is a tuple when its fields are where a tuple's are: constructors, methods and member initializers don't move them, so `struct Color { float r, g, b, a; Color(); }` is `type Color = [r: f32, g: f32, b: f32, a: f32];`. It is declared under its own name, and `--filter` matches that or the qualified name (`--filter 'nvrhi::*'`); of two of one name in different namespaces, the next is named with its namespaces (`rt_Desc` for `nvrhi::rt::Desc` under `--namespace nvrhi`). A derived struct has its bases' fields first, as C++ lays them out (an empty base has none; MSVC's tail padding after a base is a `_pad` field). A field holding a template's specialization by value is laid out as the library has it, and written once for the template as a generic tuple, its type arguments the parameters and its integer arguments part of the name: `std::vector<Item>` is `vector<Item>`, with `type vector<T> = [_Mypair: [_Myval2: [_Myfirst: Reference<T> | null, ...]]]` under MSVC (the specializations its pointers are in, `_Compressed_pair` and `_Vector_val`, inlined) and `[__begin_: Reference<T> | null, ...]` under libc++; `nvrhi::static_vector<IBindingSet *, 8>` is `static_vector8<IBindingSet | null>` (its private `std::array`'s elements, then `current_size`); `RefCountPtr<IShader>` is `RefCountPtr<IShader>`, with `type RefCountPtr<T> = [ptr_: T | null]`. A specialization whose layout doesn't show its type argument, or that is laid out unlike its template's others (an explicit specialization), is declared on its own, named by its arguments: `std::string` is `basic_string_char` (MSVC's `[_Mypair: ...]` down to its `_Bx` buffer words, size and capacity; libc++'s `[__rep_: [_0: u64, _1: u64, _2: u64]]`). Their member names are the C++ library's own, which differ between MSVC's and libc++; a pointer to a specialization alone stays `Opaque`. One that isn't a tuple is `type Name = Opaque;`, with the reason in a `// skipped:` line: a polymorphic class, a virtual base, a packed or over-aligned layout, or a field tsbindgen can't spell (`long double`, a huge array). Namespace functions (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning. To bind those, expose them through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
-
-#### C++ classes
-
-A polymorphic class (one with virtual methods), in any namespace, becomes a [`@cpp` class](docs/cpp-classes.md): tslang calls its virtual methods through the object's vtable and its non-virtual methods by their C++ declarations (`@cppname`, which tslang mangles for the target it compiles for), with no wrapper. clang computes the slots for the target's ABI (`--target`), so generate the bindings once per ABI: MSVC and the Itanium ABI (Linux, Android) number the slots differently. A non-virtual method `@cppname` can't spell (a function pointer or a template in its signature) is bound by the target's mangled symbol, `@linkname`, instead.
-
-```cpp
-namespace geo {
-struct Handle { void *p; Handle(const Handle &); ~Handle(); };
-class Shape {
-public:
-    virtual ~Shape();
-    virtual int area() const = 0;
-    virtual void scale(int by) = 0;
-    virtual void scale(double by) = 0;
-    virtual Handle handle() = 0;
-    int id(int x);
-};
-class Square : public Shape { public: int area() const override; virtual bool bigger(const Shape &other) const; int side; };
-}
-extern "C" geo::Square *make_square(int side);
-```
-
-`tsbindgen shapes.hpp --target x86_64-pc-windows-msvc` writes:
-
-```typescript
-type Handle = [p: Opaque | null];
-@cpp
-class Shape { // geo::Shape
-    @slot(1) area(): s32;
-    @slot(3) scale(by: s32): void;
-    @slot(2) scale(by: f64): void;
-    @cppnontrivial
-    @slot(4) handle(): [p: Opaque | null];
-    @cppname("int geo::Shape::id(int)") id(x: s32): s32;
-}
-@cpp
-class Square extends Shape { // geo::Square
-    side: s32;
-    @slot(5) bigger(other: Shape): boolean;
-}
-declare function make_square(side: s32): Square;
-```
-
-- **Slots** are clang's: the destructor (slot 0 under MSVC, 0 and 1 under the Itanium ABI) and methods that aren't public are slots left out. A method overriding a base's is not declared again: the `@cpp` class's override keeps the base's slot.
-- **Overloads** keep the C++ name, each with its own slot (or symbol), in whatever order the ABI puts the slots: a call picks the overload by its arguments, as C++ does (`shape.scale(2)`, `shape.scale(0.5)`). A method named as a field gets `_2`, `_3`, ...
-- **A pointer or a reference** to an object of a bound class is the class (`| null` for a pointer); a reference to a struct is a `Reference` to its tuple.
-- **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor, or (Itanium) is more than 16 bytes; under the Itanium ABI one with floating-point fields is skipped.
-- **A record passed by value** to a virtual method is its own type (a tuple), which tslang passes as the C++ ABI does (docs/cpp-classes.md, "Structs passed by value"); one that isn't trivially copyable, a union, and (Itanium) one with floating-point fields are skipped, and so is a non-virtual method taking one.
-- **Fields** are declared when they are where a `@cpp` class puts them (after the vtable pointer and the base's storage).
-- **Left out, with a `// skipped:` line:** `inline` methods (no symbol to link to), struct parameters passed by value, and a non-virtual method returning a struct. Static methods and operators are left out silently.
-- **Not bound at all:** templates, classes with several bases or a virtual one, and 32-bit targets. A pointer to such a class stays `Opaque`.
-
-Compile the bindings with `-mm=gc` or `-mm=none`: a `@cpp` class's objects are C++'s.
+More in [Running and compiling programs](docs/running.md): a larger example, the JIT cache,
+debugging JIT code with GDB, and the environment variables the linker uses.
 
 ## Memory models
 
@@ -753,246 +78,42 @@ How heap memory is managed is selected with `-mm=`:
 | `-mm=gc` | garbage collection (Boehm) | the default |
 | `-mm=rc` | reference counting - freed as soon as the last reference goes, no collector, no `libgc` | **does not collect reference cycles** |
 | `-mm=none` | nothing is ever freed | short-lived programs |
-| `-mm=own` | single ownership inferred at compile time - no collector, no counting | **in development**; ownership that cannot be proven is a compile error |
+| `-mm=own` | single ownership inferred at compile time, like Rust's borrow checker - no collector, no counting | **in development**; ownership that cannot be proven is a compile error |
 
-`-mm=gc` is the default and needs no thought. `-mm=rc` reclaims memory deterministically and
-holds close to the working set - a ray tracer that reaches 114 MB under `-mm=none` holds 4.1 MB,
-against garbage collection's 5.8 - but **objects that refer to each other in a cycle are never
-freed under it**, which is the same trade Swift makes with ARC.
+See [memory-models.md](docs/memory-models.md) and the [`-mm=own` guide](docs/own-memory-model.md).
+Under `-mm=own` tslang runs within 1.1-1.4x of idiomatic Rust on an object-heavy ray tracer and on
+par with it on array loops — see [Performance](docs/performance.md).
 
-See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
-what to do about it, and **[docs/own-memory-model.md](docs/own-memory-model.md)** for `-mm=own`.
+## Documentation
 
-### Performance
+| Topic | Page |
+| --- | --- |
+| Running with the JIT, compiling executables, debugging JIT code | [docs/running.md](docs/running.md) |
+| Android: cross-compiling and building the runtime libraries | [docs/android.md](docs/android.md) |
+| WebAssembly | [docs/wasm.md](docs/wasm.md) |
+| Memory models (`gc`, `rc`, `none`) | [docs/memory-models.md](docs/memory-models.md) |
+| The `-mm=own` single-owner model | [docs/own-memory-model.md](docs/own-memory-model.md) |
+| Benchmarks against Rust and C++ | [docs/performance.md](docs/performance.md) |
+| C and C++ bindings with `tsbindgen` | [docs/tsbindgen.md](docs/tsbindgen.md) |
+| Calling C++ classes (`@cpp`) | [docs/cpp-classes.md](docs/cpp-classes.md) |
+| Building the compiler from source | [docs/building.md](docs/building.md) |
+| What's new and roadmap | [docs/whats-new.md](docs/whats-new.md) |
+| JavaScript built-in objects library | [Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/) |
+| How-to guides and more | [Wiki](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki) |
 
-**Compared with Rust:** under `-mm=own`, tslang matches Rust on numeric array loops and runs
-within about 1.35x of idiomatic Rust on an object-heavy ray tracer, about 6.6x faster than the
-same program written with Rust's `Rc` for every object. Written without interfaces and closures,
-as Rust code with enums is, the ray tracer takes the same time as that Rust code under every
-memory model (measured on Linux x64). Put shortly: within 1.1-1.4x of idiomatic
-Rust, and on par for tight array loops. These are two benchmarks of our own, measured on Windows
-x64; on the ray tracer the remaining gap is in code generation (calls through interfaces, structs
-returned through memory), not in memory management, since `-mm=own` runs within a few percent of
-`-mm=none`, which frees nothing.
+## Showcase: native_ts_graphics
 
-The ray tracer benchmark in [tslang/benchmarks/raytrace](tslang/benchmarks/raytrace/README.md)
-(`raytrace.ts` at 512x512; release build, Windows 11 x64, median of 9 runs, measured 2026-11-10)
-against Rust and C++ ports of the same code. The benchmark's copy marks `Vector` and `Color` as
-`@value` classes and `Ray` and `Intersection` as `@value` interfaces, so they are structs passed by
-value rather than heap objects; `-mm=own` builds `rtbench_own.ts`, the same program with the
-shared surfaces as `Shared<T>` handles.
+**[native_ts_graphics](https://github.com/ASDAlexander77/native_ts_graphics)** is a set of 25
+real-time 3D graphics samples — TypeScript ports of NVIDIA's [Donut](https://github.com/NVIDIA-RTX/Donut)
+samples on **Direct3D 12** and **Vulkan**, from `basic_triangle` to ray tracing, meshlets and work
+graphs — compiled to native code with tslang. `.ts` files are a first-class CMake language
+(`TSLANG`) linked with the C++ framework through a C interop layer, and the samples run on
+**Windows** and **Android**.
 
-| build | time | vs Rust (values) |
-| --- | --- | --- |
-| `-mm=gc` | 73 ms | 1.3x slower |
-| `-mm=none` | 73 ms | 1.3x slower |
-| `-mm=own` | 76 ms | 1.35x slower |
-| `-mm=rc` | 96 ms | 1.7x slower |
-| Rust, values (`Copy` vectors and colors) | 56 ms | |
-| C++, values (clang -O3 / MSVC /O2) | 52 / 70 ms | |
-| Rust, every object in an `Rc` | 500 ms | 8.9x slower |
-| C++, every object in a `shared_ptr` (clang / MSVC) | 834 / 908 ms | 15x slower |
+## Community
 
-On 2026-10-21, before `@value`, every vector and color the program computed was a heap object and
-the same benchmark took 1298 ms under `-mm=gc` and 599 ms under `-mm=rc`; `@value` took it to 255
-and 172 ms. The rest of the gain came from capturing parameters by copy instead of in heap cells,
-calling methods nothing overrides directly, and testing a union for null without a tag. `-mm=rc`
-still pays for retains and releases in the inner loops. The benchmark's README has every step and
-the earlier results. `-mm=rc` went from 110 to 96 ms when retains and releases through an
-interface began changing the count inline; what it still pays over the other models is counting
-itself, not thread safety (atomics are only used for blocks shared between threads).
-
-The same ray tracer written without interfaces and closures, the way a Rust program with enums
-and `match` is (`rtbench_static.ts`: a thing is one `@final` class with a shape tag and a
-`switch`, the rest `@value` classes and free functions), against that Rust program
-(`rust/src/bin/static_dispatch.rs`). Ubuntu 24.04 x64, a 4-core cloud VM, release build, median of
-21 runs, measured 2026-11-11:
-
-| build | time | vs Rust (enums) |
-| --- | --- | --- |
-| `-mm=gc` | 50 ms | the same |
-| `-mm=none` | 50 ms | the same |
-| `-mm=own` | 50 ms | the same |
-| `-mm=rc` | 51 ms | the same |
-| Rust, enums and `match` | 50 ms | |
-| Rust, `dyn Thing` (the port above) | 113 ms | |
-
-On the same machine the version with interfaces above (`rtbench.ts`) takes 77 ms under `-mm=gc`,
-78 under `-mm=none`, 82 under `-mm=own` and 111 under `-mm=rc`, against 116 ms for the Rust port
-with `dyn Thing` and 70 ms for the C++ port: a call through an interface or a callback now first
-tries, as direct calls, the few functions of the module it can be. With `@final interface Thing`
-(only classes of this module implement it) no call through a pointer is left, and it takes 71 ms
-under `-mm=gc` and `-mm=none`, the C++ port's time, and 106 ms under `-mm=rc`.
-
-With nothing called through a vtable or a function value the four memory models run alike, and
-tslang takes the time of the Rust program (under `-mm=none` it executes 606 million instructions
-against Rust's 604 million). It was 1.2x (60 ms) before seven changes to the optimizer made for
-this benchmark: an array's length and data are read without a branch on null, a C math function
-is the LLVM intrinsic (TypeScript has no `errno`), `--emit=exe` makes functions that are not
-exported internal, the inliner's threshold at `--opt_level=3` is 325, jump threading runs before
-the first SimplifyCFG, a select over a phi with a constant is made a branch again once its
-function's callees are inlined, and under `-mm=rc` a local alias is not counted where nothing can
-release what it names. The steps, their open questions and what is left are in
-[docs/raytrace-rust-parity.md](docs/raytrace-rust-parity.md).
-
-Loops over arrays are measured by [tslang/benchmarks/numeric](tslang/benchmarks/numeric/README.md):
-six kernels over flat arrays of 4096 elements, with Rust and C++ ports. On Windows 11 x64 (release
-build, median of 15 runs, ms, measured 2026-11-10):
-
-| build | saxpy | triad | stencil | dot | matmul | hash |
-| --- | --- | --- | --- | --- | --- | --- |
-| `-mm=gc` | 87.8 | 107.9 | 92.5 | 91.6 | 53.8 | 64.6 |
-| `-mm=rc` | 86.2 | 114.4 | 93.9 | 94.8 | 56.7 | 65.5 |
-| `-mm=none` | 88.1 | 112.6 | 95.1 | 92.6 | 53.4 | 62.7 |
-| `-mm=own` | 85.6 | 111.8 | 94.1 | 91.2 | 53.8 | 62.3 |
-| Rust (`Vec<f64>`, iterators) | 77.0 | 93.5 | 94.7 | 93.5 | 52.0 | 65.4 |
-
-On Ubuntu 24.04 x64 (a 4-core cloud VM, median of 9 runs, ms, measured 2026-11-10):
-
-| build | saxpy | triad | stencil | dot | matmul | hash |
-| --- | --- | --- | --- | --- | --- | --- |
-| `-mm=gc` | 85.5 | 93.3 | 97.5 | 93.2 | 23.2 | 44.6 |
-| `-mm=rc` | 97.9 | 95.0 | 98.8 | 98.1 | 28.7 | 44.7 |
-| `-mm=none` | 88.7 | 93.8 | 97.3 | 93.6 | 23.2 | 43.8 |
-| `-mm=own` | 87.1 | 94.7 | 97.3 | 96.5 | 26.7 | 48.0 |
-| Rust (`Vec<f64>`, iterators) | 68.2 | 76.0 | 103.4 | 94.9 | 20.6 | 44.4 |
-| C++ (`std::vector`, clang -O3) | 69.0 | 75.2 | 107.4 | 93.5 | 30.1 | 42.8 |
-
-Here the memory model does not matter: the loops allocate nothing, and all four models vectorize
-them. tslang is level with Rust and C++ on four of the kernels and takes about 1.25x as long on
-saxpy and triad. Under `--emit=jit` the loops are vectorized for the host's CPU (AVX2 on that
-machine) rather than the baseline x86-64 an executable targets, which made saxpy, triad, matmul
-and hash 15-25% faster than the JIT of the release before it. The same ray tracer on that Linux
-machine takes 128 ms under `-mm=gc`, 123 under `-mm=none`, 130 under `-mm=own` and 238 under
-`-mm=rc`, against 103 ms for the C++ port; the benchmarks' READMEs have the full tables.
-
-### `-mm=own`
-
-`-mm=own` works the way Rust's borrow checker does. Every heap block has exactly one owner: a
-local, a field, an array element or a global. When a value is aliased, the compiler either moves
-it, so the source gives it up, or borrows it for as long as the owner lives. The owner frees the
-block at a point known at compile time: when its scope ends, when it is overwritten, or when it is
-removed from its container. No reference counts are kept at run time. When the compiler cannot
-prove a single owner, it rejects the program instead of compiling it with a leak:
-
-```typescript
-class Node { constructor(public value: number) {} }
-class Holder { node: Node; }
-
-function main() {
-    const h = new Holder();
-    const g = new Holder();
-    const n = new Node(1);
-    h.node = n;     // the Node moves into h
-    g.node = n;     // a second owner: compile error
-    print(h.node.value);
-}
-```
-
-```text
-owners.ts:9:5: error: 'this value' is used here after its value was moved
-    g.node = n;     // a second owner: compile error
-    ^
-owners.ts:8:5: note: value moved here
-    h.node = n;     // the Node moves into h
-    ^
-```
-
-Shared ownership is opt-in and explicit. `Shared<T>` keeps a count, and `.value` reads or writes
-the object inside it:
-
-```typescript
-const a = new Shared<Node>(new Node(1));
-const b = a;                                          // both share the Node
-print(a.value.value, b.value.value, Shared.count(a)); // 1 1 2
-```
-
-Inside a module ownership is inferred. What a function another module calls does with its
-parameters is said in its signature with `@keeps`, `@lends`, `@record`, `@borrows` and
-`@immortalizes`; `@nodrops` marks a C function that frees nothing, and `@final` and `@value`
-classes make calls direct and values copies.
-
-`-mm=own` is still in development: some valid TypeScript does not compile under it yet (the
-default library's `Map` and `Set` among it).
-
-See **[docs/own-memory-model.md](docs/own-memory-model.md)** for the rules, the errors and how to
-fix them, `Shared<T>`, every decorator, and separate compilation.
-
-## Build
-
-### Build on Windows
-
-#### Windows Requirements
-
-- ``Visual Studio 2026``
-- ~50 GB of free disk space (LLVM/MLIR build dominates this)
-
-> The hardcoded `C:\dev\...` paths in the scripts below are examples — adjust them to your checkout location.
-
-First, precompile dependencies
-
-```bat
-cd TypeScriptCompiler
-prepare_3rdParty.bat
-```
-
-To build ``TSLANG`` binaries:
-
-```bat
-cd TypeScriptCompiler\tslang
-config_tslang_release.bat
-build_tslang_release.bat
-```
-
-### Build on Linux (Ubuntu 20.04 and 22.04)
-
-#### Linux Requirements
-
-- `gcc` or `clang`
-- `cmake`
-- `ninja-build`
-- ~50 GB of free disk space (LLVM/MLIR build dominates this)
-- sudo apt-get install ``libtinfo-dev``
-
-First, precompile dependencies
-
-```bash
-chmod +x *.sh
-cd ~/TypeScriptCompiler
-./prepare_3rdParty.sh
-```
-
-To build ``TSLANG`` binaries:
-
-```bash
-cd ~/TypeScriptCompiler/tslang
-chmod +x *.sh
-./config_tslang_release.sh
-./build_tslang_release.sh
-```
-
-### Build for Android
-
-The release zip already carries these libraries. To build them yourself, use a Windows host with
-the Android NDK (r29 or r30) in `ANDROID_NDK_HOME` and Ninja on `PATH`. Run these after
-`prepare_3rdParty.bat`, which provides the gc sources and the LLVM headers they use. Each script builds both
-`arm64-v8a`, `armeabi-v7a` and `x86_64` for API level 29, or only the ABI you pass:
-
-```bat
-cd TypeScriptCompiler
-scripts\build_gc_release_android.bat
-scripts\build_tslang_runtime_release_android.bat
-```
-
-| Script | Builds | Pass it as |
-| --- | --- | --- |
-| `build_gc_release_android.bat` | Boehm GC, static, parallel marking off ([bdwgc#980](https://github.com/bdwgc/bdwgc/issues/980)) | `--gc-lib-path=3rdParty\gc\android\<abi>\release\lib` |
-| `build_tslang_runtime_release_android.bat` | `libTypeScriptAsyncRuntime.a` | `--tslang-lib-path=__build\tslang-runtime\release\android\<abi>` |
-
-Build the default library for Android with `scripts\build_android.bat` in the
-[Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/). It
-builds the release and debug libraries under gc, rc, none and own into the same `__build\defaultlib` tree as
-every other target, so `--default-lib-path=<TypeScriptCompilerDefaultLib>\__build` finds them.
+- [GitHub Discussions](https://github.com/ASDAlexander77/TypeScriptCompiler/discussions) (preferred)
+- [![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) (legacy)
 
 ## License
 
