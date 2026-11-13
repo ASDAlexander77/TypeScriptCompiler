@@ -2273,6 +2273,17 @@ class MLIRGenImpl
 
             varDecl->setUsing(varClass.isUsing);
 
+            // another module's variable, imported from its library: the global holds its address
+            // (mlirGen(VariableDeclaration)'s initFunc), the name is the variable it points to
+            if (varClass.isDynamicImport)
+            {
+                if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+                {
+                    varDecl->setType(refType.getElementType());
+                    varDecl->setIndirect();
+                }
+            }
+
             if (varClass.atomic)
             {
                 varDecl->setAtomic(varClass.ordering, varClass.syncscope);
@@ -13280,8 +13291,20 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()),
-                                                            value->getName(), ::mlir::IntegerAttr());
+        auto refType = mlir_ts::RefType::get(value->getType());
+        mlir::Value address;
+        if (value->getIndirect())
+        {
+            // the global holds the address of the variable: another module's, in its library
+            auto holder = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(refType),
+                                                               value->getName(), ::mlir::IntegerAttr());
+            address = builder.create<mlir_ts::LoadOp>(location, refType, holder);
+        }
+        else
+        {
+            address = builder.create<mlir_ts::AddressOfOp>(location, refType, value->getName(), ::mlir::IntegerAttr());
+        }
+
         if (asAddess)
         {
             return address;

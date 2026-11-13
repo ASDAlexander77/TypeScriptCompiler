@@ -878,28 +878,32 @@ namespace mlirgen
                     auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                         location, getOpaqueType(), dllVarName);
 
+                    // The variable is the library's own: the global holds its address, and every
+                    // read and write goes through it (createVariableDeclaration makes the name
+                    // indirect, globalVariableAccess loads through it). A copy loaded here was a
+                    // snapshot of its value when the program started, which never saw what the
+                    // library assigned to it later.
+                    auto storageType = fieldType;
                     if (varClass.isBoxed)
                     {
-                        // the resolved symbol's storage is a single boxed
-                        // pointer (ObjectType lowers to `ptr`) to the real
-                        // data, not the data inline - load the pointer,
-                        // instead of reading sizeof(fieldType) bytes directly
-                        // at the symbol's own address (which would read past a
-                        // lone 8-byte slot). The variable is that pointer, as
-                        // the exporter's is: a copy of the data it points to
-                        // was a snapshot, which the exporter's object never saw
-                        // a write to, nor a method call, and a cast to an
-                        // interface copied again. See DeclarationPrinter.cpp's
+                        // the library's storage is a single boxed pointer (ObjectType lowers to
+                        // `ptr`) to the real data, not the data inline. See DeclarationPrinter.cpp's
                         // @boxed emission.
-                        auto boxedType = getObjectType(fieldType);
-                        auto refToBoxed = cast(location, mlir_ts::RefType::get(boxedType), referenceToStaticFieldOpaque, genContext);
-                        auto boxedPtr = V(builder.create<mlir_ts::LoadOp>(location, boxedType, refToBoxed));
-                        return std::make_tuple(boxedPtr.getType(), boxedPtr, TypeProvided::Yes);
+                        storageType = getObjectType(fieldType);
+                    }
+                    else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldType); funcType && !funcType.isCVarArg())
+                    {
+                        // an exported global holds a function as a hybrid one (adjustGlobalVariableType)
+                        storageType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
                     }
 
-                    auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
-                    auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
+                    auto refToStorage = cast(location, mlir_ts::RefType::get(storageType), referenceToStaticFieldOpaque, genContext);
+                    if (refToStorage.failed_or_no_value())
+                    {
+                        return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No);
+                    }
+
+                    return std::make_tuple(V(refToStorage).getType(), V(refToStorage), TypeProvided::Yes);
                 }
             }
 

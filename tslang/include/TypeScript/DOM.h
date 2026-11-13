@@ -192,7 +192,19 @@ class VariableDeclarationDOM
         invariant = value;
     };
 
+    // A global that holds the address of the variable rather than the variable: another module's,
+    // imported from its library (-shared) - reads and writes go through it to the library's own
+    bool getIndirect() const
+    {
+        return indirect;
+    }
+    void setIndirect(bool value = true)
+    {
+        indirect = value;
+    }
+
   protected:
+    bool indirect = false;
     bool readWrite;
     bool atomic;
     int ordering;
