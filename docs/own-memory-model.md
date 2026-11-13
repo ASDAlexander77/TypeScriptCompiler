@@ -850,4 +850,4 @@ a reference gives it back on every path out of a function.
 
 The ray tracer benchmark ([tslang/benchmarks/raytrace](../tslang/benchmarks/raytrace/README.md))
 compiles under `-mm=own`; its timings against the other memory models are in the
-[README](../README.md#performance).
+[performance page](performance.md).
