@@ -80,8 +80,10 @@ if(TSLANG_MEMORY_MODEL STREQUAL "gc")
     list(APPEND TSLANG_LINK_LIBS gc)
 endif()
 
+# legacy_stdio_definitions: printf, sprintf_s and the rest of stdio as functions compiled code can
+# call (the UCRT has them only as inline wrappers in its headers)
 if(WIN32)
-    list(APPEND TSLANG_LINK_LIBS ntdll)
+    list(APPEND TSLANG_LINK_LIBS ntdll legacy_stdio_definitions)
 else()
     find_library(TSLANG_TINFO_LIB NAMES tinfo)
     list(APPEND TSLANG_LINK_LIBS LLVMDemangle stdc++ m pthread dl rt)

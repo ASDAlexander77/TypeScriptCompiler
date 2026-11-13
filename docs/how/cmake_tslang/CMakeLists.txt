@@ -82,9 +82,11 @@ if (TSLANG_MEMORY_MODEL STREQUAL "gc")
     endif()
 endif()
 
-# ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
+# ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows; legacy_stdio_definitions
+# printf, sprintf_s and the rest of stdio as functions compiled code can call (the UCRT has them only
+# as inline wrappers in its headers)
 if(WIN32)
-    list(APPEND TSLANG_LINK_LIBS "ntdll")
+    list(APPEND TSLANG_LINK_LIBS "ntdll" "legacy_stdio_definitions")
 else()
     list(APPEND TSLANG_LINK_LIBS "LLVMDemangle" "stdc++" "m" "pthread" "tinfo" "dl" "rt")
 endif()
