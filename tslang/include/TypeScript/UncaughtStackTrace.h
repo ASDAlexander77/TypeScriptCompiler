@@ -102,11 +102,6 @@ struct DbgHelp
     decltype(&SymFromAddr) fromAddr;
     decltype(&SymGetLineFromAddr64) lineFromAddr;
     decltype(&SymGetModuleInfo64) moduleInfo;
-#ifdef _M_IX86
-    decltype(&StackWalk64) stackWalk;
-    decltype(&SymFunctionTableAccess64) functionTableAccess;
-    decltype(&SymGetModuleBase64) moduleBase;
-#endif
 };
 
 // dbghelp.dll from System32, initialized once; null when it can't be had
@@ -131,12 +126,6 @@ inline DbgHelp *dbgHelp()
     auto fromAddr = reinterpret_cast<decltype(&SymFromAddr)>(GetProcAddress(library, "SymFromAddr"));
     dbg.lineFromAddr = reinterpret_cast<decltype(&SymGetLineFromAddr64)>(GetProcAddress(library, "SymGetLineFromAddr64"));
     dbg.moduleInfo = reinterpret_cast<decltype(&SymGetModuleInfo64)>(GetProcAddress(library, "SymGetModuleInfo64"));
-#ifdef _M_IX86
-    dbg.stackWalk = reinterpret_cast<decltype(&StackWalk64)>(GetProcAddress(library, "StackWalk64"));
-    dbg.functionTableAccess =
-        reinterpret_cast<decltype(&SymFunctionTableAccess64)>(GetProcAddress(library, "SymFunctionTableAccess64"));
-    dbg.moduleBase = reinterpret_cast<decltype(&SymGetModuleBase64)>(GetProcAddress(library, "SymGetModuleBase64"));
-#endif
     if (!setOptions || !initialize || !fromAddr || !dbg.lineFromAddr || !dbg.moduleInfo)
     {
         return nullptr;
@@ -320,25 +309,30 @@ inline int walk(const CONTEXT *start, uintptr_t *pcs, int max)
             }
         }
 #elif defined(_M_IX86)
-        auto *dbg = dbgHelp();
-        if (!dbg || !dbg->stackWalk || !dbg->functionTableAccess || !dbg->moduleBase)
+        // The chain of frame pointers: [ebp] the caller's ebp, [ebp + 4] the return address. StackWalk64 lost
+        // the caller of every function LLVM compiled (it has no FPO record of them), and a function with no
+        // frame pointer is only left out here: ebp goes through it unchanged.
+        auto *tib = reinterpret_cast<NT_TIB *>(NtCurrentTeb());
+        auto low = reinterpret_cast<uintptr_t>(tib->StackLimit);
+        auto high = reinterpret_cast<uintptr_t>(tib->StackBase);
+        pcs[count++] = static_cast<uintptr_t>(context.Eip);
+        auto frame = static_cast<uintptr_t>(context.Ebp);
+        while (count < max && frame >= low && frame + 2 * sizeof(uintptr_t) <= high && frame % sizeof(uintptr_t) == 0)
         {
-            return 0;
-        }
+            auto *slots = reinterpret_cast<const uintptr_t *>(frame);
+            auto returnAddress = slots[1];
+            if (!returnAddress)
+            {
+                break;
+            }
 
-        STACKFRAME64 frame = {};
-        frame.AddrPC.Offset = context.Eip;
-        frame.AddrPC.Mode = AddrModeFlat;
-        frame.AddrFrame.Offset = context.Ebp;
-        frame.AddrFrame.Mode = AddrModeFlat;
-        frame.AddrStack.Offset = context.Esp;
-        frame.AddrStack.Mode = AddrModeFlat;
-        while (count < max &&
-               dbg->stackWalk(IMAGE_FILE_MACHINE_I386, dbg->process, GetCurrentThread(), &frame, &context, nullptr,
-                              dbg->functionTableAccess, dbg->moduleBase, nullptr) &&
-               frame.AddrPC.Offset)
-        {
-            pcs[count++] = static_cast<uintptr_t>(frame.AddrPC.Offset);
+            pcs[count++] = returnAddress;
+            if (slots[0] <= frame)
+            {
+                break;
+            }
+
+            frame = slots[0];
         }
 #endif
     }
@@ -423,11 +417,12 @@ inline bool nameFrame(uintptr_t pc, UncaughtFrameName &name)
         return false;
     }
 
-    // an export table's nearest name is as likely another function's: names from debug info only
+    // an export table's nearest name is as likely another function's, and so is a PDB of another build of
+    // the image (one with --di, beside it under the same name): names from its own debug info only
     IMAGEHLP_MODULE64 module = {};
     module.SizeOfStruct = sizeof(module);
     if (!dbg->moduleInfo(dbg->process, pc, &module) || module.SymType == SymNone ||
-        module.SymType == SymExport || module.SymType == SymDeferred)
+        module.SymType == SymExport || module.SymType == SymDeferred || module.PdbUnmatched || module.DbgUnmatched)
     {
         return false;
     }

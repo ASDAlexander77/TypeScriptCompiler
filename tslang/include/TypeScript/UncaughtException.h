@@ -101,16 +101,19 @@ inline void describeUncaught(EXCEPTION_POINTERS *pointers, char *uncaughtDescrip
     uncaughtDescription[0] = '\0';
     __try
     {
+        // x64 and ARM64: the ThrowInfo's references are relative to the image base, the 4th parameter; x86 has 3
+        // parameters, and its references are addresses (a base of 0)
         auto *record = pointers->ExceptionRecord;
-        if (record->NumberParameters < 4)
+        if (record->NumberParameters < (sizeof(void *) == 4 ? 3u : 4u))
         {
             return;
         }
 
         auto *object = reinterpret_cast<char *>(record->ExceptionInformation[1]);
         auto *throwInfo = reinterpret_cast<int32_t *>(record->ExceptionInformation[2]);
-        auto *imageBase = reinterpret_cast<char *>(record->ExceptionInformation[3]);
-        if (!object || !throwInfo || !imageBase)
+        auto *imageBase =
+            record->NumberParameters >= 4 ? reinterpret_cast<char *>(record->ExceptionInformation[3]) : nullptr;
+        if (!object || !throwInfo || (!imageBase && sizeof(void *) != 4))
         {
             return;
         }

@@ -6205,6 +6205,37 @@ if (WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
                              -P "${CMAKE_CURRENT_SOURCE_DIR}/uncaught-exe.cmake")
         endforeach()
     endforeach()
+
+    # A 32-bit program too (TSLANG_TEST_X86): its runtime once had no UncaughtException.cpp, and the
+    # program ended in abort()'s message box, which an unattended run waits on forever. Its frames are
+    # walked by their frame pointers, which tslang keeps in every function for x86.
+    if (TSLANG_TEST_X86)
+        get_filename_component(uncaught_x86_tslang_lib "${TEST_TSLANG_LIBPATH_X86}" DIRECTORY)
+        foreach(uncaught_model gc rc own)
+            foreach(uncaught_di nodi di)
+                if (uncaught_di STREQUAL "di")
+                    set(uncaught_opt_flags "-mtriple=i686-pc-windows-msvc;--opt_level=0;--di")
+                else()
+                    set(uncaught_opt_flags "-mtriple=i686-pc-windows-msvc;--opt_level=0")
+                endif()
+                set(uncaught_test test-x86-compile-${uncaught_model}-${uncaught_di}-uncaught-trace)
+                add_test(NAME ${uncaught_test}
+                         COMMAND ${CMAKE_COMMAND}
+                                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                                 "-DSOURCE=${uncaught_trace_source}"
+                                 "-DMODEL=${uncaught_model}"
+                                 "-DEXPECT=error: uncaught exception: Failure"
+                                 "-DEXPECT_TRACE=${uncaught_trace_expected_${uncaught_di}}"
+                                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${uncaught_test}"
+                                 "-DGC_LIB=${TEST_GC_LIBDIR}"
+                                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                                 "-DTSLANG_LIB=${uncaught_x86_tslang_lib}"
+                                 "-DOPT=${uncaught_opt_flags}"
+                                 -P "${CMAKE_CURRENT_SOURCE_DIR}/uncaught-exe.cmake")
+                set_tests_properties(${uncaught_test} PROPERTIES LABELS x86 TIMEOUT 60)
+            endforeach()
+        endforeach()
+    endif()
 endif()
 
 # Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
