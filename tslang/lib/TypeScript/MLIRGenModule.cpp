@@ -1942,7 +1942,21 @@ namespace mlirgen
         // or through another library - is not declared again; see mlirGenInclude. Nor is one
         // whose source is being generated around this import (declSymbolsInProgress): the
         // program, say, built into a library it imports. Its source declares it.
+        //
+        // The modules' declarations name each other's classes (one module's State holds the
+        // Profiler another declares), and nothing orders them: they come in the order the library's
+        // symbol table lists them - by name in a DLL's export table, as the linker laid them out in
+        // an ELF one. A module's declarations that name what is not declared yet fail, and are read
+        // again once others have been; only a pass that declares none of them is a failure.
+        struct LibraryDeclarations
+        {
+            StringRef symbol;
+            std::string text;
+            bool isGenericClassDecl;
+        };
+
         SmallVector<StringRef> declaredSymbols;
+        SmallVector<LibraryDeclarations> pendingDeclarations;
         for (auto declSymbol : symbols)
         {
             if (emittedFiles.contains(declSymbol) || declSymbolsInProgress.contains(declSymbol))
@@ -1989,34 +2003,48 @@ namespace mlirgen
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
-                {
-                    MLIRLocationGuard vgLoc(overwriteLoc);
-                    overwriteLoc = location;
-
-                    // a generic class's declaration (see
-                    // createGenericClassDeclarationExportGlobalVar) must NOT be parsed with
-                    // the ".d.ts" filename convention used below for every other kind of
-                    // declaration: that convention makes the parser mark everything ambient/
-                    // external regardless of any per-declaration @dllimport marker (see the
-                    // comment on parsePartialStatements's file_d_ts parameter), which would
-                    // make the generic's instantiated specializations wrongly look like
-                    // external stubs with no compilable body - they need to be treated as
-                    // ordinary, fully-compilable local source instead.
-                    auto isGenericClassDecl =
-                        declSymbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
-
-                    auto importData = convertUTF8toWide(dataPtr);
-                    if (mlir::failed(parsePartialStatements(importData, genContext, false, !isGenericClassDecl, true)))
-                    {
-                        //assert(false);
-                        return mlir::failure();
-                    }
-                }
+                // a generic class's declaration (see
+                // createGenericClassDeclarationExportGlobalVar) must NOT be parsed with
+                // the ".d.ts" filename convention used below for every other kind of
+                // declaration: that convention makes the parser mark everything ambient/
+                // external regardless of any per-declaration @dllimport marker (see the
+                // comment on parsePartialStatements's file_d_ts parameter), which would
+                // make the generic's instantiated specializations wrongly look like
+                // external stubs with no compilable body - they need to be treated as
+                // ordinary, fully-compilable local source instead.
+                auto isGenericClassDecl =
+                    declSymbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
+                pendingDeclarations.push_back({declSymbol, std::string(dataPtr), isGenericClassDecl});
             }
             else
             {
                 emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
             }
+        }
+
+        while (!pendingDeclarations.empty())
+        {
+            SmallVector<LibraryDeclarations> notDeclaredYet;
+            for (auto &declarations : pendingDeclarations)
+            {
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
+
+                auto importData = convertUTF8toWide(declarations.text);
+                if (mlir::failed(
+                        parsePartialStatements(importData, genContext, false, !declarations.isGenericClassDecl, true)))
+                {
+                    notDeclaredYet.push_back(declarations);
+                }
+            }
+
+            // a pass that declared none of them: what they name is nowhere (its errors are the reason)
+            if (notDeclaredYet.size() == pendingDeclarations.size())
+            {
+                return mlir::failure();
+            }
+
+            pendingDeclarations = std::move(notDeclaredYet);
         }
 
         // What a library built under own says about its functions (SHARED_LIB_OWN_FACTS). Kept in
