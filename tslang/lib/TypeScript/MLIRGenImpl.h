@@ -10931,6 +10931,25 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
 
+        // A `@stdcall` function of another library given to C (a parameter of a C function type, @cdecl), on
+        // 32-bit Windows: C calls it as __stdcall, so it is the function itself, not the C function the
+        // library exports under its name for calls from TypeScript (stdcallDynamicImports)
+        if (!stdcallDynamicImports.empty() && isa_and_nonnull<mlir_ts::FunctionType>(operandsProcessingInfo.getReceiverType()))
+        {
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto addressOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+            auto found = addressOp ? stdcallDynamicImports.find(addressOp.getGlobalName()) : stdcallDynamicImports.end();
+            if (found != stdcallDynamicImports.end())
+            {
+                auto location = loc(expression);
+                auto symbolName = V(mlirGenStringValue(location, found->second + STDCALL_EXPORT_SUFFIX, true));
+                auto address = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), symbolName);
+                auto itself = cast(location, value.getType(), address, argGenContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(itself)
+                value = V(itself);
+            }
+        }
+
         if (expression == SyntaxKind::SpreadElement)
         {
             auto location = loc(expression);
@@ -16357,7 +16376,8 @@ class MLIRGenImpl
         };
         dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName,
                  marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME), marker(OWN_DECLARED_LENDS_ATTR_NAME),
-                 funcOp && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME), marker(OWN_DECLARED_IMMORTALIZES_ATTR_NAME));
+                 funcOp && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME), marker(OWN_DECLARED_IMMORTALIZES_ATTR_NAME),
+                 funcOp && funcOp->hasAttr(STDCALL_ATTR_NAME));
 
         declExports << ss.str().str();
     }
@@ -17546,6 +17566,11 @@ class MLIRGenImpl
     ts::SourceFile sourceFile;
 
     bool declarationMode;
+
+    // 32-bit Windows: the `@stdcall` functions of another library (-shared), by the global their address is
+    // kept in, and the name the library exports them under - a C function of that name, which calls them
+    // (STDCALL_EXPORT_SUFFIX). Given to C as a callback, one is looked up as itself instead (mlirGenOperand).
+    llvm::StringMap<std::string> stdcallDynamicImports;
 
     std::stringstream declExports;
     // generic class declarations must be re-imported as plain (non-".d.ts") source: unlike

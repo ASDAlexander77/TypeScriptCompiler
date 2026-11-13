@@ -455,7 +455,7 @@ namespace typescript
 
     void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName,
                                        ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows, ArrayRef<int32_t> ownLends,
-                                       bool ownRecord, ArrayRef<int32_t> ownImmortalizes)
+                                       bool ownRecord, ArrayRef<int32_t> ownImmortalizes, bool stdcall)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -464,6 +464,13 @@ namespace typescript
         if (!dllName.empty())
         {
             os << "@dllname(\"" << dllName << "\")";
+            newline();
+        }
+
+        // __stdcall on 32-bit Windows: the importer calls it so, and by the name it has there (_f@N)
+        if (stdcall)
+        {
+            os << "@" STDCALL_DECORATOR;
             newline();
         }
 

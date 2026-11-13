@@ -40,6 +40,41 @@ namespace ts
 
             F->setCallingConv(CallingConv::X86_StdCall);
 
+            // Exported from a library (-shared): an importer finds a function by its name at run time
+            // (SearchForAddressOfSymbol) and calls it through a pointer, the C way. So the library exports
+            // a C function that calls it under the plain name (`scale`), and the function itself as
+            // `scale$stdcall`, which an importer takes to give it to C as a callback.
+            if (!F->isDeclaration() && (F->hasFnAttribute("export") || F->hasFnAttribute(DLL_EXPORT)))
+            {
+                auto name = F->getName().str();
+                auto *plain = Function::Create(F->getFunctionType(), GlobalValue::ExternalLinkage, "\x01_" + name, M);
+                plain->setAttributes(F->getAttributes());
+                plain->removeFnAttr(STDCALL_ATTR_NAME);
+                plain->addFnAttr("export");
+                IRBuilder<> builder(BasicBlock::Create(M.getContext(), "", plain));
+                SmallVector<Value *> args;
+                for (auto &arg : plain->args())
+                {
+                    args.push_back(&arg);
+                }
+
+                auto *call = builder.CreateCall(F, args);
+                call->setCallingConv(CallingConv::X86_StdCall);
+                call->setAttributes(F->getAttributes());
+                if (call->getType()->isVoidTy())
+                {
+                    builder.CreateRetVoid();
+                }
+                else
+                {
+                    builder.CreateRet(call);
+                }
+
+                auto *itself = GlobalAlias::create(F->getValueType(), F->getAddressSpace(), GlobalValue::ExternalLinkage,
+                                                   "\x01_" + name + STDCALL_EXPORT_SUFFIX, F, &M);
+                itself->setDLLStorageClass(GlobalValue::DLLExportStorageClass);
+            }
+
             // a call of it, or it given to a C function (a declaration): uses that keep it as it is
             auto keepsIt = [](Use &use) {
                 auto *call = dyn_cast<CallBase>(use.getUser());
@@ -77,6 +112,9 @@ namespace ts
 
             auto *callee = Function::Create(F->getFunctionType(), GlobalValue::InternalLinkage, F->getName() + ".cdecl", M);
             callee->setAttributes(F->getAttributes());
+            // this module's own: what exports the function does not export this
+            callee->removeFnAttr("export");
+            callee->removeFnAttr(DLL_EXPORT);
             F->replaceUsesWithIf(callee, [&](Use &use) { return !keepsIt(use); });
 
             IRBuilder<> builder(BasicBlock::Create(M.getContext(), "", callee));

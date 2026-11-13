@@ -370,6 +370,9 @@
 // STDCALL_ATTR_NAME, and CxxThrowCallingConvPass gives the function and its calls the convention.
 #define STDCALL_DECORATOR "stdcall"
 #define STDCALL_ATTR_NAME "tslang.stdcall"
+// A library exports a `@stdcall` function, on 32-bit Windows, as a C function under its own name - which an
+// importer's calls go through - and as itself under its name with this suffix, which an importer gives to C
+#define STDCALL_EXPORT_SUFFIX "$stdcall"
 // The memory model a module is compiled for, a string literal: `if (__MEMORY_MODEL__ === "gc")`
 // generates the branch taken only (MLIRGenImpl::foldLiteralCompare)
 #define MEMORY_MODEL_IDENTIFIER "__MEMORY_MODEL__"
