@@ -5,6 +5,10 @@
 // for dump obj
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/IntrinsicsWebAssembly.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -310,6 +314,114 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     return 0;
 }
 
+// wasm: memory.copy and memory.fill after the memory's size is brought up to date.
+//
+// V8 (Node 26, wasm32 and wasm64 alike) checks memory.copy and memory.fill against the size of a
+// shared memory as this thread last saw it: right after another thread grew the memory, they trap
+// ("memory access out of bounds") on a block that thread has just allocated - a queue's array after
+// the other thread's push - while plain loads and stores see the new size at once. memory.size gives
+// that same size, and memory.grow by 0 brings it up to date. So each llvm.memcpy, memmove and memset
+// that becomes one of them (LLVM emits them once bulk-memory is on, which passive data segments - a
+// shared memory - need, and has no switch for them alone) is a call to one of these internal
+// functions instead: when the copy or fill reaches past memory.size, memory.grow 0 first. A copy of a
+// small constant size is left alone: the backend expands it into loads and stores. (A byval
+// argument's copy is the backend's own, but it is one thread's stack to its stack.)
+static llvm::Function *getWasmMemoryFunction(llvm::Module &module, bool fill)
+{
+    auto name = fill ? "__tslang_wasm_memset" : "__tslang_wasm_memmove";
+    if (auto *existing = module.getFunction(name))
+    {
+        return existing;
+    }
+
+    auto &context = module.getContext();
+    auto *ptrTy = llvm::PointerType::get(context, 0);
+    auto *sizeTy = module.getDataLayout().getIntPtrType(context);
+    auto *i8Ty = llvm::Type::getInt8Ty(context);
+    auto *i32Ty = llvm::Type::getInt32Ty(context);
+    auto *i64Ty = llvm::Type::getInt64Ty(context);
+    auto *fnTy = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                                         {ptrTy, fill ? (llvm::Type *)i8Ty : ptrTy, sizeTy}, false);
+    auto *fn = llvm::Function::Create(fnTy, llvm::GlobalValue::InternalLinkage, name, module);
+    fn->addFnAttr(llvm::Attribute::NoUnwind);
+
+    auto *dst = fn->getArg(0);
+    auto *second = fn->getArg(1);
+    auto *count = fn->getArg(2);
+
+    auto *entry = llvm::BasicBlock::Create(context, "entry", fn);
+    auto *refresh = llvm::BasicBlock::Create(context, "refresh", fn);
+    auto *copy = llvm::BasicBlock::Create(context, "copy", fn);
+    llvm::IRBuilder<> builder(entry);
+
+    // the end of what is touched, in 64 bits (a wasm32 memory's 65536 pages are 2^32 bytes)
+    auto *last = builder.CreatePtrToInt(dst, sizeTy);
+    if (!fill)
+    {
+        last = builder.CreateBinaryIntrinsic(llvm::Intrinsic::umax, last, builder.CreatePtrToInt(second, sizeTy));
+    }
+
+    auto *end = builder.CreateAdd(builder.CreateZExt(last, i64Ty), builder.CreateZExt(count, i64Ty));
+    auto *zeroIndex = llvm::ConstantInt::get(i32Ty, 0);
+    auto *pages = builder.CreateIntrinsic(llvm::Intrinsic::wasm_memory_size, {sizeTy}, {zeroIndex});
+    auto *size = builder.CreateShl(builder.CreateZExt(pages, i64Ty), 16);
+    builder.CreateCondBr(builder.CreateICmpUGT(end, size), refresh, copy);
+
+    builder.SetInsertPoint(refresh);
+    builder.CreateIntrinsic(llvm::Intrinsic::wasm_memory_grow, {sizeTy}, {zeroIndex, llvm::ConstantInt::get(sizeTy, 0)});
+    builder.CreateBr(copy);
+
+    // memory.copy or memory.fill: this function's own call isn't replaced
+    builder.SetInsertPoint(copy);
+    if (fill)
+    {
+        builder.CreateMemSet(dst, second, count, llvm::MaybeAlign(1));
+    }
+    else
+    {
+        builder.CreateMemMove(dst, llvm::MaybeAlign(1), second, llvm::MaybeAlign(1), count);
+    }
+
+    builder.CreateRetVoid();
+    return fn;
+}
+
+static void replaceWasmBulkMemory(llvm::Module &module)
+{
+    // the backend expands a constant copy or fill this small (at most 4 stores of 8 bytes, as at -Os)
+    // into loads and stores
+    const uint64_t expandedSize = 32;
+
+    llvm::SmallVector<llvm::MemIntrinsic *> calls;
+    for (auto &function : module)
+    {
+        for (auto &instruction : llvm::instructions(function))
+        {
+            if (auto *call = llvm::dyn_cast<llvm::MemIntrinsic>(&instruction))
+            {
+                auto *size = llvm::dyn_cast<llvm::ConstantInt>(call->getLength());
+                if (!size || size->getZExtValue() > expandedSize)
+                {
+                    calls.push_back(call);
+                }
+            }
+        }
+    }
+
+    for (auto *call : calls)
+    {
+        auto fill = llvm::isa<llvm::MemSetInst>(call);
+        auto *fn = getWasmMemoryFunction(module, fill);
+        llvm::IRBuilder<> builder(call);
+        auto *length = builder.CreateZExtOrTrunc(call->getLength(), fn->getArg(2)->getType());
+        auto *second = fill ? llvm::cast<llvm::MemSetInst>(call)->getValue()
+                            : llvm::cast<llvm::MemTransferInst>(call)->getSource();
+        auto *replacement = builder.CreateCall(fn, {call->getDest(), second, length});
+        replacement->setDebugLoc(call->getDebugLoc());
+        call->eraseFromParent();
+    }
+}
+
 int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
@@ -347,6 +459,12 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     if (compileOptions.wasmExceptions && llvmModule->getFunction("tslang_thread_spawn"))
     {
         compileOptions.wasmThreads = true;
+    }
+
+    // after the optimizations, which would inline the calls
+    if (auto triple = llvm::Triple(llvmModule->getTargetTriple()); triple.isWasm() && !triple.isOSEmscripten())
+    {
+        replaceWasmBulkMemory(*llvmModule);
     }
 
     //
