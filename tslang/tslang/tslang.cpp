@@ -380,6 +380,33 @@ std::unique_ptr<mlir::MLIRContext> createMLIRContext()
     return mlirContext;
 }
 
+// The backends tslang links (TSLANG_TARGETS in CMakeLists.txt). Not llvm::InitializeAllTargets():
+// it calls into every backend LLVM was built with, which would link them all.
+#define TSLANG_INITIALIZE_TARGET(T)                                                                \
+    LLVMInitialize##T##TargetInfo();                                                               \
+    LLVMInitialize##T##Target();                                                                   \
+    LLVMInitialize##T##TargetMC();                                                                 \
+    LLVMInitialize##T##AsmPrinter();                                                               \
+    LLVMInitialize##T##AsmParser();
+
+static void initializeTargets()
+{
+#ifdef TSLANG_TARGET_X86
+    TSLANG_INITIALIZE_TARGET(X86)
+#endif
+#ifdef TSLANG_TARGET_ARM
+    TSLANG_INITIALIZE_TARGET(ARM)
+#endif
+#ifdef TSLANG_TARGET_AARCH64
+    TSLANG_INITIALIZE_TARGET(AArch64)
+#endif
+#ifdef TSLANG_TARGET_WEBASSEMBLY
+    TSLANG_INITIALIZE_TARGET(WebAssembly)
+#endif
+}
+
+#undef TSLANG_INITIALIZE_TARGET
+
 int main(int argc, char **argv)
 {
 #if _MSC_VER && _DEBUG
@@ -424,10 +451,7 @@ int main(int argc, char **argv)
 
     // Register for Obj/ASM
     // Initialize targets first, so that --version shows registered targets.
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmPrinters();
-    llvm::InitializeAllAsmParsers();
+    initializeTargets();
 
     // Initialize codegen and IR passes used by llc so that the -print-after,
     // -print-before, and -stop-after options work.
