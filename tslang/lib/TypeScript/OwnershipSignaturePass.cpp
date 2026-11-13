@@ -195,6 +195,17 @@ namespace own_signature
                 entry.second->removeAttr(OWN_DECLARED_LENDS_ATTR_NAME);
             }
         }
+        // before the facts: an object literal holding `new Date(0)` borrows it as it does `new C()`,
+        // which classifyRecordBoxes decides from whether the value is fresh (the loop below marks it
+        // again, with the rest)
+        for (auto &call : calls)
+        {
+            if (isImportedFreshResult(call))
+            {
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+        }
+
         // before the facts: a value kept for good is immortal, which keeps nothing of its owner
         findKeepers(module);
         decideKeptForGood(module);
@@ -260,9 +271,7 @@ namespace own_signature
             // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
             // ...and of a function another own module's object says returns one its caller owns
             // (--own-facts)
-            if (call.callees.imported && call.op->getNumResults() == 1 &&
-                ((!call.callees.importedOverwrites && call.callees.importedName.ends_with("." NEW_METHOD_NAME)) ||
-                 importedFreshResults.contains(call.callees.importedName)))
+            if (isImportedFreshResult(call))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }

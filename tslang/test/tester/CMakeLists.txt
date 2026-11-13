@@ -1958,6 +1958,12 @@ add_test(NAME test-compile-class-field-capture-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_field_capture_error.ts")
 set_tests_properties(test-compile-class-field-capture-error PROPERTIES PASS_REGULAR_EXPRESSION "a member of class 'Counter' reads 'start', a local of the function the class is declared in"
                                                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|defined outside the region")
+# an object literal holding a fresh instance of another module's class, given to a call (-mm=own:
+# JSON.stringify({ when: new Date(0) }))
+foreach(stamp_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-record-stamp-${stamp_mm} COMMAND test-runner -shared -mm=${stamp_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_record_stamp.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_record_stamp.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-record-stamp-${stamp_mm} COMMAND test-runner -jit -shared -mm=${stamp_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_record_stamp.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_record_stamp.ts")
+endforeach()
 # @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
 # other models ignore them
 foreach(markers_mm gc rc own)

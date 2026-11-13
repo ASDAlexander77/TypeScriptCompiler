@@ -607,6 +607,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // ...and those it says return a value their caller owns (SHARED_LIB_OWN_FRESH_RESULTS_ATTR_NAME)
     llvm::StringSet<> importedFreshResults;
 
+    // `new C()` of a class from a library built under own, or a call of a function another own
+    // module's object says returns a value its caller owns (--own-facts): the caller owns the result
+    bool isImportedFreshResult(const Call &call)
+    {
+        return call.callees.known && call.callees.imported && call.op->getNumResults() == 1 &&
+               ((!call.callees.importedOverwrites && call.callees.importedName.ends_with("." NEW_METHOD_NAME)) ||
+                importedFreshResults.contains(call.callees.importedName));
+    }
+
     // The body's own share of a function's FieldDrops: its stores, not its calls.
     FieldDrops fieldDropsInBody(mlir_ts::FuncOp funcOp);
 
