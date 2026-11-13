@@ -69,7 +69,9 @@ set(not_compilable_alone
     # an error by design (test-compile-cdecl-closure-error)
     cdecl_closure_error.ts
     # an error by design (test-compile-computed-name-failed-error)
-    computed_name_failed_error.ts)
+    computed_name_failed_error.ts
+    # an error by design (test-compile-generic-self-recursion-untyped-error)
+    generic_self_recursion_untyped_error.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

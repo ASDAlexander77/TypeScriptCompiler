@@ -1256,6 +1256,8 @@ namespace mlirgen
                         return {mlir::success(), funcType, fullName};
                     }
 
+                    // its return type is found from its body, which calls it: said below if that fails
+                    functionGenericTypeInfo->calledBeforeTyped.insert(fullName);
                     if (instantiateGenContext.allowPartialResolve)
                     {
                         return {mlir::success(), mlir_ts::FunctionType(), fullName};
@@ -1280,6 +1282,17 @@ namespace mlirgen
                 functionGenericTypeInfo->processing.erase(fullName);
                 if (mlir::failed(result))
                 {
+                    // An instance whose return type is declared is called from its own body with that type
+                    // (mlirGenFunctionPrototype). One whose return type is found from its body could not be:
+                    // the body needed the result of a call of itself first.
+                    if (functionGenericTypeInfo->calledBeforeTyped.contains(fullName)
+                        && !functionGenericTypeInfo->functionDeclaration->type)
+                    {
+                        emitError(location) << "'" << functionGenericTypeInfo->name
+                                            << "' calls itself, and its return type is found from its body: "
+                                               "declare its return type";
+                    }
+
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 

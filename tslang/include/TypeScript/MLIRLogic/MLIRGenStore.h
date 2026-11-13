@@ -48,6 +48,8 @@ struct GenericFunctionInfo
     // the instances being generated, by full name: a call of one of them from its own body (or from an
     // instance it calls) is recursion and takes its type; any other instance can still be made then
     llvm::StringSet<> processing;
+    // instances called from their own bodies before their types were known (a return type found from the body)
+    llvm::StringSet<> calledBeforeTyped;
     bool processed = false;
 
     // declared inside a function, whose locals its body may read; otherwise an instantiation sees no
