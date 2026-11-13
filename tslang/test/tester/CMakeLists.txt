@@ -1686,6 +1686,9 @@ tslang_add_test(NAME test-compile-export-import-generators COMMAND test-runner "
 # export_os_suffix.linux.ts: the host's is compiled and linked beside it, and the import's
 # declarations for each target are those of its file (the OS function that file declares).
 if (WIN32)
+    # `@stdcall declare function`: the Windows API, called as it is on 32-bit Windows too (its x86 twin)
+    tslang_add_test(NAME test-compile-00-stdcall-winapi COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00stdcall_winapi.ts")
+    tslang_add_test(NAME test-jit-00-stdcall-winapi COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00stdcall_winapi.ts")
     tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.win32.ts")
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.linux.ts")

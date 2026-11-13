@@ -9,7 +9,8 @@ namespace ts
     // _CxxThrowException is __stdcall on 32-bit x86 MSVC; its symbol is then __CxxThrowException@8.
     // Sets that convention on the declaration and on every call and invoke of it. A call whose
     // convention differs from its callee's is undefined behaviour, which InstCombine turns into
-    // `unreachable`, so this runs before the optimization pipeline.
+    // `unreachable`, so this runs before the optimization pipeline. A `@stdcall declare function`
+    // (the Windows API) is given the same convention, the same way.
     class CxxThrowCallingConvPass : public llvm::PassInfoMixin<CxxThrowCallingConvPass>
     {
     public:

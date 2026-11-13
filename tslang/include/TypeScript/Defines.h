@@ -362,6 +362,13 @@
 // a C function pointer - one code pointer, not the code-and-context a TypeScript function value is.
 // Only a function that captures nothing can be passed there (TSLANG_ISSUES 29).
 #define CDECL_DECORATOR "cdecl"
+// `@stdcall declare function GetCurrentProcessId(): u32`: f is __stdcall, as the Windows API is. On 32-bit
+// Windows that is how it is called (the callee pops its arguments) and named (_GetCurrentProcessId@0,
+// which is what kernel32.lib exports); on every other target it is the C convention, so the same
+// declaration serves both. A declaration's alone: it marks the function STDCALL_ATTR_NAME, and
+// CxxThrowCallingConvPass gives the function and its calls the convention.
+#define STDCALL_DECORATOR "stdcall"
+#define STDCALL_ATTR_NAME "tslang.stdcall"
 // The memory model a module is compiled for, a string literal: `if (__MEMORY_MODEL__ === "gc")`
 // generates the branch taken only (MLIRGenImpl::foldLiteralCompare)
 #define MEMORY_MODEL_IDENTIFIER "__MEMORY_MODEL__"
