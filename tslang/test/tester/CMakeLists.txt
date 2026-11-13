@@ -1926,6 +1926,11 @@ add_test(NAME test-compile-ref-element-layout-error
 set_tests_properties(test-compile-ref-element-layout-error PROPERTIES PASS_REGULAR_EXPRESSION "a reference to number can't be used as a reference to f32"
                                                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a string given to a number, or a number to a string, is an error (TS2322)
+# a generic instance calling itself with its return type found from its body: the error says to declare it
+add_test(NAME test-compile-generic-self-recursion-untyped-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/generic_self_recursion_untyped_error.ts")
+set_tests_properties(test-compile-generic-self-recursion-untyped-error PROPERTIES PASS_REGULAR_EXPRESSION "'countUp' calls itself, and its return type is found from its body: declare its return type"
+                                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-assign-string-to-number-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_string_to_number_error.ts")
 set_tests_properties(test-compile-assign-string-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "type '\"x\"' is not assignable to type 'number'"
@@ -2519,6 +2524,7 @@ set(TSLANG_CORPUS
     00callback_result_ignored.ts
     00generic_default_no_inference.ts
     00generic_instance_from_instance.ts
+    00generic_self_recursion.ts
     00promise_type.ts
     00class_deconst.ts
     00class_def_constr.ts
@@ -4847,6 +4853,10 @@ tslang_add_test(NAME test-compile-00-generic-instance-from-instance COMMAND test
 tslang_add_test(NAME test-compile-own-00-generic-instance-from-instance COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
 tslang_add_test(NAME test-jit-00-generic-instance-from-instance COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
 tslang_add_test(NAME test-jit-own-00-generic-instance-from-instance COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_instance_from_instance.ts")
+tslang_add_test(NAME test-compile-00-generic-self-recursion COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
+tslang_add_test(NAME test-compile-own-00-generic-self-recursion COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
+tslang_add_test(NAME test-jit-00-generic-self-recursion COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
+tslang_add_test(NAME test-jit-own-00-generic-self-recursion COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.

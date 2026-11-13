@@ -577,6 +577,17 @@ namespace mlirgen
         // seems we need to discover it all the time due to captured vars
         auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered)
             && !funcProto->getIsGeneric();
+        // An instance of a generic function (countDown<string>) whose return type is declared: its type is known
+        // before its body is, and a call of itself in the body (`return countDown(value, n - 1) + 1`) takes it
+        // from here (instantiateSpecializedFunction). A function at the top level was registered by the pass
+        // over the module's declarations before its body was discovered; an instance is made only when called.
+        auto isGenericInstance =
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0 && !genContext.typeParamsWithArgs.empty();
+        if (detectReturnType && isGenericInstance && funcType && !functionDiscovered)
+        {
+            getFunctionTypeMap().insert({fullName, funcType});
+        }
+
         if (detectReturnType)
         {
             // register function to be able to call it if used in recursive call
