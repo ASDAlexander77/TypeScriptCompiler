@@ -43,4 +43,9 @@ if(NOT status EQUAL 1 OR NOT out MATCHES "^before\r?\n" OR NOT err MATCHES "${EX
                         "stderr '${err}' (expected '${EXPECT}')")
 endif()
 
+# and, when given, the frames it was thrown from (TypeScript/UncaughtStackTrace.h)
+if(DEFINED EXPECT_TRACE AND NOT err MATCHES "${EXPECT_TRACE}")
+    message(FATAL_ERROR "the program's stack trace: stderr '${err}' (expected '${EXPECT_TRACE}')")
+endif()
+
 message(STATUS "${err}")

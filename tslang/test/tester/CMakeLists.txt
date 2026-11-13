@@ -6152,6 +6152,59 @@ if (WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
             endforeach()
         endforeach()
     endforeach()
+
+    # Under the error, the frames it was thrown from - from the throw, not from the `finally` blocks that
+    # throw it again (TypeScript/UncaughtStackTrace.h). The JIT names its functions, with no lines.
+    set(uncaught_trace_source "${PROJECT_SOURCE_DIR}/test/tester/uncaught/throw_through_finally.ts")
+    set(uncaught_trace_names "at fail[^a]*at inner[^a]*at outer[^a]*at main")
+    foreach(uncaught_model gc rc own)
+        add_test(NAME test-jit-${uncaught_model}-uncaught-trace
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${uncaught_model} --opt_level=0
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime> "${uncaught_trace_source}")
+        set_tests_properties(test-jit-${uncaught_model}-uncaught-trace
+                             PROPERTIES PASS_REGULAR_EXPRESSION "uncaught exception: Failure[^a]*${uncaught_trace_names}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
+    endforeach()
+
+    # An executable: with --di its functions and lines. Without it, on Windows, where there is no PDB, the
+    # module and offset of each frame and a word on --di; on Linux the symbol table names the functions.
+    set(uncaught_trace_lines "at fail \\([^)]*throw_through_finally.ts:8\\)[^a]*at inner \\([^)]*throw_through_finally.ts:13\\)[^a]*at outer \\([^)]*throw_through_finally.ts:21\\)[^a]*at main \\([^)]*throw_through_finally.ts:29\\)")
+    if (WIN32)
+        set(uncaught_trace_expected_nodi "at program\\.exe\\+0x[0-9a-f]+.*\\(compile with --di for function names and source lines\\)")
+        set(uncaught_trace_expected_di "${uncaught_trace_lines}")
+    else()
+        set(uncaught_trace_expected_nodi "${uncaught_trace_names}")
+        # the lines come from addr2line, when it is installed
+        if (EXISTS /usr/bin/addr2line)
+            set(uncaught_trace_expected_di "${uncaught_trace_lines}")
+        else()
+            set(uncaught_trace_expected_di "${uncaught_trace_names}")
+        endif()
+    endif()
+
+    foreach(uncaught_model gc rc own)
+        foreach(uncaught_di nodi di)
+            if (uncaught_di STREQUAL "di")
+                set(uncaught_opt_flags "--opt_level=0;--di")
+            else()
+                set(uncaught_opt_flags "--opt_level=0")
+            endif()
+            set(uncaught_test test-compile-${uncaught_model}-${uncaught_di}-uncaught-trace)
+            add_test(NAME ${uncaught_test}
+                     COMMAND ${CMAKE_COMMAND}
+                             "-DTSLANG=$<TARGET_FILE:tslang>"
+                             "-DSOURCE=${uncaught_trace_source}"
+                             "-DMODEL=${uncaught_model}"
+                             "-DEXPECT=error: uncaught exception: Failure"
+                             "-DEXPECT_TRACE=${uncaught_trace_expected_${uncaught_di}}"
+                             "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${uncaught_test}"
+                             "-DGC_LIB=${TEST_GC_LIBDIR}"
+                             "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                             "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                             "-DOPT=${uncaught_opt_flags}"
+                             -P "${CMAKE_CURRENT_SOURCE_DIR}/uncaught-exe.cmake")
+        endforeach()
+    endforeach()
 endif()
 
 # Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
