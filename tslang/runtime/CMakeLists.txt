@@ -26,12 +26,14 @@ set(SRC "${CMAKE_CURRENT_SOURCE_DIR}/../lib/TypeScriptAsyncRuntime")
 # program using async does not link (GC_enable_threads); ProcessHeap.cpp is empty off Windows. Without
 # UncaughtException.cpp an x86 program that threw what nothing caught ended in abort()'s message box,
 # which an unattended run waits on forever (exe.cpp takes the file only when the runtime defines it).
+# Without StdioDefinitions.cpp a program calling printf or sprintf_s does not link on Windows.
 add_library(TypeScriptAsyncRuntime STATIC
   "${SRC}/AsyncRuntime.cpp"
   "${SRC}/AsyncGCThreads.cpp"
   "${SRC}/ProcessHeap.cpp"
   "${SRC}/DynamicRuntime.cpp"
-  "${SRC}/UncaughtException.cpp")
+  "${SRC}/UncaughtException.cpp"
+  "${SRC}/StdioDefinitions.cpp")
 target_include_directories(TypeScriptAsyncRuntime PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../include"
   "${CMAKE_CURRENT_SOURCE_DIR}/../lib"

@@ -5,6 +5,7 @@ add_mlir_library(TypeScriptAsyncRuntime
   ProcessHeap.cpp
   DynamicRuntime.cpp
   UncaughtException.cpp
+  StdioDefinitions.cpp
 
   EXCLUDE_FROM_LIBMLIR
 
