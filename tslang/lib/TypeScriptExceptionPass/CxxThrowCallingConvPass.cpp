@@ -14,10 +14,11 @@ using namespace llvm;
 
 namespace ts
 {
-    // `@stdcall declare function` (STDCALL_ATTR_NAME): the convention on the declaration - which also
-    // gives its symbol the @N suffix the import library names - and on every direct call of it. Any other
-    // use, the function taken as a value, is called as any function value is, the C way: it gets a C
-    // function that calls this one instead. A variadic function is the C convention, as in MSVC.
+    // `@stdcall` (STDCALL_ATTR_NAME): the convention on the function - which also gives its symbol the @N
+    // suffix the import library names - and on every direct call of it. Given to a C function as an argument
+    // (a callback: `_beginthreadex(..., entry, ...)`), it is the function itself, which C calls as __stdcall.
+    // Any other use, the function as a TypeScript value, is called as any function value is, the C way: it
+    // gets a C function that calls this one instead. A variadic function is the C convention, as in MSVC.
     static bool applyDeclaredStdcall(Module &M)
     {
         SmallVector<Function *> declared;
@@ -39,9 +40,21 @@ namespace ts
 
             F->setCallingConv(CallingConv::X86_StdCall);
 
-            auto isCallOfIt = [](Use &use) {
+            // a call of it, or it given to a C function (a declaration): uses that keep it as it is
+            auto keepsIt = [](Use &use) {
                 auto *call = dyn_cast<CallBase>(use.getUser());
-                return call && call->isCallee(&use);
+                if (!call)
+                {
+                    return false;
+                }
+
+                if (call->isCallee(&use))
+                {
+                    return true;
+                }
+
+                auto *called = call->getCalledFunction();
+                return call->isArgOperand(&use) && called && called->isDeclaration();
             };
 
             auto takenAsValue = false;
@@ -51,7 +64,7 @@ namespace ts
                 {
                     call->setCallingConv(CallingConv::X86_StdCall);
                 }
-                else
+                else if (!keepsIt(use))
                 {
                     takenAsValue = true;
                 }
@@ -64,7 +77,7 @@ namespace ts
 
             auto *callee = Function::Create(F->getFunctionType(), GlobalValue::InternalLinkage, F->getName() + ".cdecl", M);
             callee->setAttributes(F->getAttributes());
-            F->replaceUsesWithIf(callee, [&](Use &use) { return !isCallOfIt(use); });
+            F->replaceUsesWithIf(callee, [&](Use &use) { return !keepsIt(use); });
 
             IRBuilder<> builder(BasicBlock::Create(M.getContext(), "", callee));
             SmallVector<Value *> args;

@@ -365,8 +365,9 @@
 // `@stdcall declare function GetCurrentProcessId(): u32`: f is __stdcall, as the Windows API is. On 32-bit
 // Windows that is how it is called (the callee pops its arguments) and named (_GetCurrentProcessId@0,
 // which is what kernel32.lib exports); on every other target it is the C convention, so the same
-// declaration serves both. A declaration's alone: it marks the function STDCALL_ATTR_NAME, and
-// CxxThrowCallingConvPass gives the function and its calls the convention.
+// declaration serves both. On a function with a body it is a callback the Windows API calls, as
+// `@stdcall function entry(arg: Opaque): u32` for _beginthreadex. It marks the function
+// STDCALL_ATTR_NAME, and CxxThrowCallingConvPass gives the function and its calls the convention.
 #define STDCALL_DECORATOR "stdcall"
 #define STDCALL_ATTR_NAME "tslang.stdcall"
 // The memory model a module is compiled for, a string literal: `if (__MEMORY_MODEL__ === "gc")`

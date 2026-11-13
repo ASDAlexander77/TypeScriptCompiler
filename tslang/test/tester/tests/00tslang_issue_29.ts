@@ -3,7 +3,8 @@
 // C function given a callback called garbage. A function declared @cdecl takes each callback
 // parameter as a plain C function pointer: a function, or an arrow that captures nothing.
 
-@cdecl declare function qsort(base: Opaque, count: u64, size: u64, compare: (a: Opaque, b: Opaque) => s32): void;
+// count and size are size_t: `index`, as wide as a pointer (u64 put 8 bytes each where a 32-bit qsort reads 4)
+@cdecl declare function qsort(base: Opaque, count: index, size: index, compare: (a: Opaque, b: Opaque) => s32): void;
 
 function ascending(a: Opaque, b: Opaque): s32 {
     return Deref(<Ref<s32>>a) - Deref(<Ref<s32>>b);

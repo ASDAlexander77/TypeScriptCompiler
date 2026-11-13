@@ -3816,18 +3816,10 @@ class MLIRGenImpl
                 addAttr("func.varargs", mlir::BoolAttr::get(builder.getContext(), true));
             }
 
-            // a function of the Windows API: __stdcall on 32-bit Windows (STDCALL_DECORATOR)
+            // a function of the Windows API, or one it calls back: __stdcall on 32-bit Windows (STDCALL_DECORATOR)
             if (name == STDCALL_DECORATOR)
             {
-                if (functionLikeDeclarationBaseAST->body)
-                {
-                    emitWarning(location, "'@" STDCALL_DECORATOR "' is ignored on a function with a body: it is for a declared "
-                                          "function, one defined outside TypeScript");
-                }
-                else
-                {
-                    addAttr(STDCALL_ATTR_NAME, mlir::UnitAttr::get(builder.getContext()));
-                }
+                addAttr(STDCALL_ATTR_NAME, mlir::UnitAttr::get(builder.getContext()));
             }
 
             // a body's facts come from the body: the decorator is a declaration's alone
