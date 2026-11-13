@@ -3,9 +3,12 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllExtensions.h"
-#include "mlir/InitAllPasses.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/AsmState.h"
@@ -345,7 +348,15 @@ static int ReportWarningWithoutBreak(int reportType, char *message, int *returnV
 std::unique_ptr<mlir::MLIRContext> createMLIRContext()
 {
     mlir::DialectRegistry registry;
-    registerAllExtensions(registry);
+    // Only the extensions of the dialects the compiler loads (below). registerAllExtensions would
+    // reference every upstream dialect's extension (GPU, NVVM, ROCDL, linalg, vector, sparse
+    // tensor, the transform dialect's...) and keep ~13 MB of code nothing runs in the executable.
+    mlir::arith::registerConvertArithToLLVMInterface(registry);
+    mlir::cf::registerConvertControlFlowToLLVMInterface(registry);
+    mlir::func::registerAllExtensions(registry);
+    mlir::registerConvertFuncToLLVMInterface(registry);
+    mlir::index::registerConvertIndexToLLVMInterface(registry);
+    mlir::registerConvertMathToLLVMInterface(registry);
     // the llvm dialect promises an inliner interface that only registerAllDialects provides: without
     // it a pass that inlines past lowering (the JIT's) failed the promise check in an assertions build
     mlir::LLVM::registerInlinerInterface(registry);
@@ -368,6 +379,33 @@ std::unique_ptr<mlir::MLIRContext> createMLIRContext()
     mlirContext->printStackTraceOnDiagnostic(printStackTrace.getValue());
     return mlirContext;
 }
+
+// The backends tslang links (TSLANG_TARGETS in CMakeLists.txt). Not llvm::InitializeAllTargets():
+// it calls into every backend LLVM was built with, which would link them all.
+#define TSLANG_INITIALIZE_TARGET(T)                                                                \
+    LLVMInitialize##T##TargetInfo();                                                               \
+    LLVMInitialize##T##Target();                                                                   \
+    LLVMInitialize##T##TargetMC();                                                                 \
+    LLVMInitialize##T##AsmPrinter();                                                               \
+    LLVMInitialize##T##AsmParser();
+
+static void initializeTargets()
+{
+#ifdef TSLANG_TARGET_X86
+    TSLANG_INITIALIZE_TARGET(X86)
+#endif
+#ifdef TSLANG_TARGET_ARM
+    TSLANG_INITIALIZE_TARGET(ARM)
+#endif
+#ifdef TSLANG_TARGET_AARCH64
+    TSLANG_INITIALIZE_TARGET(AArch64)
+#endif
+#ifdef TSLANG_TARGET_WEBASSEMBLY
+    TSLANG_INITIALIZE_TARGET(WebAssembly)
+#endif
+}
+
+#undef TSLANG_INITIALIZE_TARGET
 
 int main(int argc, char **argv)
 {
@@ -413,10 +451,7 @@ int main(int argc, char **argv)
 
     // Register for Obj/ASM
     // Initialize targets first, so that --version shows registered targets.
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmPrinters();
-    llvm::InitializeAllAsmParsers();
+    initializeTargets();
 
     // Initialize codegen and IR passes used by llc so that the -print-after,
     // -print-before, and -stop-after options work.

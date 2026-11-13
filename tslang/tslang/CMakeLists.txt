@@ -1,11 +1,23 @@
 set_Options()
 
+# The backends tslang compiles for, of those LLVM was built with. Not AllTargets*: the prebuilt LLVM
+# a release links has RISCV, BPF and NVPTX too, several MB of code no tslang target uses.
+# tslang.cpp initializes the same list (TSLANG_TARGET_<NAME>).
+set(TSLANG_TARGETS X86 ARM AArch64 WebAssembly CACHE STRING "LLVM backends linked into tslang")
+set(TSLANG_TARGET_COMPONENTS)
+set(TSLANG_TARGET_DEFINITIONS)
+foreach(target ${TSLANG_TARGETS})
+    if (target IN_LIST LLVM_TARGETS_TO_BUILD)
+        list(APPEND TSLANG_TARGET_COMPONENTS ${target}AsmParser ${target}CodeGen ${target}Desc ${target}Info)
+        string(TOUPPER ${target} TARGET_UPPER)
+        list(APPEND TSLANG_TARGET_DEFINITIONS TSLANG_TARGET_${TARGET_UPPER})
+    endif()
+endforeach()
+message(STATUS "tslang backends: ${TSLANG_TARGET_COMPONENTS}")
+
 set(LLVM_LINK_COMPONENTS
     # for Obj/ASM
-    AllTargetsAsmParsers
-    AllTargetsCodeGens
-    AllTargetsDescs
-    AllTargetsInfos
+    ${TSLANG_TARGET_COMPONENTS}
     # end - Obj/ASM
     Core
     Option
@@ -38,7 +50,6 @@ set(LIBS
     MLIROptLib
     MLIRParser
     MLIRPass
-    MLIRRegisterAllExtensions
     MLIRSideEffectInterfaces
     MLIRSupport
     MLIRTargetLLVMIRExport
@@ -92,6 +103,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 endif()
 target_compile_definitions(tslang PUBLIC TSLANG_PACKAGE_VERSION="${TSLANG_PACKAGE_VERSION}")
+target_compile_definitions(tslang PRIVATE ${TSLANG_TARGET_DEFINITIONS})
 
 # TSLANG_PACKAGE_VERSION is only set by a release build (CI passes the tag via
 # -DTSLANG_PACKAGE_VERSION / the TSLANG_PACKAGE_VERSION env var); a plain dev
