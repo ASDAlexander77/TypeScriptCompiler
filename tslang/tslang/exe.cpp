@@ -1095,6 +1095,12 @@ int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &co
             args.push_back("-Wl,-nodefaultlib:libcmt");
         }
 
+        // printf and the rest of stdio as functions a program can call (a `@varargs declare function
+        // printf`): the UCRT has them only as inline wrappers in its headers. x86's libucrt defines none, and
+        // a 32-bit program calling printf failed to link (undefined symbol _printf); x64's libucrt happens
+        // to define printf, which it still takes, being ahead of this.
+        args.push_back("-llegacy_stdio_definitions");
+
         // Windows asks for elevation before starting a 32-bit program that has no
         // requestedExecutionLevel and whose name contains "setup", "install", "update" or "patch"
         // (installer detection), so `my_setup.exe` or `dispatch.exe` would never start. Link an

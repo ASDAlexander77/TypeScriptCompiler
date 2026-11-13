@@ -1667,6 +1667,7 @@ endforeach()
 # A library whose root only declares and initializes a variable must not get an entry point of
 # its own: it is compiled with the same --emit=obj as the program linked beside it, and a `main`
 # in both fails to link. Only the program half is given --entry-point.
+tslang_add_test(NAME test-compile-export-import-vars-live COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
 tslang_add_test(NAME test-compile-export-import-root-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_root_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_root_var.ts")
 tslang_add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 # @linkname across a static link - the mode it is named for; the second is the live guard for an
@@ -1686,6 +1687,13 @@ tslang_add_test(NAME test-compile-export-import-generators COMMAND test-runner "
 # export_os_suffix.linux.ts: the host's is compiled and linked beside it, and the import's
 # declarations for each target are those of its file (the OS function that file declares).
 if (WIN32)
+    # `@stdcall declare function`: the Windows API, called as it is on 32-bit Windows too (its x86 twin)
+    tslang_add_test(NAME test-compile-00-stdcall-winapi COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00stdcall_winapi.ts")
+    tslang_add_test(NAME test-jit-00-stdcall-winapi COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00stdcall_winapi.ts")
+    # and exported: another module calls them, and gives one to _beginthreadex, by the same convention
+    tslang_add_test(NAME test-compile-export-import-stdcall COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_stdcall.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_stdcall.ts")
+    tslang_add_test(NAME test-compile-shared-export-import-stdcall COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_stdcall.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_stdcall.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-stdcall COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_stdcall.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_stdcall.ts")
     tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.win32.ts")
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.linux.ts")
@@ -2195,6 +2203,7 @@ tslang_add_test(NAME test-compile-shared-export-import-object-literal-structural
 tslang_add_test(NAME test-compile-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
 tslang_add_test(NAME test-compile-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-compile-shared-export-import-vars COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+tslang_add_test(NAME test-compile-shared-export-import-vars-live COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
 tslang_add_test(NAME test-compile-shared-export-import-vars-2 COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 tslang_add_test(NAME test-compile-shared-export-import-enum COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
 
@@ -2253,6 +2262,7 @@ tslang_add_test(NAME test-jit-shared-export-import-object-literal-structural-typ
 tslang_add_test(NAME test-jit-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
 tslang_add_test(NAME test-jit-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-jit-shared-export-import-vars COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+tslang_add_test(NAME test-jit-shared-export-import-vars-live COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
 tslang_add_test(NAME test-jit-shared-export-import-vars-2 COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 tslang_add_test(NAME test-jit-shared-export-import-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
 
@@ -5972,6 +5982,8 @@ tslang_add_test(NAME test-compile-none-shared-export-import-object-literal-struc
 tslang_add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-compile-rc-shared-export-import-vars COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+tslang_add_test(NAME test-compile-rc-shared-export-import-vars-live COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
+tslang_add_test(NAME test-compile-own-shared-export-import-vars-live COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
 tslang_add_test(NAME test-compile-none-shared-export-import-vars COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
 tslang_add_test(NAME test-compile-rc-shared-export-import-vars-2 COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 tslang_add_test(NAME test-compile-none-shared-export-import-vars-2 COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
@@ -6058,6 +6070,8 @@ tslang_add_test(NAME test-jit-none-shared-export-import-object-literal-structura
 tslang_add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
 tslang_add_test(NAME test-jit-rc-shared-export-import-vars COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+tslang_add_test(NAME test-jit-rc-shared-export-import-vars-live COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
+tslang_add_test(NAME test-jit-own-shared-export-import-vars-live COMMAND test-runner -jit -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars_live.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars_live.ts")
 tslang_add_test(NAME test-jit-none-shared-export-import-vars COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
 tslang_add_test(NAME test-jit-rc-shared-export-import-vars-2 COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 tslang_add_test(NAME test-jit-none-shared-export-import-vars-2 COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")

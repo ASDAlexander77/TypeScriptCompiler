@@ -1,6 +1,9 @@
 #include "TypeScript/Pass/CxxThrowCallingConvPass.h"
+#include "TypeScript/Defines.h"
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32Const.h"
 
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -11,9 +14,135 @@ using namespace llvm;
 
 namespace ts
 {
+    // `@stdcall` (STDCALL_ATTR_NAME): the convention on the function - which also gives its symbol the @N
+    // suffix the import library names - and on every direct call of it. Given to a C function as an argument
+    // (a callback: `_beginthreadex(..., entry, ...)`), it is the function itself, which C calls as __stdcall.
+    // Any other use, the function as a TypeScript value, is called as any function value is, the C way: it
+    // gets a C function that calls this one instead. A variadic function is the C convention, as in MSVC.
+    static bool applyDeclaredStdcall(Module &M)
+    {
+        SmallVector<Function *> declared;
+        for (auto &F : M)
+        {
+            if (F.hasFnAttribute(STDCALL_ATTR_NAME))
+            {
+                declared.push_back(&F);
+            }
+        }
+
+        for (auto *F : declared)
+        {
+            F->removeFnAttr(STDCALL_ATTR_NAME);
+            if (F->isVarArg())
+            {
+                continue;
+            }
+
+            F->setCallingConv(CallingConv::X86_StdCall);
+
+            // Exported from a library (-shared): an importer finds a function by its name at run time
+            // (SearchForAddressOfSymbol) and calls it through a pointer, the C way. So the library exports
+            // a C function that calls it under the plain name (`scale`), and the function itself as
+            // `scale$stdcall`, which an importer takes to give it to C as a callback.
+            if (!F->isDeclaration() && (F->hasFnAttribute("export") || F->hasFnAttribute(DLL_EXPORT)))
+            {
+                auto name = F->getName().str();
+                auto *plain = Function::Create(F->getFunctionType(), GlobalValue::ExternalLinkage, "\x01_" + name, M);
+                plain->setAttributes(F->getAttributes());
+                plain->removeFnAttr(STDCALL_ATTR_NAME);
+                plain->addFnAttr("export");
+                IRBuilder<> builder(BasicBlock::Create(M.getContext(), "", plain));
+                SmallVector<Value *> args;
+                for (auto &arg : plain->args())
+                {
+                    args.push_back(&arg);
+                }
+
+                auto *call = builder.CreateCall(F, args);
+                call->setCallingConv(CallingConv::X86_StdCall);
+                call->setAttributes(F->getAttributes());
+                if (call->getType()->isVoidTy())
+                {
+                    builder.CreateRetVoid();
+                }
+                else
+                {
+                    builder.CreateRet(call);
+                }
+
+                auto *itself = GlobalAlias::create(F->getValueType(), F->getAddressSpace(), GlobalValue::ExternalLinkage,
+                                                   "\x01_" + name + STDCALL_EXPORT_SUFFIX, F, &M);
+                itself->setDLLStorageClass(GlobalValue::DLLExportStorageClass);
+            }
+
+            // a call of it, or it given to a C function (a declaration): uses that keep it as it is
+            auto keepsIt = [](Use &use) {
+                auto *call = dyn_cast<CallBase>(use.getUser());
+                if (!call)
+                {
+                    return false;
+                }
+
+                if (call->isCallee(&use))
+                {
+                    return true;
+                }
+
+                auto *called = call->getCalledFunction();
+                return call->isArgOperand(&use) && called && called->isDeclaration();
+            };
+
+            auto takenAsValue = false;
+            for (auto &use : F->uses())
+            {
+                if (auto *call = dyn_cast<CallBase>(use.getUser()); call && call->isCallee(&use))
+                {
+                    call->setCallingConv(CallingConv::X86_StdCall);
+                }
+                else if (!keepsIt(use))
+                {
+                    takenAsValue = true;
+                }
+            }
+
+            if (!takenAsValue)
+            {
+                continue;
+            }
+
+            auto *callee = Function::Create(F->getFunctionType(), GlobalValue::InternalLinkage, F->getName() + ".cdecl", M);
+            callee->setAttributes(F->getAttributes());
+            // this module's own: what exports the function does not export this
+            callee->removeFnAttr("export");
+            callee->removeFnAttr(DLL_EXPORT);
+            F->replaceUsesWithIf(callee, [&](Use &use) { return !keepsIt(use); });
+
+            IRBuilder<> builder(BasicBlock::Create(M.getContext(), "", callee));
+            SmallVector<Value *> args;
+            for (auto &arg : callee->args())
+            {
+                args.push_back(&arg);
+            }
+
+            auto *call = builder.CreateCall(F, args);
+            call->setCallingConv(CallingConv::X86_StdCall);
+            call->setAttributes(F->getAttributes());
+            if (call->getType()->isVoidTy())
+            {
+                builder.CreateRetVoid();
+            }
+            else
+            {
+                builder.CreateRet(call);
+            }
+        }
+
+        return !declared.empty();
+    }
+
     llvm::PreservedAnalyses CxxThrowCallingConvPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &AM)
     {
-        auto changed = false;
+        auto changed = applyDeclaredStdcall(M);
 
         // The CRT calls a CatchableType's copy function as a member function - `__thiscall` on
         // x86: the catch variable in ECX, the thrown object on the stack. Nothing in the module

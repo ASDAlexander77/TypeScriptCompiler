@@ -29,7 +29,9 @@ target_link_directories(
     ${GCLIBPATH}
 )
 
-set (LIBS "gcmt-lib")
+# legacy_stdio_definitions: printf, sprintf_s and the rest of stdio as functions compiled code can
+# call (the UCRT has them only as inline wrappers in its headers)
+set (LIBS "gcmt-lib" "legacy_stdio_definitions")
 
 target_link_libraries(
     ${PROJECT_NAME} 

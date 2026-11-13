@@ -1469,6 +1469,11 @@ namespace mlirgen
                         globalOp->setAttr(name, attr);
                     }
                 }
+
+                if (declared->hasAttr(STDCALL_ATTR_NAME) && compileOptions.targetInfo.stdcallDecoratesCxxThrow)
+                {
+                    stdcallDynamicImports[globalName] = dllFuncName.str();
+                }
             }
         }
 

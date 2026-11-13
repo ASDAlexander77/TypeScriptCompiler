@@ -25,7 +25,7 @@ namespace typescript
         void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool, StringRef = StringRef());
         void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType, StringRef = StringRef(),
                    ArrayRef<int32_t> ownKeeps = {}, ArrayRef<int32_t> ownBorrows = {}, ArrayRef<int32_t> ownLends = {},
-                   bool ownRecord = false, ArrayRef<int32_t> ownImmortalizes = {});
+                   bool ownRecord = false, ArrayRef<int32_t> ownImmortalizes = {}, bool stdcall = false);
         void print(ClassInfo::TypePtr);
         void print(InterfaceInfo::TypePtr);
         void printGenericClass(NamespaceInfo::TypePtr, StringRef);
