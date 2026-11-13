@@ -13,9 +13,9 @@
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
 //#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib "
 // static CRT (/MT[d]) to match LLVM/TypeScript runtime libs and gc.lib; mixing static+dynamic CRT crashes at startup
-// legacy_stdio_definitions: printf and the rest of stdio as functions a program can call, which the
-// UCRT has only as inline wrappers - x86's libucrt defines none of them (x64's happens to have printf)
-#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib legacy_stdio_definitions.lib "
+// printf and the rest of stdio, which the UCRT has only as inline wrappers, come from TYPESCRIPT_LIB
+// (TypeScriptAsyncRuntime/StdioDefinitions.cpp)
+#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib "
 #else
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
 #define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm"

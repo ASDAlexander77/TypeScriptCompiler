@@ -352,11 +352,7 @@ if (TSLANG_MEMORY_MODEL STREQUAL "gc")
     list(APPEND TSLANG_LINK_LIBS "gc")
 endif()
 
-# printf, sprintf_s and the rest of stdio as functions compiled code can call: the UCRT has them only
-# as inline wrappers in its headers, which code tslang compiles never sees.
-if(WIN32)
-    list(APPEND TSLANG_LINK_LIBS "legacy_stdio_definitions")
-else()
+if(NOT WIN32)
     list(APPEND TSLANG_LINK_LIBS "stdc++" "m" "pthread" "dl" "rt")
 endif()
 
