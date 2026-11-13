@@ -3,9 +3,12 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllExtensions.h"
-#include "mlir/InitAllPasses.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/AsmState.h"
@@ -345,7 +348,15 @@ static int ReportWarningWithoutBreak(int reportType, char *message, int *returnV
 std::unique_ptr<mlir::MLIRContext> createMLIRContext()
 {
     mlir::DialectRegistry registry;
-    registerAllExtensions(registry);
+    // Only the extensions of the dialects the compiler loads (below). registerAllExtensions would
+    // reference every upstream dialect's extension (GPU, NVVM, ROCDL, linalg, vector, sparse
+    // tensor, the transform dialect's...) and keep ~13 MB of code nothing runs in the executable.
+    mlir::arith::registerConvertArithToLLVMInterface(registry);
+    mlir::cf::registerConvertControlFlowToLLVMInterface(registry);
+    mlir::func::registerAllExtensions(registry);
+    mlir::registerConvertFuncToLLVMInterface(registry);
+    mlir::index::registerConvertIndexToLLVMInterface(registry);
+    mlir::registerConvertMathToLLVMInterface(registry);
     // the llvm dialect promises an inliner interface that only registerAllDialects provides: without
     // it a pass that inlines past lowering (the JIT's) failed the promise check in an assertions build
     mlir::LLVM::registerInlinerInterface(registry);
