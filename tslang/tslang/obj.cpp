@@ -5,6 +5,9 @@
 // for dump obj
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -310,6 +313,154 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     return 0;
 }
 
+// wasm: copies and fills of plain loads and stores, not memory.copy and memory.fill.
+//
+// V8 (Node 26, wasm32 and wasm64 alike) checks memory.copy and memory.fill against the size of a
+// shared memory as this thread last saw it: right after another thread grew the memory, they trap
+// ("memory access out of bounds") on a block that thread has just allocated - a queue's array after
+// the other thread's push - while plain loads and stores see the new size at once. LLVM emits them
+// for every copy and fill it doesn't expand into loads and stores once bulk-memory is on, which
+// passive data segments - a shared memory - need, and nothing turns them off on their own. So each
+// llvm.memcpy, memmove and memset that would become one is a call to one of these internal functions
+// instead. A copy of a small constant size is left alone: the backend expands it into loads and
+// stores. (A byval argument's copy is the backend's own, but it is one thread's stack to its stack.)
+static llvm::Function *getWasmMemoryFunction(llvm::Module &module, bool fill)
+{
+    auto name = fill ? "__tslang_wasm_memset" : "__tslang_wasm_memmove";
+    if (auto *existing = module.getFunction(name))
+    {
+        return existing;
+    }
+
+    auto &context = module.getContext();
+    auto *ptrTy = llvm::PointerType::get(context, 0);
+    auto *sizeTy = module.getDataLayout().getIntPtrType(context);
+    auto *i8Ty = llvm::Type::getInt8Ty(context);
+    auto *i64Ty = llvm::Type::getInt64Ty(context);
+    auto *fnTy = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                                         {ptrTy, fill ? (llvm::Type *)i8Ty : ptrTy, sizeTy}, false);
+    auto *fn = llvm::Function::Create(fnTy, llvm::GlobalValue::InternalLinkage, name, module);
+    fn->addFnAttr(llvm::Attribute::NoUnwind);
+    fn->addFnAttr("no-builtins");
+
+    auto *dst = fn->getArg(0);
+    auto *src = fn->getArg(1);
+    auto *count = fn->getArg(2);
+    auto *eight = llvm::ConstantInt::get(sizeTy, 8);
+    auto *one = llvm::ConstantInt::get(sizeTy, 1);
+    auto *zero = llvm::ConstantInt::get(sizeTy, 0);
+
+    auto *entry = llvm::BasicBlock::Create(context, "entry", fn);
+    auto *done = llvm::BasicBlock::Create(context, "done", fn);
+    llvm::IRBuilder<> builder(done);
+    builder.CreateRetVoid();
+
+    // one unit at `at`: 8 bytes or 1, unaligned (wasm loads and stores take any address)
+    auto unit = [&](llvm::IRBuilder<> &b, llvm::Value *at, llvm::Value *word, bool wide) {
+        auto *type = wide ? i64Ty : i8Ty;
+        auto *to = b.CreateGEP(i8Ty, dst, at);
+        auto *value = fill ? (wide ? word : (llvm::Value *)src)
+                           : (llvm::Value *)b.CreateAlignedLoad(type, b.CreateGEP(i8Ty, src, at), llvm::MaybeAlign(1));
+        b.CreateAlignedStore(value, to, llvm::MaybeAlign(1));
+    };
+
+    // up: words then bytes, from the start; down (an overlapping copy to a higher address): from the end
+    auto loops = [&](llvm::BasicBlock *from, llvm::Value *word, bool up) {
+        auto *words = llvm::BasicBlock::Create(context, up ? "up.words" : "down.words", fn);
+        auto *bytesCheck = llvm::BasicBlock::Create(context, up ? "up.bytes.check" : "down.bytes.check", fn);
+        auto *bytes = llvm::BasicBlock::Create(context, up ? "up.bytes" : "down.bytes", fn);
+
+        llvm::IRBuilder<> b(from);
+        auto *start = up ? (llvm::Value *)zero : (llvm::Value *)count;
+        auto *wordsCheck = llvm::BasicBlock::Create(context, up ? "up.words.check" : "down.words.check", fn, words);
+        b.CreateBr(wordsCheck);
+
+        // words: up while at + 8 <= count, down while at >= 8
+        b.SetInsertPoint(wordsCheck);
+        auto *at = b.CreatePHI(sizeTy, 2);
+        at->addIncoming(start, from);
+        auto *more = up ? b.CreateICmpULE(b.CreateAdd(at, eight), count) : b.CreateICmpUGE(at, eight);
+        b.CreateCondBr(more, words, bytesCheck);
+
+        b.SetInsertPoint(words);
+        auto *wordAt = up ? (llvm::Value *)at : b.CreateSub(at, eight);
+        unit(b, wordAt, word, true);
+        auto *nextWord = up ? b.CreateAdd(at, eight) : wordAt;
+        at->addIncoming(nextWord, words);
+        b.CreateBr(wordsCheck);
+
+        // bytes: up while at < count, down while at > 0
+        b.SetInsertPoint(bytesCheck);
+        auto *byteAt = b.CreatePHI(sizeTy, 2);
+        byteAt->addIncoming(at, wordsCheck);
+        auto *moreBytes = up ? b.CreateICmpULT(byteAt, count) : b.CreateICmpUGT(byteAt, zero);
+        b.CreateCondBr(moreBytes, bytes, done);
+
+        b.SetInsertPoint(bytes);
+        auto *thisByte = up ? (llvm::Value *)byteAt : b.CreateSub(byteAt, one);
+        unit(b, thisByte, word, false);
+        byteAt->addIncoming(up ? b.CreateAdd(byteAt, one) : thisByte, bytes);
+        b.CreateBr(bytesCheck);
+    };
+
+    builder.SetInsertPoint(entry);
+    if (fill)
+    {
+        // the byte in each of the word's 8
+        auto *word = builder.CreateMul(builder.CreateZExt(src, i64Ty), llvm::ConstantInt::get(i64Ty, 0x0101010101010101ULL));
+        auto *body = llvm::BasicBlock::Create(context, "fill", fn, done);
+        builder.CreateBr(body);
+        loops(body, word, true);
+        return fn;
+    }
+
+    // to a lower address (or no overlap) up from the start, to a higher one down from the end
+    auto *up = llvm::BasicBlock::Create(context, "up", fn, done);
+    auto *down = llvm::BasicBlock::Create(context, "down", fn, done);
+    auto *dstAddress = builder.CreatePtrToInt(dst, sizeTy);
+    auto *srcAddress = builder.CreatePtrToInt(src, sizeTy);
+    builder.CreateCondBr(builder.CreateICmpULE(dstAddress, srcAddress), up, down);
+    loops(up, nullptr, true);
+    loops(down, nullptr, false);
+    return fn;
+}
+
+static void replaceWasmBulkMemory(llvm::Module &module)
+{
+    // the backend expands a constant copy or fill this small (at most 4 stores of 8 bytes, as at -Os)
+    // into loads and stores
+    const uint64_t expandedSize = 32;
+
+    llvm::SmallVector<llvm::MemIntrinsic *> calls;
+    for (auto &function : module)
+    {
+        for (auto &instruction : llvm::instructions(function))
+        {
+            if (auto *call = llvm::dyn_cast<llvm::MemIntrinsic>(&instruction))
+            {
+                auto *size = llvm::dyn_cast<llvm::ConstantInt>(call->getLength());
+                if (!size || size->getZExtValue() > expandedSize)
+                {
+                    calls.push_back(call);
+                }
+            }
+        }
+    }
+
+    for (auto *call : calls)
+    {
+        auto fill = llvm::isa<llvm::MemSetInst>(call);
+        auto *fn = getWasmMemoryFunction(module, fill);
+        llvm::IRBuilder<> builder(call);
+        auto *length = builder.CreateZExtOrTrunc(call->getLength(), fn->getArg(2)->getType());
+        auto *second = fill ? llvm::cast<llvm::MemSetInst>(call)->getValue()
+                            : llvm::cast<llvm::MemTransferInst>(call)->getSource();
+        auto *replacement = builder.CreateCall(fn, {call->getDest(), second, length});
+        replacement->setDebugLoc(call->getDebugLoc());
+        call->eraseFromParent();
+    }
+}
+
 int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
@@ -347,6 +498,12 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     if (compileOptions.wasmExceptions && llvmModule->getFunction("tslang_thread_spawn"))
     {
         compileOptions.wasmThreads = true;
+    }
+
+    // after the optimizations, which would turn the loops back into llvm.memcpy
+    if (auto triple = llvm::Triple(llvmModule->getTargetTriple()); triple.isWasm() && !triple.isOSEmscripten())
+    {
+        replaceWasmBulkMemory(*llvmModule);
     }
 
     //

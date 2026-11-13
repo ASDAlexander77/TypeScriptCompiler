@@ -302,6 +302,17 @@ tslang_add_test(NAME test-compile-00-bound-method-wider-callback COMMAND test-ru
 tslang_add_test(NAME test-compile-00-optional-union-truthiness COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_union_truthiness.ts")
 tslang_add_test(NAME test-compile-00-gc-allocations-distinct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
 tslang_add_test(NAME test-compile-00-assert-message COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
+tslang_add_test(NAME test-compile-00-wasm-no-bulk-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00wasm_no_bulk_copy.ts")
+# wasm: a copy or fill of a run-time size is plain loads and stores (V8 checks memory.copy and
+# memory.fill against a shared memory's size as this thread last saw it, see obj.cpp)
+foreach(wasm_triple wasm32-unknown-unknown wasm64-unknown-unknown)
+    add_test(NAME test-compile-wasm-no-bulk-copy-${wasm_triple}
+             COMMAND $<TARGET_FILE:tslang> --emit=asm --no-default-lib -mm=none -mtriple=${wasm_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/00wasm_no_bulk_copy.ts" -o -)
+    set_tests_properties(test-compile-wasm-no-bulk-copy-${wasm_triple}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "call[ \t]+__tslang_wasm_memmove"
+                                    FAIL_REGULAR_EXPRESSION "memory\\.copy|memory\\.fill|error:|Stack dump|Assertion failed")
+endforeach()
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 # printf is avaliable in JIT only, C has snprintf
 #tslang_add_test(NAME test-compile-02-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
@@ -984,6 +995,7 @@ tslang_add_test(NAME test-jit-00-bound-method-wider-callback COMMAND test-runner
 tslang_add_test(NAME test-jit-00-optional-union-truthiness COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_union_truthiness.ts")
 tslang_add_test(NAME test-jit-00-gc-allocations-distinct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
 tslang_add_test(NAME test-jit-00-assert-message COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
+tslang_add_test(NAME test-jit-00-wasm-no-bulk-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00wasm_no_bulk_copy.ts")
 tslang_add_test(NAME test-jit-01-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 tslang_add_test(NAME test-jit-02-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
 tslang_add_test(NAME test-jit-00-funcs-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_bindings.ts")
@@ -2618,6 +2630,7 @@ set(TSLANG_CORPUS
     00optional_union_truthiness.ts
     00gc_allocations_distinct.ts
     00assert_message.ts
+    00wasm_no_bulk_copy.ts
     00funcs.ts
     00generator_manual_next.ts
     00generator_manual_next2.ts
