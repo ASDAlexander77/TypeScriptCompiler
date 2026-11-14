@@ -129,9 +129,11 @@ namespace own_signature
                 return true;
             }
 
+            // ...or the object a value, not a read (`const frame = new Frame(); frame.allocators.push(a)`,
+            // TSLANG 78): the read right after uses that very value
             auto loadOp = field.getObjectRef().getDefiningOp<mlir_ts::LoadOp>();
-            return loadOp && (loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>() ||
-                              loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>());
+            return !loadOp || loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>() ||
+                   loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
         }
 
         // The truthiness test of `value` a branch makes: `cond_br(DialectCast(Cast(value -> boolean)))`.
