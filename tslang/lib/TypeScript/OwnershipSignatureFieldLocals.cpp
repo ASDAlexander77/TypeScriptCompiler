@@ -134,6 +134,99 @@ namespace own_signature
                               loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>());
         }
 
+        // The truthiness test of `value` a branch makes: `cond_br(DialectCast(Cast(value -> boolean)))`.
+        static bool testsTruthOf(mlir::cf::CondBranchOp branch, mlir::Value value)
+        {
+            auto dialectCast = branch.getCondition().getDefiningOp<mlir_ts::DialectCastOp>();
+            auto cast = dialectCast ? dialectCast->getOperand(0).getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+            return cast && mlir::isa<mlir_ts::BooleanType>(cast.getType()) && cast->getOperand(0) == value;
+        }
+
+        // `if (value) array.push(value);` and uses of `value` after it (TSLANG 67): the block the test's
+        // false edge goes to, reached otherwise only through the push, gets an argument - the element
+        // read back after the push (`read`) on those paths, null on the false edge - and the uses of
+        // `value` that block dominates read it.
+        void mergePushedOrNull(mlir::Operation *pushOp, mlir::Value value, mlir::Value read, mlir::DominanceInfo &dominance)
+        {
+            auto *pushBlock = pushOp->getBlock();
+            mlir::cf::CondBranchOp test;
+            for (auto *user : value.getUsers())
+            {
+                auto cast = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                if (!cast)
+                {
+                    continue;
+                }
+
+                for (auto *castUser : cast->getUsers())
+                {
+                    for (auto *dialectUser : castUser->getUsers())
+                    {
+                        auto branch = mlir::dyn_cast<mlir::cf::CondBranchOp>(dialectUser);
+                        if (branch && testsTruthOf(branch, value) && dominance.dominates(branch.getTrueDest(), pushBlock))
+                        {
+                            test = branch;
+                        }
+                    }
+                }
+            }
+
+            if (!test || test.getFalseDest() == test.getTrueDest())
+            {
+                return;
+            }
+
+            auto *merge = test.getFalseDest();
+            for (auto *pred : merge->getPredecessors())
+            {
+                if (pred == test->getBlock())
+                {
+                    continue;
+                }
+
+                // every other way in has pushed it, and goes in by a plain branch
+                if (!mlir::isa<mlir::cf::BranchOp>(pred->getTerminator()) || !dominance.dominates(pushOp, pred->getTerminator()))
+                {
+                    return;
+                }
+            }
+
+            llvm::SmallVector<mlir::OpOperand *> uses;
+            for (auto &use : value.getUses())
+            {
+                auto *user = use.getOwner();
+                if (!mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() != test->getBlock() &&
+                    dominance.dominates(merge, user->getBlock()))
+                {
+                    uses.push_back(&use);
+                }
+            }
+
+            if (uses.empty())
+            {
+                return;
+            }
+
+            auto location = pushOp->getLoc();
+            auto argument = merge->addArgument(value.getType(), location);
+            mlir::OpBuilder builder(test);
+            mlir::Value null = builder.create<mlir_ts::NullOp>(location, mlir_ts::NullType::get(builder.getContext()));
+            null = builder.create<mlir_ts::CastOp>(location, value.getType(), null);
+            test.getFalseDestOperandsMutable().append(null);
+            for (auto *pred : merge->getPredecessors())
+            {
+                if (auto branch = mlir::dyn_cast<mlir::cf::BranchOp>(pred->getTerminator()))
+                {
+                    branch.getDestOperandsMutable().append(read);
+                }
+            }
+
+            for (auto *use : uses)
+            {
+                use->set(argument);
+            }
+        }
+
         // `value` seen through the views that keep its block: an optional made of it or opened, a
         // widening or narrowing cast that is a view.
         mlir::Value stripViews(mlir::Value value)
@@ -848,6 +941,11 @@ namespace own_signature
                 }
 
                 movedTo[root].push_back({pushOp.getOperation(), read});
+
+                // ...and pushed only where it is not null (TSLANG 67): `const view = make(); if (view)
+                // this.views.push(view); return view;`. Where the paths meet again it is the element
+                // read back, or the null it was: a merge of the two, which each use there reads.
+                mergePushedOrNull(pushOp, root, read, dominance);
             }
 
             followFieldStores();
