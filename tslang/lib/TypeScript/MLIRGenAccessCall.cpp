@@ -769,6 +769,13 @@ namespace mlirgen
             auto getMethodInfo = findMethodInfo(getFunc);
             auto setMethodInfo = findMethodInfo(setFunc);
 
+            // @final accessors (TSLANG 48): no subclass overrides them, so the ones this class has run
+            if ((getMethodInfo || setMethodInfo) && (!getMethodInfo || getMethodInfo->isFinal) &&
+                (!setMethodInfo || setMethodInfo->isFinal))
+            {
+                finalReceiver = true;
+            }
+
             // a @final receiver's accessor is the one this class has, called directly when the class
             // is defined in this module, as a method is (ClassMethodAccess)
             auto direct = finalReceiver && !classInfo->isDeclaration && !classInfo->isImport &&

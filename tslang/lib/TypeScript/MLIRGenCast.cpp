@@ -409,6 +409,54 @@ namespace mlirgen
             });
     }
 
+    mlir::LogicalResult MLIRGenImpl::checkNotClosureAtRunTime(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        // a function by name, made a function value: nothing to test
+        for (auto current = value; current;)
+        {
+            auto *def = current.getDefiningOp();
+            if (!def)
+            {
+                break;
+            }
+
+            if (auto castOp = dyn_cast<mlir_ts::CastOp>(def))
+            {
+                if (castOp.getIn().getDefiningOp<mlir_ts::SymbolRefOp>() && isa<mlir_ts::FunctionType>(castOp.getIn().getType()))
+                {
+                    return mlir::success();
+                }
+
+                current = castOp.getIn();
+                continue;
+            }
+
+            break;
+        }
+
+        auto thisVal = builder.create<mlir_ts::GetThisOp>(location, getOpaqueType(), value);
+        auto isBound = builder.create<mlir_ts::CastOp>(location, getBooleanType(), thisVal);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, isBound, false);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto message = builder.create<mlir_ts::ConstantOp>(
+            location, getStringType(),
+            getStringAttr("a closure or a bound method can't be used as a plain function pointer: the pointer carries "
+                          "no captured variables and no 'this'"));
+        builder.create<mlir_ts::ThrowOp>(location, message);
+
+        MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+        setCatchCopyThunkBuilder(rtti);
+        if (!rtti.setRTTIForType(location, message.getType(),
+                                 [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+        {
+            emitError(location, "Not supported type in throw");
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castFieldsToClass(mlir::Location location, mlir::Value value,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, 
         mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning)

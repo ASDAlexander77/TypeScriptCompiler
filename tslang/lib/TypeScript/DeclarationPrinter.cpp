@@ -724,6 +724,15 @@ namespace typescript
                 if (filterName(accessor.name))
                     continue;
 
+                // no override (TSLANG 48)
+                if (method.isFinal && !method.isStatic &&
+                    ((accessor.get && accessor.get.name == method.funcName) || (accessor.set && accessor.set.name == method.funcName)))
+                {
+                    os.indent(4);
+                    os << "@" FINAL_DECORATOR;
+                    newline();
+                }
+
                 if (accessor.get && accessor.get.name == method.funcName)
                 {
                     printAccessorGet(accessor);

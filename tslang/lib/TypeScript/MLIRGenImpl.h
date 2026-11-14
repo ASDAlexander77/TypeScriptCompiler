@@ -11133,6 +11133,15 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
 
+                // A function value (`const f: () => void = ...`, a callback parameter) may be a closure
+                // at run time: its bound value is checked, and a closure is an error there instead of
+                // a C function that reads its captures through garbage (TSLANG_ISSUES 29)
+                if (isa<mlir_ts::HybridFunctionType>(value.getType()) && isa<mlir_ts::FunctionType>(argTypeDestFuncType) &&
+                    mlir::failed(checkNotClosureAtRunTime(location, value, genContext)))
+                {
+                    return mlir::failure();
+                }
+
                 CAST_A(castValue, location, argTypeDestFuncType, value, genContext);
 
                 if (auto castOp = castValue.getDefiningOp<mlir_ts::CastOp>();
@@ -14493,6 +14502,11 @@ class MLIRGenImpl
 
     struct ClassMethodMemberInfo;
 
+    // TSLANG_ISSUES 29: a function value given as a C function pointer must not hold a closure's
+    // captures or a bound `this`: unless it is a function named directly (seen through its views
+    // and the `const`s that hold it), a run-time test throws when it does.
+    mlir::LogicalResult checkNotClosureAtRunTime(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
     // -mm=own (TSLANG 49): a caller through the base takes the result of a method it cannot resolve for
     // its own when no method of the family says the result borrows. So an override may not say so
     // (`@lends`, `@borrows`, `@record`, a result of type `this`) when the method it overrides does not.
@@ -14577,8 +14591,9 @@ class MLIRGenImpl
             {
                 if (auto finalOwner = finalMethodOwner(newClassPtr, methodName))
                 {
-                    emitError(location) << "method '" << methodName << "' overrides the @" FINAL_DECORATOR " method of '"
-                                        << finalOwner->name << "'";
+                    auto isAccessor = classMember == SyntaxKind::GetAccessor || classMember == SyntaxKind::SetAccessor;
+                    emitError(location) << (isAccessor ? "accessor '" : "method '") << getName() << "' overrides the @" FINAL_DECORATOR
+                                        << (isAccessor ? " accessor of '" : " method of '") << finalOwner->name << "'";
                     return false;
                 }
             }

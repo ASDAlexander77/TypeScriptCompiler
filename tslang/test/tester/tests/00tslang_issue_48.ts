@@ -15,6 +15,11 @@ export class Base {
         return this.scale;
     }
 
+    // a @final getter, as a @final method
+    @final get doubled(): number {
+        return this.scale * 2;
+    }
+
     // a method that is not final, overridden below: still called through the vtable
     bonus(): number {
         return 0;
@@ -25,7 +30,8 @@ export class App extends Base {
     total(): number {
         const item = this.items[1];
         const f = this.factor();
-        return item.n * f + this.bonus();
+        const d = this.doubled;
+        return item.n * f + this.bonus() + d - 4;
     }
 
     bonus(): number {

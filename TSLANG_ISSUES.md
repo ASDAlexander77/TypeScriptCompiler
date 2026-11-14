@@ -24,9 +24,14 @@ Regression test `tslang/test/tester/tests/00tslang_issue_28.ts`.
 so `_beginthreadex(..., entry, arg, ...)` shifted `arg` and every argument after the callback): a
 function declared `@cdecl` takes each function-typed parameter as a C function pointer. A function or
 an arrow that captures nothing passes; a capturing arrow or a bound method passed straight to it is a
-compile error ("a closure or a bound method can't be used as a plain function pointer"). Not checked
-yet: a closure already stored in a variable of function type, passed on to a `@cdecl` parameter, still
-loses its captures at run time. Regression tests `tslang/test/tester/tests/00tslang_issue_29.ts`,
+compile error ("a closure or a bound method can't be used as a plain function pointer"). A function
+value (a `const` of function type, a callback parameter) passed on to a `@cdecl` parameter is checked at
+run time: a closure throws that error there, instead of the C function running it without its captures
+later (an `atexit` handler crashed at exit). A function named directly skips the check. Also, a
+capturing arrow can now be assigned to a function type whose leading parameters are `Opaque`
+(`(a: Opaque, b: Opaque) => s32`, a C comparator). The type match took a leading `Opaque` for a receiver
+and refused it; the parameters are now first matched as they are. Regression tests
+`00tslang_issue_29_function_value.ts` and `00tslang_issue_29_comparator.ts`, and `tslang/test/tester/tests/00tslang_issue_29.ts`,
 `00tslang_issue_29_thread.ts` (Windows), `00tslang_issue_29_pthread.ts` (Linux) and
 `cdecl_closure_error.ts`.
 30 (a generic's body, compiled where it is first instantiated, resolved a name to a local of the
@@ -183,7 +188,9 @@ Still open from 48:
 - Whole-program facts: a method that no module of the program overrides is still taken as overridable
   when its class is exported. `--own-facts` reads the facts of the modules a module imports, not of the
   ones that import it, so the base's module can't know its subclasses. `@final` is the way to say it.
-- `@final` on an accessor (`get`/`set`) is accepted but changes nothing at the call site yet.
+- `@final` on an accessor (`get`/`set`) works now, as on a method: a direct call, an error for an
+  override ("accessor 'x' overrides the @final accessor of 'Base'"), and the declaration printer writes
+  it.
 - The other errors seen in powder_sandbox's own build were item 49 (fixed). The one in `levels.ts`, `'x' is
   moved inside a loop but was made outside it` (the same `box` array kept by several `LevelStroke`s),
   is the game's to fix.

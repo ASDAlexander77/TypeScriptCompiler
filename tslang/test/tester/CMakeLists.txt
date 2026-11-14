@@ -1922,6 +1922,10 @@ add_test(NAME test-compile-final-method-override-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_override_error.ts")
 set_tests_properties(test-compile-final-method-override-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' overrides the @final method of 'Base'"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-final-accessor-override-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_accessor_override_error.ts")
+set_tests_properties(test-compile-final-accessor-override-error PROPERTIES PASS_REGULAR_EXPRESSION "accessor 'factor' overrides the @final accessor of 'Base'"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-final-method-abstract-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_abstract_error.ts")
 set_tests_properties(test-compile-final-method-abstract-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' cannot be both abstract and @final"
@@ -1949,6 +1953,10 @@ endif()
 foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-29-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-29-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29.ts")
+    tslang_add_test(NAME test-jit-00-tslang-issue-29-function-value-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29_function_value.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issue-29-function-value-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29_function_value.ts")
+    tslang_add_test(NAME test-jit-00-tslang-issue-29-comparator-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29_comparator.ts")
+    tslang_add_test(NAME test-compile-00-tslang-issue-29-comparator-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_29_comparator.ts")
     tslang_add_test(NAME test-jit-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
     tslang_add_test(NAME test-compile-00-tslang-issue-29-thread-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_29_thread_test}")
 endforeach()
