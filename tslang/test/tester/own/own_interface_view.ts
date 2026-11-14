@@ -46,7 +46,8 @@ function make(k: number): I {
 function main() {
     let t = 0;
     for (let i = 0; i < 20000; i++) {
-        const n = i % 10;
+        // a number: `i % 10` of two integers is an integer, and the field `x` below is the interface's number
+        const n: number = i % 10;
 
         // a temporary class instance given as an interface
         t += show(new C(n));

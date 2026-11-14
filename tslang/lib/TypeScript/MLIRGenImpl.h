@@ -8593,14 +8593,64 @@ class MLIRGenImpl
         }
         case SyntaxKind::PercentToken:
         {
-            // `%` of two integers, one of them 64-bit, is done in that 64-bit type: through a
-            // number (f64) it was wrong once the value passed 2^53. Narrower integers keep the
-            // number path, which is exact for them.
+            // `%` of two integers is an integer remainder, and so is its result: through a number
+            // (f64) a 64-bit value was wrong once it passed 2^53, and a narrower one, though exact,
+            // was an fmod call and two conversions where one instruction does it (a hash modulo the
+            // length of a table, on every lookup of a Map). A zero divisor is then undefined, as
+            // integer division by zero is in C - a fault on x86, not the NaN a number gives - and so is
+            // the least value of a signed type `% -1`.
+            // The type: an integer literal that fits takes the other operand's; otherwise the wider
+            // one, and of two of a width the left one. A signed and an unsigned one that an s64
+            // holds both of are done in s64, where neither changes its value.
             auto leftIntType = dyn_cast<mlir::IntegerType>(leftExpressionValue.getType());
             auto rightIntType = dyn_cast<mlir::IntegerType>(rightExpressionValue.getType());
-            if (leftIntType && rightIntType && (leftIntType.getWidth() > 32 || rightIntType.getWidth() > 32))
+            if (leftIntType && rightIntType && leftIntType.getWidth() >= 8 && rightIntType.getWidth() >= 8)
             {
-                mlir::Type intType = leftIntType.getWidth() >= rightIntType.getWidth() ? leftIntType : rightIntType;
+                // a literal that `type` holds as it is
+                auto literalFits = [&](mlir::Value value, mlir::IntegerType type) {
+                    auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+                    if (!constantOp)
+                    {
+                        return false;
+                    }
+
+                    auto intAttr = dyn_cast<mlir::IntegerAttr>(constantOp.getValue());
+                    if (!intAttr)
+                    {
+                        return false;
+                    }
+
+                    auto literal = intAttr.getValue();
+                    auto literalIsUnsigned = value.getType().isUnsignedInteger();
+                    if (literalIsUnsigned ? !literal.isIntN(63) : literal.isNegative())
+                    {
+                        // negative, or past what an s64 says: only its own type holds it
+                        return false;
+                    }
+
+                    return literal.getActiveBits() <= (type.isUnsigned() ? type.getWidth() : type.getWidth() - 1);
+                };
+
+                mlir::Type intType;
+                if (literalFits(rightExpressionValue, leftIntType))
+                {
+                    intType = leftIntType;
+                }
+                else if (literalFits(leftExpressionValue, rightIntType))
+                {
+                    intType = rightIntType;
+                }
+                else
+                {
+                    auto wider = leftIntType.getWidth() >= rightIntType.getWidth() ? leftIntType : rightIntType;
+                    auto narrower = wider == leftIntType ? rightIntType : leftIntType;
+                    // an unsigned type does not hold a signed operand's negative values, nor a
+                    // signed one an unsigned operand of its own width
+                    auto losesValues = wider.isUnsigned() != narrower.isUnsigned()
+                        && (wider.isUnsigned() || wider.getWidth() == narrower.getWidth());
+                    intType = losesValues && wider.getWidth() <= 32 ? static_cast<mlir::Type>(SInt(64)) : wider;
+                }
+
                 if (leftExpressionValue.getType() != intType)
                 {
                     CAST(leftExpressionValue, location, intType, leftExpressionValue, genContext);
