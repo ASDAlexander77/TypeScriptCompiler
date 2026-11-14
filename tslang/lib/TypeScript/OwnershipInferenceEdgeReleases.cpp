@@ -483,15 +483,121 @@ namespace own_inference
         return true;
     }
 
+    bool OwnershipInferencePass::valueUnmovedEdges(mlir::Value value, mlir::Operation *definition, mlir::Operation *acquire,
+                                                   mlir::Operation *taker, mlir::Operation *release)
+    {
+        auto &body = getFunction().getFunctionBody();
+        if (!definition || definition->getParentRegion() != &body || acquire->getParentRegion() != &body ||
+            release->getParentRegion() != &body || !dominance->properlyDominates(definition, release))
+        {
+            return false;
+        }
+
+        // what follows the move, while this value is the one the definition made: the blocks the move
+        // reaches, not through the definition again (a loop's next turn makes another)
+        auto *moveBlock = acquire->getBlock();
+        llvm::SmallPtrSet<mlir::Block *, 16> after;
+        llvm::SmallVector<mlir::Block *> work(moveBlock->getSuccessors().begin(), moveBlock->getSuccessors().end());
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (block == definition->getBlock() || !after.insert(block).second)
+            {
+                continue;
+            }
+
+            work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+        }
+
+        if (!after.contains(release->getBlock()) || after.contains(moveBlock))
+        {
+            return false;
+        }
+
+        // nothing reads the value where the ways join: released on an edge into there, it is gone
+        // (a copyable value's read after the move is not one the moves refuse)
+        auto usedAfter = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
+            auto *top = body.findAncestorOpInRegion(*user);
+            if (!top || user == release || user == taker || top == body.findAncestorOpInRegion(*taker) ||
+                mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(user))
+            {
+                return;
+            }
+
+            usedAfter = usedAfter || after.contains(top->getBlock()) ||
+                        (top->getBlock() == moveBlock && acquire->isBeforeInBlock(top) && top != acquire);
+        });
+        if (usedAfter)
+        {
+            return false;
+        }
+
+        // the edges into it from where the value is held and not moved
+        auto handler = handlerBlocks();
+        llvm::SmallVector<EdgeRelease> placed;
+        for (auto &block : body)
+        {
+            if (after.contains(&block) || &block == moveBlock || !dominance->dominates(definition, block.getTerminator()))
+            {
+                continue;
+            }
+
+            for (auto index : llvm::seq<unsigned>(0, block.getNumSuccessors()))
+            {
+                if (!after.contains(block.getSuccessor(index)))
+                {
+                    continue;
+                }
+
+                auto *terminator = block.getTerminator();
+                if (!mlir::isa<mlir::cf::BranchOp, mlir::cf::CondBranchOp>(terminator) || handler.contains(&block))
+                {
+                    return false;
+                }
+
+                // another release of the value placed it already
+                if (llvm::any_of(edgeReleases, [&](EdgeRelease &edge) {
+                        return edge.slot == value && edge.from == &block && edge.successor == index;
+                    }))
+                {
+                    continue;
+                }
+
+                placed.push_back({value, &block, static_cast<unsigned>(index), terminator->getLoc()});
+            }
+        }
+
+        if (placed.empty())
+        {
+            return false;
+        }
+
+        edgeReleases.append(placed.begin(), placed.end());
+        return true;
+    }
+
     void OwnershipInferencePass::placeEdgeReleases()
     {
+        // a slot's release, or a value's (TSLANG 81)
+        auto releaseOf = [](mlir::OpBuilder &builder, EdgeRelease &edge) {
+            if (edge.slot.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                builder.create<mlir_ts::ReleaseSlotOp>(edge.loc, edge.slot);
+            }
+            else
+            {
+                builder.create<mlir_ts::ReleaseOp>(edge.loc, edge.slot);
+            }
+        };
+
         for (auto &edge : edgeReleases)
         {
             auto *terminator = edge.from->getTerminator();
             mlir::OpBuilder builder(terminator);
             if (terminator->getNumSuccessors() == 1)
             {
-                builder.create<mlir_ts::ReleaseSlotOp>(edge.loc, edge.slot);
+                releaseOf(builder, edge);
                 continue;
             }
 
@@ -501,7 +607,7 @@ namespace own_inference
             auto *split = new mlir::Block();
             split->insertAfter(edge.from);
             builder.setInsertionPointToEnd(split);
-            builder.create<mlir_ts::ReleaseSlotOp>(edge.loc, edge.slot);
+            releaseOf(builder, edge);
             builder.create<mlir::cf::BranchOp>(edge.loc, join, forwarded);
             if (!forwarded.empty())
             {

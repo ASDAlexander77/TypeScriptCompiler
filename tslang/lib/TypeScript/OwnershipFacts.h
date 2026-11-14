@@ -591,13 +591,15 @@ inline bool takenOutOfBorrowedRest(mlir::Operation *def)
 }
 
 inline bool isFresh(mlir::Value value);
+inline bool isCall(mlir::Operation *op);
 
 // A value merged from branches (TSLANG 54): `const p = loaded ? device.create() : null`. It is the
 // function's own when every way into the merge brings a fresh value that nothing else uses, or null
 // or undefined, which holds no block - rc gave it the one reference the merge holds. Not across a
 // loop: a block that reaches one of its own predecessors carries a value from one iteration into the
-// next, which is not decided here.
-inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0)
+// next, which is not decided here. `anyCall`: a call's result counts as fresh too - for a step that runs
+// before the calls' facts are known, as it takes an unmerged call's result (TSLANG 74).
+inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0, bool anyCall = false)
 {
     auto *block = argument.getOwner();
     if (block->isEntryBlock() || block->hasNoPredecessors() || depth > 8)
@@ -648,7 +650,7 @@ inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0)
 
         if (auto nested = mlir::dyn_cast<mlir::BlockArgument>(incoming))
         {
-            if (!nested.hasOneUse() || !isFreshMerge(nested, depth + 1))
+            if (!nested.hasOneUse() || !isFreshMerge(nested, depth + 1, anyCall))
             {
                 return false;
             }
@@ -693,7 +695,7 @@ inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0)
                 continue;
             }
 
-            if (!isFresh(value))
+            if (!isFresh(value) && !(anyCall && def && isCall(def)))
             {
                 return false;
             }
@@ -2325,6 +2327,25 @@ inline mlir_ts::ClassStorageType fieldOwnerStorage(mlir_ts::PropertyRefOp proper
     }
 
     return mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
+}
+
+// Is `ref` a private field nothing writes after its object's constructor (OWN_STABLE_FIELDS_ATTR_NAME, the
+// signature pass's, TSLANG 73)?
+inline bool isStableField(mlir::Value ref)
+{
+    auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+    auto storage = propertyRefOp ? fieldOwnerStorage(propertyRefOp) : mlir_ts::ClassStorageType();
+    auto module = propertyRefOp ? propertyRefOp->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp();
+    auto entries = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_STABLE_FIELDS_ATTR_NAME) : mlir::ArrayAttr();
+    if (!storage || !entries)
+    {
+        return false;
+    }
+
+    return llvm::any_of(entries.getAsRange<mlir::ArrayAttr>(), [&](mlir::ArrayAttr entry) {
+        return mlir::cast<mlir::TypeAttr>(entry[0]).getValue() == storage &&
+               mlir::cast<mlir::IntegerAttr>(entry[1]).getInt() == propertyRefOp.getPosition();
+    });
 }
 
 // Is `ref` a field some back-reference is stored into (OWN_BACK_REFERENCE_FIELDS_ATTR_NAME, the

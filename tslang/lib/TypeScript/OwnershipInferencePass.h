@@ -1239,6 +1239,10 @@ class OwnershipInferencePass
         llvm::DenseMap<mlir::Operation *, unsigned> before;
     };
 
+    // A value moved on some paths only (TSLANG 81): its release, which the move reaches, goes on the
+    // edges into what follows the move from the paths that did not move it.
+    bool valueUnmovedEdges(mlir::Value value, mlir::Operation *definition, mlir::Operation *acquire, mlir::Operation *taker,
+                           mlir::Operation *release);
     bool placeOnUnmovedEdges(mlir_ts::VariableOp varOp, mlir::Operation *acquire, mlir::Operation *retain,
                              mlir::Operation *taker, llvm::ArrayRef<mlir::Operation *> assignments,
                              llvm::SetVector<mlir::Operation *> &toErase);

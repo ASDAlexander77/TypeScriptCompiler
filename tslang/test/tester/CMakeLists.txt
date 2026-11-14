@@ -1922,11 +1922,21 @@ endforeach()
 # TSLANG_ISSUES 66: a `let` borrowing a field, given fresh values on some paths, borrows them from a slot of their own
 # TSLANG_ISSUES 67-68: a value pushed only where it is not null; a union of string literals read as a string
 # TSLANG_ISSUES 69-70: a value moved on every path, by a different move on each; a constant literal global given to a keeping call
+# TSLANG_ISSUES 71-72: a narrowed value kept by a constructor; a local kept by a constructor or pushed, then read
+# TSLANG_ISSUES 73: a private field nothing writes after the constructor, borrowed across a call that runs callbacks
+# TSLANG_ISSUES 75: a call through a constant global that holds a function, a call of that function
+# TSLANG_ISSUES 76: a constructor that keeps a parameter in a private field only it writes, and gives `this` to a call
+# TSLANG_ISSUES 77: an array kept by a constructor, then filled through the local
+# TSLANG_ISSUES 78: a value pushed on or stored into a field of a local object, then used
+# TSLANG_ISSUES 79: a local pushed only where it is not null, then used
+# TSLANG_ISSUES 81: a value moved on some paths only
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
                         00tslang_issue_58 00tslang_issue_59 00tslang_issue_60
-                        00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69)
+                        00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71 00tslang_issue_73
+                        00tslang_issue_75 00tslang_issue_76 00tslang_issue_77 00tslang_issue_78 00tslang_issue_79
+                        00tslang_issue_81)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5157,7 +5167,6 @@ set_tests_properties(test-own-err-names-the-variable
 set(own_error_cases
     "own_err_assign_after_move|:12:16: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_borrow_escape|:9:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
-    "own_err_move_some_paths_field|:8:9: error: '[^']*' is moved here on some paths only"
     "own_err_borrow_and_move|:8:5: error: '[^']*' is moved here while '[^']*' borrows it"
     "own_err_borrow_bound_method|:20:17: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_const_bound_method_reassigned|:20:11: error: '[^']*' takes a second reference"
@@ -5166,7 +5175,7 @@ set(own_error_cases
     "own_err_borrow_derived_ref|:28:5: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_const_alias_move|:12:5: error: '[^']*' borrows '[^']*' and cannot be assigned"
     "own_err_const_alias_field|:15:5: error: '[^']*' is moved here while '[^']*' borrows it"
-    "own_err_field_alias|:9:11: error: '[^']*' is used here after its value was moved"
+    "own_err_field_alias|:9:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_call_in_try_drops|:30:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|:9:11: error: '[^']*' is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_twice|:12:25: error: 'n' is captured by a closure that escapes, and is still used here"
@@ -5190,12 +5199,11 @@ set(own_error_cases
     "own_err_generator_yields_borrow|borrows the generator's argument and cannot be stored, returned or captured"
     "own_err_generator_map_outlives|:7:11: error: '[^']*' borrows 'the generator's source' but is used here after 'the generator's source' is released or overwritten"
     "own_err_generator_place_overwritten|:15:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_two_owners|:8:13: error: '[^']*' is used here after its value was moved"
     "own_err_reassign_some_paths|:10:5: error: '[^']*' is moved here on some paths only"
     "own_err_push_let|:7:9: error: '[^']*' is used here after its value was moved"
     "own_err_push_loop|:6:33: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_field_loop|:10:9: error: '[^']*' is moved inside a loop but was made outside it"
-    "own_err_union_moved|:10:11: error: '[^']*' is used here after its value was moved"
+    "own_err_union_moved|:10:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_field_read_overwritten|:28:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_element_read_overwritten|:22:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_element_read_popped|:26:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
@@ -5387,9 +5395,9 @@ set(own_error_cases
     "own_err_iface_field_view_overwritten|:26:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_iface_field_call|:27:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten"
-    "own_err_read_after_move_overwritten|:10:11: error: '[^']*' is used here after its value was moved"
-    "own_err_read_after_move_view|:12:11: error: '[^']*' is used here after its value was moved"
-    "own_err_read_after_move_call|:11:11: error: '[^']*' is used here after its value was moved"
+    "own_err_read_after_move_overwritten|:10:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_read_after_move_view|:12:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_read_after_move_call|:11:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_read_after_move_loop|:25:14: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_after_loop|:14:11: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_global|:42:15: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
@@ -5480,7 +5488,6 @@ set(own_error_cases
     "own_err_fill_in_loop|:23:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten"
-    "own_err_moved_when_tested_other|:13:13: error: '[^']*' is moved here on some paths only"
     "own_err_field_moved_call_between|:12:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not"
     "own_err_moved_field_overwritten|:15:25: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
@@ -5502,7 +5509,15 @@ set(own_error_cases
     "own_err_split_let_stored|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_split_let_field_overwritten|:14:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_pushed_or_null_popped|:17:23: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
-    "own_err_moved_on_two_of_three_paths|:16:13: error: '[^']*' is moved here on some paths only")
+    "own_err_moved_on_two_of_three_paths|:16:13: error: '[^']*' is moved here on some paths only"
+    "own_err_kept_local_array_popped|:16:22: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_private_field_written_callback|:33:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_const_alias_drops|:22:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_kept_field_rebound|:29:5: error: '[^']*' is used here after its value was moved"
+    "own_err_kept_array_filled_after_pop|:21:9: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_local_object_field_popped|:18:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_pushed_let_popped|:17:9: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_moved_on_some_paths_used|:21:15: error: '[^']*' is used here after its value was moved")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

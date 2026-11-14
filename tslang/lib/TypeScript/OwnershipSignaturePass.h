@@ -715,6 +715,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // the `.instanceOf` slot. Anything else - a closure, a function read from a field, an
     // interface's method - is unknown.
     void resolveValue(mlir::Value callee, Callees &callees);
+    // The function a global nothing assigns holds from its initializer, read by `def` (TSLANG 75)
+    mlir::StringAttr globalFunction(mlir::Operation *def);
 
     // A method of a closed interface (interfaceFamilies), `ts.InterfaceSymbolRef(value, index)`, or a
     // function-typed field of one (interfaceFieldFamilies), read and called: the family of the slot

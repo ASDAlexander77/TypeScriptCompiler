@@ -527,6 +527,111 @@ type is the literal, so it holds that literal and nothing else, in read-only dat
 literal itself, as `"..."` written in place is. 69 exposed it: `loadTexture` is now found to keep its path. In the sweep, the 2 errors it gave
 (in `ray_tracing_extended_nri.ts` and `ray_tracing_invocation_reorder_nri.ts`) are gone.
 
+71 (a value narrowed from `T | null`, kept by a constructor, then used: `const texture =
+device.createStorageTexture(...); if (!texture) return null; const target = new Target(texture, ...);
+target.readView = texture.createView(format);` in `examples/nri/raytracing_ao_nri.ts`, refused "is used here
+after its value was moved") is fixed. TSLANG 53 reads the field the constructor keeps a value in for each use
+after the call, but only for a value of the field's type, or a class value kept in a union field. A value of
+the field's class or null, narrowed by the test before, is now one too: the field read back is widened to
+the value's type again. The object popped before the use is still refused. Regression test
+`tslang/test/tester/tests/00tslang_issue_71.ts` (every model; it holds 72 too).
+
+72 (a local, rather than a value, kept by a constructor or pushed, then read: `const t: number[] = []; for (let
+i = 0; i < 16; i++) t.push(transform[i]); const node = new SceneNode(..., t, ...); ... this.movingX = t[12];`
+in a loop in `examples/nri/extended_dynamic_state2_nri.ts`, and `let pipeline = ...; ...;
+this.pipelines.push(pipeline); return pipeline.n;`) is fixed. TSLANG 65's reads of a local after a store (the
+local assigned nowhere after it, its address taken nowhere) now serve the constructor and the push too. A
+store in a loop is taken when the local is declared in that loop, so each time round starts it afresh, and an
+array filled in place through the local is taken when the filling comes before the move. The local pushed to
+after the move, declared outside the loop that moves it, or its new owner popped before the read, is still
+refused. In the sweep, 71 and 72 take 20 errors, and `extended_dynamic_state2.ts` compiles. Regression test
+`own/own_err_kept_local_array_popped.ts`.
+
+73 (a private field read off a parameter or `this` around a call: `constructor(private sample: NriSample)`, then
+`this.sample.run(() => ...)` and a later `this.sample` read in the examples' `App` classes, refused "borrows a
+field but is used here after it may be released or overwritten") is fixed. Any call could have overwritten the
+field (a callback that writes it, say), so the read before it was not trusted after it. Only the class's own
+methods can write a private field, and they are all in the module. So the signature pass now marks each private
+field that nothing but its class's constructor writes, and a call no longer drops such a field read off a
+parameter (`this` included) the function does not assign. The object is the caller's, so the field lives as long
+as the call does. A private field a method writes, called back from the call, is still refused. Regression tests
+`tslang/test/tester/tests/00tslang_issue_73.ts` (every model) and `own/own_err_private_field_written_callback.ts`.
+`own/own_err_declared_drops.ts` lends a public field now: the private one it had is a field 73 keeps.
+
+74 (a value of `cond ? null : f(...)`, with `f` another module's, pushed where it is not null, then used: `const
+texture = textureName == "" ? null : device.loadTexture(...); if (!texture) ... else { this.materialTextures.push(texture);
+this.materialViews.push(texture.createView(texture.getFormat())); }` in `examples/nri/mouse_cursor_nri.ts`, refused
+"is used here after its value was moved") is fixed. TSLANG 65's push step reads such a value back from the array
+when the value is the function's own. A call's result alone counts, whoever defines the function. A merge of a
+call's result and null (TSLANG 54) counted only when the call's result was known to be fresh, which, for another
+module's function, the signature pass decides only after this step. A merge now counts when each way into it
+brings null or a call's result, as the call alone does. Regression test: TSLANG 74's step in
+`tslang/test/tester/own-facts-objects.cmake` (`tests/own_facts_tex_lib.ts`, `tests/own_facts_tex_main.ts`).
+
+75 (a call through a constant that holds a function: `const f = Math.fround;` in `examples/clustered_geometry.ts`,
+then `centroidY = f(centroidY + c.positions[v])` with `c` a cluster of a parameter's mesh, refused "borrows a field
+but is used here after it may be released or overwritten" at each later use of `c`) is fixed. The signature pass
+took a call through a global's value as one through a callback it knows nothing of, so the call could destroy
+anything. A global that no store writes, and that its initializer gives a function's symbol, now resolves to that
+function: `f(...)` is a call of `Math.fround`, which destroys nothing. A global something assigns is still
+unknown. In the sweep, `clustered_geometry.ts` goes from 44 errors to 16. Regression tests
+`tslang/test/tester/tests/00tslang_issue_75.ts` (every model) and `own/own_err_const_alias_drops.ts`.
+
+76 (a parameter kept by a constructor that also gives `this` to a call: `constructor(private sample: NriSample) {
+this.reset(); }`, then `sample.addExampleOption(...)` after `new App(sample)` in `examples/nri/simple_compute_nri.ts`,
+refused "is used here after its value was moved") is fixed. TSLANG 53 reads the field a constructor keeps a
+parameter in, for each use after the call. It took only a constructor that reads `this` for its fields and
+nothing else, so that no call it makes can reach the field. A constructor that gives `this` to a call now keeps a
+parameter too, when the field is private and no other function writes it: as in 73, no call can then overwrite
+it. A field a method writes is still refused. In the sweep, the 4 examples with this shape lose their errors.
+Regression tests `tslang/test/tester/tests/00tslang_issue_76.ts` (every model) and `own/own_err_kept_field_rebound.ts`.
+
+77 (an array kept by a constructor, then filled through the local: `const sceneSets: NriDescriptorSet[] = [];
+this.queuedFrames.push(new QueuedFrame(sceneView, sceneSets)); for (...) sceneSets.push(sceneSet);` in
+`examples/nri/msaa_nri.ts`, refused "is used here after its value was moved") is fixed. An array is a reference,
+so after the move the local is the object's array, and each push fills it. TSLANG 72 took an array filled in
+place before the move. One changed in place after it now changes the field, reached the way the other uses after
+the move are: through the object, or the place it moved to last. The object popped before the push is still
+refused. Regression tests `tslang/test/tester/tests/00tslang_issue_77.ts` (every model) and
+`own/own_err_kept_array_filled_after_pop.ts`.
+
+78 (a value pushed on a field of a local object, then used: `const queuedFrame = new QueuedFrame(...); for (...) {
+const faceAllocator = ...; queuedFrame.faceAllocators.push(faceAllocator);
+queuedFrame.faceCommandBuffers.push(faceAllocator.createCommandBuffer()); }` in
+`examples/nri/threaded_rendering_nri.ts`, refused "is used here after its value was moved") is fixed. TSLANG 65's
+push step and the field store step read the value back through the object right after the move. They took an
+object read out of a local or an element, but not a `const` holding the object itself, which is a value and
+needs no read. That value now serves, as it is. The element popped before the use is still refused.
+Regression tests `tslang/test/tester/tests/00tslang_issue_78.ts` (every model) and
+`own/own_err_local_object_field_popped.ts`.
+
+79 (a local pushed only where it is not null, then used: `let pipeline: NriPipeline | null = null; if (loaded)
+pipeline = device.createPipelineFromDesc(...); if (pipeline) { this.pipelineKeys.push(key);
+this.pipelines.push(pipeline); } return pipeline;` in `examples/nri/msaa_nri.ts`, refused "is used here after its
+value was moved") is fixed. TSLANG 67 did this for a value. For a local, the test and the uses are reads of
+their own. Now, when nothing assigns the local from the test on, each read where the paths join takes the merge:
+the element read back after the push, or the null the test found. The local is then not read after the join, so
+its release goes on the edge that did not push it. The method returns a borrow of `this` on every way, so the
+early `return this.pipelines[i]` is no longer refused either. `msaa_nri.ts` and
+`dynamic_multisample_rasterization_nri.ts` compile. Regression tests
+`tslang/test/tester/tests/00tslang_issue_79.ts` (every model) and `own/own_err_pushed_let_popped.ts`.
+
+80 (a parameter the function owns, stored into a field, then read again: `constructor(world: GameWorld, public
+name: string, ...)`, then `${name}` in a loop that calls, in `core/rtxpt_game.ts`, refused "is used here after
+its value was moved") is open. The local/field pairing reads the field for later reads of the parameter, but stops
+at any call, as in that loop. Copying the parameter at the store instead leaks it: the caller gave it up, and
+nothing releases it then (`own/own_err_string_kept_param_known.ts`; a first fix that copied grew 3M calls to
+2.7 GB, and was backed out). The fix is for the pairing to see past calls that cannot reach the object. Meanwhile
+`this.name` reads the field.
+
+81 (a value moved on some paths only: `const controller = new LightController(); if (controller.read(...)) {
+...; this.lights.push(controller); }` in `core/rtxpt_game.ts`, refused "is moved here on some paths only; -mm=own
+cannot release it on the others yet") is fixed. Spec 30 placed a local's release on the edges that did not move
+it; a value, like the `const` here, had no such rule. Now a value one taker moves gets its release on each edge
+into what follows the move, from where the value is held and was not moved. The release after the move goes. A
+use after the paths join is still refused, a copyable value's read included (`own_string_copy_branch.ts`). Regression tests `tslang/test/tester/tests/00tslang_issue_81.ts`
+(every model) and `own/own_err_moved_on_some_paths_used.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -535,9 +640,24 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
-- Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
-  `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-70 in, 116 of the 276 sources fail (635 errors). The
-  largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
-  93 of them `this.sample.run` callbacks), then "used here after its value was moved" (52: mostly a value a pushed object or an
-  earlier call keeps, then returned or used).
+- `core/nri_donut_textures.ts`: `MipBlit` held the texture it blits, and `recordBlits` read it back after the
+  blits array kept it, so the module and the 9 examples importing it failed under `-mm=own` (199 errors). A
+  `MipBlit` now holds the texture's index into `this.textures`. `MsvcRandom` (`core/random.ts`) and `GameWorld`
+  (`core/rtxpt_game.ts`) are now `@final`: a class that can be derived from may have its methods overridden, so
+  `-mm=own` cannot read their facts (about 48 errors). So are `AtomOrbitals`, `OrbitalsPass`, `Pose` and
+  `RtxptGame` now; a class that can be derived from turns each call of its methods into one that may
+  destroy anything.
+- The `*_nri.ts` examples' `QueuedFrame` kept `this.frames.commandBuffer(i)`, a borrow of the frame ring's,
+  which a field cannot hold: it is read from `this.frames` where it is recorded (16 examples). The
+  `atom_orbitals` examples set two fields to one `Orbital` (`this.orbitalA = this.orbitalB`), a second owner:
+  each field gets its own. These are on ntg branch `own-sweep-fixes`.
+- Left in `examples/clustered_geometry.ts` (ntg's call): `Cluster.clone` and `SceneObject.copy` share the
+  vertex, index and material arrays on purpose ("which nothing changes"). That gives each array two owners,
+  so either the copies copy them (`slice()`) or the arrays are `Shared`. The `add` closure keeps its mesh and
+  position and returns the object it pushed; a function, or the caller pushing, would say that.
+- Under `-mm=own`, 2 `core/` modules do not compile yet (`ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and
+  nor do many examples, which #310 did not port: with every facts object built, 50-74 in and the changes above,
+  48 of the 276 sources fail (194 errors). The largest groups left are "borrows a field but is used here after
+  it may be released or overwritten" (36), "borrows a field and cannot be stored, returned or captured" (31),
+  "used here after its value was moved" (27), and an element borrowed and stored (21) or used after it may be
+  released (20).

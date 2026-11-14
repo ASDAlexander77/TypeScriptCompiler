@@ -19,7 +19,7 @@ set(ENV{TSLANG_LIB_PATH} "")
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 # the importer finds `./own_facts_lib` beside it, as a source to read declarations from
-foreach(file own_facts_lib.ts own_facts_main.ts own_facts_main_drops.ts)
+foreach(file own_facts_lib.ts own_facts_main.ts own_facts_main_drops.ts own_facts_tex_lib.ts own_facts_tex_main.ts)
     file(COPY "${SOURCE_DIR}/${file}" DESTINATION "${WORK_DIR}")
 endforeach()
 
@@ -67,4 +67,25 @@ execute_process(COMMAND "${WORK_DIR}/own_facts.exe"
     RESULT_VARIABLE status)
 if(NOT status EQUAL 0 OR NOT "${out}" MATCHES "^11[\r\n]+done[.]")
     message(FATAL_ERROR "own_facts.exe: exit ${status}\n${out}${err}")
+endif()
+
+# TSLANG 74: `cond ? null : device.load(...)` of the library's, pushed where not null, then used
+tslang_run(tex_lib --emit=obj -mm=own own_facts_tex_lib.ts -o own_facts_tex_lib.obj)
+if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump")
+    message(FATAL_ERROR "own_facts_tex_lib: exit ${status}\n${output}")
+endif()
+
+tslang_run(tex_link --emit=exe -mm=own "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
+           --own-facts=own_facts_tex_lib.obj --obj=own_facts_tex_lib.obj own_facts_tex_main.ts -o own_facts_tex.exe)
+if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump")
+    message(FATAL_ERROR "own_facts_tex_main with --own-facts: exit ${status}\n${output}")
+endif()
+
+execute_process(COMMAND "${WORK_DIR}/own_facts_tex.exe"
+    WORKING_DIRECTORY "${WORK_DIR}"
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE err
+    RESULT_VARIABLE status)
+if(NOT status EQUAL 0 OR NOT "${out}" MATCHES "^false 2 12 16[\r\n]+done[.]")
+    message(FATAL_ERROR "own_facts_tex.exe: exit ${status}\n${out}${err}")
 endif()
