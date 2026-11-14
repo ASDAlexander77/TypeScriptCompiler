@@ -1,8 +1,11 @@
 // TSLANG 75: a call through a global nothing assigns, given a function by its initializer, is a
-// call of that function: `const f = Math.fround` destroys nothing, so the cluster borrowed from a
+// call of that function: `const f = half` (as `const f = Math.fround`) destroys nothing, so the cluster borrowed from a
 // parameter's mesh outlives it.
 namespace Clusters {
-    const f = Math.fround;
+    function half(x: number) {
+        return x / 2;
+    }
+    const f = half;
     function twice(x: number) {
         return x * 2;
     }
@@ -35,6 +38,6 @@ namespace Clusters {
 function main() {
     const meshes = [new Clusters.Mesh()];
     const c = Clusters.centroid(meshes);
-    assert(c == 26, "centroid");
+    assert(c == 5, "centroid");
     print("done.");
 }
