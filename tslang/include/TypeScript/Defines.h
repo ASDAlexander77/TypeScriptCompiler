@@ -163,7 +163,7 @@
 // the private fields of this module's classes nothing writes after the constructor (TSLANG 73)
 #define OWN_STABLE_FIELDS_ATTR_NAME "ts.own_stable_fields"
 // the classes of the module, its own or imported, declared @final: their objects are of that class only,
-// so what one holds is what its fields' types can hold (TSLANG 82)
+// so what one holds is what its fields' types can hold (TSLANG 84)
 #define OWN_FINAL_CLASSES_ATTR_NAME "ts.own_final_classes"
 // -mm=own only, set by OwnershipSignaturePass on the module, in the same shape: the fields of a
 // generator's state object - its locals - read only to be yielded (`const groups = [...r]; yield

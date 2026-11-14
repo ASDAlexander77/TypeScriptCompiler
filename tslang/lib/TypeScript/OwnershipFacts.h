@@ -2330,7 +2330,7 @@ inline mlir_ts::ClassStorageType fieldOwnerStorage(mlir_ts::PropertyRefOp proper
 }
 
 // Can a value of type `holder`, released, free a value of type `target`: is `target` the holder, or
-// under it, by the types its fields, elements and members can hold (TSLANG 82)? A class not known to be
+// under it, by the types its fields, elements and members can hold (TSLANG 84)? A class not known to be
 // of that class only (not @final, OWN_FINAL_CLASSES_ATTR_NAME) may be a subclass holding anything, and
 // an interface, `any`, a function (its captures) or a type not listed here may too.
 inline bool typeMayHold(mlir::ModuleOp module, mlir::Type holder, mlir::Type target, llvm::SmallPtrSetImpl<mlir::Type> &seen)

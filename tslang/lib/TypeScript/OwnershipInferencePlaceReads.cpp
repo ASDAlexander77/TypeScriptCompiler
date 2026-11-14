@@ -633,7 +633,7 @@ namespace own_inference
 
         // a chain whose places are not known (a borrowing call's result): what a release frees is what
         // the released value's type can hold, so one that cannot hold the borrowed value's type does not
-        // free it (TSLANG 82)
+        // free it (TSLANG 84)
         auto borrowedValue = borrowed ? borrowed : (read && read->getNumResults() == 1 ? read->getResult(0) : mlir::Value());
         auto module = drop->getParentOfType<mlir::ModuleOp>();
         if (chain.anyPlace && !isCall(drop))
@@ -745,7 +745,7 @@ namespace own_inference
             auto keepsClosure = givenClosure && llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
                                     return holdsCaptures(operand) && isKeptArgument(drop, operand);
                                 });
-            // ...and a chain whose places are not known, by the types those places hold (TSLANG 82)
+            // ...and a chain whose places are not known, by the types those places hold (TSLANG 84)
             if (mayDrop && !keepsClosure && chain.anyPlace && borrowedValue)
             {
                 if (auto places = callDropFields(drop))

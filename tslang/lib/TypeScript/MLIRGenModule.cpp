@@ -532,7 +532,7 @@ namespace mlirgen
     // class code outside the module may extend - exported, declared or imported, a C++ binding,
     // or one of its subclasses so - keeps its methods virtual.
     // The classes whose objects are of that class only, for -mm=own (OWN_FINAL_CLASSES_ATTR_NAME,
-    // TSLANG 82): a @final class, or a declared @cpp one (a C++ object, which holds nothing of ours).
+    // TSLANG 84): a @final class, or a declared @cpp one (a C++ object, which holds nothing of ours).
     void MLIRGenImpl::markFinalClasses()
     {
         llvm::SmallVector<mlir::Attribute> finals;

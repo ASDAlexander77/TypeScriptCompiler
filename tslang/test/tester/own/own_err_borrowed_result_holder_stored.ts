@@ -1,6 +1,6 @@
 // -mm=own rejects: `texture` borrows the result of `Chain.texture`, a place not known, and the store
 // into `this.chain` releases a Chain, whose type holds textures: it may free the one borrowed
-// (TSLANG 82 refines by type only where the released type cannot hold the borrowed one).
+// (TSLANG 84 refines by type only where the released type cannot hold the borrowed one).
 @final
 class Tex {
     constructor(public id: int) {}
