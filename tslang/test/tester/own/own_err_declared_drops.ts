@@ -1,5 +1,5 @@
-// -mm=own rejects: `strlen` is declared without `@nodrops`, so the method that calls it may
-// destroy anything, and `this.value` cannot be lent to it (own_declared_no_drops).
+// -mm=own rejects: `strlen` is declared without `@nodrops`, so the method that calls it may destroy anything,
+// and `this.value` (public: not one TSLANG 73 keeps) cannot be lent to it (own_declared_no_drops).
 declare function strlen(s: string): index;
 
 namespace __S {
@@ -9,7 +9,7 @@ namespace __S {
 }
 
 class W {
-    constructor(private value: string) {}
+    constructor(public value: string) {}
 
     size(): int {
         return this.value.size();
