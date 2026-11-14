@@ -184,36 +184,40 @@ Still open from 48:
   when its class is exported. `--own-facts` reads the facts of the modules a module imports, not of the
   ones that import it, so the base's module can't know its subclasses. `@final` is the way to say it.
 - `@final` on an accessor (`get`/`set`) is accepted but changes nothing at the call site yet.
-- The other errors seen in powder_sandbox's own build are item 49. The one in `levels.ts`, `'x' is
+- The other errors seen in powder_sandbox's own build were item 49 (fixed). The one in `levels.ts`, `'x' is
   moved inside a loop but was made outside it` (the same `box` array kept by several `LevelStroke`s),
   is the game's to fix.
 
-### 49. `-mm=own`: a nullable fresh local stored into a field, and a field moved into another
-
-Reduced on 2026-11-14 by the powder_sandbox session from the errors left in its own build. All three
-fail on alpha127 and on the branch with the 47/48 fixes (`tslang -mm=own --emit=obj r1.ts`):
+Item 49, three `-mm=own` errors powder_sandbox reduced on 2026-11-14 from what was left in its build,
+is fixed. Before the fix, `startA`, `startB` and `moveAside` below were refused:
 
 ```ts
 class Level { name: string = "a"; }
 export class App {
     level: Level | null = null;
-    read(n: string): Level | null { return n == "" ? null : new Level(); }
-    // 6:58 "moved here on some paths only" + "takes a second reference"
-    startA(n: string) { const l = this.read(n); if (l) { this.level = l; } }
-    // 8:49 "takes a second reference": unconditional store of a nullable fresh local
-    startB(n: string) { const l = this.read(n); this.level = l; }
     other: Level | null = null;
-    // 11:19 "borrows a field and cannot be stored": moving one field into another (a swap works)
+    read(n: string): Level | null { return n == "" ? null : new Level(); }
+    startA(n: string) { const l = this.read(n); if (l) { this.level = l; } }
+    startB(n: string) { const l = this.read(n); this.level = l; }
     moveAside() { this.other = this.level; this.level = null; }
 }
-function main() { const a = new App(); a.startA("x"); a.startB("x"); a.moveAside(); print(a.other != null); }
 ```
 
-- `startA`: the store moves `l` on the path where it is not null. On the other path `l` is null and
-  holds nothing to release, so moving it on some paths only should be fine.
-- `startB` compiles when `App` is `@final`, so the second reference likely comes from the call to
-  `this.read` going through the vtable.
-- `moveAside`: a field read stored into another field, with the source cleared right after, is a move
-  of the field's value, as `[a, b] = [b, a]` already is.
+- `startA` ("moved here on some paths only"): a value moved on some ways only is fine when, on every
+  other way to its release, a branch tested it empty (`if (l)`, `if (!l) return;`, `l !== null`). There
+  it holds nothing, so the release frees nothing and goes (`emptyWhereNotMoved`). `if (l && n == "y")`
+  is still an error.
+- `startB` ("takes a second reference"): `this.read(n)` goes through the vtable, since another module
+  may override `read`. The result of such a call is the caller's when no method of the family says it
+  borrows (`@lends`, `@borrows`, `@record`, a `this` result) and each one defined here returns its own.
+  An override in another module may not say it borrows when the method it overrides does not. Under
+  own that is an error now: "method 'read' returns a borrow ..., but the method of 'Base' it overrides
+  does not".
+- `moveAside` ("borrows a field and cannot be stored"): a field read stored into another place and the
+  source field refilled right after is a move, as the exchange `[a, this.f] = [this.f, a]` (spec 77)
+  already was. Between the store and the refill there may be only reads, constants and rc's counts of
+  `null`. A call in between is still an error.
 
-Worked around in powder_sandbox with the exchange `[l, this.level] = [this.level, l]`.
+Regression tests `tslang/test/tester/tests/00tslang_issue_49.ts` (every model),
+`own/own_err_moved_when_tested_other.ts`, `own_err_field_moved_call_between.ts` and
+`own_err_override_lends.ts`. powder_sandbox's exchange workaround still works.

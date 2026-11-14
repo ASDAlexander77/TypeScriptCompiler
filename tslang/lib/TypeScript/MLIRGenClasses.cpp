@@ -4918,6 +4918,11 @@ genContext);
             classMethodMemberInfo.setFuncOp(funcOp);
             if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight, accessLevel))
             {
+                if (mlir::failed(checkOverrideResultFacts(loc(funcLikeDeclaration), newClassPtr, classMethodMemberInfo)))
+                {
+                    return mlir::failure();
+                }
+
                 // C++ methods: not a constructor, nor `.new` (static)
                 if (!classMethodMemberInfo.isConstructor && !classMethodMemberInfo.isStatic
                     && mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp,
@@ -5481,6 +5486,67 @@ genContext);
         }
 
         return instance;
+    }
+
+    mlir::LogicalResult MLIRGenImpl::checkOverrideResultFacts(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                              ClassMethodMemberInfo &member)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn || member.isStatic || member.isConstructor)
+        {
+            return mlir::success();
+        }
+
+        auto index = classInfo->getMethodIndex(member.methodName);
+        if (index < 0)
+        {
+            return mlir::success();
+        }
+
+        auto saysBorrow = [](const MethodInfo &method) {
+            return method.ownLendsMask != 0 || !method.ownBorrows.empty() || method.ownRecord || method.ownReturnsThis;
+        };
+
+        auto &method = classInfo->methods[index];
+        if (!saysBorrow(method))
+        {
+            return mlir::success();
+        }
+
+        // the nearest base that has the method
+        std::function<ClassInfo::TypePtr(ClassInfo::TypePtr)> overridden = [&](ClassInfo::TypePtr of) -> ClassInfo::TypePtr {
+            for (auto &baseClass : of->baseClasses)
+            {
+                if (baseClass->getMethodIndex(member.methodName) >= 0)
+                {
+                    return baseClass;
+                }
+
+                if (auto found = overridden(baseClass))
+                {
+                    return found;
+                }
+            }
+
+            return nullptr;
+        };
+
+        auto baseClass = overridden(classInfo);
+        if (!baseClass)
+        {
+            return mlir::success();
+        }
+
+        auto &baseMethod = baseClass->methods[baseClass->getMethodIndex(member.methodName)];
+        if (baseMethod.isStatic || saysBorrow(baseMethod))
+        {
+            return mlir::success();
+        }
+
+        emitError(location) << "method '" << member.methodName << "' returns a borrow ('@lends', '@borrows', '@record' or "
+                            << "the result type 'this'), but the method of '" << baseClass->name
+                            << "' it overrides does not: under -mm=own a call through '" << baseClass->name
+                            << "' takes the result for its own";
+        return mlir::failure();
     }
 
 } // namespace mlirgen

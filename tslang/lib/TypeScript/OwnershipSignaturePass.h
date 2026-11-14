@@ -626,6 +626,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // facts that count every fill as a drop (computeDrops' first round)
     bool decideFill(mlir_ts::ReleaseSlotOp releaseSlotOp);
 
+    // Does every method of the family of this vtable slot hand its result to the caller: none says it
+    // borrows (`@lends`, `@borrows`, `@record`, a `this` result), and each defined here returns its
+    // own (returnsFresh)? An override in another module may not say otherwise (TSLANG 49).
+    bool familyResultsFresh(int64_t index, mlir::StringAttr identifier);
+
     // each call by its op, for isFill
     llvm::DenseMap<mlir::Operation *, Call *> callOf;
 

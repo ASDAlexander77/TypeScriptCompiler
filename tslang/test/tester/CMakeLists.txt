@@ -1903,8 +1903,9 @@ endforeach()
 # TSLANG_ISSUES 46: a function returning its union parameter, given a new object, freed it twice
 # TSLANG_ISSUES 47: a lazily cached field returned through a local; a fill of an empty field frees nothing
 # TSLANG_ISSUES 48: a @final method of an exported class is called directly, by its own facts
+# TSLANG_ISSUES 49: a nullable local moved when not null, a virtual call's own result, a field moved into another
 foreach(issues_mm gc rc none own)
-    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48)
+    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5435,7 +5436,10 @@ set(own_error_cases
     "own_err_fill_after_call|:21:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_in_loop|:23:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
-    "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten")
+    "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten"
+    "own_err_moved_when_tested_other|:13:13: error: '[^']*' is moved here on some paths only"
+    "own_err_field_moved_call_between|:12:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

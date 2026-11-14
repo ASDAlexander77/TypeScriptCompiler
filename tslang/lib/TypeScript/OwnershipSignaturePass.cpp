@@ -261,6 +261,15 @@ namespace own_signature
                 if (refOp && !refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
                 {
                     call.op->setAttr(OWN_OVERRIDABLE_CALL_ATTR_NAME, refOp.getIdentifierAttr());
+
+                    // ...whose result is the caller's when no method of the family says it borrows: an
+                    // override in another module may not say so either (checkOverrideResultFacts), and
+                    // one that returns a borrow without saying it is an error there (TSLANG 49)
+                    if (call.op->getNumResults() == 1 && !isRecordResult(call.op) &&
+                        familyResultsFresh(refOp.getIndex(), refOp.getIdentifierAttr().getAttr()))
+                    {
+                        call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    }
                 }
 
                 continue;
@@ -1648,6 +1657,22 @@ namespace own_signature
         });
 
         computeDropsRound(true);
+    }
+
+    bool OwnershipSignaturePass::familyResultsFresh(int64_t index, mlir::StringAttr identifier)
+    {
+        for (auto member : familyOf(index, identifier))
+        {
+            auto funcOp = functions.lookup(member.getValue());
+            if (!funcOp || funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) ||
+                funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME) || funcOp->hasAttr(OWN_IMPLIED_LENDS_ATTR_NAME) ||
+                (!funcOp.isDeclaration() && !returnsFresh(funcOp)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool OwnershipSignaturePass::isFill(mlir_ts::ReleaseSlotOp releaseSlotOp)

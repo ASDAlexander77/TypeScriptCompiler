@@ -14491,6 +14491,14 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext);
 
+    struct ClassMethodMemberInfo;
+
+    // -mm=own (TSLANG 49): a caller through the base takes the result of a method it cannot resolve for
+    // its own when no method of the family says the result borrows. So an override may not say so
+    // (`@lends`, `@borrows`, `@record`, a result of type `this`) when the method it overrides does not.
+    mlir::LogicalResult checkOverrideResultFacts(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                 ClassMethodMemberInfo &member);
+
     struct ClassMethodMemberInfo
     {
         ClassMethodMemberInfo(ClassInfo::TypePtr newClassPtr, ClassElement classMember) : newClassPtr(newClassPtr), classMember(classMember)
