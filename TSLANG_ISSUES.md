@@ -228,3 +228,47 @@ export class App {
 Regression tests `tslang/test/tester/tests/00tslang_issue_49.ts` (every model),
 `own/own_err_moved_when_tested_other.ts`, `own_err_field_moved_call_between.ts` and
 `own_err_override_lends.ts`. powder_sandbox's exchange workaround still works.
+
+Items 50 and 51, found on 2026-11-14 by compiling every module of powder_sandbox's `-mm=own` build
+(native_ts_graphics fc6fe6c as its submodule) with the compiler from main, are fixed.
+
+50 (a value of the function's own moved into a field, then used: `const layout =
+device.createPipelineLayoutFromDesc(desc); this.layout = layout; if (!layout) return false;
+device.createPipelineFromDesc(layout, ...)`, in native_ts_graphics' `core/nri_donut_blit.ts`, was
+refused, "'this value' is used here after its value was moved"). Item 47 read a local as the field it
+was moved into, but a `const` given a call's result is that result itself, with no local to read. Now
+each use the store dominates reads the field instead, read right after the store, so it is a borrow
+of the field. The checks then follow that borrow through the calls in between with their facts. This
+also covers a store inside an `if`, and an object (`new Layout()`) stored into a `Layout | null`
+field, which is read back narrowed. A string stored into a field is a copy and a `Shared<T>` handle a
+count, so those stay the function's own, as before. A call in between that may overwrite the field is
+still an error, now "borrows a field but is used here after it may be released or overwritten".
+`nri_donut_blit.ts` compiles under own now. It also closes a hole: with a value moved into a field of
+a parameter (`h.c = c`), and `h` then given away into a field that is cleared, alpha127 took the later
+`c.x` and printed 0 from freed memory. That is refused now. Still open: a value merged from a `?:`
+(`const l = ok ? make() : null; this.f = l; use(l)`) stays "merged from several branches", as before.
+
+51 (`--own-facts=<file>` naming a file that does not exist was passed over in silence): every call into
+that module was then taken to release or overwrite anything, so the errors that followed read as the
+program's own. powder_sandbox's `build-own` had 27 of the 58 facts objects its compile lines name
+(`own-facts/core/donut.ts.obj` was never built there). With them all built, the sweep's own failures
+went from 210 files to 149, and "borrows a field but is used here after it may be released or
+overwritten" from 724 errors to 275. A missing file still gives no facts, but tslang warns now:
+"--own-facts: '<file>' does not exist; calls into its module are taken to release or overwrite
+anything".
+
+Regression tests `tslang/test/tester/tests/00tslang_issue_50.ts` (every model),
+`own/own_err_moved_field_overwritten.ts`, `own/own_err_moved_param_field_dropped.ts` and the ctest
+`test-own-facts-missing-file`. `own/own_err_read_after_move_global.ts` is still refused at all three
+sites, now as a borrow of the field that the global's assignment ends.
+
+For native_ts_graphics, from the same sweep (its code, not the compiler):
+- `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
+  fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
+  takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
+- Under `-mm=own`, 7 `core/` modules do not compile yet (`directx_math.ts`, `donut_first_person_camera.ts`,
+  `nri_donut_textures.ts`, `octomap_common.ts`, `ray_tracing_extended_scene.ts`, `simple_camera.ts`,
+  `rtxpt_game.ts`), and nor do most examples, which #310 did not port: with every facts object built,
+  149 of the 276 sources fail. Most use-after-move errors left are a constructor keeping its argument
+  (`const r = new X(sample)`, then `sample` used: about 96) or a value used after `push` into an array
+  (about 91).

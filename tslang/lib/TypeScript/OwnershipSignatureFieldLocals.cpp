@@ -363,6 +363,74 @@ namespace own_signature
                 }
             }
 
+            // A value of the function's own moved into a field and used after (TSLANG 50): `const
+            // layout = device.create(); this.layout = layout; if (!layout) return false;
+            // use(layout);`. The `const` is the call's result itself, with no local to pair with a
+            // field. After the store it is what the field holds, so each use the store dominates
+            // reads the field instead, read right after the store: a borrow of the field, which the
+            // checks then follow through the calls between with their facts. Its release stays: the
+            // move takes it over.
+            // The stores in nested regions count too (`if (ok) { this.f = v; use(v); }`).
+            mlir::DominanceInfo dominance(body->getParentOp());
+            llvm::SmallVector<mlir_ts::StoreOp> movedStores;
+            body->walk([&](mlir_ts::StoreOp storeOp) {
+                auto field = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (field && objectReadable(field))
+                {
+                    movedStores.push_back(storeOp);
+                }
+            });
+
+            for (auto fieldStore : movedStores)
+            {
+                auto root = stripViews(fieldStore.getValue());
+                auto *def = root.getDefiningOp();
+                auto field = fieldStore.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                // an object stored into a field that may also be null or hold another type
+                // (`new Layout()` into `Layout | null`): read back, the field is narrowed to it
+                auto fieldType = mlir::cast<mlir_ts::RefType>(field.getType()).getElementType();
+                auto narrowed = !fieldReadsAs(field, root.getType()) &&
+                                mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
+                                mlir::isa<mlir_ts::UnionType>(fieldType);
+                // a string and the like are copied into the field, and a Shared<T> handle counted:
+                // the value stays the function's own, not moved
+                if (!def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                    own_facts::isCopyableValueAt(fieldStore, root.getType()) ||
+                    MLIRTypeHelper::isSharedHandleType(root.getType()) || (!narrowed && !fieldReadsAs(field, root.getType())))
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                for (auto &use : root.getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (user != fieldStore.getOperation() && !mlir::isa<mlir_ts::ReleaseOp>(user) &&
+                        dominance.properlyDominates(fieldStore.getOperation(), user))
+                    {
+                        uses.push_back(&use);
+                    }
+                }
+
+                if (uses.empty())
+                {
+                    continue;
+                }
+
+                mlir::OpBuilder builder(fieldStore->getContext());
+                builder.setInsertionPointAfter(fieldStore);
+                auto read = readFieldAt(builder, fieldStore.getLoc(), narrowed ? fieldType : root.getType(), field);
+                if (narrowed)
+                {
+                    read = builder.create<mlir_ts::CastOp>(fieldStore.getLoc(), root.getType(), read);
+                }
+
+                for (auto *use : uses)
+                {
+                    use->set(read);
+                }
+            }
+
             // the pairs: a local not captured, and a field it is declared from or that is given it
             llvm::SmallVector<LocalField> pairs;
             body->walk([&](mlir_ts::VariableOp varOp) {
