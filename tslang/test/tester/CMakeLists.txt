@@ -1926,12 +1926,13 @@ endforeach()
 # TSLANG_ISSUES 73: a private field nothing writes after the constructor, borrowed across a call that runs callbacks
 # TSLANG_ISSUES 75: a call through a constant global that holds a function, a call of that function
 # TSLANG_ISSUES 76: a constructor that keeps a parameter in a private field only it writes, and gives `this` to a call
+# TSLANG_ISSUES 77: an array kept by a constructor, then filled through the local
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
                         00tslang_issue_58 00tslang_issue_59 00tslang_issue_60
                         00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71 00tslang_issue_73
-                        00tslang_issue_75 00tslang_issue_76)
+                        00tslang_issue_75 00tslang_issue_76 00tslang_issue_77)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5511,7 +5512,8 @@ set(own_error_cases
     "own_err_kept_local_array_popped|:16:22: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_private_field_written_callback|:33:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_const_alias_drops|:22:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_kept_field_rebound|:29:5: error: '[^']*' is used here after its value was moved")
+    "own_err_kept_field_rebound|:29:5: error: '[^']*' is used here after its value was moved"
+    "own_err_kept_array_filled_after_pop|:21:9: error: '[^']*' borrows an element but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

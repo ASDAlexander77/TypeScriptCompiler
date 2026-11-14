@@ -817,7 +817,10 @@ namespace own_signature
                 return false;
             };
 
-            auto usesAfterMove = [&](mlir::Operation *store, mlir::Value root, llvm::SmallVectorImpl<mlir::OpOperand *> &uses) {
+            // `inPlaceAfter`: an array changed in place through the local after the move is a use too, of
+            // the local's slot (TSLANG 77) - for a step that gives it the place the array moved to
+            auto usesAfterMove = [&](mlir::Operation *store, mlir::Value root, llvm::SmallVectorImpl<mlir::OpOperand *> &uses,
+                                     bool inPlaceAfter = false) {
                 auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
                 auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
                 if (!slot)
@@ -861,6 +864,24 @@ namespace own_signature
                                   mlir_ts::ArraySpliceOp>(user) &&
                         !reaches(store, user, slot->getBlock()))
                     {
+                        continue;
+                    }
+
+                    // ...and after it, through the place it moved to: `const sets = []; this.frames.push(new
+                    // Frame(sets)); for (...) sets.push(set)` (TSLANG 77)
+                    if (inPlaceAfter &&
+                        mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                                  mlir_ts::ArraySpliceOp>(user) &&
+                        dominance.properlyDominates(store, user))
+                    {
+                        for (auto &operand : user->getOpOperands())
+                        {
+                            if (operand.get() == slot.getResult())
+                            {
+                                uses.push_back(&operand);
+                            }
+                        }
+
                         continue;
                     }
 
@@ -1171,7 +1192,7 @@ namespace own_signature
                     if (slotRead)
                     {
                         llvm::SmallVector<mlir::OpOperand *> later;
-                        if (!usesAfterMove(callOp, root, later))
+                        if (!usesAfterMove(callOp, root, later, true))
                         {
                             continue;
                         }
@@ -1196,6 +1217,16 @@ namespace own_signature
                         }
                     }
 
+                    // an array changed in place after the move changes the field itself: its reference, of the
+                    // local's type (TSLANG 77)
+                    if (llvm::any_of(uses, [&](mlir::OpOperand *use) {
+                            return mlir::isa<mlir_ts::RefType>(use->get().getType()) && (narrowed || use->get().getType() != fieldRefType);
+                        }))
+                    {
+                        continue;
+                    }
+
+                    llvm::DenseMap<mlir::Value, mlir::Value> refs;
                     for (auto *use : uses)
                     {
                         auto *user = use->getOwner();
@@ -1217,6 +1248,7 @@ namespace own_signature
                             builder.setInsertionPointAfter(after);
                             auto ref = builder.create<mlir_ts::PropertyRefOp>(callOp->getLoc(), fieldRefType, place,
                                                                               builder.getI32IntegerAttr(kept.first));
+                            refs[place] = ref;
                             fieldRead = builder.create<mlir_ts::LoadOp>(callOp->getLoc(), fieldType, ref);
                             if (narrowed)
                             {
@@ -1224,7 +1256,7 @@ namespace own_signature
                             }
                         }
 
-                        use->set(fieldRead);
+                        use->set(mlir::isa<mlir_ts::RefType>(use->get().getType()) ? refs[place] : fieldRead);
                     }
                 }
             }
