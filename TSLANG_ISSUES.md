@@ -556,6 +556,17 @@ field that nothing but its class's constructor writes, and a call no longer drop
 parameter (`this` included) the function does not assign. The object is the caller's, so the field lives as long
 as the call does. A private field a method writes, called back from the call, is still refused. Regression tests
 `tslang/test/tester/tests/00tslang_issue_73.ts` (every model) and `own/own_err_private_field_written_callback.ts`.
+`own/own_err_declared_drops.ts` lends a public field now: the private one it had is a field 73 keeps.
+
+74 (a value of `cond ? null : f(...)`, with `f` another module's, pushed where it is not null, then used: `const
+texture = textureName == "" ? null : device.loadTexture(...); if (!texture) ... else { this.materialTextures.push(texture);
+this.materialViews.push(texture.createView(texture.getFormat())); }` in `examples/nri/mouse_cursor_nri.ts`, refused
+"is used here after its value was moved") is fixed. TSLANG 65's push step reads such a value back from the array
+when the value is the function's own. A call's result alone counts, whoever defines the function. A merge of a
+call's result and null (TSLANG 54) counted only when the call's result was known to be fresh, which, for another
+module's function, the signature pass decides only after this step. A merge now counts when each way into it
+brings null or a call's result, as the call alone does. Regression test: TSLANG 74's step in
+`tslang/test/tester/own-facts-objects.cmake` (`tests/own_facts_tex_lib.ts`, `tests/own_facts_tex_main.ts`).
 
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
