@@ -381,8 +381,28 @@ namespace own_inference
         }
 
         auto castOp = rootOf(value).getDefiningOp<mlir_ts::CastOp>();
-        return castOp && mlir::isa<mlir_ts::StringType>(castOp.getType()) &&
-               castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
+        if (!castOp || !mlir::isa<mlir_ts::StringType>(castOp.getType()))
+        {
+            return false;
+        }
+
+        if (castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return true;
+        }
+
+        // ...or a read of a constant global of a string literal's type (`const PATH = "flame.dds"`,
+        // TSLANG 70): it holds that literal, in read-only data, and nothing else
+        auto loadOp = castOp.getIn().getDefiningOp<mlir_ts::LoadOp>();
+        auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+        auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(castOp.getIn().getType());
+        if (!addressOfOp || !literalType || !mlir::isa<mlir_ts::StringType>(literalType.getElementType()))
+        {
+            return false;
+        }
+
+        auto globalOp = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::GlobalOp>(addressOfOp, addressOfOp.getGlobalNameAttr());
+        return globalOp && globalOp.getConstant();
     }
 
     bool OwnershipInferencePass::isBorrow(mlir::Operation *user, mlir::Value value)

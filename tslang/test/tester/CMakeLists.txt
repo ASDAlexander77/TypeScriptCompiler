@@ -1921,7 +1921,7 @@ endforeach()
 # TSLANG_ISSUES 63-65: a lazy getter with a @nodrops C call is a fill; a field of a pushed object; a local or element store then used
 # TSLANG_ISSUES 66: a `let` borrowing a field, given fresh values on some paths, borrows them from a slot of their own
 # TSLANG_ISSUES 67-68: a value pushed only where it is not null; a union of string literals read as a string
-# TSLANG_ISSUES 69: a value moved on every path, by a different move on each
+# TSLANG_ISSUES 69-70: a value moved on every path, by a different move on each; a constant literal global given to a keeping call
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
