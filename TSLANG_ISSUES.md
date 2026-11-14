@@ -422,6 +422,19 @@ data, immortal already. Spec 25 has the amendment. In the sweep, 126 sources fai
 29 errors to 1), and errors from 907 to 811. Regression tests `tslang/test/tester/tests/00tslang_issue_61.ts`
 (every model) and `own/own_err_immortal_array_element_overwritten.ts`.
 
+62 (an array changed in place through a local that borrows the field holding it: `const model =
+this.refractionModel; ... model.push(0.0);` in `examples/ray_tracing_extended.ts` and its NRI ports, refused
+"borrows a field and cannot be stored, returned or captured" at the push) is fixed. `push`, `pop`,
+`unshift`, `shift` and `splice` take the slot that holds the array's header, and the borrowing local's
+slot was taken to keep the field's value. The header is the field's array, so the change is the field's
+too: each such op through the local is now a use of the borrow, bounded as a read is. An element read
+before a `pop` and used after, the field given another array before a use, and the local returned or
+stored are still refused. A field that holds a null header (never given an array) gets one in the local's
+slot only, which nothing frees: that is `undefined` in TypeScript terms, where `.push` throws, as the
+array spec's ruling T4-D accepts for a parameter. In the sweep, 4 errors less (807); the two NRI ports
+keep others. Regression tests `tslang/test/tester/tests/00tslang_issue_62.ts` (every model) and
+`own/own_err_borrowed_array_pushed_returned.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -432,7 +445,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 4 `core/` modules do not compile yet (`donut_first_person_camera.ts`,
   `nri_donut_textures.ts`, `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-61 in, 119 of the 276 sources fail. The
+  which #310 did not port: with every facts object built and 50-62 in, 119 of the 276 sources fail. The
   largest group left is "borrows a field but is used here after it may be released or overwritten" (about
   200 sites), then "used here after its value was moved" (37: mostly a value a pushed object or an
   earlier call keeps, then returned or used).

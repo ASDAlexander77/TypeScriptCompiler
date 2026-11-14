@@ -1915,11 +1915,12 @@ endforeach()
 # TSLANG_ISSUES 59: a value moved into a field of an element or field read, then used, borrows that field
 # TSLANG_ISSUES 60: a call that reaches an overridable method names it where a borrow ends
 # TSLANG_ISSUES 61: an array global nothing assigns is immortal
+# TSLANG_ISSUES 62: an array changed through a local that borrows its field
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
                         00tslang_issue_58 00tslang_issue_59 00tslang_issue_60
-                        00tslang_issue_61)
+                        00tslang_issue_61 00tslang_issue_62)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5474,7 +5475,8 @@ set(own_error_cases
     "own_err_merged_locals_moved|:12:5: error: '[^']*' is moved here while '[^']*' borrows it"
     "own_err_element_field_moved_replaced|:11:12: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_overridable_reached|:34:13: note: 'Prop.tick' calls 'setNodeTransform', which calls 'World.setTransform'"
-    "own_err_immortal_array_element_overwritten|:15:12: error: '[^']*' borrows 'G\\[\\]' but is used here after it may be released or overwritten")
+    "own_err_immortal_array_element_overwritten|:15:12: error: '[^']*' borrows 'G\\[\\]' but is used here after it may be released or overwritten"
+    "own_err_borrowed_array_pushed_returned|:14:5: error: '[^']*' borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
