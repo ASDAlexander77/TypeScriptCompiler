@@ -42,8 +42,11 @@ namespace own_signature
         auto *def = castRoot(resultOp->getOperand(0)).getDefiningOp();
         if (auto createArrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(def))
         {
+            // a constant that is no block of its own: not a constant array, which becomes one (a row of
+            // `[[1, 2], [3, 4]]`), and is not made immortal: a local given it would free it (TSLANG 83)
             return llvm::all_of(createArrayOp->getOperands(), [](mlir::Value element) {
-                return !!castRoot(element).getDefiningOp<mlir_ts::ConstantOp>();
+                auto constantOp = castRoot(element).getDefiningOp<mlir_ts::ConstantOp>();
+                return constantOp && !mlir::isa<mlir_ts::ConstArrayType, mlir_ts::ConstTupleType>(constantOp.getType());
             });
         }
 
