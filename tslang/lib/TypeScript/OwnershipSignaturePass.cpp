@@ -257,10 +257,27 @@ namespace own_signature
                     callee = getMethodOp.getBoundFunc();
                 }
 
-                auto refOp = callee ? callee.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>() : mlir_ts::ThisVirtualSymbolRefOp();
+                // a method's slot, or an accessor's
+                auto *refDef = callee ? callee.getDefiningOp() : nullptr;
+                auto methodRef = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(refDef);
+                auto accessorRef = mlir::dyn_cast_or_null<mlir_ts::VirtualSymbolRefOp>(refDef);
+                auto *refOp = methodRef ? methodRef.getOperation() : accessorRef ? accessorRef.getOperation() : nullptr;
+                auto identifier = methodRef ? methodRef.getIdentifierAttr() : accessorRef ? accessorRef.getIdentifierAttr()
+                                                                                         : mlir::FlatSymbolRefAttr();
+                int64_t slotIndex = methodRef ? static_cast<int64_t>(methodRef.getIndex())
+                                  : accessorRef ? static_cast<int64_t>(accessorRef.getIndex()) : -1;
                 if (refOp && !refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
                 {
-                    call.op->setAttr(OWN_OVERRIDABLE_CALL_ATTR_NAME, refOp.getIdentifierAttr());
+                    call.op->setAttr(OWN_OVERRIDABLE_CALL_ATTR_NAME, identifier);
+
+                    // ...whose result is the caller's when no method of the family says it borrows: an
+                    // override in another module may not say so either (checkOverrideResultFacts), and
+                    // one that returns a borrow without saying it is an error there (TSLANG 49)
+                    if (call.op->getNumResults() == 1 && !isRecordResult(call.op) &&
+                        familyResultsFresh(slotIndex, identifier.getAttr()))
+                    {
+                        call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    }
                 }
 
                 continue;
@@ -1648,6 +1665,22 @@ namespace own_signature
         });
 
         computeDropsRound(true);
+    }
+
+    bool OwnershipSignaturePass::familyResultsFresh(int64_t index, mlir::StringAttr identifier)
+    {
+        for (auto member : familyOf(index, identifier))
+        {
+            auto funcOp = functions.lookup(member.getValue());
+            if (!funcOp || funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) ||
+                funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME) || funcOp->hasAttr(OWN_IMPLIED_LENDS_ATTR_NAME) ||
+                (!funcOp.isDeclaration() && !returnsFresh(funcOp)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool OwnershipSignaturePass::isFill(mlir_ts::ReleaseSlotOp releaseSlotOp)

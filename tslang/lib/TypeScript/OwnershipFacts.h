@@ -1297,6 +1297,62 @@ inline bool mayWriteField(mlir::Operation *op, mlir_ts::PropertyRefOp field, mli
     return writes;
 }
 
+// Does every way from `definition`, where `value` is made, to `release` that does not run `move`'s
+// block leave a branch on which `value` was tested empty (testedEmpty): `if (l) { this.f = l; }`? On
+// those ways the value holds no block, and its release there frees nothing (TSLANG 49). A way back to
+// the definition's block makes a new value; it ends there.
+inline bool emptyWhereNotMoved(mlir::Value value, mlir::Operation *definition, mlir::Operation *move, mlir::Operation *release)
+{
+    auto *start = definition ? definition->getBlock() : nullptr;
+    if (!start || !move || start == release->getBlock() || start->getParent() != release->getBlock()->getParent() ||
+        start->getParent() != move->getBlock()->getParent())
+    {
+        return false;
+    }
+
+    auto root = rootOf(value);
+    llvm::SmallPtrSet<mlir::Block *, 16> seen{start};
+    llvm::SmallVector<mlir::Block *> work{start};
+    while (!work.empty())
+    {
+        auto *block = work.pop_back_val();
+        auto *terminator = block->getTerminator();
+        auto condBrOp = mlir::dyn_cast_or_null<mlir::cf::CondBranchOp>(terminator);
+        for (unsigned index = 0; terminator && index < terminator->getNumSuccessors(); ++index)
+        {
+            auto *successor = terminator->getSuccessor(index);
+            if (condBrOp && condBrOp.getTrueDest() != condBrOp.getFalseDest())
+            {
+                mlir::Value condition = condBrOp.getCondition();
+                if (auto castOp = condition.getDefiningOp<mlir_ts::DialectCastOp>())
+                {
+                    condition = castOp->getOperand(0);
+                }
+
+                auto tested = testedEmpty(condition, successor == condBrOp.getTrueDest());
+                if (tested && rootOf(tested) == root)
+                {
+                    continue; // empty from here on
+                }
+            }
+
+            if (successor == release->getBlock())
+            {
+                return false;
+            }
+
+            if (successor == move->getBlock() || successor == start || !seen.insert(successor).second)
+            {
+                continue;
+            }
+
+            work.push_back(successor);
+        }
+    }
+
+    return true;
+}
+
 // Is this release of a field's old value a fill (TSLANG 47): the field was tested empty on the way
 // here, and nothing that may write it ran since? The test reads the field itself, or a `let` or
 // `const` declared from it that nothing assigns before the test (`let r = this.cached; if (!r) {...}`),

@@ -1455,8 +1455,19 @@ class MLIRTypeHelper
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
-                                                        unsigned startParamIn = 0, unsigned startParamRes = 0)
+                                                        unsigned startParamIn = 0, unsigned startParamRes = 0, bool asGiven = false)
     {
+        // The parameters as they are first: a leading `Opaque` may be a real one, not a receiver -
+        // `(a: Opaque, b: Opaque) => s32`, a C comparator, given a closure over a variable
+        if (!asGiven)
+        {
+            auto plain = TestFunctionTypesMatchWithObjectMethods(location, inFuncType, resFuncType, startParamIn, startParamRes, true);
+            if (plain.result == MatchResultType::Match)
+            {
+                return plain;
+            }
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                 << "@ TestFunctionTypesMatchWithObjectMethods:" << inFuncType << " -> " << resFuncType << "\n";);
 
@@ -1466,25 +1477,25 @@ class MLIRTypeHelper
 
         // 1 we need to skip opaque and objects
         // TODO: we need to refactor func types the way that we can understand if this is func with "captured var", bound to object etc
-        if (startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
+        if (!asGiven && startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
             (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0))))
         {
             startParamIn = 1;
         }
 
-        if (startParamIn <= 1 && inFuncType.getNumInputs() > 1 &&
+        if (!asGiven && startParamIn <= 1 && inFuncType.getNumInputs() > 1 &&
             (isa<mlir_ts::OpaqueType>(inFuncType.getInput(1)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(1))))
         {
             startParamIn = 2;
         }
 
-        if (startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
+        if (!asGiven && startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
             (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0))))
         {
             startParamRes = 1;
         }
 
-        if (startParamRes <= 1 && resFuncType.getNumInputs() > 1 &&
+        if (!asGiven && startParamRes <= 1 && resFuncType.getNumInputs() > 1 &&
             (isa<mlir_ts::OpaqueType>(resFuncType.getInput(1)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(1))))
         {
             startParamRes = 2;

@@ -1364,6 +1364,13 @@ namespace own_inference
                 continue;
             }
 
+            // the release of what the taker's place held, right before the store into it (TSLANG 49)
+            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
+                releaseSlotOp && !intoLocal && releaseSlotOp.getSlot() == storeOp.getReference() && op->getNextNode() == taker)
+            {
+                continue;
+            }
+
             if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
                 // a local's own release (the taker's assignment), never of the place's object
@@ -1395,6 +1402,41 @@ namespace own_inference
             }
 
             return false;
+        }
+
+        // ...or refilled right after the taker (TSLANG 49): `this.other = this.level; this.level = null;`
+        // moves the field into another. The same field of the same object, its release right before
+        // the store that refills it, with only reads, constants and views between - nothing that could
+        // free or read what both places hold until then.
+        if (!refillRelease && retained)
+        {
+            auto field = place.getDefiningOp<mlir_ts::PropertyRefOp>();
+            for (auto *op = field ? taker->getNextNode() : nullptr; op; op = op->getNextNode())
+            {
+                if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+                {
+                    auto refillField = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::PropertyRefOp>();
+                    auto refillStore = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(op->getNextNode());
+                    if (refillField && sameField(refillField, field) && refillStore &&
+                        refillStore.getReference() == releaseSlotOp.getSlot())
+                    {
+                        refillRelease = op;
+                    }
+
+                    break;
+                }
+
+                // rc's retain of the refill's value, when that holds no block (`null`)
+                auto retainsNothing = mlir::isa<mlir_ts::RetainOp>(op) && holdsNoBlock(op->getOperand(0));
+                // ...and that value, `null` cast to the field's union
+                auto castsNothing = mlir::isa<mlir_ts::CastOp>(op) && holdsNoBlock(op->getResult(0));
+                if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp, mlir_ts::ConstantOp, mlir_ts::NullOp,
+                               mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(op) &&
+                    !isView(op) && !retainsNothing && !castsNothing)
+                {
+                    break;
+                }
+            }
         }
 
         if (!refillRelease)

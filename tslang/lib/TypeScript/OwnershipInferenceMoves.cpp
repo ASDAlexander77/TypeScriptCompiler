@@ -1003,7 +1003,9 @@ namespace own_inference
                     continue;
                 }
 
-                if (!dominance->properlyDominates(acquire, release))
+                // moved on some ways only: on the others it must be empty (TSLANG 49)
+                if (!dominance->properlyDominates(acquire, release) &&
+                    !emptyWhereNotMoved(value, definition, acquire, release))
                 {
                     reportMovedOnSomePaths(taker, release, name);
                     return false;
