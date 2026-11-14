@@ -147,30 +147,61 @@ namespace own_signature
         // `if (value) array.push(value);` and uses of `value` after it (TSLANG 67): the block the test's
         // false edge goes to, reached otherwise only through the push, gets an argument - the element
         // read back after the push (`read`) on those paths, null on the false edge - and the uses of
-        // `value` that block dominates read it.
-        void mergePushedOrNull(mlir::Operation *pushOp, mlir::Value value, mlir::Value read, mlir::DominanceInfo &dominance)
+        // `value` that block dominates read it. `slot`: the value is a read of this local, which nothing
+        // assigns after the push (usesAfterMove), and the test and the uses are reads of it of their own
+        // (TSLANG 79: `let pipeline = ...; if (pipeline) this.pipelines.push(pipeline); return pipeline;`).
+        void mergePushedOrNull(mlir::Operation *pushOp, mlir::Value value, mlir::Value read, mlir::DominanceInfo &dominance,
+                               mlir_ts::VariableOp slot = {})
         {
             auto *pushBlock = pushOp->getBlock();
-            mlir::cf::CondBranchOp test;
-            for (auto *user : value.getUsers())
+            // the value, or each read of the local
+            llvm::SmallVector<mlir::Value> values{value};
+            if (slot)
             {
-                auto cast = mlir::dyn_cast<mlir_ts::CastOp>(user);
-                if (!cast)
+                values.clear();
+                for (auto *user : slot.getResult().getUsers())
                 {
-                    continue;
-                }
-
-                for (auto *castUser : cast->getUsers())
-                {
-                    for (auto *dialectUser : castUser->getUsers())
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
                     {
-                        auto branch = mlir::dyn_cast<mlir::cf::CondBranchOp>(dialectUser);
-                        if (branch && testsTruthOf(branch, value) && dominance.dominates(branch.getTrueDest(), pushBlock))
+                        values.push_back(loadOp.getResult());
+                    }
+                }
+            }
+
+            mlir::cf::CondBranchOp test;
+            for (auto tested : values)
+            {
+                for (auto *user : tested.getUsers())
+                {
+                    auto cast = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                    if (!cast)
+                    {
+                        continue;
+                    }
+
+                    for (auto *castUser : cast->getUsers())
+                    {
+                        for (auto *dialectUser : castUser->getUsers())
                         {
-                            test = branch;
+                            auto branch = mlir::dyn_cast<mlir::cf::CondBranchOp>(dialectUser);
+                            if (branch && testsTruthOf(branch, tested) && dominance.dominates(branch.getTrueDest(), pushBlock))
+                            {
+                                test = branch;
+                            }
                         }
                     }
                 }
+            }
+
+            // ...and nothing assigns the local from the test on: the false edge brings the null it held
+            if (test && slot &&
+                llvm::any_of(slot.getResult().getUsers(), [&](mlir::Operation *user) {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    return storeOp && storeOp.getReference() == slot.getResult() &&
+                           dominance.dominates(test->getBlock(), storeOp->getBlock());
+                }))
+            {
+                return;
             }
 
             if (!test || test.getFalseDest() == test.getTrueDest())
@@ -194,13 +225,16 @@ namespace own_signature
             }
 
             llvm::SmallVector<mlir::OpOperand *> uses;
-            for (auto &use : value.getUses())
+            for (auto each : values)
             {
-                auto *user = use.getOwner();
-                if (!mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() != test->getBlock() &&
-                    dominance.dominates(merge, user->getBlock()))
+                for (auto &use : each.getUses())
                 {
-                    uses.push_back(&use);
+                    auto *user = use.getOwner();
+                    if (!mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() != test->getBlock() &&
+                        dominance.dominates(merge, user->getBlock()))
+                    {
+                        uses.push_back(&use);
+                    }
                 }
             }
 
@@ -226,6 +260,16 @@ namespace own_signature
             for (auto *use : uses)
             {
                 use->set(argument);
+            }
+
+            // the reads of the local the merge now stands for, left unused: the local is not read after
+            // the paths join, so its release goes on the edge that did not push it (TSLANG 79)
+            for (auto each : values)
+            {
+                if (slot && each.use_empty())
+                {
+                    each.getDefiningOp()->erase();
+                }
             }
         }
 
@@ -1043,7 +1087,8 @@ namespace own_signature
                 llvm::SmallVector<mlir::OpOperand *> uses;
                 if (slotRead)
                 {
-                    if (!usesAfterMove(pushOp, root, uses) || uses.empty())
+                    // no use the push dominates: there may be some where the paths meet (below)
+                    if (!usesAfterMove(pushOp, root, uses))
                     {
                         continue;
                     }
@@ -1087,7 +1132,8 @@ namespace own_signature
                 // ...and pushed only where it is not null (TSLANG 67): `const view = make(); if (view)
                 // this.views.push(view); return view;`. Where the paths meet again it is the element
                 // read back, or the null it was: a merge of the two, which each use there reads.
-                mergePushedOrNull(pushOp, root, read, dominance);
+                mergePushedOrNull(pushOp, root, read, dominance,
+                                  slotRead ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp());
             }
 
             followFieldStores();
