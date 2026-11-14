@@ -228,3 +228,73 @@ export class App {
 Regression tests `tslang/test/tester/tests/00tslang_issue_49.ts` (every model),
 `own/own_err_moved_when_tested_other.ts`, `own_err_field_moved_call_between.ts` and
 `own_err_override_lends.ts`. powder_sandbox's exchange workaround still works.
+
+Items 50 and 51, found on 2026-11-14 by compiling every module of powder_sandbox's `-mm=own` build
+(native_ts_graphics fc6fe6c as its submodule) with the compiler from main, are fixed.
+
+50 (a value of the function's own moved into a field, then used: `const layout =
+device.createPipelineLayoutFromDesc(desc); this.layout = layout; if (!layout) return false;
+device.createPipelineFromDesc(layout, ...)`, in native_ts_graphics' `core/nri_donut_blit.ts`, was
+refused, "'this value' is used here after its value was moved"). Item 47 read a local as the field it
+was moved into, but a `const` given a call's result is that result itself, with no local to read. Now
+each use the store dominates reads the field instead, read right after the store, so it is a borrow
+of the field. The checks then follow that borrow through the calls in between with their facts. This
+also covers a store inside an `if`, and an object (`new Layout()`) stored into a `Layout | null`
+field, which is read back narrowed. A string stored into a field is a copy and a `Shared<T>` handle a
+count, so those stay the function's own, as before. A call in between that may overwrite the field is
+still an error, now "borrows a field but is used here after it may be released or overwritten".
+`nri_donut_blit.ts` compiles under own now. It also closes a hole: with a value moved into a field of
+a parameter (`h.c = c`), and `h` then given away into a field that is cleared, alpha127 took the later
+`c.x` and printed 0 from freed memory. That is refused now. Still open: a value merged from a `?:`
+(`const l = ok ? make() : null; this.f = l; use(l)`) stays "merged from several branches", as before.
+
+51 (`--own-facts=<file>` naming a file that does not exist was passed over in silence): every call into
+that module was then taken to release or overwrite anything, so the errors that followed read as the
+program's own. powder_sandbox's `build-own` had 27 of the 58 facts objects its compile lines name
+(`own-facts/core/donut.ts.obj` was never built there). With them all built, the sweep's own failures
+went from 210 files to 149, and "borrows a field but is used here after it may be released or
+overwritten" from 724 errors to 275. A missing file still gives no facts, but tslang warns now:
+"--own-facts: '<file>' does not exist; calls into its module are taken to release or overwrite
+anything".
+
+Regression tests `tslang/test/tester/tests/00tslang_issue_50.ts` (every model),
+`own/own_err_moved_field_overwritten.ts`, `own/own_err_moved_param_field_dropped.ts` and the ctest
+`test-own-facts-missing-file`. `own/own_err_read_after_move_global.ts` is still refused at all three
+sites, now as a borrow of the field that the global's assignment ends.
+
+52 (a value of the function's own pushed into an array that is a field, then used: `this.textures.push(
+texture); this.srgb.push(srgb); this.views.push(texture.createView(...))` in `core/nri_donut_textures.ts`,
+refused "used here after its value was moved") is fixed the same way. After the push the value is the
+array's last element, so each use the push dominates reads `array[newLength - 1]`, read right after the
+push: a borrow of the element. Pushing into other arrays, or more into the same one, keeps it. A `pop`,
+an element stored, the array replaced, or a call that may do any of these between the push and the use
+is still refused ("borrows an element but is used here after it may be released or overwritten"). In
+the sweep, push-then-use sites went from 91 to 72. The rest move the value into a constructor whose
+result is pushed (`this.queuedFrames.push(new QueuedFrame(viewSet, ...))`, then `viewSet` used): 53. Regression tests `tslang/test/tester/tests/00tslang_issue_52.ts`
+(every model) and `own/own_err_pushed_then_popped.ts`.
+
+53 (a value of the function's own given to a constructor that keeps it in a field, then used: each
+NRI example's `main`, `const sample = NriSample.create(); const app = new App(sample);
+sample.addExampleOption(...)`, and `this.queuedFrames.push(new QueuedFrame(viewSet, ...)); viewSet.update(...)`,
+refused "used here after its value was moved") is fixed. A constructor defined in the module keeps a
+parameter when it stores it, as it is, into a field nothing else in it writes, and `this` does not
+escape it: it is only read for its fields, or has an array field pushed into or popped. After the call,
+each use of the value reads that field of the object. If the object was moved on, the read goes through
+the place it was moved to last, as 50 and 52 made it (`this.queuedFrames[newLength - 1].viewSet`). A
+borrow of a field, so a method that overwrites it, the object given away, or the object replaced before
+the use is still refused. A constructor that writes the field again, or passes `this` on (a method
+call, `super(...)`), keeps the old error. In the sweep, use-after-move errors went from 178 to 94: those
+of a constructor's argument from 93 to 11, and push-then-use from 72 to 13. Six examples compile under
+own now (`bokeh`, `calibrated_timestamps`, `shader_debugprintf`, `simple_compute`, `simple_hdr`,
+`simple_pbr`), 143 of the 276 sources still fail. Regression tests `tslang/test/tester/tests/00tslang_issue_53.ts`
+(every model) and `own/own_err_kept_by_constructor_reset.ts`.
+
+For native_ts_graphics, from the same sweep (its code, not the compiler):
+- `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
+  fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
+  takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
+- Under `-mm=own`, 7 `core/` modules do not compile yet (`directx_math.ts`, `donut_first_person_camera.ts`,
+  `nri_donut_textures.ts`, `octomap_common.ts`, `ray_tracing_extended_scene.ts`, `simple_camera.ts`,
+  `rtxpt_game.ts`), and nor do most examples, which #310 did not port: with every facts object built
+  and 50-53 in, 143 of the 276 sources fail. The largest group left is "borrows a field but is used
+  here after it may be released or overwritten" (about 280 sites).

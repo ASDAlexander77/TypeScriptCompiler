@@ -1904,8 +1904,12 @@ endforeach()
 # TSLANG_ISSUES 47: a lazily cached field returned through a local; a fill of an empty field frees nothing
 # TSLANG_ISSUES 48: a @final method of an exported class is called directly, by its own facts
 # TSLANG_ISSUES 49: a nullable local moved when not null, a virtual call's own result, a field moved into another
+# TSLANG_ISSUES 50: a value moved into a field and used after is a borrow of the field
+# TSLANG_ISSUES 52: a value pushed into a field array and used after is a borrow of its last element
+# TSLANG_ISSUES 53: a value a constructor keeps in a field, used after, is a borrow of that field
 foreach(issues_mm gc rc none own)
-    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49)
+    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
+                        00tslang_issue_52 00tslang_issue_53)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5357,7 +5361,7 @@ set(own_error_cases
     "own_err_read_after_move_call|:11:11: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_loop|:25:14: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_after_loop|:14:11: error: '[^']*' is used here after its value was moved"
-    "own_err_read_after_move_global|:42:15: error: '[^']*' is used here after its value was moved"
+    "own_err_read_after_move_global|:42:15: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_field_let_global_overwritten|:42:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_conditional_move_read|:20:11: error: '[^']*' is used here after its value was moved"
     "own_err_conditional_move_outer|:19:13: error: '[^']*' is moved inside a loop but was made outside it"
@@ -5447,7 +5451,11 @@ set(own_error_cases
     "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten"
     "own_err_moved_when_tested_other|:13:13: error: '[^']*' is moved here on some paths only"
     "own_err_field_moved_call_between|:12:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
-    "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not")
+    "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not"
+    "own_err_moved_field_overwritten|:15:25: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_moved_param_field_dropped|:13:15: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_pushed_then_popped|:14:16: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_kept_by_constructor_reset|:16:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
@@ -5461,6 +5469,15 @@ foreach(own_error_case ${own_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# TSLANG_ISSUES 51: a file --own-facts names that does not exist is said, not passed over in silence
+add_test(NAME test-own-facts-missing-file
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "--own-facts=${CMAKE_CURRENT_BINARY_DIR}/no-such-facts.obj"
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_50.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/own-facts-missing-file.obj")
+set_tests_properties(test-own-facts-missing-file
+                     PROPERTIES PASS_REGULAR_EXPRESSION "warning: --own-facts: '[^']*no-such-facts.obj' does not exist"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding

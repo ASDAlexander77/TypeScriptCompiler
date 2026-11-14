@@ -188,6 +188,111 @@ namespace own_signature
             return run(at->getBlock(), in[at->getBlock()], at);
         }
 
+        // The fields a constructor keeps its parameters in (TSLANG 53): a parameter stored as it is into a
+        // field of `this` that nothing else in the constructor writes, where `this` never escapes - it
+        // is only read for its fields, so no call the constructor makes can reach the field. By the
+        // parameter's number (`this` is 0): the field's position and its reference type.
+        llvm::DenseMap<unsigned, std::pair<int32_t, mlir::Type>> keptParameters(mlir_ts::FuncOp ctor)
+        {
+            llvm::DenseMap<unsigned, std::pair<int32_t, mlir::Type>> kept;
+            if (ctor.isExternal())
+            {
+                return kept;
+            }
+
+            auto &entry = ctor.getFunctionBody().front();
+            llvm::DenseMap<mlir::Value, unsigned> parameters;
+            mlir::Value thisSlot;
+            // a parameter's slot: `ts.Param(%arg)`, or `ts.Variable(%arg)` once the slots are made
+            for (auto &op : entry)
+            {
+                if (!mlir::isa<mlir_ts::ParamOp, mlir_ts::VariableOp>(&op) || op.getNumOperands() != 1)
+                {
+                    continue;
+                }
+
+                if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(op.getOperand(0)); argument && argument.getOwner() == &entry)
+                {
+                    parameters[op.getResult(0)] = argument.getArgNumber();
+                    if (argument.getArgNumber() == 0)
+                    {
+                        thisSlot = op.getResult(0);
+                    }
+                }
+            }
+
+            if (!thisSlot)
+            {
+                return kept;
+            }
+
+            // `this` only read, and only for its fields, which are only read or written
+            llvm::DenseMap<int32_t, unsigned> stores;
+            llvm::SmallVector<mlir_ts::StoreOp> candidates;
+            for (auto *user : thisSlot.getUsers())
+            {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (!loadOp)
+                {
+                    return kept;
+                }
+
+                for (auto *loadUser : loadOp->getUsers())
+                {
+                    auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(loadUser);
+                    if (!propertyRefOp)
+                    {
+                        return kept;
+                    }
+
+                    for (auto *refUser : propertyRefOp->getUsers())
+                    {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(refUser);
+                        auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(refUser);
+                        if (storeOp && storeOp.getReference() == propertyRefOp.getResult())
+                        {
+                            stores[propertyRefOp.getPosition()]++;
+                            candidates.push_back(storeOp);
+                            continue;
+                        }
+
+                        // `this.values.push(0.0)`: a write of that array field, and of nothing else
+                        if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp>(refUser) && refUser->getOperand(0) == propertyRefOp.getResult())
+                        {
+                            stores[propertyRefOp.getPosition()]++;
+                            continue;
+                        }
+
+                        if (!mlir::isa<mlir_ts::LoadOp>(refUser) && !(releaseSlotOp && releaseSlotOp.getSlot() == propertyRefOp.getResult()))
+                        {
+                            return kept;
+                        }
+                    }
+                }
+            }
+
+            for (auto storeOp : candidates)
+            {
+                auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                auto loadOp = stripViews(storeOp.getValue()).getDefiningOp<mlir_ts::LoadOp>();
+                if (storeOp->getBlock() != &entry || stores[propertyRefOp.getPosition()] != 1 || !loadOp)
+                {
+                    continue;
+                }
+
+                auto parameter = parameters.find(loadOp.getReference());
+                if (parameter == parameters.end() || parameter->second == 0 ||
+                    llvm::any_of(loadOp.getReference().getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::StoreOp>(user); }))
+                {
+                    continue;
+                }
+
+                kept[parameter->second] = {static_cast<int32_t>(propertyRefOp.getPosition()), propertyRefOp.getType()};
+            }
+
+            return kept;
+        }
+
         // One local and one field: where the local holds what the field holds, a must-analysis over
         // the function's blocks. It starts to hold where the local is declared from a read of the
         // field, or where the field is given a read of the local; it stops at a store into the local,
@@ -360,6 +465,299 @@ namespace own_signature
                 if (retainOp)
                 {
                     retainOp->setOperand(0, read);
+                }
+            }
+
+            // A value of the function's own moved into a field and used after (TSLANG 50): `const
+            // layout = device.create(); this.layout = layout; if (!layout) return false;
+            // use(layout);`. The `const` is the call's result itself, with no local to pair with a
+            // field. After the store it is what the field holds, so each use the store dominates
+            // reads the field instead, read right after the store: a borrow of the field, which the
+            // checks then follow through the calls between with their facts. Its release stays: the
+            // move takes it over.
+            // The stores in nested regions count too (`if (ok) { this.f = v; use(v); }`).
+            mlir::DominanceInfo dominance(body->getParentOp());
+            // where each value moved by the steps below lives after the move: the move, and the read
+            // of its new place made right after it
+            llvm::DenseMap<mlir::Value, llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>>> movedTo;
+            llvm::SmallVector<mlir_ts::StoreOp> movedStores;
+            body->walk([&](mlir_ts::StoreOp storeOp) {
+                auto field = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (field && objectReadable(field))
+                {
+                    movedStores.push_back(storeOp);
+                }
+            });
+
+            for (auto fieldStore : movedStores)
+            {
+                auto root = stripViews(fieldStore.getValue());
+                auto *def = root.getDefiningOp();
+                auto field = fieldStore.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                // an object stored into a field that may also be null or hold another type
+                // (`new Layout()` into `Layout | null`): read back, the field is narrowed to it
+                auto fieldType = mlir::cast<mlir_ts::RefType>(field.getType()).getElementType();
+                auto narrowed = !fieldReadsAs(field, root.getType()) &&
+                                mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
+                                mlir::isa<mlir_ts::UnionType>(fieldType);
+                // a string and the like are copied into the field, and a Shared<T> handle counted:
+                // the value stays the function's own, not moved
+                if (!def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                    own_facts::isCopyableValueAt(fieldStore, root.getType()) ||
+                    MLIRTypeHelper::isSharedHandleType(root.getType()) || (!narrowed && !fieldReadsAs(field, root.getType())))
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                for (auto &use : root.getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (user != fieldStore.getOperation() && !mlir::isa<mlir_ts::ReleaseOp>(user) &&
+                        dominance.properlyDominates(fieldStore.getOperation(), user))
+                    {
+                        uses.push_back(&use);
+                    }
+                }
+
+                // made even with no use left: an argument kept by this object may read through it
+                // (below); unused, it goes at the end
+                mlir::OpBuilder builder(fieldStore->getContext());
+                builder.setInsertionPointAfter(fieldStore);
+                auto read = readFieldAt(builder, fieldStore.getLoc(), narrowed ? fieldType : root.getType(), field);
+                if (narrowed)
+                {
+                    read = builder.create<mlir_ts::CastOp>(fieldStore.getLoc(), root.getType(), read);
+                }
+
+                for (auto *use : uses)
+                {
+                    use->set(read);
+                }
+
+                movedTo[root].push_back({fieldStore.getOperation(), read});
+            }
+
+            // The same for a value pushed into an array that is a field (TSLANG 52): `this.textures.push(
+            // texture); this.views.push(texture.createView(...))`. After the push the value is the
+            // array's last element, so each use the push dominates reads `array[newLength - 1]`,
+            // read right after the push: a borrow of the element, followed through the calls between.
+            llvm::SmallVector<mlir_ts::ArrayPushOp> pushes;
+            body->walk([&](mlir_ts::ArrayPushOp pushOp) { pushes.push_back(pushOp); });
+            for (auto pushOp : pushes)
+            {
+                auto field = pushOp.getOp().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (pushOp.getItems().size() != 1 || !field || !objectReadable(field))
+                {
+                    continue;
+                }
+
+                auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(mlir::cast<mlir_ts::RefType>(field.getType()).getElementType());
+                auto root = stripViews(pushOp.getItems().front());
+                auto *def = root.getDefiningOp();
+                if (!arrayType || !def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                    own_facts::isCopyableValueAt(pushOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()))
+                {
+                    continue;
+                }
+
+                // the element read back as the value's type: itself, or widened back to it
+                auto elementType = arrayType.getElementType();
+                if (elementType != root.getType() && !(mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(elementType) &&
+                                                       mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(root.getType())))
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                for (auto &use : root.getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (!mlir::isa<mlir_ts::ReleaseOp>(user) && dominance.properlyDominates(pushOp.getOperation(), user))
+                    {
+                        uses.push_back(&use);
+                    }
+                }
+
+                auto location = pushOp.getLoc();
+                mlir::OpBuilder builder(pushOp->getContext());
+                builder.setInsertionPointAfter(pushOp);
+                auto array = readFieldAt(builder, location, arrayType, field);
+                mlir::Value one = builder.create<mlir_ts::ConstantOp>(location, builder.getI32IntegerAttr(1));
+                one = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), one);
+                mlir::Value last = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, builder.getIndexType(), builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)),
+                    pushOp.getNewSize(), one);
+                last = builder.create<mlir_ts::CastOp>(location, builder.getI32Type(), last);
+                auto elementRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), array, last);
+                mlir::Value read = builder.create<mlir_ts::LoadOp>(location, elementType, elementRef);
+                if (elementType != root.getType())
+                {
+                    read = builder.create<mlir_ts::CastOp>(location, root.getType(), read);
+                }
+
+                for (auto *use : uses)
+                {
+                    use->set(read);
+                }
+
+                movedTo[root].push_back({pushOp.getOperation(), read});
+            }
+
+            // A value of the function's own given to a constructor that keeps it in a field
+            // (TSLANG 53): `const app = new App(sample); sample.use();`, or the object pushed on
+            // (`this.frames.push(new Frame(viewSet)); viewSet.update(...)`). After the call the
+            // value is the object's field, so each use the call dominates reads that field - through
+            // the object itself, or through the place it was moved to last, as the steps above made
+            // it: a borrow of the field, followed through the calls between.
+            // the constructor calls: `ts.SymbolCallInternal(object, args...)` naming it, or a call of
+            // the method bound to the object; their operands are the object, then the parameters
+            struct Construction
+            {
+                mlir::Operation *call;
+                llvm::StringRef callee;
+                llvm::SmallVector<mlir::Value> operands;
+            };
+            llvm::SmallVector<Construction> constructions;
+            body->walk([&](mlir::Operation *op) {
+                if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
+                {
+                    constructions.push_back({op, callOp.getCallee(), llvm::to_vector(callOp.getCallOperands())});
+                }
+                else if (auto callOp = mlir::dyn_cast<mlir_ts::CallIndirectOp>(op))
+                {
+                    auto getMethodOp = callOp.getCallee().getDefiningOp<mlir_ts::GetMethodOp>();
+                    auto symbolRefOp = getMethodOp ? getMethodOp.getBoundFunc().getDefiningOp<mlir_ts::ThisSymbolRefOp>() : mlir_ts::ThisSymbolRefOp();
+                    if (symbolRefOp && callOp.getCallOperands().size() >= 1)
+                    {
+                        llvm::SmallVector<mlir::Value> operands{symbolRefOp.getThisVal()};
+                        operands.append(callOp.getCallOperands().begin() + 1, callOp.getCallOperands().end());
+                        constructions.push_back({op, symbolRefOp.getIdentifier(), operands});
+                    }
+                }
+            });
+
+            for (auto &construction : constructions)
+            {
+                auto *callOp = construction.call;
+                auto object = construction.operands.empty() ? mlir::Value() : construction.operands.front();
+                if (!object || !object.getDefiningOp<mlir_ts::NewOp>() || !construction.callee.ends_with(".constructor"))
+                {
+                    continue;
+                }
+
+                auto ctor = module.lookupSymbol<mlir_ts::FuncOp>(construction.callee);
+                if (!ctor)
+                {
+                    continue;
+                }
+
+                auto &operands = construction.operands;
+                for (auto &[number, kept] : keptParameters(ctor))
+                {
+                    if (number >= operands.size())
+                    {
+                        continue;
+                    }
+
+                    auto root = stripViews(operands[number]);
+                    auto *def = root.getDefiningOp();
+                    auto fieldRefType = mlir::cast<mlir_ts::RefType>(kept.second);
+                    auto fieldType = fieldRefType.getElementType();
+                    auto narrowed = fieldType != root.getType() && mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
+                                    mlir::isa<mlir_ts::UnionType>(fieldType);
+                    if (!def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                        own_facts::isCopyableValueAt(callOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()) ||
+                        (fieldType != root.getType() && !narrowed))
+                    {
+                        continue;
+                    }
+
+                    // each use read through the object's latest place before it: the last move
+                    // of the object that the use comes after, else the object right after the call
+                    llvm::DenseMap<mlir::Value, mlir::Value> reads;
+                    llvm::SmallVector<mlir::OpOperand *> uses;
+                    // the object's own releases: a use after one, in its block, would read a freed field
+                    llvm::SmallVector<mlir::Operation *> releases;
+                    for (auto *user : object.getUsers())
+                    {
+                        if (mlir::isa<mlir_ts::ReleaseOp>(user))
+                        {
+                            releases.push_back(user);
+                        }
+                    }
+
+                    auto afterRelease = [&](mlir::Operation *user) {
+                        return llvm::any_of(releases, [&](mlir::Operation *release) {
+                            auto *ancestor = release->getBlock()->findAncestorOpInBlock(*user);
+                            return ancestor && release->isBeforeInBlock(ancestor);
+                        });
+                    };
+
+                    for (auto &use : root.getUses())
+                    {
+                        if (!mlir::isa<mlir_ts::ReleaseOp>(use.getOwner()) && dominance.properlyDominates(callOp, use.getOwner()) &&
+                            !afterRelease(use.getOwner()))
+                        {
+                            uses.push_back(&use);
+                        }
+                    }
+
+                    for (auto *use : uses)
+                    {
+                        auto *user = use->getOwner();
+                        mlir::Operation *after = callOp;
+                        mlir::Value place = object;
+                        for (auto &[move, read] : movedTo.lookup(object))
+                        {
+                            if (dominance.properlyDominates(move, user) && dominance.properlyDominates(after, move))
+                            {
+                                after = read.getDefiningOp();
+                                place = read;
+                            }
+                        }
+
+                        auto &fieldRead = reads[place];
+                        if (!fieldRead)
+                        {
+                            mlir::OpBuilder builder(callOp->getContext());
+                            builder.setInsertionPointAfter(after);
+                            auto ref = builder.create<mlir_ts::PropertyRefOp>(callOp->getLoc(), fieldRefType, place,
+                                                                              builder.getI32IntegerAttr(kept.first));
+                            fieldRead = builder.create<mlir_ts::LoadOp>(callOp->getLoc(), fieldType, ref);
+                            if (narrowed)
+                            {
+                                fieldRead = builder.create<mlir_ts::CastOp>(callOp->getLoc(), root.getType(), fieldRead);
+                            }
+                        }
+
+                        use->set(fieldRead);
+                    }
+                }
+            }
+
+            // the reads of a moved value's new place nothing uses
+            for (auto &[value, moves] : movedTo)
+            {
+                for (auto &[move, read] : moves)
+                {
+                    llvm::SmallVector<mlir::Operation *> dead{read.getDefiningOp()};
+                    while (!dead.empty())
+                    {
+                        auto *op = dead.pop_back_val();
+                        if (!op || !op->use_empty() || !mlir::isa<mlir_ts::LoadOp, mlir_ts::CastOp, mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp,
+                                                                  mlir_ts::ArithmeticBinaryOp, mlir_ts::ConstantOp, mlir_ts::ValueOrDefaultOp>(op))
+                        {
+                            continue;
+                        }
+
+                        for (auto operand : op->getOperands())
+                        {
+                            dead.push_back(operand.getDefiningOp());
+                        }
+
+                        op->erase();
+                    }
                 }
             }
 

@@ -10,6 +10,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -222,7 +223,8 @@ void readBorrowFacts(CompileOptions &compileOptions)
 // Called before the module is compiled: the ownership signature pass reads them (MLIRGen puts
 // them on the module). Only under own, and only from the files --own-facts names: the objects of
 // the modules this one imports, which the build links with it - so, like a library's borrow facts,
-// they describe the code that runs. A file that is missing or holds none gives no facts.
+// they describe the code that runs. A file that is missing (with a warning) or holds none gives no
+// facts.
 void readOwnFacts(CompileOptions &compileOptions)
 {
     if (compileOptions.memoryModel != MemoryModelOwn)
@@ -236,6 +238,19 @@ void readOwnFacts(CompileOptions &compileOptions)
     // its facts are read from its file, as its borrow facts are (readBorrowFacts). Without them
     // every call into the library may destroy anything.
     std::vector<std::string> files(ownFacts.begin(), ownFacts.end());
+
+    // a file --own-facts names that is not there (not built yet, a wrong path) still gives no facts,
+    // but says so: every call into its module may then destroy anything, and the errors that follow
+    // read as the program's own (TSLANG 51)
+    for (auto &file : files)
+    {
+        if (!llvm::sys::fs::is_regular_file(file))
+        {
+            llvm::WithColor::warning(llvm::errs(), "tslang")
+                << "--own-facts: '" << file << "' does not exist; calls into its module are taken to release or overwrite anything\n";
+        }
+    }
+
     std::string jitDefaultLib;
     if (!compileOptions.noDefaultLib)
     {
