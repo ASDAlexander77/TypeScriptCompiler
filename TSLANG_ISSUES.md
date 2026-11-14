@@ -634,7 +634,7 @@ into what follows the move, from where the value is held and was not moved. The 
 use after the paths join is still refused, a copyable value's read included (`own_string_copy_branch.ts`). Regression tests `tslang/test/tester/tests/00tslang_issue_81.ts`
 (every model) and `own/own_err_moved_on_some_paths_used.ts`.
 
-82 (a borrow of a call's result across a store of an unrelated type: `const texture = this.swapChain.texture(index);
+84 (a borrow of a call's result across a store of an unrelated type: `const texture = this.swapChain.texture(index);
 ...; this.recordTriangle(commandBuffer); ...; commandBuffer.textureBarrier(texture, ...)` in
 `examples/nri/color_write_enable_nri.ts`, where `recordTriangle` stores a pipeline into
 `this.trianglePipelines[enabled]`, refused "borrows the result of 'NriSwapChain.texture' but is used here after
@@ -646,7 +646,7 @@ declared @cpp one, which holds nothing of ours (MLIRGen lists them on the module
 Any other class may be a subclass's object, holding anything, and an interface, `any` or a function may hold
 anything too. The borrowed value too must be of a @final class, or an array. In the sweep,
 `color_write_enable_nri.ts` and `logic_op_dynamic_state_nri.ts` compile. Regression tests
-`tslang/test/tester/tests/00tslang_issue_82.ts` (every model) and `own/own_err_borrowed_result_holder_stored.ts`.
+`tslang/test/tester/tests/00tslang_issue_84.ts` (every model) and `own/own_err_borrowed_result_holder_stored.ts`.
 
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
@@ -678,7 +678,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   "used here after its value was moved" (27), and an element borrowed and stored (21) or used after it may be
   released (20).
 
-82 (open, found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `examples/raytracing_mini_engine.ts`
+82 (fixed; found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `examples/raytracing_mini_engine.ts`
 `computeAO`): a closure that calls another closure it captured makes its method count as freeing
 anything, so every caller's borrows end at the call. Run with `-mm=own --emit=obj`:
 
@@ -716,7 +716,15 @@ FieldDrops resolves a call made inside a lambda through a captured value. Workar
 native_ts_graphics: the helper is a module-level function (`refinedReciprocal`) instead of a closure
 capturing `f`.
 
-83 (open, found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `hdr_display`, `hdr_display_nri`):
+Fixed: the signature pass took a call through a field of the closure's capture box (its first argument) as a
+callback it knows nothing of. A captured function value now resolves to the functions stored into that
+field, when every store into it, in each function that makes or calls the closure with a box, is a
+function's symbol, and the closures given the box write none of its fields. `const f = ...` captured by
+`rcp` is then a call of `f`'s function. A captured `let` another closure assigns stays unknown. Regression
+tests `tslang/test/tester/tests/00tslang_issue_82.ts` (every model) and
+`own/own_err_closure_reassigned_captured_call.ts`.
+
+83 (fixed; found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `hdr_display`, `hdr_display_nri`):
 under `-mm=own`, a row of a module-level array of arrays bound to a local (`const meta = POOL[idx];`)
 is freed at the local's end, so the second call frees it again: the program hangs (here, and in
 hdr_display at exit in mimalloc's `mi_process_done` -> `_mi_page_free_collect`, a cyclic free list) or
@@ -743,6 +751,14 @@ borrow of a global's element seems to be taken as an owned value when the elemen
 Workaround in native_ts_graphics: `.slice()` (a copy) at the three such sites (`hdr_display.ts`,
 `hdr_display_nri.ts`, `raytracing_mini_engine.ts`; native_ts_graphics #322). 61 (immortal array globals,
 after 5aa1cdb0) may cover this; not rechecked on a head with it.
+
+Fixed (it still hung after 61 and #856): `POOL` passed for a keeper, an array global whose elements are
+immortal, because its literal's elements are constants. Its rows are constant arrays, though, each a block
+the literal makes, and nothing makes them immortal. A keeper's element read is no borrow, so `meta` owned the
+row and freed it on each call. A global whose literal has constant arrays (or tuples) for elements is no
+keeper now, so a read of its row is a borrow, and the local releases nothing. Scalar and string constants
+still make one. Regression test `tslang/test/tester/tests/00tslang_issue_83.ts` (every model; built with the
+old compiler, its exe hangs at exit).
 
 native_ts_graphics: with #321 and #322 (2026-11-14, on 5aa1cdb0 with workarounds) every source compiles
 under `-mm=own` and its ctest passes 525/525, as under gc and rc.
