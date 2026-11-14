@@ -289,6 +289,23 @@ own now (`bokeh`, `calibrated_timestamps`, `shader_debugprintf`, `simple_compute
 `simple_pbr`), 143 of the 276 sources still fail. Regression tests `tslang/test/tester/tests/00tslang_issue_53.ts`
 (every model) and `own/own_err_kept_by_constructor_reset.ts`.
 
+54 (a value merged from a `?:` whose branches each bring a fresh value or null: `const pipeline =
+loaded ? device.createPipelineFromDesc(layout, desc) : null; ... this.blitPipelines.push(pipeline)` in
+`core/nri_donut_textures.ts`, refused "is merged from several branches; -mm=own cannot prove which one
+owns it yet") is fixed. Such a merge is the function's own when every way into it brings a fresh value
+that nothing else uses (a call's result, a `new`, another such merge) or null or undefined: rc gave it the
+one reference it holds. It moves like the call's result itself, and 50, 52 and 53 follow it after the
+move. In a loop's body each iteration's merge is a value of its own. Two checks took a block argument,
+which has no defining op, for a value made before the loop: the release at the end of one iteration
+looked like a second release of the next iteration's value, and a move in the body looked like a move
+of a value made outside the loop. They now take the argument as made where its block starts. A merge at
+a loop's head (a value carried from one iteration into the next) is not covered. A merge that takes a
+local (`c ? local : null`), a merge moved twice, and one made before a loop and moved in it are still
+refused. `nri_donut_textures.ts` is left with one error, which is its own: `new MipBlit(texture, ...)`
+keeps `this.textures[t]` in a second object, a second owner (an index would do). Merge errors left in
+the sweep: 3. Regression tests `tslang/test/tester/tests/00tslang_issue_54.ts` (every model) and
+`own/own_err_merge_moved_twice.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
