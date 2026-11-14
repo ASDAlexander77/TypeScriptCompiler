@@ -384,6 +384,24 @@ own errors are left (its `@keeps` and `Shared<T>`, below). One site of this shap
 does not reproduce. Regression tests `tslang/test/tester/tests/00tslang_issue_59.ts` (every model) and
 `own/own_err_element_field_moved_replaced.ts`.
 
+60 (the error at a borrow a call ends did not say why, when the callee is a function defined here: `const
+name = this.name; for (...) this.props[i].tick(this.gameTime); ... name` in `core/rtxpt_game.ts`, "borrows a
+field but is used here after it may be released or overwritten", with only "it may be released or
+overwritten here" at the call) is fixed. `Prop.tick` calls `setNodeTransform`, which calls
+`world.setGameNodeTransform(...)`, a method of the exported `GameWorld`. Another module may extend
+`GameWorld` and override it with a method that destroys anything, so `Prop.tick` may too, and the borrows
+of `this.props[i]` and `this.name` end at it. 48 named the method only when the call itself was the
+virtual one. The signature pass now finds, for a call whose callees may destroy anything, the overridable
+call they reach, breadth first through calls that may destroy anything, and the error notes it: "'Prop.tick'
+calls 'setNodeTransform', which calls 'GameWorld.setGameNodeTransform'; that method may be overridden in
+another module by a method that does; '@final' on the method, or on its class, says it is not". Nothing
+compiles that did not: it is the diagnostic. The note is given only when that method is the one
+reason (no other overridable method, unknown or imported callee, or body that destroys anything on the
+way), so `@final` on it is enough. In the sweep, 48 errors carry it, beside the 51 at a direct call of
+such a method: native_ts_graphics' own `@final`s to add (`GameWorld`, `Pose`, `MsvcRandom`, ...). Regression tests
+`tslang/test/tester/tests/00tslang_issue_60.ts` (every model; the shape with `@final`, which compiles) and
+`own/own_err_overridable_reached.ts` (the note).
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`

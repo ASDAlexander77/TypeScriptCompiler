@@ -636,6 +636,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // The FieldDrops of a call's callees together, when every one has them.
     std::optional<FieldDrops> calleesFieldDrops(const Callees &callees);
+    // OWN_OVERRIDABLE_VIA_ATTR_NAME on each call whose callees reach an overridable virtual call
+    // (TSLANG 60)
+    void markOverridableReached();
 
     // A class's vtable is a global named `<class>..vtbl` that holds its `..instanceOf`. An
     // interface's vtable for a class (`B.I..vtbl`) holds only the methods and is not one: a call

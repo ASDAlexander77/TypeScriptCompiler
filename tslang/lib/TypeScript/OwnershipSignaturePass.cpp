@@ -343,6 +343,7 @@ namespace own_signature
             }
         }
 
+        markOverridableReached();
         exportNoDrops();
         ownGlobalInitializerCalls(module);
 
@@ -1815,6 +1816,152 @@ namespace own_signature
                         changed |= mine.add(place);
                     }
                 }
+            }
+        }
+    }
+
+    void OwnershipSignaturePass::markOverridableReached()
+    {
+        // `this.props[i].tick(t)`, where `Prop.tick` calls `setNodeTransform`, which calls
+        // `world.setGameNodeTransform(...)` of an exported class: the outer call may destroy anything
+        // only because of that virtual call, which the error at a borrow it ends names (TSLANG 60). The
+        // way to it is found breadth first, through calls that may destroy anything, so it is a short one.
+        llvm::DenseMap<mlir::Operation *, llvm::SmallVector<Call *>> callsIn;
+        for (auto &call : calls)
+        {
+            callsIn[call.op->getParentOfType<mlir_ts::FuncOp>()].push_back(&call);
+        }
+
+        auto mayDropAnything = [&](const Call &call) {
+            if (call.op->hasAttr(OWN_NO_DROPS_ATTR_NAME) || call.op->hasAttr(OWN_DROP_FIELDS_ATTR_NAME))
+            {
+                return false;
+            }
+
+            auto drops = calleesFieldDrops(call.callees);
+            return !drops || drops->any;
+        };
+
+        // a function's own body destroying anything (not through its calls), as the last round decided it
+        llvm::DenseMap<mlir::Operation *, bool> bodyAny;
+        auto bodyDropsAnything = [&](mlir_ts::FuncOp funcOp) {
+            auto [found, inserted] = bodyAny.try_emplace(funcOp, false);
+            if (inserted)
+            {
+                found->second = dropsInBody(funcOp, true) && fieldDropsInBody(funcOp, true).any;
+            }
+
+            return found->second;
+        };
+
+        // The one overridable method the functions reach, and the way to it - none when they reach
+        // another, or something else that may destroy anything (an unknown or imported callee, a body
+        // that does): `@final` on that method would not be enough then
+        auto explain = [&](llvm::ArrayRef<mlir_ts::FuncOp> funcs) -> mlir::ArrayAttr {
+            // each function reached, and the one that called it on the way
+            llvm::DenseMap<mlir::Operation *, mlir::Operation *> reachedFrom;
+            llvm::SmallVector<mlir_ts::FuncOp> work;
+            for (auto callee : funcs)
+            {
+                if (reachedFrom.try_emplace(callee, nullptr).second)
+                {
+                    work.push_back(callee);
+                }
+            }
+
+            mlir::FlatSymbolRefAttr method;
+            mlir::Operation *holder = nullptr;
+            for (auto next = 0u; next < work.size(); ++next)
+            {
+                auto funcOp = work[next];
+                if (work.size() > 256 || bodyDropsAnything(funcOp))
+                {
+                    return {};
+                }
+
+                for (auto *inner : callsIn[funcOp])
+                {
+                    if (auto overridable = inner->op->getAttrOfType<mlir::FlatSymbolRefAttr>(OWN_OVERRIDABLE_CALL_ATTR_NAME))
+                    {
+                        if (method && method != overridable)
+                        {
+                            return {};
+                        }
+
+                        if (!method)
+                        {
+                            method = overridable;
+                            holder = funcOp;
+                        }
+
+                        continue;
+                    }
+
+                    if (!mayDropAnything(*inner))
+                    {
+                        continue;
+                    }
+
+                    if (!inner->callees.known || inner->callees.imported || inner->callees.funcs.empty())
+                    {
+                        return {};
+                    }
+
+                    for (auto callee : inner->callees.funcs)
+                    {
+                        if (reachedFrom.try_emplace(callee, funcOp).second)
+                        {
+                            work.push_back(callee);
+                        }
+                    }
+                }
+            }
+
+            if (!method)
+            {
+                return {};
+            }
+
+            llvm::SmallVector<mlir::Attribute> path;
+            for (auto *at = holder; at; at = reachedFrom.lookup(at))
+            {
+                path.push_back(mlir::cast<mlir_ts::FuncOp>(at).getSymNameAttr());
+            }
+
+            std::reverse(path.begin(), path.end());
+            path.insert(path.begin(), method);
+            return mlir::ArrayAttr::get(&getContext(), path);
+        };
+
+        // a call of one function, the common case, explained once per function
+        llvm::DenseMap<mlir::Operation *, mlir::ArrayAttr> explained;
+        for (auto &call : calls)
+        {
+            if (!call.callees.known || call.callees.imported || call.callees.funcs.empty() ||
+                call.op->hasAttr(OWN_OVERRIDABLE_CALL_ATTR_NAME) || !mayDropAnything(call))
+            {
+                continue;
+            }
+
+            mlir::ArrayAttr via;
+            if (call.callees.funcs.size() == 1)
+            {
+                auto [found, inserted] = explained.try_emplace(call.callees.funcs.front(), mlir::ArrayAttr());
+                if (inserted)
+                {
+                    found->second = explain(call.callees.funcs);
+                }
+
+                via = found->second;
+            }
+            else
+            {
+                via = explain(call.callees.funcs);
+            }
+
+            if (via)
+            {
+                call.op->setAttr(OWN_OVERRIDABLE_VIA_ATTR_NAME, via);
             }
         }
     }
