@@ -5196,7 +5196,7 @@ set(own_error_cases
     "own_err_merge_root_assigned|:36:12: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_container_read_stored|:27:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_field_let_overwritten|:28:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_field_let_assigned|:26:5: error: '[^']*' borrows a field and cannot be assigned"
+    "own_err_field_let_assigned|:12:5: error: '[^']*' borrows a field and cannot be assigned"
     "own_err_call_drops_indirectly|:24:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_call_given_borrow|:21:5: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
     "own_err_call_this_borrow|:19:5: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
