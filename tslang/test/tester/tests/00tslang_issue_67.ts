@@ -3,7 +3,8 @@
 //     this.constantViews.push(view); return view;` - a value pushed only where it is not null, then used
 //     where the paths meet: the element pushed, or null.
 // 68: examples/conservative_rasterization.ts, `ImGui.text(`...: ${this.yesNo(p[3])}`)` with `yesNo`
-//     returning `v != 0.0 ? "yes" : "no"` - a union of string literals read as a `string`.
+//     returning `v != 0.0 ? "yes" : "no"` - a union of string literals read as a `string`. It allows
+//     those literals only: `"maybe"`, or a `string`, given to it is an error (TS2322).
 
 class View {
     constructor(public n: int) {}
@@ -60,7 +61,10 @@ class App {
     }
 
     texts(p: number[]): int {
-        const s = yesNo(p[0]);
+        let s = yesNo(p[0]);
+        if (p[1] == 0.0) {
+            s = "no";
+        }
         return show(`a: ${yesNo(p[0])}`) + show(`b: ${this.yesNo(p[1])}`) + show("c: " + s) + show(yesNo(p[1]));
     }
 }
@@ -71,6 +75,6 @@ function main() {
     assert(v != null && v.n == 3 && app.view(0) == null);
     assert(app.count(4) == 4 && app.count(0) == -1);
     assert(app.fill(4) == 202 && app.views.length == 4);
-    assert(app.texts([1.0, 0.0]) == 6 + 5 + 6 + 2);
+    assert(app.texts([1.0, 0.0]) == 6 + 5 + 5 + 2);
     print("done.");
 }
