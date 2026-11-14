@@ -160,6 +160,8 @@
 #define OWN_BORROWING_FIELDS_ATTR_NAME "ts.own_borrowing_fields"
 // [class storage type, field position] of each field a back-reference is stored into (own spec 70)
 #define OWN_BACK_REFERENCE_FIELDS_ATTR_NAME "ts.own_back_reference_fields"
+// the private fields of this module's classes nothing writes after the constructor (TSLANG 73)
+#define OWN_STABLE_FIELDS_ATTR_NAME "ts.own_stable_fields"
 // -mm=own only, set by OwnershipSignaturePass on the module, in the same shape: the fields of a
 // generator's state object - its locals - read only to be yielded (`const groups = [...r]; yield
 // groups`). A yield moves what such a field holds to the caller, so the field never owns it: an

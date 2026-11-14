@@ -1923,11 +1923,12 @@ endforeach()
 # TSLANG_ISSUES 67-68: a value pushed only where it is not null; a union of string literals read as a string
 # TSLANG_ISSUES 69-70: a value moved on every path, by a different move on each; a constant literal global given to a keeping call
 # TSLANG_ISSUES 71-72: a narrowed value kept by a constructor; a local kept by a constructor or pushed, then read
+# TSLANG_ISSUES 73: a private field nothing writes after the constructor, borrowed across a call that runs callbacks
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
                         00tslang_issue_58 00tslang_issue_59 00tslang_issue_60
-                        00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71)
+                        00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71 00tslang_issue_73)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5504,7 +5505,8 @@ set(own_error_cases
     "own_err_split_let_field_overwritten|:14:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_pushed_or_null_popped|:17:23: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_moved_on_two_of_three_paths|:16:13: error: '[^']*' is moved here on some paths only"
-    "own_err_kept_local_array_popped|:16:22: error: '[^']*' borrows an element but is used here after it may be released or overwritten")
+    "own_err_kept_local_array_popped|:16:22: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_private_field_written_callback|:33:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

@@ -691,6 +691,23 @@ namespace own_inference
                 return false;
             }
 
+            // a private field nothing writes after construction, read straight off a parameter or `this`
+            // (TSLANG 73): no call overwrites it, and it is released only with its object, which the
+            // caller holds while this function runs
+            if (read && chain.places.size() == 1 && !chain.anyPlace)
+            {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+                auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+                auto objectLoad = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                auto objectSlot = objectLoad ? objectLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                int index = -1;
+                if (propertyRefOp && isStableField(propertyRefOp.getResult()) && objectSlot && isParameterSlot(objectSlot, index) &&
+                    isUnassignedSlot(objectSlot.getResult()))
+                {
+                    return false;
+                }
+            }
+
             // a call given a closure may run it, and its box may hold anything
             auto givenClosure = llvm::any_of(drop->getOperands(), holdsCaptures);
             auto mayDrop = true;

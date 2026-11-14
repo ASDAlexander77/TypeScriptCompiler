@@ -144,6 +144,45 @@ namespace own_signature
                             mlir::ArrayAttr::get(&getContext(), backReferenceFields.getArrayRef()));
         }
 
+        // the private fields nothing writes but their class's constructor (TSLANG 73): `constructor(private
+        // sample: NriSample)`. Only the class's own methods may write a private field, and they are all here
+        // (its constructor is), so once the object is made no call - a callback included - overwrites it:
+        // the field is released only with its object.
+        llvm::DenseMap<std::pair<mlir::Type, int64_t>, bool> writtenAfterConstruction;
+        module.walk([&](mlir_ts::PropertyRefOp propertyRefOp) {
+            auto storage = fieldOwnerStorage(propertyRefOp);
+            if (!storage)
+            {
+                return;
+            }
+
+            auto &written = writtenAfterConstruction[{storage, propertyRefOp.getPosition()}];
+            auto funcOp = propertyRefOp->getParentOfType<mlir_ts::FuncOp>();
+            auto inConstructor = funcOp && funcOp.getSymName() == (storage.getName().getAttr().getValue() + ".constructor").str();
+            auto onlyRead = llvm::all_of(propertyRefOp->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+            written = written || (!onlyRead && !inConstructor);
+        });
+        llvm::SetVector<mlir::Attribute> stableFields;
+        for (auto &[key, written] : writtenAfterConstruction)
+        {
+            auto storage = mlir::cast<mlir_ts::ClassStorageType>(key.first);
+            auto constructor = functions.lookup((storage.getName().getAttr().getValue() + ".constructor").str());
+            auto fields = storage.getFields();
+            if (written || !constructor || constructor.isExternal() || key.second < 0 ||
+                static_cast<size_t>(key.second) >= fields.size() || fields[key.second].accessLevel != mlir_ts::AccessLevel::Private)
+            {
+                continue;
+            }
+
+            stableFields.insert(mlir::ArrayAttr::get(
+                &getContext(), {mlir::TypeAttr::get(storage), mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), key.second)}));
+        }
+
+        if (!stableFields.empty())
+        {
+            module->setAttr(OWN_STABLE_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), stableFields.getArrayRef()));
+        }
+
         if (auto functionsDropping = module->getAttrOfType<mlir::DictionaryAttr>(SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME))
         {
             for (auto entry : functionsDropping)

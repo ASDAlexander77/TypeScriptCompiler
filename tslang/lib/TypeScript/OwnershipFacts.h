@@ -2327,6 +2327,25 @@ inline mlir_ts::ClassStorageType fieldOwnerStorage(mlir_ts::PropertyRefOp proper
     return mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
 }
 
+// Is `ref` a private field nothing writes after its object's constructor (OWN_STABLE_FIELDS_ATTR_NAME, the
+// signature pass's, TSLANG 73)?
+inline bool isStableField(mlir::Value ref)
+{
+    auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+    auto storage = propertyRefOp ? fieldOwnerStorage(propertyRefOp) : mlir_ts::ClassStorageType();
+    auto module = propertyRefOp ? propertyRefOp->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp();
+    auto entries = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_STABLE_FIELDS_ATTR_NAME) : mlir::ArrayAttr();
+    if (!storage || !entries)
+    {
+        return false;
+    }
+
+    return llvm::any_of(entries.getAsRange<mlir::ArrayAttr>(), [&](mlir::ArrayAttr entry) {
+        return mlir::cast<mlir::TypeAttr>(entry[0]).getValue() == storage &&
+               mlir::cast<mlir::IntegerAttr>(entry[1]).getInt() == propertyRefOp.getPosition();
+    });
+}
+
 // Is `ref` a field some back-reference is stored into (OWN_BACK_REFERENCE_FIELDS_ATTR_NAME, the
 // signature pass's)? What it holds may borrow the object it is in, so it is never taken out of it
 inline bool isBackReferenceField(mlir::Value ref)
