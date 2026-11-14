@@ -1091,10 +1091,13 @@ namespace own_inference
                 continue;
             }
 
+            // the value is made again before the taker runs again - a merge (a block's argument,
+            // whose definition is its block's first op) made on entering the taker's block, even
+            // when that first op is the taker itself (`const s = c ? t0 : t1` in a loop, TSLANG 58)
             if (kill && kill->getBlock() == block &&
-                (block != top->getBlock() || kill->isBeforeInBlock(top)))
+                (block != top->getBlock() || kill == top || kill->isBeforeInBlock(top)))
             {
-                continue; // the value is made again before the taker runs again
+                continue;
             }
 
             if (block == top->getBlock())

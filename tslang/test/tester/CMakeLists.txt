@@ -1911,9 +1911,11 @@ endforeach()
 # TSLANG_ISSUES 55: an array literal of fields, only read, borrows them
 # TSLANG_ISSUES 56: a `let` given only fields borrows each until the next assignment
 # TSLANG_ISSUES 57: a `let` that only holds parameters owns nothing
+# TSLANG_ISSUES 58: a `const` declared from a merge of owning locals borrows them; a merge made in a loop's body
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
-                        00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57)
+                        00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
+                        00tslang_issue_58)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5463,7 +5465,9 @@ set(own_error_cases
     "own_err_merge_moved_twice|:19:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_borrowing_array_field_reset|:13:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_let_borrows_reassigned_overwritten|:17:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_parameter_let_stored|:10:5: error: '[^']*' takes a second reference")
+    "own_err_parameter_let_stored|:10:5: error: '[^']*' takes a second reference"
+    "own_err_merged_locals_overwritten|:11:16: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
+    "own_err_merged_locals_moved|:12:5: error: '[^']*' is moved here while '[^']*' borrows it")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

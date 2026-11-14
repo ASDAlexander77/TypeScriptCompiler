@@ -393,6 +393,7 @@ namespace own_inference
         fieldBorrowRetains.clear();
         fieldBorrowReleases.clear();
         mergeBorrowRetains.clear();
+        mergedSlotRetains.clear();
         captureStores.clear();
         captureRetains.clear();
         callCopies.clear();
@@ -700,6 +701,27 @@ namespace own_inference
             {
                 slotReceivers[load.getReference()].push_back({op, value, load});
                 continue;
+            }
+
+            // a `let` declared from a merge of owning locals (TSLANG 58): it borrows each of them
+            if (auto argument = value ? mlir::dyn_cast<mlir::BlockArgument>(rootOf(value)) : mlir::BlockArgument();
+                argument && mlir::isa<mlir_ts::RetainSlotOp>(op) && borrowerOf(op))
+            {
+                llvm::SmallVector<mlir_ts::LoadOp> loads;
+                if (slotLoadsOfMerge(argument, loads) && !loads.empty())
+                {
+                    mergedSlotRetains.insert(op);
+                    llvm::SmallPtrSet<mlir::Value, 4> slots;
+                    for (auto load : loads)
+                    {
+                        if (slots.insert(load.getReference()).second)
+                        {
+                            slotReceivers[load.getReference()].push_back({op, value, load});
+                        }
+                    }
+
+                    continue;
+                }
             }
 
             if (value && isReadOutOfException(value))
