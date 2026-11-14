@@ -141,7 +141,11 @@ namespace own_signature
         llvm::MapVector<mlir_ts::GlobalOp, std::pair<mlir::Value, mlir_ts::StoreOp>> candidates;
         auto mth = typeHelper(&getContext());
         module.walk([&](mlir_ts::GlobalOp globalOp) {
-            if (!mlir::isa<mlir_ts::ClassType>(globalOp.getType()) || !mth.ownsHeapMemory(globalOp.getLoc(), globalOp.getType()) ||
+            // a class's object, or an array (TSLANG 61: `const CUBE_VERTICES = [...]`, read into
+            // `[CUBE_VERTICES, PLANE_VERTICES]`): one block the global keeps, whose elements stay the
+            // array's, freed as any place's old value is when overwritten
+            if (!mlir::isa<mlir_ts::ClassType, mlir_ts::ArrayType>(globalOp.getType()) ||
+                !mth.ownsHeapMemory(globalOp.getLoc(), globalOp.getType()) ||
                 globalOp->hasAttr("export") || globalOp->hasAttr("import") || globalOp->hasAttr(DLL_EXPORT) ||
                 globalOp->hasAttr(DLL_IMPORT) || !globalOp.getInitializerRegion().hasOneBlock())
             {
