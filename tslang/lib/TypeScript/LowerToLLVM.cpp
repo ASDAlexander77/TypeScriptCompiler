@@ -786,7 +786,18 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             auto releaseSlot = [&]() {
-                orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+                auto elementType = cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType();
+                // a local array literal that only borrowed its elements (-mm=own's
+                // classifyLocalBorrowingArrays): the array goes, its elements stay with their owners
+                if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(elementType); arrayType && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
+                {
+                    TypeHelper th(rewriter);
+                    auto header = rewriter.create<LLVM::LoadOp>(op->getLoc(), th.getPtrType(), transformed.getSlot());
+                    orl.emitReleaseArrayShallow(arrayType, header);
+                    return;
+                }
+
+                orl.emitReleaseSlot(elementType, transformed.getSlot());
             };
 
             // an interface's field filled by a setter has no slot: the setter lets go of what it held

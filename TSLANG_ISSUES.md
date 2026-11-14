@@ -306,6 +306,23 @@ keeps `this.textures[t]` in a second object, a second owner (an index would do).
 the sweep: 3. Regression tests `tslang/test/tester/tests/00tslang_issue_54.ts` (every model) and
 `own/own_err_merge_moved_twice.ts`.
 
+55 (an array literal of fields: `const directions = [this.dir, this.dir, this.right, this.right, this.up,
+this.up]` in `core/donut_first_person_camera.ts`, `const pipelines = [this.a, this.b, this.c]` and
+`for (const p of [this.a, this.b])` in the examples, refused "borrows a field and cannot be stored") is
+fixed. An array literal that is only read (its length and its elements), held in a local or used as it
+is, and whose elements are each a read out of a field or an element or a parameter, borrows its
+elements while it is used, as the array a rest parameter is given already did (spec 49). Its release
+gives back the array and not the elements, so the same field twice is fine. Every use of the array,
+and of what is read out of it, is a use of each element: a field written, or a call that may write
+it, before such a use is still refused, "borrows a field but is used here after it may be released
+or overwritten". So is an array written, stored, returned, captured or given to a call, one with a
+fresh element, or an element read out of it and stored. Spec section 80 has the rules. In the sweep,
+array literals of fields refused went from 18 to 1 (`this.options = [...]` stores it: refused, rightly),
+and `donut_first_person_camera.ts` is left with the two errors of a `let` that borrows a field and is
+given a new array (`let dir = this.dir; ... dir = rotateAround(...)`). Regression tests
+`tslang/test/tester/tests/00tslang_issue_55.ts` (every model, and as an exe) and
+`own/own_err_borrowing_array_field_reset.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still

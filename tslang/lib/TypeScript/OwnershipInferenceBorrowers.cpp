@@ -425,6 +425,18 @@ namespace own_inference
                     }
                 }
 
+                // an element of an array literal that only borrows (TSLANG 55): whatever uses the
+                // array reads it - and nothing else: its release leaves the element to its owner
+                if (auto found = arrayElementUses.find(user); found != arrayElementUses.end())
+                {
+                    for (auto &arrayUse : found->second)
+                    {
+                        uses.push_back({arrayUse.op, pending.kills, arrayUse.callee});
+                    }
+
+                    continue;
+                }
+
                 if (pending.borrowed && keeping.returns && mlir::isa<mlir_ts::ReturnInternalOp>(user))
                 {
                     continue;

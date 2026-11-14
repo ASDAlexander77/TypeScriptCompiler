@@ -307,6 +307,8 @@ namespace own_inference
         classifyRecords();
         // ...and whether an array given to a rest parameter takes its elements (spec 49)
         classifyArgumentArrays();
+        // ...and whether an array literal in a local only borrows its elements (TSLANG 55)
+        classifyLocalBorrowingArrays();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {
@@ -399,6 +401,7 @@ namespace own_inference
         returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
         records.clear();
         recordStoreUses.clear();
+        arrayElementUses.clear();
     }
 
     // A store of a value that owns a block into a parameter's own slot: the function's argument, which no local
