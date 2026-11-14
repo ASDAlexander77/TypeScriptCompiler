@@ -1076,36 +1076,9 @@ namespace own_inference
         auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(taking->getOwner());
         auto intoPlace = storeOp && storeOp.getValue() == taking->get() &&
                          mlir::isa_and_nonnull<mlir_ts::ElementRefOp, mlir_ts::PropertyRefOp>(storeOp.getReference().getDefiningOp());
-        // ...unless the parameter is read again after the store (`constructor(public name: string)`, then
-        // `${name}` in a loop that calls): moved, the read would find it gone; a copy leaves it the
-        // parameter's own (TSLANG 80)
-        auto readAgain = [&]() {
-            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
-            auto slot = loadOp ? loadOp.getReference() : mlir::Value();
-            if (!intoPlace || !slot || !slot.getDefiningOp<mlir_ts::VariableOp>())
-            {
-                return false;
-            }
-
-            return llvm::any_of(slot.getUsers(), [&](mlir::Operation *user) {
-                if (user == loadOp.getOperation() || !mlir::isa<mlir_ts::LoadOp>(user))
-                {
-                    return false;
-                }
-
-                if (user->getBlock() == storeOp->getBlock() && storeOp->isBeforeInBlock(user))
-                {
-                    return true;
-                }
-
-                return llvm::any_of(storeOp->getBlock()->getSuccessors(),
-                                    [&](mlir::Block *successor) { return reachableFrom(successor, user, {}); });
-            });
-        };
         if (borrowsKnownParam(value) &&
             !(intoPlace && borrowedParam(value) == returnsBorrowOf &&
-              !llvm::is_contained(ownedParams(getFunction()), returnsBorrowOf)) &&
-            !readAgain())
+              !llvm::is_contained(ownedParams(getFunction()), returnsBorrowOf)))
         {
             return false;
         }

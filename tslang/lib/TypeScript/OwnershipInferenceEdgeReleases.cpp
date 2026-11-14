@@ -484,7 +484,7 @@ namespace own_inference
     }
 
     bool OwnershipInferencePass::valueUnmovedEdges(mlir::Value value, mlir::Operation *definition, mlir::Operation *acquire,
-                                                   mlir::Operation *release)
+                                                   mlir::Operation *taker, mlir::Operation *release)
     {
         auto &body = getFunction().getFunctionBody();
         if (!definition || definition->getParentRegion() != &body || acquire->getParentRegion() != &body ||
@@ -510,6 +510,25 @@ namespace own_inference
         }
 
         if (!after.contains(release->getBlock()) || after.contains(moveBlock))
+        {
+            return false;
+        }
+
+        // nothing reads the value where the ways join: released on an edge into there, it is gone
+        // (a copyable value's read after the move is not one the moves refuse)
+        auto usedAfter = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
+            auto *top = body.findAncestorOpInRegion(*user);
+            if (!top || user == release || user == taker || top == body.findAncestorOpInRegion(*taker) ||
+                mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(user))
+            {
+                return;
+            }
+
+            usedAfter = usedAfter || after.contains(top->getBlock()) ||
+                        (top->getBlock() == moveBlock && acquire->isBeforeInBlock(top) && top != acquire);
+        });
+        if (usedAfter)
         {
             return false;
         }

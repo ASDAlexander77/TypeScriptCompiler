@@ -1044,7 +1044,7 @@ namespace own_inference
                 if (!dominance->properlyDominates(acquire, release) &&
                     !emptyWhereNotMoved(value, definition, acquire, release) &&
                     !(definition && takers.size() > 1 && !reachableAfter(definition, release, takers)) &&
-                    !(takers.size() == 1 && valueUnmovedEdges(value, definition, acquire, release)))
+                    !(takers.size() == 1 && valueUnmovedEdges(value, definition, acquire, taker, release)))
                 {
                     reportMovedOnSomePaths(taker, release, name);
                     return false;

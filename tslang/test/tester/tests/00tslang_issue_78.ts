@@ -46,4 +46,23 @@ function fieldStore() {
     objects.push(o);
 }
 
-function main() { assert(new App().build() == 3, "bufs"); fieldStore(); print("done."); }
+// an array stored into a field of a local object and read through a local declared from the store
+// (was own_err_two_owners: the local now reads the field)
+class N {
+    v: number[] = [0];
+}
+
+function aliasedStore(): number {
+    let sum = 0;
+    for (let i = 0; i < 1000; i++) {
+        const n = new N();
+        let a = (n.v = [i, i + 1]);
+        const filler = [i, i, i, i];
+        sum += a[1] - i + filler.length;
+    }
+
+    return sum;
+}
+
+function main() { assert(new App().build() == 3, "bufs"); fieldStore(); assert(aliasedStore() == 5000, "aliased");
+    print("done."); }
