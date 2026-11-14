@@ -22,6 +22,14 @@ function show(s: string): int {
     return s.length;
 }
 
+// a parameter property typed by its default holds any string, not only that literal
+class Pattern {
+    constructor(private source: string, private flags = "") {}
+    text() {
+        return this.source + "/" + this.flags;
+    }
+}
+
 class App {
     views: View[] = [];
 
@@ -76,5 +84,7 @@ function main() {
     assert(app.count(4) == 4 && app.count(0) == -1);
     assert(app.fill(4) == 202 && app.views.length == 4);
     assert(app.texts([1.0, 0.0]) == 6 + 5 + 5 + 2);
+    const flags: string = "g";
+    assert(new Pattern("a", flags).text() == "a/g" && new Pattern("b").text() == "b/");
     print("done.");
 }
