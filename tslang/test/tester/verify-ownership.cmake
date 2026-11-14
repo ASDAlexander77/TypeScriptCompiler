@@ -66,6 +66,11 @@ set(not_compilable_alone
     assign_number_to_string_error.ts
     # an error by design (test-compile-argument-string-to-number-error)
     argument_string_to_number_error.ts
+    # errors by design (test-compile-assign-string-literal-union-error, -string-to-literal-union-error,
+    # test-compile-argument-string-literal-union-error)
+    assign_string_literal_union_error.ts
+    assign_string_to_literal_union_error.ts
+    argument_string_literal_union_error.ts
     # errors by design (test-compile-assign-boolean-to-number-error, -boolean-to-string-error,
     # -number-to-boolean-error, test-compile-argument-boolean-to-number-error)
     assign_boolean_to_number_error.ts

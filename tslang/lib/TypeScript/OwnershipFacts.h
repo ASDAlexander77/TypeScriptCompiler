@@ -409,11 +409,11 @@ inline bool isView(mlir::Operation *op)
     auto out = castOp.getType();
     auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
                           (isStringOrArray(out) && holdsAsIs(in, out, true));
-    // ...or text seen as other text, each one pointer: a string, a string literal, or a union of them
-    // (and null) that needs no tag - `"yes" | "no"` read as a `string` (TSLANG 68). An optional is
-    // `{ptr, i1}`, not one of them.
+    // ...or text seen as other text, each one pointer: a string, or a union of strings and string
+    // literals (and null) that needs no tag - `"yes" | "no"` read as a `string` (TSLANG 68). An optional
+    // is `{ptr, i1}`, not one of them; a cast of a literal is a constant's read, which stays one.
     auto isOnePointerText = [](mlir::Type type) {
-        return !mlir::isa<mlir_ts::OptionalType>(type) && isCopyableString(type);
+        return mlir::isa<mlir_ts::StringType, mlir_ts::UnionType>(type) && isCopyableString(type);
     };
     isNullableView = isNullableView || (isOnePointerText(in) && isOnePointerText(out));
     // a `@value` value seen as the tuple it is laid out as, or a tuple seen as the value: the same
