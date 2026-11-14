@@ -509,6 +509,24 @@ Regression tests
 `tslang/test/tester/tests/assign_string_literal_union_error.ts`, `assign_string_to_literal_union_error.ts`
 and `argument_string_literal_union_error.ts`.
 
+69 (a value moved on every path, by a different move on each: `const node = new SceneNode(...); if
+(SCENE_ORDER[o] == TESSELLATED) this.tessNodes.push(node); else { ... this.baselineNodes.push(node); }` in
+`examples/nri/extended_dynamic_state2_nri.ts`, refused "is moved here on some paths only; -mm=own cannot
+release it on the others yet") is fixed. Each move was judged alone: the value's release where the paths meet
+was past this move on some paths, and on the others past a move it did not look at. A release no path reaches
+from the value's making without passing one of its moves is past a move on each, and goes. A path that moves
+it nowhere (`if ... else if ...` with no `else`) is still refused, and so is a use after the moves. In the
+sweep, 4 errors less. Regression tests `tslang/test/tester/tests/00tslang_issue_69.ts` (every model; it holds
+70 too) and `own/own_err_moved_on_two_of_three_paths.ts`.
+
+70 (a constant global of a string literal's type given to a call that keeps it: `this.loadTexture(device,
+FLAME_TEXTURE_PATH)` in `examples/nri/ray_tracing_extended_nri.ts`, with `const FLAME_TEXTURE_PATH = "..."` in
+its namespace and `loadTexture` pushing the path into `textureNames`, refused "is given to ..., which keeps
+it, but -mm=own cannot move it here: this function does not own it") is fixed. The global is a constant whose
+type is the literal, so it holds that literal and nothing else, in read-only data: given to a keeper, it is the
+literal itself, as `"..."` written in place is. 69 exposed it: `loadTexture` is now found to keep its path. In the sweep, the 2 errors it gave
+(in `ray_tracing_extended_nri.ts` and `ray_tracing_invocation_reorder_nri.ts`) are gone.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -519,7 +537,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
   `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-68 in, 116 of the 276 sources fail (639 errors). The
+  which #310 did not port: with every facts object built and 50-70 in, 116 of the 276 sources fail (635 errors). The
   largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
   93 of them `this.sample.run` callbacks), then "used here after its value was moved" (52: mostly a value a pushed object or an
   earlier call keeps, then returned or used).
