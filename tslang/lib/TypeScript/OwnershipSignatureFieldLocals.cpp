@@ -720,6 +720,71 @@ namespace own_signature
             // comes before the store (TSLANG 65: `let pipeline = null; if (ok) pipeline = make(); this.
             // pipelines[i] = pipeline; return pipeline;`), every later read of the local the store
             // dominates. False when the value is neither.
+            // Can control go from `from` to `to`, `to` after `from` in its block or in a block after -
+            // not through `avoided` (a local's declaration, which starts it afresh)?
+            auto reaches = [&](mlir::Operation *from, mlir::Operation *to, mlir::Block *avoided = nullptr) {
+                if (from->getBlock() == to->getBlock() && from->isBeforeInBlock(to))
+                {
+                    return true;
+                }
+
+                llvm::SmallPtrSet<mlir::Block *, 16> seen;
+                llvm::SmallVector<mlir::Block *> work(from->getBlock()->getSuccessors().begin(), from->getBlock()->getSuccessors().end());
+                while (!work.empty())
+                {
+                    auto *next = work.pop_back_val();
+                    if (next == to->getBlock())
+                    {
+                        return true;
+                    }
+
+                    if (next == avoided)
+                    {
+                        continue;
+                    }
+
+                    if (seen.insert(next).second)
+                    {
+                        work.append(next->getSuccessors().begin(), next->getSuccessors().end());
+                    }
+                }
+
+                return false;
+            };
+
+            // Does control come back to `op` on a way that does not declare `slot` again first?
+            auto runsAgainUndeclared = [&](mlir::Operation *op, mlir_ts::VariableOp slot) {
+                if (op->getParentRegion() != slot->getParentRegion() || !dominance.properlyDominates(slot.getOperation(), op))
+                {
+                    return true;
+                }
+
+                // the declaration's block, between it and `op` (in the same block: before it)
+                auto *declared = slot->getBlock();
+                llvm::SmallPtrSet<mlir::Block *, 16> seen;
+                llvm::SmallVector<mlir::Block *> work(op->getBlock()->getSuccessors().begin(), op->getBlock()->getSuccessors().end());
+                while (!work.empty())
+                {
+                    auto *next = work.pop_back_val();
+                    if (next == declared)
+                    {
+                        continue;
+                    }
+
+                    if (next == op->getBlock())
+                    {
+                        return true;
+                    }
+
+                    if (seen.insert(next).second)
+                    {
+                        work.append(next->getSuccessors().begin(), next->getSuccessors().end());
+                    }
+                }
+
+                return false;
+            };
+
             auto usesAfterMove = [&](mlir::Operation *store, mlir::Value root, llvm::SmallVectorImpl<mlir::OpOperand *> &uses) {
                 auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
                 auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
@@ -743,9 +808,10 @@ namespace own_signature
                 }
 
                 // run once (not in a loop), so an assignment the store does not dominate runs before it
-                // or on a way that does not reach the reads after it
+                // or on a way that does not reach the reads after it - or once for each time the local
+                // is declared: `for (...) { const t = []; ...; new Node(t); t[0] }` (TSLANG 72)
                 if (!own_facts::isOwningVariable(slot) || slot.getCaptured().value_or(false) || slot->getParentRegion() != body ||
-                    mayRunAgain(store))
+                    (mayRunAgain(store) && runsAgainUndeclared(store, slot)))
                 {
                     return false;
                 }
@@ -756,6 +822,14 @@ namespace own_signature
                         assignment && assignment.getReference() == slot.getResult() && dominance.dominates(store, assignment))
                     {
                         return false;
+                    }
+
+                    // an array filled in place through the local before the move: `t.push(x)` (TSLANG 72)
+                    if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                                  mlir_ts::ArraySpliceOp>(user) &&
+                        !reaches(store, user, slot->getBlock()))
+                    {
+                        continue;
                     }
 
                     if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::StoreOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp,
@@ -894,7 +968,10 @@ namespace own_signature
                 auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(mlir::cast<mlir_ts::RefType>(field.getType()).getElementType());
                 auto root = stripViews(pushOp.getItems().front());
                 auto *def = root.getDefiningOp();
-                if (!arrayType || !ownValue(root, def) || !own_facts::ownsHeap(root) ||
+                // ...or a read of an owning local (TSLANG 72), its later reads the uses (usesAfterMove)
+                auto rootLoad = def ? mlir::dyn_cast<mlir_ts::LoadOp>(def) : mlir_ts::LoadOp();
+                auto slotRead = rootLoad && rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                if (!arrayType || (!ownValue(root, def) && !slotRead) || !own_facts::ownsHeap(root) ||
                     own_facts::isCopyableValueAt(pushOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()))
                 {
                     continue;
@@ -909,12 +986,22 @@ namespace own_signature
                 }
 
                 llvm::SmallVector<mlir::OpOperand *> uses;
-                for (auto &use : root.getUses())
+                if (slotRead)
                 {
-                    auto *user = use.getOwner();
-                    if (!mlir::isa<mlir_ts::ReleaseOp>(user) && dominance.properlyDominates(pushOp.getOperation(), user))
+                    if (!usesAfterMove(pushOp, root, uses) || uses.empty())
                     {
-                        uses.push_back(&use);
+                        continue;
+                    }
+                }
+                else
+                {
+                    for (auto &use : root.getUses())
+                    {
+                        auto *user = use.getOwner();
+                        if (!mlir::isa<mlir_ts::ReleaseOp>(user) && dominance.properlyDominates(pushOp.getOperation(), user))
+                        {
+                            uses.push_back(&use);
+                        }
                     }
                 }
 
@@ -1010,9 +1097,18 @@ namespace own_signature
                     auto *def = root.getDefiningOp();
                     auto fieldRefType = mlir::cast<mlir_ts::RefType>(kept.second);
                     auto fieldType = fieldRefType.getElementType();
-                    auto narrowed = fieldType != root.getType() && mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
-                                    mlir::isa<mlir_ts::UnionType>(fieldType);
-                    if (!ownValue(root, def) || !own_facts::ownsHeap(root) ||
+                    // ...or a value narrowed to the field's class from that class or null: `const texture =
+                    // load(); if (!texture) return; new Target(texture)` (TSLANG 71). Read back, the field
+                    // is widened to the value's type again.
+                    auto narrowed = fieldType != root.getType() &&
+                                    ((mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
+                                      mlir::isa<mlir_ts::UnionType>(fieldType)) ||
+                                     (mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(fieldType) &&
+                                      own_facts::holdsAsIs(root.getType(), fieldType, true)));
+                    // ...or a read of an owning local (TSLANG 72), its later reads the uses (usesAfterMove)
+                    auto rootLoad = def ? mlir::dyn_cast<mlir_ts::LoadOp>(def) : mlir_ts::LoadOp();
+                    auto slotRead = rootLoad && rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    if ((!ownValue(root, def) && !slotRead) || !own_facts::ownsHeap(root) ||
                         own_facts::isCopyableValueAt(callOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()) ||
                         (fieldType != root.getType() && !narrowed))
                     {
@@ -1040,12 +1136,31 @@ namespace own_signature
                         });
                     };
 
-                    for (auto &use : root.getUses())
+                    if (slotRead)
                     {
-                        if (!mlir::isa<mlir_ts::ReleaseOp>(use.getOwner()) && dominance.properlyDominates(callOp, use.getOwner()) &&
-                            !afterRelease(use.getOwner()))
+                        llvm::SmallVector<mlir::OpOperand *> later;
+                        if (!usesAfterMove(callOp, root, later))
                         {
-                            uses.push_back(&use);
+                            continue;
+                        }
+
+                        for (auto *use : later)
+                        {
+                            if (!afterRelease(use->getOwner()))
+                            {
+                                uses.push_back(use);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (auto &use : root.getUses())
+                        {
+                            if (!mlir::isa<mlir_ts::ReleaseOp>(use.getOwner()) && dominance.properlyDominates(callOp, use.getOwner()) &&
+                                !afterRelease(use.getOwner()))
+                            {
+                                uses.push_back(&use);
+                            }
                         }
                     }
 
