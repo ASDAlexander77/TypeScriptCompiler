@@ -353,6 +353,37 @@ own now, and with it `examples/render_octomap.ts`. Six of ntg's `core/` modules 
 Regression tests `tslang/test/tester/tests/00tslang_issue_57.ts` (every model, and as an exe) and
 `own/own_err_parameter_let_stored.ts`.
 
+58 (a `const` declared from a merge of owning locals: `const selected = x2py2gez2pw2 ? (x2gey2 ? tensor0 :
+tensor1) : (z2gew2 ? tensor2 : tensor3)` in `core/directx_math.ts`'s quaternion-from-matrix, refused "is
+merged from several branches; -mm=own cannot prove which one owns it yet") is fixed. Even `const s = c ?
+t0 : t1` was refused: each local keeps its value, and is released at its scope's end, so neither can move
+into the merge. The `const` (or `let`) now borrows each of them, as a `let` given one local while that
+local is still used already did: rc's retain and release for it go, and each local's own releases and
+assignments end the borrow. One of them assigned or moved while the `const` is still used, or the
+`const` stored, returned or assigned, is still refused. null or undefined may be one of the ways in. A
+merge made in a loop's body was also refused, "moved inside a loop but was made outside it" (the merge's
+own declaration was taken as reached again around the loop before the merge is remade), which also hit
+54's `const p = c ? mk() : null` in a loop. With `directx_math.ts` compiling, its facts object exists, so
+`core/simple_camera.ts` compiles too (it had been refused for calling into a module with no facts), and
+the sweep went from 141 failing sources to 126. Regression tests `tslang/test/tester/tests/00tslang_issue_58.ts`
+(every model) and `own/own_err_merged_locals_overwritten.ts`, `own/own_err_merged_locals_moved.ts`.
+
+59 (a value moved into a field of an object read out of an array, then used: `const queuedFrame =
+this.queuedFrames[i]; ... queuedFrame.aabbAttributeBuffer = buffer; const view = buffer ?
+buffer.createStructuredView(0) : null;` in `examples/nri/procedural_geometry_nri.ts`, refused "used here
+after its value was moved") is fixed. 50 and 52 follow a value moved into a field, or pushed into a field
+array, by reading the field right after the move; they took only an object read out of a local or
+parameter nothing assigns. A `const` given an element or a field is no local by then (it is the read
+itself), so `frame.view = view` with `const frame = frames[i]` was left a move. The read right after the
+move now takes an object read out of an element or a field too: nothing runs between, so it is the same
+object, and the checks then follow the borrow through that chain. The element or the field it hangs from
+replaced, popped or reset before a use is still refused. In the
+sweep, "used here after its value was moved" went from 49 sites to 37, and `core/ray_tracing_extended_scene.ts`'s
+own errors are left (its `@keeps` and `Shared<T>`, below). One site of this shape is left,
+`procedural_geometry_nri.ts:425` (`!aabbAttributeView` after the `||` chain), which a reduced copy of it
+does not reproduce. Regression tests `tslang/test/tester/tests/00tslang_issue_59.ts` (every model) and
+`own/own_err_element_field_moved_replaced.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -361,8 +392,9 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
-- Under `-mm=own`, 7 `core/` modules do not compile yet (`directx_math.ts`, `donut_first_person_camera.ts`,
-  `nri_donut_textures.ts`, `octomap_common.ts`, `ray_tracing_extended_scene.ts`, `simple_camera.ts`,
-  `rtxpt_game.ts`), and nor do most examples, which #310 did not port: with every facts object built
-  and 50-53 in, 143 of the 276 sources fail. The largest group left is "borrows a field but is used
-  here after it may be released or overwritten" (about 280 sites).
+- Under `-mm=own`, 4 `core/` modules do not compile yet (`donut_first_person_camera.ts`,
+  `nri_donut_textures.ts`, `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
+  which #310 did not port: with every facts object built and 50-59 in, 126 of the 276 sources fail. The
+  largest group left is "borrows a field but is used here after it may be released or overwritten" (about
+  200 sites), then "used here after its value was moved" (37: mostly a value a pushed object or an
+  earlier call keeps, then returned or used).

@@ -1115,6 +1115,72 @@ inline mlir_ts::LoadOp slotLoadOf(mlir::Value value)
     return loadOp;
 }
 
+// A merge of owning locals' values (TSLANG 58): `const selected = c ? tensor0 : tensor1`. Every way
+// into it brings a read of an owning local (slotLoadOf), null or undefined, or another such merge;
+// `loads` gets the reads. Not across a loop, as isFreshMerge.
+inline bool slotLoadsOfMerge(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &loads, unsigned depth = 0)
+{
+    auto *block = argument.getOwner();
+    if (block->isEntryBlock() || block->hasNoPredecessors() || depth > 8)
+    {
+        return false;
+    }
+
+    mlir::DominanceInfo dominance(block->getParentOp());
+    for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+    {
+        auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+        if (dominance.dominates(block, *predecessor) || !branchOp)
+        {
+            return false;
+        }
+
+        auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+        if (argument.getArgNumber() < operands.getProducedOperandCount())
+        {
+            return false;
+        }
+
+        auto incoming = operands[argument.getArgNumber()];
+        if (!incoming)
+        {
+            return false;
+        }
+
+        auto constant = incoming;
+        while (auto castOp = constant.getDefiningOp<mlir_ts::CastOp>())
+        {
+            constant = castOp.getIn();
+        }
+
+        if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+            constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+        {
+            continue;
+        }
+
+        if (auto nested = mlir::dyn_cast<mlir::BlockArgument>(incoming))
+        {
+            if (!nested.hasOneUse() || !slotLoadsOfMerge(nested, loads, depth + 1))
+            {
+                return false;
+            }
+
+            continue;
+        }
+
+        auto load = slotLoadOf(incoming);
+        if (!load)
+        {
+            return false;
+        }
+
+        loads.push_back(load);
+    }
+
+    return true;
+}
+
 // The ownership passes ask MLIRTypeHelper about types only, under the default options.
 inline MLIRTypeHelper typeHelper(mlir::MLIRContext *context)
 {

@@ -1104,6 +1104,11 @@ class OwnershipInferencePass
     // decided there
     llvm::DenseSet<mlir::Operation *> mergeBorrowRetains;
 
+    // the `ts.RetainSlot`s of the `let`s declared from a merge of owning locals (TSLANG 58, `const
+    // selected = c ? tensor0 : tensor1`): a receiver of each of those locals, which the `let` borrows
+    // (decideSlot)
+    llvm::DenseSet<mlir::Operation *> mergedSlotRetains;
+
     // A call that keeps an argument and is given the same value again through another operand - the
     // value itself, a view of it, something read out of it, another read of its slot (`f(n, n)`,
     // `f(h, n, n.v)` with only the first `n` kept): the callee takes the value while it borrows it

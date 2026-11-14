@@ -1906,7 +1906,10 @@ namespace own_inference
     void OwnershipInferencePass::decideSlot(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::SetVector<mlir::Operation *> &toErase)
     {
         auto owner = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
-        if (receivers.size() == 1 || takeValuesOfTheirOwn(slot, receivers))
+
+        // a `let` declared from a merge of this and other locals borrows it, so nothing moves it (TSLANG 58)
+        auto merged = llvm::any_of(receivers, [&](const SlotReceiver &receiver) { return mergedSlotRetains.contains(receiver.retain); });
+        if (!merged && (receivers.size() == 1 || takeValuesOfTheirOwn(slot, receivers)))
         {
             // a move on some paths only is placed when it is the local's one receiver (spec 30)
             for (auto &receiver : receivers)
