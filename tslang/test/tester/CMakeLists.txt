@@ -1906,9 +1906,10 @@ endforeach()
 # TSLANG_ISSUES 49: a nullable local moved when not null, a virtual call's own result, a field moved into another
 # TSLANG_ISSUES 50: a value moved into a field and used after is a borrow of the field
 # TSLANG_ISSUES 52: a value pushed into a field array and used after is a borrow of its last element
+# TSLANG_ISSUES 53: a value a constructor keeps in a field, used after, is a borrow of that field
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
-                        00tslang_issue_52)
+                        00tslang_issue_52 00tslang_issue_53)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5453,7 +5454,8 @@ set(own_error_cases
     "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not"
     "own_err_moved_field_overwritten|:15:25: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_moved_param_field_dropped|:13:15: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
-    "own_err_pushed_then_popped|:14:16: error: '[^']*' borrows an element but is used here after it may be released or overwritten")
+    "own_err_pushed_then_popped|:14:16: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_kept_by_constructor_reset|:16:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

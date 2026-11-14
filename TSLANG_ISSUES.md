@@ -270,9 +270,24 @@ push: a borrow of the element. Pushing into other arrays, or more into the same 
 an element stored, the array replaced, or a call that may do any of these between the push and the use
 is still refused ("borrows an element but is used here after it may be released or overwritten"). In
 the sweep, push-then-use sites went from 91 to 72. The rest move the value into a constructor whose
-result is pushed (`this.queuedFrames.push(new QueuedFrame(viewSet, ...))`, then `viewSet` used): the
-constructor case below, still open. Regression tests `tslang/test/tester/tests/00tslang_issue_52.ts`
+result is pushed (`this.queuedFrames.push(new QueuedFrame(viewSet, ...))`, then `viewSet` used): 53. Regression tests `tslang/test/tester/tests/00tslang_issue_52.ts`
 (every model) and `own/own_err_pushed_then_popped.ts`.
+
+53 (a value of the function's own given to a constructor that keeps it in a field, then used: each
+NRI example's `main`, `const sample = NriSample.create(); const app = new App(sample);
+sample.addExampleOption(...)`, and `this.queuedFrames.push(new QueuedFrame(viewSet, ...)); viewSet.update(...)`,
+refused "used here after its value was moved") is fixed. A constructor defined in the module keeps a
+parameter when it stores it, as it is, into a field nothing else in it writes, and `this` does not
+escape it: it is only read for its fields, or has an array field pushed into or popped. After the call,
+each use of the value reads that field of the object. If the object was moved on, the read goes through
+the place it was moved to last, as 50 and 52 made it (`this.queuedFrames[newLength - 1].viewSet`). A
+borrow of a field, so a method that overwrites it, the object given away, or the object replaced before
+the use is still refused. A constructor that writes the field again, or passes `this` on (a method
+call, `super(...)`), keeps the old error. In the sweep, use-after-move errors went from 178 to 94: those
+of a constructor's argument from 93 to 11, and push-then-use from 72 to 13. Six examples compile under
+own now (`bokeh`, `calibrated_timestamps`, `shader_debugprintf`, `simple_compute`, `simple_hdr`,
+`simple_pbr`), 143 of the 276 sources still fail. Regression tests `tslang/test/tester/tests/00tslang_issue_53.ts`
+(every model) and `own/own_err_kept_by_constructor_reset.ts`.
 
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
@@ -280,7 +295,6 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 7 `core/` modules do not compile yet (`directx_math.ts`, `donut_first_person_camera.ts`,
   `nri_donut_textures.ts`, `octomap_common.ts`, `ray_tracing_extended_scene.ts`, `simple_camera.ts`,
-  `rtxpt_game.ts`), and nor do most examples, which #310 did not port: with every facts object built,
-  149 of the 276 sources fail. Most use-after-move errors left are a constructor keeping its argument
-  (`const r = new X(sample)`, then `sample` used: about 96) or a value used after `push` into an array
-  (about 91).
+  `rtxpt_game.ts`), and nor do most examples, which #310 did not port: with every facts object built
+  and 50-53 in, 143 of the 276 sources fail. The largest group left is "borrows a field but is used
+  here after it may be released or overwritten" (about 280 sites).
