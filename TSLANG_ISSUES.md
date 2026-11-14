@@ -547,6 +547,16 @@ after the move, declared outside the loop that moves it, or its new owner popped
 refused. In the sweep, 71 and 72 take 20 errors, and `extended_dynamic_state2.ts` compiles. Regression test
 `own/own_err_kept_local_array_popped.ts`.
 
+73 (a private field read off a parameter or `this` around a call: `constructor(private sample: NriSample)`, then
+`this.sample.run(() => ...)` and a later `this.sample` read in the examples' `App` classes, refused "borrows a
+field but is used here after it may be released or overwritten") is fixed. Any call could have overwritten the
+field (a callback that writes it, say), so the read before it was not trusted after it. Only the class's own
+methods can write a private field, and they are all in the module. So the signature pass now marks each private
+field that nothing but its class's constructor writes, and a call no longer drops such a field read off a
+parameter (`this` included) the function does not assign. The object is the caller's, so the field lives as long
+as the call does. A private field a method writes, called back from the call, is still refused. Regression tests
+`tslang/test/tester/tests/00tslang_issue_73.ts` (every model) and `own/own_err_private_field_written_callback.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -555,9 +565,14 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
-- Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
-  `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-72 in, 115 of the 276 sources fail (615 errors). The
-  largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
-  93 of them `this.sample.run` callbacks), then "used here after its value was moved" (52: mostly a value a pushed object or an
-  earlier call keeps, then returned or used).
+- `core/nri_donut_textures.ts`: `MipBlit` held the texture it blits, and `recordBlits` read it back after the
+  blits array kept it, so the module and the 9 examples importing it failed under `-mm=own` (199 errors). A
+  `MipBlit` now holds the texture's index into `this.textures`. `MsvcRandom` (`core/random.ts`) and `GameWorld`
+  (`core/rtxpt_game.ts`) are now `@final`: a class that can be derived from may have its methods overridden, so
+  `-mm=own` cannot read their facts (about 48 errors). These are on ntg branch `own-sweep-fixes`.
+- Under `-mm=own`, 2 `core/` modules do not compile yet (`ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and
+  nor do many examples, which #310 did not port: with every facts object built, 50-73 in and the changes above,
+  58 of the 276 sources fail (266 errors). The largest groups left are "borrows a field but is used here after
+  it may be released or overwritten" (64), "borrows a field and cannot be stored, returned or captured" (50),
+  "used here after its value was moved" (32) and "borrows the result of a call and cannot be stored, returned or
+  captured" (32).
