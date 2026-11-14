@@ -423,6 +423,19 @@ namespace own_signature
             resolveInterfaceSlot(interfaceRefOp, interfaceFamilies, callees);
             return;
         }
+        else if (auto symbols = capturedFunctions(def); !symbols.empty())
+        {
+            // a function value a closure captured: `const f = (y) => ...; const g = (y) => f(y)`
+            // (TSLANG 82), a call of the functions stored into its box's field
+            callees.known = true;
+            for (auto symbol : symbols)
+            {
+                callees.named.push_back(symbol);
+                callees.known = (addDefined(symbol, callees) || addImported(symbol, callees)) && callees.known;
+            }
+
+            return;
+        }
         else if (auto symbol = globalFunction(def))
         {
             // a global nothing assigns, given a function by its initializer: `const f = Math.fround`
@@ -471,6 +484,159 @@ namespace own_signature
 
         callees.named = familyOf(index, identifier);
         resolveFamily(index, identifier, callees);
+    }
+
+    llvm::SmallVector<mlir::StringAttr> OwnershipSignaturePass::capturedFunctions(mlir::Operation *def)
+    {
+        llvm::SmallVector<mlir::StringAttr> symbols;
+        // `ts.Load(ts.PropertyRef(%box, n))`, the box the closure's first argument
+        auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+        auto field = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto box = field ? mlir::dyn_cast<mlir::BlockArgument>(field.getObjectRef()) : mlir::BlockArgument();
+        auto closure = box ? mlir::dyn_cast_or_null<mlir_ts::FuncOp>(box.getOwner()->getParentOp()) : mlir_ts::FuncOp();
+        if (!closure || box.getArgNumber() != 0 || !box.getOwner()->isEntryBlock() || !mlir::isa<mlir_ts::RefType>(box.getType()))
+        {
+            return symbols;
+        }
+
+        auto position = field.getPosition();
+        auto name = closure.getSymName();
+        auto module = closure->getParentOfType<mlir::ModuleOp>();
+        auto failed = false;
+        llvm::SetVector<mlir::Value> boxes;
+        llvm::SetVector<mlir::StringRef> closures;
+        // the boxes the closure is made with, or called with
+        module.walk([&](mlir::Operation *op) {
+            if (auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(op))
+            {
+                auto symbolRefOp = boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>();
+                if (symbolRefOp && symbolRefOp.getIdentifier() == name)
+                {
+                    boxes.insert(boundOp.getThisVal());
+                }
+            }
+            else if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(op);
+                     callOp && callOp.getCallee() == name && callOp->getNumOperands() > 0)
+            {
+                boxes.insert(callOp->getOperand(0));
+            }
+            else if (auto refOp = mlir::dyn_cast<mlir_ts::SymbolRefOp>(op); refOp && refOp.getIdentifier() == name)
+            {
+                // the closure's symbol used other than to bind it to a box: not known
+                failed = failed || llvm::any_of(refOp->getUsers(), [](mlir::Operation *user) {
+                             return !mlir::isa<mlir_ts::CreateBoundFunctionOp>(user);
+                         });
+            }
+        });
+
+        if (failed || boxes.empty())
+        {
+            return symbols;
+        }
+
+        // each box: a local only bound, called with and read for its fields, whose field `position` is
+        // given a function's symbol and nothing else; the closures that get it write none of its fields
+        for (auto boxValue : boxes)
+        {
+            auto varOp = boxValue.getDefiningOp<mlir_ts::VariableOp>();
+            if (!varOp)
+            {
+                return {};
+            }
+
+            for (auto *user : varOp->getUsers())
+            {
+                if (auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(user))
+                {
+                    auto symbolRefOp = boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>();
+                    if (!symbolRefOp)
+                    {
+                        return {};
+                    }
+
+                    closures.insert(symbolRefOp.getIdentifier());
+                    continue;
+                }
+
+                if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(user))
+                {
+                    if (llvm::count(callOp->getOperands(), varOp.getResult()) != 1 || callOp->getOperand(0) != varOp.getResult())
+                    {
+                        return {};
+                    }
+
+                    closures.insert(callOp.getCallee());
+                    continue;
+                }
+
+                auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                if (!propertyRefOp)
+                {
+                    return {};
+                }
+
+                for (auto *refUser : propertyRefOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(refUser);
+                    if (mlir::isa<mlir_ts::LoadOp>(refUser) ||
+                        (storeOp && propertyRefOp.getPosition() != position && storeOp.getReference() == propertyRefOp.getResult()))
+                    {
+                        continue;
+                    }
+
+                    if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                    {
+                        return {};
+                    }
+
+                    auto stored = storeOp.getValue();
+                    while (auto castOp = stored.getDefiningOp<mlir_ts::CastOp>())
+                    {
+                        stored = castOp.getIn();
+                    }
+
+                    auto symbolRefOp = stored.getDefiningOp<mlir_ts::SymbolRefOp>();
+                    if (!symbolRefOp)
+                    {
+                        return {};
+                    }
+
+                    if (!llvm::is_contained(symbols, symbolRefOp.getIdentifierAttr().getAttr()))
+                    {
+                        symbols.push_back(symbolRefOp.getIdentifierAttr().getAttr());
+                    }
+                }
+            }
+        }
+
+        // the closures that get the box write none of its fields
+        for (auto closureName : closures)
+        {
+            auto funcOp = functions.lookup(closureName);
+            if (!funcOp || funcOp.isExternal())
+            {
+                return {};
+            }
+
+            auto &entry = funcOp.getFunctionBody().front();
+            if (entry.getNumArguments() == 0)
+            {
+                return {};
+            }
+
+            auto written = false;
+            funcOp.walk([&](mlir_ts::PropertyRefOp propertyRefOp) {
+                written = written || (propertyRefOp.getObjectRef() == entry.getArgument(0) &&
+                                      llvm::any_of(propertyRefOp->getUsers(),
+                                                   [](mlir::Operation *user) { return !mlir::isa<mlir_ts::LoadOp>(user); }));
+            });
+            if (written)
+            {
+                return {};
+            }
+        }
+
+        return symbols;
     }
 
     mlir::StringAttr OwnershipSignaturePass::globalFunction(mlir::Operation *def)

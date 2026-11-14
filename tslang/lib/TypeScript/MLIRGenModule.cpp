@@ -518,6 +518,7 @@ namespace mlirgen
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
                 devirtualizeClosedMethods();
+                markFinalClasses();
                 return theModule;
             }
         }
@@ -530,6 +531,29 @@ namespace mlirgen
     // can inline it. Every class the module made is known by now, the imported sources' too; a
     // class code outside the module may extend - exported, declared or imported, a C++ binding,
     // or one of its subclasses so - keeps its methods virtual.
+    // The classes whose objects are of that class only, for -mm=own (OWN_FINAL_CLASSES_ATTR_NAME,
+    // TSLANG 84): a @final class, or a declared @cpp one (a C++ object, which holds nothing of ours).
+    void MLIRGenImpl::markFinalClasses()
+    {
+        llvm::SmallVector<mlir::Attribute> finals;
+        for (auto &classInfo : moduleClasses)
+        {
+            if (classInfo->isFinal || (classInfo->isCppVTable && classInfo->isDeclaration))
+            {
+                auto name = builder.getStringAttr(classInfo->fullName);
+                if (!llvm::is_contained(finals, name))
+                {
+                    finals.push_back(name);
+                }
+            }
+        }
+
+        if (!finals.empty())
+        {
+            theModule->setAttr(OWN_FINAL_CLASSES_ATTR_NAME, builder.getArrayAttr(finals));
+        }
+    }
+
     void MLIRGenImpl::devirtualizeClosedMethods()
     {
         auto seenOutside = [](const ClassInfo::TypePtr &classInfo) {

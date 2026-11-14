@@ -631,8 +631,19 @@ namespace own_inference
             return false; // a call that returns a borrow has not destroyed it by returning it
         }
 
+        // a chain whose places are not known (a borrowing call's result): what a release frees is what
+        // the released value's type can hold, so one that cannot hold the borrowed value's type does not
+        // free it (TSLANG 84)
+        auto borrowedValue = borrowed ? borrowed : (read && read->getNumResults() == 1 ? read->getResult(0) : mlir::Value());
+        auto module = drop->getParentOfType<mlir::ModuleOp>();
         if (chain.anyPlace && !isCall(drop))
         {
+            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop); releaseSlotOp && borrowedValue)
+            {
+                auto slotType = mlir::cast<mlir_ts::RefType>(releaseSlotOp.getSlot().getType()).getElementType();
+                return typeMayHold(module, slotType, borrowedValue.getType());
+            }
+
             return true;
         }
 
@@ -734,6 +745,28 @@ namespace own_inference
             auto keepsClosure = givenClosure && llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
                                     return holdsCaptures(operand) && isKeptArgument(drop, operand);
                                 });
+            // ...and a chain whose places are not known, by the types those places hold (TSLANG 84)
+            if (mayDrop && !keepsClosure && chain.anyPlace && borrowedValue)
+            {
+                if (auto places = callDropFields(drop))
+                {
+                    mayDrop = llvm::any_of(*places, [&](auto &place) {
+                        if (place.first == OWN_CAPTURED_STRING_POSITION || place.first == OWN_CAPTURED_CELL_POSITION)
+                        {
+                            return true;
+                        }
+
+                        auto placeType = place.second;
+                        if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(placeType))
+                        {
+                            placeType = refType.getElementType();
+                        }
+
+                        return typeMayHold(module, placeType, borrowedValue.getType());
+                    });
+                }
+            }
+
             if (mayDrop && !keepsClosure && !chain.anyPlace)
             {
                 if (auto places = callDropFields(drop))

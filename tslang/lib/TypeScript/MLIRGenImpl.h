@@ -300,6 +300,7 @@ class MLIRGenImpl
 
     // calls through a vtable to methods no class overrides made direct, once the module is generated
     void devirtualizeClosedMethods();
+    void markFinalClasses();
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false);
 
