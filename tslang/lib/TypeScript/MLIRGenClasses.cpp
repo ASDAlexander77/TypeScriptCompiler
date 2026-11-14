@@ -2686,6 +2686,13 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // `constructor(private flags = "")` is a field of the parameter's type: the default's,
+            // widened - a `string`, not the literal `""` (no other value could be given to it)
+            if (!typeProvided)
+            {
+                type = mth.wideStorageType(type);
+            }
+
             // `constructor(public m?: T)` is a field `m?: T`: T | undefined, as a declared one
             // (mlirGenClassDataFieldMember) - `new Error().message` is undefined
             if (parameter->questionToken)

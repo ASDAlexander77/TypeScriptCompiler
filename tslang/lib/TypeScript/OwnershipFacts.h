@@ -366,6 +366,8 @@ inline llvm::SmallVector<mlir::Value> valuesStoredInto(mlir_ts::VariableOp varOp
 // interned, nobody's block). rc's retain or release of
 // either is one of the block, so the pass looks through them. A cast that converts (a number
 // printed into a string) or boxes (into `any`) makes a new block and is not one.
+inline bool isCopyableString(mlir::Type type);
+
 inline bool isView(mlir::Operation *op)
 {
     // (`ts.ValueOrDefault` of a class: the optional's object, or null - the same block or none, spec 77)
@@ -407,6 +409,13 @@ inline bool isView(mlir::Operation *op)
     auto out = castOp.getType();
     auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
                           (isStringOrArray(out) && holdsAsIs(in, out, true));
+    // ...or text seen as other text, each one pointer: a string, or a union of strings and string
+    // literals (and null) that needs no tag - `"yes" | "no"` read as a `string` (TSLANG 68). An optional
+    // is `{ptr, i1}`, not one of them; a cast of a literal is a constant's read, which stays one.
+    auto isOnePointerText = [](mlir::Type type) {
+        return mlir::isa<mlir_ts::StringType, mlir_ts::UnionType>(type) && isCopyableString(type);
+    };
+    isNullableView = isNullableView || (isOnePointerText(in) && isOnePointerText(out));
     // a `@value` value seen as the tuple it is laid out as, or a tuple seen as the value: the same
     // tuple (the cast lowers to nothing)
     auto isValueStorage = [](mlir::Type value, mlir::Type tuple) {

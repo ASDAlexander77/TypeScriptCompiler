@@ -3278,8 +3278,84 @@ class MLIRGenImpl
         auto to = stringOrNumber(destType);
         // a partial resolve may stand in a call's first overload for the one it will pick (an @cpp
         // class's `write(s32)` for `write(string)`): the full pass checks the one picked
-        return from != StringOrNumber::Neither && to != StringOrNumber::Neither && from != to
-               && !untypedParametersInScope(genContext) && !genContext.allowPartialResolve;
+        if (untypedParametersInScope(genContext) || genContext.allowPartialResolve)
+        {
+            return false;
+        }
+
+        return (from != StringOrNumber::Neither && to != StringOrNumber::Neither && from != to)
+               || isStringLiteralMismatch(valueType, destType);
+    }
+
+    // The string literals a type allows when it allows only string literals (`"no" | "yes"`, with
+    // null or undefined beside them), or none.
+    static bool stringLiteralsOf(mlir::Type type, llvm::SmallVectorImpl<mlir::Type> &literals)
+    {
+        auto isStringLiteral = [](mlir::Type member) {
+            auto literalType = dyn_cast<mlir_ts::LiteralType>(member);
+            return literalType && isa<mlir_ts::StringType>(literalType.getElementType());
+        };
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            type = optionalType.getElementType();
+        }
+
+        if (isStringLiteral(type))
+        {
+            literals.push_back(type);
+            return true;
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        if (!unionType)
+        {
+            return false;
+        }
+
+        for (auto member : unionType.getTypes())
+        {
+            if (isStringLiteral(member))
+            {
+                literals.push_back(member);
+            }
+            else if (!isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+            {
+                return false;
+            }
+        }
+
+        return !literals.empty();
+    }
+
+    // `let answer: "no" | "yes" = "maybe"`, or a `string` given to it: TypeScript rejects them (TS2322),
+    // the values it allows being those literals only. A literal, or a union of literals, it allows
+    // each of passes.
+    bool isStringLiteralMismatch(mlir::Type valueType, mlir::Type destType)
+    {
+        llvm::SmallVector<mlir::Type> allowed;
+        if (!stringLiteralsOf(destType, allowed))
+        {
+            return false;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(valueType))
+        {
+            valueType = optionalType.getElementType();
+        }
+
+        if (isa<mlir_ts::StringType>(valueType))
+        {
+            return true;
+        }
+
+        llvm::SmallVector<mlir::Type> given;
+        if (!stringLiteralsOf(valueType, given))
+        {
+            return false;
+        }
+
+        return llvm::any_of(given, [&](mlir::Type literal) { return !llvm::is_contained(allowed, literal); });
     }
 
     // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,

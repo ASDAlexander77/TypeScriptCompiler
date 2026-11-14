@@ -479,6 +479,54 @@ ports 25 to 6), and no source has more. Regression tests `tslang/test/tester/tes
 (every model; loops, a class-typed `let`, a throw), `own/own_err_split_let_stored.ts` and
 `own/own_err_split_let_field_overwritten.ts`.
 
+67 (a value pushed only where it is not null, then used: `const view = constantBuffer.createConstantView(offset,
+size); if (view) this.constantViews.push(view); return view;` in `examples/nri/rt_shadows_nri.ts` and its
+NRI ports, refused "is used here after its value was moved") is fixed. TSLANG 52 made each use the push
+dominates a read of the array's last element; one after the paths meet again is now one too. The block the
+test's false edge goes to, entered otherwise only from blocks the push dominates, takes the element read
+back on those paths and null on the false edge, and the uses there read it. A function returning it returns
+a borrow of `this`, as one returning the element read does. The array popped before the use is still
+refused, and so is a push under a test that is not the value's own truth (`if (view && keep)`), where the
+value is not null on the other path. A `let` pushed this way (`let pipeline = null; if (loaded) pipeline =
+create(); if (pipeline) this.pipelines.push(pipeline); return pipeline;` in `msaa_nri.ts`) is not handled
+yet. In the sweep, 6 errors less; their sources fail for others too. Regression tests
+`tslang/test/tester/tests/00tslang_issue_67.ts` (every model; it holds 68 too) and
+`own/own_err_pushed_or_null_popped.ts`.
+
+68 (a union of string literals read as a `string`: `ImGui.text(`primitiveUnderestimation: ${this.yesNo(
+p[3])}`)` in `examples/conservative_rasterization.ts`, with `yesNo` returning `value != 0.0 ? "yes" : "no"`,
+refused "takes a second reference") is fixed. `"no" | "yes"` is one pointer, like a `string`, and the cast
+between them lowers to nothing, but -mm=own took it for a conversion making a new string, so the call
+result it was cast from was released while the string was used. A cast between a string, a string literal
+and a union of them (and null) that needs no tag is now a view. In the sweep, 2 sources more compile
+(`conservative_rasterization.ts`, `multi_draw_indirect.ts`) and 20 errors less. A union of string literals
+also allows only its literals now, under every model: `let a: "no" | "yes" = "maybe"`, a `string` given
+to it, or `a = "maybe"` after `let a = yesNo(v)`, compiled and held "maybe"; each is now refused, as in
+TypeScript (TS2322, and TS2345 for an argument). The check found a parameter property typed by its
+default left unwidened: `constructor(private source: string, private flags = "")` in the default library's
+`RegExp` made a field of type `""`; it is a `string` now, as a declared field and a parameter already were.
+Regression tests
+`tslang/test/tester/tests/assign_string_literal_union_error.ts`, `assign_string_to_literal_union_error.ts`
+and `argument_string_literal_union_error.ts`.
+
+69 (a value moved on every path, by a different move on each: `const node = new SceneNode(...); if
+(SCENE_ORDER[o] == TESSELLATED) this.tessNodes.push(node); else { ... this.baselineNodes.push(node); }` in
+`examples/nri/extended_dynamic_state2_nri.ts`, refused "is moved here on some paths only; -mm=own cannot
+release it on the others yet") is fixed. Each move was judged alone: the value's release where the paths meet
+was past this move on some paths, and on the others past a move it did not look at. A release no path reaches
+from the value's making without passing one of its moves is past a move on each, and goes. A path that moves
+it nowhere (`if ... else if ...` with no `else`) is still refused, and so is a use after the moves. In the
+sweep, 4 errors less. Regression tests `tslang/test/tester/tests/00tslang_issue_69.ts` (every model; it holds
+70 too) and `own/own_err_moved_on_two_of_three_paths.ts`.
+
+70 (a constant global of a string literal's type given to a call that keeps it: `this.loadTexture(device,
+FLAME_TEXTURE_PATH)` in `examples/nri/ray_tracing_extended_nri.ts`, with `const FLAME_TEXTURE_PATH = "..."` in
+its namespace and `loadTexture` pushing the path into `textureNames`, refused "is given to ..., which keeps
+it, but -mm=own cannot move it here: this function does not own it") is fixed. The global is a constant whose
+type is the literal, so it holds that literal and nothing else, in read-only data: given to a keeper, it is the
+literal itself, as `"..."` written in place is. 69 exposed it: `loadTexture` is now found to keep its path. In the sweep, the 2 errors it gave
+(in `ray_tracing_extended_nri.ts` and `ray_tracing_invocation_reorder_nri.ts`) are gone.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -489,7 +537,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
   `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-66 in, 118 of the 276 sources fail (664 errors). The
+  which #310 did not port: with every facts object built and 50-70 in, 116 of the 276 sources fail (635 errors). The
   largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
-  93 of them `this.sample.run` callbacks), then "used here after its value was moved" (58: mostly a value a pushed object or an
+  93 of them `this.sample.run` callbacks), then "used here after its value was moved" (52: mostly a value a pushed object or an
   earlier call keeps, then returned or used).
