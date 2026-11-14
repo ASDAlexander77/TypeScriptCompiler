@@ -527,6 +527,26 @@ type is the literal, so it holds that literal and nothing else, in read-only dat
 literal itself, as `"..."` written in place is. 69 exposed it: `loadTexture` is now found to keep its path. In the sweep, the 2 errors it gave
 (in `ray_tracing_extended_nri.ts` and `ray_tracing_invocation_reorder_nri.ts`) are gone.
 
+71 (a value narrowed from `T | null`, kept by a constructor, then used: `const texture =
+device.createStorageTexture(...); if (!texture) return null; const target = new Target(texture, ...);
+target.readView = texture.createView(format);` in `examples/nri/raytracing_ao_nri.ts`, refused "is used here
+after its value was moved") is fixed. TSLANG 53 reads the field the constructor keeps a value in for each use
+after the call, but only for a value of the field's type, or a class value kept in a union field. A value of
+the field's class or null, narrowed by the test before, is now one too: the field read back is widened to
+the value's type again. The object popped before the use is still refused. Regression test
+`tslang/test/tester/tests/00tslang_issue_71.ts` (every model; it holds 72 too).
+
+72 (a local, rather than a value, kept by a constructor or pushed, then read: `const t: number[] = []; for (let
+i = 0; i < 16; i++) t.push(transform[i]); const node = new SceneNode(..., t, ...); ... this.movingX = t[12];`
+in a loop in `examples/nri/extended_dynamic_state2_nri.ts`, and `let pipeline = ...; ...;
+this.pipelines.push(pipeline); return pipeline.n;`) is fixed. TSLANG 65's reads of a local after a store (the
+local assigned nowhere after it, its address taken nowhere) now serve the constructor and the push too. A
+store in a loop is taken when the local is declared in that loop, so each time round starts it afresh, and an
+array filled in place through the local is taken when the filling comes before the move. The local pushed to
+after the move, declared outside the loop that moves it, or its new owner popped before the read, is still
+refused. In the sweep, 71 and 72 take 20 errors, and `extended_dynamic_state2.ts` compiles. Regression test
+`own/own_err_kept_local_array_popped.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -537,7 +557,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
   `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-70 in, 116 of the 276 sources fail (635 errors). The
+  which #310 did not port: with every facts object built and 50-72 in, 115 of the 276 sources fail (615 errors). The
   largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
   93 of them `this.sample.run` callbacks), then "used here after its value was moved" (52: mostly a value a pushed object or an
   earlier call keeps, then returned or used).
