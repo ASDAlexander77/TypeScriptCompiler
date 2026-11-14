@@ -174,6 +174,8 @@ struct MethodInfo
     int cppSlot = -1;
     // @destructor: the C++ virtual destructor of a @cpp class, which can't be called
     bool isCppDestructor = false;
+    // @final: no subclass may override it, so a call of it runs this very method (TSLANG 48)
+    bool isFinal = false;
     // a slot of a @cpp class's vtable that no method names (ClassInfo::getVirtualTable)
     bool isCppSlotGap = false;
     // `@keeps`, `@borrows`, `@lends` (OWN_DECLARED_KEEPS_ATTR_NAME): argument indices, `this` 0, for

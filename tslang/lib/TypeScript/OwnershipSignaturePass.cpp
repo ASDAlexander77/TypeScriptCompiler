@@ -102,6 +102,7 @@ namespace own_signature
     {
         auto module = getOperation();
         stubCannotShare(module);
+        readFieldsForLocals(module);
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
         module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });
         module.walk([&](mlir_ts::AddressOfOp addressOfOp) {
@@ -246,6 +247,22 @@ namespace own_signature
             call.op->removeAttr(OWN_DROP_FIELDS_ATTR_NAME);
             if (!call.callees.known)
             {
+                // a method of a class another module may extend, called through its vtable: say so
+                // where a borrow ends at the call (TSLANG 48)
+                auto callee = mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(call.op)
+                                  ? calleeValue(call.op)
+                                  : mlir::Value();
+                if (auto getMethodOp = callee ? callee.getDefiningOp<mlir_ts::GetMethodOp>() : mlir_ts::GetMethodOp())
+                {
+                    callee = getMethodOp.getBoundFunc();
+                }
+
+                auto refOp = callee ? callee.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>() : mlir_ts::ThisVirtualSymbolRefOp();
+                if (refOp && !refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
+                {
+                    call.op->setAttr(OWN_OVERRIDABLE_CALL_ATTR_NAME, refOp.getIdentifierAttr());
+                }
+
                 continue;
             }
 
@@ -1607,20 +1624,92 @@ namespace own_signature
 
     void OwnershipSignaturePass::computeDrops()
     {
+        callOf.clear();
+        for (auto &call : calls)
+        {
+            callOf[call.op] = &call;
+        }
+
+        computeDropsRound(false);
+
+        // A fill of an empty field (TSLANG 47) frees nothing, unless a call between the test and the
+        // store may write the field. Each is decided once, by the facts that count every fill as a
+        // drop: a callee that only fills may still write the field (it is no-drops once fills are
+        // not drops). The verdict is pinned on the release, for the second round and the inference.
+        getOperation().walk([&](mlir_ts::ReleaseSlotOp releaseSlotOp) {
+            if (releaseSlotOp->getParentOfType<mlir::FunctionOpInterface>() && decideFill(releaseSlotOp))
+            {
+                releaseSlotOp->setAttr(OWN_FILL_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+            else
+            {
+                releaseSlotOp->removeAttr(OWN_FILL_ATTR_NAME);
+            }
+        });
+
+        computeDropsRound(true);
+    }
+
+    bool OwnershipSignaturePass::isFill(mlir_ts::ReleaseSlotOp releaseSlotOp)
+    {
+        return releaseSlotOp->hasAttr(OWN_FILL_ATTR_NAME);
+    }
+
+    bool OwnershipSignaturePass::decideFill(mlir_ts::ReleaseSlotOp releaseSlotOp)
+    {
+        auto field = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::PropertyRefOp>();
+        return field && fillsEmptyField(releaseSlotOp, [&](mlir::Operation *op) {
+                   auto *call = callOf.lookup(op);
+                   // another module's facts count its fills as no drops: they cannot clear a call
+                   if (!call || call->callees.imported)
+                   {
+                       return true;
+                   }
+
+                   if (!callMayDrop(call->callees))
+                   {
+                       return false;
+                   }
+
+                   auto drops = calleesFieldDrops(call->callees);
+                   return !drops || drops->any || llvm::any_of(drops->places, [&](auto &place) {
+                              return place.first == OWN_INTERFACE_FIELD_POSITION ||
+                                     (place.first == field.getPosition() && place.second == field.getType());
+                          });
+               });
+    }
+
+    void OwnershipSignaturePass::computeDropsRound(bool fills)
+    {
         llvm::DenseMap<mlir::Operation *, llvm::SmallVector<Call *>> callsIn;
         for (auto &call : calls)
         {
             callsIn[call.op->getParentOfType<mlir_ts::FuncOp>()].push_back(&call);
         }
 
+        // the bodies first, all against the previous round's facts
+        llvm::DenseSet<mlir::Operation *> bodyNoDrops;
+        llvm::DenseMap<mlir::Operation *, FieldDrops> bodyFieldDrops;
         for (auto &entry : functions)
         {
             auto funcOp = entry.second;
-            if (!funcOp.isDeclaration() && !dropsInBody(funcOp))
+            if (funcOp.isDeclaration())
             {
-                noDrops.insert(funcOp);
+                continue;
+            }
+
+            if (!dropsInBody(funcOp, fills))
+            {
+                bodyNoDrops.insert(funcOp);
+            }
+            else
+            {
+                bodyFieldDrops[funcOp] = fieldDropsInBody(funcOp, fills);
             }
         }
+
+        noDrops = std::move(bodyNoDrops);
+        fieldDrops.clear();
 
         for (auto changed = true; changed;)
         {
@@ -1654,7 +1743,8 @@ namespace own_signature
             auto funcOp = entry.second;
             if (!funcOp.isDeclaration() && !noDrops.contains(funcOp))
             {
-                fieldDrops[funcOp] = fieldDropsInBody(funcOp);
+                auto found = bodyFieldDrops.find(funcOp);
+                fieldDrops[funcOp] = found != bodyFieldDrops.end() ? found->second : FieldDrops();
             }
         }
 
@@ -1736,7 +1826,7 @@ namespace own_signature
         return all;
     }
 
-    OwnershipSignaturePass::FieldDrops OwnershipSignaturePass::fieldDropsInBody(mlir_ts::FuncOp funcOp)
+    OwnershipSignaturePass::FieldDrops OwnershipSignaturePass::fieldDropsInBody(mlir_ts::FuncOp funcOp, bool fills)
     {
         // what dropsInBody counts, with the overwrites of places it can name kept apart
         FieldDrops drops;
@@ -1754,7 +1844,7 @@ namespace own_signature
             {
                 auto slot = releaseSlotOp.getSlot();
                 auto slotType = mlir::dyn_cast<mlir_ts::RefType>(slot.getType());
-                if (releasesNothing(releaseSlotOp))
+                if (releasesNothing(releaseSlotOp) || (fills && isFill(releaseSlotOp)))
                 {
                     return;
                 }
@@ -2008,7 +2098,7 @@ namespace own_signature
         return counted;
     }
 
-    bool OwnershipSignaturePass::dropsInBody(mlir_ts::FuncOp funcOp)
+    bool OwnershipSignaturePass::dropsInBody(mlir_ts::FuncOp funcOp, bool fills)
     {
         auto drops = false;
         funcOp.walk([&](mlir::Operation *op) {
@@ -2030,8 +2120,9 @@ namespace own_signature
                 // a captured variable assigned through its cell, by a closure's body: the variable
                 // is its declaring function's
                 auto slot = releaseSlotOp.getSlot();
-                drops = !releasesNothing(releaseSlotOp) &&slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
-                        isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot));
+                drops = !releasesNothing(releaseSlotOp) && !(fills && isFill(releaseSlotOp)) &&
+                        (slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
+                         isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot)));
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {

@@ -118,6 +118,12 @@ namespace own_inference
                      }));
                 if (!closure->borrowsCopies)
                 {
+                    // what a closure that escapes took a copy of is the closure's: nothing uses it after
+                    if (closure->escape)
+                    {
+                        checkEscapingCopies(*closure);
+                    }
+
                     if (!closure->escape && closure->aliased)
                     {
                         closures.push_back(std::move(closure));
@@ -1399,6 +1405,12 @@ namespace own_inference
                 }
             };
 
+            // what a closure that escapes took a copy of is the closure's: nothing uses it after
+            if (closure->escape && !checkEscapingCopies(*closure))
+            {
+                continue;
+            }
+
             if (!closure->hasCells && !closure->borrowsCopies)
             {
                 keepAliasedReleases();
@@ -1644,6 +1656,67 @@ namespace own_inference
         }
 
         toErase.insert(closure.retains.begin(), closure.retains.end());
+    }
+
+    bool OwnershipInferencePass::checkEscapingCopies(Closure &closure)
+    {
+        if (closure.borrowsValues || closure.borrowsCopies)
+        {
+            return true;
+        }
+
+        for (auto &fill : closure.fills)
+        {
+            auto value = fill.second.getValue();
+            mlir::Operation *move = fill.second;
+            if (mlir::isa<mlir_ts::RefType>(value.getType()))
+            {
+                continue; // a cell: decideEscaping
+            }
+
+            auto root = rootOf(value);
+            if (holdsNoBlock(value) || !ownsHeap(root) || isHandle(root) || isConstantData(root) ||
+                isImmortalGlobalRead(root) || isKeptForGood(root))
+            {
+                continue;
+            }
+
+            mlir::Operation *usedAfter = nullptr;
+            if (auto slotLoad = slotLoadOf(root))
+            {
+                // a `let`: every later read of it, until it is given a new value
+                auto slot = slotLoad.getReference();
+                auto assignments = slotAssignments(slot);
+                llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
+                for (auto *user : slot.getUsers())
+                {
+                    if (!usedAfter && user != slotLoad.getOperation() && mlir::isa<mlir_ts::LoadOp>(user) &&
+                        reachableAfter(move, user, kills))
+                    {
+                        usedAfter = user;
+                    }
+                }
+            }
+            else if (isFresh(root))
+            {
+                forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+                    auto isUse = user != move && !llvm::is_contained(closure.retains, user) &&
+                                 !mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp, mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user);
+                    if (!usedAfter && isUse && reachableAfter(move, user, root.getDefiningOp()))
+                    {
+                        usedAfter = user;
+                    }
+                });
+            }
+
+            if (usedAfter)
+            {
+                reportUsedAfterEscapingCapture(usedAfter, move, ownerName(root));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     void OwnershipInferencePass::decideCells()

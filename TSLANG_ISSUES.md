@@ -142,3 +142,78 @@ the call, `x instanceof A` of the borrowed union was refused ("borrows ... and c
 was of a field read (`const x = this.f; x instanceof A`) before: the object seen as an opaque pointer,
 whose vtable is read for its class's `.instanceOf`, is a test that keeps nothing, as for an owned value.
 Regression test `tslang/test/tester/tests/00tslang_issue_46.ts`, JIT and compiled, under every model.
+
+Items 47 and 48, found on 2026-11-13 porting powder_sandbox and native_ts_graphics to `-mm=own`, are
+fixed. 47 (a lazily cached field could not be returned through a local: `let result = this.cached; if
+(!result) { result = new Q(1); this.cached = result; } return result;` was refused three ways): two
+changes. First, before the facts, a read of a local where it holds what a field holds is read as the
+field. That is a `let` or a `const` declared from the field and not assigned since, or a local given a
+value that was just moved into the field. So `return result` is `return this.cached`, a borrow of
+`this`, and the local's first value, read by nothing now, is dropped. The check-then-return form
+(`const hit = this.cached; if (hit) return hit; ... return result;`) and `r = n` after
+`this.cached = n` work the same. Second, a store into a field that was tested empty on the way (`!f`,
+`f == null`, `f === undefined`, or the else branch of `if (f)`, reading the field or such a local) frees
+nothing. A method whose only overwrites are such fills drops nothing, so a second `d.getQ()` no longer
+ends the borrow the first one returned, and `main` prints `1 1 true`. A loop between the test and the
+store, a test of another field, or a call in between that may write the field leaves the store a drop.
+A call in between is judged by facts that count every fill as a drop, since a method that only fills
+may still fill this field. An exported method still says what it returns (`@lends("this")`), and
+an importer calling it twice needs it `@final` (48). The diagnostics name the variable now: a folded
+`const` by its debug name under `--di`, and "while another read of it still borrows it" where no local
+does. Regression tests `tslang/test/tester/tests/00tslang_issue_47.ts` (every model),
+`own/own_lazy_cache_main.ts` with `own_lazy_cache_lib.ts` (an exported class in a namespace, imported,
+every model), and `own/own_err_fill_after_call.ts`, `own_err_fill_in_loop.ts`, `own_err_fill_other_field.ts`,
+`own_err_fill_after_fill_call.ts`.
+
+48 (in an exported class that isn't `@final`, any `this.method()` may overwrite any field): a method can
+be `@final` now, as a class can. No subclass may override it ("method 'x' overrides the @final method of
+'Base'"), and it cannot be abstract. A call of it runs that method: directly when its class is defined in
+the module, through the vtable with the one callee known when it is imported. The `-shared` declaration
+printer writes `@final`, so an importer knows it too. Under `-mm=own` the call goes by the method's own
+facts: `this.factor()` reading a number drops nothing, and a borrow of `this.items[1]` held across it
+compiles. The error for a borrow ended by such a call has a note: "'Base.factor' may be overridden in
+another module by a method that does; '@final' on the method, or on its class, says it is not". Also
+fixed: the store into a field whose type holds no block was still counted a drop when the body was
+checked for drops (`!releasesNothing(...) && a || b` read as `(... && a) || b`). Regression tests
+`tslang/test/tester/tests/00tslang_issue_48.ts` (every model), `own/own_final_method_main.ts` with
+`own_final_method_lib.ts` (a `@final` method of an imported class), `own/own_err_overridable_call.ts`,
+`tests/final_method_override_error.ts` and `final_method_abstract_error.ts`.
+
+Still open from 48:
+- Whole-program facts: a method that no module of the program overrides is still taken as overridable
+  when its class is exported. `--own-facts` reads the facts of the modules a module imports, not of the
+  ones that import it, so the base's module can't know its subclasses. `@final` is the way to say it.
+- `@final` on an accessor (`get`/`set`) is accepted but changes nothing at the call site yet.
+- The other errors seen in powder_sandbox's own build are item 49. The one in `levels.ts`, `'x' is
+  moved inside a loop but was made outside it` (the same `box` array kept by several `LevelStroke`s),
+  is the game's to fix.
+
+### 49. `-mm=own`: a nullable fresh local stored into a field, and a field moved into another
+
+Reduced on 2026-11-14 by the powder_sandbox session from the errors left in its own build. All three
+fail on alpha127 and on the branch with the 47/48 fixes (`tslang -mm=own --emit=obj r1.ts`):
+
+```ts
+class Level { name: string = "a"; }
+export class App {
+    level: Level | null = null;
+    read(n: string): Level | null { return n == "" ? null : new Level(); }
+    // 6:58 "moved here on some paths only" + "takes a second reference"
+    startA(n: string) { const l = this.read(n); if (l) { this.level = l; } }
+    // 8:49 "takes a second reference": unconditional store of a nullable fresh local
+    startB(n: string) { const l = this.read(n); this.level = l; }
+    other: Level | null = null;
+    // 11:19 "borrows a field and cannot be stored": moving one field into another (a swap works)
+    moveAside() { this.other = this.level; this.level = null; }
+}
+function main() { const a = new App(); a.startA("x"); a.startB("x"); a.moveAside(); print(a.other != null); }
+```
+
+- `startA`: the store moves `l` on the path where it is not null. On the other path `l` is null and
+  holds nothing to release, so moving it on some paths only should be fine.
+- `startB` compiles when `App` is `@final`, so the second reference likely comes from the call to
+  `this.read` going through the vtable.
+- `moveAside`: a field read stored into another field, with the source cleared right after, is a move
+  of the field's value, as `[a, b] = [b, a]` already is.
+
+Worked around in powder_sandbox with the exchange `[l, this.level] = [this.level, l]`.

@@ -25,7 +25,7 @@ about it, and `Shared<T>` gives opt-in shared ownership.
   - [`@borrows`](#borrows) - the arguments a generator borrows
   - [`@immortalizes`](#immortalizes) - the parameters a function keeps for good
   - [`@nodrops`](#nodrops) - a C function that frees nothing
-  - [`@final`](#final) - a class nobody extends
+  - [`@final`](#final) - a class nobody extends, a method nobody overrides
   - [`@value`](#value) - a type that is copied, not shared
 - [Separate compilation](#separate-compilation)
 - [Code for one memory model](#code-for-one-memory-model)
@@ -704,10 +704,16 @@ m8_virtual_err.ts:11:16: error: 'this value' borrows a field but is used here af
 m8_virtual_err.ts:11:38: note: it may be released or overwritten here
         return `${this.color} area=${this.area()}`;
                                      ^
+m8_virtual_err.ts:11:38: note: 'S.area' may be overridden in another module by a method that does; '@final' on the method, or on its class, says it is not
 ```
 
 With `@final export class S` it compiles and prints `red area=4`. Mark exported classes `@final`
 unless another module has to extend them.
+
+A class that other modules extend can mark single methods instead: `@final area()` may not be
+overridden (a subclass that does is an error, and an abstract method can't be `@final`), so a call
+of it runs that method, and `-mm=own` goes by what its body does. That holds for a class imported
+from another module too: the declaration it is imported by says `@final`.
 
 ### `@value`
 

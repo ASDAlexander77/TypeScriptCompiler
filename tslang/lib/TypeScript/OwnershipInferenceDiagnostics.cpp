@@ -232,7 +232,8 @@ namespace own_inference
             }
         });
 
-        return name;
+        // a folded `const` has no ts.Variable, but under --di it has a ts.DebugVariable (TSLANG 47)
+        return name == "this value" ? ownerName(value) : name;
     }
 
     void OwnershipInferencePass::reportSecondReference(mlir::Operation *op, mlir::Value value)
@@ -750,6 +751,14 @@ namespace own_inference
         auto diag = use->emitError("'") << name << "' borrows " << place
                                         << " but is used here after it may be released or overwritten";
         diag.attachNote(drop->getLoc()) << "it may be released or overwritten here";
+        // why a call of a method that writes nothing may: an override (TSLANG 48)
+        if (auto method = drop->getAttrOfType<mlir::FlatSymbolRefAttr>(OWN_OVERRIDABLE_CALL_ATTR_NAME))
+        {
+            diag.attachNote(drop->getLoc())
+                << "'" << method.getValue() << "' may be overridden in another module by a method that does; '@" FINAL_DECORATOR
+                << "' on the method, or on its class, says it is not";
+        }
+
         signalPassFailure();
     }
 
@@ -780,6 +789,15 @@ namespace own_inference
     {
         if (!reporting())
         {
+            return;
+        }
+
+        // no local borrows it by name: another of its reads does (TSLANG 47 named it 'another variable')
+        if (borrower.empty())
+        {
+            op->emitError("'") << owner << "' is moved here while another read of it still borrows it; a borrowed "
+                                           "value cannot be moved";
+            signalPassFailure();
             return;
         }
 

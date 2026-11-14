@@ -376,6 +376,13 @@ class OwnershipInferencePass
     // nothing to move. And nothing may call through the box once the closure has gone.
     void decideEscaping(Closure &closure, llvm::SetVector<mlir::Operation *> &toErase);
 
+    // A closure that escapes owns what it took a copy of as well: the object a `const` names moves
+    // into its box, which gives it back when the closure goes (`c.onTick = null`). A use of the
+    // object after the capture read it freed once the closure was gone, so it is an error, as a use
+    // of a captured variable is. False, with the error reported, when something uses a copy's
+    // object after the closure took it.
+    bool checkEscapingCopies(Closure &closure);
+
     // A captured variable whose value this function does not own - a parameter, `this` - has a cell
     // that borrows the value: the cell's release frees the cell only (OWN_CELL_BORROWS_ATTR_NAME),
     // and nothing may assign the variable, here or in a closure over it, since the old value is the

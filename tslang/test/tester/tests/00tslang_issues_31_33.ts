@@ -141,7 +141,8 @@ function resultsKept() {
     arrow.runInTry();
     churn();
     assert(arrow.get().value == 42);
-    assert(captured.value == 1);
+    // `captured` is the closure's from the capture on: under -mm=own a use of it here is an error
+    // (own_escaping_capture_used_after_error.ts)
 
     // one nobody keeps is given back
     for (let i = 0; i < 1000; i++) {

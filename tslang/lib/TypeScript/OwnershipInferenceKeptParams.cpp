@@ -185,7 +185,7 @@ namespace own_inference
             llvm::SetVector<mlir::Operation *> unused;
             if (checkSlotMove(receiver.retain, receiver.value, receiver.load, unused))
             {
-                reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : "another variable");
+                reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : llvm::StringRef());
             }
         }
     }

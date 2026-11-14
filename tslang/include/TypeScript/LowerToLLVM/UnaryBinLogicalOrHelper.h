@@ -365,6 +365,20 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;        
     }    
+    // a function value compared with null (`f !== null` of a `(() => void) | null`, which is the
+    // function's own value): it is null when it has no code to run. Without it the comparison fell
+    // to the "not applicable" warning at the bottom and was constant false
+    else if (isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(leftType)
+             && (right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())))
+    {
+        auto llvmFuncType = typeConverter.convertType(leftType);
+        mlir::Value llvmFunc = left.getType() == llvmFuncType
+            ? left
+            : builder.create<mlir_ts::DialectCastOp>(loc, llvmFuncType, left).getResult();
+        auto codePointer = builder.create<LLVM::ExtractValueOp>(loc, llvmFunc, ArrayRef<int64_t>{DATA_VALUE_INDEX});
+        auto zero = builder.create<LLVM::ZeroOp>(loc, codePointer.getType());
+        return builder.create<StdIOpTy>(loc, v1, codePointer, zero);
+    }
     else if (auto unionType = dyn_cast<mlir_ts::UnionType>(leftType))
     {
         ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);

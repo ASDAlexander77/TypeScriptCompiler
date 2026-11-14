@@ -3219,13 +3219,14 @@ class MLIRGenImpl
         return std::make_tuple(type, init, typeProvided);
     }
 
-    // a string, or a number of any width, as TypeScript sees it: what a value of each converts to
-    // silently is a type error there, and here
+    // a string, a number of any width or a boolean, as TypeScript sees it: what a value of each
+    // converts to silently is a type error there, and here
     enum class StringOrNumber
     {
         Neither,
         String,
-        Number
+        Number,
+        Boolean
     };
 
     StringOrNumber stringOrNumber(mlir::Type type)
@@ -3251,6 +3252,12 @@ class MLIRGenImpl
             return StringOrNumber::Number;
         }
 
+        // a `boolean`, not an `i1`: that one is a one-bit integer, given a number as a C `bool` is
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            return StringOrNumber::Boolean;
+        }
+
         return StringOrNumber::Neither;
     }
 
@@ -3263,7 +3270,8 @@ class MLIRGenImpl
                             [](auto &entry) { return entry.getKey().starts_with("TGenParam_"); });
     }
 
-    // a string given where a number is wanted, or a number where a string is (checkStringNumberAssignment)
+    // a string given where a number is wanted, a number where a string is, or a boolean and either of
+    // them (checkStringNumberAssignment)
     bool isStringNumberMismatch(mlir::Type valueType, mlir::Type destType, const GenContext &genContext)
     {
         auto from = stringOrNumber(valueType);
@@ -3275,7 +3283,8 @@ class MLIRGenImpl
     }
 
     // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
-    // they hid a mistake - "x" became 0. A union, `any` or an enum on either side is left to the cast.
+    // they hid a mistake - "x" became 0. So does `n = flag` with `n: number` (it became 1) and
+    // `flag = 5`. A union, `any` or an enum on either side is left to the cast.
     mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType,
                                                     const GenContext &genContext)
     {
@@ -4905,14 +4914,15 @@ class MLIRGenImpl
         // which has none, an array holding null in its own pointer. What is truthy is not null, as
         // after `x !== null`; what is not may be null or a falsy value (0, ""), so only the branch
         // where it is truthy is narrowed - the then branch of `if (x)`, the else of `if (!x)`.
-        // Without the array case `if (a) a[0]` of a `string[] | null` indexed the union. (A
-        // `Shared<T> | null` is a counted handle, which own reads through the variable itself.)
+        // Without the array case `if (a) a[0]` of a `string[] | null` indexed the union, and without
+        // the function case `if (f) f()` of a `(() => void) | null` called it ("not a function to
+        // call"). (A `Shared<T> | null` is a counted handle, which own reads through the variable itself.)
         if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(exprEval))
         {
             auto isNull = [](mlir::Type member) { return isa<mlir_ts::NullType>(member); };
             mlir::Type baseType;
             auto arrayOrNull = llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
-                return isNull(member) || isa<mlir_ts::ArrayType>(member);
+                return isNull(member) || isa<mlir_ts::ArrayType>(member) || mth.isAnyFunctionType(member);
             });
             if ((mth.isUnionTypeNeedsTag(loc(exprVal), unionType, baseType) || arrayOrNull)
                 && llvm::any_of(unionType.getTypes(), isNull))
@@ -9503,6 +9513,8 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! method index access: " << methodIndex << "\n";);
 
         auto methodInfo = classInfo->methods[methodIndex];
+        // a @final method is the one every object that has it runs, whatever its class (TSLANG 48)
+        finalReceiver = finalReceiver || methodInfo.isFinal;
         if (accessingFromLevel < methodInfo.accessLevel) {
             emitError(location, "Class member '") << methodInfo.name << "' is not accessable";
             return mlir::Value();
@@ -14508,6 +14520,7 @@ class MLIRGenImpl
             isForceVirtual |= !isConstructor && !newClassPtr->isValue;
     #endif
             isVirtual = isForceVirtual;
+            isFinal = !isConstructor && MLIRHelper::hasDecorator(classMember, FINAL_DECORATOR);
         };
 
         bool isFunctionLike()
@@ -14545,6 +14558,23 @@ class MLIRGenImpl
         {
             auto &methodInfos = newClassPtr->methods;
 
+            // @final (TSLANG 48): a method no subclass overrides, which an abstract one cannot be
+            if (isFinal && isAbstract)
+            {
+                emitError(location) << "method '" << methodName << "' cannot be both abstract and @" FINAL_DECORATOR;
+                return false;
+            }
+
+            if (!isStatic)
+            {
+                if (auto finalOwner = finalMethodOwner(newClassPtr, methodName))
+                {
+                    emitError(location) << "method '" << methodName << "' overrides the @" FINAL_DECORATOR " method of '"
+                                        << finalOwner->name << "'";
+                    return false;
+                }
+            }
+
             auto methodIndex = newClassPtr->getMethodIndex(methodName);
             auto dllNameAttr = funcOp ? funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME) : mlir::StringAttr();
             auto dllName = dllNameAttr ? dllNameAttr.getValue().str() : std::string();
@@ -14565,11 +14595,13 @@ class MLIRGenImpl
                 });
                 methodInfos.back().cppSlot = cppSlot;
                 methodInfos.back().isCppDestructor = isCppDestructor;
+                methodInfos.back().isFinal = isFinal;
             }
             else
             {
                 methodInfos[methodIndex].orderWeight = orderWeight;
                 methodInfos[methodIndex].accessLevel = accessLevel;
+                methodInfos[methodIndex].isFinal = isFinal;
                 if (newClassPtr->isCppVTable)
                 {
                     methodInfos[methodIndex].cppSlot = cppSlot;
@@ -14741,6 +14773,28 @@ class MLIRGenImpl
         // @slot(N) of a method of a @cpp class (MethodInfo::cppSlot)
         int cppSlot = -1;
         bool isCppDestructor = false;
+        // @final (TSLANG 48)
+        bool isFinal = false;
+
+        // The base class, up the chain, whose method of this name is @final, if any
+        static ClassInfo::TypePtr finalMethodOwner(ClassInfo::TypePtr classInfo, mlir::StringRef name)
+        {
+            for (auto &base : classInfo->baseClasses)
+            {
+                auto index = base->getMethodIndex(name);
+                if (index >= 0 && base->methods[index].isFinal && !base->methods[index].isStatic)
+                {
+                    return base;
+                }
+
+                if (auto owner = finalMethodOwner(base, name))
+                {
+                    return owner;
+                }
+            }
+
+            return nullptr;
+        }
 
         mlir_ts::FuncOp funcOp;
     };

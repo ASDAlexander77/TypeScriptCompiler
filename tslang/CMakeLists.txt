@@ -204,6 +204,33 @@ add_subdirectory(tslang)
 add_subdirectory(tsbindgen)
 add_subdirectory(ts-new-parser)
 
+# Whole-program optimization of the compiler itself (MSVC /GL + /LTCG, with /Ob3 inlining):
+# slower links, a little smaller and faster tslang/tsbindgen. Only the compiler's own code: the LLVM
+# it links (~90% of the executable) comes prebuilt, and /GL objects only link with the exact MSVC
+# toolset that compiled them.
+# Only the compiler's own targets: the runtime libraries (TypeScriptMimalloc, the async runtime,
+# TypeScriptRuntime, gc) are linked into the programs tslang builds, by lld, which cannot read /GL
+# objects.
+option(TSLANG_ENABLE_LTCG "Build the compiler with link-time code generation (MSVC Release)" OFF)
+if (TSLANG_ENABLE_LTCG AND MSVC)
+  set(TSLANG_LTCG_TARGETS
+    MLIRTypeScript
+    TypeScriptAliasPass
+    TypeScriptDebugInfoPass
+    TypeScriptExceptionPass
+    TypeScriptExportPass
+    TypeScriptMemAllocPass
+    TsClangImporter
+    ts-new-parser-lib
+    tslang
+    tsbindgen)
+  foreach(target ${TSLANG_LTCG_TARGETS})
+    set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:/Ob3>)
+  endforeach()
+  message(STATUS "LTCG for: ${TSLANG_LTCG_TARGETS}")
+endif()
+
 if (NOT DEFINED TYPESCRIPT_IGNORE_UNIT_TESTS)
   # enable unit tests
   set (MLIRTYPESCRIPT_LLVM_THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/llvm-project/third-party")

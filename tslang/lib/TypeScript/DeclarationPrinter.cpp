@@ -798,6 +798,14 @@ namespace typescript
                 }
             }
 
+            // no override: the importer's calls of it run it (TSLANG 48)
+            if (method.isFinal && !method.isStatic)
+            {
+                os.indent(4);
+                os << "@" FINAL_DECORATOR;
+                newline();
+            }
+
             os.indent(4);
 
             if (method.accessLevel == mlir_ts::AccessLevel::Protected)

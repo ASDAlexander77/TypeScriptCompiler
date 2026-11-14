@@ -1876,6 +1876,22 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-28-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
     tslang_add_test(NAME test-compile-00-tslang-issue-28-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_28.ts")
 endforeach()
+# `(() => T) | null`: a function is stored in it, `if (f)` and `f !== null` narrow it, and it is called
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-function-or-null-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_or_null.ts")
+    tslang_add_test(NAME test-compile-00-function-or-null-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_or_null.ts")
+endforeach()
+# a closure stored into a field of the local object it captures borrows that object (own: it owned it,
+# and clearing the field freed the object)
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-closure-back-reference-local-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_back_reference_local.ts")
+    tslang_add_test(NAME test-compile-00-closure-back-reference-local-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00closure_back_reference_local.ts")
+endforeach()
+# ...and an object another closure that escapes captured is the closure's: a use after it is an error
+add_test(NAME test-compile-own-escaping-capture-used-after-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_escaping_capture_used_after_error.ts")
+set_tests_properties(test-compile-own-escaping-capture-used-after-error PROPERTIES PASS_REGULAR_EXPRESSION "'s' is captured by a closure that escapes, and is still used here"
+                                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG_ISSUES 30: a generic sees no local of the function it is instantiated from
 foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issue-30-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_30.ts")
@@ -1885,8 +1901,10 @@ endforeach()
 # TSLANG_ISSUES 45: a union widened to one with all its members is a plain cast; -mm=own takes an
 # exported class's `..instanceOf` for a call that destroys nothing
 # TSLANG_ISSUES 46: a function returning its union parameter, given a new object, freed it twice
+# TSLANG_ISSUES 47: a lazily cached field returned through a local; a fill of an empty field frees nothing
+# TSLANG_ISSUES 48: a @final method of an exported class is called directly, by its own facts
 foreach(issues_mm gc rc none own)
-    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46)
+    foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -1898,6 +1916,15 @@ foreach(issues_mm gc rc none own)
         tslang_add_test(NAME test-compile-${symbol_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${symbol_test}.ts")
     endforeach()
 endforeach()
+# TSLANG_ISSUES 48: a @final method is not overridden, nor abstract
+add_test(NAME test-compile-final-method-override-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_override_error.ts")
+set_tests_properties(test-compile-final-method-override-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' overrides the @final method of 'Base'"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-final-method-abstract-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_abstract_error.ts")
+set_tests_properties(test-compile-final-method-abstract-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' cannot be both abstract and @final"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-symbol-value-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/symbol_value_error.ts")
 set_tests_properties(test-compile-symbol-value-error PROPERTIES PASS_REGULAR_EXPRESSION "a symbol has no value at run time yet"
@@ -1964,6 +1991,23 @@ add_test(NAME test-compile-argument-string-to-number-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_string_to_number_error.ts")
 set_tests_properties(test-compile-argument-string-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type '\"7\"' is not assignable to parameter of type 'number'"
                                                                            FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...and so is a boolean given to a number or a string, or a number to a boolean
+add_test(NAME test-compile-assign-boolean-to-number-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_boolean_to_number_error.ts")
+set_tests_properties(test-compile-assign-boolean-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'boolean' is not assignable to type 'number'"
+                                                                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-assign-boolean-to-string-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_boolean_to_string_error.ts")
+set_tests_properties(test-compile-assign-boolean-to-string-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'boolean' is not assignable to type 'string'"
+                                                                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-assign-number-to-boolean-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_number_to_boolean_error.ts")
+set_tests_properties(test-compile-assign-number-to-boolean-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'number' is not assignable to type 'boolean'"
+                                                                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-argument-boolean-to-number-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_boolean_to_number_error.ts")
+set_tests_properties(test-compile-argument-boolean-to-number-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type 'boolean' is not assignable to parameter of type 'number'"
+                                                                            FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class extending a class value known at run time only is an error
 add_test(NAME test-compile-mixin-runtime-base-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")
@@ -5039,6 +5083,16 @@ foreach(override_mm rc none gc)
     tslang_add_test(NAME test-compile-${override_mm}-shared-override-imported-class COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
 endforeach()
 
+# TSLANG_ISSUES 48: a @final method of a class another module defines: its declaration says it, and
+# an importer holds a borrow of a field across the call
+# TSLANG_ISSUES 47: the cached getter of an exported class in a namespace, called twice by an importer
+foreach(final_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${final_mm}-shared-final-method COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_final_method_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_final_method_lib.ts")
+    tslang_add_test(NAME test-compile-${final_mm}-shared-final-method COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_final_method_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_final_method_lib.ts")
+    tslang_add_test(NAME test-jit-${final_mm}-shared-lazy-cache COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_lazy_cache_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_lazy_cache_lib.ts")
+    tslang_add_test(NAME test-compile-${final_mm}-shared-lazy-cache COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_lazy_cache_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_lazy_cache_lib.ts")
+endforeach()
+
 # The ownership verifier runs under own too, on the IR before inference erases its birth takes.
 add_test(NAME test-own-verify-ownership
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own --verify-ownership
@@ -5376,7 +5430,12 @@ set(own_error_cases
     "own_err_back_reference_stored|:15:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_back_reference_captures|:13:20: error: a closure that escapes owns what it captures, but -mm=own cannot move 'this' into it: its value is the caller's"
     "own_err_closure_kept_param_used|:19:11: error: '[^']*' is used here after its value was moved"
-    "own_err_this_result_other|:7:5: error: 'A.copy' has the result type 'this', but its body returns something else than the object it is called on")
+    "own_err_this_result_other|:7:5: error: 'A.copy' has the result type 'this', but its body returns something else than the object it is called on"
+    "own_err_overridable_call|:17:19: note: 'Base.factor' may be overridden in another module by a method that does. '@final' on the method, or on its class, says it is not"
+    "own_err_fill_after_call|:21:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
+    "own_err_fill_in_loop|:23:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
+    "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
+    "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
