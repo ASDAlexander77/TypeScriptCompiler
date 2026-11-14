@@ -289,6 +289,40 @@ own now (`bokeh`, `calibrated_timestamps`, `shader_debugprintf`, `simple_compute
 `simple_pbr`), 143 of the 276 sources still fail. Regression tests `tslang/test/tester/tests/00tslang_issue_53.ts`
 (every model) and `own/own_err_kept_by_constructor_reset.ts`.
 
+54 (a value merged from a `?:` whose branches each bring a fresh value or null: `const pipeline =
+loaded ? device.createPipelineFromDesc(layout, desc) : null; ... this.blitPipelines.push(pipeline)` in
+`core/nri_donut_textures.ts`, refused "is merged from several branches; -mm=own cannot prove which one
+owns it yet") is fixed. Such a merge is the function's own when every way into it brings a fresh value
+that nothing else uses (a call's result, a `new`, another such merge) or null or undefined: rc gave it the
+one reference it holds. It moves like the call's result itself, and 50, 52 and 53 follow it after the
+move. In a loop's body each iteration's merge is a value of its own. Two checks took a block argument,
+which has no defining op, for a value made before the loop: the release at the end of one iteration
+looked like a second release of the next iteration's value, and a move in the body looked like a move
+of a value made outside the loop. They now take the argument as made where its block starts. A merge at
+a loop's head (a value carried from one iteration into the next) is not covered. A merge that takes a
+local (`c ? local : null`), a merge moved twice, and one made before a loop and moved in it are still
+refused. `nri_donut_textures.ts` is left with one error, which is its own: `new MipBlit(texture, ...)`
+keeps `this.textures[t]` in a second object, a second owner (an index would do). Merge errors left in
+the sweep: 3. Regression tests `tslang/test/tester/tests/00tslang_issue_54.ts` (every model) and
+`own/own_err_merge_moved_twice.ts`.
+
+55 (an array literal of fields: `const directions = [this.dir, this.dir, this.right, this.right, this.up,
+this.up]` in `core/donut_first_person_camera.ts`, `const pipelines = [this.a, this.b, this.c]` and
+`for (const p of [this.a, this.b])` in the examples, refused "borrows a field and cannot be stored") is
+fixed. An array literal that is only read (its length and its elements), held in a local or used as it
+is, and whose elements are each a read out of a field or an element or a parameter, borrows its
+elements while it is used, as the array a rest parameter is given already did (spec 49). Its release
+gives back the array and not the elements, so the same field twice is fine. Every use of the array,
+and of what is read out of it, is a use of each element: a field written, or a call that may write
+it, before such a use is still refused, "borrows a field but is used here after it may be released
+or overwritten". So is an array written, stored, returned, captured or given to a call, one with a
+fresh element, or an element read out of it and stored. Spec section 80 has the rules. In the sweep,
+array literals of fields refused went from 18 to 1 (`this.options = [...]` stores it: refused, rightly),
+and `donut_first_person_camera.ts` is left with the two errors of a `let` that borrows a field and is
+given a new array (`let dir = this.dir; ... dir = rotateAround(...)`). Regression tests
+`tslang/test/tester/tests/00tslang_issue_55.ts` (every model, and as an exe) and
+`own/own_err_borrowing_array_field_reset.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still

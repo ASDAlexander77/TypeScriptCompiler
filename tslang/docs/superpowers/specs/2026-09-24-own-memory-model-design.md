@@ -5723,3 +5723,31 @@ and its declared `@keeps` and `@lends` apply, as to `obj.set(key, value)`.
 Found with it, under every model: the call lowered for an indexer's `set` had no result, also when
 `set` returns one (`set(key, value): this`), so the call disagreed with the function it calls and the
 lowering to LLVM crashed now and then. It has the setter's results now, unused.
+
+## 80. An array literal that borrows its elements, 2026-11-14
+
+TSLANG_ISSUES 55. `const pipelines = [this.a, this.b, this.c]` and `for (const p of [this.a, this.b])`
+were refused, "borrows a field and cannot be stored": an element of an array literal moved into the
+array, and a field read cannot move. §49 had the borrowing array a rest parameter is given; this is
+the same array held in a local or used as it is.
+
+`classifyLocalBorrowingArrays` takes a `ts.CreateArray` that is only read, and whose block-holding
+elements are each a read out of a place (a field, an element) or of a parameter's slot, with no fresh
+value among them:
+- held in a local (`ts.Variable` initialized with it, not captured), the local is only read (its
+  `ts.RetainSlot` and `ts.ReleaseSlot`s aside), or used as it is with a `ts.Release` of its own;
+- each read of it is a `ts.LengthOf`, or a `ts.ElementRef` that is only read;
+- `walkRecord` of it finds nothing that keeps it and no return.
+
+Such an array is marked `OWN_BORROWING_ARRAY_ATTR_NAME`, rc's references for its elements go
+(`fieldBorrowRetains`), and its releases are marked `OWN_SHALLOW_RELEASE_ATTR_NAME`: a `ts.Release`
+or a `ts.ReleaseSlot` (lowered with `emitReleaseArrayShallow`) frees the array and not its elements,
+so the same field twice is fine. Every use `walkRecord` found - of the array and of what is read out
+of it - is a use of each element (`arrayElementUses`, read by `walkBorrowed`), so an element's source
+written or released before any of them is the error it is for a field read held in a local; the
+array's own release is not one. The array is one borrow: a use of it bounds every element, also one
+it does not read.
+
+Not here: an array written (`push`, an element stored), stored, returned, captured or given to a
+call (the call's array of §49 aside); a literal with a fresh element beside borrowed ones; a local's
+value as an element (`[background, tile]`), whose bound is the local's own ends.

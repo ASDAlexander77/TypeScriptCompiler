@@ -558,6 +558,124 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::classifyLocalBorrowingArrays()
+    {
+        getFunction().walk([&](mlir_ts::CreateArrayOp arrayOp) {
+            // `const pipelines = [this.a, this.b]` (TSLANG 55): an array literal in a local, made only
+            // of what it does not own - each a read out of a place (a field, an element) or a
+            // parameter - and only read: its length and its elements. It borrows its elements as the
+            // array a rest parameter is given does (spec 49), for as long as it is used.
+            auto result = arrayOp.getResult();
+            if (arrayOp->getNumOperands() == 0 || arrayOp->hasAttr(OWN_BORROWING_ARRAY_ATTR_NAME) || result.use_empty())
+            {
+                return;
+            }
+
+            // held in a local, or used as it is (`for (const p of [this.a, this.b])`)
+            auto slot = result.hasOneUse() ? mlir::dyn_cast<mlir_ts::VariableOp>(*result.getUsers().begin()) : mlir_ts::VariableOp();
+            if (slot && (slot.getInitializer() != result || slot.getCaptured().value_or(false)))
+            {
+                return;
+            }
+
+            llvm::SmallVector<mlir::Operation *> retains;
+            for (auto element : arrayOp->getOperands())
+            {
+                if (holdsNoBlock(element))
+                {
+                    continue;
+                }
+
+                auto root = rootOf(element);
+                auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();
+                auto paramSlot = rootLoad ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                int index = -1;
+                auto isParameter = paramSlot && isParameterSlot(paramSlot, index);
+                auto *retain = retainBefore(element, arrayOp);
+                if (!retain || (!placeReadOf(root) && !isParameter))
+                {
+                    return;
+                }
+
+                retains.push_back(retain);
+            }
+
+            if (retains.empty())
+            {
+                return;
+            }
+
+            // the local: read, and given back - never written, never passed on
+            llvm::SmallVector<mlir::Operation *> releases;
+            llvm::SmallVector<mlir::Value> reads;
+            if (slot)
+            {
+                for (auto *user : slot->getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        reads.push_back(loadOp.getResult());
+                    }
+                    else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        releases.push_back(user);
+                    }
+                    else if (!mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                reads.push_back(result);
+            }
+
+            // each read: its length, or an element read out of it (and not written); the array used
+            // as it is is given back by a `ts.Release` of its own
+            for (auto read : reads)
+            {
+                for (auto *user : read.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::LengthOfOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    if (!slot && mlir::isa<mlir_ts::ReleaseOp>(user))
+                    {
+                        releases.push_back(user);
+                        continue;
+                    }
+
+                    auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
+                    if (!elementRefOp || elementRefOp.getArray() != read ||
+                        llvm::any_of(elementRefOp->getUsers(), [](mlir::Operation *refUser) { return !mlir::isa<mlir_ts::LoadOp>(refUser); }))
+                    {
+                        return;
+                    }
+                }
+            }
+
+            // what reads the array reads what it borrows: each use bounds every element (walkBorrowed)
+            RecordWalk walk;
+            walkRecord({result}, {}, walk);
+            if (walk.kept || !walk.returns.empty())
+            {
+                return;
+            }
+
+            setAttrTracked(arrayOp, OWN_BORROWING_ARRAY_ATTR_NAME);
+            fieldBorrowRetains.insert(retains.begin(), retains.end());
+            arrayElementUses[arrayOp.getOperation()] = walk.uses;
+            // its releases give back the array, without what it holds
+            for (auto *release : releases)
+            {
+                setAttrTracked(release, OWN_SHALLOW_RELEASE_ATTR_NAME);
+            }
+        });
+    }
+
     bool OwnershipInferencePass::isBorrowingCell(mlir::Value ref)
     {
         auto cellLoad = ref.getDefiningOp<mlir_ts::LoadOp>();
