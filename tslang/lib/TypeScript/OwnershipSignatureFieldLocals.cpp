@@ -383,6 +383,117 @@ namespace own_signature
         };
     } // namespace
 
+    void OwnershipSignaturePass::borrowParametersInLocals(mlir::ModuleOp module)
+    {
+        // `let src = order; let dst = scratch; ... const swap = src; src = dst; dst = swap;` (TSLANG
+        // 57, native_ts_graphics' sortDescending): a `let` that only ever holds the function's
+        // parameters - read out of their slots, or out of another such `let` - holds the caller's
+        // values for the whole call. MLIRGen made it an owning local, so storing a parameter into it
+        // kept the parameter. It owns nothing: it is made a plain local, its rc counting goes, and what
+        // is done with its reads is what is done with the parameter.
+        module.walk([&](mlir::FunctionOpInterface funcOp) {
+            if (funcOp.isExternal())
+            {
+                return;
+            }
+
+            auto &body = funcOp.getFunctionBody();
+            llvm::SetVector<mlir_ts::VariableOp> aliases;
+            body.walk([&](mlir_ts::VariableOp varOp) {
+                // not a Shared<T> handle, which own counts (spec 23.2), nor a string and the like,
+                // which a local takes a copy of
+                auto type = varOp.getInitializer() ? varOp.getInitializer().getType() : mlir::Type();
+                if (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) &&
+                    type && !varOp.getCaptured().value_or(false) && !MLIRTypeHelper::isSharedHandleType(type) &&
+                    !own_facts::isCopyableValueAt(varOp, type))
+                {
+                    aliases.insert(varOp);
+                }
+            });
+
+            // a parameter's slot nothing assigns, or a `let` still in the set
+            auto aliased = [&](mlir::Value value) {
+                auto loadOp = own_facts::rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+                auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                int index = -1;
+                return slot && (aliases.contains(slot) || (own_facts::isParameterSlot(slot, index) && isUnassignedSlot(slot.getResult())));
+            };
+
+            auto holdsOnlyParameters = [&](mlir_ts::VariableOp varOp) {
+                if (!aliased(varOp.getInitializer()))
+                {
+                    return false;
+                }
+
+                for (auto *user : varOp->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (!storeOp || storeOp.getReference() != varOp.getResult() || !aliased(storeOp.getValue()))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+            // to a fixed point: a `let` that takes another's value stays only while that one does
+            for (auto changed = true; changed;)
+            {
+                changed = false;
+                for (auto varOp : llvm::to_vector(aliases))
+                {
+                    if (!holdsOnlyParameters(varOp))
+                    {
+                        aliases.remove(varOp);
+                        changed = true;
+                    }
+                }
+            }
+
+            for (auto varOp : aliases)
+            {
+                varOp->removeAttr(OWNED_LOCAL_ATTR_NAME);
+                llvm::SmallVector<mlir::Operation *> counting;
+                for (auto *user : varOp->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        counting.push_back(user);
+                    }
+
+                    // rc's retain for an assignment, right before it (`Retain(v); ReleaseSlot(x); Store(v, x)`)
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+                    {
+                        for (auto *before = user->getPrevNode(); before; before = before->getPrevNode())
+                        {
+                            if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(before); retainOp && retainOp->getOperand(0) == storeOp.getValue())
+                            {
+                                counting.push_back(before);
+                                break;
+                            }
+
+                            if (!mlir::isa<mlir_ts::ReleaseSlotOp>(before))
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                for (auto *op : counting)
+                {
+                    op->erase();
+                }
+            }
+        });
+    }
+
     void OwnershipSignaturePass::readFieldsForLocals(mlir::ModuleOp module)
     {
         llvm::SmallVector<mlir::Region *> bodies;

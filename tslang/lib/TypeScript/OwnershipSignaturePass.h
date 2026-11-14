@@ -1133,6 +1133,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // in every function of the module.
     void readFieldsForLocals(mlir::ModuleOp module);
 
+    // A `let` that only ever holds the function's parameters (TSLANG 57): `let src = order; ...
+    // src = dst;`. It holds the caller's values, so it is made a plain local that owns nothing.
+    void borrowParametersInLocals(mlir::ModuleOp module);
+
     // ---- Drops ----
 
     // Least fixpoint: a function drops nothing until its body or a call it makes shows it may.

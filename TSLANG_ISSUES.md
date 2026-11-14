@@ -339,7 +339,25 @@ the only `cannot be assigned` errors left are the camera's two. Regression tests
 `tslang/test/tester/tests/00tslang_issue_56.ts` (every model, and as an exe) and
 `own/own_err_let_borrows_reassigned_overwritten.ts`.
 
+57 (a `let` that only holds parameters: `let src = order; let dst = scratch; ... const swap = src; src =
+dst; dst = swap;` in `core/octomap_common.ts`'s exported `sortDescending`, refused "a parameter, kept
+here, but -mm=own cannot make the callers of 'sortDescending' give it up") is fixed. Even `let s = a;
+return s.length;` was refused: MLIRGen makes every `let` an owning local, so storing a parameter into
+one kept the parameter. A `let` whose declaration and every assignment give it a parameter (read out of
+a slot nothing assigns) or the value of another such `let` holds the caller's values for the whole
+call, so before the facts the signature pass makes it a plain local that owns nothing and drops rc's
+counting for it. What is done with its reads is then what is done with the parameter: stored into a
+field or a global, captured, or given a fresh value (`s = [9]`) it is still refused. A `Shared<T>`
+handle (counted under own) and a string (copied) are left as they were. `octomap_common.ts` compiles under
+own now, and with it `examples/render_octomap.ts`. Six of ntg's `core/` modules are left that do not.
+Regression tests `tslang/test/tester/tests/00tslang_issue_57.ts` (every model, and as an exe) and
+`own/own_err_parameter_let_stored.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
+- `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
+  (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
+  on `FlameParticleGenerator`'s and `@keeps("vertices", "triangles")` on `Model`'s. `@keeps` on a
+  constructor works (checked). Its `this.particles.filter(...)` needs `Shared<FlameParticle>` elements.
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
