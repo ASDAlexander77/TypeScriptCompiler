@@ -398,7 +398,8 @@ another module by a method that does; '@final' on the method, or on its class, s
 compiles that did not: it is the diagnostic. The note is given only when that method is the one
 reason (no other overridable method, unknown or imported callee, or body that destroys anything on the
 way), so `@final` on it is enough. In the sweep, 48 errors carry it, beside the 51 at a direct call of
-such a method: native_ts_graphics' own `@final`s to add (`GameWorld`, `Pose`, `MsvcRandom`, ...). Regression tests
+such a method. They name native_ts_graphics' `@final`s to add: `MsvcRandom` (41, through the
+examples' `randomFloat`) and `GameWorld` (7). Regression tests
 `tslang/test/tester/tests/00tslang_issue_60.ts` (every model; the shape with `@final`, which compiles) and
 `own/own_err_overridable_reached.ts` (the note).
 
