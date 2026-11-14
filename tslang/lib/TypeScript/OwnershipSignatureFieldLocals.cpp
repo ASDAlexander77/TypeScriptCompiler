@@ -618,10 +618,78 @@ namespace own_signature
             // where each value moved by the steps below lives after the move: the move, and the read
             // of its new place made right after it
             llvm::DenseMap<mlir::Value, llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>>> movedTo;
+            // Run again after the pushes below (TSLANG 64): `const q = new Frame(); this.frames.push(q);
+            // q.view = view; if (!view) ...` - once the push makes `q` a read of the array's last
+            // element, `q.view` is a field of an object that can be read again. Each store once.
+            llvm::DenseSet<mlir::Operation *> followedStores;
+            // The uses after `store` of the value it moves: those of `root` itself, the store
+            // dominates; or, when `root` is a read of an owning local every other assignment of which
+            // comes before the store (TSLANG 65: `let pipeline = null; if (ok) pipeline = make(); this.
+            // pipelines[i] = pipeline; return pipeline;`), every later read of the local the store
+            // dominates. False when the value is neither.
+            auto usesAfterMove = [&](mlir::Operation *store, mlir::Value root, llvm::SmallVectorImpl<mlir::OpOperand *> &uses) {
+                auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+                auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                if (!slot)
+                {
+                    if (!ownValue(root, root.getDefiningOp()))
+                    {
+                        return false;
+                    }
+
+                    for (auto &use : root.getUses())
+                    {
+                        auto *user = use.getOwner();
+                        if (user != store && !mlir::isa<mlir_ts::ReleaseOp>(user) && dominance.properlyDominates(store, user))
+                        {
+                            uses.push_back(&use);
+                        }
+                    }
+
+                    return true;
+                }
+
+                // run once (not in a loop), so an assignment the store does not dominate runs before it
+                // or on a way that does not reach the reads after it
+                if (!own_facts::isOwningVariable(slot) || slot.getCaptured().value_or(false) || slot->getParentRegion() != body ||
+                    mayRunAgain(store))
+                {
+                    return false;
+                }
+
+                for (auto *user : slot.getResult().getUsers())
+                {
+                    if (auto assignment = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                        assignment && assignment.getReference() == slot.getResult() && dominance.dominates(store, assignment))
+                    {
+                        return false;
+                    }
+
+                    if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::StoreOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp,
+                                   mlir_ts::DebugVariableOp>(user))
+                    {
+                        return false; // its address taken: anything may change it
+                    }
+                }
+
+                for (auto *user : slot.getResult().getUsers())
+                {
+                    if (user != loadOp.getOperation() && mlir::isa<mlir_ts::LoadOp>(user) && dominance.properlyDominates(store, user))
+                    {
+                        for (auto &use : user->getResult(0).getUses())
+                        {
+                            uses.push_back(&use);
+                        }
+                    }
+                }
+
+                return true;
+            };
+            auto followFieldStores = [&]() {
             llvm::SmallVector<mlir_ts::StoreOp> movedStores;
             body->walk([&](mlir_ts::StoreOp storeOp) {
                 auto field = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
-                if (field && objectReadableRightAfter(field))
+                if (field && objectReadableRightAfter(field) && !followedStores.contains(storeOp))
                 {
                     movedStores.push_back(storeOp);
                 }
@@ -629,6 +697,7 @@ namespace own_signature
 
             for (auto fieldStore : movedStores)
             {
+                followedStores.insert(fieldStore);
                 auto root = stripViews(fieldStore.getValue());
                 auto *def = root.getDefiningOp();
                 auto field = fieldStore.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
@@ -640,22 +709,14 @@ namespace own_signature
                                 mlir::isa<mlir_ts::UnionType>(fieldType);
                 // a string and the like are copied into the field, and a Shared<T> handle counted:
                 // the value stays the function's own, not moved
-                if (!ownValue(root, def) || !own_facts::ownsHeap(root) ||
-                    own_facts::isCopyableValueAt(fieldStore, root.getType()) ||
-                    MLIRTypeHelper::isSharedHandleType(root.getType()) || (!narrowed && !fieldReadsAs(field, root.getType())))
+                // (a read of a local: TSLANG 65, usesAfterMove)
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                (void)def;
+                if (!own_facts::ownsHeap(root) || own_facts::isCopyableValueAt(fieldStore, root.getType()) ||
+                    MLIRTypeHelper::isSharedHandleType(root.getType()) || (!narrowed && !fieldReadsAs(field, root.getType())) ||
+                    !usesAfterMove(fieldStore, root, uses))
                 {
                     continue;
-                }
-
-                llvm::SmallVector<mlir::OpOperand *> uses;
-                for (auto &use : root.getUses())
-                {
-                    auto *user = use.getOwner();
-                    if (user != fieldStore.getOperation() && !mlir::isa<mlir_ts::ReleaseOp>(user) &&
-                        dominance.properlyDominates(fieldStore.getOperation(), user))
-                    {
-                        uses.push_back(&use);
-                    }
                 }
 
                 // made even with no use left: an argument kept by this object may read through it
@@ -675,6 +736,53 @@ namespace own_signature
 
                 movedTo[root].push_back({fieldStore.getOperation(), read});
             }
+
+            // The same for a value stored into an element of an array that is a field or a local nothing
+            // assigns (TSLANG 65): `this.baselinePipelines[logicOp] = pipeline; return pipeline;`. The
+            // element's reference is there, and nothing runs between: a load of it right after the
+            // store reads what was stored - a borrow of the element.
+            llvm::SmallVector<mlir_ts::StoreOp> elementStores;
+            body->walk([&](mlir_ts::StoreOp storeOp) {
+                auto elementRefOp = storeOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>();
+                if (!elementRefOp || followedStores.contains(storeOp))
+                {
+                    return;
+                }
+
+                auto arrayLoad = elementRefOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
+                auto arrayField = arrayLoad ? arrayLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+                if (arrayLoad && ((arrayField && objectReadableRightAfter(arrayField)) || isUnassignedSlot(arrayLoad.getReference())))
+                {
+                    elementStores.push_back(storeOp);
+                }
+            });
+
+            for (auto elementStore : elementStores)
+            {
+                followedStores.insert(elementStore);
+                auto root = stripViews(elementStore.getValue());
+                auto elementType = mlir::cast<mlir_ts::RefType>(elementStore.getReference().getType()).getElementType();
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                if (elementType != root.getType() || !own_facts::ownsHeap(root) ||
+                    own_facts::isCopyableValueAt(elementStore, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()) ||
+                    !usesAfterMove(elementStore, root, uses) || uses.empty())
+                {
+                    continue;
+                }
+
+                mlir::OpBuilder builder(elementStore->getContext());
+                builder.setInsertionPointAfter(elementStore);
+                mlir::Value read = builder.create<mlir_ts::LoadOp>(elementStore.getLoc(), elementType, elementStore.getReference());
+                for (auto *use : uses)
+                {
+                    use->set(read);
+                }
+
+                movedTo[root].push_back({elementStore.getOperation(), read});
+            }
+            };
+
+            followFieldStores();
 
             // The same for a value pushed into an array that is a field (TSLANG 52): `this.textures.push(
             // texture); this.views.push(texture.createView(...))`. After the push the value is the
@@ -741,6 +849,8 @@ namespace own_signature
 
                 movedTo[root].push_back({pushOp.getOperation(), read});
             }
+
+            followFieldStores();
 
             // A value of the function's own given to a constructor that keeps it in a field
             // (TSLANG 53): `const app = new App(sample); sample.use();`, or the object pushed on

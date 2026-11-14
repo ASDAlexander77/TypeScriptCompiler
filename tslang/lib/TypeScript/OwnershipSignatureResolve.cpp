@@ -209,6 +209,41 @@ namespace own_signature
                             [](mlir::Type type) { return mlir::isa<mlir_ts::VoidType>(type) || scalarType(type); });
     }
 
+    bool OwnershipSignaturePass::foreignOnlyDeclaration(mlir_ts::FuncOp funcOp)
+    {
+        // a number, a string, a `@cpp` handle, or one of them or null: nothing that reaches an object
+        // of this module
+        std::function<bool(mlir::Type)> foreign = [&](mlir::Type type) {
+            if (scalarType(type) || mlir::isa<mlir_ts::StringType, mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::VoidType>(type))
+            {
+                return true;
+            }
+
+            if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
+            {
+                auto storage = mlir::dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType());
+                return storage && storage.isCpp();
+            }
+
+            if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+            {
+                return foreign(optionalType.getElementType());
+            }
+
+            if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+            {
+                return llvm::all_of(unionType.getTypes(), foreign);
+            }
+
+            return false;
+        };
+
+        auto functionType = funcOp.getFunctionType();
+        return funcOp.isDeclaration() && funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME) && !funcOp->hasAttr("export") &&
+               !funcOp->hasAttr("import") && !funcOp->hasAttr(DLL_IMPORT) && !functionType.isVarArg() &&
+               llvm::all_of(functionType.getInputs(), foreign) && llvm::all_of(functionType.getResults(), foreign);
+    }
+
     bool OwnershipSignaturePass::scalarDeclaration(mlir_ts::FuncOp funcOp)
     {
         return funcOp.isDeclaration() && !funcOp->hasAttr("export") && !funcOp->hasAttr("import") &&
