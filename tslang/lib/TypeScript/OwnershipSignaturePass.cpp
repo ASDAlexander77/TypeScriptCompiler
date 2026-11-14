@@ -102,6 +102,7 @@ namespace own_signature
     {
         auto module = getOperation();
         stubCannotShare(module);
+        borrowParametersInLocals(module);
         readFieldsForLocals(module);
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
         module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });

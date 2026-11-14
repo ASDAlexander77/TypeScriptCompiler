@@ -249,12 +249,107 @@ namespace own_inference
         return true;
     }
 
-    mlir::Operation *OwnershipInferencePass::collectBorrowerUses(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> kills,
-                                         llvm::SmallVectorImpl<BorrowUse> &uses,
-                                         llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping)
+    bool OwnershipInferencePass::borrowsOnly(mlir_ts::VariableOp varOp)
     {
+        // `let layout = this.computeLayout; if (fp16) layout = this.computeLayoutFP16;` (TSLANG 56):
+        // an owning `let` given only reads of places and parameters, each a borrow of its own
+        auto borrowed = [&](mlir::Value value) {
+            auto root = rootOf(value);
+            auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();
+            auto slot = rootLoad ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            int index = -1;
+            return placeReadOf(root) || (slot && isParameterSlot(slot, index));
+        };
+
+        if (!varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false) ||
+            !borrowed(varOp.getInitializer()))
+        {
+            return false;
+        }
+
+        auto assigned = false;
+        for (auto *user : varOp.getResult().getUsers())
+        {
+            if (isAssignmentOf(user, varOp))
+            {
+                if (!borrowed(mlir::cast<mlir_ts::StoreOp>(user).getValue()))
+                {
+                    return false;
+                }
+
+                assigned = true;
+            }
+        }
+
+        return assigned;
+    }
+
+    mlir_ts::VariableOp OwnershipInferencePass::borrowingAssignmentOf(mlir::Operation *user, mlir::Value value)
+    {
+        // the assignment itself
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == value)
+        {
+            auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            return varOp && borrowsOnly(varOp) ? varOp : mlir_ts::VariableOp();
+        }
+
+        // rc's reference for it, right before it
+        if (mlir::isa<mlir_ts::RetainOp>(user) && user->getOperand(0) == value)
+        {
+            for (auto *next = user->getNextNode(); next; next = next->getNextNode())
+            {
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(next); storeOp && storeOp.getValue() == value)
+                {
+                    auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    return varOp && borrowsOnly(varOp) ? varOp : mlir_ts::VariableOp();
+                }
+
+                if (!mlir::isa<mlir_ts::ReleaseSlotOp>(next))
+                {
+                    break;
+                }
+            }
+        }
+
+        return {};
+    }
+
+    mlir::Operation *OwnershipInferencePass::collectBorrowerUses(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> givenKills,
+                                         llvm::SmallVectorImpl<BorrowUse> &uses,
+                                         llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping, mlir::Operation *from)
+    {
+        // a `let` given only borrows (TSLANG 56): each borrow lasts until the next assignment, and its
+        // reads are those its own store (`from`: the declaration or an assignment) reaches before one
+        llvm::SmallVector<mlir::Operation *, 4> kills(givenKills.begin(), givenKills.end());
+        llvm::SmallVector<mlir::Operation *, 4> assignments;
+        auto onlyBorrows = borrowsOnly(borrower);
+        if (onlyBorrows)
+        {
+            for (auto *user : borrower.getResult().getUsers())
+            {
+                if (isAssignmentOf(user, borrower))
+                {
+                    kills.push_back(user);
+                    if (user != from)
+                    {
+                        assignments.push_back(user);
+                    }
+                }
+            }
+        }
+
         for (auto *user : borrower.getResult().getUsers())
         {
+            if (onlyBorrows && isAssignmentOf(user, borrower))
+            {
+                continue;
+            }
+
+            if (onlyBorrows && from && mlir::isa<mlir_ts::LoadOp>(user) && !reachableAfter(from, user, assignments))
+            {
+                continue;
+            }
+
             if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
             {
                 bookkeeping.push_back(user);

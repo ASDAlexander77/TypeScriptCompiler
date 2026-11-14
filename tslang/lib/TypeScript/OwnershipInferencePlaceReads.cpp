@@ -833,11 +833,29 @@ namespace own_inference
                 auto borrower = borrowerOf(user, /*consumed=*/true);
                 if (!borrower || borrower.getOperation() != user)
                 {
-                    return false;
+                    // assigned to a `let` given only borrows (TSLANG 56): the `let` borrows it from the
+                    // assignment on, and rc's retain for the assignment goes
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    auto operand = storeOp ? storeOp.getValue()
+                                           : (mlir::isa<mlir_ts::RetainOp>(user) ? user->getOperand(0) : mlir::Value());
+                    auto assigned = operand && rootOf(operand) == rootOf(result) ? borrowingAssignmentOf(user, operand)
+                                                                                 : mlir_ts::VariableOp();
+                    if (!assigned)
+                    {
+                        return false;
+                    }
+
+                    if (!storeOp)
+                    {
+                        bookkeeping.push_back(user);
+                        return true;
+                    }
+
+                    borrower = assigned;
                 }
 
                 name = varName(borrower);
-                if (auto *keeps = collectBorrowerUses(borrower, kills, uses, bookkeeping); keeps && !letKept)
+                if (auto *keeps = collectBorrowerUses(borrower, kills, uses, bookkeeping, user); keeps && !letKept)
                 {
                     letKept = keeps;
                     letKeeps = borrower;

@@ -323,7 +323,41 @@ given a new array (`let dir = this.dir; ... dir = rotateAround(...)`). Regressio
 `tslang/test/tester/tests/00tslang_issue_55.ts` (every model, and as an exe) and
 `own/own_err_borrowing_array_field_reset.ts`.
 
+56 (a `let` given only fields: `let layout = this.computeLayout; ... if (this.fp16Enabled) { layout =
+this.computeLayoutFP16; ... }` in `examples/nri/16bit_arithmetic_nri.ts`, refused "borrows a field and
+cannot be assigned; -mm=own cannot prove that yet") is fixed. An owning `let` whose declaration and
+every assignment give it a read of a field or an element, or a parameter, borrows each value it is
+given until the next assignment. Each read's uses are the `let`'s reads its own store reaches before
+another assignment, and the assignments end it, so a field written once the `let` holds another field
+is fine, in a loop too. rc's references for the `let` (its retain, its releases, and the retain for each
+assignment) go. Still refused: the field the `let` holds written (or a call that may write it) before a
+use, the `let` stored or returned, and a fresh value assigned (`dir = rotateAround(...)` in
+`core/donut_first_person_camera.ts`, which would make the `let` own its value on some ways and borrow
+it on others). One shape is refused that is sound: in a loop that reads the `let`, assigns it another
+field and then writes the first, a read after the loop is taken to see the first field. In the sweep
+the only `cannot be assigned` errors left are the camera's two. Regression tests
+`tslang/test/tester/tests/00tslang_issue_56.ts` (every model, and as an exe) and
+`own/own_err_let_borrows_reassigned_overwritten.ts`.
+
+57 (a `let` that only holds parameters: `let src = order; let dst = scratch; ... const swap = src; src =
+dst; dst = swap;` in `core/octomap_common.ts`'s exported `sortDescending`, refused "a parameter, kept
+here, but -mm=own cannot make the callers of 'sortDescending' give it up") is fixed. Even `let s = a;
+return s.length;` was refused: MLIRGen makes every `let` an owning local, so storing a parameter into
+one kept the parameter. A `let` whose declaration and every assignment give it a parameter (read out of
+a slot nothing assigns) or the value of another such `let` holds the caller's values for the whole
+call, so before the facts the signature pass makes it a plain local that owns nothing and drops rc's
+counting for it. What is done with its reads is then what is done with the parameter: stored into a
+field or a global, captured, or given a fresh value (`s = [9]`) it is still refused. A `Shared<T>`
+handle (counted under own) and a string (copied) are left as they were. `octomap_common.ts` compiles under
+own now, and with it `examples/render_octomap.ts`. Six of ntg's `core/` modules are left that do not.
+Regression tests `tslang/test/tester/tests/00tslang_issue_57.ts` (every model, and as an exe) and
+`own/own_err_parameter_let_stored.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
+- `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
+  (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
+  on `FlameParticleGenerator`'s and `@keeps("vertices", "triangles")` on `Model`'s. `@keeps` on a
+  constructor works (checked). Its `this.particles.filter(...)` needs `Shared<FlameParticle>` elements.
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
