@@ -5,6 +5,7 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -68,6 +69,12 @@ namespace mlir_ts = mlir::typescript;
 // through an interface), -1 for an element - judged as those stores would be if they were the
 // caller's own (OwnershipInferencePass::overwritesChain).
 #define OWN_DROP_FIELDS_ATTR_NAME "__own_drop_fields"
+// A virtual call that may destroy anything only because another module may override the method it
+// names (TSLANG 48): the method's symbol, for the error that a borrow ends there
+#define OWN_OVERRIDABLE_CALL_ATTR_NAME "__own_overridable_call"
+// On a `ts.ReleaseSlot` of a field: a fill of the field, tested empty on the way (fillsEmptyField,
+// TSLANG 47), which frees nothing. The signature pass decides it, with what calls in between may write.
+#define OWN_FILL_ATTR_NAME "__own_fill"
 // The position a place reached through an interface is given: its position in the object is not
 // known (spec 28)
 constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
@@ -386,8 +393,11 @@ inline bool isView(mlir::Operation *op)
     // a string or an array widened to a union that holds it as it is (`string | null`), or narrowed
     // back from one whose other members are only null or undefined. A union with other members can
     // convert on the way out (a number printed into a string), and an array of another element type
-    // is a new array.
-    auto isStringOrArray = [](mlir::Type type) { return mlir::isa<mlir_ts::StringType, mlir_ts::ArrayType>(type); };
+    // is a new array. A closure likewise: `(() => void) | null` is the function value itself, null
+    // when it has no code to run.
+    auto isStringOrArray = [&](mlir::Type type) {
+        return mlir::isa<mlir_ts::StringType, mlir_ts::ArrayType>(type) || isClosure(type);
+    };
     auto in = castOp.getIn().getType();
     auto out = castOp.getType();
     auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
@@ -1031,6 +1041,390 @@ inline bool releasesNothing(mlir_ts::ReleaseSlotOp releaseSlotOp)
     return refType && !ownsHeap(releaseSlotOp.getLoc(), refType.getElementType());
 }
 
+// ---- Fills (TSLANG 47) ----
+//
+// A lazy cache is filled only when it is empty: `if (!this.cached) this.cached = new Q()`. The store's
+// release of the old value then frees nothing, so a call of the method destroys nothing a caller
+// borrows, and a borrow of the cache taken before the call still reads the same object after it.
+
+// Does a value of this type that tests falsy hold no block? An object, an array or an interface is
+// truthy whenever it is there; a string is not (`""`), nor anything else that may be falsy and own one.
+inline bool falsyHoldsNoBlock(mlir::Location location, mlir::Type type)
+{
+    if (!ownsHeap(location, type))
+    {
+        return true;
+    }
+
+    if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+    {
+        return falsyHoldsNoBlock(location, optionalType.getElementType());
+    }
+
+    if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+    {
+        return llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return falsyHoldsNoBlock(location, member); });
+    }
+
+    return mlir::isa<mlir_ts::ClassType, mlir_ts::ArrayType, mlir_ts::InterfaceType>(type);
+}
+
+// The cond_br that ends `block`'s one predecessor, when `block` is one of its two ways and not both:
+// the condition (seen through its `ts.DialectCast` to i1), and whether `block` is the way taken when
+// it holds. Null otherwise.
+inline std::pair<mlir::Value, bool> branchInto(mlir::Block *block)
+{
+    auto *predecessor = block->getSinglePredecessor();
+    auto condBrOp = predecessor ? mlir::dyn_cast<mlir::cf::CondBranchOp>(predecessor->getTerminator()) : mlir::cf::CondBranchOp();
+    if (!condBrOp || condBrOp.getTrueDest() == condBrOp.getFalseDest())
+    {
+        return {};
+    }
+
+    mlir::Value condition = condBrOp.getCondition();
+    if (auto castOp = condition.getDefiningOp<mlir_ts::DialectCastOp>())
+    {
+        condition = castOp->getOperand(0);
+    }
+
+    return {condition, condBrOp.getTrueDest() == block};
+}
+
+// The value a truthiness test reads, when it tests falsy and falsy means it holds no block: `HasValue(v)`,
+// `<boolean>v`, `<boolean>Value(v)`, and MLIRGen's `HasValue(v) ? <boolean>Value(v) : false` lowered to
+// a merge whose `false` comes only from the way `HasValue(v)` did not take. Null otherwise.
+inline mlir::Value truthinessOf(mlir::Value test, int depth = 0)
+{
+    mlir::Value tested;
+    if (auto hasValueOp = test.getDefiningOp<mlir_ts::HasValueOp>())
+    {
+        tested = hasValueOp.getIn();
+    }
+    else if (auto castOp = test.getDefiningOp<mlir_ts::CastOp>())
+    {
+        tested = castOp.getIn();
+        if (auto valueOp = tested.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            tested = valueOp.getIn();
+        }
+    }
+    else if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(test); argument && depth < 2)
+    {
+        auto *block = argument.getOwner();
+        if (block->isEntryBlock())
+        {
+            return {};
+        }
+
+        for (auto *predecessor : block->getPredecessors())
+        {
+            auto brOp = mlir::dyn_cast<mlir::cf::BranchOp>(predecessor->getTerminator());
+            if (!brOp)
+            {
+                return {};
+            }
+
+            auto passed = brOp.getDestOperands()[argument.getArgNumber()];
+            mlir::Value from;
+            if (passed.getDefiningOp<mlir_ts::DefaultOp>())
+            {
+                // false, on the way HasValue(v) did not take
+                auto [condition, holds] = branchInto(predecessor);
+                auto hasValueOp = condition ? condition.getDefiningOp<mlir_ts::HasValueOp>() : mlir_ts::HasValueOp();
+                if (!hasValueOp || holds)
+                {
+                    return {};
+                }
+
+                from = hasValueOp.getIn();
+            }
+            else
+            {
+                from = truthinessOf(passed, depth + 1);
+            }
+
+            if (!from || (tested && tested != from))
+            {
+                return {};
+            }
+
+            tested = from;
+        }
+    }
+
+    if (!tested || !falsyHoldsNoBlock(tested.getLoc(), tested.getType()))
+    {
+        return {};
+    }
+
+    return tested;
+}
+
+// The value `condition` tests to be empty when it is `holds` (the way taken when it is true, or
+// false): `!v`, `v == null`, `v === undefined` when true; `v`, `v != null`, `v !== undefined` when
+// false. Null when it proves nothing.
+inline mlir::Value testedEmpty(mlir::Value condition, bool holds)
+{
+    auto isNullish = [](mlir::Value value) {
+        return mlir::isa<mlir_ts::NullType, mlir_ts::UndefinedType>(value.getType()) &&
+               mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp>(value.getDefiningOp());
+    };
+
+    if (auto unaryOp = condition.getDefiningOp<mlir_ts::ArithmeticUnaryOp>();
+        unaryOp && unaryOp.getOpCode() == static_cast<int32_t>(SyntaxKind::ExclamationToken))
+    {
+        return testedEmpty(unaryOp.getOperand1(), !holds);
+    }
+
+    if (auto binaryOp = condition.getDefiningOp<mlir_ts::LogicalBinaryOp>())
+    {
+        auto opCode = static_cast<SyntaxKind>(binaryOp.getOpCode());
+        auto equals = opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::EqualsEqualsEqualsToken;
+        auto differs = opCode == SyntaxKind::ExclamationEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken;
+        if ((equals && holds) || (differs && !holds))
+        {
+            if (isNullish(binaryOp.getOperand2()))
+            {
+                return binaryOp.getOperand1();
+            }
+
+            if (isNullish(binaryOp.getOperand1()))
+            {
+                return binaryOp.getOperand2();
+            }
+        }
+
+        return {};
+    }
+
+    return holds ? mlir::Value() : truthinessOf(condition);
+}
+
+inline bool isUnassignedSlot(mlir::Value slot);
+
+// Is `object` the same object `other` is: the same value, or read out of the same local or
+// parameter that nothing assigns or captures (`this`, read again for each `this.f`)?
+inline bool sameObject(mlir::Value object, mlir::Value other)
+{
+    if (object == other)
+    {
+        return true;
+    }
+
+    auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>();
+    auto otherLoadOp = other.getDefiningOp<mlir_ts::LoadOp>();
+    return loadOp && otherLoadOp && loadOp.getReference() == otherLoadOp.getReference() &&
+           isUnassignedSlot(loadOp.getReference());
+}
+
+// A local or a parameter that nothing assigns or captures: every read of it is the same value.
+inline bool isUnassignedSlot(mlir::Value slot)
+{
+    auto *def = slot.getDefiningOp();
+    if (auto varOp = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(def); !(varOp && !varOp.getCaptured().value_or(false)))
+    {
+        auto paramOp = mlir::dyn_cast_or_null<mlir_ts::ParamOp>(def);
+        if (!paramOp || paramOp.getCaptured().value_or(false))
+        {
+            return false;
+        }
+    }
+
+    return llvm::none_of(slot.getUsers(), [&](mlir::Operation *user) {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+        return (storeOp && storeOp.getReference() == slot) || mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::SwapOp>(user);
+    });
+}
+
+// Is `field` the same field of the same object as `other`?
+inline bool sameField(mlir_ts::PropertyRefOp field, mlir_ts::PropertyRefOp other)
+{
+    return field.getPosition() == other.getPosition() && field.getType() == other.getType() &&
+           sameObject(field.getObjectRef(), other.getObjectRef());
+}
+
+// May `op`, or anything in its regions, write `field` (or the local `local`, when given)? An overwrite
+// of a field at its position and of its type, of a place that may be any field (an interface's), a
+// delete, a call `callMayWrite` does not clear, or a point where other code runs (a generator's
+// state switch, an await).
+inline bool mayWriteField(mlir::Operation *op, mlir_ts::PropertyRefOp field, mlir::Value local,
+                          llvm::function_ref<bool(mlir::Operation *call)> callMayWrite)
+{
+    auto writesPlace = [&](mlir::Value ref) {
+        if (local && ref == local)
+        {
+            return true;
+        }
+
+        if (auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>())
+        {
+            return propertyRefOp.getPosition() == field.getPosition() && propertyRefOp.getType() == field.getType();
+        }
+
+        // a local, a parameter, a global or an element is never a field of an object
+        return !mlir::isa_and_nonnull<mlir_ts::VariableOp, mlir_ts::ParamOp, mlir_ts::AddressOfOp, mlir_ts::ElementRefOp>(
+            ref.getDefiningOp());
+    };
+
+    auto writes = false;
+    op->walk([&](mlir::Operation *inner) {
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(inner))
+        {
+            writes = writesPlace(storeOp.getReference());
+        }
+        else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(inner))
+        {
+            writes = writesPlace(releaseSlotOp.getSlot());
+        }
+        else if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(inner))
+        {
+            writes = writesPlace(swapOp.getFirst()) || writesPlace(swapOp.getSecond());
+        }
+        else if (isCall(inner))
+        {
+            writes = callMayWrite(inner);
+        }
+        else
+        {
+            writes = mlir::isa<mlir_ts::DeleteOp, mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp, mlir_ts::SwitchStateOp,
+                               mlir_ts::SwitchStateInternalOp>(inner) ||
+                     inner->getDialect() == nullptr || inner->getDialect()->getNamespace() == "async";
+        }
+
+        return writes ? mlir::WalkResult::interrupt() : mlir::WalkResult::advance();
+    });
+
+    return writes;
+}
+
+// Is this release of a field's old value a fill (TSLANG 47): the field was tested empty on the way
+// here, and nothing that may write it ran since? The test reads the field itself, or a `let` or
+// `const` declared from it that nothing assigns before the test (`let r = this.cached; if (!r) {...}`),
+// in the block that reads the field. Every way to the release comes from that block, through no
+// loop that skips it, and nothing on those ways may write the field. `callMayWrite` answers for
+// each call on the way.
+inline bool fillsEmptyField(mlir_ts::ReleaseSlotOp releaseSlotOp, llvm::function_ref<bool(mlir::Operation *call)> callMayWrite)
+{
+    auto field = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::PropertyRefOp>();
+    auto *block = releaseSlotOp->getBlock();
+    if (!field || field->getParentRegion() != releaseSlotOp->getParentRegion())
+    {
+        return false;
+    }
+
+    // the branch that proves the field empty: on the way into the release's block, or into a block
+    // that is the only way to it
+    mlir_ts::LoadOp testOp;
+    llvm::SmallPtrSet<mlir::Block *, 8> chain;
+    for (auto *on = block; on && !testOp && chain.insert(on).second; on = on->getSinglePredecessor())
+    {
+        auto [condition, holds] = branchInto(on);
+        if (!condition)
+        {
+            continue;
+        }
+
+        auto tested = testedEmpty(condition, holds);
+        testOp = tested ? tested.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+    }
+
+    if (!testOp || testOp->getParentRegion() != releaseSlotOp->getParentRegion())
+    {
+        return false;
+    }
+
+    // what the test reads holds the field's value: the field, or a local declared from it in its block
+    mlir::Operation *fieldRead = testOp;
+    mlir::Value local;
+    if (auto propertyRefOp = testOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+    {
+        if (!sameField(propertyRefOp, field))
+        {
+            return false;
+        }
+    }
+    else if (auto varOp = testOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+             varOp && !varOp.getCaptured().value_or(false) && varOp.getInitializer())
+    {
+        auto initOp = varOp.getInitializer().getDefiningOp<mlir_ts::LoadOp>();
+        auto initField = initOp ? initOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        if (!initField || !sameField(initField, field) || initOp->getBlock() != testOp->getBlock() ||
+            varOp->getBlock() != testOp->getBlock() || !initOp->isBeforeInBlock(varOp) || !varOp->isBeforeInBlock(testOp))
+        {
+            return false;
+        }
+
+        fieldRead = initOp;
+        local = varOp.getResult();
+    }
+    else
+    {
+        return false;
+    }
+
+    auto *start = fieldRead->getBlock();
+    if (start == block)
+    {
+        return false; // the test branches away from its own block
+    }
+
+    // the blocks on the ways from the read to the release: every way into them comes from the read's
+    // block, and none comes round to the release's block again
+    llvm::SmallPtrSet<mlir::Block *, 8> between;
+    llvm::SmallVector<mlir::Block *> work(block->getPredecessors().begin(), block->getPredecessors().end());
+    if (work.empty())
+    {
+        return false;
+    }
+
+    while (!work.empty())
+    {
+        auto *on = work.pop_back_val();
+        if (on == block || (on != start && on->isEntryBlock()))
+        {
+            return false;
+        }
+
+        if (on == start || !between.insert(on).second)
+        {
+            continue;
+        }
+
+        work.append(on->getPredecessors().begin(), on->getPredecessors().end());
+    }
+
+    // nothing on those ways writes the field, nor the local before the test
+    for (auto *op = fieldRead->getNextNode(); op; op = op->getNextNode())
+    {
+        auto beforeTest = op->isBeforeInBlock(testOp);
+        if (mayWriteField(op, field, beforeTest ? local : mlir::Value(), callMayWrite))
+        {
+            return false;
+        }
+    }
+
+    for (auto *on : between)
+    {
+        for (auto &op : *on)
+        {
+            if (mayWriteField(&op, field, mlir::Value(), callMayWrite))
+            {
+                return false;
+            }
+        }
+    }
+
+    for (auto *op = &block->front(); op != releaseSlotOp.getOperation(); op = op->getNextNode())
+    {
+        if (mayWriteField(op, field, mlir::Value(), callMayWrite))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.
 // Also a view of a value whose type owns none: a union's number payload made into another union
 // (`GetValueFromUnion`, then `CreateUnionInstance`) is a number all the way. A `value_ref` is not
@@ -1230,10 +1624,15 @@ inline bool isConstantData(mlir::Value value)
         return true;
     }
 
-    // a function, which a `ts.SymbolRef` names, seen as a function value: it has no capture box
-    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def); castOp && castOp.getIn().getDefiningOp<mlir_ts::SymbolRefOp>())
+    // a function, which a `ts.SymbolRef` names, seen as a function value: it has no capture box.
+    // Seen through its views too - that function value given as a `(() => void) | null`
+    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def))
     {
-        return true;
+        auto functionCastOp = rootOf(value).getDefiningOp<mlir_ts::CastOp>();
+        if (functionCastOp && functionCastOp.getIn().getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            return true;
+        }
     }
 
     // a field of such data: of a `ts.Constant`, or of a tuple of literals re-made as a named one
@@ -1537,10 +1936,36 @@ inline bool isFieldOfMemberThis(mlir::Value ref)
     return isMemberThis(object);
 }
 
+// A field of the object `object` is: of the object itself, or of a base class's storage in it
+inline bool isFieldOfObject(mlir::Value ref, mlir::Value object)
+{
+    auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+    if (!propertyRefOp || !object)
+    {
+        return false;
+    }
+
+    auto base = propertyRefOp->getOperand(0);
+    while (auto baseRefOp = base.getDefiningOp<mlir_ts::PropertyRefOp>())
+    {
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(baseRefOp.getType());
+        if (!refType || !mlir::isa<mlir_ts::ClassStorageType>(refType.getElementType()))
+        {
+            return false;
+        }
+
+        base = baseRefOp->getOperand(0);
+    }
+
+    return rootOf(base) == object;
+}
+
 // A back-reference's box (spec 70): it holds the member's `this` and nothing else that owns a block,
 // and the closure over it is stored once, into a field of that `this`; anything else done with the
 // closure is a call through it, a view of it, or a count of it. The box borrows the object: the
 // field owns the closure, and the object bounds it.
+// The same of an object a `const` of this function names, made here: `c.onTick = () => { c.seen++ }`.
+// Owned by its box, `c` was owned by a closure it owned itself, and clearing the field freed it.
 inline bool isBackReferenceBox(mlir::Value box)
 {
     auto boundOp = closureOfBox(box);
@@ -1550,6 +1975,8 @@ inline bool isBackReferenceBox(mlir::Value box)
     }
 
     auto holdsThis = false;
+    // the object made here that the box holds, when it is not the member's `this`
+    mlir::Value object;
     for (auto *user : box.getUsers())
     {
         if (user == boundOp.getOperation() || mlir::isa<mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp>(user))
@@ -1577,14 +2004,20 @@ inline bool isBackReferenceBox(mlir::Value box)
             }
             else if (!holdsNoBlock(storeOp.getValue()))
             {
-                return false;
+                auto held = rootOf(storeOp.getValue());
+                if (!mlir::isa<mlir_ts::ClassType>(held.getType()) || !isFresh(held) || (object && object != held))
+                {
+                    return false;
+                }
+
+                object = held;
             }
         }
     }
 
-    if (!holdsThis)
+    if (holdsThis == static_cast<bool>(object))
     {
-        return false;
+        return false; // neither, or both: the box would borrow one and own the other
     }
 
     auto stores = 0;
@@ -1600,7 +2033,8 @@ inline bool isBackReferenceBox(mlir::Value box)
             }
 
             if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-                storeOp && storeOp.getValue() == value && isFieldOfMemberThis(storeOp.getReference()))
+                storeOp && storeOp.getValue() == value &&
+                (holdsThis ? isFieldOfMemberThis(storeOp.getReference()) : isFieldOfObject(storeOp.getReference(), object)))
             {
                 ++stores;
                 continue;

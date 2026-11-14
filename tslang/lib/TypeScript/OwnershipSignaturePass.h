@@ -616,8 +616,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 importedFreshResults.contains(call.callees.importedName));
     }
 
-    // The body's own share of a function's FieldDrops: its stores, not its calls.
-    FieldDrops fieldDropsInBody(mlir_ts::FuncOp funcOp);
+    // The body's own share of a function's FieldDrops: its stores, not its calls. With `fills`, a
+    // store that fills an empty field (fillsEmptyField) is none, judged by the facts so far.
+    FieldDrops fieldDropsInBody(mlir_ts::FuncOp funcOp, bool fills = false);
+
+    // Is this release of a field's old value a fill (OWN_FILL_ATTR_NAME, decideFill's verdict)?
+    bool isFill(mlir_ts::ReleaseSlotOp releaseSlotOp);
+    // ...decided by fillsEmptyField, with each call between the test and the store judged by the
+    // facts that count every fill as a drop (computeDrops' first round)
+    bool decideFill(mlir_ts::ReleaseSlotOp releaseSlotOp);
+
+    // each call by its op, for isFill
+    llvm::DenseMap<mlir::Operation *, Call *> callOf;
 
     // The FieldDrops of a call's callees together, when every one has them.
     std::optional<FieldDrops> calleesFieldDrops(const Callees &callees);
@@ -1113,6 +1123,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // under own too.
     void rejectBorrowedGlobalInitializers(mlir::ModuleOp module);
 
+    // A local that holds what a field holds is read as the field (TSLANG 47): `let r = this.cached;
+    // if (!r) { r = new Q(); this.cached = r; } return r;` returns `this.cached`. Before the facts,
+    // in every function of the module.
+    void readFieldsForLocals(mlir::ModuleOp module);
+
     // ---- Drops ----
 
     // Least fixpoint: a function drops nothing until its body or a call it makes shows it may.
@@ -1167,7 +1182,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // of a block it did not make, assign a global, remove elements from an array it did not make,
     // or `delete`? A local's own releases are not drops, nor is the constructor's filling of the
     // object it is building.
-    bool dropsInBody(mlir_ts::FuncOp funcOp);
+    bool dropsInBody(mlir_ts::FuncOp funcOp, bool fills = false);
+
+    // One round of computeDrops: the bodies' own drops (without the fills pinned when `fills`), then
+    // what their calls add, to a fixed point.
+    void computeDropsRound(bool fills);
     // Is `slot` a local declared from a read rc counts, and never assigned, so that its release is
     // never the last of a handle (spec 51)?
     static bool isCountedReadSlot(mlir::Value slot);

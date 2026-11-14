@@ -66,10 +66,19 @@ set(not_compilable_alone
     assign_number_to_string_error.ts
     # an error by design (test-compile-argument-string-to-number-error)
     argument_string_to_number_error.ts
+    # errors by design (test-compile-assign-boolean-to-number-error, -boolean-to-string-error,
+    # -number-to-boolean-error, test-compile-argument-boolean-to-number-error)
+    assign_boolean_to_number_error.ts
+    assign_boolean_to_string_error.ts
+    assign_number_to_boolean_error.ts
+    argument_boolean_to_number_error.ts
     # an error by design (test-compile-cdecl-closure-error)
     cdecl_closure_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts
+    # errors by design (test-compile-final-method-override-error, -abstract-error)
+    final_method_override_error.ts
+    final_method_abstract_error.ts
     # an error by design (test-compile-generic-self-recursion-untyped-error)
     generic_self_recursion_untyped_error.ts)
 
