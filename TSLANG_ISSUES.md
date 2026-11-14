@@ -435,6 +435,50 @@ array spec's ruling T4-D accepts for a parameter. In the sweep, 4 errors less (8
 keep others. Regression tests `tslang/test/tester/tests/00tslang_issue_62.ts` (every model) and
 `own/own_err_borrowed_array_pushed_returned.ts`.
 
+63 (a lazy getter that fills an empty field with a C call in between: `if (!this.cachedVertexBuffer)
+this.cachedVertexBuffer = new NriBuffer(Nri_GetGltfMeshVertexBuffer(this.handle));` in `core/nri.ts`, which
+made every call of such a getter one that "may release or overwrite" whatever the caller borrowed) is fixed.
+A fill of an empty field (TSLANG 47) may not run a call that can reach the field in between, and an imported
+C function could reach anything. One declared `@nodrops`, with no export, import or dllimport, not variadic,
+and given and returning only numbers, strings, `null`/`undefined` or `@cpp` handles (or unions of them), runs
+no function of this module and gets nothing that leads to one: the fill now holds across it. Regression test
+`tslang/test/tester/tests/00tslang_issue_63.ts` (every model; it also holds 64 and 65).
+
+64 (a value moved into a field of an object already pushed into an array, then used: `const queuedFrame =
+new QueuedFrame(); this.queuedFrames.push(queuedFrame); queuedFrame.pbrView = pbrView; if (!pbrView) ...` in
+`examples/nri/simple_pbr_nri.ts`, refused "is used here after its value was moved") is fixed. TSLANG 50's
+borrow of the field the value went into is now also taken after the push, and for a value built by `new`
+in one arm of a `?:` (its construction's own uses are not uses of the merge). Popping or splicing the
+object out before the use, or overwriting the field, is still refused. Regression test
+`own/own_err_pushed_object_field_popped.ts`.
+
+65 (a value moved into an element, or a local's value moved into a field or an element, then used: `let
+pipeline = null; if (loaded) pipeline = create(); this.baselinePipelines[logicOp] = pipeline; return
+pipeline;` in `examples/nri/logic_op_dynamic_state_nri.ts`) is fixed. The use borrows the element (or field)
+from the store on, as TSLANG 50 does for a fresh value, when the local's slot is not assigned again after the
+store and the store does not run again (a loop). The element reset or popped before the use, or the store in
+a loop, is still refused. Regression test `own/own_err_local_stored_element_reset.ts`.
+
+With 63-65 in, errors in the sweep went from 807 to 767 (21 sources have fewer; `simple_pbr_nri.ts` 6 to 1),
+and no source has more; 119 sources still fail, each for other errors as well.
+
+66 (a `let` borrowing a field, then given a fresh value on some paths: `let dir = this.dir; ... if (yaw != 0.0
+|| pitch != 0.0) { dir = rotateAround(...); } ... this.dir = normalize(dir);` in
+`core/donut_first_person_camera.ts`'s `animate`, refused "borrows a field and cannot be assigned; -mm=own
+cannot prove that yet") is fixed. The `let` would own its value on one path and borrow it on the other, and
+-mm=own has no flag to release it on one only. Where the dry run finds such a `let` (initialized from a
+place, only read, assigned and released), each fresh value it is given goes into a slot of its own, released
+where the `let` is (an assignment of another fresh value, the scope's end, an unwind), and the `let` is given
+a borrow of that slot's value; it then holds only borrows, as TSLANG 56's do. Each borrow of the slot is
+checked like any other: it may not be stored, returned or captured, nor used after the slot's value is
+released. The `let` given its field on the other paths stays bounded by the field, so the field overwritten
+before a use is still refused. In the sweep, the camera module compiles, and with its facts the examples that
+call it do too: errors went from 767 to 664, and failing sources from 119 to 118 (`async_compute_bloom_nri.ts`,
+`multi_draw_indirect_nri.ts` and `terrain_tessellation_nri.ts` 8 errors to 1, both `ray_tracing_*_nri.ts`
+ports 25 to 6), and no source has more. Regression tests `tslang/test/tester/tests/00tslang_issue_66.ts`
+(every model; loops, a class-typed `let`, a throw), `own/own_err_split_let_stored.ts` and
+`own/own_err_split_let_field_overwritten.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -443,9 +487,9 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
-- Under `-mm=own`, 4 `core/` modules do not compile yet (`donut_first_person_camera.ts`,
-  `nri_donut_textures.ts`, `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-62 in, 119 of the 276 sources fail. The
-  largest group left is "borrows a field but is used here after it may be released or overwritten" (about
-  200 sites), then "used here after its value was moved" (37: mostly a value a pushed object or an
+- Under `-mm=own`, 3 `core/` modules do not compile yet (`nri_donut_textures.ts`,
+  `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
+  which #310 did not port: with every facts object built and 50-66 in, 118 of the 276 sources fail (664 errors). The
+  largest group left is "borrows a field but is used here after it may be released or overwritten" (396,
+  93 of them `this.sample.run` callbacks), then "used here after its value was moved" (58: mostly a value a pushed object or an
   earlier call keeps, then returned or used).
