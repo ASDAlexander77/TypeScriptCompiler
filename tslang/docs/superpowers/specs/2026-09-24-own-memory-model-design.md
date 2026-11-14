@@ -3057,6 +3057,18 @@ above, in a static block whose only store of `K.w` is the loop's) and `own_err_g
 programs exit 139 on Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them:
 only the unsafe shapes; the corpus keeps 526 files and the ray tracer has no error.
 
+**Arrays (TSLANG 61), 2026-11-14.** A global of an array type is a candidate too, on the same terms
+(not exported, written once by its initializer, given a fresh array, nothing, or another immortal
+global's value): `const CUBE_VERTICES = [...]` read into `[CUBE_VERTICES, PLANE_VERTICES]`, or
+`return GREEN;`. The block made immortal is the array's header, which every array release tests
+first (`buildArrayBody`'s `emitIfLastReference`), so neither the data block nor the elements are
+ever released through it. As with a class's fields, only that block: an element overwritten, popped
+or spliced out frees the old element, and a borrow of `G[i]` stays bounded
+(`own_err_immortal_array_element_overwritten`). A global given a push or any other write through its
+address stays mortal (its `ts.AddressOf` is then not only loaded). The initializing store marks the
+header with `emitMarkImmortalIfMortal`: a constant array's header is in read-only data, immortal
+already. Test: `00tslang_issue_61`.
+
 ## 26. `Shared<I>` of an object literal (G4 of the ray tracer plan), 2026-10-21
 
 The ray tracer's surfaces are module-level `new Shared<Surface>({ ...function fields... })`. The

@@ -362,6 +362,18 @@ namespace own_inference
                 continue;
             }
 
+            // `const model = this.model; model.push(0.0)` (TSLANG 62): the array changed in place,
+            // through the slot that holds its header - the borrowed array, which the field sees. A
+            // null header (an unset field) gets one in the local's slot only, which nothing frees:
+            // that is `undefined` in TypeScript terms, where `.push` throws (array spec, ruling T4-D)
+            if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                          mlir_ts::ArraySpliceOp>(user) &&
+                user->getOperand(0) == borrower.getResult())
+            {
+                uses.push_back({user, {kills.begin(), kills.end()}});
+                continue;
+            }
+
             auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
             if (!readOp)
             {

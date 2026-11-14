@@ -384,6 +384,57 @@ own errors are left (its `@keeps` and `Shared<T>`, below). One site of this shap
 does not reproduce. Regression tests `tslang/test/tester/tests/00tslang_issue_59.ts` (every model) and
 `own/own_err_element_field_moved_replaced.ts`.
 
+60 (the error at a borrow a call ends did not say why, when the callee is a function defined here: `const
+name = this.name; for (...) this.props[i].tick(this.gameTime); ... name` in `core/rtxpt_game.ts`, "borrows a
+field but is used here after it may be released or overwritten", with only "it may be released or
+overwritten here" at the call) is fixed. `Prop.tick` calls `setNodeTransform`, which calls
+`world.setGameNodeTransform(...)`, a method of the exported `GameWorld`. Another module may extend
+`GameWorld` and override it with a method that destroys anything, so `Prop.tick` may too, and the borrows
+of `this.props[i]` and `this.name` end at it. 48 named the method only when the call itself was the
+virtual one. The signature pass now finds, for a call whose callees may destroy anything, the overridable
+call they reach, breadth first through calls that may destroy anything, and the error notes it: "'Prop.tick'
+calls 'setNodeTransform', which calls 'GameWorld.setGameNodeTransform'; that method may be overridden in
+another module by a method that does; '@final' on the method, or on its class, says it is not". Nothing
+compiles that did not: it is the diagnostic. The note is given only when that method is the one
+reason (no other overridable method, unknown or imported callee, or body that destroys anything on the
+way), so `@final` on it is enough. In the sweep, 48 errors carry it, beside the 51 at a direct call of
+such a method. They name native_ts_graphics' `@final`s to add: `MsvcRandom` (41, through the
+examples' `randomFloat`) and `GameWorld` (7). Regression tests
+`tslang/test/tester/tests/00tslang_issue_60.ts` (every model; the shape with `@final`, which compiles) and
+`own/own_err_overridable_reached.ts` (the note).
+
+61 (a module or namespace array nothing assigns, read where a borrow cannot go: `[CUBE_VERTICES,
+PLANE_VERTICES, CUBE_VERTICES]` and `[[MAT_RED, MAT_GREEN, ...], [MAT_GREY]]` in
+`examples/nri/ray_tracing_reflection_nri.ts`, `return GREEN;` in `examples/nri/collision_nri.ts`, `const p
+= CAMERA_POSITION;` held across calls in `examples/nri/async_compute_bloom_nri.ts`, refused "the value read
+from 'X' is kept where its end at an assignment of 'X' cannot be checked" and "borrows the global 'X' and
+cannot be stored, returned or captured") is fixed. Even a plain `const A = [1.0, 2.0]` at the top level was
+refused: only a global of a class type could be immortal (own spec 25). An array global is now one on the
+same terms - not exported, written once by its initializer, given a fresh array, nothing, or another
+immortal global's value - and a read of it owns nothing and may go anywhere. The block made immortal is the
+array's header, which every array release tests first, so neither its data nor its elements are released
+through it; an element overwritten, popped or spliced out still frees the old element, and a borrow of
+`G[i]` stays bounded. A global pushed to, or written in any other way through its address, stays mortal.
+The initializing store marks the header only when it is mortal: a constant array's header is in read-only
+data, immortal already. Spec 25 has the amendment. In the sweep, 126 sources failing went to 119
+(`ptlas.ts`, `ray_tracing_reflection.ts`, `collision.ts`, `nvrhi_direct.ts`, `async_compute_bloom.ts`,
+`msaa.ts`, `texture_compression_comparison.ts` now compile, and `ray_tracing_reflection_nri.ts` went from
+29 errors to 1), and errors from 907 to 811. Regression tests `tslang/test/tester/tests/00tslang_issue_61.ts`
+(every model) and `own/own_err_immortal_array_element_overwritten.ts`.
+
+62 (an array changed in place through a local that borrows the field holding it: `const model =
+this.refractionModel; ... model.push(0.0);` in `examples/ray_tracing_extended.ts` and its NRI ports, refused
+"borrows a field and cannot be stored, returned or captured" at the push) is fixed. `push`, `pop`,
+`unshift`, `shift` and `splice` take the slot that holds the array's header, and the borrowing local's
+slot was taken to keep the field's value. The header is the field's array, so the change is the field's
+too: each such op through the local is now a use of the borrow, bounded as a read is. An element read
+before a `pop` and used after, the field given another array before a use, and the local returned or
+stored are still refused. A field that holds a null header (never given an array) gets one in the local's
+slot only, which nothing frees: that is `undefined` in TypeScript terms, where `.push` throws, as the
+array spec's ruling T4-D accepts for a parameter. In the sweep, 4 errors less (807); the two NRI ports
+keep others. Regression tests `tslang/test/tester/tests/00tslang_issue_62.ts` (every model) and
+`own/own_err_borrowed_array_pushed_returned.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -394,7 +445,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 4 `core/` modules do not compile yet (`donut_first_person_camera.ts`,
   `nri_donut_textures.ts`, `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-59 in, 126 of the 276 sources fail. The
+  which #310 did not port: with every facts object built and 50-62 in, 119 of the 276 sources fail. The
   largest group left is "borrows a field but is used here after it may be released or overwritten" (about
   200 sites), then "used here after its value was moved" (37: mostly a value a pushed object or an
   earlier call keeps, then returned or used).

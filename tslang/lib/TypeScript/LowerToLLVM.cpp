@@ -5522,7 +5522,15 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && storeOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME))
         {
             OwnershipRoutineLogic orl(storeOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitMarkImmortal(transformed.getValue());
+            // an array's header may be a constant one in read-only data, immortal already (TSLANG 61)
+            if (mlir::isa<mlir_ts::ArrayType>(storeOp.getValue().getType()))
+            {
+                orl.emitMarkImmortalIfMortal(transformed.getValue());
+            }
+            else
+            {
+                orl.emitMarkImmortal(transformed.getValue());
+            }
         }
 
         const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition

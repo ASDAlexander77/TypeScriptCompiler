@@ -758,6 +758,21 @@ namespace own_inference
                 << "'" << method.getValue() << "' may be overridden in another module by a method that does; '@" FINAL_DECORATOR
                 << "' on the method, or on its class, says it is not";
         }
+        // ...or a call of a function here that reaches such a call (TSLANG 60)
+        else if (auto via = drop->getAttrOfType<mlir::ArrayAttr>(OWN_OVERRIDABLE_VIA_ATTR_NAME); via && via.size() >= 2)
+        {
+            // `'Prop.tick' calls 'setNodeTransform', which calls 'GameWorld.setGameNodeTransform'`
+            auto &note = diag.attachNote(drop->getLoc());
+            note << "'" << mlir::cast<mlir::StringAttr>(via[1]).getValue() << "' calls '";
+            for (auto index = 2u; index < via.size(); ++index)
+            {
+                note << mlir::cast<mlir::StringAttr>(via[index]).getValue() << "', which calls '";
+            }
+
+            note << mlir::cast<mlir::FlatSymbolRefAttr>(via[0]).getValue()
+                 << "'; that method may be overridden in another module by a method that does; '@" << FINAL_DECORATOR
+                 << "' on the method, or on its class, says it is not";
+        }
 
         signalPassFailure();
     }

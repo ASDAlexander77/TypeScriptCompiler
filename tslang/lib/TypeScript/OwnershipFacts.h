@@ -73,6 +73,10 @@ namespace mlir_ts = mlir::typescript;
 // A virtual call that may destroy anything only because another module may override the method it
 // names (TSLANG 48): the method's symbol, for the error that a borrow ends there
 #define OWN_OVERRIDABLE_CALL_ATTR_NAME "__own_overridable_call"
+// A call of functions defined here that may destroy anything because a call they reach, directly or
+// through others, is such a virtual call (TSLANG 60): [the method's symbol, then the functions on the
+// way to it, the callee first], for the same error
+#define OWN_OVERRIDABLE_VIA_ATTR_NAME "__own_overridable_via"
 // On a `ts.ReleaseSlot` of a field: a fill of the field, tested empty on the way (fillsEmptyField,
 // TSLANG 47), which frees nothing. The signature pass decides it, with what calls in between may write.
 #define OWN_FILL_ATTR_NAME "__own_fill"
