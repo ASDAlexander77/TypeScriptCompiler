@@ -1016,9 +1016,12 @@ namespace own_inference
                     continue;
                 }
 
-                // moved on some ways only: on the others it must be empty (TSLANG 49)
+                // moved on some ways only: on the others it must be empty (TSLANG 49) - or moved by
+                // another taker: `if (c) this.a.push(node); else this.b.push(node);` reaches the
+                // release only past one move or the other (TSLANG 69)
                 if (!dominance->properlyDominates(acquire, release) &&
-                    !emptyWhereNotMoved(value, definition, acquire, release))
+                    !emptyWhereNotMoved(value, definition, acquire, release) &&
+                    !(definition && takers.size() > 1 && !reachableAfter(definition, release, takers)))
                 {
                     reportMovedOnSomePaths(taker, release, name);
                     return false;
