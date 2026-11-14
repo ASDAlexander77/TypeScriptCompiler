@@ -506,6 +506,9 @@ namespace own_signature
         {
             mlir_ts::VariableOp local;
             mlir_ts::PropertyRefOp field;
+            // a field of a constructor's `this` that never escapes it: no call reaches the object, so
+            // none writes the field (TSLANG 80)
+            bool callsCannotWrite = false;
 
             // the state after `op`, given the state before it
             bool step(mlir::Operation *op, bool holds)
@@ -571,9 +574,38 @@ namespace own_signature
                     return false;
                 }
 
-                return holds && !mayWriteField(op, field, slot, [](mlir::Operation *) { return true; });
+                auto cannot = callsCannotWrite;
+                return holds && !mayWriteField(op, field, slot, [cannot](mlir::Operation *) { return !cannot; });
             }
         };
+
+        // Is `field` a field of the `this` of a constructor that only ever reads `this` to reach its
+        // fields - never gives it to a call or stores it - so that no call can reach the object
+        // (TSLANG 80)?
+        static bool fieldOfUnescapedThis(mlir_ts::PropertyRefOp field)
+        {
+            auto funcOp = field->getParentOfType<mlir_ts::FuncOp>();
+            auto objectLoad = field.getObjectRef().getDefiningOp<mlir_ts::LoadOp>();
+            auto slot = objectLoad ? objectLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (!funcOp || !funcOp.getSymName().ends_with(".constructor") || !slot || slot->getNumOperands() != 1 ||
+                funcOp.isExternal())
+            {
+                return false;
+            }
+
+            auto argument = mlir::dyn_cast<mlir::BlockArgument>(slot->getOperand(0));
+            if (!argument || argument.getArgNumber() != 0 || argument.getOwner() != &funcOp.getFunctionBody().front())
+            {
+                return false;
+            }
+
+            return llvm::all_of(slot.getResult().getUsers(), [](mlir::Operation *user) {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                return loadOp && llvm::all_of(loadOp->getUsers(), [](mlir::Operation *loadUser) {
+                           return mlir::isa<mlir_ts::PropertyRefOp>(loadUser);
+                       });
+            });
+        }
     } // namespace
 
     void OwnershipSignaturePass::borrowParametersInLocals(mlir::ModuleOp module)
@@ -1358,7 +1390,7 @@ namespace own_signature
                         return;
                     }
 
-                    pairs.push_back({varOp, field});
+                    pairs.push_back({varOp, field, fieldOfUnescapedThis(field)});
                 };
 
                 if (auto init = varOp.getInitializer())

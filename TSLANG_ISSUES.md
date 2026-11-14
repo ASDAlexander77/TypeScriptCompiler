@@ -616,13 +616,15 @@ early `return this.pipelines[i]` is no longer refused either. `msaa_nri.ts` and
 `dynamic_multisample_rasterization_nri.ts` compile. Regression tests
 `tslang/test/tester/tests/00tslang_issue_79.ts` (every model) and `own/own_err_pushed_let_popped.ts`.
 
-80 (a parameter the function owns, stored into a field, then read again: `constructor(world: GameWorld, public
-name: string, ...)`, then `${name}` in a loop that calls, in `core/rtxpt_game.ts`, refused "is used here after
-its value was moved") is open. The local/field pairing reads the field for later reads of the parameter, but stops
-at any call, as in that loop. Copying the parameter at the store instead leaks it: the caller gave it up, and
-nothing releases it then (`own/own_err_string_kept_param_known.ts`; a first fix that copied grew 3M calls to
-2.7 GB, and was backed out). The fix is for the pairing to see past calls that cannot reach the object. Meanwhile
-`this.name` reads the field.
+80 (a parameter a constructor stores into a field, then reads in a loop that calls: `constructor(world:
+GameWorld, public name: string, ...)`, then `${name}` in `core/rtxpt_game.ts`, refused "is used here after its
+value was moved") is fixed. The pairing of a local with the field it was stored into reads the field for
+the local's later reads, but it stopped at any call. A constructor that reads `this` only to reach its fields
+never gives the object to anyone, so no call can write them, and the pairing now sees past calls there. Copying
+the parameter at the store instead leaks it: the caller gave it up, and nothing releases the copy's original
+(`own/own_err_string_kept_param_known.ts`). A first fix that copied grew 3M calls to 2.7 GB, and was backed out
+before #856. A constructor that gives `this` away is still refused. Regression tests
+`tslang/test/tester/tests/00tslang_issue_80.ts` (every model) and `own/own_err_escaped_this_field_read.ts`.
 
 81 (a value moved on some paths only: `const controller = new LightController(); if (controller.read(...)) {
 ...; this.lights.push(controller); }` in `core/rtxpt_game.ts`, refused "is moved here on some paths only; -mm=own
