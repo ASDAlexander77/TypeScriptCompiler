@@ -119,6 +119,21 @@ namespace own_signature
             return isUnassignedSlot(loadOp.getReference());
         }
 
+        // The object can be read again right after a store into its field or a push into it - nothing
+        // runs between, so a read of an element or of a field is the same object (TSLANG 59: `const
+        // frame = this.frames[i]; frame.view = view;`, with `frame` the element read itself).
+        bool objectReadableRightAfter(mlir_ts::PropertyRefOp field)
+        {
+            if (objectReadable(field))
+            {
+                return true;
+            }
+
+            auto loadOp = field.getObjectRef().getDefiningOp<mlir_ts::LoadOp>();
+            return loadOp && (loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>() ||
+                              loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>());
+        }
+
         // `value` seen through the views that keep its block: an optional made of it or opened, a
         // widening or narrowing cast that is a view.
         mlir::Value stripViews(mlir::Value value)
@@ -606,7 +621,7 @@ namespace own_signature
             llvm::SmallVector<mlir_ts::StoreOp> movedStores;
             body->walk([&](mlir_ts::StoreOp storeOp) {
                 auto field = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
-                if (field && objectReadable(field))
+                if (field && objectReadableRightAfter(field))
                 {
                     movedStores.push_back(storeOp);
                 }
@@ -670,7 +685,7 @@ namespace own_signature
             for (auto pushOp : pushes)
             {
                 auto field = pushOp.getOp().getDefiningOp<mlir_ts::PropertyRefOp>();
-                if (pushOp.getItems().size() != 1 || !field || !objectReadable(field))
+                if (pushOp.getItems().size() != 1 || !field || !objectReadableRightAfter(field))
                 {
                     continue;
                 }

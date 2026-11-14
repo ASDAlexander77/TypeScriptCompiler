@@ -368,6 +368,22 @@ own declaration was taken as reached again around the loop before the merge is r
 the sweep went from 141 failing sources to 126. Regression tests `tslang/test/tester/tests/00tslang_issue_58.ts`
 (every model) and `own/own_err_merged_locals_overwritten.ts`, `own/own_err_merged_locals_moved.ts`.
 
+59 (a value moved into a field of an object read out of an array, then used: `const queuedFrame =
+this.queuedFrames[i]; ... queuedFrame.aabbAttributeBuffer = buffer; const view = buffer ?
+buffer.createStructuredView(0) : null;` in `examples/nri/procedural_geometry_nri.ts`, refused "used here
+after its value was moved") is fixed. 50 and 52 follow a value moved into a field, or pushed into a field
+array, by reading the field right after the move; they took only an object read out of a local or
+parameter nothing assigns. A `const` given an element or a field is no local by then (it is the read
+itself), so `frame.view = view` with `const frame = frames[i]` was left a move. The read right after the
+move now takes an object read out of an element or a field too: nothing runs between, so it is the same
+object, and the checks then follow the borrow through that chain. The element or the field it hangs from
+replaced, popped or reset before a use is still refused. In the
+sweep, "used here after its value was moved" went from 49 sites to 37, and `core/ray_tracing_extended_scene.ts`'s
+own errors are left (its `@keeps` and `Shared<T>`, below). One site of this shape is left,
+`procedural_geometry_nri.ts:425` (`!aabbAttributeView` after the `||` chain), which a reduced copy of it
+does not reproduce. Regression tests `tslang/test/tester/tests/00tslang_issue_59.ts` (every model) and
+`own/own_err_element_field_moved_replaced.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -378,8 +394,7 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   takes it; the next release won't. `desc.setDepthClip(clip != 0)` fixes it.
 - Under `-mm=own`, 4 `core/` modules do not compile yet (`donut_first_person_camera.ts`,
   `nri_donut_textures.ts`, `ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and nor do many examples,
-  which #310 did not port: with every facts object built and 50-58 in, 126 of the 276 sources fail. A
-  compiler gap 58 uncovered: 50's "a value moved into a field and used after borrows the field" does not
-  hold inside a loop's body (`frame.buf = buf; if (buf) ...` in `examples/nri/procedural_geometry_nri.ts`
-  is "used here after its value was moved", 49 sites in all). The largest group left is "borrows a field
-  but is used here after it may be released or overwritten" (about 200 sites).
+  which #310 did not port: with every facts object built and 50-59 in, 126 of the 276 sources fail. The
+  largest group left is "borrows a field but is used here after it may be released or overwritten" (about
+  200 sites), then "used here after its value was moved" (37: mostly a value a pushed object or an
+  earlier call keeps, then returned or used).
