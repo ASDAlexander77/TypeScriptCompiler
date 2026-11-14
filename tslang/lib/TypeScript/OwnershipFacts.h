@@ -2329,6 +2329,93 @@ inline mlir_ts::ClassStorageType fieldOwnerStorage(mlir_ts::PropertyRefOp proper
     return mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
 }
 
+// Can a value of type `holder`, released, free a value of type `target`: is `target` the holder, or
+// under it, by the types its fields, elements and members can hold (TSLANG 82)? A class not known to be
+// of that class only (not @final, OWN_FINAL_CLASSES_ATTR_NAME) may be a subclass holding anything, and
+// an interface, `any`, a function (its captures) or a type not listed here may too.
+inline bool typeMayHold(mlir::ModuleOp module, mlir::Type holder, mlir::Type target, llvm::SmallPtrSetImpl<mlir::Type> &seen)
+{
+    if (holder == target)
+    {
+        return true;
+    }
+
+    if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(target))
+    {
+        return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return typeMayHold(module, holder, member, seen); });
+    }
+
+    if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(target))
+    {
+        return typeMayHold(module, holder, optionalType.getElementType(), seen);
+    }
+
+    // the target an object of its type only: an array, or a @final class's (not a base class's, whose
+    // object may be a subclass's, held in a field of that type)
+    if (auto targetClass = mlir::dyn_cast<mlir_ts::ClassType>(target))
+    {
+        auto finals = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_FINAL_CLASSES_ATTR_NAME) : mlir::ArrayAttr();
+        auto name = targetClass.getName().getValue();
+        if (!finals || !llvm::any_of(finals.getAsRange<mlir::StringAttr>(), [&](mlir::StringAttr each) { return each.getValue() == name; }))
+        {
+            return true;
+        }
+    }
+    else if (!mlir::isa<mlir_ts::ArrayType>(target))
+    {
+        return true;
+    }
+
+    if (mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::StringType, mlir_ts::CharType, mlir_ts::LiteralType,
+                  mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::EnumType, mlir_ts::OpaqueType, mlir::IntegerType,
+                  mlir::FloatType, mlir::IndexType>(holder))
+    {
+        return false;
+    }
+
+    if (!seen.insert(holder).second)
+    {
+        return false; // its fields are looked at already
+    }
+
+    if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(holder))
+    {
+        return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return typeMayHold(module, member, target, seen); });
+    }
+
+    if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(holder))
+    {
+        return typeMayHold(module, optionalType.getElementType(), target, seen);
+    }
+
+    if (auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(holder))
+    {
+        return typeMayHold(module, arrayType.getElementType(), target, seen);
+    }
+
+    if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(holder))
+    {
+        auto finals = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_FINAL_CLASSES_ATTR_NAME) : mlir::ArrayAttr();
+        auto name = classType.getName().getValue();
+        auto isFinal = finals && llvm::any_of(finals.getAsRange<mlir::StringAttr>(), [&](mlir::StringAttr each) { return each.getValue() == name; });
+        auto storageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType());
+        if (!isFinal || !storageType)
+        {
+            return true;
+        }
+
+        return llvm::any_of(storageType.getFields(), [&](mlir_ts::FieldInfo field) { return typeMayHold(module, field.type, target, seen); });
+    }
+
+    return true;
+}
+
+inline bool typeMayHold(mlir::ModuleOp module, mlir::Type holder, mlir::Type target)
+{
+    llvm::SmallPtrSet<mlir::Type, 8> seen;
+    return typeMayHold(module, holder, target, seen);
+}
+
 // Is `ref` a private field nothing writes after its object's constructor (OWN_STABLE_FIELDS_ATTR_NAME, the
 // signature pass's, TSLANG 73)?
 inline bool isStableField(mlir::Value ref)

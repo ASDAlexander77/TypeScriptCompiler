@@ -634,6 +634,20 @@ into what follows the move, from where the value is held and was not moved. The 
 use after the paths join is still refused, a copyable value's read included (`own_string_copy_branch.ts`). Regression tests `tslang/test/tester/tests/00tslang_issue_81.ts`
 (every model) and `own/own_err_moved_on_some_paths_used.ts`.
 
+82 (a borrow of a call's result across a store of an unrelated type: `const texture = this.swapChain.texture(index);
+...; this.recordTriangle(commandBuffer); ...; commandBuffer.textureBarrier(texture, ...)` in
+`examples/nri/color_write_enable_nri.ts`, where `recordTriangle` stores a pipeline into
+`this.trianglePipelines[enabled]`, refused "borrows the result of 'NriSwapChain.texture' but is used here after
+it may be released or overwritten") is fixed. A call's result borrows a place not known, so any release was
+taken to free it. A release frees the released value and what it holds, which is what its type can hold. When
+that type cannot hold the borrowed value's type, it cannot free it: the release, or a call whose drops are
+known stores, is no longer taken to. Only an object whose class is known is followed: a @final class's, or a
+declared @cpp one, which holds nothing of ours (MLIRGen lists them on the module, OWN_FINAL_CLASSES_ATTR_NAME).
+Any other class may be a subclass's object, holding anything, and an interface, `any` or a function may hold
+anything too. The borrowed value too must be of a @final class, or an array. In the sweep,
+`color_write_enable_nri.ts` and `logic_op_dynamic_state_nri.ts` compile. Regression tests
+`tslang/test/tester/tests/00tslang_issue_82.ts` (every model) and `own/own_err_borrowed_result_holder_stored.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
