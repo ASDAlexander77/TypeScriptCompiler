@@ -38,7 +38,7 @@ function main() {
     assert(s % 256 == minus109);
     assert(s % 1000000007 == minus340597691);
 
-    // narrower integers keep the number path
+    // narrower integers: an integer remainder too (00int_remainder.ts)
     let i: s32 = 1000;
     assert(i % 7 == 6);
     let n: number = 7.5;
