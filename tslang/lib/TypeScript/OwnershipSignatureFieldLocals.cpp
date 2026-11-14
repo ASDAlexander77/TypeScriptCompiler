@@ -348,7 +348,10 @@ namespace own_signature
                 return kept;
             }
 
-            // `this` only read, and only for its fields, which are only read or written
+            // `this` only read, and only for its fields, which are only read or written. Or `this` given
+            // to a call (`this.reset()`), which may reach any field it can write: then only a private
+            // field nothing but this constructor writes (TSLANG 76), which no call can
+            auto escapes = false;
             llvm::DenseMap<int32_t, unsigned> stores;
             llvm::SmallVector<mlir_ts::StoreOp> candidates;
             for (auto *user : thisSlot.getUsers())
@@ -364,7 +367,8 @@ namespace own_signature
                     auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(loadUser);
                     if (!propertyRefOp)
                     {
-                        return kept;
+                        escapes = true;
+                        continue;
                     }
 
                     for (auto *refUser : propertyRefOp->getUsers())
@@ -393,11 +397,37 @@ namespace own_signature
                 }
             }
 
+            // a private field of the constructor's class that no other function writes
+            auto writtenOnlyHere = [&](mlir_ts::PropertyRefOp field) {
+                auto storage = fieldOwnerStorage(field);
+                auto fields = storage ? storage.getFields() : decltype(storage.getFields())();
+                auto position = field.getPosition();
+                if (!storage || position < 0 || static_cast<size_t>(position) >= fields.size() ||
+                    fields[position].accessLevel != mlir_ts::AccessLevel::Private)
+                {
+                    return false;
+                }
+
+                auto module = ctor->getParentOfType<mlir::ModuleOp>();
+                auto written = false;
+                module.walk([&](mlir_ts::PropertyRefOp propertyRefOp) {
+                    if (written || propertyRefOp.getPosition() != position || fieldOwnerStorage(propertyRefOp) != storage ||
+                        propertyRefOp->getParentOfType<mlir_ts::FuncOp>() == ctor)
+                    {
+                        return;
+                    }
+
+                    written = !llvm::all_of(propertyRefOp->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+                });
+                return !written;
+            };
+
             for (auto storeOp : candidates)
             {
                 auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
                 auto loadOp = stripViews(storeOp.getValue()).getDefiningOp<mlir_ts::LoadOp>();
-                if (storeOp->getBlock() != &entry || stores[propertyRefOp.getPosition()] != 1 || !loadOp)
+                if (storeOp->getBlock() != &entry || stores[propertyRefOp.getPosition()] != 1 || !loadOp ||
+                    (escapes && !writtenOnlyHere(propertyRefOp)))
                 {
                     continue;
                 }
