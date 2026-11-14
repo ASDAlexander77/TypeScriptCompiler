@@ -1929,14 +1929,14 @@ endforeach()
 # TSLANG_ISSUES 77: an array kept by a constructor, then filled through the local
 # TSLANG_ISSUES 78: a value pushed on or stored into a field of a local object, then used
 # TSLANG_ISSUES 79: a local pushed only where it is not null, then used
-# TSLANG_ISSUES 80-81: an owned parameter stored into a field, then read; a value moved on some paths only
+# TSLANG_ISSUES 81: a value moved on some paths only
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
                         00tslang_issue_58 00tslang_issue_59 00tslang_issue_60
                         00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71 00tslang_issue_73
                         00tslang_issue_75 00tslang_issue_76 00tslang_issue_77 00tslang_issue_78 00tslang_issue_79
-                        00tslang_issue_80 00tslang_issue_81)
+                        00tslang_issue_81)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()

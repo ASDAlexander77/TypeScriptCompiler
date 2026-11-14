@@ -618,17 +618,18 @@ early `return this.pipelines[i]` is no longer refused either. `msaa_nri.ts` and
 
 80 (a parameter the function owns, stored into a field, then read again: `constructor(world: GameWorld, public
 name: string, ...)`, then `${name}` in a loop that calls, in `core/rtxpt_game.ts`, refused "is used here after
-its value was moved") is fixed. The local/field pairing reads the field for later reads of the parameter, but
-stops at any call, as in that loop. A read of a parameter the function owns, stored into a field, was then
-always moved, never copied. It is now copied when the parameter can be read again after the store, so that
-read finds it. Regression test `tslang/test/tester/tests/00tslang_issue_80.ts` (every model).
+its value was moved") is open. The local/field pairing reads the field for later reads of the parameter, but stops
+at any call, as in that loop. Copying the parameter at the store instead leaks it: the caller gave it up, and
+nothing releases it then (`own/own_err_string_kept_param_known.ts`; a first fix that copied grew 3M calls to
+2.7 GB, and was backed out). The fix is for the pairing to see past calls that cannot reach the object. Meanwhile
+`this.name` reads the field.
 
 81 (a value moved on some paths only: `const controller = new LightController(); if (controller.read(...)) {
 ...; this.lights.push(controller); }` in `core/rtxpt_game.ts`, refused "is moved here on some paths only; -mm=own
 cannot release it on the others yet") is fixed. Spec 30 placed a local's release on the edges that did not move
 it; a value, like the `const` here, had no such rule. Now a value one taker moves gets its release on each edge
 into what follows the move, from where the value is held and was not moved. The release after the move goes. A
-use after the paths join is still refused. Regression tests `tslang/test/tester/tests/00tslang_issue_81.ts`
+use after the paths join is still refused, a copyable value's read included (`own_string_copy_branch.ts`). Regression tests `tslang/test/tester/tests/00tslang_issue_81.ts`
 (every model) and `own/own_err_moved_on_some_paths_used.ts`.
 
 For native_ts_graphics, from the same sweep (its code, not the compiler):
