@@ -292,6 +292,12 @@ class OwnershipInferencePass
     // An array literal held in a local, made only of reads of places and parameters and only read
     // (TSLANG 55): it borrows its elements while it is used, and its releases are shallow.
     void classifyLocalBorrowingArrays();
+    // An owning `let` given only reads of places and parameters, and assigned at least once
+    // (TSLANG 56): each value it is given is a borrow until the next assignment.
+    bool borrowsOnly(mlir_ts::VariableOp varOp);
+    // The `let` (borrowsOnly) that `user` assigns `value` to - the store itself, or rc's retain right
+    // before it - or null.
+    mlir_ts::VariableOp borrowingAssignmentOf(mlir::Operation *user, mlir::Value value);
 
     // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
     // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
@@ -517,10 +523,12 @@ class OwnershipInferencePass
     // A borrowing `let`'s slot: each read, and everything it leads to (walkBorrowed), joins
     // `uses`, made again at `kills`; its `ts.RetainSlot` and `ts.ReleaseSlot`s are `bookkeeping`,
     // which a borrow erases. Answers the first use that would keep what the slot holds - an
-    // assignment, or anything else that is not a read - or null.
+    // assignment, or anything else that is not a read - or null. For a `let` given only borrows
+    // (borrowsOnly, TSLANG 56) its assignments end each borrow, and with `from` (the store of the
+    // value: the declaration or an assignment) only the reads it reaches before one are its uses.
     mlir::Operation *collectBorrowerUses(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> kills,
                                          llvm::SmallVectorImpl<BorrowUse> &uses,
-                                         llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping);
+                                         llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping, mlir::Operation *from = nullptr);
 
     static bool isAssignmentOf(mlir::Operation *op, mlir_ts::VariableOp varOp);
 

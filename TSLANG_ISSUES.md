@@ -323,6 +323,22 @@ given a new array (`let dir = this.dir; ... dir = rotateAround(...)`). Regressio
 `tslang/test/tester/tests/00tslang_issue_55.ts` (every model, and as an exe) and
 `own/own_err_borrowing_array_field_reset.ts`.
 
+56 (a `let` given only fields: `let layout = this.computeLayout; ... if (this.fp16Enabled) { layout =
+this.computeLayoutFP16; ... }` in `examples/nri/16bit_arithmetic_nri.ts`, refused "borrows a field and
+cannot be assigned; -mm=own cannot prove that yet") is fixed. An owning `let` whose declaration and
+every assignment give it a read of a field or an element, or a parameter, borrows each value it is
+given until the next assignment. Each read's uses are the `let`'s reads its own store reaches before
+another assignment, and the assignments end it, so a field written once the `let` holds another field
+is fine, in a loop too. rc's references for the `let` (its retain, its releases, and the retain for each
+assignment) go. Still refused: the field the `let` holds written (or a call that may write it) before a
+use, the `let` stored or returned, and a fresh value assigned (`dir = rotateAround(...)` in
+`core/donut_first_person_camera.ts`, which would make the `let` own its value on some ways and borrow
+it on others). One shape is refused that is sound: in a loop that reads the `let`, assigns it another
+field and then writes the first, a read after the loop is taken to see the first field. In the sweep
+the only `cannot be assigned` errors left are the camera's two. Regression tests
+`tslang/test/tester/tests/00tslang_issue_56.ts` (every model, and as an exe) and
+`own/own_err_let_borrows_reassigned_overwritten.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still
