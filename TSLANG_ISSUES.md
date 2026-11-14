@@ -502,7 +502,10 @@ and a union of them (and null) that needs no tag is now a view. In the sweep, 2 
 (`conservative_rasterization.ts`, `multi_draw_indirect.ts`) and 20 errors less. A union of string literals
 also allows only its literals now, under every model: `let a: "no" | "yes" = "maybe"`, a `string` given
 to it, or `a = "maybe"` after `let a = yesNo(v)`, compiled and held "maybe"; each is now refused, as in
-TypeScript (TS2322, and TS2345 for an argument). Regression tests
+TypeScript (TS2322, and TS2345 for an argument). The check found a parameter property typed by its
+default left unwidened: `constructor(private source: string, private flags = "")` in the default library's
+`RegExp` made a field of type `""`; it is a `string` now, as a declared field and a parameter already were.
+Regression tests
 `tslang/test/tester/tests/assign_string_literal_union_error.ts`, `assign_string_to_literal_union_error.ts`
 and `argument_string_literal_union_error.ts`.
 
