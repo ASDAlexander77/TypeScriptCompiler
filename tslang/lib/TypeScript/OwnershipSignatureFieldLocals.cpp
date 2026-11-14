@@ -188,6 +188,18 @@ namespace own_signature
             return run(at->getBlock(), in[at->getBlock()], at);
         }
 
+        // A value the steps below may follow to where it moves: made here (not a read of a local or a
+        // place), or merged from branches that each bring a fresh value or null (TSLANG 54).
+        bool ownValue(mlir::Value root, mlir::Operation *def)
+        {
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root))
+            {
+                return own_facts::isFreshMerge(argument);
+            }
+
+            return def && !mlir::isa<mlir_ts::LoadOp>(def);
+        }
+
         // The fields a constructor keeps its parameters in (TSLANG 53): a parameter stored as it is into a
         // field of `this` that nothing else in the constructor writes, where `this` never escapes - it
         // is only read for its fields, so no call the constructor makes can reach the field. By the
@@ -502,7 +514,7 @@ namespace own_signature
                                 mlir::isa<mlir_ts::UnionType>(fieldType);
                 // a string and the like are copied into the field, and a Shared<T> handle counted:
                 // the value stays the function's own, not moved
-                if (!def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                if (!ownValue(root, def) || !own_facts::ownsHeap(root) ||
                     own_facts::isCopyableValueAt(fieldStore, root.getType()) ||
                     MLIRTypeHelper::isSharedHandleType(root.getType()) || (!narrowed && !fieldReadsAs(field, root.getType())))
                 {
@@ -555,7 +567,7 @@ namespace own_signature
                 auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(mlir::cast<mlir_ts::RefType>(field.getType()).getElementType());
                 auto root = stripViews(pushOp.getItems().front());
                 auto *def = root.getDefiningOp();
-                if (!arrayType || !def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                if (!arrayType || !ownValue(root, def) || !own_facts::ownsHeap(root) ||
                     own_facts::isCopyableValueAt(pushOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()))
                 {
                     continue;
@@ -666,7 +678,7 @@ namespace own_signature
                     auto fieldType = fieldRefType.getElementType();
                     auto narrowed = fieldType != root.getType() && mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(root.getType()) &&
                                     mlir::isa<mlir_ts::UnionType>(fieldType);
-                    if (!def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                    if (!ownValue(root, def) || !own_facts::ownsHeap(root) ||
                         own_facts::isCopyableValueAt(callOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()) ||
                         (fieldType != root.getType() && !narrowed))
                     {

@@ -708,7 +708,14 @@ namespace own_inference
             }
         });
 
+        // a block's argument (a merge, TSLANG 54) is made again each time its block is entered: in a
+        // loop, the release at the end of one iteration and the one of the next are of two values
         auto *definition = value.getDefiningOp();
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value); argument && !argument.getOwner()->empty())
+        {
+            definition = &argument.getOwner()->front();
+        }
+
         for (auto *first : releases)
         {
             for (auto *second : releases)
@@ -924,7 +931,13 @@ namespace own_inference
             }
         });
 
+        // a block's argument (a merge, TSLANG 54) is made where its block starts, each time it is
+        // entered: a move of it in that loop's body is of that iteration's value
         auto *definition = value.getDefiningOp();
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value); argument && !argument.getOwner()->empty())
+        {
+            definition = &argument.getOwner()->front();
+        }
 
         // `c ? h : h2` that is only read borrows `h` and `h2`, and in a loop moves neither. What
         // reads the merged value reads this one, so each such read can be a use after a move of

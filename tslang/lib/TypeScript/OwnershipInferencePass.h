@@ -289,6 +289,9 @@ class OwnershipInferencePass
     // The arrays a rest parameter is given that only borrow their elements for the call (spec 49):
     // rc's references for the elements go, and the array is released after the call without them.
     void classifyArgumentArrays();
+    // An array literal held in a local, made only of reads of places and parameters and only read
+    // (TSLANG 55): it borrows its elements while it is used, and its releases are shallow.
+    void classifyLocalBorrowingArrays();
 
     // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
     // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
@@ -623,6 +626,9 @@ class OwnershipInferencePass
     // a store of a place read into a borrowing record's field -> the record's uses, which are the
     // read's uses too (walkBorrowed)
     llvm::DenseMap<mlir::Operation *, BorrowingRecord *> recordStoreUses;
+    // an array literal that only borrows its elements (classifyLocalBorrowingArrays, TSLANG 55) ->
+    // its uses, and those of what is read out of it: uses of each element (walkBorrowed)
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<BorrowUse>> arrayElementUses;
 
     // Can a value of this type point into a heap block - a reference into one, a block of its own,
     // or a method bound to one? A number or a boolean read out of a borrowed block cannot.

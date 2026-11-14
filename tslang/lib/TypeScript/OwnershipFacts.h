@@ -6,6 +6,7 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -576,8 +577,106 @@ inline bool takenOutOfBorrowedRest(mlir::Operation *def)
     return rest && !llvm::is_contained(ownedParams(rest.getOwner()->getParentOp()), static_cast<int32_t>(rest.getArgNumber()));
 }
 
+inline bool isFresh(mlir::Value value);
+
+// A value merged from branches (TSLANG 54): `const p = loaded ? device.create() : null`. It is the
+// function's own when every way into the merge brings a fresh value that nothing else uses, or null
+// or undefined, which holds no block - rc gave it the one reference the merge holds. Not across a
+// loop: a block that reaches one of its own predecessors carries a value from one iteration into the
+// next, which is not decided here.
+inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0)
+{
+    auto *block = argument.getOwner();
+    if (block->isEntryBlock() || block->hasNoPredecessors() || depth > 8)
+    {
+        return false;
+    }
+
+    // a loop header: a predecessor it dominates comes back to it (a merge inside a loop's body is
+    // fine - each iteration makes its own values)
+    mlir::DominanceInfo dominance(block->getParentOp());
+    for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+    {
+        if (dominance.dominates(block, *predecessor))
+        {
+            return false;
+        }
+
+        auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+        if (!branchOp)
+        {
+            return false;
+        }
+
+        auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+        if (argument.getArgNumber() < operands.getProducedOperandCount())
+        {
+            return false;
+        }
+
+        auto incoming = operands[argument.getArgNumber()];
+        if (!incoming)
+        {
+            return false;
+        }
+
+        // null or undefined, seen through its casts
+        auto constant = incoming;
+        while (auto castOp = constant.getDefiningOp<mlir_ts::CastOp>())
+        {
+            constant = castOp.getIn();
+        }
+
+        if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+            constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+        {
+            continue;
+        }
+
+        if (auto nested = mlir::dyn_cast<mlir::BlockArgument>(incoming))
+        {
+            if (!nested.hasOneUse() || !isFreshMerge(nested, depth + 1))
+            {
+                return false;
+            }
+
+            continue;
+        }
+
+        // the fresh value and the views it reaches the branch through, used by nothing else
+        for (auto value = incoming;;)
+        {
+            if (!value.hasOneUse())
+            {
+                return false;
+            }
+
+            auto *def = value.getDefiningOp();
+            if (def && isView(def) && def->getNumOperands() == 1)
+            {
+                value = def->getOperand(0);
+                continue;
+            }
+
+            if (!isFresh(value))
+            {
+                return false;
+            }
+
+            break;
+        }
+    }
+
+    return true;
+}
+
 inline bool isFresh(mlir::Value value)
 {
+    if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+    {
+        return isFreshMerge(argument);
+    }
+
     auto *def = value.getDefiningOp();
     if (!def || resultBorrows(def) >= 0 || takenOutOfBorrowedRest(def))
     {
