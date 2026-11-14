@@ -622,6 +622,13 @@ class CastLogicHelper
                 if (!needTag)
                 {
                     auto llvmBoolType = tch.convertType(boolType);
+                    // `(() => void) | null` is the function's own value, and a function is true when
+                    // it has code to run (GetMethodOp below): that op takes a function, not the union
+                    if (isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(baseType) && isa<mlir_ts::UnionType>(in.getType()))
+                    {
+                        in = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, baseType, in);
+                    }
+
                     auto valAsBool = cast(in, baseType, tch.convertType(baseType), boolType, llvmBoolType);
                     return valAsBool;
                 }

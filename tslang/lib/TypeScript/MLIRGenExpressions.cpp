@@ -1274,8 +1274,20 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
+        // `(() => void) | null` has no tag: it is the function's own value (isUnionTypeNeedsTag), as
+        // `C | null` is the class's pointer, and is called as that function - a field `this.f` read
+        // again after `if (this.f)` is the union still
+        if (auto funcUnionType = dyn_cast<mlir_ts::UnionType>(funcResult.getType()))
+        {
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(location, funcUnionType, baseType) && baseType && mth.isAnyFunctionType(baseType))
+            {
+                funcResult = builder.create<mlir_ts::GetValueFromUnionOp>(location, baseType, funcResult);
+            }
+        }
+
         auto funcType = funcResult.getType();
-        if (!mth.isAnyFunctionType(funcType) 
+        if (!mth.isAnyFunctionType(funcType)
             && !mth.isBuiltinFunctionType(funcResult)
             // TODO: do I need to use ConstructFunction instead?
             // to support constructor calls

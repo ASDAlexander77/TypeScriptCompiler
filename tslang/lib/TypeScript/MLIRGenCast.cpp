@@ -2715,6 +2715,15 @@ namespace mlirgen
             // it does not match, instead of naming the whole union
             if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
             {
+                // `(() => number) | null` has no tag: it is the function's own value, null an empty
+                // one, as `C | null` is the class's pointer. A function of that type is stored as it is
+                // (castToNullableUnionType has made one of any other)
+                mlir::Type baseType;
+                if (!mth.isUnionTypeNeedsTag(location, unionType, baseType) && baseType == valueType)
+                {
+                    return mlir::success();
+                }
+
                 for (auto memberType : unionType.getTypes())
                 {
                     if (!mth.isAnyFunctionType(memberType))
