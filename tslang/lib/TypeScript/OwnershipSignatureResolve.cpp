@@ -423,6 +423,12 @@ namespace own_signature
             resolveInterfaceSlot(interfaceRefOp, interfaceFamilies, callees);
             return;
         }
+        else if (auto symbol = globalFunction(def))
+        {
+            // a global nothing assigns, given a function by its initializer: `const f = Math.fround`
+            // (TSLANG 75), a call of that function
+            identifier = symbol;
+        }
         else if (mlir::isa_and_nonnull<mlir_ts::LoadOp>(def) || (def && isCall(def)))
         {
             // a callback parameter, field or local; or what a call returned (spec 56)
@@ -465,6 +471,35 @@ namespace own_signature
 
         callees.named = familyOf(index, identifier);
         resolveFamily(index, identifier, callees);
+    }
+
+    mlir::StringAttr OwnershipSignaturePass::globalFunction(mlir::Operation *def)
+    {
+        // `ts.Load(ts.AddressOf @g)` of a global no store writes, whose initializer gives it a
+        // function's symbol, seen through its casts
+        auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+        auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+        if (!addressOfOp || writtenGlobals.contains(addressOfOp.getGlobalName()))
+        {
+            return {};
+        }
+
+        auto globalOp = globals.lookup(addressOfOp.getGlobalName());
+        auto *block = globalOp ? globalOp.getInitializerBlock() : nullptr;
+        auto resultOp = block && !block->empty() ? mlir::dyn_cast<mlir_ts::GlobalResultOp>(block->getTerminator()) : mlir_ts::GlobalResultOp();
+        if (!resultOp || resultOp->getNumOperands() != 1)
+        {
+            return {};
+        }
+
+        auto value = resultOp->getOperand(0);
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            value = castOp.getIn();
+        }
+
+        auto symbolRefOp = value.getDefiningOp<mlir_ts::SymbolRefOp>();
+        return symbolRefOp ? symbolRefOp.getIdentifierAttr().getAttr() : mlir::StringAttr();
     }
 
     void OwnershipSignaturePass::resolveFamily(int64_t index, mlir::StringAttr identifier, Callees &callees)
