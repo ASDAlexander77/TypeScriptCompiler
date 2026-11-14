@@ -56,6 +56,8 @@
 // `ts.RetainSlot` to pair the release with. The ownership verifier reads this attribute as the
 // retain it stands in for.
 #define OWNED_LOCAL_CONSUMED_ATTR_NAME "__owned_consumed"
+// the owning slot that holds the fresh values a `let` borrowing a field is given (TSLANG 66)
+#define OWN_LET_HOLDER_ATTR_NAME "__own_let_holder"
 
 // Marks an OWNED_RESULT_ATTR_NAME operation whose reference some receiver has taken over, so the
 // +1 it produced is now somebody's to give back. Set at each of the receiving sites (§9.25) and

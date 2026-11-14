@@ -647,10 +647,32 @@ inline bool isFreshMerge(mlir::BlockArgument argument, unsigned depth = 0)
             continue;
         }
 
-        // the fresh value and the views it reaches the branch through, used by nothing else
+        // the fresh value and the views it reaches the branch through, used by nothing else - but
+        // what makes an object `ts.New` gives (TSLANG 64: `c ? new V(i) : null`): its vtable's store
+        // into field 0 and the call of its constructor
+        auto constructs = [](mlir::Value value, mlir::Operation *user) {
+            if (!value.getDefiningOp<mlir_ts::NewOp>())
+            {
+                return false;
+            }
+
+            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user))
+            {
+                return propertyRefOp.getPosition() == 0 && llvm::all_of(propertyRefOp->getUsers(), [&](mlir::Operation *fieldUser) {
+                           auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                           return storeOp && storeOp.getReference() == propertyRefOp.getResult();
+                       });
+            }
+
+            auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(user);
+            return callOp && callOp->getNumOperands() > 0 && callOp->getOperand(0) == value &&
+                   callOp.getCallee().ends_with(".constructor") &&
+                   llvm::count(callOp->getOperands(), value) == 1;
+        };
         for (auto value = incoming;;)
         {
-            if (!value.hasOneUse())
+            auto uses = llvm::count_if(value.getUsers(), [&](mlir::Operation *user) { return !constructs(value, user); });
+            if (uses != 1)
             {
                 return false;
             }

@@ -696,6 +696,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // one (functionsEscape) - or an exported function reached by name, which a `@nodrops`
     // declaration takes on as well.
     static bool scalarDeclaration(mlir_ts::FuncOp funcOp);
+    // A C function declared `@nodrops` whose parameters and result are numbers, strings and `@cpp`
+    // handles: it runs no function of this module and reaches no object of it (TSLANG 63)
+    static bool foreignOnlyDeclaration(mlir_ts::FuncOp funcOp);
 
     // `ts.Load(ts.AddressOf @f)`, where the global `f` holds the address of a function exported
     // by a library loaded at run time, looked up by name: that function, if the library exported

@@ -1695,10 +1695,20 @@ namespace own_signature
         auto field = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::PropertyRefOp>();
         return field && fillsEmptyField(releaseSlotOp, [&](mlir::Operation *op) {
                    auto *call = callOf.lookup(op);
-                   // another module's facts count its fills as no drops: they cannot clear a call
-                   if (!call || call->callees.imported)
+                   if (!call)
                    {
                        return true;
+                   }
+
+                   // another module's facts count its fills as no drops: they cannot clear a call.
+                   // A C function declared `@nodrops` runs no function of this module, and given only
+                   // numbers, strings and `@cpp` handles it reaches no field of an object here at all:
+                   // `if (!this.cached) this.cached = new B(C_Get(this.handle))`, a lazy getter in
+                   // native_ts_graphics' core/nri.ts (TSLANG 63)
+                   if (call->callees.imported)
+                   {
+                       auto funcOp = functions.lookup(call->callees.importedName);
+                       return !funcOp || !foreignOnlyDeclaration(funcOp);
                    }
 
                    if (!callMayDrop(call->callees))
