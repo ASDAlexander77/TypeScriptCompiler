@@ -297,12 +297,14 @@ namespace own_signature
         }
 
         // A value the steps below may follow to where it moves: made here (not a read of a local or a
-        // place), or merged from branches that each bring a fresh value or null (TSLANG 54).
+        // place), or merged from branches that each bring a fresh value or null (TSLANG 54) - a call's
+        // result among them, as unmerged: `cond ? null : device.loadTexture(...)` of another module, whose
+        // facts are not read yet (TSLANG 74).
         bool ownValue(mlir::Value root, mlir::Operation *def)
         {
             if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root))
             {
-                return own_facts::isFreshMerge(argument);
+                return own_facts::isFreshMerge(argument, 0, true);
             }
 
             return def && !mlir::isa<mlir_ts::LoadOp>(def);
