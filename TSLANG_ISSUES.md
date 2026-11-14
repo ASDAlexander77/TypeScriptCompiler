@@ -262,6 +262,18 @@ Regression tests `tslang/test/tester/tests/00tslang_issue_50.ts` (every model),
 `test-own-facts-missing-file`. `own/own_err_read_after_move_global.ts` is still refused at all three
 sites, now as a borrow of the field that the global's assignment ends.
 
+52 (a value of the function's own pushed into an array that is a field, then used: `this.textures.push(
+texture); this.srgb.push(srgb); this.views.push(texture.createView(...))` in `core/nri_donut_textures.ts`,
+refused "used here after its value was moved") is fixed the same way. After the push the value is the
+array's last element, so each use the push dominates reads `array[newLength - 1]`, read right after the
+push: a borrow of the element. Pushing into other arrays, or more into the same one, keeps it. A `pop`,
+an element stored, the array replaced, or a call that may do any of these between the push and the use
+is still refused ("borrows an element but is used here after it may be released or overwritten"). In
+the sweep, push-then-use sites went from 91 to 72. The rest move the value into a constructor whose
+result is pushed (`this.queuedFrames.push(new QueuedFrame(viewSet, ...))`, then `viewSet` used): the
+constructor case below, still open. Regression tests `tslang/test/tester/tests/00tslang_issue_52.ts`
+(every model) and `own/own_err_pushed_then_popped.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `examples/dynamic_primitive_clipping.ts:223`, `desc.setDepthClip(clip)` with `clip` the loop's `int`,
   fails under every model since #846 (a number is not a `boolean` argument, TS2345). alpha127 still

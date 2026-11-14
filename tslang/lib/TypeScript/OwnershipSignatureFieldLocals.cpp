@@ -431,6 +431,75 @@ namespace own_signature
                 }
             }
 
+            // The same for a value pushed into an array that is a field (TSLANG 52): `this.textures.push(
+            // texture); this.views.push(texture.createView(...))`. After the push the value is the
+            // array's last element, so each use the push dominates reads `array[newLength - 1]`,
+            // read right after the push: a borrow of the element, followed through the calls between.
+            llvm::SmallVector<mlir_ts::ArrayPushOp> pushes;
+            body->walk([&](mlir_ts::ArrayPushOp pushOp) { pushes.push_back(pushOp); });
+            for (auto pushOp : pushes)
+            {
+                auto field = pushOp.getOp().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (pushOp.getItems().size() != 1 || !field || !objectReadable(field))
+                {
+                    continue;
+                }
+
+                auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(mlir::cast<mlir_ts::RefType>(field.getType()).getElementType());
+                auto root = stripViews(pushOp.getItems().front());
+                auto *def = root.getDefiningOp();
+                if (!arrayType || !def || mlir::isa<mlir_ts::LoadOp>(def) || !own_facts::ownsHeap(root) ||
+                    own_facts::isCopyableValueAt(pushOp, root.getType()) || MLIRTypeHelper::isSharedHandleType(root.getType()))
+                {
+                    continue;
+                }
+
+                // the element read back as the value's type: itself, or widened back to it
+                auto elementType = arrayType.getElementType();
+                if (elementType != root.getType() && !(mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(elementType) &&
+                                                       mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(root.getType())))
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<mlir::OpOperand *> uses;
+                for (auto &use : root.getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (!mlir::isa<mlir_ts::ReleaseOp>(user) && dominance.properlyDominates(pushOp.getOperation(), user))
+                    {
+                        uses.push_back(&use);
+                    }
+                }
+
+                if (uses.empty())
+                {
+                    continue;
+                }
+
+                auto location = pushOp.getLoc();
+                mlir::OpBuilder builder(pushOp->getContext());
+                builder.setInsertionPointAfter(pushOp);
+                auto array = readFieldAt(builder, location, arrayType, field);
+                mlir::Value one = builder.create<mlir_ts::ConstantOp>(location, builder.getI32IntegerAttr(1));
+                one = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), one);
+                mlir::Value last = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, builder.getIndexType(), builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)),
+                    pushOp.getNewSize(), one);
+                last = builder.create<mlir_ts::CastOp>(location, builder.getI32Type(), last);
+                auto elementRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), array, last);
+                mlir::Value read = builder.create<mlir_ts::LoadOp>(location, elementType, elementRef);
+                if (elementType != root.getType())
+                {
+                    read = builder.create<mlir_ts::CastOp>(location, root.getType(), read);
+                }
+
+                for (auto *use : uses)
+                {
+                    use->set(read);
+                }
+            }
+
             // the pairs: a local not captured, and a field it is declared from or that is given it
             llvm::SmallVector<LocalField> pairs;
             body->walk([&](mlir_ts::VariableOp varOp) {
