@@ -568,6 +568,15 @@ module's function, the signature pass decides only after this step. A merge now 
 brings null or a call's result, as the call alone does. Regression test: TSLANG 74's step in
 `tslang/test/tester/own-facts-objects.cmake` (`tests/own_facts_tex_lib.ts`, `tests/own_facts_tex_main.ts`).
 
+75 (a call through a constant that holds a function: `const f = Math.fround;` in `examples/clustered_geometry.ts`,
+then `centroidY = f(centroidY + c.positions[v])` with `c` a cluster of a parameter's mesh, refused "borrows a field
+but is used here after it may be released or overwritten" at each later use of `c`) is fixed. The signature pass
+took a call through a global's value as one through a callback it knows nothing of, so the call could destroy
+anything. A global that no store writes, and that its initializer gives a function's symbol, now resolves to that
+function: `f(...)` is a call of `Math.fround`, which destroys nothing. A global something assigns is still
+unknown. In the sweep, `clustered_geometry.ts` goes from 44 errors to 16. Regression tests
+`tslang/test/tester/tests/00tslang_issue_75.ts` (every model) and `own/own_err_const_alias_drops.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
@@ -587,6 +596,10 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   which a field cannot hold: it is read from `this.frames` where it is recorded (16 examples). The
   `atom_orbitals` examples set two fields to one `Orbital` (`this.orbitalA = this.orbitalB`), a second owner:
   each field gets its own. These are on ntg branch `own-sweep-fixes`.
+- Left in `examples/clustered_geometry.ts` (ntg's call): `Cluster.clone` and `SceneObject.copy` share the
+  vertex, index and material arrays on purpose ("which nothing changes"). That gives each array two owners,
+  so either the copies copy them (`slice()`) or the arrays are `Shared`. The `add` closure keeps its mesh and
+  position and returns the object it pushed; a function, or the caller pushing, would say that.
 - Under `-mm=own`, 2 `core/` modules do not compile yet (`ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and
   nor do many examples, which #310 did not port: with every facts object built, 50-74 in and the changes above,
   48 of the 276 sources fail (194 errors). The largest groups left are "borrows a field but is used here after
