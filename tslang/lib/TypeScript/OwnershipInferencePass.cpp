@@ -38,7 +38,10 @@ namespace own_inference
             if (!passed)
             {
                 makeStringCopies(toErase);
+                splitBorrowingLets();
             }
+
+            splitLetCandidates.clear();
 
             for (auto &[op, name] : dryRunAttrs)
             {
@@ -352,6 +355,7 @@ namespace own_inference
         checkCannotShare();
         checkBorrowingRecords();
         checkRecordResults();
+        checkLetHolders(toErase);
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
 
         if (dryRun)

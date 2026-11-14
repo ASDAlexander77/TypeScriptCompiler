@@ -973,6 +973,12 @@ namespace own_inference
 
             if (!kept && isAssignmentOf(letKept, letKeeps))
             {
+                // a candidate for a holder of its fresh values (TSLANG 66)
+                if (dryRun)
+                {
+                    splitLetCandidates.insert(letKeeps);
+                }
+
                 reportPlaceBorrowerAssigned(letKept, varName(letKeeps), place);
             }
             else

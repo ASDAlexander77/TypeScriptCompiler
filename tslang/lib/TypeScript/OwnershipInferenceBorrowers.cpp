@@ -249,17 +249,21 @@ namespace own_inference
         return true;
     }
 
+    bool OwnershipInferencePass::letBorrows(mlir::Value value)
+    {
+        // a read of a place or of a parameter - or of a split `let`'s holder (TSLANG 66)
+        auto root = rootOf(value);
+        auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();
+        auto slot = rootLoad ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        int index = -1;
+        return placeReadOf(root) || (slot && (isParameterSlot(slot, index) || slot->hasAttr(OWN_LET_HOLDER_ATTR_NAME)));
+    }
+
     bool OwnershipInferencePass::borrowsOnly(mlir_ts::VariableOp varOp)
     {
         // `let layout = this.computeLayout; if (fp16) layout = this.computeLayoutFP16;` (TSLANG 56):
         // an owning `let` given only reads of places and parameters, each a borrow of its own
-        auto borrowed = [&](mlir::Value value) {
-            auto root = rootOf(value);
-            auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();
-            auto slot = rootLoad ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-            int index = -1;
-            return placeReadOf(root) || (slot && isParameterSlot(slot, index));
-        };
+        auto borrowed = [&](mlir::Value value) { return letBorrows(value); };
 
         if (!varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false) ||
             !borrowed(varOp.getInitializer()))
@@ -388,6 +392,155 @@ namespace own_inference
         }
 
         return nullptr;
+    }
+
+    void OwnershipInferencePass::splitBorrowingLets()
+    {
+        // `let dir = this.dir; if (turn) dir = rotate(dir); this.dir = normalize(dir);` (TSLANG 66): each
+        // fresh value the `let` is given goes into a holder, an owning slot of its own released where the
+        // `let` is, and the `let` borrows it from the holder - as it borrows the field
+        for (auto *candidate : splitLetCandidates)
+        {
+            auto varOp = mlir::cast<mlir_ts::VariableOp>(candidate);
+            auto slot = varOp.getResult();
+            if (!varOp.getInitializer() || !letBorrows(varOp.getInitializer()) || varOp.getCaptured().value_or(false))
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir_ts::StoreOp> fresh;
+            llvm::SmallVector<mlir::Operation *> exits;
+            auto splits = true;
+            for (auto *user : slot.getUsers())
+            {
+                if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(user))
+                {
+                    continue;
+                }
+
+                // the release of its old value before an assignment, or of its last at a way out
+                if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                {
+                    auto next = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(user->getNextNode());
+                    if (!next || next.getReference() != slot)
+                    {
+                        exits.push_back(user);
+                    }
+
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                if (!storeOp || storeOp.getReference() != slot)
+                {
+                    splits = false;
+                    break;
+                }
+
+                if (letBorrows(storeOp.getValue()))
+                {
+                    continue;
+                }
+
+                auto release = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
+                if (!release || release->getOperand(0) != slot)
+                {
+                    splits = false;
+                    break;
+                }
+
+                fresh.push_back(storeOp);
+            }
+
+            if (!splits || fresh.empty())
+            {
+                continue;
+            }
+
+            auto type = mlir::cast<mlir_ts::RefType>(slot.getType()).getElementType();
+            mlir::OpBuilder builder(varOp);
+            builder.setInsertionPointAfter(varOp);
+            auto empty = builder.create<mlir_ts::DefaultOp>(varOp.getLoc(), type);
+            auto holder = builder.create<mlir_ts::VariableOp>(varOp.getLoc(), slot.getType(), empty, varOp.getCapturedAttr(),
+                                                              mlir::IntegerAttr());
+            holder->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+            holder->setAttr(OWN_LET_HOLDER_ATTR_NAME, builder.getUnitAttr());
+            for (auto storeOp : fresh)
+            {
+                storeOp->getPrevNode()->setOperand(0, holder.getResult());
+                storeOp.getReferenceMutable().assign(holder.getResult());
+                builder.setInsertionPointAfter(storeOp);
+                auto read = builder.create<mlir_ts::LoadOp>(storeOp.getLoc(), type, holder.getResult());
+                builder.create<mlir_ts::StoreOp>(storeOp.getLoc(), read, slot);
+            }
+
+            for (auto *exit : exits)
+            {
+                builder.setInsertionPointAfter(exit);
+                builder.create<mlir_ts::ReleaseSlotOp>(exit->getLoc(), holder.getResult());
+            }
+        }
+    }
+
+    void OwnershipInferencePass::checkLetHolders(llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        getFunction()->walk([&](mlir_ts::VariableOp holder) {
+            if (!holder->hasAttr(OWN_LET_HOLDER_ATTR_NAME))
+            {
+                return;
+            }
+
+            auto ends = slotEnds(holder.getResult());
+            for (auto *user : holder.getResult().getUsers())
+            {
+                auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (!readOp || !readOp->hasOneUse())
+                {
+                    continue;
+                }
+
+                // the `let` given the holder's value: its reads up to its next assignment borrow it
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(*readOp->getUsers().begin());
+                auto borrower = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                if (!borrower || storeOp.getValue() != readOp.getResult())
+                {
+                    continue;
+                }
+
+                auto name = varName(borrower);
+                llvm::SmallVector<BorrowUse> uses;
+                llvm::SmallVector<mlir::Operation *> bookkeeping;
+                // (a `let` declared in a loop: its declaration starts it afresh)
+                mlir::Operation *declaration = borrower;
+                if (auto *kept = collectBorrowerUses(borrower, declaration, uses, bookkeeping, storeOp))
+                {
+                    if (isAssignmentOf(kept, borrower))
+                    {
+                        reportBorrowerAssigned(kept, name, name);
+                    }
+                    else
+                    {
+                        reportBorrowEscapes(kept, name, name);
+                    }
+
+                    return;
+                }
+
+                for (auto *end : ends)
+                {
+                    for (auto &use : uses)
+                    {
+                        if (reachableAfter(end, use.op, use.kills))
+                        {
+                            reportBorrowOutlives(use.op, end, name, name);
+                            return;
+                        }
+                    }
+                }
+
+                toErase.insert(bookkeeping.begin(), bookkeeping.end());
+            }
+        });
     }
 
     bool OwnershipInferencePass::isAssignmentOf(mlir::Operation *op, mlir_ts::VariableOp varOp)

@@ -174,6 +174,15 @@ class OwnershipInferencePass
     // Strings as values (spec 22.3): each string retain the dry run did not erase is rewritten, where
     // its one use can be found, into a copy for that use.
     void makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased);
+    // `let dir = this.dir; if (turn) dir = rotate(dir); this.dir = normalize(dir);` (TSLANG 66): a `let`
+    // borrowing a field, then given a fresh value, the dry run found it could not be assigned. The fresh
+    // values go into an owning slot of their own (its holder), released where the `let` is, and the
+    // `let` borrows the holder's value: it then holds only borrows (borrowsOnly).
+    llvm::SetVector<mlir::Operation *> splitLetCandidates;
+    void splitBorrowingLets();
+    // The checks of a split `let`'s borrows of its holder's values: none outlives the holder's value
+    // nor escapes.
+    void checkLetHolders(llvm::SetVector<mlir::Operation *> &toErase);
 
     // The value a parameter of this function is, when its callers were told this function keeps it
     // or returns a borrow of it (spec 15): copying it would leak what the caller gave up.
@@ -295,6 +304,8 @@ class OwnershipInferencePass
     // An owning `let` given only reads of places and parameters, and assigned at least once
     // (TSLANG 56): each value it is given is a borrow until the next assignment.
     bool borrowsOnly(mlir_ts::VariableOp varOp);
+    // Is `value` a read a `let` given it only borrows (borrowsOnly)?
+    bool letBorrows(mlir::Value value);
     // The `let` (borrowsOnly) that `user` assigns `value` to - the store itself, or rc's retain right
     // before it - or null.
     mlir_ts::VariableOp borrowingAssignmentOf(mlir::Operation *user, mlir::Value value);
