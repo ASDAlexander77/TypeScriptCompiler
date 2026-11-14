@@ -577,6 +577,34 @@ function: `f(...)` is a call of `Math.fround`, which destroys nothing. A global 
 unknown. In the sweep, `clustered_geometry.ts` goes from 44 errors to 16. Regression tests
 `tslang/test/tester/tests/00tslang_issue_75.ts` (every model) and `own/own_err_const_alias_drops.ts`.
 
+76 (a parameter kept by a constructor that also gives `this` to a call: `constructor(private sample: NriSample) {
+this.reset(); }`, then `sample.addExampleOption(...)` after `new App(sample)` in `examples/nri/simple_compute_nri.ts`,
+refused "is used here after its value was moved") is fixed. TSLANG 53 reads the field a constructor keeps a
+parameter in, for each use after the call. It took only a constructor that reads `this` for its fields and
+nothing else, so that no call it makes can reach the field. A constructor that gives `this` to a call now keeps a
+parameter too, when the field is private and no other function writes it: as in 73, no call can then overwrite
+it. A field a method writes is still refused. In the sweep, the 4 examples with this shape lose their errors.
+Regression tests `tslang/test/tester/tests/00tslang_issue_76.ts` (every model) and `own/own_err_kept_field_rebound.ts`.
+
+77 (an array kept by a constructor, then filled through the local: `const sceneSets: NriDescriptorSet[] = [];
+this.queuedFrames.push(new QueuedFrame(sceneView, sceneSets)); for (...) sceneSets.push(sceneSet);` in
+`examples/nri/msaa_nri.ts`, refused "is used here after its value was moved") is fixed. An array is a reference,
+so after the move the local is the object's array, and each push fills it. TSLANG 72 took an array filled in
+place before the move. One changed in place after it now changes the field, reached the way the other uses after
+the move are: through the object, or the place it moved to last. The object popped before the push is still
+refused. Regression tests `tslang/test/tester/tests/00tslang_issue_77.ts` (every model) and
+`own/own_err_kept_array_filled_after_pop.ts`.
+
+78 (a value pushed on a field of a local object, then used: `const queuedFrame = new QueuedFrame(...); for (...) {
+const faceAllocator = ...; queuedFrame.faceAllocators.push(faceAllocator);
+queuedFrame.faceCommandBuffers.push(faceAllocator.createCommandBuffer()); }` in
+`examples/nri/threaded_rendering_nri.ts`, refused "is used here after its value was moved") is fixed. TSLANG 65's
+push step and the field store step read the value back through the object right after the move. They took an
+object read out of a local or an element, but not a `const` holding the object itself, which is a value and
+needs no read. That value now serves, as it is. The element popped before the use is still refused.
+Regression tests `tslang/test/tester/tests/00tslang_issue_78.ts` (every model) and
+`own/own_err_local_object_field_popped.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
