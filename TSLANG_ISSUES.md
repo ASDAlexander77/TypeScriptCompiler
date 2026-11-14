@@ -661,3 +661,72 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   it may be released or overwritten" (36), "borrows a field and cannot be stored, returned or captured" (31),
   "used here after its value was moved" (27), and an element borrowed and stored (21) or used after it may be
   released (20).
+
+82 (open, found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `examples/raytracing_mini_engine.ts`
+`computeAO`): a closure that calls another closure it captured makes its method count as freeing
+anything, so every caller's borrows end at the call. Run with `-mm=own --emit=obj`:
+
+```typescript
+@nodrops declare function C_Rcp(x: number): number;
+class Holder { n: number = 1.0; }
+class P {
+    holder: Holder | null = new Holder();
+    values: number[] = [2.0];
+    calc(h: Holder | null, x: number): number {
+        const f = (y: number): number => Math.fround(y);
+        const rcp = (y: number): number => {
+            const r = f(C_Rcp(y));      // f, a captured closure, called from a closure
+            return f(r + r);
+        };
+        return h ? rcp(x * h.n) : 0.0;
+    }
+    run() {
+        const a = this.values;
+        this.calc(this.holder, 1.0);    // "it may be released or overwritten here"
+        print(a[0]);                    // error: 'this value' borrows a field but is used here after ...
+    }
+}
+function main() { new P().run(); }
+```
+
+Refused twice: `print(a[0])` ("borrows a field but is used here after it may be released or
+overwritten", note at the `this.calc` call) and the call itself (`this.holder` lent to it). The C call
+plays no part: `const r = f(y)` in `rcp` gives the same two errors, while `rcp` calling `Math.fround`
+directly instead of `f` gives none, and so does calling `f` straight from `calc` (outside a closure).
+So a call through a function value a closure captured seems to be taken as an unknown call (may free
+anything) when the enclosing method's facts are worked out, although the value is a local closure whose
+body is known. Suspect (not checked in the source yet): how OwnershipSignaturePass's per-function
+FieldDrops resolves a call made inside a lambda through a captured value. Workaround in
+native_ts_graphics: the helper is a module-level function (`refinedReciprocal`) instead of a closure
+capturing `f`.
+
+83 (open, found 2026-11-14 on head 5aa1cdb0; native_ts_graphics `hdr_display`, `hdr_display_nri`):
+under `-mm=own`, a row of a module-level array of arrays bound to a local (`const meta = POOL[idx];`)
+is freed at the local's end, so the second call frees it again: the program hangs (here, and in
+hdr_display at exit in mimalloc's `mi_process_done` -> `_mi_page_free_collect`, a cyclic free list) or
+crashes. It compiles without a diagnostic. Built with `--emit=exe` (gc prints `750000 1000 500`):
+
+```typescript
+const POOL = [[1000.0, 0.001], [500.0, 0.002]];
+function build(idx: int): number {
+    const meta = POOL[idx];          // dropped at the end of build: a double free from the 2nd call
+    return meta[0];
+}
+function main() {
+    let total = 0.0;
+    for (let i = 0; i < 1000; i++) {
+        total += build(i % 2);
+    }
+    print(total, POOL[0][0], POOL[1][0]);
+}
+```
+
+`-mm=own`: hangs. Fine: `return POOL[idx][0];` (no local), the same with the array a local passed in
+(`pool[idx]`), and a global string array's element bound to a local (`const name = NAMES[idx]`). So a
+borrow of a global's element seems to be taken as an owned value when the element is itself an object.
+Workaround in native_ts_graphics: `.slice()` (a copy) at the three such sites (`hdr_display.ts`,
+`hdr_display_nri.ts`, `raytracing_mini_engine.ts`; native_ts_graphics #322). 61 (immortal array globals,
+after 5aa1cdb0) may cover this; not rechecked on a head with it.
+
+native_ts_graphics: with #321 and #322 (2026-11-14, on 5aa1cdb0 with workarounds) every source compiles
+under `-mm=own` and its ctest passes 525/525, as under gc and rc.
