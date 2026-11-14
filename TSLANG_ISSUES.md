@@ -580,10 +580,16 @@ For native_ts_graphics, from the same sweep (its code, not the compiler):
   blits array kept it, so the module and the 9 examples importing it failed under `-mm=own` (199 errors). A
   `MipBlit` now holds the texture's index into `this.textures`. `MsvcRandom` (`core/random.ts`) and `GameWorld`
   (`core/rtxpt_game.ts`) are now `@final`: a class that can be derived from may have its methods overridden, so
-  `-mm=own` cannot read their facts (about 48 errors). These are on ntg branch `own-sweep-fixes`.
+  `-mm=own` cannot read their facts (about 48 errors). So are `AtomOrbitals`, `OrbitalsPass`, `Pose` and
+  `RtxptGame` now; a class that can be derived from turns each call of its methods into one that may
+  destroy anything.
+- The `*_nri.ts` examples' `QueuedFrame` kept `this.frames.commandBuffer(i)`, a borrow of the frame ring's,
+  which a field cannot hold: it is read from `this.frames` where it is recorded (16 examples). The
+  `atom_orbitals` examples set two fields to one `Orbital` (`this.orbitalA = this.orbitalB`), a second owner:
+  each field gets its own. These are on ntg branch `own-sweep-fixes`.
 - Under `-mm=own`, 2 `core/` modules do not compile yet (`ray_tracing_extended_scene.ts`, `rtxpt_game.ts`), and
-  nor do many examples, which #310 did not port: with every facts object built, 50-73 in and the changes above,
-  58 of the 276 sources fail (266 errors). The largest groups left are "borrows a field but is used here after
-  it may be released or overwritten" (64), "borrows a field and cannot be stored, returned or captured" (50),
-  "used here after its value was moved" (32) and "borrows the result of a call and cannot be stored, returned or
-  captured" (32).
+  nor do many examples, which #310 did not port: with every facts object built, 50-74 in and the changes above,
+  48 of the 276 sources fail (194 errors). The largest groups left are "borrows a field but is used here after
+  it may be released or overwritten" (36), "borrows a field and cannot be stored, returned or captured" (31),
+  "used here after its value was moved" (27), and an element borrowed and stored (21) or used after it may be
+  released (20).
