@@ -605,6 +605,17 @@ needs no read. That value now serves, as it is. The element popped before the us
 Regression tests `tslang/test/tester/tests/00tslang_issue_78.ts` (every model) and
 `own/own_err_local_object_field_popped.ts`.
 
+79 (a local pushed only where it is not null, then used: `let pipeline: NriPipeline | null = null; if (loaded)
+pipeline = device.createPipelineFromDesc(...); if (pipeline) { this.pipelineKeys.push(key);
+this.pipelines.push(pipeline); } return pipeline;` in `examples/nri/msaa_nri.ts`, refused "is used here after its
+value was moved") is fixed. TSLANG 67 did this for a value. For a local, the test and the uses are reads of
+their own. Now, when nothing assigns the local from the test on, each read where the paths join takes the merge:
+the element read back after the push, or the null the test found. The local is then not read after the join, so
+its release goes on the edge that did not push it. The method returns a borrow of `this` on every way, so the
+early `return this.pipelines[i]` is no longer refused either. `msaa_nri.ts` and
+`dynamic_multisample_rasterization_nri.ts` compile. Regression tests
+`tslang/test/tester/tests/00tslang_issue_79.ts` (every model) and `own/own_err_pushed_let_popped.ts`.
+
 For native_ts_graphics, from the same sweep (its code, not the compiler):
 - `core/ray_tracing_extended_scene.ts`: the exported classes' constructors keep their array parameters
   (`this.origin = origin`), which an exported constructor has to say: `@keeps("origin", "direction")`
