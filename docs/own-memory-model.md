@@ -89,6 +89,46 @@ stores a parameter keeps it, so its callers have to move the argument in; a func
 returns a field of its argument returns a borrow, so its callers may only borrow the result.
 Callers in other modules cannot see the body, which is what the [decorators](#decorators) are for.
 
+## Assigned parameters and `delete`
+
+A parameter is lent by the caller. A function that assigns one keeps it instead: the parameter
+then owns each value it is given, so the caller moves the argument in and may not use it after
+the call.
+
+```typescript
+class B { constructor(public b: number) {} }
+
+function pick(x: B, fresh: boolean) {
+    if (fresh) {
+        x = new B(7);       // pick assigns x, so it keeps it
+    }
+
+    return x.b;
+}
+
+function main() {
+    print(pick(new B(1), true));    // a new object moves in
+
+    const b = new B(2);
+    print(pick(b, false));          // b moves in
+    // print(b.b);                  // error: 'b' is used here after its value was moved
+}
+```
+
+An exported function, or a method reached through an interface, says so in its signature with
+[`@keeps("x")`](#keeps). A parameter captured or assigned by a closure, one a generator assigns,
+and `x ??= value` are not accepted yet.
+
+`delete` ends an owner. `delete c` of a local or a field that owns its value frees the value now
+and leaves null there, so reading it afterwards fails as a null read does. If the value was moved
+out before (`h.child = c; delete c`), nothing is freed. A `const` holding a new object is freed
+where its block ends. `delete` of a parameter, or of anything else the function does not own, is
+an error:
+
+```text
+error: 'delete' of a value this function does not own: under -mm=own only a local or a field that owns its value can be deleted
+```
+
 ## Reading the errors
 
 A value is named `'this value'` in the messages below; the position points at it.

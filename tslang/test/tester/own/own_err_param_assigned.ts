@@ -1,5 +1,5 @@
-// -mm=own rejects: a parameter's value is its caller's; this function cannot put a value of its
-// own in its place.
+// -mm=own rejects: a function that assigns a parameter keeps it - its local owns the caller's value
+// until it is given another - so the caller gave `c` up at the call and may not read it after.
 class C {
     constructor(public x: number) {}
 }

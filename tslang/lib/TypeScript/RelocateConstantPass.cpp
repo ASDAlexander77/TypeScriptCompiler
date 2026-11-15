@@ -9,7 +9,7 @@
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
-#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -30,7 +30,10 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
         // TODO: get rid of using it
         auto f = getFunction();
 
-        SmallPtrSet<Operation *, 16> workSetConst;
+        // in the order the function holds them: a set of pointers gave them back in the order of their addresses
+        // once there were more than 16, so the same source compiled to constants - and the globals made for
+        // them - in another order on every run
+        SmallVector<Operation *, 16> workSetConst;
         getOps<mlir_ts::ConstantOp>(f, workSetConst);
         /*auto lastConstOp =*/relocateConst(f, workSetConst);
 
@@ -48,7 +51,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
         });
     }
 
-    Operation *relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    Operation *relocateConst(mlir_ts::FuncOp &f, SmallVector<Operation *, 16> &workSet)
     {
         // find first non-constant op
         auto firstNonConstOp = seekFirstNonConstOp(f);
@@ -75,7 +78,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
         return firstNonConstOp;
     }
 
-    template <typename T> void getOps(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet, Operation *startFrom = nullptr)
+    template <typename T> void getOps(mlir_ts::FuncOp &f, SmallVector<Operation *, 16> &workSet, Operation *startFrom = nullptr)
     {
         auto startFromStage = startFrom != nullptr;
         auto skipFirstOps = true;
@@ -101,7 +104,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
                     if (typedOp->getParentOp() == f)
                     {
                         // select only those consts which are not at the beginning
-                        workSet.insert(typedOp);
+                        workSet.push_back(typedOp);
                     }
                 }
             }

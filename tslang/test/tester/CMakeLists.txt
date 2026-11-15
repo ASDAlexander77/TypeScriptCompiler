@@ -4567,12 +4567,12 @@ add_test(NAME test-own-flag-accepted
                  "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 set_tests_properties(test-own-flag-accepted PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
-# Under own MLIRGen emits exactly what it emits under rc: an awaited, deleted or captured value
-# still carries its ownership ops for the inference pass to judge. Checked on `delete`, whose
-# claim (MLIRGenExpressions.cpp) is one of the four MLIRGen sites.
+# Under own MLIRGen emits what it emits under rc - moves, field stores, a reassigned local and a returned
+# `const` carry their ownership ops for the inference pass to judge. Not `delete` (a clearing assignment
+# under own, spec 81), a captured variable or an assigned parameter, which own writes its own way.
 add_test(NAME test-own-mlirgen-matches-rc
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_delete.ts"
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_moves.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-mlirgen-matches-rc.cmake")
 
 # The lowering backstop: a retain that reaches LLVM lowering under own is an error, never
@@ -4959,6 +4959,24 @@ foreach(reassign_mm rc gc)
     tslang_add_test(NAME test-compile-${reassign_mm}-own_move_reassign COMMAND test-runner -mm=${reassign_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_move_reassign.ts")
 endforeach()
 
+# A parameter the body assigns is one the function keeps under own: it starts a local that owns what it holds,
+# and the callers give the argument up. The same program under rc and gc.
+# `delete` under own ends the owner it names: a local or a field is released and cleared, a value no storage
+# holds goes where its block ends. Under rc too (not gc: a delete after a move frees what the field holds).
+foreach(param_assigned_mm own rc gc)
+    tslang_add_test(NAME test-jit-${param_assigned_mm}-own_param_assigned COMMAND test-runner -jit -mm=${param_assigned_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_assigned.ts")
+    tslang_add_test(NAME test-compile-${param_assigned_mm}-own_param_assigned COMMAND test-runner -mm=${param_assigned_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_assigned.ts")
+endforeach()
+foreach(own_delete_mm own rc)
+    tslang_add_test(NAME test-jit-${own_delete_mm}-own_delete COMMAND test-runner -jit -mm=${own_delete_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_delete.ts")
+    tslang_add_test(NAME test-compile-${own_delete_mm}-own_delete COMMAND test-runner -mm=${own_delete_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_delete.ts")
+endforeach()
+# ...and the corpus files that only these two stopped under own
+foreach(own_flipped_test 00class_accessor 00class_discover_types 00new_delete 00ns5 00owned_delete 00narrowed_assign_other_member 00const_of_let)
+    tslang_add_test(NAME test-jit-own-flipped-${own_flipped_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/${own_flipped_test}.ts")
+    tslang_add_test(NAME test-compile-own-flipped-${own_flipped_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/${own_flipped_test}.ts")
+endforeach()
+
 # Strings as values (spec 22): no model but own makes a copy, and each program means the same
 # under every model.
 foreach(strings_mm rc none gc)
@@ -5241,7 +5259,6 @@ set(own_error_cases
     "own_err_any_unboxed_outlives|:11:11: error: '[^']*' borrows the result of '___unbox<!ts[.]class<C, !ts[.]class_storage<C>>>' but is used here after it may be released or overwritten"
     "own_err_param_kept_loop|:19:9: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
-    "own_err_delete|'delete' is not supported by -mm=own yet"
     "own_err_mixed_return|:13:28: error: '[^']*' is used here after its value was moved"
     "own_err_mixed_return_join_use|:14:15: error: '[^']*' is moved here on some paths only"
     "own_err_callback_escapes|cannot make the callers of 'pick' give it up"
@@ -5263,7 +5280,10 @@ set(own_error_cases
     "own_err_call_result_record|:47:12: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
-    "own_err_param_assigned|:7:5: error: '[^']*' is a parameter and cannot be assigned under -mm=own yet"
+    "own_err_param_assigned|:12:21: error: '[^']*' is used here after its value was moved"
+    "own_err_param_assigned_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'pick' give it up"
+    "own_err_delete_param|:7:5: error: 'delete' of a value this function does not own"
+    "own_err_delete_borrowed|:12:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_local_owns_nothing|:8:5: error: '[^']*' owns nothing under -mm=own [(]it is declared without a value, or in a catch or finally clause[)], so it cannot be given a new value here"
     "own_err_merged_result|:7:5: error: '[^']*' is merged from several branches [(]`[?]:`, `&&`, `[|][|]`, `[?][?]`, a loop[)]"
     "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
@@ -5296,7 +5316,6 @@ set(own_error_cases
     "own_err_global_read_callee_assigns|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_global_read_callee_assigns_transitive|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_argument_assigned|is lent to 'g', but is given a new value before the call takes it"
-    "own_err_param_assigned_local|:15:5: error: a parameter cannot be assigned under -mm=own yet"
     "own_err_argument_assigned_conditional|is lent to 'g', but is given a new value before the call takes it"
     "own_err_argument_assigned_closure|is lent to 'g', but is given a new value before the call takes it"
     "own_err_global_method_transitive|:19:11: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
