@@ -92,11 +92,35 @@ throwing stub per interface method through `mlirGenThrowingMethodStub`, which as
 `theModule.lookupSymbol<FuncOp>(stubName)` before and after: the first is a miss and scans the
 module. `INSTANCEOF_NONE_NAME` is looked up for every vtable and the function is pushed at the
 *end* of the module, so each lookup scans all of it. `createGlobalVariable` still scans after a
-dummy run made a global (the entry of `lastGlobalOfModule` is dropped then). A fix needs a symbol
-table for MLIR generation that survives its erases: `funcOp.erase()` in about eight places,
-`GenContext::clean` for dummy runs, and the temp and discovery modules. Count the creation and
-erase sites of `mlir_ts::FuncOp` first; if they are few, the pattern of `lastGlobalOfModule` (drop
-the entry wherever it can go stale, check against the scan) applies.
+dummy run made a global (the entry of `lastGlobalOfModule` is dropped then).
+
+The sites were mapped on 2026-11-15 (branch `perf-compile-time-5`, cut from `perf-compile-time-4`,
+nothing committed on it yet), and the plan below follows from them. Nothing of it is written.
+
+- Only `mlir_ts::FuncOp` and `mlir_ts::GlobalOp` are symbols. A function enters a module through
+  `theModule.push_back(funcOp)` and nowhere else: 8 sites (`MLIRGenFunctions.cpp` 1427 and 2310,
+  `MLIRGenStatements.cpp` 1630, `MLIRGenInterfaces.cpp` 500, `MLIRGenClasses.cpp` 3484 and 3587,
+  `MLIRGenCast.cpp` 2494 and 2650). A global enters through `createGlobalVariable`, and through
+  `MLIRRTTIHelperVC`, which MLIR generation cannot see into.
+- A function already in a module is erased in one place, `existing->erase()` in
+  `mlirGenThrowingMethodStub`. The other `funcOp.erase()` calls (`MLIRGenStatements.cpp` 1616,
+  `MLIRGenClasses.cpp` 3462 and 3547, `MLIRGenCast.cpp` 2624) erase a function that failed before
+  it was pushed. `GenContext::clean` erases blocks and the globals of a dummy run, not functions.
+  The temp and discovery modules are erased whole (where `forgetLastGlobalOf` is already called).
+- Plan: per module, a table of symbol names, with the operation for a function and no operation
+  for a global (a dummy run's global can be erased unseen). A name not in the table is not in the
+  module, which is the answer the guards need fast: `mlirGenThrowingMethodStub` (the first
+  lookup), `INSTANCEOF_NONE_NAME`, the thunk guards in `MLIRGenClasses.cpp` 3416 and 3502 and
+  `MLIRGenCast.cpp` 2443 and 2576, `MLIRGenFunctions.cpp` 2228. A function in the table is
+  returned without a scan (this is what fixes `INSTANCEOF_NONE_NAME`, found at the end of the
+  module today); a global in it is looked up by the scan. Fill the table at the 8 `push_back`
+  sites and in `createGlobalVariable`; build it by one scan for a module first seen with
+  operations in it; drop a function's entry at the one erase, and a module's table where the
+  module is erased.
+- The risk is a symbol entering a module by a route the table does not hear of: its name would be
+  reported absent and made twice. Names from `MLIRRTTIHelperVC` are only ever looked up by that
+  helper, with its own scan. Extend the checking mode to this table (compare every answer with
+  `theModule.lookupSymbol`) and run the suite with it before trusting it, as for the other tables.
 
 **One very large function.** The `IfOp` lowering in `LowerToAffineLoops.cpp` calls
 `rewriter.splitBlock`. Under a conversion rewriter that moves the rest of the block one operation
