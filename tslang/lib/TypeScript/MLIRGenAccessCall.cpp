@@ -867,7 +867,7 @@ namespace mlirgen
                     StringRef funcName = funcEntry.name;
                     auto effectiveFuncType = funcEntry.funcType;
 
-                    if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+                    if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(funcName))
                     {
                         if (!funcOp.getBody().empty())
                         {
@@ -989,7 +989,7 @@ namespace mlirgen
                 StringRef funcName = funcEntry.name;
                 auto effectiveFuncType = funcEntry.funcType;
 
-                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+                if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(funcName))
                 {
                     if (!funcOp.getBody().empty())
                     {
@@ -1234,7 +1234,7 @@ namespace mlirgen
             return symbolRef();
         }
 
-        if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName); funcOp && !funcOp.getBody().empty())
+        if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(funcName); funcOp && !funcOp.getBody().empty())
         {
             return symbolRef();
         }

@@ -1278,15 +1278,15 @@ namespace mlirgen
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
             auto funcEntry = lookupFunctionMap(functionName);
-            if (funcEntry && theModule.lookupSymbol(functionName)
-                || theModule.lookupSymbol(fullFunctionName))
+            if (funcEntry && lookupModuleSymbol(functionName)
+                || lookupModuleSymbol(fullFunctionName))
             {
                 // resolve a live op from the module instead of returning a cached handle;
                 // the registered symbol is usually the full name
-                auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(functionName);
+                auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(functionName);
                 if (!funcOp)
                 {
-                    funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(fullFunctionName);
+                    funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(fullFunctionName);
                 }
 
                 return {mlir::success(), funcOp, functionName, false};
@@ -1424,7 +1424,7 @@ namespace mlirgen
 
         if (!funcDeclGenContext.dummyRun)
         {
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         if (isGenericFunction)
@@ -1458,7 +1458,7 @@ namespace mlirgen
         if (declared && !genContext.dummyRun)
         {
             auto globalName = isFullNamespaceName ? funcName.str() : getFullNamespaceName(funcName).str();
-            if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(globalName))
+            if (auto globalOp = lookupModuleSymbol<mlir_ts::GlobalOp>(globalName))
             {
                 for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
                                    OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_RETURNS_THIS_ATTR_NAME, OWN_IMPLIED_LENDS_ATTR_NAME,
@@ -2225,7 +2225,7 @@ namespace mlirgen
                                             const GenContext &genContext,
                                             int firstParam, bool isPublic)
     {
-        if (theModule.lookupSymbol(fullFuncName))
+        if (lookupModuleSymbol(fullFuncName))
         {
             return mlir::success();
         }
@@ -2307,7 +2307,7 @@ namespace mlirgen
         }
         else
         {
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         if (isPublic)

@@ -1562,7 +1562,7 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source,
                                                            mlir::Type target)
     {
-        if (theModule.lookupSymbol(name))
+        if (lookupModuleSymbol(name))
         {
             return mlir::success();
         }
@@ -1627,7 +1627,7 @@ namespace mlirgen
         builder.create<mlir_ts::StoreOp>(location, V(result), arguments[0]);
         builder.create<mlir_ts::ExitOp>(location, mlir::Value());
 
-        theModule.push_back(funcOp);
+        pushFunction(funcOp);
         return mlir::success();
     }
 
@@ -1636,6 +1636,69 @@ namespace mlirgen
         rtti.setCopyThunkBuilder([&](mlir::Location location, StringRef name, mlir::Type source, mlir::Type target) {
             return mlirGenCatchCopyThunk(location, name, source, target);
         });
+    }
+
+    // The records an exception of `type` is thrown and caught by (MLIRRTTIHelperVC::setRTTIForType):
+    // globals of the module, and the copy thunks they name. They are made once for a type and a
+    // module - the helper makes none that is there already - so a type they were made for is not
+    // handed to the helper again: it would look each of them up by name, and place them by a scan
+    // of the module, for every `throw`. False when the type can't be thrown.
+    bool MLIRGenImpl::mlirGenRttiForType(mlir::Location location, mlir::Type type)
+    {
+        auto &made = rttiTypesOfModule[theModule.getOperation()];
+        auto isMade = made.contains(type);
+
+        // TSLANG_VERIFY_LLVM_GLOBALS_INDEX=<file>: the helper is asked all the same, and must
+        // add nothing to the module
+        static const char *verifyFile = std::getenv("TSLANG_VERIFY_LLVM_GLOBALS_INDEX");
+        if (isMade && !verifyFile)
+        {
+            return true;
+        }
+
+        auto countTopLevel = [&]() { return std::distance(theModule.getBody()->begin(), theModule.getBody()->end()); };
+        auto before = countTopLevel();
+
+        MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+        RttiGlobalsScope rttiGlobalsScope(*this);
+        setCatchCopyThunkBuilder(rtti);
+        auto supported = rtti.setRTTIForType(location, type, [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); });
+        auto grew = countTopLevel() != before;
+        if (grew)
+        {
+            // the helper's globals are made with nothing here hearing of them: the table of the
+            // module's symbols (symbolsOfModule) is made again by a scan. Once per type.
+            symbolsOfModule.erase(theModule.getOperation());
+        }
+
+        if (!supported)
+        {
+            if (isMade)
+            {
+                std::error_code ec;
+                llvm::raw_fd_ostream out(verifyFile, ec, llvm::sys::fs::OF_Append);
+                if (!ec)
+                {
+                    out << "MLIR generation: the exception records of " << type << " were made, and making them again fails\n";
+                }
+            }
+
+            return false;
+        }
+
+        if (isMade && grew)
+        {
+            std::error_code ec;
+            llvm::raw_fd_ostream out(verifyFile, ec, llvm::sys::fs::OF_Append);
+            if (!ec)
+            {
+                out << "MLIR generation: the exception records of " << type << " were made, and making them again adds to the module\n";
+            }
+        }
+
+        // the reference may be stale: making a copy thunk can throw, and come back here
+        rttiTypesOfModule[theModule.getOperation()].insert(type);
+        return true;
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ThrowStatement throwStatementAST, const GenContext &genContext)
@@ -1660,12 +1723,7 @@ namespace mlirgen
 
         if (!genContext.allowPartialResolve)
         {
-            MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
-            RttiGlobalsScope rttiGlobalsScope(*this);
-            setCatchCopyThunkBuilder(rtti);
-            if (!rtti.setRTTIForType(
-                location, exception.getType(), 
-                [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+            if (!mlirGenRttiForType(location, exception.getType()))
             {
                 emitError(location, "Not supported type in throw");
                 return mlir::failure();
@@ -1792,13 +1850,7 @@ namespace mlirgen
 
                 if (!genContext.allowPartialResolve)
                 {
-                    MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
-                    RttiGlobalsScope rttiGlobalsScope(*this);
-                    setCatchCopyThunkBuilder(rtti);
-                    if (!rtti.setRTTIForType(
-                        location, 
-                        varInfo.getType(),
-                        [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+                    if (!mlirGenRttiForType(location, varInfo.getType()))
                     {
                         emitError(location, "Not supported type in catch");
                         return mlir::failure();
