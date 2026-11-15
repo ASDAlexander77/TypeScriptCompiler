@@ -36,63 +36,58 @@ class LLVMCodeHelperBase
     {
     }
 
-    template <typename T> 
+    // The seekLast family puts the insertion point after the last operation of a kind in the
+    // module's body. Those operations (globals, global constructors) only sit at the top level of
+    // the module, so the body is scanned backwards and the function bodies are never entered: a
+    // walk of the whole module for every new global made compile time grow with globals x module
+    // size.
+    template <typename T>
     void seekLast(mlir::Block *block)
     {
         // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<LLVM::GlobalOp>(&blockOp))
             {
                 if (globalOp.getValueAttr() && isa<T>(globalOp.getValueAttr()))
                 {
                     rewriter.setInsertionPointAfter(globalOp);
+                    return;
                 }
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     void seekLast(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
-            {
-                rewriter.setInsertionPointAfter(globalOp);
-            }
-        };
-
-        block->walk(lastUse);
+        seekLastOp<LLVM::GlobalOp>(block);
     }
 
     void seekLastWithBody(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<LLVM::GlobalOp>(&blockOp))
             {
                 if (globalOp.getInitializerBlock())
                 {
                     rewriter.setInsertionPointAfter(globalOp);
+                    return;
                 }
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     template <typename T> void seekLastOp(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto opT = dyn_cast_or_null<T>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto opT = dyn_cast<T>(&blockOp))
             {
                 rewriter.setInsertionPointAfter(opT);
+                return;
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     template <typename T> Operation *seekFirstNonConstantOp(T funcOp)

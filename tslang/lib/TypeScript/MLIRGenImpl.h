@@ -2809,15 +2809,16 @@ class MLIRGenImpl
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
             builder.setInsertionPointToStart(theModule.getBody());
-            // find last string
-            auto lastUse = [&](mlir::Operation *op) {
-                if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+            // after the last global: globals only sit at the top level of the module, and walking
+            // into every function body for each new global made compile time quadratic
+            for (auto &moduleOp : llvm::reverse(*theModule.getBody()))
+            {
+                if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(&moduleOp))
                 {
                     builder.setInsertionPointAfter(globalOp);
+                    break;
                 }
-            };
-
-            theModule.getBody()->walk(lastUse);
+            }
 
             SmallVector<mlir::NamedAttribute> attrs;
 

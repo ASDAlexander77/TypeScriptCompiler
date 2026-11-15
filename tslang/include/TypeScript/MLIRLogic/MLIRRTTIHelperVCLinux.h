@@ -324,15 +324,16 @@ class MLIRRTTIHelperVCLinux
 
     void seekLast(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+        // the last one at the top level of the block: globals do not nest, and walking into
+        // every function body for each new global made compile time quadratic
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(&blockOp))
             {
                 rewriter.setInsertionPointAfter(globalOp);
+                return;
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)

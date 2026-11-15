@@ -397,16 +397,17 @@ class MLIRRTTIHelperVCWin32
     template <typename T>
     void seekLastOp(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<T>(op))
+        // the last one at the top level of the block: these operations do not nest, and walking
+        // into every function body for each new global made compile time quadratic
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<T>(&blockOp))
             {
                 rewriter.setInsertionPointAfter(globalOp);
+                return;
             }
-        };
-
-        block->walk(lastUse);
-    }    
+        }
+    }
 
     void seekLast(mlir::Block *block)
     {
