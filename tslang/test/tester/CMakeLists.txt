@@ -1933,6 +1933,7 @@ endforeach()
 # TSLANG_ISSUES 82: a closure calling a function value it captured
 # TSLANG_ISSUES 83: a row of a global array of constant arrays bound to a local
 # TSLANG_ISSUES 84: a borrowed call result across a release of a type that cannot hold it
+# TSLANG_ISSUES 85: a global whose initializer concatenates three or more strings
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issue_44 00tslang_issue_45 00tslang_issue_46 00tslang_issue_47 00tslang_issue_48 00tslang_issue_49 00tslang_issue_50
                         00tslang_issue_52 00tslang_issue_53 00tslang_issue_54 00tslang_issue_55 00tslang_issue_56 00tslang_issue_57
@@ -1940,7 +1941,7 @@ foreach(issues_mm gc rc none own)
                         00tslang_issue_61 00tslang_issue_62 00tslang_issue_63 00tslang_issue_66 00tslang_issue_67 00tslang_issue_69 00tslang_issue_71 00tslang_issue_73
                         00tslang_issue_75 00tslang_issue_76 00tslang_issue_77 00tslang_issue_78 00tslang_issue_79
                         00tslang_issue_80 00tslang_issue_81 00tslang_issue_82
-                        00tslang_issue_83 00tslang_issue_84)
+                        00tslang_issue_83 00tslang_issue_84 00tslang_issue_85)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
@@ -5267,6 +5268,8 @@ set(own_error_cases
     "own_err_merged_result|:7:5: error: '[^']*' is merged from several branches [(]`[?]:`, `&&`, `[|][|]`, `[?][?]`, a loop[)]"
     "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
     "own_err_global_borrowed_temporary|:11:11: error: the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_concat_borrowed|:8:11: error: the initializer of global 'B' holds the result of 'id', which borrows its argument"
+    "own_err_global_chain_other_global|:13:15: error: the initializer of global 'ALIAS' holds the result of 'Bag.add', which borrows its argument"
     "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_immortal_borrowed_init|:9:5: error: '[^']*' borrows 'K[.]list\\[\\]' and cannot be stored, returned or captured"

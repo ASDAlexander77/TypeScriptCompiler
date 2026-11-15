@@ -320,13 +320,33 @@ namespace own_signature
                 // nothing in the region gives the block back, or takes a second reference to it:
                 // the global is its one owner
                 auto released = false;
+                auto releasedOnce = 0;
                 auto retained = 0;
-                forEachUse(rootOf(value), [&](mlir::Operation *user, mlir::Value) {
+                // read only by a concatenation, which copies what it reads into a string of its own, or
+                // given to a call as an argument: ownGlobalInitializerCalls, run after the facts, moves it
+                // into a callee that keeps it (the release goes), and refuses a callee whose result
+                // borrows it
+                auto onlyConcatenated = true;
+                forEachUse(rootOf(value), [&](mlir::Operation *user, mlir::Value used) {
                     released = released || mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(user);
+                    releasedOnce += mlir::isa<mlir_ts::ReleaseOp>(user);
                     retained += mlir::isa<mlir_ts::RetainOp>(user);
+                    onlyConcatenated = onlyConcatenated &&
+                                       (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::StringConcatOp>(user) ||
+                                        (isCall(user) && llvm::is_contained(callArgs(user), used)));
                 });
 
                 if (retained == 1 && !released && (isFresh(value) || holdsOnlyConstants(value) || isConstantData(value)) && movesIntoResult(value))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
+                // a temporary the initializer makes, reads and gives back itself (TSLANG 85: the inner
+                // sum of `"a" + "b" + "c"`): rc's retain is the reference the value arrives with, which
+                // the release then gives back, as in a function body
+                if (retained == 1 && releasedOnce == 1 && onlyConcatenated && isFresh(value) &&
+                    mlir::isa<mlir_ts::StringType>(value.getType()))
                 {
                     retainOp.erase();
                     continue;
@@ -542,12 +562,19 @@ namespace own_signature
                 }
             });
 
+            // the results that are the initializer's own: a chain's calls, in order, each given the one
+            // before it (`new Bag().add(a).add(b)`)
+            llvm::SmallPtrSet<mlir::Value, 4> ownedResults;
             for (auto *op : calls)
             {
                 auto callees = resolve(op);
                 auto facts = callFacts(callees);
                 auto calleeName = callees.funcs.empty() ? llvm::StringRef("the callee") : callees.funcs.front().getSymName();
-                if (!facts.borrows.empty())
+                if (!facts.borrows.empty() && takeOverTemporaryReceiver(op, callees, facts, ownedResults))
+                {
+                    ownedResults.insert(op->getResult(0));
+                }
+                else if (!facts.borrows.empty())
                 {
                     op->emitError("the initializer of global '")
                         << globalOp.getSymName() << "' holds the result of '" << calleeName
@@ -572,6 +599,88 @@ namespace own_signature
                 }
             }
         });
+    }
+
+    bool OwnershipSignaturePass::takeOverTemporaryReceiver(mlir::Operation *call, const Callees &callees, const Facts &facts,
+                                                           const llvm::SmallPtrSetImpl<mlir::Value> &ownedResults)
+    {
+        // a result that is the one argument it borrows, itself (spec 78), as transferTemporaryReceivers
+        // takes it in a function body: `this` returned by `add(s: string): this`
+        auto args = callArgs(call);
+        if (!facts.itself || facts.record || facts.borrows.size() != 1 || call->getNumResults() != 1)
+        {
+            return false;
+        }
+
+        auto index = facts.borrows.front();
+        if (index < 0 || static_cast<size_t>(index) >= args.size() || llvm::is_contained(facts.owned, index))
+        {
+            return false;
+        }
+
+        // a method called through the object's vtable or by its symbol, returning the object it is bound
+        // to. A function returning its parameter (`id(new V(1))`) stays an error here (#638): only a
+        // chain's `this` is taken over.
+        // Called directly (`ts.SymbolCallInternal`, by now), the object is the first argument, and the
+        // callee a method of its class (`Bag.add`).
+        auto object = boundThis(args[index]);
+        if (!object && index == 0)
+        {
+            auto classType = mlir::dyn_cast<mlir_ts::ClassType>(args[index].getType());
+            auto prefix = classType ? (classType.getName().getValue() + ".").str() : std::string();
+            auto isMethod = classType && !callees.funcs.empty() && llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp funcOp) {
+                                return funcOp.getSymName().starts_with(prefix);
+                            });
+            object = isMethod ? args[index] : mlir::Value();
+        }
+
+        if (!object || !mlir::isa<mlir_ts::ClassType>(object.getType()))
+        {
+            return false;
+        }
+
+        auto receiver = rootOf(object);
+
+        // the initializer's own: made here (`new Bag()`), or the result of a call taken over before
+        auto *producer = receiver.getDefiningOp();
+        if (!producer || producer->getBlock() != call->getBlock() || !(isFresh(receiver) || ownedResults.contains(receiver)))
+        {
+            return false;
+        }
+
+        // given to nothing after the call but its releases; a use before it has its own uses before it
+        // too, or the call itself (rc's header of a new object, the method bound to it)
+        llvm::SmallVector<mlir::Operation *> releases;
+        std::function<bool(mlir::Operation *, int)> before = [&](mlir::Operation *other, int depth) {
+            return depth < 4 && other->getBlock() == call->getBlock() && other->isBeforeInBlock(call) &&
+                   llvm::all_of(other->getUsers(), [&](mlir::Operation *use) { return use == call || before(use, depth + 1); });
+        };
+        auto temporary = llvm::all_of(receiver.getUsers(), [&](mlir::Operation *user) {
+            if (user == call)
+            {
+                return true;
+            }
+
+            if (mlir::isa<mlir_ts::ReleaseOp>(user) && user->getBlock() == call->getBlock() && call->isBeforeInBlock(user))
+            {
+                releases.push_back(user);
+                return true;
+            }
+
+            return before(user, 0);
+        });
+        if (!temporary)
+        {
+            return false;
+        }
+
+        // the result is the object itself, the initializer's: its releases are the result's to make
+        for (auto *release : releases)
+        {
+            release->erase();
+        }
+
+        return true;
     }
 
     bool OwnershipSignaturePass::moveIntoCallee(mlir::Operation *call, mlir::Value value)
