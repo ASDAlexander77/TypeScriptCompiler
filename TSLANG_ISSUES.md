@@ -762,3 +762,32 @@ old compiler, its exe hangs at exit).
 
 native_ts_graphics: with #321 and #322 (2026-11-14, on 5aa1cdb0 with workarounds) every source compiles
 under `-mm=own` and its ctest passes 525/525, as under gc and rc.
+
+85 (open, found 2026-11-14 on pre-alpha128 (0c8439cb); native_ts_graphics `examples/sakura_forest_ser.ts`
+`LIBRARY_EXPORTS`): under `-mm=own`, a module-level `const` whose initializer concatenates three or more
+string literals is refused at the initializer. Run with `-mm=own --emit=jit` (gc prints
+`Raygen,Miss,Hit,Group`):
+
+```typescript
+namespace M {
+    const EXPORTS = "Raygen,Miss," +
+        "Hit," + "Group";       // error: the initializer of global 'M.EXPORTS' takes a second reference;
+                                // -mm=own cannot prove a move or a borrow here yet
+    function show(names: string) {
+        print(names);
+    }
+    export function run() {
+        show(EXPORTS);
+    }
+}
+function main() {
+    M.run();
+}
+```
+
+Fine: two literals (`"Raygen,Miss," + "HitGroup"`), and one literal. So `a + b` seems to be taken as a
+fresh string the global owns, while `(a + b) + c` reads the inner sum as a second reference to a value
+something else holds. The whole initializer is a constant (literals only), so it could fold to one
+literal, as 70 made a literal-typed constant global its literal. Suspect (not checked in the source yet):
+the global-initializer check in the own pass treating the nested `+`'s left operand as a borrow. Workaround
+in native_ts_graphics: a function returning the concatenation (`libraryExports()`).
