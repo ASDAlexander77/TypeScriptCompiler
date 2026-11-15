@@ -320,13 +320,29 @@ namespace own_signature
                 // nothing in the region gives the block back, or takes a second reference to it:
                 // the global is its one owner
                 auto released = false;
+                auto releasedOnce = 0;
                 auto retained = 0;
+                // read only by a concatenation, which copies what it reads into a string of its own
+                auto onlyConcatenated = true;
                 forEachUse(rootOf(value), [&](mlir::Operation *user, mlir::Value) {
                     released = released || mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(user);
+                    releasedOnce += mlir::isa<mlir_ts::ReleaseOp>(user);
                     retained += mlir::isa<mlir_ts::RetainOp>(user);
+                    onlyConcatenated = onlyConcatenated &&
+                                       mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::StringConcatOp>(user);
                 });
 
                 if (retained == 1 && !released && (isFresh(value) || holdsOnlyConstants(value) || isConstantData(value)) && movesIntoResult(value))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
+                // a temporary the initializer makes, reads and gives back itself (TSLANG 85: the inner
+                // sum of `"a" + "b" + "c"`): rc's retain is the reference the value arrives with, which
+                // the release then gives back, as in a function body
+                if (retained == 1 && releasedOnce == 1 && onlyConcatenated && isFresh(value) &&
+                    mlir::isa<mlir_ts::StringType>(value.getType()))
                 {
                     retainOp.erase();
                     continue;

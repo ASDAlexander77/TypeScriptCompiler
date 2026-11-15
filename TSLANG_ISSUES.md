@@ -763,7 +763,7 @@ old compiler, its exe hangs at exit).
 native_ts_graphics: with #321 and #322 (2026-11-14, on 5aa1cdb0 with workarounds) every source compiles
 under `-mm=own` and its ctest passes 525/525, as under gc and rc.
 
-85 (open, found 2026-11-14 on pre-alpha128 (0c8439cb); native_ts_graphics `examples/sakura_forest_ser.ts`
+85 (fixed; found 2026-11-14 on pre-alpha128 (0c8439cb); native_ts_graphics `examples/sakura_forest_ser.ts`
 `LIBRARY_EXPORTS`): under `-mm=own`, a module-level `const` whose initializer concatenates three or more
 string literals is refused at the initializer. Run with `-mm=own --emit=jit` (gc prints
 `Raygen,Miss,Hit,Group`):
@@ -791,3 +791,14 @@ something else holds. The whole initializer is a constant (literals only), so it
 literal, as 70 made a literal-typed constant global its literal. Suspect (not checked in the source yet):
 the global-initializer check in the own pass treating the nested `+`'s left operand as a borrow. Workaround
 in native_ts_graphics: a function returning the concatenation (`libraryExports()`).
+
+Fixed: the inner sum is a temporary the initializer makes, reads and gives back itself. rc's retain on it is
+the reference it arrives with and its release gives that back, as in a function body, but the check that
+moves a value into a global took every retain in the initializer for the global's: one retain, a release,
+and no move into the result read as a second reference. A fresh string retained once and released once,
+that only a concatenation reads, now keeps its release and loses the retain. Four literals, a number in
+the chain, a template literal, and other globals, a field or an element read into the chain work too
+(a call that returns a borrow of its argument is still refused). Still open: a string
+built this way and given to a constructor in a global's initializer (`const H = new Holder("x" + "y")`,
+two literals are enough) is refused the same way, as before. Regression test
+`tslang/test/tester/tests/00tslang_issue_85.ts` (every model).
