@@ -95,6 +95,205 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
         return found ? llvm::cast<mlir::LLVM::GlobalOp>(found) : mlir::LLVM::GlobalOp();
     }
 
+    // module.lookupSymbol(name): the first operation of the name at the top level of the module.
+    //
+    // The lookup scans the module, and lowering asks it for the callee of every call. Here the
+    // symbols the module has before the conversion are tabled (tableSymbols), and the answer is
+    // found from the tabled one: an operation that replaces a symbol during the conversion (a ts
+    // function by a func.func, that by an llvm.func) is created in front of the one it replaces,
+    // which stays where it was until the conversion ends, so the first of the name is reached by
+    // stepping back over the operations of that name. The conversion never erases those symbols
+    // before it ends.
+    //
+    // A symbol made during the conversion (a helper routine, a global, a comdat table) is in a
+    // second table, which createdSymbol fills; what a failed pattern created is erased, so that
+    // table is made again by a scan after one fails.
+    //
+    // A name in neither table is looked up by the scan, unless it is the lowering's own
+    // (`ownName`): a name only tslang's lowering gives a symbol - a release routine of a type,
+    // "__mlir_gctors". Such a name in neither table is not in the module. The helpers ask "is this
+    // routine there yet?" for every type, the answer is nearly always no, and a scan to learn it
+    // read the whole module each time. It holds because every symbol the lowering makes is
+    // reported (createSymbol, the helpers' createGlobal). It would not hold for any name: MLIR's
+    // own patterns make symbols too (the lowering of cf.assert declares "puts").
+    void tableSymbols()
+    {
+        for (auto &moduleOp : *module.getBody())
+        {
+            if (auto symbolName = symbolNameOf(&moduleOp))
+            {
+                symbols.try_emplace(symbolName, &moduleOp);
+            }
+        }
+    }
+
+    // a symbol the lowering made at the top level of the module
+    void createdSymbol(mlir::Operation *op)
+    {
+        created_++;
+        noteCreatedSymbol(op);
+    }
+
+    // module.lookupSymbol(name), from the index while the module is being converted
+    static mlir::Operation *lookupSymbolIn(CompileOptions &compileOptions, mlir::ModuleOp module, llvm::StringRef name,
+                                           bool ownName = false)
+    {
+        auto *index = of(compileOptions);
+        if (index && index->isFor(module))
+        {
+            return index->lookupSymbol(name, ownName);
+        }
+
+        return module.lookupSymbol(name);
+    }
+
+    // module.lookupSymbol<T>(name)
+    template <typename T>
+    static T lookupSymbolAs(CompileOptions &compileOptions, mlir::ModuleOp module, llvm::StringRef name)
+    {
+        return llvm::dyn_cast_or_null<T>(lookupSymbolIn(compileOptions, module, name));
+    }
+
+    // module.lookupSymbol<T>(name) for a name that only tslang's lowering gives a symbol
+    template <typename T>
+    static T lookupOwnSymbolAs(CompileOptions &compileOptions, mlir::ModuleOp module, llvm::StringRef name)
+    {
+        return llvm::dyn_cast_or_null<T>(lookupSymbolIn(compileOptions, module, name, /*ownName=*/true));
+    }
+
+    // builder.create<OpTy>(...) for a symbol at the top level of the module, told to the index
+    template <typename OpTy, typename... Args>
+    static OpTy createSymbol(CompileOptions &compileOptions, mlir::OpBuilder &builder, Args &&...args)
+    {
+        auto symbolOp = builder.create<OpTy>(std::forward<Args>(args)...);
+        if (auto *index = of(compileOptions))
+        {
+            index->createdSymbol(symbolOp);
+        }
+
+        return symbolOp;
+    }
+
+    mlir::Operation *lookupSymbol(llvm::StringRef name, bool ownName = false)
+    {
+        auto nameAttr = mlir::StringAttr::get(module.getContext(), name);
+        mlir::Operation *found = nullptr;
+        auto it = symbols.find(nameAttr);
+        if (it != symbols.end())
+        {
+            found = it->second;
+        }
+        else
+        {
+            if (!createdSymbolsKnown)
+            {
+                createdSymbols.clear();
+                for (auto &moduleOp : *module.getBody())
+                {
+                    auto symbolName = symbolNameOf(&moduleOp);
+                    if (symbolName && !symbols.contains(symbolName))
+                    {
+                        createdSymbols.try_emplace(symbolName, &moduleOp);
+                    }
+                }
+
+                createdSymbolsKnown = true;
+            }
+
+            auto created = createdSymbols.find(nameAttr);
+            if (created != createdSymbols.end())
+            {
+                found = created->second;
+            }
+            else if (!ownName)
+            {
+                return module.lookupSymbol(name);
+            }
+        }
+
+        if (found)
+        {
+            for (auto *previous = found->getPrevNode(); previous && symbolNameOf(previous) == nameAttr;
+                 previous = previous->getPrevNode())
+            {
+                found = previous;
+            }
+        }
+
+        if (!verifyFile.empty())
+        {
+            auto *scanned = module.lookupSymbol(name);
+            if (scanned != found)
+            {
+                report("symbol lookup", name);
+                return scanned;
+            }
+        }
+
+        return found;
+    }
+
+    // The comdat table that takes the next selector, with how many it holds and its number (the
+    // module's tables are numbered from 0 as they are made): null when the module has none. The
+    // lowering keeps a table small (COMDAT_TABLE_SELECTORS in LowerToLLVM.cpp) and starts another.
+    mlir::Operation *comdatTable(unsigned &selectors, unsigned &number)
+    {
+        if (!comdatKnown)
+        {
+            comdat = nullptr;
+            comdatSelectors = 0;
+            comdatNumber = 0;
+            for (auto &moduleOp : *module.getBody())
+            {
+                auto comdatOp = llvm::dyn_cast<mlir::LLVM::ComdatOp>(&moduleOp);
+                if (!comdatOp)
+                {
+                    continue;
+                }
+
+                // the newest is the one with the highest number, which its name ends with
+                unsigned tableNumber = 0;
+                auto name = comdatOp.getSymName();
+                auto underscore = name.rfind('_');
+                if (underscore == llvm::StringRef::npos || name.substr(underscore + 1).getAsInteger(10, tableNumber))
+                {
+                    // the first one's name has no number
+                    tableNumber = 0;
+                }
+
+                if (!comdat || tableNumber >= comdatNumber)
+                {
+                    comdat = &moduleOp;
+                    comdatNumber = tableNumber;
+                    comdatSelectors = static_cast<unsigned>(
+                        std::distance(comdatOp.getBody().front().begin(), comdatOp.getBody().front().end()));
+                }
+            }
+
+            comdatKnown = true;
+        }
+
+        selectors = comdatSelectors;
+        number = comdatNumber;
+        return comdat;
+    }
+
+    void comdatTableCreated(mlir::Operation *table, unsigned number)
+    {
+        created_++;
+        noteCreatedSymbol(table);
+        comdat = table;
+        comdatSelectors = 0;
+        comdatNumber = number;
+        comdatKnown = true;
+    }
+
+    void comdatSelectorAdded()
+    {
+        created_++;
+        comdatSelectors++;
+    }
+
     // the last global of the kind at the top level of the module, or null
     mlir::Operation *last(Kind kind)
     {
@@ -118,6 +317,7 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
     void created(mlir::LLVM::GlobalOp globalOp)
     {
         created_++;
+        noteCreatedSymbol(globalOp);
 
         if (!built || globalOp->getParentOp() != module.getOperation())
         {
@@ -180,10 +380,31 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
             // what the pattern created, and the patterns applied to what it created, is erased
             // (or about to be): no pointer taken since it began can be trusted
             built = false;
+            comdatKnown = false;
+            createdSymbolsKnown = false;
         }
     }
 
   private:
+    static mlir::StringAttr symbolNameOf(mlir::Operation *op)
+    {
+        return op->getAttrOfType<mlir::StringAttr>(mlir::SymbolTable::getSymbolAttrName());
+    }
+
+    void noteCreatedSymbol(mlir::Operation *op)
+    {
+        if (!createdSymbolsKnown || op->getParentOp() != module.getOperation())
+        {
+            return;
+        }
+
+        auto symbolName = symbolNameOf(op);
+        if (symbolName && !symbols.contains(symbolName))
+        {
+            createdSymbols.try_emplace(symbolName, op);
+        }
+    }
+
     static Kind kindOf(mlir::LLVM::GlobalOp globalOp)
     {
         auto value = globalOp.getValueAttr();
@@ -257,6 +478,16 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
     }
 
     mlir::ModuleOp module;
+    // the first operation of each symbol name before the conversion (tableSymbols)
+    llvm::DenseMap<mlir::StringAttr, mlir::Operation *> symbols;
+    // ...and of each name made since (createdSymbol); empty and known as the conversion begins
+    bool createdSymbolsKnown = true;
+    llvm::DenseMap<mlir::StringAttr, mlir::Operation *> createdSymbols;
+    // the comdat table taking selectors (comdatTable)
+    bool comdatKnown = false;
+    mlir::Operation *comdat = nullptr;
+    unsigned comdatSelectors = 0;
+    unsigned comdatNumber = 0;
     bool built = false;
     llvm::StringMap<mlir::Operation *> byName;
     mlir::Operation *lastOf[static_cast<int>(Kind::Count)] = {};

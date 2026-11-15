@@ -44,6 +44,38 @@ namespace mlirgen
         llvm::APInt currentEnumValue(32, 0);
         // a member after a string member has no value to count on from
         auto previousIsString = false;
+
+        // The enum's members so far, as the dictionary an initializer naming an earlier member
+        // reads them from. It is made again only where it can be read - before an initializer that
+        // is not a literal, and once all members are in: making it after every member took a time
+        // that grew with the square of their number.
+        auto membersListed = true;
+        auto listMembers = [&]() {
+            if (membersListed)
+            {
+                return;
+            }
+
+            SmallVector<mlir::NamedAttribute> namedEnumValues;
+            for (auto &key : enumValues)
+            {
+                namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
+            }
+
+            enumInfo.second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
+            membersListed = true;
+        };
+
+        // also where a member fails: the declaration is tried again, against what is listed
+        struct ListMembersOnExit
+        {
+            std::function<void()> list;
+            ~ListMembersOnExit()
+            {
+                list();
+            }
+        } listMembersOnExit{listMembers};
+
         for (auto enumMember : enumDeclarationAST->members)
         {
             auto location = loc(enumMember);
@@ -57,6 +89,11 @@ namespace mlirgen
             mlir::Attribute enumValueAttr;
             if (enumMember->initializer)
             {
+                if (enumMember->initializer != SyntaxKind::NumericLiteral && enumMember->initializer != SyntaxKind::StringLiteral)
+                {
+                    listMembers();
+                }
+
                 GenContext enumValueGenContext(genContext);
                 enumValueGenContext.allowConstEval = true;
                 auto result = mlirGen(enumMember->initializer, enumValueGenContext);
@@ -137,16 +174,12 @@ namespace mlirgen
             previousIsString = isa<mlir::StringAttr>(enumValueAttr);
 
             // update enum to support req. access
-            SmallVector<mlir::NamedAttribute> namedEnumValues;
-            for (auto &key : enumValues)
-            {
-                namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
-            }
-
-            enumInfo.second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
+            membersListed = false;
 
             currentEnumValue++;
         }
+
+        listMembers();
 
         auto location = loc(enumDeclarationAST);
         auto storeType = mth.getUnionTypeWithMerge(location, enumLiteralTypes);

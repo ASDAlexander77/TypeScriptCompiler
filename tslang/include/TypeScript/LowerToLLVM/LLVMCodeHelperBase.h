@@ -61,6 +61,18 @@ class LLVMCodeHelperBase
         return module.lookupSymbol<LLVM::GlobalOp>(name);
     }
 
+    // module.lookupSymbol(name)
+    mlir::Operation *lookupSymbol(mlir::ModuleOp module, StringRef name)
+    {
+        auto *index = LLVMGlobalsIndex::of(compileOptions);
+        if (index && index->isFor(module))
+        {
+            return index->lookupSymbol(name);
+        }
+
+        return module.lookupSymbol(name);
+    }
+
     // rewriter.create<LLVM::GlobalOp>(...), told to the index
     template <typename... Args> LLVM::GlobalOp createGlobal(Args &&...args)
     {
@@ -238,14 +250,14 @@ class LLVMCodeHelperBase
 
     LLVM::LLVMFuncOp getOrInsertFunction(mlir::Location loc, ModuleOp parentModule, const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
     {
-        if (auto funcOp = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (auto funcOp = LLVMGlobalsIndex::lookupSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return funcOp;
         }
 
         PatternRewriter::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
-        return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
+        return LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, loc, name, llvmFnType);
     }    
 
     LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)

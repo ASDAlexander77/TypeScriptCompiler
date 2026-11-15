@@ -2297,6 +2297,73 @@ static StringRef getIntegerExtensionAttrName(mlir::Type type)
     return {};
 }
 
+// A comdat selector named `name` for a function or a global, and the reference to it that goes
+// in their `comdat` attribute.
+//
+// The selectors live in comdat tables at the start of the module: "__llvm_comdat", then
+// "__llvm_comdat_1" and so on, each holding at most COMDAT_TABLE_SELECTORS. MLIR's verifier and its
+// translation to LLVM IR find a selector by name for every function and global that has one,
+// scanning the module's operations for the table and then the table for the selector. With one
+// table for the module that was a scan of every selector for each of them: the translation of a
+// module with 2,000 instances of a generic class took 1.8 s, and four times that for twice as
+// many. In LLVM IR a comdat is named by its selector alone, so which table holds it changes
+// nothing there.
+constexpr unsigned COMDAT_TABLE_SELECTORS = 128;
+
+static mlir::SymbolRefAttr addComdatSelector(mlir::ModuleOp module, StringRef name, mlir::LLVM::comdat::Comdat comdat,
+                                             mlir::ConversionPatternRewriter &rewriter, CompileOptions &compileOptions)
+{
+    auto *index = LLVMGlobalsIndex::of(compileOptions);
+    if (index && !index->isFor(module))
+    {
+        index = nullptr;
+    }
+
+    mlir::LLVM::ComdatOp comdatOp;
+    unsigned selectors = 0;
+    unsigned number = 0;
+    auto haveTable = false;
+    if (index)
+    {
+        if (auto *table = index->comdatTable(selectors, number))
+        {
+            comdatOp = cast<mlir::LLVM::ComdatOp>(table);
+            haveTable = true;
+        }
+    }
+    else if ((comdatOp = module.lookupSymbol<mlir::LLVM::ComdatOp>("__llvm_comdat")))
+    {
+        // outside the LLVM lowering pass nothing counts the selectors: the one table takes them all
+        haveTable = true;
+    }
+
+    if (!haveTable || (index && selectors >= COMDAT_TABLE_SELECTORS))
+    {
+        auto newNumber = haveTable ? number + 1 : 0;
+        auto tableName = newNumber == 0 ? std::string("__llvm_comdat") : "__llvm_comdat_" + std::to_string(newNumber);
+
+        // at the start of the module, where a lookup by name finds it soonest: see moveComdatsFirst
+        mlir::OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToStart(module.getBody());
+        comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), tableName);
+        if (index)
+        {
+            index->comdatTableCreated(comdatOp, newNumber);
+        }
+    }
+
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
+    auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(comdatOp.getLoc(), name, comdat);
+    if (index)
+    {
+        index->comdatSelectorAdded();
+    }
+
+    return mlir::SymbolRefAttr::get(rewriter.getContext(), comdatOp.getSymName(),
+                                    mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr()));
+}
+
 struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
@@ -2331,7 +2398,9 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         auto convertedFuncType = rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes());
-        auto newFuncOp = rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{}, argDictAttrs);
+        auto newFuncOp = LLVMGlobalsIndex::createSymbol<mlir::func::FuncOp>(
+            tsLlvmContext->compileOptions, rewriter, location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{},
+            argDictAttrs);
 
         // C expects an 8- or 16-bit integer or a bool extended to 32 bits by whoever hands it
         // over: the caller for an argument, the callee for a result, and clang-compiled code
@@ -2417,7 +2486,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 //newFuncOp->setAttr("dso_local", rewriter.getUnitAttr());
                 newFuncOp.setPrivate();
 
-                addComdat(newFuncOp, rewriter);
+                addComdat(newFuncOp, rewriter, tsLlvmContext->compileOptions);
                 continue;
             }
 
@@ -2490,28 +2559,9 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     }
 
     static void addComdat(mlir::func::FuncOp &func,
-                        mlir::ConversionPatternRewriter &rewriter) {
-        auto module = func->getParentOfType<mlir::ModuleOp>();
-
-        const char *comdatName = "__llvm_comdat";
-        mlir::LLVM::ComdatOp comdatOp = module.lookupSymbol<mlir::LLVM::ComdatOp>(comdatName);
-        if (!comdatOp)
-        {
-            // at the start of the module, where a lookup by name finds it at once: see
-            // moveComdatsFirst
-            mlir::OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(module.getBody());
-            comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
-        }
-
-        mlir::OpBuilder::InsertionGuard guard(rewriter);
-        rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
-        auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
-            comdatOp.getLoc(), func.getSymName(),
-            mlir::LLVM::comdat::Comdat::Any);
-        func->setAttr("comdat", mlir::SymbolRefAttr::get(
-            rewriter.getContext(), comdatName,
-            mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
+                        mlir::ConversionPatternRewriter &rewriter, CompileOptions &compileOptions) {
+        func->setAttr("comdat", addComdatSelector(func->getParentOfType<mlir::ModuleOp>(), func.getSymName(),
+                                                  mlir::LLVM::comdat::Comdat::Any, rewriter, compileOptions));
     }
 };
 
@@ -2528,7 +2578,8 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
 
         auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
 
-        auto funcOp = moduleOp.lookupSymbol(op.getCallee());
+        LLVMCodeHelper symbolsHelper(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto funcOp = symbolsHelper.lookupSymbol(moduleOp, op.getCallee());
 
         LLVM::LLVMFunctionType llvmFuncType;
         if (auto llvmFuncOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(funcOp))
@@ -3293,7 +3344,7 @@ static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, Conversion
     StringRef listName = "ts_remap_vtable_list";
 
     auto parentModule = op->getParentOfType<ModuleOp>();
-    if (auto existing = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+    if (auto existing = LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
     {
         return existing;
     }
@@ -3321,7 +3372,7 @@ static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, Conversion
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{nullList});
     }
 
-    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+    auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
         loc, name, th.getFunctionType(ptrType, {ptrType, ptrType, wordType}), LLVM::Linkage::Internal);
 
     // anchored at the function, not at `op`: what it builds takes the anchor's location, and one in
@@ -5964,7 +6015,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 auto comdat = globalOp.getComdat().has_value() 
                     ? static_cast<mlir::LLVM::comdat::Comdat>(globalOp.getComdat().value()) 
                     : mlir::LLVM::comdat::Comdat::Any;
-                addComdat(llvmGlobalOp, rewriter, comdat);
+                addComdat(llvmGlobalOp, rewriter, tsLlvmContext->compileOptions, comdat);
             }
 
             if (tsLlvmContext->compileOptions.generateDebugInfo)
@@ -5984,29 +6035,11 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     }
 
     static void addComdat(mlir::LLVM::GlobalOp &global,
-                        mlir::ConversionPatternRewriter &rewriter, mlir::LLVM::comdat::Comdat comdat = mlir::LLVM::comdat::Comdat::Any) {
-        auto module = global->getParentOfType<mlir::ModuleOp>();
-
-        const char *comdatName = "__llvm_comdat";
-        mlir::LLVM::ComdatOp comdatOp =
-            module.lookupSymbol<mlir::LLVM::ComdatOp>(comdatName);
-        if (!comdatOp)
-        {
-            // at the start of the module, where a lookup by name finds it at once: see
-            // moveComdatsFirst
-            mlir::OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(module.getBody());
-            comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
-        }
-
+                        mlir::ConversionPatternRewriter &rewriter, CompileOptions &compileOptions,
+                        mlir::LLVM::comdat::Comdat comdat = mlir::LLVM::comdat::Comdat::Any) {
         // TODO: add check if name already added
-        mlir::OpBuilder::InsertionGuard guard(rewriter);
-        rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
-        auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
-            comdatOp.getLoc(), global.getSymName(), comdat);
-        global.setComdatAttr(mlir::SymbolRefAttr::get(
-            rewriter.getContext(), comdatName,
-            mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
+        global.setComdatAttr(addComdatSelector(global->getParentOfType<mlir::ModuleOp>(), global.getSymName(), comdat,
+                                               rewriter, compileOptions));
     }
 };
 
@@ -8394,7 +8427,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
             auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
             //auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>(MLIR_GCTORS);
-            auto mlirGCtors = parentModule.lookupSymbol(MLIR_GCTORS);
+            auto mlirGCtors = LLVMGlobalsIndex::lookupSymbolIn(tsLlvmContext->compileOptions, parentModule, MLIR_GCTORS, /*ownName=*/true);
             if (!mlirGCtors)
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -8402,7 +8435,8 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 // create dummy __mlir_gctors for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
                 auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
-                auto initFunc = rewriter.create<func::FuncOp>(loc, MLIR_GCTORS, llvmFnType);
+                auto initFunc = LLVMGlobalsIndex::createSymbol<func::FuncOp>(tsLlvmContext->compileOptions, rewriter, loc,
+                                                                             MLIR_GCTORS, llvmFnType);
                 initFunc.setPublic();                
                 auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::External);
                 initFunc->setAttr("llvm.linkage", linkage);
@@ -9668,7 +9702,7 @@ static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOp
     }
 }
 
-// The module's comdat table becomes its first operation. MLIR's verifier and its translation to
+// The module's comdat tables (addComdatSelector) become its first operations. MLIR's verifier and its translation to
 // LLVM IR look the table up by name for every global and function that has a comdat (a vtable, an
 // RTTI record, a generic's instance), each time scanning the module from its start: with the table
 // last in a module of 4,000 classes the translation took 2.9 s, with it first 0.5 s. The globals
@@ -9677,17 +9711,32 @@ static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOp
 static void moveComdatsFirst(mlir::ModuleOp m)
 {
     auto *body = m.getBody();
+    SmallVector<mlir::Operation *> tables;
     for (auto &moduleOp : *body)
     {
         if (isa<mlir::LLVM::ComdatOp>(&moduleOp))
         {
-            if (&moduleOp != &body->front())
-            {
-                moduleOp.moveBefore(&body->front());
-            }
-
-            return;
+            tables.push_back(&moduleOp);
         }
+    }
+
+    // in the order they stand in, so the same module always comes out the same
+    mlir::Operation *after = nullptr;
+    for (auto *table : tables)
+    {
+        if (after)
+        {
+            if (after->getNextNode() != table)
+            {
+                table->moveAfter(after);
+            }
+        }
+        else if (table != &body->front())
+        {
+            table->moveBefore(&body->front());
+        }
+
+        after = table;
     }
 }
 
@@ -9981,6 +10030,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // next one goes (LLVMGlobalsIndex.h). It listens to the conversion, to forget what a failed
     // pattern created.
     LLVMGlobalsIndex globalsIndex(m);
+    globalsIndex.tableSymbols();
     ConversionConfig conversionConfig;
     conversionConfig.listener = &globalsIndex;
     tsContext.compileOptions.llvmGlobalsIndex = &globalsIndex;

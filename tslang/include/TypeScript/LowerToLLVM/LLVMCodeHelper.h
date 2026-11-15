@@ -242,8 +242,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // TODO: finish it
-        auto newFuncOp = rewriter.create<mlir::func::FuncOp>(
-            location, name, mlir::FunctionType::get(rewriter.getContext(), llvm::ArrayRef<mlir::Type>(), llvm::ArrayRef<mlir::Type>()));
+        auto newFuncOp = LLVMGlobalsIndex::createSymbol<mlir::func::FuncOp>(
+            compileOptions, rewriter, location, name,
+            mlir::FunctionType::get(rewriter.getContext(), llvm::ArrayRef<mlir::Type>(), llvm::ArrayRef<mlir::Type>()));
         // the per-symbol "__cctor" is only ever called from this module's own global ctors / __mlir_gctors.
         // keep it internal so it is not exported - otherwise an executable and a shared lib that both
         // define e.g. "A.Origin__cctor" interpose each other (ELF gives the executable's copy priority),
