@@ -5268,6 +5268,8 @@ set(own_error_cases
     "own_err_merged_result|:7:5: error: '[^']*' is merged from several branches [(]`[?]:`, `&&`, `[|][|]`, `[?][?]`, a loop[)]"
     "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
     "own_err_global_borrowed_temporary|:11:11: error: the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_concat_borrowed|:8:11: error: the initializer of global 'B' holds the result of 'id', which borrows its argument"
+    "own_err_global_chain_other_global|:13:15: error: the initializer of global 'ALIAS' holds the result of 'Bag.add', which borrows its argument"
     "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_immortal_borrowed_init|:9:5: error: '[^']*' borrows 'K[.]list\\[\\]' and cannot be stored, returned or captured"

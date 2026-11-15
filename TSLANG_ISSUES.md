@@ -798,7 +798,17 @@ moves a value into a global took every retain in the initializer for the global'
 and no move into the result read as a second reference. A fresh string retained once and released once,
 that only a concatenation reads, now keeps its release and loses the retain. Four literals, a number in
 the chain, a template literal, and other globals, a field or an element read into the chain work too
-(a call that returns a borrow of its argument is still refused). Still open: a string
-built this way and given to a constructor in a global's initializer (`const H = new Holder("x" + "y")`,
-two literals are enough) is refused the same way, as before. Regression test
-`tslang/test/tester/tests/00tslang_issue_85.ts` (every model).
+(a call that returns a borrow of its argument is still refused). So does a sum given to a call, which
+was refused even of two strings (`const H = new Holder("x" + "y")`): the global-initializer step after the
+facts moves it into a callee that keeps it, so its release goes, and leaves the release after a callee
+that only reads it. A callee whose result borrows it is refused, "holds the result of 'id', which borrows
+its argument". A chain returning `this` on a new object (`const B = new Bag().add("m").add("n" + "o")`,
+with `add(s: string): this` or a `return this` the body infers) was refused too, "holds the result of
+'Bag.add', which borrows its argument", with a plain literal as well. A function body takes the object
+over (39, spec 78), but only for calls in functions. The global step now does the same: a call whose result
+is its `this` itself, on an object the initializer made (a `new`, or the call before it in the chain)
+and gives to nothing after but its releases, returns that object, the global's own, and its releases go.
+A chain on another global's object (`const A = SHARED.add("q")`) is still refused: `A` would be a second
+owner. So is a function returning its parameter (`const c = id(new V(1))`, #638): only a method's
+`this` is taken over. Regression tests `tslang/test/tester/tests/00tslang_issue_85.ts` (every model),
+`own/own_err_global_concat_borrowed.ts` and `own/own_err_global_chain_other_global.ts`.

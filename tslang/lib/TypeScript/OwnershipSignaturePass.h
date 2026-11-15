@@ -1190,6 +1190,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // is nobody's, and is given as it is.
     static bool moveIntoCallee(mlir::Operation *call, mlir::Value value);
 
+    // A method call in a global's initializer whose result is the object it is called on, itself
+    // (spec 78; a function returning its parameter stays an error, #638), on an object the initializer made (`new Bag()`, or such a call's result in `ownedResults`)
+    // and gives to nothing after the call but its releases: the result is that object, the
+    // initializer's own. The object's releases go. `const B = new Bag().add(a).add(b)`.
+    static bool takeOverTemporaryReceiver(mlir::Operation *call, const Callees &callees, const Facts &facts,
+                                          const llvm::SmallPtrSetImpl<mlir::Value> &ownedResults);
+
     // ---- Export ----
 
     // A library says, beside its memory-model marker, which of its exported functions destroy
