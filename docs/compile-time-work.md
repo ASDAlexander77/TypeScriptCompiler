@@ -143,8 +143,9 @@ Every table answers a question a scan used to answer, and must give the same ans
    `TSLANG_LIB_PATH`, `TSLANG_HOME`; set `TSLANG_VERIFY_LLVM_GLOBALS_INDEX`; `ctest -C Release -j 10
    --timeout 300`. Then the suite without it.
 4. Compare LLVM IR with a compiler from before the change (`--emit=llvm`, default options,
-   `--opt --opt_level=3`, `--mm=rc`) on the largest tests. `00param_assigned_owned.ts` differs
-   from run to run with any compiler (the same lines in another order) and is not a finding.
+   `--opt --opt_level=3`, `--mm=rc`) on the largest tests. The output is the same from run to run;
+   a compiler before #868 put the constants of a function with more than 16 of them (and the
+   globals made for them) in another order on each run - `00param_assigned_owned.ts` showed it.
 
 Known on the development machine: `test-borrow-facts-*` (5 tests) fail because the build cache's
 `CMAKE_AR` names an MSVC toolset that is no longer installed. They pass when their commands are
