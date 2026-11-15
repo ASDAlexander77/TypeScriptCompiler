@@ -73,7 +73,15 @@ All 14 shapes of `shapes.ps1` grow 1.7-2.3x from n = 1,000 to 2,000, which is li
 the larger inputs move by 10-15% between runs on the development machine.
 
 **Known and open:** one function of 8,000 `if`s takes 6.1 s against 2.0 s for 4,000 (3.0x); up
-to 4,000 it doubles. Which stage was not looked at.
+to 4,000 it doubles. The cause is the split itself: `Block::splitBlock` splices the rest of the
+block into the new one, and the splice sets the parent of every operation it moves
+(`ilist_traits<Operation>::transferNodesFromList`, 25% of the samples at 8,000), so n splits of
+one block are still n^2/2 steps, each now a pointer write. A fix, not written: before the
+conversion, split the function's own blocks at their control-flow operations from the last to the
+first (each split then moves little), ending each with a `cf.br` to the next, and have the
+patterns take that next block as their continuation. Not the blocks of nested regions: the
+patterns of the operations around them expect one block. The driver walks blocks in dominance
+order, so the blocks must be linked by branches before it starts.
 
 **Block splits under the conversion driver.** `rewriter.splitBlock` moves the rest of the block
 one operation at a time and records each move for undo (`RewriterBase::splitBlock` with a
