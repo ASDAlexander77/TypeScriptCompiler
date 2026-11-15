@@ -250,14 +250,14 @@ class LLVMCodeHelperBase
 
     LLVM::LLVMFuncOp getOrInsertFunction(mlir::Location loc, ModuleOp parentModule, const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
     {
-        if (auto funcOp = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (auto funcOp = LLVMGlobalsIndex::lookupSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return funcOp;
         }
 
         PatternRewriter::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
-        return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
+        return LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, loc, name, llvmFnType);
     }    
 
     LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)

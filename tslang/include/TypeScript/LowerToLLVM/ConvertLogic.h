@@ -94,7 +94,7 @@ class ConvertLogic
     {
         constexpr auto name = "__ts_number_to_string";
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (auto existing = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (auto existing = LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return existing;
         }
@@ -114,7 +114,7 @@ class ConvertLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(noLoc, name, th.getFunctionType(th.getVoidType(), {ptrTy, f64Ty}),
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, noLoc, name, th.getFunctionType(th.getVoidType(), {ptrTy, f64Ty}),
                                                         LLVM::Linkage::Internal);
 
         auto *entry = funcOp.addEntryBlock(rewriter);

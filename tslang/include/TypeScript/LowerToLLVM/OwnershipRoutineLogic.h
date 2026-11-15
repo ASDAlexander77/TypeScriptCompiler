@@ -169,7 +169,7 @@ class OwnershipRoutineLogic
 
         auto name = getRoutineName(type);
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -180,7 +180,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
         // the symbol must exist before the body is built: a recursive type (`class Node {
@@ -217,7 +217,7 @@ class OwnershipRoutineLogic
 
         auto name = nameStream.str();
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -228,7 +228,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
         auto *entryBlock = funcOp.addEntryBlock(rewriter);
@@ -259,7 +259,7 @@ class OwnershipRoutineLogic
 
         auto name = getRetainRoutineName(type);
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -270,7 +270,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
         // as with release, the symbol must exist before the body is built, so that a
@@ -590,7 +590,7 @@ class OwnershipRoutineLogic
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -601,7 +601,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
         // the symbol exists before the body, for a recursive type, as the release routine's does
@@ -631,7 +631,7 @@ class OwnershipRoutineLogic
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -644,7 +644,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(loc, name, th.getFunctionType(th.getVoidType(), {ptrTy}),
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, loc, name, th.getFunctionType(th.getVoidType(), {ptrTy}),
                                                         LLVM::Linkage::Internal);
 
         auto *entryBlock = funcOp.addEntryBlock(rewriter);
@@ -770,7 +770,7 @@ class OwnershipRoutineLogic
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -785,7 +785,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(loc, name, th.getFunctionType(th.getVoidType(), {llvmType}),
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, loc, name, th.getFunctionType(th.getVoidType(), {llvmType}),
                                                         LLVM::Linkage::Internal);
 
         auto *entryBlock = funcOp.addEntryBlock(rewriter);
@@ -813,12 +813,12 @@ class OwnershipRoutineLogic
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         const char *helperName = "__tslang_free_block";
-        if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
+        if (!LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
-            auto helper = rewriter.create<LLVM::LLVMFuncOp>(
+            auto helper = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
                 loc, helperName, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
@@ -865,13 +865,13 @@ class OwnershipRoutineLogic
 
         const bool atomicAlways = compileOptions.atomicRefCounts();
         const char *helperName = atomicAlways ? "__tslang_dec_ref_atomic" : "__tslang_dec_ref";
-        if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
+        if (!LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
             auto boolType = th.getLLVMBoolType();
-            auto helper = rewriter.create<LLVM::LLVMFuncOp>(
+            auto helper = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
                 loc, helperName, th.getFunctionType(boolType, {th.getPtrType()}), LLVM::Linkage::Internal);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
@@ -955,12 +955,12 @@ class OwnershipRoutineLogic
 
         const bool atomicAlways = compileOptions.atomicRefCounts();
         const char *helperName = atomicAlways ? "__tslang_inc_ref_atomic" : "__tslang_inc_ref";
-        if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
+        if (!LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, helperName))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
-            auto helper = rewriter.create<LLVM::LLVMFuncOp>(
+            auto helper = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
                 loc, helperName, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
@@ -1409,7 +1409,7 @@ class OwnershipRoutineLogic
     void ensurePlainBlockRetainRoutine()
     {
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(PLAIN_BLOCK_RETAIN_ROUTINE))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, PLAIN_BLOCK_RETAIN_ROUTINE))
         {
             return;
         }
@@ -1420,7 +1420,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, PLAIN_BLOCK_RETAIN_ROUTINE, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
         auto *entryBlock = funcOp.addEntryBlock(rewriter);
         rewriter.setInsertionPointToStart(entryBlock);
@@ -1522,7 +1522,7 @@ class OwnershipRoutineLogic
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
-        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
         {
             return name;
         }
@@ -1534,7 +1534,7 @@ class OwnershipRoutineLogic
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
 
-        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter, 
             loc, name, th.getFunctionType(th.getVoidType(), {ptrTy}), LLVM::Linkage::Internal);
 
         auto *entryBlock = funcOp.addEntryBlock(rewriter);
