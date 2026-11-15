@@ -476,7 +476,7 @@ namespace mlirgen
         methodInfo.orderWeight = 0;
         methodInfo.accessLevel = mlir_ts::AccessLevel::Public;
 
-        if (theModule.lookupSymbol(INSTANCEOF_NONE_NAME))
+        if (lookupModuleSymbol(INSTANCEOF_NONE_NAME))
         {
             return methodInfo;
         }
@@ -497,7 +497,7 @@ namespace mlirgen
         builder.create<mlir_ts::ReturnValOp>(noLocation, falseValue, entryOp.getReference());
         builder.create<mlir_ts::ExitOp>(noLocation, entryOp.getReference());
 
-        theModule.push_back(funcOp);
+        pushFunction(funcOp);
         return methodInfo;
     }
 
@@ -543,7 +543,7 @@ namespace mlirgen
                                                                mlir_ts::FunctionType funcType, const GenContext &genContext,
                                                                StringRef message)
     {
-        if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
+        if (auto existing = lookupModuleSymbol<mlir_ts::FuncOp>(stubName))
         {
             // one a discovery run left without its body (GenContext::clean) is made again
             if (!existing.isDeclaration())
@@ -551,6 +551,7 @@ namespace mlirgen
                 return mlir::success();
             }
 
+            forgetModuleSymbol(existing);
             existing->erase();
         }
 
@@ -590,7 +591,7 @@ namespace mlirgen
 
         // it returns nothing at all: what the ownership passes conclude about the functions that do
         // (OwnedReturnConsumptionPass) does not wait on it
-        if (auto stubOp = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
+        if (auto stubOp = lookupModuleSymbol<mlir_ts::FuncOp>(stubName))
         {
             stubOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
         }
@@ -717,7 +718,7 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(vtableName))
+        if (auto globalOp = lookupModuleSymbol<mlir_ts::GlobalOp>(vtableName))
         {
             globalOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
             if (newInterfacePtr->isFinal)

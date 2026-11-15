@@ -11,7 +11,7 @@
 # stage of the compiler the growth is in.
 param(
     [string]$Tslang = "$PSScriptRoot\..\..\..\__build\tslang\windows-msbuild-2026-release\bin\tslang.exe",
-    [int[]]$Sizes = @(500, 1000, 2000),
+    [string[]]$Sizes = @('500', '1000', '2000'),
     [string[]]$Only = @(),
     [string[]]$Flags = @(),
     [switch]$Stages
@@ -21,6 +21,7 @@ $ErrorActionPreference = "Continue"
 # `pwsh -File shapes.ps1 -Only a,b` hands the list over as one string
 $Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $Flags = @($Flags | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+[int[]]$Sizes = @($Sizes | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $out = Join-Path $PSScriptRoot "out"
 New-Item -ItemType Directory -Force $out | Out-Null
 

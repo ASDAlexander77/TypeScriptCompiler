@@ -185,6 +185,11 @@ struct TSFunctionContext
     // the loads and stores through an interface's field inside a `try`, and the blocks their accessor calls unwind
     // to (the innermost try's, which comes last): AccessorUnwindEdgeOps once the function is lowered
     mlir::SmallVector<std::pair<Operation *, mlir::Block *>> accessorUnwinds;
+
+    // the operations of the function's own blocks that split their block when lowered, and the
+    // branch put after each before the conversion: what follows the operation is in the block the
+    // branch goes to already (splitFunctionBlocksAhead in LowerToAffineLoops.cpp)
+    llvm::DenseMap<Operation *, Operation *> splitAhead = llvm::DenseMap<Operation *, Operation *>();
 };
 
 // A reference through an interface's field whose slot may name a cell of accessors (INTERFACE_ACCESSOR_CELL_TAG)

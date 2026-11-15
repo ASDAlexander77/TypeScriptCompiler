@@ -1140,13 +1140,13 @@ namespace mlirgen
         // A library - a module linked beside the program, or one the JIT cache compiles for an
         // import - runs its top level from a global constructor: a `main` of its own was a second
         // one at link time (#447).
-        if (!compileOptions.generateEntryPoint && hasDeferredStatements && !theModule.lookupSymbol(fullGlobalFuncName))
+        if (!compileOptions.generateEntryPoint && hasDeferredStatements && !lookupModuleSymbol(fullGlobalFuncName))
         {
             name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
             fullGlobalFuncName = getFullNamespaceName(name);
             useGlobalCtor = true;
         }
-        else if (theModule.lookupSymbol(fullGlobalFuncName))
+        else if (lookupModuleSymbol(fullGlobalFuncName))
         {
             // a user-written `main` already is the entry point, so with nothing deferred to run
             // ahead of it there is nothing left to generate
