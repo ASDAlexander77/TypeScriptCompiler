@@ -29,6 +29,9 @@ Not merged yet, branch `perf-compile-time-5`:
   of a type already seen no longer has `MLIRRTTIHelperVC` look each record up by name and scan
   for the last global.
 - MLIR generation of 2,000 interfaces: 3.1 s -> 1.0 s, and it now doubles with the source.
+- **A block is split in one step** (`splitBlockOfSucceedingPattern` in `LowerToAffineLoops.cpp`)
+  by the lowering of `if`, the loops, `switch`, labels and the returns. One function of 2,000
+  `if`s: 1.7 s -> 0.9 s.
 
 Figures, object file, no optimisation, `--no-default-lib`, Windows x64, Release compiler:
 
@@ -66,21 +69,20 @@ The suite's largest test is 1,500 lines and shows none of this. Only generated i
 
 ## 3. What is left, with the cause of each
 
-All 14 shapes of `shapes.ps1` now grow 1.7-2.6x from n = 1,000 to 2,000. Timings of the larger
-inputs move by 10-15% between runs on the development machine, so read up to about 2.5x as linear.
-What stands out:
+All 14 shapes of `shapes.ps1` grow 1.7-2.3x from n = 1,000 to 2,000, which is linear: timings of
+the larger inputs move by 10-15% between runs on the development machine.
 
-| Shape | Total | Growth | Where |
-| --- | --- | --- | --- |
-| one function of n `if` statements | 0.66 -> 1.7 s | 2.6x | `TypeScriptToAffineLoweringTSFuncPass` 0.23 -> 0.89 s (3.9x) |
-| interfaces | 2.2 -> 5.0 s | 2.3x | Canonicalizer 0.28 -> 0.73 s (2.6x); `OwnedReturnConsumptionPass` and `StackPromotionPass` were 4-5x but small |
+**Known and open:** one function of 8,000 `if`s takes 6.1 s against 2.0 s for 4,000 (3.0x); up
+to 4,000 it doubles. Which stage was not looked at.
 
-**One very large function.** The `IfOp` lowering in `LowerToAffineLoops.cpp` calls
-`rewriter.splitBlock`. Under a conversion rewriter that moves the rest of the block one operation
-at a time, each with a recorded rewrite, so n sequential `if`s move n^2/2 operations. Options, none
-tried: lower the `if`s of a block last to first, so each split moves little; or build the
-continuation block once per region instead of splitting at every `if`. Upstream's SCF-to-CF has
-the same shape.
+**Block splits under the conversion driver.** `rewriter.splitBlock` moves the rest of the block
+one operation at a time and records each move for undo (`RewriterBase::splitBlock` with a
+listener; `MoveOperationRewrite` in MLIR's `DialectConversion.cpp`). The patterns that cannot fail
+after the split call `Block::splitBlock` instead, which the driver does not hear of: if the
+conversion fails and is undone, the block stays split and the function is not valid, but the pass
+has failed and nothing uses it (checked: a setter-less property assignment after an `if` gives
+the same error and exit code). `TryOpLowering` still uses `rewriter.splitBlock`, as do the
+patterns of `LowerToLLVM.cpp`.
 
 **Not looked at:** `OwnedReturnConsumptionPass` and `BorrowFactsExportPass` showed 4-5x growth on
 some shapes but small absolute times (0.2 s); the canonicalizer runs grow 2.3-2.6x; `-mm=rc` and

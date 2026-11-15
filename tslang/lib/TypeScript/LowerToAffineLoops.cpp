@@ -41,6 +41,18 @@ namespace
 // TypeScriptToAffine RewritePatterns
 //===----------------------------------------------------------------------===//
 
+// rewriter.splitBlock for a pattern that does not fail once it has split. Under the conversion
+// driver the rewriter moves the rest of the block into the new block one operation at a time, and
+// records every move so as to undo it (RewriterBase::splitBlock with a listener): a block of n
+// `if`s moved n^2/2 operations. This is Block::splitBlock, one splice, which the driver does not
+// hear of at all. If the conversion fails and the driver undoes its rewrites, the block stays
+// split, with every operation still in the function: the function is not valid then, and is not
+// used, as the pass has failed.
+static mlir::Block *splitBlockOfSucceedingPattern(PatternRewriter &rewriter, mlir::Block *block, mlir::Block::iterator before)
+{
+    return block->splitBlock(before);
+}
+
 struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
 {
     using TsPattern<mlir_ts::EntryOp>::TsPattern;
@@ -124,7 +136,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
 
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        auto *continuationBlock = splitBlockOfSucceedingPattern(rewriter, opBlock, opPosition);
 
         rewriter.setInsertionPointToEnd(opBlock);
 
@@ -163,7 +175,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        auto *continuationBlock = splitBlockOfSucceedingPattern(rewriter, opBlock, opPosition);
 
         rewriter.setInsertionPointToEnd(opBlock);
 
@@ -406,7 +418,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         // continuation point.
         auto *condBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
-        auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
+        auto *remainingOpsBlock = splitBlockOfSucceedingPattern(rewriter, condBlock, opPosition);
         mlir::Block *continueBlock;
         if (ifOp.getNumResults() == 0)
         {
@@ -544,7 +556,7 @@ struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
 
         // Split the current block before the WhileOp to create the inlining point.
         auto *currentBlock = rewriter.getInsertionBlock();
-        auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *continuation = splitBlockOfSucceedingPattern(rewriter, currentBlock, rewriter.getInsertionPoint());
 
         auto *body = &whileOp.getBody().front();
         auto *bodyLast = &whileOp.getBody().back();
@@ -604,7 +616,7 @@ struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
-        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *continuation = splitBlockOfSucceedingPattern(rewriter, currentBlock, rewriter.getInsertionPoint());
 
         // Only the "before" region should be inlined.
         auto *body = &doWhileOp.getBody().front();
@@ -659,7 +671,7 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
 
         // Split the current block before the WhileOp to create the inlining point.
         auto *currentBlock = rewriter.getInsertionBlock();
-        auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *continuation = splitBlockOfSucceedingPattern(rewriter, currentBlock, rewriter.getInsertionPoint());
 
         auto *incr = &forOp.getIncr().front();
         auto *incrLast = &forOp.getIncr().back();
@@ -733,7 +745,7 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
         Location loc = labelOp.getLoc();
 
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
-        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *continuation = splitBlockOfSucceedingPattern(rewriter, currentBlock, rewriter.getInsertionPoint());
 
         auto *begin = &labelOp.getLabelRegion().front();
 
@@ -843,7 +855,7 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
-        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *continuation = splitBlockOfSucceedingPattern(rewriter, currentBlock, rewriter.getInsertionPoint());
 
         auto *casesRegion = &switchOp.getCasesRegion().front();
 
