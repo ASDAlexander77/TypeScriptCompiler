@@ -170,7 +170,7 @@ class StackEscapeFacts
     {
         for (auto candidate : candidates)
         {
-            auto funcOp = module.lookupSymbol<mlir_ts::FuncOp>(candidate);
+            auto funcOp = lookupFunction(candidate);
             // declared here, defined in a library linked statically that published its facts - by
             // the name it binds: one renamed by @dllname / @linkname binds another symbol
             if (funcOp && funcOp.getBody().empty() && !funcOp->hasAttr(DLL_NAME) &&
@@ -205,9 +205,33 @@ class StackEscapeFacts
         return it != imported->end() && llvm::is_contained(it->second, argIndex);
     }
 
+    // module.lookupSymbol<mlir_ts::FuncOp>(symbol), from a table of the module's symbols made on
+    // the first question: the lookup itself scans the module's operations, and it is asked for
+    // every call and every function reference of the module. The facts already hold the module's
+    // functions by address, so the symbols are no more allowed to change under them than those.
+    mlir_ts::FuncOp lookupFunction(mlir::FlatSymbolRefAttr symbol)
+    {
+        if (!symbols)
+        {
+            symbols.emplace();
+            for (auto &moduleOp : *module.getBody())
+            {
+                if (auto name = moduleOp.getAttrOfType<mlir::StringAttr>(mlir::SymbolTable::getSymbolAttrName()))
+                {
+                    // the first of a name, as the lookup finds it
+                    symbols->try_emplace(name, &moduleOp);
+                }
+            }
+        }
+
+        auto it = symbols->find(symbol.getAttr());
+        return it == symbols->end() ? mlir_ts::FuncOp() : llvm::dyn_cast<mlir_ts::FuncOp>(it->second);
+    }
+
     mlir::ModuleOp module;
     bool trustLocalVTables;
     const BorrowFactsMap *imported;
+    std::optional<llvm::DenseMap<mlir::StringAttr, mlir::Operation *>> symbols;
     std::optional<llvm::SmallPtrSet<mlir::Operation *, 16>> recursive;
 
     // Every function on a cycle of the call graph, in one pass (Tarjan's strongly connected
@@ -232,7 +256,7 @@ class StackEscapeFacts
             llvm::SmallPtrSet<mlir::Operation *, 16> seen;
             for (auto callee : calleesOfFunction(funcOp))
             {
-                auto calleeOp = module.lookupSymbol<mlir_ts::FuncOp>(callee);
+                auto calleeOp = lookupFunction(callee);
                 if (!calleeOp || !seen.insert(calleeOp).second)
                 {
                     continue;
@@ -359,7 +383,7 @@ class StackEscapeFacts
             llvm::SmallPtrSet<mlir::Operation *, 16> seen;
             module.walk([&](mlir_ts::FuncOp funcOp) {
                 funcOp.walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
-                    auto target = module.lookupSymbol<mlir_ts::FuncOp>(symbolRefOp.getIdentifierAttr());
+                    auto target = lookupFunction(symbolRefOp.getIdentifierAttr());
                     if (target && seen.insert(target).second)
                     {
                         addressTakenFunctions->push_back(symbolRefOp.getIdentifierAttr());
