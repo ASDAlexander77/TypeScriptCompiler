@@ -1,9 +1,4 @@
-$files = Get-ChildItem -Path C:\dev\TypeScriptCompiler\tslang\test\tester\tests\ -Filter *.ts -Force
-
-$Env:GC_LIB_PATH="C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\debug\Debug"
-$Env:LLVM_LIB_PATH="C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\debug\Debug\lib"
-$Env:TSLANG_LIB_PATH="C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-debug\lib"
-$Env:TSLANG_BIN_PATH="C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-debug\bin"
+$files = Get-ChildItem -Path ..\..\..\..\..\tslang\test\tester\tests\ -Filter *.ts -Force
 
 #foreach ($file in $files)
 $files | ForEach-Object -Parallel {
@@ -13,7 +8,7 @@ $files | ForEach-Object -Parallel {
 	
 	$out += "Compiling $file ... "
 
-	$exe = "$Env:TSLANG_BIN_PATH\tslang.exe"
+	$exe = "tslang.exe"
 	$outFileName = $file.BaseName + ".wasm"
         $stdOutputFileName = $file.BaseName + ".txt"
         $errOutputFileName = $file.BaseName + ".err"
