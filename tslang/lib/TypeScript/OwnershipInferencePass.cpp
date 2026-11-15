@@ -230,7 +230,19 @@ namespace own_inference
         auto suffix = (llvm::Twine(".") + field + ".accessor").str();
         auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
         llvm::StringRef found;
-        module.walk([&](mlir_ts::GlobalOp globalOp) {
+        // Only the module's own operations, which no function's pass changes: this pass runs on the
+        // module's functions at once, on several threads, and module.walk went into the bodies of
+        // the functions the other threads were putting releases in and erasing reads from. It read a
+        // list as it was relinked, and the compiler ended with an access violation about once in
+        // 500 runs (test/tester/own/own_field_chain_let.ts).
+        for (auto &moduleOp : *module.getBody())
+        {
+            auto globalOp = mlir::dyn_cast<mlir_ts::GlobalOp>(&moduleOp);
+            if (!globalOp)
+            {
+                continue;
+            }
+
             auto name = globalOp.getSymName();
             auto vtbl = name.find("..vtbl.");
             if (vtbl != llvm::StringRef::npos && name.ends_with(suffix) && vtbl + 6 + suffix.size() == name.size())
@@ -238,11 +250,9 @@ namespace own_inference
                 // the class: up to the interface's name
                 auto head = name.take_front(vtbl);
                 found = head.take_front(head.rfind('.') == llvm::StringRef::npos ? head.size() : head.rfind('.'));
-                return mlir::WalkResult::interrupt();
+                break;
             }
-
-            return mlir::WalkResult::advance();
-        });
+        }
 
         return found;
     }
