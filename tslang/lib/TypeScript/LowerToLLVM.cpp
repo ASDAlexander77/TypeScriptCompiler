@@ -3307,8 +3307,9 @@ static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, Conversion
     rewriter.setInsertionPointToStart(parentModule.getBody());
 
     // the first vtable built; each starts with the next one and its slot count: {next, count, slots...}
-    auto list = rewriter.create<LLVM::GlobalOp>(loc, ptrType, /*isConstant=*/false, LLVM::Linkage::Internal, listName,
-                                                mlir::Attribute{});
+    LLVMCodeHelper globals(op, rewriter, typeConverter, compileOptions);
+    auto list = globals.createGlobal(loc, ptrType, /*isConstant=*/false, LLVM::Linkage::Internal, listName,
+                                     mlir::Attribute{});
     {
         OpBuilder::InsertionGuard initGuard(rewriter);
         rewriter.setInsertionPointToStart(rewriter.createBlock(&list.getInitializerRegion()));
@@ -3474,7 +3475,8 @@ static mlir::Value remapInterfaceVTable(Operation *op, mlir::Value interfaceValu
     // the map, one constant per content
     auto mapName = "ts_vtable_map_" + std::to_string((size_t)llvm::hash_combine_range(vtableMap.begin(), vtableMap.end()));
     auto parentModule = op->getParentOfType<ModuleOp>();
-    if (!parentModule.lookupSymbol<LLVM::GlobalOp>(mapName))
+    LLVMCodeHelper globals(op, rewriter, typeConverter, compileOptions);
+    if (!globals.lookupGlobal(parentModule, mapName))
     {
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -3482,7 +3484,7 @@ static mlir::Value remapInterfaceVTable(Operation *op, mlir::Value interfaceValu
         auto mapType = LLVM::LLVMArrayType::get(i32Type, vtableMap.size());
         auto mapValue = mlir::DenseIntElementsAttr::get(
             mlir::RankedTensorType::get({(int64_t)vtableMap.size()}, i32Type), vtableMap);
-        rewriter.create<LLVM::GlobalOp>(loc, mapType, /*isConstant=*/true, LLVM::Linkage::Internal, mapName, mapValue);
+        globals.createGlobal(loc, mapType, /*isConstant=*/true, LLVM::Linkage::Internal, mapName, mapValue);
     }
 
     mlir::Value vtable = rewriter.create<LLVM::ExtractValueOp>(loc, interfaceValue, ArrayRef<int64_t>{DATA_VALUE_INDEX});
@@ -6030,7 +6032,7 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
             // load type from symbol
             auto module = addressOfOp->getParentOfType<mlir::ModuleOp>();
             assert(module);
-            auto globalOp = module.lookupSymbol<LLVM::GlobalOp>(addressOfOp.getGlobalName());
+            auto globalOp = lch.lookupGlobal(module, addressOfOp.getGlobalName());
             if (!globalOp)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! NOT found symbol: " << addressOfOp.getGlobalName() << "\n";);
@@ -9944,7 +9946,17 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         }
     }
 
-    if (failed(applyFullConversion(m, target, std::move(patterns))))
+    // The LLVM globals of the module, for the helpers that ask whether one exists and where the
+    // next one goes (LLVMGlobalsIndex.h). It listens to the conversion, to forget what a failed
+    // pattern created.
+    LLVMGlobalsIndex globalsIndex(m);
+    ConversionConfig conversionConfig;
+    conversionConfig.listener = &globalsIndex;
+    tsContext.compileOptions.llvmGlobalsIndex = &globalsIndex;
+    auto converted = applyFullConversion(m, target, std::move(patterns), conversionConfig);
+    tsContext.compileOptions.llvmGlobalsIndex = nullptr;
+
+    if (failed(converted))
     {
         signalPassFailure();
     }

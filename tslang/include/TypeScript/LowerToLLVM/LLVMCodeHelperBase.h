@@ -3,8 +3,11 @@
 
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMGlobalsIndex.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+
+#include <type_traits>
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -36,63 +39,110 @@ class LLVMCodeHelperBase
     {
     }
 
-    template <typename T> 
+    // The seekLast family puts the insertion point after the last operation of a kind in the
+    // module's body. Those operations (globals, global constructors) only sit at the top level of
+    // the module, so the body is scanned backwards and the function bodies are never entered: a
+    // walk of the whole module for every new global made compile time grow with globals x module
+    // size.
+    //
+    // While the LLVM lowering pass converts the module, its LLVMGlobalsIndex knows the LLVM globals
+    // and no scan is made at all: lookupGlobal, createGlobal and seekLast go through it. Every
+    // LLVM global made during the conversion has to be made with createGlobal.
+
+    // module.lookupSymbol<LLVM::GlobalOp>(name)
+    LLVM::GlobalOp lookupGlobal(mlir::ModuleOp module, StringRef name)
+    {
+        auto *index = LLVMGlobalsIndex::of(compileOptions);
+        if (index && index->isFor(module))
+        {
+            return index->lookup(name);
+        }
+
+        return module.lookupSymbol<LLVM::GlobalOp>(name);
+    }
+
+    // rewriter.create<LLVM::GlobalOp>(...), told to the index
+    template <typename... Args> LLVM::GlobalOp createGlobal(Args &&...args)
+    {
+        auto globalOp = rewriter.create<LLVM::GlobalOp>(std::forward<Args>(args)...);
+        if (auto *index = LLVMGlobalsIndex::of(compileOptions))
+        {
+            index->created(globalOp);
+        }
+
+        return globalOp;
+    }
+
+    template <typename T>
     void seekLast(mlir::Block *block)
     {
+        auto *index = LLVMGlobalsIndex::of(compileOptions);
+        if (index && index->isFor(block) && (std::is_same_v<T, StringAttr> || std::is_same_v<T, DenseElementsAttr>))
+        {
+            auto kind = std::is_same_v<T, StringAttr> ? LLVMGlobalsIndex::Kind::String : LLVMGlobalsIndex::Kind::Dense;
+            if (auto *last = index->last(kind))
+            {
+                rewriter.setInsertionPointAfter(last);
+            }
+
+            return;
+        }
+
         // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<LLVM::GlobalOp>(&blockOp))
             {
                 if (globalOp.getValueAttr() && isa<T>(globalOp.getValueAttr()))
                 {
                     rewriter.setInsertionPointAfter(globalOp);
+                    return;
                 }
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     void seekLast(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+        auto *index = LLVMGlobalsIndex::of(compileOptions);
+        if (index && index->isFor(block))
+        {
+            if (auto *last = index->last(LLVMGlobalsIndex::Kind::Any))
             {
-                rewriter.setInsertionPointAfter(globalOp);
+                rewriter.setInsertionPointAfter(last);
             }
-        };
 
-        block->walk(lastUse);
+            return;
+        }
+
+        seekLastOp<LLVM::GlobalOp>(block);
     }
 
     void seekLastWithBody(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto globalOp = dyn_cast<LLVM::GlobalOp>(&blockOp))
             {
                 if (globalOp.getInitializerBlock())
                 {
                     rewriter.setInsertionPointAfter(globalOp);
+                    return;
                 }
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     template <typename T> void seekLastOp(mlir::Block *block)
     {
-        // find last string
-        auto lastUse = [&](Operation *op) {
-            if (auto opT = dyn_cast_or_null<T>(op))
+        for (auto &blockOp : llvm::reverse(*block))
+        {
+            if (auto opT = dyn_cast<T>(&blockOp))
             {
                 rewriter.setInsertionPointAfter(opT);
+                return;
             }
-        };
-
-        block->walk(lastUse);
+        }
     }
 
     template <typename T> Operation *seekFirstNonConstantOp(T funcOp)
@@ -156,7 +206,7 @@ class LLVMCodeHelperBase
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -164,7 +214,7 @@ class LLVMCodeHelperBase
             seekLast<StringAttr>(parentModule.getBody());
 
             auto type = th.getArrayType(th.getI8Type(), blockBytes.size());
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(blockBytes));
+            global = createGlobal(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(blockBytes));
             // the header is read as a whole word, so the block base has to be word-aligned
             global.setAlignment(headerSize);
         }

@@ -261,12 +261,12 @@ class LLVMRTTIHelperVCWin32
     LogicalResult typeInfo(mlir::Location loc)
     {
         auto name = typeInfoExtRef;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
 
-        rewriter.create<LLVM::GlobalOp>(loc, th.getPtrType(), true, LLVM::Linkage::External, name, mlir::Attribute{});
+        ch.createGlobal(loc, th.getPtrType(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
     }
 
@@ -286,14 +286,14 @@ class LLVMRTTIHelperVCWin32
     LogicalResult typeDescriptor(mlir::Location loc, StringRef typeInfoRefName, StringRef typeName)
     {
         auto name = typeInfoRefName;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
 
         auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty(StringRef(typeName).size());
         auto _r0n_Value =
-            rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
+            ch.createGlobal(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_r0n_Value);
@@ -331,12 +331,12 @@ class LLVMRTTIHelperVCWin32
         }
 
         auto name = imageBaseRef;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
 
-        rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, mlir::Attribute{});
+        ch.createGlobal(loc, th.getI8Type(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
     }
 
@@ -381,7 +381,7 @@ class LLVMRTTIHelperVCWin32
                                 int catchableTypeSize)
     {
         auto name = catchableTypeInfoRefName;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
@@ -389,7 +389,7 @@ class LLVMRTTIHelperVCWin32
         // _CT??_R0N@88
         auto ehCatchableTypeTy = getCatchableTypeTy();
         auto _ct_r0n_Value =
-            rewriter.create<LLVM::GlobalOp>(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
+            ch.createGlobal(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_ct_r0n_Value);
@@ -441,7 +441,7 @@ class LLVMRTTIHelperVCWin32
     LogicalResult catchableArrayType(mlir::Location loc)
     {
         auto name = catchableTypeInfoArrayRef;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
@@ -451,7 +451,7 @@ class LLVMRTTIHelperVCWin32
         // _CT??_R0N@88
         auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy(arraySize);
         auto _cta1nValue =
-            rewriter.create<LLVM::GlobalOp>(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
+            ch.createGlobal(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_cta1nValue);
@@ -493,13 +493,13 @@ class LLVMRTTIHelperVCWin32
     LogicalResult throwInfo(mlir::Location loc)
     {
         auto name = throwInfoRef;
-        if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (ch.lookupGlobal(parentModule, name))
         {
             return failure();
         }
 
         auto throwInfoTy = getThrowInfoTy();
-        auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
+        auto _TI1NValue = ch.createGlobal(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         // Throw Info
         ch.setStructWritingPoint(_TI1NValue);

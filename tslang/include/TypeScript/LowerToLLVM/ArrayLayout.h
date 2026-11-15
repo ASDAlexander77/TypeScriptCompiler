@@ -301,7 +301,7 @@ class ArrayLayout : public LLVMCodeHelperBase
         auto withWord = compileOptions.tracksOwnership();
         auto headerName = ("ah_" + dataGlobalName).str();
 
-        auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(headerName);
+        auto global = lookupGlobal(parentModule, headerName);
         if (!global)
         {
             OpBuilder::InsertionGuard guard(rewriter);
@@ -313,7 +313,7 @@ class ArrayLayout : public LLVMCodeHelperBase
                                                               /*isPacked=*/true);
             }
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, globalType, /*isConstant=*/true, LLVM::Linkage::Internal,
+            global = createGlobal(loc, globalType, /*isConstant=*/true, LLVM::Linkage::Internal,
                                                      headerName, mlir::Attribute{});
             global.setAlignment(getHeapBlockHeaderSize());
 
@@ -389,11 +389,11 @@ class ArrayLayout : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<mlir::ModuleOp>();
-        if (!parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+        if (!lookupGlobal(parentModule, name))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
-            auto global = rewriter.create<LLVM::GlobalOp>(rewriter.getUnknownLoc(), headerType(), /*isConstant=*/true,
+            auto global = createGlobal(rewriter.getUnknownLoc(), headerType(), /*isConstant=*/true,
                                                           LLVM::Linkage::Internal, name, mlir::Attribute{});
             rewriter.setInsertionPointToStart(rewriter.createBlock(&global.getInitializerRegion()));
             mlir::Value zero = rewriter.create<LLVM::ZeroOp>(rewriter.getUnknownLoc(), headerType());
