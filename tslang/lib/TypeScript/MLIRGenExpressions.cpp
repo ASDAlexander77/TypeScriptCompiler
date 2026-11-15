@@ -1907,6 +1907,8 @@ namespace mlirgen
         auto result = mlirGen(deleteExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
+        // what the expression named, before an array is turned into a reference to its elements
+        auto place = expr;
 
         if (!isa<mlir_ts::RefType>(expr.getType()) && !isa<mlir_ts::ValueRefType>(expr.getType()) &&
             !isa<mlir_ts::ClassType>(expr.getType()))
@@ -1934,6 +1936,40 @@ namespace mlirgen
                 emitError(location, "the operand of a 'delete' operator must be optional");
                 return mlir::failure();
             }
+        }
+
+        // -mm=own: `delete` ends the owner the expression names, and only an owner can be ended. There is no
+        // ts.Delete: a local or a field that owns its value is released and cleared the way an assignment
+        // releases what it replaces, which the ownership passes already follow - what was moved out of the local
+        // is not freed, a borrow of it ends, and a caller learns the function may drop. A value no storage holds
+        // (`delete new C()`, or a `const` the compiler kept as a value) is released where its block ends, as it
+        // would have been. Anything else - a parameter, a local that owns nothing, a value read out of another
+        // owner - belongs to someone who would free it again.
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            // a discovery run marks no value as carrying a reference, so it cannot tell whose the value is
+            // ...and a value that owns no block (`new` of a number) has no owner to end: own frees it no more than
+            // reference counting does
+            if (genContext.dummyRun || !mth.ownsHeapMemory(location, place.getType()) || producesOwnedReferenceAtLastUse(place))
+            {
+                return mlir::success();
+            }
+
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto reference = mcl.GetReferenceFromValue(location, place);
+            if (!reference || !isOwningSlot(location, reference))
+            {
+                emitError(location, "'delete' of a value this function does not own: under -mm=own only a local or a field "
+                                    "that owns its value can be deleted");
+                return mlir::failure();
+            }
+
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            auto clearedResult = cast(location, place.getType(), nullValue, genContext, /*disableStrictNullCheck*/ true);
+            EXIT_IF_FAILED_OR_NO_VALUE(clearedResult)
+            auto saved = mlirGenSaveLogicOneItem(location, place, V(clearedResult), genContext);
+            EXIT_IF_FAILED(saved)
+            return mlir::success();
         }
 
         builder.create<mlir_ts::DeleteOp>(location, expr);

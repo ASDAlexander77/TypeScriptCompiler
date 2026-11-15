@@ -1627,7 +1627,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a function returns a borrow of a parameter on one path and something else on another | `'f' returns a borrow of its argument on some paths and another value on others; -mm=own cannot tell its callers whether they own the result`, with a note at the other return | `own_err_mixed_return`; `own_err_unbox_string` until §22, which copies the string and deleted it |
 | a parameter's value, returned, where the callers cannot learn the fact (§15) | `'x' is a parameter, returned here, but -mm=own cannot tell the callers of 'f' that the result borrows it`, with §15's facts-lost note | `own_err_param_returned_exported` |
 | a parameter's value, kept (stored, pushed, given away) | `'x' is a parameter, kept here, but -mm=own cannot make the callers of 'f' give it up`, with the note | `own_err_param_kept_exported` |
-| a store into a parameter's slot | `'x' is a parameter and cannot be assigned under -mm=own yet` | `own_err_param_assigned` |
+| a store into a parameter's slot (one with no local of its own, §81) | `'x' is a parameter and cannot be assigned under -mm=own yet` | - |
 | a store into a local that owns nothing | `'x' owns nothing under -mm=own (it is declared without a value, or in a catch or finally clause), so it cannot be given a new value here` | `own_err_local_owns_nothing` |
 | a value merged from branches or loop iterations (a conditional, `&&`, `\|\|`, `??`, a loop) | 'x' is merged from several branches (the operators, a loop); -mm=own cannot prove which one owns it yet | `own_err_merged_result` |
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
@@ -5763,3 +5763,35 @@ it does not read.
 Not here: an array written (`push`, an element stored), stored, returned, captured or given to a
 call (the call's array of §49 aside); a literal with a fresh element beside borrowed ones; a local's
 value as an element (`[background, tile]`), whose bound is the local's own ends.
+
+## 81. An assigned parameter is kept; `delete` ends an owner, 2026-11-15
+
+Two refusals that said "yet". Of the 621 corpus files, nine stopped at the first and five at the second.
+
+**A parameter the body assigns.** rc gives such a parameter a local of its own (#512), and own did so
+only for a string (§22.3) and a `Shared<T>` handle; any other was "a parameter and cannot be assigned
+under -mm=own yet". `mlirGenFunctionOwnAssignedParams` now starts the local for every parameter that owns
+a block. The local owns what it holds, so the caller's value moves into it: the parameter is a kept one,
+by the rules a parameter stored in a field already follows (`__own_params`, `@keeps("x")` for a function
+another module may call), and no pass changed. What follows from that:
+- a caller that reads the argument after the call gets "is used here after its value was moved", with the
+  call as the place it moved (`own_err_param_assigned`);
+- a function whose callers cannot be told - exported, reached through an interface - gets "is a parameter,
+  kept here, but -mm=own cannot make the callers ... give it up" (`own_err_param_assigned_exported`);
+- `x = n` of a local moves `n` into the parameter's local, where it was the error #752 added
+  (`own_err_param_assigned_local`, now a case of `own_param_assigned`).
+
+`p.length = n` starts a local only for a string; an array is resized where it is, and its callers keep it.
+`assignsParameter` stays for a parameter with no local (a binding pattern). Still refused, by other rules:
+a parameter a closure captures or assigns, one a generator assigns, and `x ??= v` (a merge).
+
+**`delete`.** Own has no `ts.Delete`. MLIRGen writes `delete place` as the assignment that clears the place
+when the place owns its value (`isOwningSlot`: a local, a field, an element, a global): the release and the
+store an assignment makes, which the passes follow already - a local whose value moved frees nothing, a
+borrow of it ends (`own_err_delete_borrowed`), the function may drop. A value no storage holds (`delete new
+C()`, a `const` kept as a value) is released where its block ends, as before, and a value that owns no
+block is left alone. Anything else - a parameter, a local that owns nothing - is "'delete' of a value this
+function does not own" (`own_err_delete_param`). A local read after its `delete` holds null.
+
+Tests: `own_param_assigned` (own, rc, gc), `own_delete` (own, rc), and the seven corpus files only these
+two stopped, under own (`test-*-own-flipped-*`).

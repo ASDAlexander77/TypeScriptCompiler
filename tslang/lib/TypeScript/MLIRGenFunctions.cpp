@@ -1794,8 +1794,14 @@ namespace mlirgen
     // -mm=own: a Shared<T> parameter the body assigns is copied too. Own steps aside for Shared handles - their
     // counts are rc's - so it accepts the assignment, and the slot held a handle that only borrowed the new
     // value: assigned in a loop, the handle was released at the end of the loop body and a later `p.value` read
-    // freed memory. Any other parameter own refuses to assign (OwnershipInferencePass), and a collector needs
-    // none of this.
+    // freed memory.
+    //
+    // -mm=own: any other parameter the body assigns - an object, an array - starts a local as well. The local
+    // owns what it holds, so the caller's value has to become its own: the function keeps the parameter, as one
+    // that stores it in a field does, and its callers give the argument up (the ownership passes' kept
+    // parameters; '@keeps' says it for a function another module may call). A caller that reads the argument
+    // after the call is told it was moved. A parameter left without a local (one with a binding pattern) own
+    // still refuses to assign (OwnershipInferencePass). A collector needs none of this.
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionOwnAssignedParams(mlir::Location location,
                                                                       FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                                       FunctionPrototypeDOM::TypePtr funcProto,
@@ -1812,8 +1818,7 @@ namespace mlirgen
         auto scanned = false;
         for (const auto &param : funcProto->getParams())
         {
-            if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()) ||
-                (own && !mlir::isa<mlir_ts::StringType, mlir_ts::SharedType>(param->getType())))
+            if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()))
             {
                 continue;
             }
@@ -1824,7 +1829,9 @@ namespace mlirgen
                 scanned = true;
             }
 
-            if (!assignedNames.contains(param->getName()) && !lengthNames.contains(param->getName()))
+            // `p.length = n` makes a new value only of a string: an array is resized where it is
+            if (!assignedNames.contains(param->getName()) &&
+                !(lengthNames.contains(param->getName()) && mlir::isa<mlir_ts::StringType>(param->getType())))
             {
                 continue;
             }
