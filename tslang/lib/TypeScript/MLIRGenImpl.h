@@ -2809,15 +2809,59 @@ class MLIRGenImpl
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
             builder.setInsertionPointToStart(theModule.getBody());
-            // after the last global: globals only sit at the top level of the module, and walking
-            // into every function body for each new global made compile time quadratic
-            for (auto &moduleOp : llvm::reverse(*theModule.getBody()))
-            {
-                if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(&moduleOp))
+            // after the last global: the one remembered for this module (lastGlobalOfModule), or
+            // found by scanning the top level of the module backwards - globals do not nest
+            auto scanForLastGlobal = [&]() -> mlir::Operation * {
+                for (auto &moduleOp : llvm::reverse(*theModule.getBody()))
                 {
-                    builder.setInsertionPointAfter(globalOp);
-                    break;
+                    if (isa<mlir_ts::GlobalOp>(&moduleOp))
+                    {
+                        return &moduleOp;
+                    }
                 }
+
+                return nullptr;
+            };
+
+            mlir::Operation *lastGlobal = nullptr;
+            auto known = lastGlobalOfModule.find(theModule.getOperation());
+            if (known == lastGlobalOfModule.end())
+            {
+                lastGlobal = scanForLastGlobal();
+            }
+            else
+            {
+                lastGlobal = known->second;
+                // TSLANG_VERIFY_LLVM_GLOBALS_INDEX=<file>: checked against the scan, as the LLVM
+                // globals index is (LowerToLLVM/LLVMGlobalsIndex.h)
+                static const char *verifyFile = std::getenv("TSLANG_VERIFY_LLVM_GLOBALS_INDEX");
+                if (verifyFile)
+                {
+                    auto *scanned = scanForLastGlobal();
+                    if (scanned != lastGlobal)
+                    {
+                        std::error_code ec;
+                        llvm::raw_fd_ostream out(verifyFile, ec, llvm::sys::fs::OF_Append);
+                        if (!ec)
+                        {
+                            out << "MLIR generation: the last global remembered for '"
+                                << variableDeclarationInfo.fullName << "' differs from the scan (scan: '";
+                            if (auto scannedGlobal = dyn_cast_or_null<mlir_ts::GlobalOp>(scanned))
+                            {
+                                out << scannedGlobal.getSymName();
+                            }
+
+                            out << "')\n";
+                        }
+
+                        lastGlobal = scanned;
+                    }
+                }
+            }
+
+            if (lastGlobal)
+            {
+                builder.setInsertionPointAfter(lastGlobal);
             }
 
             SmallVector<mlir::NamedAttribute> attrs;
@@ -2860,6 +2904,13 @@ class MLIRGenImpl
             if (genContext.dummyRun && genContext.cleanUpOps)
             {
                 genContext.cleanUpOps->push_back(globalOp);
+                // erased when the dummy run is cleaned up, which nothing here hears of: not
+                // remembered, so the next global of the module is placed by a scan
+                forgetLastGlobalOf(theModule.getOperation());
+            }
+            else
+            {
+                lastGlobalOfModule[theModule.getOperation()] = globalOp;
             }
 
             if (variableDeclarationInfo.scope == VariableScope::Global)
@@ -15474,7 +15525,7 @@ class MLIRGenImpl
         // A fresh module holds none of the files emitted so far, so it starts with an empty
         // `emittedFiles`: discovery has to see every declaration to resolve against it.
         DiscoveryModuleScope(MLIRGenImpl &mlirGenImpl)
-            : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder),
+            : mlirGenImpl(mlirGenImpl), moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder),
               emittedFilesGuard(mlirGenImpl.emittedFiles, {}),
               discoveryDepthGuard(mlirGenImpl.discoveryDepth, mlirGenImpl.discoveryDepth + 1)
         {
@@ -15487,15 +15538,37 @@ class MLIRGenImpl
         ~DiscoveryModuleScope()
         {
             // members restore theModule and the insertion point after the erase
+            mlirGenImpl.forgetLastGlobalOf(discoveryModule.getOperation());
             discoveryModule.erase();
         }
 
       private:
+        MLIRGenImpl &mlirGenImpl;
         MLIRValueGuard<mlir::ModuleOp> moduleGuard;
         mlir::OpBuilder::InsertionGuard insertGuard;
         MLIRValueGuard<llvm::StringSet<>> emittedFilesGuard;
         MLIRValueGuard<int> discoveryDepthGuard;
         mlir::ModuleOp discoveryModule;
+    };
+
+    // Around a use of MLIRRTTIHelperVC, which makes globals of its own (an exception's type
+    // records) and places them by its own scan: the last global remembered for the module
+    // (lastGlobalOfModule) is not the last one while it works, nor once it is done.
+    class RttiGlobalsScope
+    {
+      public:
+        RttiGlobalsScope(MLIRGenImpl &mlirGenImpl) : mlirGenImpl(mlirGenImpl)
+        {
+            mlirGenImpl.forgetLastGlobalOf(mlirGenImpl.theModule.getOperation());
+        }
+
+        ~RttiGlobalsScope()
+        {
+            mlirGenImpl.forgetLastGlobalOf(mlirGenImpl.theModule.getOperation());
+        }
+
+      private:
+        MLIRGenImpl &mlirGenImpl;
     };
 
     // RAII scope that redirects theModule and the builder into the temp module
@@ -15546,6 +15619,7 @@ class MLIRGenImpl
             tempEntryBlock->erase();
 
             tempFuncOp.erase();
+            forgetLastGlobalOf(tempModule.getOperation());
             tempModule.erase();
 
             tempEntryBlock = nullptr;
@@ -17539,6 +17613,18 @@ class MLIRGenImpl
 
     /// A "module" matches a TypeScript source file: containing a list of functions.
     mlir::ModuleOp theModule;
+
+    // The last global of each module that createGlobalVariable has put one in (the module being
+    // generated, the temp module, a discovery module). Every global goes after the last one, so
+    // the one just created is the last: without this, each new global scanned the module
+    // backwards over every function generated so far. An entry is dropped when its global or its
+    // module is erased; a module with no entry is scanned.
+    llvm::DenseMap<mlir::Operation *, mlir::Operation *> lastGlobalOfModule;
+
+    void forgetLastGlobalOf(mlir::Operation *moduleOp)
+    {
+        lastGlobalOfModule.erase(moduleOp);
+    }
 
     mlir::StringRef mainSourceFileName;
 

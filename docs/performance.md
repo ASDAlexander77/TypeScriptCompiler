@@ -128,5 +128,5 @@ Measured on Windows 11 x64 with the release compiler, `--no-default-lib`, on 202
 | 2,000 classes of 5 lines | object, `--opt_level=3` | 1.7 s |
 
 Functions compile at about 5,500 lines a second, and twice the source takes twice the time.
-Classes take a little more than that: from 2,000 to 4,000 classes MLIR generation takes 2.65
-times as long, every other stage about 2.2 times.
+So do classes, within a tenth: from 4,000 to 8,000 classes every stage takes 2.0 to 2.5 times as
+long, and the whole compilation 2.2 times (5.5 s and 11.9 s).

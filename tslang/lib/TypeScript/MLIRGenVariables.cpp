@@ -305,6 +305,7 @@ namespace mlirgen
 
             if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
             {
+                forgetLastGlobalOf(variableDeclarationInfo.globalOp->getParentOp());
                 variableDeclarationInfo.globalOp->erase();
                 variableDeclarationInfo.deleted = true;
             }

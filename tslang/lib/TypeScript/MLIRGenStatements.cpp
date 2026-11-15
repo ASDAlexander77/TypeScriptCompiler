@@ -1661,6 +1661,7 @@ namespace mlirgen
         if (!genContext.allowPartialResolve)
         {
             MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+            RttiGlobalsScope rttiGlobalsScope(*this);
             setCatchCopyThunkBuilder(rtti);
             if (!rtti.setRTTIForType(
                 location, exception.getType(), 
@@ -1792,6 +1793,7 @@ namespace mlirgen
                 if (!genContext.allowPartialResolve)
                 {
                     MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+                    RttiGlobalsScope rttiGlobalsScope(*this);
                     setCatchCopyThunkBuilder(rtti);
                     if (!rtti.setRTTIForType(
                         location, 
