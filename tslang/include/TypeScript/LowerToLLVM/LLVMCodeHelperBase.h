@@ -61,6 +61,18 @@ class LLVMCodeHelperBase
         return module.lookupSymbol<LLVM::GlobalOp>(name);
     }
 
+    // module.lookupSymbol(name)
+    mlir::Operation *lookupSymbol(mlir::ModuleOp module, StringRef name)
+    {
+        auto *index = LLVMGlobalsIndex::of(compileOptions);
+        if (index && index->isFor(module))
+        {
+            return index->lookupSymbol(name);
+        }
+
+        return module.lookupSymbol(name);
+    }
+
     // rewriter.create<LLVM::GlobalOp>(...), told to the index
     template <typename... Args> LLVM::GlobalOp createGlobal(Args &&...args)
     {

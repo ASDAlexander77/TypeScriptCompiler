@@ -2528,7 +2528,8 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
 
         auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
 
-        auto funcOp = moduleOp.lookupSymbol(op.getCallee());
+        LLVMCodeHelper symbolsHelper(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto funcOp = symbolsHelper.lookupSymbol(moduleOp, op.getCallee());
 
         LLVM::LLVMFunctionType llvmFuncType;
         if (auto llvmFuncOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(funcOp))
@@ -9981,6 +9982,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // next one goes (LLVMGlobalsIndex.h). It listens to the conversion, to forget what a failed
     // pattern created.
     LLVMGlobalsIndex globalsIndex(m);
+    globalsIndex.tableSymbols();
     ConversionConfig conversionConfig;
     conversionConfig.listener = &globalsIndex;
     tsContext.compileOptions.llvmGlobalsIndex = &globalsIndex;

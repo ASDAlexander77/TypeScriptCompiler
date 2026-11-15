@@ -95,6 +95,57 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
         return found ? llvm::cast<mlir::LLVM::GlobalOp>(found) : mlir::LLVM::GlobalOp();
     }
 
+    // module.lookupSymbol(name): the first operation of the name at the top level of the module.
+    //
+    // The lookup scans the module, and lowering asks it for the callee of every call. Here the
+    // symbols the module has before the conversion are tabled (tableSymbols), and the answer is
+    // found from the tabled one: an operation that replaces a symbol during the conversion (a ts
+    // function by a func.func, that by an llvm.func) is created in front of the one it replaces,
+    // which stays where it was until the conversion ends, so the first of the name is reached by
+    // stepping back over the operations of that name. Only those symbols are tabled because the
+    // conversion never erases them before it ends, as it does what a failed pattern created. A
+    // symbol made during the conversion (a helper routine) is looked up by the scan.
+    void tableSymbols()
+    {
+        for (auto &moduleOp : *module.getBody())
+        {
+            if (auto symbolName = symbolNameOf(&moduleOp))
+            {
+                symbols.try_emplace(symbolName, &moduleOp);
+            }
+        }
+    }
+
+    mlir::Operation *lookupSymbol(llvm::StringRef name)
+    {
+        auto nameAttr = mlir::StringAttr::get(module.getContext(), name);
+        mlir::Operation *found = nullptr;
+        auto it = symbols.find(nameAttr);
+        if (it == symbols.end())
+        {
+            return module.lookupSymbol(name);
+        }
+
+        found = it->second;
+        for (auto *previous = found->getPrevNode(); previous && symbolNameOf(previous) == nameAttr;
+             previous = previous->getPrevNode())
+        {
+            found = previous;
+        }
+
+        if (!verifyFile.empty())
+        {
+            auto *scanned = module.lookupSymbol(name);
+            if (scanned != found)
+            {
+                report("symbol lookup", name);
+                return scanned;
+            }
+        }
+
+        return found;
+    }
+
     // the last global of the kind at the top level of the module, or null
     mlir::Operation *last(Kind kind)
     {
@@ -184,6 +235,11 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
     }
 
   private:
+    static mlir::StringAttr symbolNameOf(mlir::Operation *op)
+    {
+        return op->getAttrOfType<mlir::StringAttr>(mlir::SymbolTable::getSymbolAttrName());
+    }
+
     static Kind kindOf(mlir::LLVM::GlobalOp globalOp)
     {
         auto value = globalOp.getValueAttr();
@@ -257,6 +313,8 @@ class LLVMGlobalsIndex : public mlir::RewriterBase::Listener
     }
 
     mlir::ModuleOp module;
+    // the first operation of each symbol name before the conversion (tableSymbols)
+    llvm::DenseMap<mlir::StringAttr, mlir::Operation *> symbols;
     bool built = false;
     llvm::StringMap<mlir::Operation *> byName;
     mlir::Operation *lastOf[static_cast<int>(Kind::Count)] = {};
