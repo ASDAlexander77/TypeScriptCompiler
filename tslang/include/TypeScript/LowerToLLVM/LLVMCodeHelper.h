@@ -78,14 +78,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, value);
+            global = createGlobal(loc, type, isConst, linkage, name, value);
 
             {
                 setStructWritingPoint(global);
@@ -116,7 +116,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // Create the global at the entry of the module.
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -129,7 +129,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 effectiveValue = rewriter.getArrayAttr({effectiveValue});
             }
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, effectiveValue);
+            global = createGlobal(loc, type, isConst, linkage, name, effectiveValue);
             if (section.size() > 0)
             {
                 global.setSection(section);
@@ -170,7 +170,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto ptrType = th.getPtrType();
 
         // Create the global at the entry of the module.
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -180,7 +180,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             TypeHelper th(rewriter);
             auto arrayPtrType = LLVM::LLVMArrayType::get(ptrType, 1);
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, arrayPtrType, false, LLVM::Linkage::Appending, name, mlir::Attribute{});
+            global = createGlobal(loc, arrayPtrType, false, LLVM::Linkage::Appending, name, mlir::Attribute{});
             if (section.size() > 0)
             {
                 global.setSection(section);
@@ -310,7 +310,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // Create the global at the entry of the module.
-        LLVM::GlobalOp global = parentModule.lookupSymbol<LLVM::GlobalOp>(name);
+        LLVM::GlobalOp global = lookupGlobal(parentModule, name);
         if (!global)
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -318,7 +318,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, true, linkage, name, mlir::Attribute());
+            global = createGlobal(loc, type, true, linkage, name, mlir::Attribute());
 
             {
                 setStructWritingPoint(global);
@@ -375,14 +375,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto descriptorType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {recordType, nameArrayType}, false);
 
         LLVM::GlobalOp global;
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(varName.str())))
+        if (!(global = lookupGlobal(parentModule, varName.str())))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, descriptorType, true, LLVM::Linkage::Internal, varName.str(),
+            global = createGlobal(loc, descriptorType, true, LLVM::Linkage::Internal, varName.str(),
                                                      mlir::Attribute{});
 
             setStructWritingPoint(global);
@@ -571,7 +571,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -625,7 +625,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 // i32 wants sixteen bytes, which would put the header two words back instead
                 auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {getHeapBlockWordType(), dataType},
                                                                   /*isPacked=*/true);
-                global = rewriter.create<LLVM::GlobalOp>(loc, blockType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+                global = createGlobal(loc, blockType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
@@ -650,7 +650,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             {
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, denseAttr);
+                global = createGlobal(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, denseAttr);
             }
             else
             {
@@ -658,7 +658,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+                global = createGlobal(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
@@ -843,14 +843,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
-        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        if (!(global = lookupGlobal(parentModule, name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+            global = createGlobal(loc, llvmStructType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
             setStructWritingPoint(global);
 

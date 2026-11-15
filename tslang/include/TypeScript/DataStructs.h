@@ -135,6 +135,12 @@ struct CompileOptions
     {
         return memoryModel == MemoryModelRC || memoryModel == MemoryModelOwn;
     }
+
+    // Not an option: the LLVM globals of the module the LLVM lowering pass is converting, there
+    // only while it converts (LowerToLLVM/LLVMGlobalsIndex.h). The lowering helpers are built
+    // from these options everywhere, so this is how they reach it. A typescript::LLVMGlobalsIndex,
+    // untyped because this header declares no namespace: read it with LLVMGlobalsIndex::of.
+    void *llvmGlobalsIndex = nullptr;
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_
