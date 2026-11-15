@@ -394,6 +394,7 @@ namespace mlirgen
                 builder.create<mlir_ts::ThrowOp>(location, message);
 
                 MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+                RttiGlobalsScope rttiGlobalsScope(*this);
                 setCatchCopyThunkBuilder(rtti);
                 if (!rtti.setRTTIForType(location, message.getType(), [&](StringRef classFullName) {
                         return getClassInfoByFullName(classFullName);
@@ -446,6 +447,7 @@ namespace mlirgen
         builder.create<mlir_ts::ThrowOp>(location, message);
 
         MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+        RttiGlobalsScope rttiGlobalsScope(*this);
         setCatchCopyThunkBuilder(rtti);
         if (!rtti.setRTTIForType(location, message.getType(),
                                  [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
