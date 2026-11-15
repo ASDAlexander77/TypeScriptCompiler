@@ -2438,7 +2438,7 @@ class MLIRGenImpl
         auto inferred = definingOp && definingOp->hasAttr(INTEGER_LITERAL_INFERRED_ATTR_NAME);
         if (auto addressOfOp = dyn_cast_or_null<mlir_ts::AddressOfOp>(definingOp))
         {
-            auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName());
+            auto globalOp = lookupModuleSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName());
             inferred = globalOp && globalOp->hasAttr(INTEGER_LITERAL_INFERRED_ATTR_NAME);
         }
 
@@ -2907,10 +2907,12 @@ class MLIRGenImpl
                 // erased when the dummy run is cleaned up, which nothing here hears of: not
                 // remembered, so the next global of the module is placed by a scan
                 forgetLastGlobalOf(theModule.getOperation());
+                moduleGlobalCreated(globalOp, /*kept=*/false);
             }
             else
             {
                 lastGlobalOfModule[theModule.getOperation()] = globalOp;
+                moduleGlobalCreated(globalOp, /*kept=*/true);
             }
 
             if (variableDeclarationInfo.scope == VariableScope::Global)
@@ -4350,6 +4352,7 @@ class MLIRGenImpl
                                                         mlir::Value value = mlir::Value());
 
     void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
+    bool mlirGenRttiForType(mlir::Location location, mlir::Type type);
 
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext);
@@ -7424,7 +7427,7 @@ class MLIRGenImpl
         auto setAccessorSymbolValueType = [&](mlir::FlatSymbolRefAttr setAccessor, mlir::Type accessorType) -> mlir::Type {
             if (setAccessor)
             {
-                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(setAccessor))
+                if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(setAccessor.getValue()))
                 {
                     return setAccessorValueType(funcOp.getFunctionType(), accessorType);
                 }
@@ -8498,7 +8501,7 @@ class MLIRGenImpl
 
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___range_check";
-        if (!theModule.lookupSymbol(funcName))
+        if (!lookupModuleSymbol(funcName))
         {
             // see castPrimitiveTypeFromAny: the call site is the location until the call instantiates it
             MLIRLocationGuard vgLoc(overwriteLoc);
@@ -8513,7 +8516,7 @@ class MLIRGenImpl
 
             // a copy in each module that checks, its own: the default library has one as well, and two
             // public ones were a duplicate symbol where nothing optimized one away (a debug build's link)
-            if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+            if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(funcName))
             {
                 funcOp.setPrivate();
                 funcOp->setAttr("internal_linkage", builder.getUnitAttr());
@@ -9828,7 +9831,7 @@ class MLIRGenImpl
                 //    a defined body qualifies: a bodyless declaration FuncOp would lower
                 //    to a plain external symbol reference, which the dynamic import mode
                 //    (-shared without an import .lib) cannot link.
-                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+                if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(funcName))
                 {
                     if (!funcOp.getBody().empty())
                     {
@@ -10749,7 +10752,7 @@ class MLIRGenImpl
             return false;
         }
 
-        auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
+        auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(name);
         return funcOp && funcOp.getBody().empty();
     }
 
@@ -14535,7 +14538,7 @@ class MLIRGenImpl
         auto funcType = setter
             ? getFunctionType({getOpaqueType(), fieldType}, {}, false)
             : getFunctionType({getOpaqueType()}, {fieldType}, false);
-        if (theModule.lookupSymbol<mlir_ts::FuncOp>(name))
+        if (lookupModuleSymbol<mlir_ts::FuncOp>(name))
         {
             return funcType;
         }
@@ -15538,7 +15541,7 @@ class MLIRGenImpl
         ~DiscoveryModuleScope()
         {
             // members restore theModule and the insertion point after the erase
-            mlirGenImpl.forgetLastGlobalOf(discoveryModule.getOperation());
+            mlirGenImpl.forgetModule(discoveryModule.getOperation());
             discoveryModule.erase();
         }
 
@@ -15619,7 +15622,7 @@ class MLIRGenImpl
             tempEntryBlock->erase();
 
             tempFuncOp.erase();
-            forgetLastGlobalOf(tempModule.getOperation());
+            forgetModule(tempModule.getOperation());
             tempModule.erase();
 
             tempEntryBlock = nullptr;
@@ -17625,6 +17628,153 @@ class MLIRGenImpl
     {
         lastGlobalOfModule.erase(moduleOp);
     }
+
+    // The symbols of each module by name (the module being generated, the temp module, a discovery
+    // module), so that "is there a symbol of this name?" - asked for every stub, thunk and
+    // instance of a generic function - is not a scan of the module (mlir::SymbolTable::lookupSymbolIn
+    // walks it). A name that is not here is not in the module. A name with an operation is that
+    // operation: a function (pushFunction; one is erased in a single place, forgetModuleSymbol), or
+    // a global made by a run that keeps its IR. A name with no operation is looked up by the scan:
+    // a global of a dummy run, which is erased with nothing here hearing of it, and any global the
+    // module had when the table was made. Made by one scan on the first question about a module;
+    // dropped when the module is erased (forgetModule).
+    // TSLANG_VERIFY_LLVM_GLOBALS_INDEX=<file> checks every answer against the scan.
+    llvm::DenseMap<mlir::Operation *, llvm::StringMap<mlir::Operation *>> symbolsOfModule;
+    // the globals dummy runs made (addresses; some are erased by now)
+    llvm::DenseSet<mlir::Operation *> unkeptGlobals;
+
+    llvm::StringMap<mlir::Operation *> &moduleSymbols()
+    {
+        auto [it, isNew] = symbolsOfModule.try_emplace(theModule.getOperation());
+        if (isNew)
+        {
+            for (auto &op : *theModule.getBody())
+            {
+                if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(&op))
+                {
+                    it->second.try_emplace(funcOp.getSymName(), &op);
+                }
+                else if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(&op))
+                {
+                    // the first of a name is the one a lookup finds: a function after it is not.
+                    // A dummy run's global may be erased unseen; an address in unkeptGlobals that
+                    // is another global's by now only costs that one a scan
+                    auto [entry, isNew] = it->second.try_emplace(globalOp.getSymName(), unkeptGlobals.contains(&op) ? nullptr : &op);
+                    if (!isNew)
+                    {
+                        entry->second = nullptr;
+                    }
+                }
+            }
+        }
+
+        return it->second;
+    }
+
+    mlir::Operation *lookupModuleSymbol(mlir::StringRef name)
+    {
+        auto &symbols = moduleSymbols();
+        mlir::Operation *found = nullptr;
+        if (auto it = symbols.find(name); it != symbols.end())
+        {
+            if (!it->second)
+            {
+                return theModule.lookupSymbol(name);
+            }
+
+            found = it->second;
+        }
+
+        static const char *verifyFile = std::getenv("TSLANG_VERIFY_LLVM_GLOBALS_INDEX");
+        if (verifyFile)
+        {
+            auto *scanned = theModule.lookupSymbol(name);
+            if (scanned != found)
+            {
+                std::error_code ec;
+                llvm::raw_fd_ostream out(verifyFile, ec, llvm::sys::fs::OF_Append);
+                if (!ec)
+                {
+                    out << "MLIR generation: the symbol tabled for '" << name << "' differs from the scan (table: "
+                        << (found ? "found" : "none") << ", scan: " << (scanned ? "found" : "none") << ")\n";
+                }
+
+                found = scanned;
+            }
+        }
+
+        return found;
+    }
+
+    template <typename T> T lookupModuleSymbol(mlir::StringRef name)
+    {
+        return dyn_cast_or_null<T>(lookupModuleSymbol(name));
+    }
+
+    // every function enters a module here
+    void pushFunction(mlir_ts::FuncOp funcOp)
+    {
+        theModule.push_back(funcOp);
+        if (auto known = symbolsOfModule.find(theModule.getOperation()); known != symbolsOfModule.end())
+        {
+            auto [it, isNew] = known->second.try_emplace(funcOp.getSymName(), funcOp.getOperation());
+            if (!isNew && it->second != funcOp.getOperation())
+            {
+                // two of a name (a global and a function): the scan says which is first, and
+                // which is left when one of them is erased
+                it->second = nullptr;
+            }
+        }
+    }
+
+    // a global created in theModule; `kept` - by a run that keeps its IR, so nothing erases it unseen
+    void moduleGlobalCreated(mlir_ts::GlobalOp globalOp, bool kept)
+    {
+        if (kept)
+        {
+            unkeptGlobals.erase(globalOp.getOperation());
+        }
+        else
+        {
+            unkeptGlobals.insert(globalOp.getOperation());
+        }
+
+        if (auto known = symbolsOfModule.find(theModule.getOperation()); known != symbolsOfModule.end())
+        {
+            auto [it, isNew] = known->second.try_emplace(globalOp.getSymName(), kept ? globalOp.getOperation() : nullptr);
+            if (!isNew && it->second != globalOp.getOperation())
+            {
+                // two of a name: the scan says which is first
+                it->second = nullptr;
+            }
+        }
+    }
+
+    // before a function or a global that is in a module is erased
+    void forgetModuleSymbol(mlir::Operation *symbolOp)
+    {
+        auto known = symbolsOfModule.find(symbolOp->getParentOp());
+        if (known == symbolsOfModule.end())
+        {
+            return;
+        }
+
+        auto name = mlir::SymbolTable::getSymbolName(symbolOp).getValue();
+        if (auto it = known->second.find(name); it != known->second.end() && it->second == symbolOp)
+        {
+            known->second.erase(it);
+        }
+    }
+
+    void forgetModule(mlir::Operation *moduleOp)
+    {
+        forgetLastGlobalOf(moduleOp);
+        symbolsOfModule.erase(moduleOp);
+        rttiTypesOfModule.erase(moduleOp);
+    }
+
+    // the types whose exception records each module has (mlirGenRttiForType)
+    llvm::DenseMap<mlir::Operation *, llvm::DenseSet<mlir::Type>> rttiTypesOfModule;
 
     mlir::StringRef mainSourceFileName;
 

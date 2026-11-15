@@ -18,27 +18,17 @@ Merged:
 | #863 | The comdat table is first in the module. `--mlir-timing` works. |
 | #864 | MLIR generation remembers each module's last global (`MLIRGenImpl::lastGlobalOfModule`). |
 
-Open: PR #865, branch `perf-compile-time-4`.
+| #865 | `StackEscapeFacts` and `LLVMGlobalsIndex::lookupSymbol` look symbols up in tables; an enum's member dictionary is made once; bounded comdat tables; the symbols the lowering makes are tabled (`createSymbol`, `lookupOwnSymbolAs`: a miss is final only for names the lowering itself invents - the check caught `puts`, which MLIR's `cf.assert` lowering declares); `tslang/benchmarks/compile-time/` and this document. |
 
-| Commit | What |
-| --- | --- |
-| `8f303db6` | `StackEscapeFacts` looks functions up in a table. |
-| `5254b577` | `LLVMGlobalsIndex::lookupSymbol`: the callee of a call is found from a table of the symbols the module has before the conversion. |
-| `fea78525` | An enum's member dictionary is made once, not after every member. |
+Not merged yet, branch `perf-compile-time-5`:
 
-Also on `perf-compile-time-4`, after those three (see `git log`; all went through section 5):
-
-- **Bounded comdat tables** (`addComdatSelector`, `COMDAT_TABLE_SELECTORS` in `LowerToLLVM.cpp`;
-  `comdatTable` in `LLVMGlobalsIndex.h`). Translation to LLVM IR for 2,000 generic instances:
-  1.8 s -> 0.5-0.7 s.
-- **Symbols the lowering makes are tabled** (`createSymbol`, `lookupOwnSymbolAs`, `createdSymbols`
-  in `LLVMGlobalsIndex.h`; 14 lookups and 17 creations routed in `OwnershipRoutineLogic.h`,
-  `ConvertLogic.h`, `LLVMCodeHelperBase.h`, `LLVMCodeHelper.h`, `LowerToLLVM.cpp`). A first version
-  treated every name missing from the tables as absent from the module; the check caught `puts`,
-  which MLIR's own `cf.assert` lowering declares. The rule is now: a miss is final only for names
-  the lowering itself invents (`ownName`), otherwise the scan decides. LLVM lowering of 2,000
-  interfaces: 2.0 s -> 1.4 s.
-- `tslang/benchmarks/compile-time/` (the scripts of section 2) and this document.
+- **MLIR generation tables each module's symbols** (`symbolsOfModule`, `lookupModuleSymbol`,
+  `pushFunction` in `MLIRGenImpl.h`). Every `theModule.lookupSymbol` of MLIR generation goes through
+  it; a name that is not in the table is not in the module.
+- **An exception's records are made once per type and module** (`mlirGenRttiForType`): a `throw`
+  of a type already seen no longer has `MLIRRTTIHelperVC` look each record up by name and scan
+  for the last global.
+- MLIR generation of 2,000 interfaces: 3.1 s -> 1.0 s, and it now doubles with the source.
 
 Figures, object file, no optimisation, `--no-default-lib`, Windows x64, Release compiler:
 
@@ -47,7 +37,7 @@ Figures, object file, no optimisation, `--no-default-lib`, Windows x64, Release 
 | 2,000 classes of 5 lines | 99.9 s | 2.5 s |
 | 8,000 classes | not measured (4,000: 19.7 s after #862) | 11.9 s |
 | 2,000 instances of a generic class | 16.4 s | 6.0-7.0 s |
-| 2,000 interfaces with a class and a use each | 10.9 s | 7.3-8.7 s |
+| 2,000 interfaces with a class and a use each | 10.9 s | 5.0 s |
 | 2,000 classes overriding a base method | 3.3 s | 2.4 s |
 | an enum of 2,000 members and a switch | 1.8 s | 0.3 s |
 | 2,000 functions of 5 lines | 1.8 s | 1.7 s |
@@ -76,51 +66,14 @@ The suite's largest test is 1,500 lines and shows none of this. Only generated i
 
 ## 3. What is left, with the cause of each
 
-Measured with all of the above, n = 1,000 -> 2,000. Timings of the larger inputs moved by 10-15%
-between runs on the development machine, and at n = 2,000 even code emission (LLVM's, linear)
-came out at 2.8x on these two shapes, so read 2.5-2.9x here as "about linear, plus memory":
+All 14 shapes of `shapes.ps1` now grow 1.7-2.6x from n = 1,000 to 2,000. Timings of the larger
+inputs move by 10-15% between runs on the development machine, so read up to about 2.5x as linear.
+What stands out:
 
 | Shape | Total | Growth | Where |
 | --- | --- | --- | --- |
-| interfaces | 2.8 -> 8.7 s | 3.1x | MLIR generation 0.9 -> 3.2 s (3.6x) is the one clear case; LLVM lowering 0.46 -> 1.36 s (2.9x); `OwnedReturnConsumptionPass` and `StackPromotionPass` 0.04 -> 0.2 s (4-5x, small) |
-| one function of n `if` statements | 0.65 -> 1.7 s | 2.7x | `TypeScriptToAffineLoweringTSFuncPass` 0.23 -> 0.89 s (3.9x) |
-| generics | 2.8 -> 7.0 s | 2.5x | nothing stands out; every stage 2.1-2.8x |
-| inheritance, classes | | 2.3x | nothing stands out |
-
-**Interfaces, MLIR generation.** `mlirGenNullInterfaceVTable` (`MLIRGenInterfaces.cpp`) makes one
-throwing stub per interface method through `mlirGenThrowingMethodStub`, which asks
-`theModule.lookupSymbol<FuncOp>(stubName)` before and after: the first is a miss and scans the
-module. `INSTANCEOF_NONE_NAME` is looked up for every vtable and the function is pushed at the
-*end* of the module, so each lookup scans all of it. `createGlobalVariable` still scans after a
-dummy run made a global (the entry of `lastGlobalOfModule` is dropped then).
-
-The sites were mapped on 2026-11-15 (branch `perf-compile-time-5`, cut from `perf-compile-time-4`,
-nothing committed on it yet), and the plan below follows from them. Nothing of it is written.
-
-- Only `mlir_ts::FuncOp` and `mlir_ts::GlobalOp` are symbols. A function enters a module through
-  `theModule.push_back(funcOp)` and nowhere else: 8 sites (`MLIRGenFunctions.cpp` 1427 and 2310,
-  `MLIRGenStatements.cpp` 1630, `MLIRGenInterfaces.cpp` 500, `MLIRGenClasses.cpp` 3484 and 3587,
-  `MLIRGenCast.cpp` 2494 and 2650). A global enters through `createGlobalVariable`, and through
-  `MLIRRTTIHelperVC`, which MLIR generation cannot see into.
-- A function already in a module is erased in one place, `existing->erase()` in
-  `mlirGenThrowingMethodStub`. The other `funcOp.erase()` calls (`MLIRGenStatements.cpp` 1616,
-  `MLIRGenClasses.cpp` 3462 and 3547, `MLIRGenCast.cpp` 2624) erase a function that failed before
-  it was pushed. `GenContext::clean` erases blocks and the globals of a dummy run, not functions.
-  The temp and discovery modules are erased whole (where `forgetLastGlobalOf` is already called).
-- Plan: per module, a table of symbol names, with the operation for a function and no operation
-  for a global (a dummy run's global can be erased unseen). A name not in the table is not in the
-  module, which is the answer the guards need fast: `mlirGenThrowingMethodStub` (the first
-  lookup), `INSTANCEOF_NONE_NAME`, the thunk guards in `MLIRGenClasses.cpp` 3416 and 3502 and
-  `MLIRGenCast.cpp` 2443 and 2576, `MLIRGenFunctions.cpp` 2228. A function in the table is
-  returned without a scan (this is what fixes `INSTANCEOF_NONE_NAME`, found at the end of the
-  module today); a global in it is looked up by the scan. Fill the table at the 8 `push_back`
-  sites and in `createGlobalVariable`; build it by one scan for a module first seen with
-  operations in it; drop a function's entry at the one erase, and a module's table where the
-  module is erased.
-- The risk is a symbol entering a module by a route the table does not hear of: its name would be
-  reported absent and made twice. Names from `MLIRRTTIHelperVC` are only ever looked up by that
-  helper, with its own scan. Extend the checking mode to this table (compare every answer with
-  `theModule.lookupSymbol`) and run the suite with it before trusting it, as for the other tables.
+| one function of n `if` statements | 0.66 -> 1.7 s | 2.6x | `TypeScriptToAffineLoweringTSFuncPass` 0.23 -> 0.89 s (3.9x) |
+| interfaces | 2.2 -> 5.0 s | 2.3x | Canonicalizer 0.28 -> 0.73 s (2.6x); `OwnedReturnConsumptionPass` and `StackPromotionPass` were 4-5x but small |
 
 **One very large function.** The `IfOp` lowering in `LowerToAffineLoops.cpp` calls
 `rewriter.splitBlock`. Under a conversion rewriter that moves the rest of the block one operation
@@ -140,7 +93,7 @@ Every table answers a question a scan used to answer, and must give the same ans
 
 - **`TSLANG_VERIFY_LLVM_GLOBALS_INDEX=<file>`** makes the compiler ask the scan too, append any
   difference to the file and use the scan's answer. It covers `LLVMGlobalsIndex` (global lookup,
-  last global, symbol lookup) and `lastGlobalOfModule`. After a change to any of them: run the
+  last global, symbol lookup), `lastGlobalOfModule`, `symbolsOfModule` and `mlirGenRttiForType`. After a change to any of them: run the
   whole suite with it set, and the file must not exist afterwards. It has caught two wrong
   versions that the plain suite's IR comparison would also have shown, and one (`puts`) that it
   would not have.
@@ -156,6 +109,13 @@ Every table answers a question a scan used to answer, and must give the same ans
 - **In MLIR generation** the remembered global of a module is dropped where a global or a module
   is erased, for dummy-run globals, and around `MLIRRTTIHelperVC` (`RttiGlobalsScope`), which
   makes globals itself.
+- **The table of a module's symbols** (`symbolsOfModule`) hears of a function at `pushFunction`,
+  the only way one enters a module, and of a global at `createGlobalVariable`. A name with no
+  operation in it is looked up by the scan: a global of a dummy run (erased unseen), and two
+  symbols of one name. The globals `MLIRRTTIHelperVC` makes are not heard of, so the table is
+  dropped, and made again by a scan, when a call of the helper added to the module
+  (`mlirGenRttiForType`, the one place it is called from). Under the check the helper is still
+  called for a type it was called for, and must add nothing.
 - A cheaper comparison inside a scan does not help: the cost is walking the operation list.
 
 ## 5. Verifying a change

@@ -3413,7 +3413,7 @@ genContext);
             return mlir::Value();
         }
 
-        if (!theModule.lookupSymbol(thunkName))
+        if (!lookupModuleSymbol(thunkName))
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -3481,7 +3481,7 @@ genContext);
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
 
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         return builder.create<mlir_ts::SymbolRefOp>(location, funcType,
@@ -3499,7 +3499,7 @@ genContext);
                                                      const GenContext &genContext)
     {
         auto thunkName = (calleeName + ".slot" + std::to_string(thunkType.getNumInputs())).str();
-        if (!theModule.lookupSymbol(thunkName))
+        if (!lookupModuleSymbol(thunkName))
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -3584,7 +3584,7 @@ genContext);
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
 
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         return builder.create<mlir_ts::SymbolRefOp>(location, thunkType,
@@ -3599,7 +3599,7 @@ genContext);
         // made before, and in this module: a discovery pass makes its own in a module it then drops
         for (auto &erased : classInfo->erasedGenericMethods)
         {
-            if (erased.name == name && theModule.lookupSymbol(erased.funcName))
+            if (erased.name == name && lookupModuleSymbol(erased.funcName))
             {
                 return {mlir::success(), &erased};
             }
@@ -4434,7 +4434,7 @@ genContext);
 
         if (registeredType && newInterfacePtr->isFinal)
         {
-            if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(fullClassInterfaceVTableFieldName))
+            if (auto globalOp = lookupModuleSymbol<mlir_ts::GlobalOp>(fullClassInterfaceVTableFieldName))
             {
                 globalOp->setAttr(FINAL_INTERFACE_ATTR_NAME, builder.getStringAttr(newInterfacePtr->fullName));
             }

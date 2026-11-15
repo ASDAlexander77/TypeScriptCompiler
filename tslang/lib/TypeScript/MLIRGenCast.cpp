@@ -393,12 +393,7 @@ namespace mlirgen
                                                                    getStringAttr("Can't cast from interface"));
                 builder.create<mlir_ts::ThrowOp>(location, message);
 
-                MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
-                RttiGlobalsScope rttiGlobalsScope(*this);
-                setCatchCopyThunkBuilder(rtti);
-                if (!rtti.setRTTIForType(location, message.getType(), [&](StringRef classFullName) {
-                        return getClassInfoByFullName(classFullName);
-                    }))
+                if (!mlirGenRttiForType(location, message.getType()))
                 {
                     emitError(location, "Not supported type in throw");
                     return ValueOrLogicalResult(mlir::failure());
@@ -446,11 +441,7 @@ namespace mlirgen
                           "no captured variables and no 'this'"));
         builder.create<mlir_ts::ThrowOp>(location, message);
 
-        MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
-        RttiGlobalsScope rttiGlobalsScope(*this);
-        setCatchCopyThunkBuilder(rtti);
-        if (!rtti.setRTTIForType(location, message.getType(),
-                                 [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+        if (!mlirGenRttiForType(location, message.getType()))
         {
             emitError(location, "Not supported type in throw");
             return mlir::failure();
@@ -2440,7 +2431,7 @@ namespace mlirgen
         auto calleeName = symbolRefOp.getIdentifier();
         auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size())).str();
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
-        if (!theModule.lookupSymbol(thunkName))
+        if (!lookupModuleSymbol(thunkName))
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -2491,7 +2482,7 @@ namespace mlirgen
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
 
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         if (boundOp)
@@ -2573,7 +2564,7 @@ namespace mlirgen
         llvm::raw_string_ostream typesStream(typesText);
         typesStream << methodType << "|" << thunkType;
         auto thunkName = ".bound_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
-        if (!theModule.lookupSymbol(thunkName))
+        if (!lookupModuleSymbol(thunkName))
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -2647,7 +2638,7 @@ namespace mlirgen
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
 
-            theModule.push_back(funcOp);
+            pushFunction(funcOp);
         }
 
         // the box is the adapter's own, as a closure's capture box is (resolveFunctionWithCapture): it holds a

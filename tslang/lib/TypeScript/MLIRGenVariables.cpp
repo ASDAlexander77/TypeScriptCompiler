@@ -306,6 +306,7 @@ namespace mlirgen
             if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
             {
                 forgetLastGlobalOf(variableDeclarationInfo.globalOp->getParentOp());
+                forgetModuleSymbol(variableDeclarationInfo.globalOp);
                 variableDeclarationInfo.globalOp->erase();
                 variableDeclarationInfo.deleted = true;
             }
