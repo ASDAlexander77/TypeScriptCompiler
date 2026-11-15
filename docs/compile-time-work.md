@@ -144,7 +144,7 @@ Every table answers a question a scan used to answer, and must give the same ans
    --timeout 300`. Then the suite without it.
 4. Compare LLVM IR with a compiler from before the change (`--emit=llvm`, default options,
    `--opt --opt_level=3`, `--mm=rc`) on the largest tests. The output is the same from run to run;
-   a compiler before #868 put the constants of a function with more than 16 of them (and the
+   a compiler before RelocateConstantPass kept program order put the constants of a function with more than 16 of them (and the
    globals made for them) in another order on each run - `00param_assigned_owned.ts` showed it.
 
 Known on the development machine: `test-borrow-facts-*` (5 tests) fail because the build cache's
