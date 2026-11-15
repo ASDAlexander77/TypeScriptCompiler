@@ -4567,12 +4567,12 @@ add_test(NAME test-own-flag-accepted
                  "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 set_tests_properties(test-own-flag-accepted PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
-# Under own MLIRGen emits exactly what it emits under rc: an awaited, deleted or captured value
-# still carries its ownership ops for the inference pass to judge. Checked on `delete`, whose
-# claim (MLIRGenExpressions.cpp) is one of the four MLIRGen sites.
+# Under own MLIRGen emits what it emits under rc - moves, field stores, a reassigned local and a returned
+# `const` carry their ownership ops for the inference pass to judge. Not `delete` (a clearing assignment
+# under own, spec 81), a captured variable or an assigned parameter, which own writes its own way.
 add_test(NAME test-own-mlirgen-matches-rc
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_delete.ts"
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_moves.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-mlirgen-matches-rc.cmake")
 
 # The lowering backstop: a retain that reaches LLVM lowering under own is an error, never
@@ -5259,7 +5259,6 @@ set(own_error_cases
     "own_err_any_unboxed_outlives|:11:11: error: '[^']*' borrows the result of '___unbox<!ts[.]class<C, !ts[.]class_storage<C>>>' but is used here after it may be released or overwritten"
     "own_err_param_kept_loop|:19:9: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
-    "own_err_delete|'delete' is not supported by -mm=own yet"
     "own_err_mixed_return|:13:28: error: '[^']*' is used here after its value was moved"
     "own_err_mixed_return_join_use|:14:15: error: '[^']*' is moved here on some paths only"
     "own_err_callback_escapes|cannot make the callers of 'pick' give it up"

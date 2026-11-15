@@ -1778,6 +1778,27 @@ namespace mlirgen
         visitor.visit(body);
     }
 
+    // Every name a function nested in this body mentions: what a closure there may capture. A name too many only
+    // keeps a parameter as it was.
+    static void collectNestedFunctionNames(ts::Node body, llvm::StringSet<> &names)
+    {
+        ts::VisitorAST visitor([&](ts::Node node) {
+            if (node == SyntaxKind::ArrowFunction || node == SyntaxKind::FunctionExpression ||
+                node == SyntaxKind::FunctionDeclaration || node == SyntaxKind::MethodDeclaration ||
+                node == SyntaxKind::GetAccessor || node == SyntaxKind::SetAccessor || node == SyntaxKind::Constructor)
+            {
+                ts::VisitorAST nested([&](ts::Node inner) {
+                    if (inner == SyntaxKind::Identifier)
+                    {
+                        names.insert(MLIRHelper::getName(inner.as<ts::Identifier>()));
+                    }
+                });
+                nested.visit(node);
+            }
+        });
+        visitor.visit(body);
+    }
+
     // -mm=rc: a parameter is borrowed - the caller owns its value (takeOwnershipOfLocal), so its slot neither
     // retains nor releases. One the body assigns holds values the frame made, though: `x = new B(1)` stored the
     // instance with no reference of its own, the block it was made in released it, and `x` pointed at freed
@@ -1800,8 +1821,9 @@ namespace mlirgen
     // owns what it holds, so the caller's value has to become its own: the function keeps the parameter, as one
     // that stores it in a field does, and its callers give the argument up (the ownership passes' kept
     // parameters; '@keeps' says it for a function another module may call). A caller that reads the argument
-    // after the call is told it was moved. A parameter left without a local (one with a binding pattern) own
-    // still refuses to assign (OwnershipInferencePass). A collector needs none of this.
+    // after the call is told it was moved. A parameter left without a local own still refuses to assign
+    // (OwnershipInferencePass): one with a binding pattern, and one a nested function mentions - a closure's
+    // cell borrows the caller's value, and the error for that names the capture. A collector needs none of this.
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionOwnAssignedParams(mlir::Location location,
                                                                       FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                                       FunctionPrototypeDOM::TypePtr funcProto,
@@ -1815,6 +1837,7 @@ namespace mlirgen
 
         llvm::StringSet<> assignedNames;
         llvm::StringSet<> lengthNames;
+        llvm::StringSet<> nestedNames;
         auto scanned = false;
         for (const auto &param : funcProto->getParams())
         {
@@ -1826,7 +1849,20 @@ namespace mlirgen
             if (!scanned)
             {
                 collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames, own ? &lengthNames : nullptr);
+                if (own)
+                {
+                    collectNestedFunctionNames(functionLikeDeclarationBaseAST->body, nestedNames);
+                }
+
                 scanned = true;
+            }
+
+            // own: a string or a Shared<T> handle is a copy whoever captures it; any other parameter a closure may
+            // capture stays the caller's
+            if (own && !mlir::isa<mlir_ts::StringType, mlir_ts::SharedType>(param->getType()) &&
+                nestedNames.contains(param->getName()))
+            {
+                continue;
             }
 
             // `p.length = n` makes a new value only of a string: an array is resized where it is
