@@ -72,17 +72,14 @@ The suite's largest test is 1,500 lines and shows none of this. Only generated i
 All 14 shapes of `shapes.ps1` grow 1.7-2.3x from n = 1,000 to 2,000, which is linear: timings of
 the larger inputs move by 10-15% between runs on the development machine.
 
-**Known and open:** one function of 8,000 `if`s takes 6.1 s against 2.0 s for 4,000 (3.0x); up
-to 4,000 it doubles. The cause is the split itself: `Block::splitBlock` splices the rest of the
-block into the new one, and the splice sets the parent of every operation it moves
-(`ilist_traits<Operation>::transferNodesFromList`, 25% of the samples at 8,000), so n splits of
-one block are still n^2/2 steps, each now a pointer write. A fix, not written: before the
-conversion, split the function's own blocks at their control-flow operations from the last to the
-first (each split then moves little), ending each with a `cf.br` to the next, and have the
-patterns take that next block as their continuation. Not the blocks of nested regions: the
-patterns of the operations around them expect one block. The driver walks blocks in dominance
-order, so the blocks must be linked by branches before it starts.
+**One very large function** (n `if` statements): 0.86 s at 2,000, 1.8 s at 4,000, 4.8 s at 8,000,
+11.2 s at 16,000 (it was 6.9 s and 21.7 s at the last two). The lowering pass is linear now; from
+4,000 to 8,000 `TypeScriptToLLVMLoweringPass` and the canonicalizer grow about 3x (0.28 -> 0.82 s
+and 0.26 -> 0.79 s). Not looked at.
 
+**Seen while testing, not from this work:** `tslang --emit=llvm --no-default-lib -mm=own
+tslang/test/tester/own/own_field_chain_let.ts` ends with an access violation about once in 300 to
+500 runs, with the compiler from before #862 as well.
 **Block splits under the conversion driver.** `rewriter.splitBlock` moves the rest of the block
 one operation at a time and records each move for undo (`RewriterBase::splitBlock` with a
 listener; `MoveOperationRewrite` in MLIR's `DialectConversion.cpp`). The patterns that cannot fail
@@ -91,6 +88,15 @@ conversion fails and is undone, the block stays split and the function is not va
 has failed and nothing uses it (checked: a setter-less property assignment after an `if` gives
 the same error and exit code). `TryOpLowering` still uses `rewriter.splitBlock`, as do the
 patterns of `LowerToLLVM.cpp`.
+
+Even `Block::splitBlock` sets the parent of every operation it moves, so n splits of one block
+were n^2/2 pointer writes (25% of the samples at 8,000 `if`s). So the function's own blocks are
+split before the conversion (`splitFunctionBlocksAhead`): after each operation whose lowering
+splits, from the last of a block to the first, each part ending in a `cf.br` to the next (the
+driver walks blocks in dominance order, so they must be linked). The pattern of such an operation
+(`TSFunctionContext::splitAhead`) erases the branch and takes the block it went to as its
+continuation. Only the function's own blocks: the patterns of the operations around a nested
+region take it as it was generated.
 
 **Not looked at:** `OwnedReturnConsumptionPass` and `BorrowFactsExportPass` showed 4-5x growth on
 some shapes but small absolute times (0.2 s); the canonicalizer runs grow 2.3-2.6x; `-mm=rc` and
