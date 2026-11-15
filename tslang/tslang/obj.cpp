@@ -1,6 +1,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Support/Timing.h"
 
 // for dump obj
 #include "llvm/IR/LegacyPassManager.h"
@@ -422,13 +423,17 @@ static void replaceWasmBulkMemory(llvm::Module &module)
     }
 }
 
+mlir::TimingScope &compileTiming();
+
 int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
 
     // Convert the module to LLVM IR in a new LLVM IR context.
     llvm::LLVMContext llvmContext;
+    auto translationTiming = compileTiming().nest("Translation to LLVM IR");
     auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+    translationTiming.stop();
     if (!llvmModule)
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
@@ -464,12 +469,15 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         }
     }
 
+    auto optimizationTiming = compileTiming().nest("LLVM optimization");
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, Target.get());
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
+
+    optimizationTiming.stop();
 
     // a wasm program that starts a thread (Thread.spawn, new Worker) is linked with a shared memory
     if (compileOptions.wasmExceptions && llvmModule->getFunction("tslang_thread_spawn"))
@@ -561,9 +569,12 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         // Before executing passes, print the final values of the LLVM options.
         //llvm::cl::PrintOptionValues();
 
-        PM.run(*llvmModule.get());
+        {
+            auto emissionTiming = compileTiming().nest("Code emission");
+            PM.run(*llvmModule.get());
+        }
 
-        auto HasError = ((const LLCDiagnosticHandler *)(Context.getDiagHandlerPtr()))->HasError;
+        auto HasError =((const LLCDiagnosticHandler *)(Context.getDiagHandlerPtr()))->HasError;
         if (*HasError)
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "diagnostic error(s)\n";

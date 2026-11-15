@@ -3,6 +3,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Support/Timing.h"
 
 #include "llvm/IR/LLVMContext.h"
 
@@ -49,13 +50,17 @@ int dumpAST()
     return 0;
 }
 
+mlir::TimingScope &compileTiming();
+
 int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
 
     // Convert the module to LLVM IR in a new LLVM IR context.
     llvm::LLVMContext llvmContext;
+    auto translationTiming = compileTiming().nest("Translation to LLVM IR");
     auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+    translationTiming.stop();
     if (!llvmModule)
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
@@ -77,6 +82,7 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
+    auto optimizationTiming = compileTiming().nest("LLVM optimization");
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions,
                                       /*targetMachine=*/nullptr);
     if (auto err = optPipeline(llvmModule.get()))
@@ -84,6 +90,8 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
+
+    optimizationTiming.stop();
 
 #ifndef SAVE_VIA_PASS
 

@@ -24,6 +24,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Support/Timing.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -67,6 +68,7 @@ extern cl::opt<std::string> jitCacheDir;
 std::unique_ptr<mlir::MLIRContext> createMLIRContext();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::StringRef, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions &);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions &);
+mlir::TimingScope &compileTiming();
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 llvm::Error addEntryThunk(llvm::Module &, llvm::StringRef);
@@ -509,6 +511,7 @@ class JitUnitBuilder
             module = nullptr;
             context = createMLIRContext();
             sourceMgr = std::make_unique<llvm::SourceMgr>();
+            auto generationTiming = compileTiming().nest("MLIR generation");
             return compileTypeScriptFileIntoMLIR(*context, path, *sourceMgr, module, options);
         };
 
@@ -590,7 +593,9 @@ class JitUnitBuilder
         registerMLIRDialects(*module);
 
         llvm::LLVMContext llvmContext;
+        auto translationTiming = compileTiming().nest("Translation to LLVM IR");
         auto llvmModule = mlir::translateModuleToLLVMIR(*module, llvmContext);
+        translationTiming.stop();
         if (!llvmModule)
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
@@ -600,8 +605,11 @@ class JitUnitBuilder
         llvmModule->setDataLayout(tm->createDataLayout());
         llvmModule->setTargetTriple(tm->getTargetTriple());
 
+        auto optimizationTiming = compileTiming().nest("LLVM optimization");
         auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, options, tm.get());
-        if (auto err = optPipeline(llvmModule.get()))
+        auto optimizationError = optPipeline(llvmModule.get());
+        optimizationTiming.stop();
+        if (auto err = std::move(optimizationError))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
             llvm::consumeError(std::move(err));

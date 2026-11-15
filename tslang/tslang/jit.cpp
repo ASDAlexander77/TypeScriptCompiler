@@ -3,6 +3,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Support/Timing.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
@@ -92,6 +93,8 @@ std::string makeAbsolutePath(std::string);
 std::string getExecutablePath(const char *);
 
 int registerMLIRDialects(mlir::ModuleOp);
+mlir::TimingScope &compileTiming();
+void reportCompileTiming();
 namespace llvm { class TargetMachine; }
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
@@ -1426,6 +1429,9 @@ static int runProgram(ProgramSymbolLookup lookup, llvm::ArrayRef<std::string> in
 // Runs what was added to the JIT: the platform initializers, then the program (runProgram).
 static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod)
 {
+    // --mlir-timing: what compiling took, before the program's own time begins
+    reportCompileTiming();
+
     // run platform initializers (llvm.global_ctors etc.)
     if (auto err = jit.initialize(jit.getMainJITDylib()))
     {
@@ -1611,7 +1617,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     auto llvmContext = std::make_unique<llvm::LLVMContext>();
+    auto translationTiming = compileTiming().nest("Translation to LLVM IR");
     auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
+    translationTiming.stop();
     if (!llvmModule)
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
@@ -1641,8 +1649,11 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     // the host's machine, which is what the JIT compiles with: the optimizer's cost model has to
     // be for the CPU the code is generated for
+    auto optimizationTiming = compileTiming().nest("LLVM optimization");
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions, tmOrError->get());
-    if (auto err = optPipeline(llvmModule.get()))
+    auto optimizationError = optPipeline(llvmModule.get());
+    optimizationTiming.stop();
+    if (auto err = std::move(optimizationError))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
         llvm::consumeError(std::move(err));
