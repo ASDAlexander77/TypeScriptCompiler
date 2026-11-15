@@ -1,7 +1,8 @@
 # Performance
 
 Benchmarks of tslang under each memory model against Rust and C++ ports of the same code.
-See [memory-models.md](memory-models.md) for what the models are.
+See [memory-models.md](memory-models.md) for what the models are. How long the compiler itself
+takes is under [Compile time](#compile-time) at the end.
 
 **Compared with Rust:** under `-mm=own`, tslang matches Rust on numeric array loops and runs
 within about 1.35x of idiomatic Rust on an object-heavy ray tracer, about 6.6x faster than the
@@ -103,3 +104,29 @@ machine) rather than the baseline x86-64 an executable targets, which made saxpy
 and hash 15-25% faster than the JIT of the release before it. The same ray tracer on that Linux
 machine takes 128 ms under `-mm=gc`, 123 under `-mm=none`, 130 under `-mm=own` and 238 under
 `-mm=rc`, against 103 ms for the C++ port; the benchmarks' READMEs have the full tables.
+
+## Compile time
+
+`--mlir-timing` prints where a compilation spent its time when the compiler exits: MLIR
+generation, each MLIR pass, the translation to LLVM IR, LLVM's optimizations and code emission.
+It works with every `--emit`; under `--emit=jit` the report is printed before the program runs
+and does not include the machine code the JIT emits as the program first calls it.
+
+```
+tslang --emit=obj --mlir-timing program.ts -o program.obj
+```
+
+Measured on Windows 11 x64 with the release compiler, `--no-default-lib`, on 2026-11-15:
+
+| input | build | time |
+| --- | --- | --- |
+| hello world | object | 23 ms |
+| hello world | executable | 92 ms |
+| the ray tracer benchmark (328 lines) | executable, `--opt_level=3` | 244 ms |
+| 2,000 functions of 5 lines | object | 1.7 s |
+| 2,000 classes of 5 lines | object | 2.6 s |
+| 2,000 classes of 5 lines | object, `--opt_level=3` | 1.7 s |
+
+Functions compile at about 5,500 lines a second, and twice the source takes twice the time.
+Classes take a little more than that: from 2,000 to 4,000 classes MLIR generation takes 2.65
+times as long, every other stage about 2.2 times.

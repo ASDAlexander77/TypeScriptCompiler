@@ -26,6 +26,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -98,6 +99,8 @@ extern cl::opt<unsigned> stackPromotionMaxObject;
 extern cl::opt<unsigned> stackPromotionMaxFrame;
 extern cl::opt<bool> stackPromotionReport;
 
+mlir::TimingScope &compileTiming();
+
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
@@ -107,6 +110,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
     mlir::PassManager pm(&context);
     // Apply any generic pass manager command line options and run the pipeline.
     applyPassManagerCLOptions(pm);
+    pm.enableTiming(compileTiming());
 
     // Check to see what granularity of MLIR we are compiling to.
     bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;

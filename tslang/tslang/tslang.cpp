@@ -14,6 +14,7 @@
 #include "mlir/IR/AsmState.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Debug/Counter.h"
+#include "mlir/Support/Timing.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -81,6 +82,32 @@ int declarationInline(int, char **, mlir::MLIRContext &, llvm::SourceMgr &, llvm
 int buildExe(int, char **, std::string, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 int runJitCached(int, char **, CompileOptions&);
+
+// --mlir-timing: where a compilation spends its time - MLIR generation, each MLIR pass, the
+// translation to LLVM IR, LLVM's optimizations and code emission - printed when the compiler
+// exits. Without the option the scopes are empty and cost nothing. First called after the command
+// line is parsed.
+static mlir::DefaultTimingManager &compileTimingManager()
+{
+    static mlir::DefaultTimingManager manager;
+    return manager;
+}
+
+mlir::TimingScope &compileTiming()
+{
+    static mlir::TimingScope root =
+        (mlir::applyDefaultTimingManagerCLOptions(compileTimingManager()), compileTimingManager().getRootScope());
+    return root;
+}
+
+// Prints the report now. The JIT calls it before it runs the program: the program's time is not
+// the compiler's, and the JIT ends the process without running destructors.
+void reportCompileTiming()
+{
+    compileTiming().stop();
+    compileTimingManager().print();
+    compileTimingManager().setEnabled(false);
+}
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 extern cl::opt<std::string> TargetTriple;
@@ -605,9 +632,12 @@ int main(int argc, char **argv)
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
-    if (auto error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
     {
-        return error;
+        auto generationTiming = compileTiming().nest("MLIR generation");
+        if (auto error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
+        {
+            return error;
+        }
     }
 
     // Read before the passes lower it away: a program that loads a tslang shared library has to
