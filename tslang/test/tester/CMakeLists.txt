@@ -4673,7 +4673,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4715,7 +4715,7 @@ foreach(keeps_mm rc gc none)
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                        own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -5569,6 +5569,9 @@ set(own_error_cases
     "own_err_weakref_after_release|:4:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_weakref_thread|:14:15: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
     "own_err_capture_block_closure|:5:51: error: 'n4' is used here after its value was moved"
+    "own_err_literal_let_used_after|:5:11: error: '[^']*' is used here after its value was moved"
+    "own_err_literal_let_twice|:4:12: error: '[^']*' is used here after its value was moved"
+    "own_err_select_used_after|:11:11: error: '[^']*' is used here after its value was moved"
     "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"

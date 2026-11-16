@@ -2007,8 +2007,9 @@ inline mlir_ts::VariableOp recordLocalOf(mlir::Value value)
 // into it - a new object, a call's result, a literal, a `const` local folded into the value it holds.
 // Each such value moves into the record: its own check, against the record's retain, decides that
 // nothing uses it after (OwnershipInferencePass's recordRetainOf). A read out of a place (`this.pos`)
-// or a parameter is a borrow, and such a record is not this one. Neither is a `let` read into a field:
-// its slot keeps its own release, which nothing here cancels.
+// or a parameter is a borrow, and such a record is not this one. A read of an owning `let` (`return
+// { s, n }`) moves out of the local: the record's retain is that slot's receiver, whose move check
+// cancels the slot's release and refuses a use after it (OwnershipInferencePass::recordSlotLoads).
 inline bool isOwningRecord(mlir::Value value)
 {
     auto varOp = recordLocalOf(value);
@@ -2043,7 +2044,7 @@ inline bool isOwningRecord(mlir::Value value)
 
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
             if (!storeOp || storeOp.getReference() != field ||
-                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue())))
+                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue()) || slotLoadOf(storeOp.getValue())))
             {
                 return false;
             }

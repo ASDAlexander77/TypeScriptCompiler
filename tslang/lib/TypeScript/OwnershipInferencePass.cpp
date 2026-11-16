@@ -414,6 +414,19 @@ namespace own_inference
             op->erase();
         }
 
+        // a select of two fresh values moved both into what it selected: the other is released at
+        // once, chosen by the same condition the other way round (nothing uses either after: the
+        // moves' own checks)
+        for (auto *op : selectMoves)
+        {
+            auto selectOp = mlir::cast<mlir::arith::SelectOp>(op);
+            mlir::OpBuilder builder(selectOp->getContext());
+            builder.setInsertionPointAfter(selectOp);
+            auto notSelected = builder.create<mlir::arith::SelectOp>(selectOp.getLoc(), selectOp.getCondition(),
+                                                                      selectOp.getFalseValue(), selectOp.getTrueValue());
+            builder.create<mlir_ts::ReleaseOp>(selectOp.getLoc(), notSelected.getResult());
+        }
+
         stripFacts();
         return true;
     }
@@ -436,6 +449,7 @@ namespace own_inference
         captureStores.clear();
         captureRetains.clear();
         callCopies.clear();
+        selectMoves.clear();
         returnedParams.clear();
         // the stores that take a value out of the object their place holds, for every walk of this
         // function to see (never another function's: its operations are gone, their addresses reused)
@@ -787,6 +801,12 @@ namespace own_inference
 
             if (value && holdsConstantsOrMoves(value))
             {
+                // the reads of owning `let`s stored into its fields move out of them, at this retain
+                for (auto load : recordSlotLoads(value))
+                {
+                    slotReceivers[load.getReference()].push_back({op, load.getResult(), load});
+                }
+
                 toErase.insert(op);
                 continue;
             }

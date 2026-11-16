@@ -125,6 +125,59 @@ namespace own_inference
         return !movesIn || recordRetainOf(varOp) != nullptr;
     }
 
+    llvm::SmallVector<mlir_ts::LoadOp> OwnershipInferencePass::recordSlotLoads(mlir::Value value)
+    {
+        llvm::SmallVector<mlir_ts::LoadOp> loads;
+        auto varOp = recordLocalOf(value);
+        if (!varOp || !isOwningRecord(value))
+        {
+            return loads;
+        }
+
+        for (auto *user : varOp->getUsers())
+        {
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                continue;
+            }
+
+            for (auto *fieldUser : propertyRefOp->getUsers())
+            {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || storeOp.getReference() != propertyRefOp.getResult() ||
+                    holdsNoBlock(storeOp.getValue()))
+                {
+                    continue;
+                }
+
+                if (auto load = slotLoadOf(storeOp.getValue()); load && !isFresh(rootOf(storeOp.getValue())))
+                {
+                    loads.push_back(load);
+                }
+            }
+        }
+
+        return loads;
+    }
+
+    mlir::Operation *OwnershipInferencePass::recordStoreOf(mlir::Operation *retain, mlir::Value value)
+    {
+        // the value or a view of it (a union's member stored as the union)
+        mlir::Operation *found = nullptr;
+        auto several = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (storeOp && storeOp.getValue() == used && recordRetainOfStore(storeOp) == retain)
+            {
+                several = several || found;
+                found = storeOp;
+            }
+        });
+
+        return several ? nullptr : found;
+    }
+
     mlir::Operation *OwnershipInferencePass::recordRetainOf(mlir_ts::VariableOp varOp)
     {
         if (!isConstantRecordLocal(varOp))
@@ -1063,6 +1116,13 @@ namespace own_inference
                 moved.push_back(mergeRetain);
             }
 
+            // ...or into a select of two fresh values, which releases the one it did not select
+            if (auto *selectRetain = selectRetainOf(taker, value))
+            {
+                moved.push_back(selectRetain);
+                selectMoves.insert(taker);
+            }
+
             auto *acquire = acquirePoint(taker, value);
             for (auto *release : releases)
             {
@@ -1266,6 +1326,13 @@ namespace own_inference
 
     mlir::Operation *OwnershipInferencePass::takerOf(mlir::Operation *retain, mlir::Value value)
     {
+        // a `let`'s read stored into a field of a record: the record's retain (or its owning local's
+        // `ts.RetainSlot`) acquires it, and the store is where it moves (recordSlotLoads)
+        if (auto *store = recordStoreOf(retain, value))
+        {
+            return store;
+        }
+
         if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(retain))
         {
             // an owned local hoisted in front of a TryOp (allocateScopeOwnedVarsOutsideOfOperation)
