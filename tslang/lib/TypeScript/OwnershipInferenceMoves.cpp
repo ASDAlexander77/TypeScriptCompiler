@@ -271,6 +271,13 @@ namespace own_inference
                 return;
             }
 
+            // ...or into a global, which owns what it holds (`o = { s: mk(5) }`: its old value is released
+            // where it is given the new one)
+            if (storeOp && storeOp.getValue() == used && storeOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>())
+            {
+                return;
+            }
+
             // stored into the result slot, or into an owning local (`a = { item: new C() }`)
             auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                                               : mlir_ts::VariableOp();
