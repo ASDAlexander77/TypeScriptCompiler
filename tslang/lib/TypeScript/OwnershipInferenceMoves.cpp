@@ -127,9 +127,11 @@ namespace own_inference
 
     llvm::SmallVector<mlir_ts::LoadOp> OwnershipInferencePass::recordSlotLoads(mlir::Value value)
     {
+        // not a borrowing record (spec 32, 36): it borrows the `let` instead, and its release leaves
+        // that field to the `let`
         llvm::SmallVector<mlir_ts::LoadOp> loads;
         auto varOp = recordLocalOf(value);
-        if (!varOp || !isOwningRecord(value))
+        if (!varOp || borrowingRecordOf(varOp) || !isOwningRecord(value))
         {
             return loads;
         }

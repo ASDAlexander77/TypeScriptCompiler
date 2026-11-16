@@ -409,22 +409,31 @@ namespace own_inference
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
         dropUnboxedRecordCounts(toErase);
-        for (auto *op : toErase)
-        {
-            op->erase();
-        }
-
-        // a select of two fresh values moved both into what it selected: the other is released at
-        // once, chosen by the same condition the other way round (nothing uses either after: the
-        // moves' own checks)
+        // a select of two fresh values moved both into what it selected: the other is released where
+        // rc's retain of the selected one was - the point the moves were checked from, after which
+        // nothing uses either - chosen by the same condition the other way round
         for (auto *op : selectMoves)
         {
             auto selectOp = mlir::cast<mlir::arith::SelectOp>(op);
+            auto *retain = selectRetainOf(selectOp, selectOp.getTrueValue());
             mlir::OpBuilder builder(selectOp->getContext());
-            builder.setInsertionPointAfter(selectOp);
+            if (retain)
+            {
+                builder.setInsertionPoint(retain);
+            }
+            else
+            {
+                builder.setInsertionPointAfter(selectOp);
+            }
+
             auto notSelected = builder.create<mlir::arith::SelectOp>(selectOp.getLoc(), selectOp.getCondition(),
                                                                       selectOp.getFalseValue(), selectOp.getTrueValue());
             builder.create<mlir_ts::ReleaseOp>(selectOp.getLoc(), notSelected.getResult());
+        }
+
+        for (auto *op : toErase)
+        {
+            op->erase();
         }
 
         stripFacts();
