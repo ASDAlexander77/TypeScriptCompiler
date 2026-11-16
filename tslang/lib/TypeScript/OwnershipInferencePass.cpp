@@ -809,6 +809,14 @@ namespace own_inference
                 continue;
             }
 
+            // a merge of what nothing owns (`first ? shared : other` of immortal globals,
+            // `c ? 1 : "one"`): it owns nothing either
+            if (value && (mlir::isa<mlir_ts::RetainOp>(op) || slotHoldsInitializerAt(op)) && mergeOwnsNothing(value))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             // an array a spread builds, read into the owning local it is made for, or returned
             if (value && mlir::isa<mlir_ts::RetainSlotOp>(op) && isBuiltArrayRead(op, value))
             {
@@ -896,6 +904,55 @@ namespace own_inference
                 op->removeAttr(name);
             }
         });
+    }
+
+    bool OwnershipInferencePass::mergeOwnsNothing(mlir::Value value, unsigned depth)
+    {
+        auto argument = mlir::dyn_cast<mlir::BlockArgument>(rootOf(value));
+        if (!argument || argument.getOwner()->isEntryBlock() || depth > 8)
+        {
+            return false;
+        }
+
+        auto *block = argument.getOwner();
+        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+        {
+            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+            if (!branchOp)
+            {
+                return false;
+            }
+
+            auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+            if (argument.getArgNumber() < operands.getProducedOperandCount())
+            {
+                return false;
+            }
+
+            auto incoming = operands[argument.getArgNumber()];
+            if (!incoming)
+            {
+                return false;
+            }
+
+            auto root = rootOf(incoming);
+            if (mlir::isa<mlir::BlockArgument>(root))
+            {
+                if (!mergeOwnsNothing(root, depth + 1))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!(isConstantData(incoming) || isConstantData(root) || isImmortalGlobalRead(root) || isImmortalLiteral(root)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool OwnershipInferencePass::reporting()

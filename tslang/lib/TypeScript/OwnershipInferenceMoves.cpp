@@ -879,21 +879,43 @@ namespace own_inference
             return true;
         }
 
-        forEachUse(extract->getResult(0), [&](mlir::Operation *user, mlir::Value used) {
-            if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
-            {
-                onlyRead = fieldOnlyRead(user, reads) && onlyRead;
-                return;
-            }
+        // ...and through a merge of branches that is only read: `o?.v == "x"` merges the field with
+        // undefined, and what reads the merge reads the field
+        llvm::SmallVector<mlir::Value> values{extract->getResult(0)};
+        llvm::SmallPtrSet<mlir::Value, 4> seen{extract->getResult(0)};
+        while (!values.empty() && onlyRead)
+        {
+            forEachUse(values.pop_back_val(), [&](mlir::Operation *user, mlir::Value used) {
+                if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
+                {
+                    onlyRead = fieldOnlyRead(user, reads) && onlyRead;
+                    return;
+                }
 
-            if (!isBorrow(user, used))
-            {
-                onlyRead = false;
-                return;
-            }
+                auto merged = mergedValuesOf(user, used);
+                if (!merged.empty())
+                {
+                    reads.push_back(user);
+                    for (auto value : merged)
+                    {
+                        if (seen.insert(value).second)
+                        {
+                            values.push_back(value);
+                        }
+                    }
 
-            reads.push_back(user);
-        });
+                    return;
+                }
+
+                if (!isBorrow(user, used))
+                {
+                    onlyRead = false;
+                    return;
+                }
+
+                reads.push_back(user);
+            });
+        }
 
         return onlyRead;
     }
@@ -1033,6 +1055,12 @@ namespace own_inference
             {
                 reportSecondReference(taker, value);
                 return false;
+            }
+
+            // moved into a merge: rc's retain of the merged value is the reference it moves into
+            if (auto *mergeRetain = mergeRetainOf(taker, value))
+            {
+                moved.push_back(mergeRetain);
             }
 
             auto *acquire = acquirePoint(taker, value);
