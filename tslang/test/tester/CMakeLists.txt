@@ -4676,7 +4676,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
