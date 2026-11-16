@@ -577,9 +577,23 @@ namespace own_inference
                      castOp && mlir::isa<mlir_ts::OpaqueType>(castOp.getType()) && ownsHeap(castOp.getIn()))
             {
                 // `<Opaque>new Item()`: an Opaque only borrows, so a temporary nothing else holds would be
-                // freed under it (spec 92). A `const` or a local holding the object owns it.
+                // freed under it (spec 92). A `const` or a local holding the object owns it. Only an
+                // Opaque that is kept - stored in a field or a variable - outlives the statement: one
+                // given straight to a call (a bound method's `this`, a generic's argument) is read while
+                // the temporary is still alive. A scalar boxed into `any` (`<Opaque><any>0`) holds no object.
+                std::function<bool(mlir::Value)> storedValue = [&](mlir::Value value) {
+                    return llvm::any_of(value.getUsers(), [&](mlir::Operation *user) {
+                        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+                            return storeOp.getValue() == value;
+                        if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp>(user))
+                            return storedValue(user->getResult(0));
+                        return mlir::isa<mlir_ts::VariableOp>(user);
+                    });
+                };
+                auto stored = storedValue(castOp.getResult());
                 auto *def = rootOf(castOp.getIn()).getDefiningOp();
-                if (def && isFresh(rootOf(castOp.getIn())) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
+                if (stored && !mlir::isa<mlir_ts::AnyType>(castOp.getIn().getType()) && def &&
+                    isFresh(rootOf(castOp.getIn())) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
                     llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); }) &&
                     reporting())
                 {
