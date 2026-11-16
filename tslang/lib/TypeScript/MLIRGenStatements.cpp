@@ -1868,7 +1868,10 @@ namespace mlirgen
                 catchGenContext.finallyGuardScope = &catchGenContext;
             }
 
+            auto nestedTry = blockHasTry(tryStatementAST->catchClause->block) ? 1 : 0;
+            clausesWithNestedTry += nestedTry;
             auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
+            clausesWithNestedTry -= nestedTry;
             EXIT_IF_FAILED(result)
         }
 
@@ -1879,7 +1882,10 @@ namespace mlirgen
         builder.setInsertionPointToStart(&tryOp.getFinally().front());
         if (tryStatementAST->finallyBlock)
         {
+            auto nestedTry = blockHasTry(tryStatementAST->finallyBlock) ? 1 : 0;
+            clausesWithNestedTry += nestedTry;
             auto result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
+            clausesWithNestedTry -= nestedTry;
             EXIT_IF_FAILED(result)
 
             // The copy of the finally that runs on the unwind leg resumes the exception past the

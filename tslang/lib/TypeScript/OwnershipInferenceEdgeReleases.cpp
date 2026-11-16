@@ -494,14 +494,17 @@ namespace own_inference
         }
 
         // what follows the move, while this value is the one the definition made: the blocks the move
-        // reaches, not through the definition again (a loop's next turn makes another)
+        // reaches, not through the definition again (a loop's next turn makes another), and only those
+        // the definition dominates - a loop's header and its exit are outside the value's life, and the
+        // edges into them (a `break`) release it on their own
         auto *moveBlock = acquire->getBlock();
         llvm::SmallPtrSet<mlir::Block *, 16> after;
         llvm::SmallVector<mlir::Block *> work(moveBlock->getSuccessors().begin(), moveBlock->getSuccessors().end());
         while (!work.empty())
         {
             auto *block = work.pop_back_val();
-            if (block == definition->getBlock() || !after.insert(block).second)
+            if (block == definition->getBlock() || !dominance->dominates(definition->getBlock(), block) ||
+                !after.insert(block).second)
             {
                 continue;
             }

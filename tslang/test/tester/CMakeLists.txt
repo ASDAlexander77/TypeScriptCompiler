@@ -790,6 +790,8 @@ tslang_add_test(NAME test-compile-00-interface-union-literal COMMAND test-runner
 tslang_add_test(NAME test-compile-01-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
+tslang_add_test(NAME test-compile-00-catch-finally-locals-own COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_locals_own.ts")
+tslang_add_test(NAME test-compile-00-catch-finally-owned-locals-eh COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-compile-00-try-finally-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
@@ -1469,6 +1471,11 @@ tslang_add_test(NAME test-jit-00-interface-union-literal COMMAND test-runner -ji
 tslang_add_test(NAME test-jit-01-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
+tslang_add_test(NAME test-jit-00-catch-finally-locals-own COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_locals_own.ts")
+tslang_add_test(NAME test-jit-00-catch-finally-owned-locals-eh COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
+# the same under own: locals in catch and finally clauses own what they hold (fuzzer seed 920443)
+tslang_add_test(NAME test-jit-own-00-catch-finally-owned-locals-eh COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
+tslang_add_test(NAME test-compile-own-00-catch-finally-owned-locals-eh COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-jit-00-try-finally-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-jit-00-try-catch-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
@@ -2941,6 +2948,8 @@ set(TSLANG_CORPUS
     00try_finally_break_continue.ts
     00try_finally_return.ts
     00try_finally_funclet.ts
+    00catch_finally_locals_own.ts
+    00catch_finally_owned_locals_eh.ts
     00try_in_catch_with_finally.ts
     00try_finally.ts
     00try_finally_throws.ts
@@ -4663,7 +4672,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
-                 own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants)
+                 own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
+                 own_moved_some_paths_break)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4704,7 +4714,8 @@ foreach(keeps_mm rc gc none)
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                        own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
-                 own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants)
+                 own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
+                 own_moved_some_paths_break)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -5222,8 +5233,8 @@ set(own_error_cases
     "own_err_borrow_and_move|:8:5: error: '[^']*' is moved here while '[^']*' borrows it"
     "own_err_borrow_bound_method|:20:17: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_const_bound_method_reassigned|:20:11: error: '[^']*' takes a second reference"
-    "own_err_borrow_catch_local|:31:20: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
-    "own_err_borrow_finally_local|:30:20: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
+    "own_err_borrow_catch_local|:28:13: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_borrow_finally_local|:27:13: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
     "own_err_borrow_derived_ref|:28:5: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_const_alias_move|:12:5: error: '[^']*' borrows '[^']*' and cannot be assigned"
     "own_err_const_alias_field|:15:5: error: '[^']*' is moved here while '[^']*' borrows it"
@@ -5557,6 +5568,7 @@ set(own_error_cases
     "own_err_weakref_after_call|:5:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_weakref_after_release|:4:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_weakref_thread|:14:15: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
+    "own_err_capture_block_closure|:5:51: error: 'n4' is used here after its value was moved"
     "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"

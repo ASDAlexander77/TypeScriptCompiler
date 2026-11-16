@@ -159,6 +159,34 @@ namespace own_inference
             }
         }
 
+        // a closure's box: it lives as long as the closure value that owns it, and goes where that is
+        // given back (`{ let c = () => n.v.get(); } n.v` - the `let`'s release at the block's end frees
+        // the box, and `n` with it). A closure that may go anywhere else is no owner to read through.
+        for (auto &root : chain.roots)
+        {
+            auto boundOp = closureOfBox(root.first);
+            if (!boundOp)
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Operation *> closureUses;
+            llvm::SmallVector<mlir::Operation *> closureEnds;
+            auto aliased = false;
+            if (followClosure(boundOp.getResult(), closureUses, closureEnds, aliased) || aliased)
+            {
+                return false;
+            }
+
+            for (auto *end : closureEnds)
+            {
+                if (outlives(end))
+                {
+                    return false;
+                }
+            }
+        }
+
         for (auto *drop : drops)
         {
             if (dropsChain(drop, chain, nullptr, value) && outlives(drop))
