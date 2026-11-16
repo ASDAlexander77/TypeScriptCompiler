@@ -288,6 +288,12 @@ namespace own_inference
         {
             refs.push_back(loadOp.getReference());
         }
+        else if (mlir::isa<mlir_ts::WeakRefDerefOp>(read))
+        {
+            // the object a WeakRef refers to (spec 84): no root here owns it, and wherever it is
+            // held, a release of a holder of its type or a call that may drop ends it
+            chain.anyPlace = true;
+        }
         else
         {
             // a call's result that borrows its arguments - a plain borrow, or a borrowing record's box
@@ -1297,6 +1303,43 @@ namespace own_inference
             }
 
             if (frees(drop) && dropsChain(drop, chain, read) && outlives(drop))
+            {
+                return false;
+            }
+        }
+
+        // The object a WeakRef refers to may be any owner's, a local's too: a release of a local or
+        // of a temporary that may hold its type ends the borrow as well (spec 84). Not a WeakRef's.
+        if (mlir::isa<mlir_ts::WeakRefDerefOp>(read))
+        {
+            auto targetType = mlir::cast<mlir_ts::WeakRefType>(read->getOperand(0).getType()).getElementType();
+            auto module = read->getParentOfType<mlir::ModuleOp>();
+            auto ended = false;
+            getFunction()->walk([&](mlir::Operation *op) {
+                if (ended)
+                {
+                    return;
+                }
+
+                mlir::Type held;
+                if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+                {
+                    held = mlir::cast<mlir_ts::RefType>(releaseSlotOp.getSlot().getType()).getElementType();
+                }
+                else if (auto releaseOp = mlir::dyn_cast<mlir_ts::ReleaseOp>(op))
+                {
+                    held = releaseOp.getReference().getType();
+                }
+
+                if (!held || MLIRTypeHelper::isWeakRefType(held) || !typeMayHold(module, held, targetType))
+                {
+                    return;
+                }
+
+                ended = outlives(op);
+            });
+
+            if (ended)
             {
                 return false;
             }

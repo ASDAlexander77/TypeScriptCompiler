@@ -2410,7 +2410,8 @@ namespace own_signature
             // a drop.
             if (mlir::isa<mlir_ts::ReleaseOp>(op) && touchesHandle(op))
             {
-                drops = true;
+                // a WeakRef's frees at most a tombstone (spec 84)
+                drops = !MLIRTypeHelper::isWeakRefType(op->getOperand(0).getType());
             }
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {

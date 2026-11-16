@@ -801,6 +801,14 @@ namespace own_inference
                     continue;
                 }
 
+                // A WeakRef made of the borrow, or the object a borrowed WeakRef refers to, is no part
+                // of it: the WeakRef finds the object gone, and the object is checked as its own
+                // borrow (spec 84)
+                if (mlir::isa<mlir_ts::WeakRefNewOp, mlir_ts::WeakRefDerefOp>(user))
+                {
+                    continue;
+                }
+
                 // A result that borrows what it was given borrows this too, and is walked as it.
                 for (auto result : user->getResults())
                 {

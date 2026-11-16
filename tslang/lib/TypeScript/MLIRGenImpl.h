@@ -1368,7 +1368,7 @@ class MLIRGenImpl
     // balanced, where a mark on its own would hand a receiver a reference nobody took.
     void markFreshBlockOwned(mlir::Location location, mlir::Value value)
     {
-        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::SharedType>(value.getType()))
+        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::SharedType, mlir_ts::WeakRefType>(value.getType()))
         {
             return;
         }

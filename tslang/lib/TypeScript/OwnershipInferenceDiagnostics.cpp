@@ -13,6 +13,11 @@ namespace own_inference
 
     std::string OwnershipInferencePass::describeCall(mlir::Operation *call)
     {
+        if (mlir::isa<mlir_ts::WeakRefDerefOp>(call))
+        {
+            return "the object a WeakRef refers to";
+        }
+
         auto callee = calleeName(call);
         return callee.empty() ? "a call's result" : "the result of '" + callee + "'";
     }

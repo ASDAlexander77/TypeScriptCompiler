@@ -2480,9 +2480,12 @@ class MLIRTypeHelper
     // own no heap memory: null, undefined, a number, a boolean, a literal, another Shared<U>.
     // `Shared<T> | null` is one pointer; `Shared<T> | number` is tagged, and its routines dispatch
     // on the tag through descriptors, each Shared member's counting and the others' doing nothing.
+    //
+    // A WeakRef<T> (own spec 84) is a handle too: own leaves its retains and releases, and they
+    // count on its target's header (isWeakRefType).
     static bool isSharedHandleType(mlir::Type type)
     {
-        if (isa<mlir_ts::SharedType>(type))
+        if (isa<mlir_ts::SharedType>(type) || isWeakRefType(type))
         {
             return true;
         }
@@ -4397,6 +4400,12 @@ protected:
         // is released by the handle's routine, so it is not a record here
         if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ClassType>(type) ||
             isa<mlir_ts::SharedType>(type) || isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
+        {
+            return true;
+        }
+
+        // A WeakRef (own spec 84) owns one weak count of its target, which its release gives back
+        if (isa<mlir_ts::WeakRefType>(type))
         {
             return true;
         }

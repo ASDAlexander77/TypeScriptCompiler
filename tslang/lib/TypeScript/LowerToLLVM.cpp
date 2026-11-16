@@ -1462,11 +1462,8 @@ class WeakRefNewOpLowering : public TsLlvmPattern<mlir_ts::WeakRefNewOp>
     {
         auto loc = op->getLoc();
         auto &compileOptions = tsLlvmContext->compileOptions;
-        if (compileOptions.tracksOwnership())
-        {
-            return op.emitError("WeakRef under -mm=own is not implemented yet");
-        }
-
+        // own: the target's pointer, counted by the retains own leaves for it (MLIRGen's first);
+        // none: the target's pointer, never freed
         if (!compileOptions.needsGCRuntime())
         {
             rewriter.replaceOp(op, ValueRange{transformed.getTarget()});
@@ -1505,15 +1502,18 @@ class WeakRefDerefOpLowering : public TsLlvmPattern<mlir_ts::WeakRefDerefOp>
     {
         auto loc = op->getLoc();
         auto &compileOptions = tsLlvmContext->compileOptions;
-        if (compileOptions.tracksOwnership())
-        {
-            return op.emitError("WeakRef under -mm=own is not implemented yet");
-        }
-
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
         mlir::Value target = transformed.getWeakRef();
+        // own: the target, unless its block is a tombstone (Defines.h, beside HEAP_BLOCK_IMMORTAL)
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), compileOptions);
+            auto alive = orl.emitWeakTargetAlive(target);
+            auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+            target = rewriter.create<LLVM::SelectOp>(loc, alive, target, null);
+        }
         if (compileOptions.needsGCRuntime())
         {
             auto llvmIndexType = tch.convertType(th.getIndexType());

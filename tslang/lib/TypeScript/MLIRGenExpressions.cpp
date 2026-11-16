@@ -1968,14 +1968,11 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (compileOptions.tracksOwnership())
-        {
-            emitError(location, "WeakRef under -mm=own is not implemented yet");
-            return mlir::failure();
-        }
-
         CAST_A(target, location, elementType, value, genContext);
-        return V(builder.create<mlir_ts::WeakRefNewOp>(location, mlir_ts::WeakRefType::get(elementType), target));
+        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, mlir_ts::WeakRefType::get(elementType), target);
+        // born with no weak count, as a Shared block with no count: the retain this adds is the first
+        markFreshBlockOwned(location, weakRef);
+        return V(weakRef);
     }
 
     // `w.deref()`: an optional of the target; `w?.deref()` on a WeakRef that may be null or

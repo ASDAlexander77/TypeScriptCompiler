@@ -577,6 +577,12 @@ namespace own_inference
                 // an exchange of two places, which moves their values (spec 42)
                 drops.push_back(op);
             }
+            else if (mlir::isa<mlir_ts::WeakRefDerefOp>(op))
+            {
+                // the object a WeakRef refers to: a borrow of a place nobody here knows, which anything
+                // that may free an object of its type ends (spec 84)
+                ops.placeReads.push_back(op);
+            }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp,
                                mlir_ts::SetLengthOfOp>(op) ||
                      isCall(op))
