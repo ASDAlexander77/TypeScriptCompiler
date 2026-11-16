@@ -23,6 +23,16 @@ function make(text: string) {
     return text;
 }
 
+// the right side grows the array the element is in: the value is read from where the element is now
+const grown: (number | undefined)[] = [undefined];
+function grow() {
+    for (let i = 0; i < 1000; i++) {
+        grown.push(i);
+    }
+
+    return 5;
+}
+
 function withDefault(results?: number[]) {
     results ??= [];
     results.push(1);
@@ -66,6 +76,9 @@ function main() {
         assert(orDefault(undefined) == 1 && orDefault([5]) == 2, "a parameter given a default by ||=");
         assert(orCallback() == 42 && orCallback((a: number) => a + 1) == 43, "a callback given a default");
     }
+
+    const v = (grown[0] ??= grow());
+    assert(v == 5 && grown[0] == 5 && grown.length == 1001, "an element whose array the right side grew");
 
     assert(evaluated == 2000 * 2, "the right side runs only where it is assigned");
     print("done.");

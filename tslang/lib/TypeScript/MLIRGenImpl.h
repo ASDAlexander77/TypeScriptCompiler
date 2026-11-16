@@ -6506,7 +6506,15 @@ class MLIRGenImpl
         }
 
         builder.setInsertionPointAfter(ifOp);
-        return V(builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), leftLoad.getReference()));
+        // an element's address is taken again: `b` may have grown the array into another block (as
+        // mlirGenSaveLogicOneItem takes it again for the store)
+        mlir::Value reference = leftLoad.getReference();
+        if (auto elementRefOp = reference.getDefiningOp<mlir_ts::ElementRefOp>())
+        {
+            reference = builder.clone(*elementRefOp)->getResult(0);
+        }
+
+        return V(builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference));
     }
 
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
