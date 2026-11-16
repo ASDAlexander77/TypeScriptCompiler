@@ -55,7 +55,10 @@ This is weak evidence, for three reasons. Half of what the fuzzer generates is r
 350 programs ran. It was Windows only, and the Windows heap hides double frees that glibc reports.
 And compiling one real codebase turned up, between 2026-11-13 and 2026-11-15, a read of freed
 memory (item 50), a double free (item 83), a fix that leaked 2.7 GB and was backed out (item 80),
-and a compiler crash in about one run in 500 (#867). All are fixed. The rate says more are there.
+and a compiler crash in about one run in 500 (#867). All are fixed. The rate says more are there:
+the change that added this page accepted a walk that cut the list ahead of itself (`const nx =
+n.next; n.next = null; n = nx`) and read the freed node, found the same day by a probe written for
+the next change (spec 83).
 
 ## Coverage
 
@@ -96,9 +99,10 @@ Probed one by one under the JIT:
 | Appending at the tail, cutting the tail: `c.next = n`, `c.next = null` after the walk | Compiles and runs |
 | List `pop`: `this.head = this.head.next`; unlinking: `c.next = c.next.next` | Compiles and runs |
 | Using the popped node afterwards: `this.head = h.next; return h.v` | Rejected: the node is freed by the assignment; read it first |
-| Push through a constructor: `this.head = new Node(v, this.head)` | Rejected |
-| Walking by assigning a parameter: `n = n.next` | Rejected |
-| Tree insert by recursion on a parameter: `t.l = ins(t.l, v)` | Rejected |
+| Push through a constructor: `this.head = new Node(v, this.head)` | Compiles and runs, when the constructor is in the same module and never throws |
+| Walking by assigning a parameter: `n = n.next` | Compiles and runs |
+| Tree insert by recursion on a parameter: `t.l = ins(t.l, v)` | Compiles and runs, when the function is in the same module and never throws |
+| Cutting while walking: `const nx = n.next; n.next = null; n = nx` | Rejected: the cut frees what `nx` names (accepted by mistake from 2026-11-16 until spec 83) |
 | Tree insert and sum as methods recursing on `this` | Compiles and runs |
 | Parent link: `k.parent = this` | Rejected; the answer is `Shared<T>`, whose cycles leak |
 | `new WeakRef(a)` | Rejected: built on the collector |
@@ -146,9 +150,9 @@ assertions-enabled CI leg, and a soak run. The first holds today; the other two 
 
 1. **A non-owning back-reference.** `WeakRef<T>` under own, or a declared borrowing field. Without
    it a tree with parent links either does not compile or leaks.
-2. **The rest of linked structures.** A list now works; a node built from the old head, a walk
-   that assigns a parameter and the recursive tree insert do not. These are what a newcomer writes
-   first.
+2. **The rest of linked structures.** A list, a node built from the old head, a walk that assigns a
+   parameter and the recursive tree insert work (spec 83). A call that may throw, or one into another
+   module, still cannot take a field this way, and the popped node cannot be used after the assignment that frees it.
 3. **The "not yet" messages.** Second references the compiler cannot classify, values merged from
    branches, object literals that hold owned values.
 4. **Capturing callbacks over `Map` and `Set`**, and a source position for the error they give.

@@ -65,6 +65,9 @@ namespace mlir_ts = mlir::typescript;
 // The callee destroys nothing its caller can reach: no overwrite of a place it did not make, no
 // assignment of a global, no call that may.
 #define OWN_NO_DROPS_ATTR_NAME "__own_no_drops"
+// The callee never throws: no `throw` in its body or in any function it calls, every call it makes
+// resolved to functions of this module (OwnershipSignaturePass::computeNoThrow).
+#define OWN_NO_THROW_ATTR_NAME "__own_no_throw"
 // The callee destroys nothing its caller can reach but the old values of the places it overwrites:
 // [position, slot type] pairs - a field's position (OWN_INTERFACE_FIELD_POSITION for a field reached
 // through an interface), -1 for an element - judged as those stores would be if they were the
@@ -202,6 +205,11 @@ inline mlir::OperandRange callArgs(mlir::Operation *op)
 inline bool callNoDrops(mlir::Operation *op)
 {
     return op->hasAttr(OWN_NO_DROPS_ATTR_NAME);
+}
+
+inline bool callNoThrow(mlir::Operation *op)
+{
+    return op->hasAttr(OWN_NO_THROW_ATTR_NAME);
 }
 
 // The places a call's callees may overwrite (OWN_DROP_FIELDS_ATTR_NAME), when that is all they

@@ -1154,6 +1154,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Least fixpoint: a function drops nothing until its body or a call it makes shows it may.
     void computeDrops();
 
+    // Greatest fixpoint: a function never throws while its body has no throw and every call it makes
+    // is resolved to functions of this module that never throw. Marks the calls (OWN_NO_THROW_ATTR_NAME).
+    void computeNoThrow();
+
+    // the functions computeNoThrow finds
+    llvm::DenseSet<mlir::Operation *> noThrow;
+
     bool callMayDrop(const Callees &callees);
 
     // ---- Globals a call may assign ----
@@ -1226,6 +1233,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     bool reachesOutside(mlir::Value ref, mlir_ts::FuncOp funcOp);
 
     static bool isAssigned(mlir_ts::VariableOp varOp);
+    // Is every value the local is assigned read out of what it holds, through fields of class objects:
+    // `n = n.next`, `n = n.left.right`? It walks down from what it was given and never owns any of it.
+    static bool walksDownOnly(mlir_ts::VariableOp varOp);
 
     // An owning, uncaptured local whose every value - its initializer and each assignment - is one
     // the function made.

@@ -5850,3 +5850,64 @@ Tests: `00linked_list` and `00linked_list_kept` (own, rc, gc, none; also `-noopt
 `own_err_list_walk_dropped`, `_walk_call_drops`, `_lookahead_cut`, `_walk_up`, `_pop_used_after`,
 `_next_kept_twice`, `_refill_from_param`. The corpus, the mm fuzzer (1,000 seeds) and native_ts_graphics'
 own build are unchanged by it: no file newly refused.
+
+## 83. A field given to a call and refilled; a parameter that walks; a walk cut ahead of itself, 2026-11-16
+
+Three of the shapes section 82 left refused, and a hole it opened.
+
+**A field given to a call that keeps it, refilled from the call's result (`calledFieldTakeOf`).**
+`this.head = new Node(v, this.head)` and `t.left = insert(t.left, v)`: the read of the field goes to a
+call that keeps that argument (`__own_params`), and the store right after it puts the call's result (a
+constructor's: the object `new` made) back into the same field of the same object. Section 82's moves
+out of a field all have nothing but reads between the read and the refill; here the callee runs, and
+it may reach the field another way (`insert` carries `__own_drop_fields` for the very field it is
+given). So the field is given up before the call (`ts.TakeOutOfField`, as for a splice: emptied in a
+mortal object; kept, with its value made immortal, in one an append-only global keeps), and the
+refill's release stays: it frees what the field holds then, nothing unless the callee put something
+there. The match: a class field holding a class object or null (not a string, a handle, a
+back-reference or a borrowing field); the read given once, to that call only, in its block; between
+the read and the call only reads, constants and views; between the call and the refill only views of
+the result and rc's retain of them. The call's other arguments hold no heap block, or are the object
+`new` made: not the object the field is in (`this.wrap(this.head)`, `own_err_list_push_through_this`)
+nor the field again (`f(t.l, t.l)`, `own_err_tree_field_given_twice`).
+
+The call must never throw (`__own_no_throw`, below). A throw caught by any caller would find the field
+given up where gc and rc keep the old value: `this.head = new Node(v, this.head)` with a constructor
+that throws would empty the list (`own_err_list_push_ctor_throws`). Not an invoke either, whose normal
+path goes on in another block.
+
+**`__own_no_throw` (`OwnershipSignaturePass::computeNoThrow`).** A greatest fixpoint over the module: a
+function never throws while its body holds no `ts.Throw`, `ts.ThrowCall` or `ts.ThrowUnwind` (a failed
+cast is a `ts.Throw` MLIRGen writes into the body) and no op of the `async` dialect (an await rethrows),
+and every call in it is resolved to functions of this module that never throw. An imported, unresolved
+or `instanceof` call may throw, so a constructor of another module's class cannot take a field. The fact is put on
+each call, since inference reads no other function's body (#867).
+
+**A parameter that only walks down borrows (`walksDownOnly`).** Section 81 made an assigned parameter a
+kept one: its local owns what it holds. A local whose every assignment stores a value read out of what
+it holds, through fields of class objects (`n = n.next`, `n = n.left.right`; not through a handle),
+owns none of it: it walks down from what it was given. Any other use of the local but reads, rc's counts
+and the debugger's record (a swap, its address given away) keeps the old rule. `keeps` no longer counts such a local as the
+parameter's taker, so the parameter stays a borrow, and inference treats the local as section 82's
+`let` given only borrows. One assignment of anything else (`n = new Node(9)` on some path) keeps the
+old rule (`own_err_param_walk_mixed`). The same holds for `let n = m` of a parameter `m`.
+
+**A walk cut ahead of itself (the hole).** Section 82's `frees` let a release of a field of what the
+walking `let` holds go when the `let` only walks down, reading "what the `let` holds" as the value read
+or one under it. That is true only once the `let` has been given the value read. `const nx = n.next;
+n.next = null; n = nx` reads `n` for the cut while it still holds the node above: the release frees the
+node `nx` names, and the walk goes on into it. Section 82 accepted it, and the program crashed
+(`own_err_list_unlink_walk`, refused before section 82). Now the read of the `let` that the released
+place hangs from must come after the assignment: every way from the read to it runs the assignment,
+and no way from it reaches the drop through the read again. `c.next = (c = c.next, null)` reads `c`
+for the place before the step and stores after it: section 82 accepted it and the program crashed
+(`own_err_list_cut_in_step`). The cut after the walk (`if (c) c.next = null`) and a
+cut of the node just stepped to (`c = c.next; if (c && c.v == 2) c.next = null`) still compile.
+
+Still refused: a field given to a call that may throw, a node used after the assignment that frees
+it, and a walk that keeps or returns the parameter it walks (`last(n)` returning `n`: the local borrows,
+and a borrow is not returned from a parameter's local).
+
+Tests: `00linked_list_build` (own, rc, gc, none; also `-noopt` under own), and
+`own_err_list_unlink_walk`, `_cut_in_step`, `_cut_through_alias`, `_push_ctor_throws`, `_push_through_this`,
+`own_err_tree_field_given_twice`, `own_err_param_walk_mixed`.
