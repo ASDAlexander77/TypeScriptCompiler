@@ -98,6 +98,10 @@ After spec 90 (a `let` in a `try`, a `switch`'s narrowed parameter, `??=` / `||=
 where needed): 735 compile under own (`logicalAssignment5*`, `03union_type*`, `00try_cleanup_then_catch`).
 No file went the other way.
 
+After specs 91-92 (a read-only `view` borrows its elements; a value boxed into `any` only to be cast
+back borrows; `<Opaque>x` borrows): 740 compile under own (`00any_types`, `00any_unbox_interface_class`,
+`00opaque_nullable_compare`, `00union_global_init`, `00union_member_padding`). No file went the other way.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
