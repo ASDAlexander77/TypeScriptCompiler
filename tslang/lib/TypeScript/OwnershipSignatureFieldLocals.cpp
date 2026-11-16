@@ -606,6 +606,16 @@ namespace own_signature
                        });
             });
         }
+
+        // A field of a record local, or a field of that field, that is only read: nothing is stored
+        // through it.
+        bool fieldOnlyLoaded(mlir::Operation *propertyRef, int depth = 0)
+        {
+            return depth < 8 && llvm::all_of(propertyRef->getUsers(), [&](mlir::Operation *user) {
+                       return mlir::isa<mlir_ts::LoadOp>(user) ||
+                              (mlir::isa<mlir_ts::PropertyRefOp>(user) && fieldOnlyLoaded(user, depth + 1));
+                   });
+        }
     } // namespace
 
     void OwnershipSignaturePass::borrowParametersInLocals(mlir::ModuleOp module)
@@ -662,6 +672,13 @@ namespace own_signature
                 for (auto *user : varOp->getUsers())
                 {
                     if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    // a field of a record local only read (`s.name` of a `switch`'s narrowed copy of a
+                    // parameter): a store into it would release what the caller's record holds
+                    if (mlir::isa<mlir_ts::PropertyRefOp>(user) && fieldOnlyLoaded(user))
                     {
                         continue;
                     }
