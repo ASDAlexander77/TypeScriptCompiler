@@ -4662,7 +4662,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
-                 own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this)
+                 own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4702,7 +4702,7 @@ foreach(keeps_mm rc gc none)
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
-                       own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this)
+                       own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
