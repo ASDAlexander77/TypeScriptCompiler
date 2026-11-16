@@ -543,6 +543,19 @@ namespace own_inference
             return true;
         }
 
+        // `<Opaque>x`: a raw pointer to it, which owns nothing (spec 92, USER RULING 2026-11-16: Opaque
+        // borrows) - what it points at stays its owner's, and is not tracked further
+        if (mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::OpaqueType>(user->getResult(0).getType()))
+        {
+            return true;
+        }
+
+        // an `any` box made of it only to be cast back and read (classifyBorrowingBoxes, spec 92)
+        if (mlir::isa<mlir_ts::CastOp>(user) && user->hasAttr(OWN_BORROWING_BOX_ATTR_NAME))
+        {
+            return true;
+        }
+
         // an array a rest parameter is given that borrows its elements (classifyArgumentArrays)
         if (mlir::isa<mlir_ts::CreateArrayOp>(user) && user->hasAttr(OWN_BORROWING_ARRAY_ATTR_NAME))
         {

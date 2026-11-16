@@ -6149,15 +6149,15 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
-                                           bool andOp, bool saveResult)
+                                           bool andOp, bool saveResult, mlir::Value leftValue = {})
     {
         auto location = loc(binaryExpressionAST);
 
         auto leftExpression = binaryExpressionAST->left;
         auto rightExpression = binaryExpressionAST->right;
 
-        // condition
-        auto result = mlirGen(leftExpression, genContext);
+        // condition (the left side evaluated already, by mlirGenLogicalAssignment)
+        auto result = leftValue ? ValueOrLogicalResult(leftValue) : mlirGen(leftExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
@@ -6206,6 +6206,13 @@ class MLIRGenImpl
                 if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultTrue, genContext))) 
                 {
                     return mlir::failure();
+                }
+
+                // `a &&= b` of an accessor (mlirGenLogicalAssignment): assigned only where `a` is true
+                if (saveResult)
+                {
+                    auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, resultTrue, genContext);
+                    EXIT_IF_FAILED(saved)
                 }
             }
             else
@@ -6256,7 +6263,14 @@ class MLIRGenImpl
                 if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultFalse, genContext))) 
                 {
                     return mlir::failure();
-                }                
+                }
+
+                // `a ||= b` of an accessor (mlirGenLogicalAssignment): assigned only where `a` is false
+                if (saveResult)
+                {
+                    auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, resultFalse, genContext);
+                    EXIT_IF_FAILED(saved)
+                }
             }
 
             if (!andOp)
@@ -6291,13 +6305,8 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        auto resultFirst = ifOp.getResults().front();
-        if (saveResult)
-        {
-            return mlirGenSaveLogicOneItem(location, leftExpressionValue, resultFirst, genContext);
-        }
-
-        return resultFirst;
+        // (`a ||= b`, `a &&= b` stored `b` where it ran)
+        return ifOp.getResults().front();
     }
 
     // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
@@ -6417,16 +6426,107 @@ class MLIRGenImpl
             toBoolean(V(isUndefined)));
     }
 
+    // `a ??= b`, `a ||= b`, `a &&= b`: `b` is evaluated and stored only where `a` does not decide the
+    // result, as TypeScript has it - nothing is stored (no setter runs) where it does. Storing the merge
+    // of `a` and `b` back would also give -mm=own a place assigned a merge of its own value. The value of
+    // the expression is the place read again after it: `b` where it was assigned, `a` where not.
+    ValueOrLogicalResult mlirGenLogicalAssignment(BinaryExpression binaryExpressionAST, SyntaxKind opCode,
+                                                  const GenContext &genContext)
+    {
+        auto location = loc(binaryExpressionAST);
+        auto leftExpression = binaryExpressionAST->left;
+        auto rightExpression = binaryExpressionAST->right;
+
+        auto result = mlirGen(leftExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto leftExpressionValue = V(result);
+
+        // only a place read by a load is read again (through a test's narrowing of it); an accessor's
+        // getter is not run twice: it is stored the merge, as before
+        auto leftLoad = leftExpressionValue.getDefiningOp<mlir_ts::LoadOp>();
+        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+        {
+            leftLoad = safeCastOp.getValue().getDefiningOp<mlir_ts::LoadOp>();
+        }
+
+        if (!leftLoad)
+        {
+            return opCode == SyntaxKind::QuestionQuestionToken
+                       ? mlirGenQuestionQuestionLogic(binaryExpressionAST, true, genContext, leftExpressionValue)
+                       : mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken,
+                                           true, leftExpressionValue);
+        }
+
+        mlir::Value condValue;
+        if (opCode == SyntaxKind::QuestionQuestionToken)
+        {
+            condValue = mlirGenIsNullish(location, leftExpressionValue, genContext);
+            if (!condValue)
+            {
+                return mlir::failure();
+            }
+        }
+        else
+        {
+            CAST_A(boolValue, location, getBooleanType(), leftExpressionValue, genContext);
+            condValue = boolValue;
+        }
+
+        // `||=` assigns where `a` is false: in the else branch
+        auto orOp = opCode == SyntaxKind::BarBarToken;
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, orOp);
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(orOp ? &ifOp.getElseRegion().front() : &ifOp.getThenRegion().front());
+
+            SymbolTableScopeT varScope(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+            if (opCode == SyntaxKind::AmpersandAmpersandToken)
+            {
+                checkSafeCast(leftExpression, leftExpressionValue, nullptr, genContext);
+            }
+            else if (orOp)
+            {
+                ElseSafeCases elseSafeCases;
+                collectElseSafeCases(leftExpression, leftExpressionValue, elseSafeCases, genContext);
+                addElseSafeCastStatements(elseSafeCases, genContext);
+            }
+
+            auto result2 = mlirGen(rightExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result2)
+            auto rightExpressionValue = V(result2);
+            if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, rightExpressionValue, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+            EXIT_IF_FAILED(saved)
+        }
+
+        builder.setInsertionPointAfter(ifOp);
+        // an element's address is taken again: `b` may have grown the array into another block (as
+        // mlirGenSaveLogicOneItem takes it again for the store)
+        mlir::Value reference = leftLoad.getReference();
+        if (auto elementRefOp = reference.getDefiningOp<mlir_ts::ElementRefOp>())
+        {
+            reference = builder.clone(*elementRefOp)->getResult(0);
+        }
+
+        return V(builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference));
+    }
+
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
-                                                      const GenContext &genContext)
+                                                      const GenContext &genContext, mlir::Value leftValue = {})
     {
         auto location = loc(binaryExpressionAST);
 
         auto leftExpression = binaryExpressionAST->left;
         auto rightExpression = binaryExpressionAST->right;
 
-        // condition
-        auto result = mlirGen(leftExpression, genContext);
+        // condition (the left side evaluated already, by mlirGenLogicalAssignment)
+        auto result = leftValue ? ValueOrLogicalResult(leftValue) : mlirGen(leftExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
@@ -6460,6 +6560,13 @@ class MLIRGenImpl
             return mlir::failure();
         }        
 
+        // `a ??= b` of an accessor (mlirGenLogicalAssignment): assigned only where `a` is null or undefined
+        if (saveResult)
+        {
+            auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, resultTrue, genContext);
+            EXIT_IF_FAILED(saved)
+        }
+
         // sync left part
         if (resultType != resultTrue.getType())
         {
@@ -6474,13 +6581,7 @@ class MLIRGenImpl
             // never taken
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{builder.create<mlir_ts::UndefOp>(location, resultType)});
             builder.setInsertionPointAfter(ifOp);
-            auto ifResult = ifOp.getResults().front();
-            if (saveResult)
-            {
-                return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
-            }
-
-            return ifResult;
+            return ifOp.getResults().front();
         }
 
         // here `a` is neither null nor undefined: take it as such
@@ -6511,13 +6612,8 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        auto ifResult = ifOp.getResults().front();
-        if (saveResult)
-        {
-            return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
-        }
-
-        return ifResult;
+        // (`a ??= b` stored `b` where it ran)
+        return ifOp.getResults().front();
     }
 
     // The members of a union of interfaces that have `key`, a field or a method; false when a member is

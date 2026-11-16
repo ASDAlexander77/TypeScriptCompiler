@@ -94,6 +94,14 @@ it owns" dropped from 9 files to 6 and "takes a second reference" from 19 to 18.
 
 After spec 89 (a method value takes its object): 729 compile under own; `00bound_method_count` runs.
 
+After spec 90 (a `let` in a `try`, a `switch`'s narrowed parameter, `??=` / `||=` / `&&=` assign only
+where needed): 735 compile under own (`logicalAssignment5*`, `03union_type*`, `00try_cleanup_then_catch`).
+No file went the other way.
+
+After specs 91-92 (a read-only `view` borrows its elements; a value boxed into `any` only to be cast
+back borrows; `<Opaque>x` borrows): 740 compile under own (`00any_types`, `00any_unbox_interface_class`,
+`00opaque_nullable_compare`, `00union_global_init`, `00union_member_padding`). No file went the other way.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -118,7 +126,11 @@ Probed one by one under the JIT:
 | `new WeakRef(a)` | Compiles and runs under own, gc and none; rc refuses it |
 | `new Map<string, Node>()`, `filter` over class instances | Rejected by design; `Shared<Node>` |
 | Swap through a local: `let t = a[i]; a[i] = a[j]; a[j] = t` | Rejected by design; `[a[i], a[j]] = [a[j], a[i]]` |
-| `x ??= new B()` on a parameter | Rejected ("merged from several branches") |
+| `x ??= new B()` on a parameter, a local or a field | Compiles and runs (spec 90): a plain assignment where `x` is null; `??=` of an accessor is still rejected |
+| `let t = p` inside `try`, `switch (s.kind)` over a union parameter | Compiles and runs (spec 90): borrows, as outside `try` and under `if` |
+| `const w = a.view(0, 1)` only read | Compiles and runs (spec 91): borrows the elements; a call or `pop` before a read of it is rejected |
+| `(<T><any>s).f`, `const box = a as any; (box as T[]).push(x)` | Compiles and runs (spec 92): the box borrows |
+| `<Opaque>x` of a local or a field; `<Opaque>new Item()` | Compiles and runs: borrows (spec 92); a temporary is rejected - keep it in a variable first |
 | `return set ? n : undefined`, `h.n = set ? n : null` of an owned local | Compiles and runs: `n` moves on the way that chooses it, and is released on the other |
 | `return first ? shared : other` of globals never reassigned, `c ? 1 : "one"` | Compiles and runs: the merge owns nothing |
 | `let p: Node \| null = on() ? mk(3) : null` at the top level | Compiles and runs |

@@ -6113,3 +6113,73 @@ an object of it is released in that module through the base. Test: `own_subclass
 
 Tests: `own_method_value_moves`, `own_method_value_reassigned` (own, rc, gc, none);
 `own_err_method_value_twice`, `own_err_method_value_used_after`, `own_err_interface_method_value_returned`.
+
+## 90. A `let` in a `try`; a `switch`'s narrowed parameter; `??=` assigns only where needed, 2026-11-16
+
+**A `let` declared in a `try`.** MLIRGen declares a local of a `try` without a value, outside the
+`try`, where the cleanup can release it, and gives it its value by a store right before rc's
+`ts.RetainSlot` (`slotDeclarationStore`). The checks that make a `let` a borrower looked at the
+declaration's initializer only, so `try { let t = s; ... }` of a parameter was "a parameter, kept here",
+and `let back = <Node>n` of an `any` "borrows the result of '___unbox' and cannot be stored". Now the
+store is the declaration: `borrowParametersInLocals` (a local that only ever holds parameters) takes a
+local declared that way, `borrowerOf` takes the store or the retain after it as the declaration, and
+`collectBorrowerUses` does not count that store as an assignment. Test: `own_try_let_borrows`.
+
+**A `switch` over a union parameter's tag** narrows it in each case into a local declared the same way
+(no value, a store, then the retain): a copy of the caller's record that reads its fields (`s.code`,
+`s.response.title`, through `ts.PropertyRef` of the local). `borrowParametersInLocals` now accepts such
+reads, at any depth, but no store through them: that would release what the caller's record holds.
+Test: `own_switch_narrowed_param`.
+
+**`a ??= b`, `a ||= b`, `a &&= b`** (every model) evaluate `b` and store it only where `a` does not
+decide, as TypeScript has it. MLIRGen stored the merge of `a` and `b` back every time: a setter ran
+for nothing, and under own the place was given a merge of its own value and `b` ("merged from several
+branches"), so `results ??= []` and `f ??= (a) => a` on a parameter were refused. A place read by a load
+(a local, a parameter, a field) is now given `b` in an `if` of its own (`mlirGenLogicalAssignment`) and
+read again for the expression's value; under own that is a plain assignment. An accessor stores in the
+branch that evaluates `b`, and the expression's value is still the merge - which under own is a second
+reference of what the setter took, so `??=` of an accessor stays refused. Tests:
+`00logical_assignment_only_when_needed` (gc, rc, none), `own_logical_assignment` (every model).
+
+**Imported subclasses** (rc and own, spec 89's fix): a base's release routine compares with the vtables
+of subclasses this module defines only. An imported class's vtable is a declaration of another module's
+global, which a shared library need not export: the program's link failed with an undefined dllimport.
+
+## 91. A view of an array borrows its elements, 2026-11-16
+
+`a.view(from, to)` (`ts.ArrayView`) copies the element pointers of a slice of `a`; rc retains each, own
+retains none - so its release freed elements `a` still owned, and its local was "a second reference".
+A view held in a `const` or used as it is, that is only read - its length, its elements - and neither
+stored, returned, captured nor given to a call that keeps it, now borrows its elements
+(`classifyArrayViews`): rc's reference for the local goes, its releases give back the copy without what
+it holds (`OWN_SHALLOW_RELEASE_ATTR_NAME`), and whatever borrows the array it is a view of - a field
+read, a parameter, a local - is used wherever the view is (`arrayElementUses`). Nothing that may free an
+element may run between the view and a use of it: a call that may drop, `pop`/`shift`/`splice`, a change
+of length, an exchange, a slot's release (the array's owner given a new value or ending, an element
+overwritten), a `delete` - else "a view of an array borrows its elements, but something that may free
+one runs while the view is still read". A view of a temporary, or one kept, is refused as before.
+Tests: `own_array_view_borrows` (every model), `own_err_view_after_pop`.
+
+`own_subclass_fields_freed` (own): a WeakRef to an object a subclass's own field holds gives undefined
+once the object is released through its base (spec 89), which a test that only runs to the end cannot see.
+
+## 92. A round trip through `any`; `Opaque` borrows, 2026-11-16
+
+User rulings (2026-11-16). **A value boxed into `any` only to be cast straight back and read borrows**
+(`(<Failed><any>s).code`, `const box = a as any; (box as number[]).push(2)`): `classifyBorrowingBoxes`
+takes an `any` cast (`ts.Cast` to `any`) of a value it does not own - a parameter, a field, a local - or
+of a fresh value this function owns, whose box (held in a `const`, or used as it is) is only cast back
+(a `ts.Cast`, or `___unbox<T>` for a class, whose result borrows the box), tested (`typeof`, a tuple's
+layout) or given to a call that keeps nothing of it; what is cast back is only read, or held in a `const`
+that is. rc's reference for the payload goes (and the `const`'s counting), the box is marked
+`OWN_BORROWING_BOX_ATTR_NAME` - a read of the value (`isBorrow`) - and its releases free the box only
+(`OWN_SHALLOW_RELEASE_ATTR_NAME`, `emitReleaseAnyShallow`). Nothing that may free the value may run
+between the box and a use (`freedWhileUsed`, shared with spec 91), nor a fresh value's own release. A box
+stored, returned or kept follows the `any` rules as before.
+
+**`<Opaque>x` borrows `x`** (`isBorrow`): the raw pointer owns nothing, and what it points at stays its
+owner's - a local, a `const`, a field. It is not tracked further: an Opaque is a pointer the program
+manages. A temporary nothing else keeps (`<Opaque>new Item()`) is an error: "an Opaque only borrows what
+it points at, and nothing else keeps this object under -mm=own: keep the object in a variable first".
+
+Tests: `own_any_round_trip`, `own_opaque_borrows` (every model), `own_err_opaque_temporary`.

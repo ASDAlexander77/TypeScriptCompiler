@@ -676,6 +676,414 @@ namespace own_inference
         });
     }
 
+    mlir::Operation *OwnershipInferencePass::freedWhileUsed(mlir::Operation *made, llvm::ArrayRef<mlir::Operation *> uses,
+                                                            llvm::ArrayRef<mlir::Operation *> ownReleases)
+    {
+        // what may free a value something else owns: a call that may drop, a change of an array's
+        // length, an exchange, a slot's release (an owner given a new value or ending, an element
+        // overwritten), a `delete` - not the borrower's own releases
+        auto frees = [&](mlir::Operation *op) {
+            if (llvm::is_contained(ownReleases, op))
+            {
+                return false;
+            }
+
+            return (isCall(op) && !callNoDrops(op)) ||
+                   mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp,
+                             mlir_ts::SwapOp, mlir_ts::ReleaseSlotOp, mlir_ts::DeleteOp>(op);
+        };
+
+        mlir::Operation *freer = nullptr;
+        getFunction().walk([&](mlir::Operation *op) {
+            if (freer || !frees(op) || !reachableAfter(made, op, llvm::ArrayRef<mlir::Operation *>()))
+            {
+                return;
+            }
+
+            // (in a loop, a use the next round reaches is of the borrower made again)
+            if (llvm::any_of(uses, [&](mlir::Operation *use) { return reachableAfter(op, use, made); }))
+            {
+                freer = op;
+            }
+        });
+
+        return freer;
+    }
+
+    void OwnershipInferencePass::classifyBorrowingBoxes()
+    {
+        getFunction().walk([&](mlir_ts::CastOp castOp) {
+            // `(<Failed><any>s).code`, `const box = a as any; (box as number[]).push(2)` (spec 92, USER
+            // RULING 2026-11-16): an `any` box made of a value it does not own - a parameter, a field, a
+            // local - only to be cast back and read borrows the value: rc's reference for the box's
+            // payload goes, and the box's releases free the box without what it holds. A box stored,
+            // returned or kept follows the `any` rules (a copy, or a stop for an object).
+            if (!mlir::isa<mlir_ts::AnyType>(castOp.getType()))
+            {
+                return;
+            }
+
+            auto in = castOp.getIn();
+            auto root = rootOf(in);
+            if (!ownsHeap(in) || isHandle(in) || isCopyableString(in.getType()) || isConstantData(root))
+            {
+                return;
+            }
+
+            auto *payloadRetain = retainBefore(in, castOp);
+            if (!payloadRetain)
+            {
+                return;
+            }
+
+            // the `const` a value is declared into, beside rc's retain for it (a consuming `let`); `ok` is
+            // false for any other use beside a `const`
+            auto localOf = [](mlir::Value value, bool &ok) {
+                ok = true;
+                mlir_ts::VariableOp local;
+                for (auto *user : value.getUsers())
+                {
+                    if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+                    {
+                        ok = ok && !local && varOp.getInitializer() == value && !varOp.getCaptured().value_or(false);
+                        local = varOp;
+                    }
+                }
+
+                ok = ok && (!local || llvm::all_of(value.getUsers(), [](mlir::Operation *user) {
+                                return mlir::isa<mlir_ts::VariableOp, mlir_ts::RetainOp>(user);
+                            }));
+                return local;
+            };
+
+            auto box = castOp.getResult();
+            auto boxOk = true;
+            auto slot = localOf(box, boxOk);
+            if (!boxOk)
+            {
+                return;
+            }
+
+            llvm::SmallVector<mlir::Operation *> releases;
+            llvm::SmallVector<mlir::Value> reads;
+            if (slot)
+            {
+                for (auto *user : slot->getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        reads.push_back(loadOp.getResult());
+                    }
+                    else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        releases.push_back(user);
+                    }
+                    else if (!mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                reads.push_back(box);
+            }
+
+            // each read: cast back (an unbox), tested (its type, its layout), given to a call that keeps
+            // nothing of it, or released
+            llvm::SmallVector<mlir::Value> unboxes;
+            llvm::SmallVector<mlir::Operation *> uses;
+            for (auto read : reads)
+            {
+                for (auto &use : read.getUses())
+                {
+                    auto *user = use.getOwner();
+                    // (the box's own counting reads nothing of what it holds: its shallow release frees
+                    // the box only, wherever it is)
+                    if (mlir::isa<mlir_ts::ReleaseOp>(user))
+                    {
+                        releases.push_back(user);
+                        continue;
+                    }
+
+                    if (mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    uses.push_back(user);
+                    if (mlir::isa<mlir_ts::TypeOfOp, mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp>(user))
+                    {
+                        continue;
+                    }
+
+                    if (auto unboxOp = mlir::dyn_cast<mlir_ts::CastOp>(user); unboxOp && !mlir::isa<mlir_ts::AnyType>(unboxOp.getType()))
+                    {
+                        unboxes.push_back(unboxOp.getResult());
+                        continue;
+                    }
+
+                    if (isCall(user))
+                    {
+                        auto args = callArgs(user);
+                        auto kept = ownedParams(user);
+                        auto keeps = false;
+                        for (auto [index, arg] : llvm::enumerate(args))
+                        {
+                            keeps = keeps || (arg == read && llvm::is_contained(kept, static_cast<int32_t>(index)));
+                        }
+
+                        if (!keeps && llvm::is_contained(args, read))
+                        {
+                            // a class cast back out of it (`___unbox<T>`): a result that borrows the box
+                            auto borrowsBox = llvm::any_of(resultBorrowsAll(user), [&](int index) {
+                                return static_cast<size_t>(index) < args.size() && args[index] == read;
+                            });
+                            if (borrowsBox && user->getNumResults() == 1)
+                            {
+                                unboxes.push_back(user->getResult(0));
+                            }
+
+                            continue;
+                        }
+                    }
+
+                    return;
+                }
+            }
+
+            if (unboxes.empty())
+            {
+                return;
+            }
+
+            // what is cast back, held in a `const` never assigned: the local borrows it too - rc's counting
+            // of it goes
+            llvm::SmallVector<mlir::Operation *> unboxRetains;
+            llvm::SmallVector<mlir::Operation *> unboxReleases;
+            for (auto unbox : unboxes)
+            {
+                auto unboxOk = true;
+                auto unboxSlot = localOf(unbox, unboxOk);
+                if (!unboxSlot)
+                {
+                    continue;
+                }
+
+                if (!unboxOk)
+                {
+                    return;
+                }
+
+                // rc's retain for the `const` taking it
+                for (auto *user : unbox.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::RetainOp>(user))
+                    {
+                        unboxRetains.push_back(user);
+                    }
+                }
+
+                for (auto *user : unboxSlot->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+                    {
+                        unboxRetains.push_back(user);
+                    }
+                    else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        unboxReleases.push_back(user);
+                    }
+                    else if (mlir::isa<mlir_ts::StoreOp>(user) && mlir::cast<mlir_ts::StoreOp>(user).getReference() == unboxSlot.getResult())
+                    {
+                        return; // assigned
+                    }
+                }
+            }
+
+            RecordWalk walk;
+            walkRecord(unboxes, {}, walk);
+            if (walk.kept || !walk.returns.empty())
+            {
+                return;
+            }
+
+            for (auto &use : walk.uses)
+            {
+                uses.push_back(use.op);
+            }
+
+            if (freedWhileUsed(castOp, uses, releases))
+            {
+                return;
+            }
+
+            // a fresh value this function owns (`const b = makeBig()`): its own release may not come
+            // between the box and a use of it
+            if (isFresh(root))
+            {
+                auto released = false;
+                forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+                    if (!released && mlir::isa<mlir_ts::ReleaseOp>(user) && reachableAfter(castOp, user, llvm::ArrayRef<mlir::Operation *>()))
+                    {
+                        released = llvm::any_of(uses, [&](mlir::Operation *use) { return reachableAfter(user, use, castOp.getOperation()); });
+                    }
+                });
+
+                if (released)
+                {
+                    return;
+                }
+            }
+
+            setAttrTracked(castOp, OWN_BORROWING_BOX_ATTR_NAME);
+            fieldBorrowRetains.insert(payloadRetain);
+            fieldBorrowRetains.insert(unboxRetains.begin(), unboxRetains.end());
+            fieldBorrowReleases.append(unboxReleases.begin(), unboxReleases.end());
+            // what borrows the value it boxes is used wherever the box, or what is cast back out of it, is
+            arrayElementUses[castOp.getOperation()] = walk.uses;
+            for (auto *release : releases)
+            {
+                setAttrTracked(release, OWN_SHALLOW_RELEASE_ATTR_NAME);
+            }
+        });
+    }
+
+    void OwnershipInferencePass::classifyArrayViews()
+    {
+        getFunction().walk([&](mlir_ts::ArrayViewOp viewOp) {
+            // `const w = a.view(0, 1)` (spec 91): a copy of the element pointers of a slice of `a`, which
+            // under own retains none of them. A view only read - its length and its elements - borrows
+            // them, as an array literal of borrowed elements does (TSLANG 55): rc's reference for the
+            // local goes, and its release gives back the copy without what it holds. Any other view
+            // keeps rc's reference, a second reference of each element, and is refused.
+            auto result = viewOp.getResult();
+            if (result.use_empty())
+            {
+                return;
+            }
+
+            // of an array that outlives it: not a temporary the view's statement releases
+            if (isFresh(rootOf(viewOp.getOp())))
+            {
+                return;
+            }
+
+            auto slot = result.hasOneUse() ? mlir::dyn_cast<mlir_ts::VariableOp>(*result.getUsers().begin()) : mlir_ts::VariableOp();
+            if (slot && (slot.getInitializer() != result || slot.getCaptured().value_or(false)))
+            {
+                return;
+            }
+
+            // the local: read, and given back - never written, never passed on
+            llvm::SmallVector<mlir::Operation *> releases;
+            llvm::SmallVector<mlir::Operation *> retains;
+            llvm::SmallVector<mlir::Value> reads;
+            if (slot)
+            {
+                for (auto *user : slot->getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        reads.push_back(loadOp.getResult());
+                    }
+                    else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        releases.push_back(user);
+                    }
+                    else if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+                    {
+                        retains.push_back(user);
+                    }
+                    else if (!mlir::isa<mlir_ts::DebugVariableOp>(user))
+                    {
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                reads.push_back(result);
+            }
+
+            // each read: its length, or an element read out of it (and not written)
+            for (auto read : reads)
+            {
+                for (auto *user : read.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::LengthOfOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    if (!slot && mlir::isa<mlir_ts::ReleaseOp>(user))
+                    {
+                        releases.push_back(user);
+                        continue;
+                    }
+
+                    auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
+                    if (!elementRefOp || elementRefOp.getArray() != read ||
+                        llvm::any_of(elementRefOp->getUsers(), [](mlir::Operation *refUser) { return !mlir::isa<mlir_ts::LoadOp>(refUser); }))
+                    {
+                        return;
+                    }
+                }
+            }
+
+            RecordWalk walk;
+            walkRecord({result}, {}, walk);
+            if (walk.kept || !walk.returns.empty())
+            {
+                return;
+            }
+
+            // nothing that may free an element of the array between the view and a use of it: a call
+            // that may drop, a change of an array's length, a slot's release (the array's owner given
+            // a new value or ending, an element overwritten), a `delete`
+            llvm::SmallVector<mlir::Operation *> uses;
+            for (auto &use : walk.uses)
+            {
+                uses.push_back(use.op);
+            }
+
+            for (auto read : reads)
+            {
+                for (auto *user : read.getUsers())
+                {
+                    uses.push_back(user);
+                }
+            }
+
+            auto *freer = freedWhileUsed(viewOp, uses, releases);
+
+            if (freer)
+            {
+                if (reporting())
+                {
+                    auto diag = viewOp->emitError("a view of an array borrows its elements, but something that may free "
+                                                  "one runs while the view is still read; read the view first, or copy it");
+                    diag.attachNote(freer->getLoc()) << "this may free an element";
+                    signalPassFailure();
+                }
+
+                // (reported: rc's reference for the local is not a second error)
+                fieldBorrowRetains.insert(retains.begin(), retains.end());
+                return;
+            }
+
+            setAttrTracked(viewOp, OWN_BORROWING_ARRAY_ATTR_NAME);
+            fieldBorrowRetains.insert(retains.begin(), retains.end());
+            // what borrows the array it is a view of (a field read, a `let`) is used wherever the view is
+            arrayElementUses[viewOp.getOperation()] = walk.uses;
+            // its releases give back the copy, without what it holds
+            for (auto *release : releases)
+            {
+                setAttrTracked(release, OWN_SHALLOW_RELEASE_ATTR_NAME);
+            }
+        });
+    }
+
     bool OwnershipInferencePass::isBorrowingCell(mlir::Value ref)
     {
         auto cellLoad = ref.getDefiningOp<mlir_ts::LoadOp>();

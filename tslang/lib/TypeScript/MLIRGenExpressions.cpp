@@ -948,6 +948,13 @@ namespace mlirgen
         auto leftExpression = binaryExpressionAST->left;
         auto rightExpression = binaryExpressionAST->right;
 
+        // `a &&= b`, `a ||= b`, `a ??= b`: assigned only where `a` does not decide
+        if (saveResult && (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken ||
+                           opCode == SyntaxKind::QuestionQuestionToken))
+        {
+            return mlirGenLogicalAssignment(binaryExpressionAST, opCode, genContext);
+        }
+
         if (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken)
         {
             return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken,

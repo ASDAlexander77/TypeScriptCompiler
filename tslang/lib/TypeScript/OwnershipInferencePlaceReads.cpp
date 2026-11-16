@@ -927,7 +927,8 @@ namespace own_inference
             Keeping keeping{&bookkeeping, returnsBorrowOf >= 0 && borrowedParam(result) == returnsBorrowOf};
             return walkBorrowed(result, read, uses, [&](mlir::Operation *user, llvm::ArrayRef<mlir::Operation *> kills) {
                 auto borrower = borrowerOf(user, /*consumed=*/true);
-                if (!borrower || borrower.getOperation() != user)
+                // (the store that declares a local declared in a `try` is its declaration)
+                if (!borrower || (borrower.getOperation() != user && !declarationRetainOf(user)))
                 {
                     // assigned to a `let` given only borrows (TSLANG 56): the `let` borrows it from the
                     // assignment on, and rc's retain for the assignment goes
