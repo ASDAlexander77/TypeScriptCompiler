@@ -5572,6 +5572,7 @@ set(own_error_cases
     "own_err_select_in_loop|:9:18: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_method_value_twice|:18:5: error: '[^']*' is used here after its value was moved"
     "own_err_method_value_used_after|:14:5: error: '[^']*' is used here after its value was moved"
+    "own_err_interface_method_value_returned|:15:5: error: a method read through an interface cannot be stored or returned under -mm=own yet"
     "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
