@@ -259,6 +259,14 @@ namespace own_inference
 
     llvm::StringRef OwnershipInferencePass::nameAt(mlir::Location location)
     {
+        // a name MLIRGen made up (`.expr`, `.return`, the `.a` a for...of walks) means nothing to the
+        // reader: such a value is described as one no variable holds
+        auto name = declaredNameAt(location);
+        return name.starts_with(".") ? "this value" : name;
+    }
+
+    llvm::StringRef OwnershipInferencePass::declaredNameAt(mlir::Location location)
+    {
         if (auto fused = mlir::dyn_cast<mlir::FusedLocWith<mlir::LLVM::DILocalVariableAttr>>(location))
         {
             if (auto name = fused.getMetadata().getName())
@@ -325,7 +333,8 @@ namespace own_inference
 
         if (!value || !reportShapeOfSecondReference(op, rootOf(value), name))
         {
-            auto diag = op->emitError("'") << name << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
+            auto diag = op->emitError(name == "this value" ? std::string("a value") : ("'" + name + "'").str())
+                        << " takes a second reference; -mm=own cannot prove a move or a borrow here yet";
             noteLostFacts(diag);
         }
 
@@ -461,9 +470,9 @@ namespace own_inference
         // merged from branches or loop iterations
         if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root); argument && !argument.getOwner()->isEntryBlock())
         {
-            op->emitError("'") << name
-                               << "' is merged from several branches (`?:`, `&&`, `||`, `??`, a loop); -mm=own cannot "
-                                  "prove which one owns it yet";
+            op->emitError(name == "this value" ? std::string("a value") : ("'" + name + "'").str())
+                << " is merged from several branches (`?:`, `&&`, `||`, `??`, a loop); -mm=own cannot "
+                   "prove which one owns it yet";
             return true;
         }
 
@@ -490,7 +499,14 @@ namespace own_inference
         // a read of a captured variable, through its cell
         if (loadOp && isLoadedCell(loadOp.getReference()))
         {
-            op->emitError("'") << name << "' borrows a captured variable and cannot be stored, returned or captured";
+            if (name == "this value")
+            {
+                op->emitError("a value that borrows a captured variable cannot be stored, returned or captured");
+            }
+            else
+            {
+                op->emitError("'") << name << "' borrows a captured variable and cannot be stored, returned or captured";
+            }
             return true;
         }
 
@@ -669,9 +685,11 @@ namespace own_inference
         }
 
         auto callee = calleeName(call);
-        auto diag = call->emitError("argument '") << name << "' is given to '" << (callee.empty() ? "a function" : callee)
-                                                  << "', which keeps it, but -mm=own cannot move it here: this "
-                                                     "function does not own it";
+        // a value no variable holds is just "an argument"
+        auto argument = name == "this value" ? std::string("an argument") : ("argument '" + name + "'").str();
+        auto diag = call->emitError(argument) << " is given to '" << (callee.empty() ? "a function" : callee)
+                                              << "', which keeps it, but -mm=own cannot move it here: this "
+                                                 "function does not own it";
         noteLostFacts(diag);
         signalPassFailure();
     }
@@ -769,8 +787,10 @@ namespace own_inference
 
         auto useSite = captureSiteOf(use);
         auto moveSite = captureSiteOf(move);
-        auto diag = mlir::emitError(useSite.location) << "'" << namedByCapture(name, useSite, moveSite)
-                                                      << "' is used here after its value was moved";
+        auto named = namedByCapture(name, useSite, moveSite);
+        auto diag = named == "this value"
+                        ? mlir::emitError(useSite.location) << "a value is used here after it was moved"
+                        : mlir::emitError(useSite.location) << "'" << named << "' is used here after its value was moved";
         diag.attachNote(moveSite.location) << "value moved here";
         if (!moveSite.name.empty())
         {
@@ -806,8 +826,21 @@ namespace own_inference
             return;
         }
 
-        auto diag = use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
-                                        << "' is released or overwritten";
+        // an owner no variable holds either: "the value it borrows"
+        if (owner == "this value")
+        {
+            auto diag = use->emitError(name == "this value" ? std::string("a value") : ("'" + name + "'").str())
+                        << " is used here after the value it borrows is released or overwritten";
+            diag.attachNote(end->getLoc()) << "the value it borrows is released or overwritten here";
+            signalPassFailure();
+            return;
+        }
+
+        auto diag = name == "this value"
+                        ? use->emitError("a value that borrows '") << owner << "' is used here after '" << owner
+                                                                   << "' is released or overwritten"
+                        : use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
+                                              << "' is released or overwritten";
         diag.attachNote(end->getLoc()) << "'" << owner << "' is released or overwritten here";
         signalPassFailure();
     }
@@ -820,8 +853,13 @@ namespace own_inference
             return;
         }
 
-        auto diag = use->emitError("'") << name << "' borrows " << place
-                                        << " but is used here after it may be released or overwritten";
+        // a value no variable holds - a read given straight to a call, a returned field - is described
+        // by what it borrows
+        auto diag = name == "this value"
+                        ? use->emitError("a value that borrows ") << place
+                                                                  << " is used here after it may be released or overwritten"
+                        : use->emitError("'") << name << "' borrows " << place
+                                              << " but is used here after it may be released or overwritten";
         diag.attachNote(drop->getLoc()) << "it may be released or overwritten here";
         // why a call of a method that writes nothing may: an override (TSLANG 48)
         if (auto method = drop->getAttrOfType<mlir::FlatSymbolRefAttr>(OWN_OVERRIDABLE_CALL_ATTR_NAME))
@@ -867,7 +905,9 @@ namespace own_inference
             return;
         }
 
-        auto diag = op->emitError("'") << name << "' borrows " << place << " and cannot be stored, returned or captured";
+        auto diag = name == "this value"
+                        ? op->emitError("a value that borrows ") << place << " cannot be stored, returned or captured"
+                        : op->emitError("'") << name << "' borrows " << place << " and cannot be stored, returned or captured";
         noteLostFacts(diag);
         signalPassFailure();
     }

@@ -40,7 +40,7 @@ endif()
 
 # without the library's facts: Cam.reset may destroy anything, the borrow of this.cam among it
 tslang_run(blind --emit=obj -mm=own own_facts_main.ts -o own_facts_main_blind.obj)
-if(status EQUAL 0 OR NOT output MATCHES "borrows '[^']*' but is used here after it may be released or overwritten")
+if(status EQUAL 0 OR NOT output MATCHES "borrows '[^']*' (but )?is used here after it may be released or overwritten")
     message(FATAL_ERROR "own_facts_main without --own-facts compiled, or failed otherwise: exit ${status}\n${output}")
 endif()
 
@@ -50,7 +50,7 @@ if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump")
 endif()
 
 tslang_run(drops --emit=obj -mm=own --own-facts=own_facts_lib.obj own_facts_main_drops.ts -o own_facts_main_drops.obj)
-if(status EQUAL 0 OR NOT output MATCHES ":10:11: error: '[^']*' borrows '[^']*' but is used here after it may be released or overwritten")
+if(status EQUAL 0 OR NOT output MATCHES ":10:11: error: ('[^']*' borrows|a value that borrows) '[^']*' (but )?is used here after it may be released or overwritten")
     message(FATAL_ERROR "own_facts_main_drops compiled, or failed otherwise: exit ${status}\n${output}")
 endif()
 
