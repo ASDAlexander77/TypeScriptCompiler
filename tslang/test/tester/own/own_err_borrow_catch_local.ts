@@ -1,5 +1,5 @@
-// -mm=own, phase 2 rejects: a catch clause's locals own nothing, so `x` is one more name for what
-// `b` borrows - and it is read after `a` is overwritten. (`a` is given to two `let`s, so neither
+// -mm=own, phase 2 rejects: a catch clause's local owns what it holds, as any local does, so `x` is
+// given what `b` only borrows - refused where it is declared. (`a` is given to two `let`s, so neither
 // takes its value over: each borrows it. One `let` would take it over, spec 29.)
 class C {
     v: number[] = [];
