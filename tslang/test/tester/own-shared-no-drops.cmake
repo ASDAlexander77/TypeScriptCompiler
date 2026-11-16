@@ -15,7 +15,7 @@ endforeach()
 set(ENV{GC_LIB_PATH} "")
 set(ENV{TSLANG_LIB_PATH} "")
 
-set(borrow_ended "borrows (a field|an element) but is used here after it may be released or overwritten")
+set(borrow_ended "borrows '[^']*' but is used here after it may be released or overwritten")
 
 # compile(<dir> <what> <expect> <command...>) - <expect> is "ok" or a regex the output must match
 function(compile dir what expect)

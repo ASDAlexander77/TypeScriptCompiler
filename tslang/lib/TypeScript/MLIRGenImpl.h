@@ -16374,6 +16374,21 @@ class MLIRGenImpl
                 defOp->setLoc(mti.combineWithCurrentScopeAndName(defOp->getLoc(), var->getName()));
             }
         }
+        else if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            // -mm=own names a variable in its errors; without --di the name rides on the location
+            // alone - a NameLoc reports at the location it wraps
+            if (auto defOp = value.getDefiningOp())
+            {
+                auto location = defOp->getLoc();
+                if (auto named = mlir::dyn_cast<mlir::NameLoc>(location))
+                {
+                    location = named.getChildLoc();
+                }
+
+                defOp->setLoc(mlir::NameLoc::get(builder.getStringAttr(var->getName()), location));
+            }
+        }
 
         if (!genContext.insertIntoParentScope)
         {

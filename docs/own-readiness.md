@@ -170,7 +170,7 @@ From the plan's Phase 5 row for `-mm=own`:
 | --- | --- | --- |
 | Close the open items: optional accessor fields, capturing callbacks | Half | An optional interface field filled by an accessor is a clean error under every model, not supported. Capturing callbacks over `Map` and `Set` work, keys and values pushed into a captured array included; an error found in such a callback points at its source. |
 | A written specification of the ownership rules | No | The rules exist as a design log of about 5,000 lines (`tslang/docs/superpowers/specs/2026-09-24-own-memory-model-design.md`) and as the user guide. Neither is a specification someone could implement or check against. |
-| Error messages reviewed by someone new to the model | No | Not done. Without `--di` most messages say `'this value'` in place of the variable's name. |
+| Error messages reviewed by someone new to the model | No | Not done. Messages name the variable with or without `--di` (`'item' is used here after its value was moved`, `'v' borrows 'r.value'`). A value no variable holds - a temporary, a call's argument read from a field - is still `'this value'`: 66 of the 153 corpus messages. |
 
 The tier also repeats the Phase 2 gate for its own scope: no open crash or miscompile, an
 assertions-enabled CI leg, and a soak run. The first holds today; the other two do not exist for own.
@@ -188,8 +188,8 @@ assertions-enabled CI leg, and a soak run. The first holds today; the other two 
    branches, object literals that hold owned values.
 4. **Whole-program facts**, so a class nobody extends does not need `@final` to keep its callers'
    borrows.
-5. **The exit criteria**: a rules specification, an outside review of the messages, variable names
-   in messages without `--di`.
+5. **The exit criteria**: a rules specification, an outside review of the messages, a wording for
+   the values no variable holds (still `'this value'`). Variable names no longer need `--di`.
 6. **Soundness evidence at scale**: fuzzing on Linux with a perturbing allocator, an AddressSanitizer
    run of compiled own programs, a second and third outside codebase.
 
