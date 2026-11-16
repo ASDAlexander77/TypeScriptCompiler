@@ -260,6 +260,9 @@ class OwnershipInferencePass
     // A move out of a field of an owning record local, being checked (spec 48): its retain and its
     // taker, which walkBorrowed takes for uses of the borrow and not for keeps
     llvm::SmallPtrSet<mlir::Operation *, 2> takenOps;
+    // The stores of splicedFieldTakeOf's takes: each stores a value that is its place's own from then
+    // on, so it is no use of the object the value was read out of, which the store's release frees
+    llvm::SmallPtrSet<mlir::Operation *, 4> splicedTakers;
     // each closure over a cell, by its `ts.CreateBoundFunction`
     llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
     // each generator's capture box, which escapes with its state object (classifyStateBoxes)
@@ -900,6 +903,12 @@ class OwnershipInferencePass
     // refill's release, which would free what was read, hands it over to the taker. `refill` is that
     // release; nothing but reads and stores of locals runs between the read and the taker.
     bool refilledFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take, mlir::Operation *&refill);
+    // ...or is `read` a read of a field of the object a place holds, stored into that very place:
+    // `this.head = this.head.next`, `prev.next = prev.next.next`, also through a `const` that names the
+    // object. The store's release of the place frees the object, and with it what the field holds:
+    // the field is emptied right before the release, and its value is the place's. `take.release` is
+    // that release.
+    bool splicedFieldTakeOf(mlir::Operation *read, FieldTake &take);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
     // Does `store` put `value`, a string read out of a place, into another place with no retain of

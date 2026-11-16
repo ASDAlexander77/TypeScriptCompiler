@@ -5795,3 +5795,58 @@ function does not own" (`own_err_delete_param`). A local read after its `delete`
 
 Tests: `own_param_assigned` (own, rc, gc), `own_delete` (own, rc), and the seven corpus files only these
 two stopped, under own (`test-*-own-flipped-*`).
+
+## 82. A linked list: a local that walks down, a node taken out, 2026-11-16
+
+A singly linked list whose nodes own their `next` was refused in every method a newcomer writes first:
+the walk, `push`, the append at the tail and `pop`. Four rules, all in the inference pass.
+
+**A `let` given only borrows owns nothing (`chainOf`).** A read through such a `let` (TSLANG 56) had
+the `let`'s slot for its root, and the slot's assignments and release for the ends of what was read:
+`c = c.next` in a loop ended its own borrow. The chain now goes through the `let` to the roots of every
+value it is given (its initializer and each assignment), with `anyPlace` set: what is read through `c`
+lasts as long as what `c` borrowed, and any release that could hold it ends it. The declaration is a
+kill for the uses of an assigned borrow (`collectBorrowerUses`), as an assignment is: a path from a
+drop back to the declaration does not carry the old value. Measured on a function with 8,000 reads
+through one such `let`: 63-69 s before, 7.4-7.8 s now (the slot's ends were found again for each read).
+
+**A field of what was read, overwritten, frees nothing above it (`checkPlaceRead`, `frees`).** `if (c)
+c.next = null` and `c.next = n` after a walk release a field of the borrowed node, not the node: an
+owner is never under what it owns. A release of a field or an element is no drop for a read when its
+object is the value read, or is read out of it through owning places (an element, or a class field
+that is no back-reference and no borrowing field; not through a handle). Through a `let` the read is
+assigned to, the same holds when the `let` only walks down from there: every assignment that can
+follow gives it a value read out of what it holds, and its declaration cannot run again. A `let` that
+may be given the head again is refused (`own_err_list_walk_up`), as is a use of what was read out of
+the field before (`own_err_list_lookahead_cut`).
+
+**The refill may store the object the taker is a field of (`refilledFieldTakeOf`).** `n.next =
+this.head; this.head = n;` is TSLANG 49's move of a field into another place with the source refilled
+right after; rc's retain of the refill's value stopped the match unless that value was `null`. The
+retain of the value the refill stores is let through.
+
+**A value taken out of the object its place holds (`splicedFieldTakeOf`).** `this.head =
+this.head.next`, `prev.next = prev.next.next`, also through a `const` that names the object. The store's
+release of the place frees the object, and with it what its field holds. The read is a take: the field
+is given up right before the release, and the value is the place's. The match is local: the read, rc's
+retain, the place's release and the store in one block with only reads between, the object a read of
+the same field of the same object as the store's place, both owning class fields that hold an object
+or null. That the place still holds the object there is the borrow check of the object's own read;
+the store is no use of that borrow (`splicedTakers`, filled where a function's state is reset), and a
+use of the object after it is refused (`own_err_list_pop_used_after`): read what is needed first.
+
+The object may be one an append-only global keeps too (spec 25, the keepers), which the release does
+not free. Emptying its field would then show: gc keeps `KEEP[0].next`. So the field is given up by a
+new op, `ts.TakeOutOfField(object, field)`: a mortal object's field is emptied, an immortal object
+keeps it and the value it holds is made immortal, since the kept object and the place both hold it
+from then on (`OwnershipRoutineLogic::emitTakeOutOfField`; `00linked_list_kept`).
+
+Still refused: the popped node used after the assignment, a node made with the old head as an argument
+(`this.head = new Node(v, this.head)`: a call between the read and the refill), a walk that assigns a
+parameter (`n = n.next`: an assigned parameter is kept, section 81), and an insert that recurses on a
+parameter and gives it back (`t.left = insert(t.left, v)`).
+
+Tests: `00linked_list` and `00linked_list_kept` (own, rc, gc, none; also `-noopt` under own), and
+`own_err_list_walk_dropped`, `_walk_call_drops`, `_lookahead_cut`, `_walk_up`, `_pop_used_after`,
+`_next_kept_twice`, `_refill_from_param`. The corpus, the mm fuzzer (1,000 seeds) and native_ts_graphics'
+own build are unchanged by it: no file newly refused.

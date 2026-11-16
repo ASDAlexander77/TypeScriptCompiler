@@ -421,13 +421,32 @@ namespace own_inference
                     continue;
                 }
 
-                if (base.getDefiningOp<mlir_ts::VariableOp>())
+                // A `let` given only borrows (TSLANG 56) owns nothing: its assignments and its release
+                // free nothing, so what is read through it lasts as long as what the `let` borrowed -
+                // each value it is given, somewhere under those values' own roots. `c = c.next` in a
+                // loop over a list is the case: the nodes are the list's, not `c`'s.
+                auto slotValue = base.getDefiningOp<mlir_ts::VariableOp>() ? base : mlir::Value();
+                if (auto slotLoad = slotValue ? mlir_ts::LoadOp() : slotLoadOf(base))
                 {
-                    chain.roots.push_back({base, Chain::Slot});
+                    slotValue = slotLoad.getReference();
                 }
-                else if (auto slotLoad = slotLoadOf(base))
+
+                auto borrowingLet = slotValue ? slotValue.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                if (borrowingLet && borrowsOnly(borrowingLet))
                 {
-                    chain.roots.push_back({slotLoad.getReference(), Chain::Slot});
+                    chain.anyPlace = true;
+                    bases.push_back(rootOf(borrowingLet.getInitializer()));
+                    for (auto *user : slotValue.getUsers())
+                    {
+                        if (isAssignmentOf(user, borrowingLet))
+                        {
+                            bases.push_back(rootOf(mlir::cast<mlir_ts::StoreOp>(user).getValue()));
+                        }
+                    }
+                }
+                else if (slotValue)
+                {
+                    chain.roots.push_back({slotValue, Chain::Slot});
                 }
                 else
                 {
@@ -870,6 +889,9 @@ namespace own_inference
         llvm::SmallVector<mlir::Operation *> bookkeeping;
         mlir_ts::VariableOp letKeeps;
         mlir::Operation *letKept = nullptr;
+        // the local that borrows the read, and its declaration or the assignment that gives it the read
+        mlir_ts::VariableOp assignedLet;
+        mlir::Operation *assignment = nullptr;
         // A result that borrows arrives with rc's temporary release, or rc's consuming `let`, and
         // in a function returning a borrow of the same parameter it may go out with rc's retain.
         auto walk = [&]() {
@@ -878,6 +900,8 @@ namespace own_inference
             bookkeeping.clear();
             letKeeps = {};
             letKept = nullptr;
+            assignedLet = {};
+            assignment = nullptr;
             Keeping keeping{&bookkeeping, returnsBorrowOf >= 0 && borrowedParam(result) == returnsBorrowOf};
             return walkBorrowed(result, read, uses, [&](mlir::Operation *user, llvm::ArrayRef<mlir::Operation *> kills) {
                 auto borrower = borrowerOf(user, /*consumed=*/true);
@@ -904,6 +928,9 @@ namespace own_inference
                     borrower = assigned;
                 }
 
+                assignedLet = borrower;
+                assignment = user;
+
                 name = varName(borrower);
                 if (auto *keeps = collectBorrowerUses(borrower, kills, uses, bookkeeping, user); keeps && !letKept)
                 {
@@ -916,6 +943,44 @@ namespace own_inference
         };
 
         auto *kept = walk();
+
+        // A value taken out of a field of the object a place holds, by the store that gives the place
+        // that value (`this.head = this.head.next`): the store's release frees the object, so the
+        // field is emptied right before it and the value is the place's. Nothing else may keep the
+        // value, or use it after the store through what was read here.
+        if (FieldTake splice; !countedHandle && splicedFieldTakeOf(read, splice))
+        {
+            takenOps.insert(splice.retain);
+            kept = walk();
+            takenOps.clear();
+            auto *after = kept ? kept : letKept;
+            for (auto &use : uses)
+            {
+                if (!after && use.op != splice.retain && reachableAfter(splice.taker, use.op, use.kills))
+                {
+                    after = use.op;
+                }
+            }
+
+            if (after)
+            {
+                reportPlaceBorrowEscapes(after, name, place);
+                return false;
+            }
+
+            if (!dryRun)
+            {
+                // (an object an append-only global keeps too is not freed: it keeps its field, and the
+                // value is made immortal - ts.TakeOutOfField)
+                mlir::OpBuilder builder(splice.release);
+                auto object = splice.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
+                builder.create<mlir_ts::TakeOutOfFieldOp>(splice.release->getLoc(), object, splice.field);
+            }
+
+            bookkeeping.push_back(splice.retain);
+            toErase.insert(bookkeeping.begin(), bookkeeping.end());
+            return true;
+        }
 
         // A value taken out of a field of an owning record local by one move, the field read again
         // by nothing before the local ends (spec 48): the `value` of the record `next()` returns, in
@@ -1083,6 +1148,101 @@ namespace own_inference
             return false;
         }
 
+        // `c = c.next` walks down: the `let` holds the value read from here on, and every value it is
+        // given later is read out of the one it holds, so it is that value or one under it. A field
+        // or an element of what the `let` holds, overwritten (`c.next = n` at the end of a list), is
+        // then under the value read too, and frees nothing above it: an owner is never under what it
+        // owns.
+        // a place whose value is its object's own: an element of an array, or a field of a class
+        // object that is no back-reference and borrows nothing. What is read out of one is under
+        // the object, never above it
+        auto owningPlace = [&](mlir::Operation *placeOp) {
+            if (mlir::isa_and_nonnull<mlir_ts::ElementRefOp>(placeOp))
+            {
+                return true;
+            }
+
+            auto propertyRefOp = mlir::dyn_cast_or_null<mlir_ts::PropertyRefOp>(placeOp);
+            return propertyRefOp && mlir::isa<mlir_ts::ClassType>(propertyRefOp->getOperand(0).getType()) &&
+                   !isBackReferenceField(propertyRefOp.getResult()) && !isBorrowingField(propertyRefOp.getResult());
+        };
+        // is `value` the value read (or, with `underLet`, what the local holds), or read out of it
+        // through such places
+        auto readUnder = [&](mlir::Value value, bool underLet) {
+            for (auto root = rootOf(value); root;)
+            {
+                if (!underLet && root == result)
+                {
+                    return true;
+                }
+
+                auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+                if (!loadOp || isHandle(root))
+                {
+                    return false;
+                }
+
+                if (underLet && loadOp.getReference() == assignedLet.getResult())
+                {
+                    return true;
+                }
+
+                auto *placeOp = loadOp.getReference().getDefiningOp();
+                if (!owningPlace(placeOp))
+                {
+                    return false;
+                }
+
+                root = rootOf(placeOp->getOperand(0));
+            }
+
+            return false;
+        };
+        auto onlyWalksDown = [&]() {
+            // declared anew after it is given the read (a declaration in a loop): given its
+            // initializer again
+            auto *after = assignedLet && assignment == assignedLet.getOperation() ? assignment->getNextNode() : assignment;
+            if (!after || reachableAfter(after, assignedLet, llvm::ArrayRef<mlir::Operation *>()))
+            {
+                return false;
+            }
+
+            return llvm::all_of(assignedLet.getResult().getUsers(), [&](mlir::Operation *user) {
+                return !isAssignmentOf(user, assignedLet) ||
+                       !(user == assignment || reachableAfter(assignment, user, llvm::ArrayRef<mlir::Operation *>())) ||
+                       readUnder(mlir::cast<mlir_ts::StoreOp>(user).getValue(), true);
+            });
+        };
+        auto walksDown = -1;
+        auto frees = [&](mlir::Operation *drop) {
+            auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop);
+            auto *placeOp = releaseSlotOp ? releaseSlotOp.getSlot().getDefiningOp() : nullptr;
+            if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(placeOp))
+            {
+                return true;
+            }
+
+            // a field or an element of the value read itself (`if (c) c.next = null`), or of a value
+            // under it (`const d = c.next; if (d) d.next = null`)
+            auto object = placeOp->getOperand(0);
+            if (readUnder(object, false))
+            {
+                return false;
+            }
+
+            if (!assignedLet || !readUnder(object, true))
+            {
+                return true;
+            }
+
+            if (walksDown < 0)
+            {
+                walksDown = onlyWalksDown() ? 1 : 0;
+            }
+
+            return walksDown == 0;
+        };
+
         for (auto *drop : drops)
         {
             if (countedStoreReleases.contains(drop))
@@ -1090,7 +1250,7 @@ namespace own_inference
                 continue;
             }
 
-            if (dropsChain(drop, chain, read) && outlives(drop))
+            if (frees(drop) && dropsChain(drop, chain, read) && outlives(drop))
             {
                 return false;
             }
@@ -1485,6 +1645,17 @@ namespace own_inference
         if (!refillRelease && retained)
         {
             auto field = place.getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto sameFieldAs = [&](mlir::Value slot) {
+                auto other = slot.getDefiningOp<mlir_ts::PropertyRefOp>();
+                return other && sameField(other, field);
+            };
+            // a retain followed by the release of the field and the store of the retained value into it
+            auto refillsWith = [](mlir::Operation *retain, llvm::function_ref<bool(mlir::Value)> isField) {
+                auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(retain->getNextNode());
+                auto storeOp = releaseSlotOp ? mlir::dyn_cast_or_null<mlir_ts::StoreOp>(releaseSlotOp->getNextNode()) : mlir_ts::StoreOp();
+                return storeOp && isField(releaseSlotOp.getSlot()) && storeOp.getReference() == releaseSlotOp.getSlot() &&
+                       storeOp.getValue() == retain->getOperand(0);
+            };
             for (auto *op = field ? taker->getNextNode() : nullptr; op; op = op->getNextNode())
             {
                 if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
@@ -1500,8 +1671,10 @@ namespace own_inference
                     break;
                 }
 
-                // rc's retain of the refill's value, when that holds no block (`null`)
-                auto retainsNothing = mlir::isa<mlir_ts::RetainOp>(op) && holdsNoBlock(op->getOperand(0));
+                // rc's retain of the refill's value: one that holds no block (`null`), or the value the
+                // refill stores (`n.next = this.head; this.head = n;`), which is checked where it is stored
+                auto retainsNothing = mlir::isa<mlir_ts::RetainOp>(op) &&
+                                      (holdsNoBlock(op->getOperand(0)) || refillsWith(op, sameFieldAs));
                 // ...and that value, `null` cast to the field's union
                 auto castsNothing = mlir::isa<mlir_ts::CastOp>(op) && holdsNoBlock(op->getResult(0));
                 if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp, mlir_ts::ConstantOp, mlir_ts::NullOp,
@@ -1522,6 +1695,126 @@ namespace own_inference
         take.taker = taker;
         take.field = place;
         refill = refillRelease;
+        return true;
+    }
+
+    bool OwnershipInferencePass::splicedFieldTakeOf(mlir::Operation *read, FieldTake &take)
+    {
+        // a field of a class object that owns what it holds: not a string, which is copied where it is
+        // kept (spec 22), nor a handle, which is counted
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+        auto field = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        if (!field || !mlir::isa<mlir_ts::ClassType>(field.getObjectRef().getType()) || isBackReferenceField(field.getResult()) ||
+            isBorrowingField(field.getResult()) || isCopyableValueAt(read, loadOp.getType()) || isHandle(loadOp.getResult()))
+        {
+            return false;
+        }
+
+        // ...that holds a class object or null: one pointer, which ts.TakeOutOfField empties
+        auto holdsObjectOrNull = mlir::isa<mlir_ts::ClassType>(loadOp.getType());
+        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(loadOp.getType()))
+        {
+            auto types = unionType.getTypes();
+            holdsObjectOrNull = llvm::all_of(types, [](mlir::Type type) { return mlir::isa<mlir_ts::ClassType, mlir_ts::NullType>(type); }) &&
+                                llvm::count_if(types, [](mlir::Type type) { return mlir::isa<mlir_ts::ClassType>(type); }) == 1;
+        }
+
+        if (!holdsObjectOrNull)
+        {
+            return false;
+        }
+
+        // rc's retain of the read, in its block, and the store it is for
+        mlir_ts::RetainOp retainOp;
+        for (auto *user : loadOp->getUsers())
+        {
+            if (auto found = mlir::dyn_cast<mlir_ts::RetainOp>(user); found && found->getBlock() == read->getBlock())
+            {
+                if (retainOp)
+                {
+                    return false;
+                }
+
+                retainOp = found;
+            }
+        }
+
+        auto storeOp = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(retainOp ? takerOf(retainOp, loadOp.getResult()) : nullptr);
+        if (!storeOp || storeOp.getValue() != loadOp.getResult() || storeOp->getBlock() != read->getBlock())
+        {
+            return false;
+        }
+
+        // the store's place, released right before it: a field of a class object that owns what it
+        // holds, so that the release frees the object read from
+        auto place = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto release = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
+        if (!place || !release || release.getSlot() != storeOp.getReference() ||
+            !mlir::isa<mlir_ts::ClassType>(place.getObjectRef().getType()) || isBackReferenceField(place.getResult()) ||
+            isBorrowingField(place.getResult()))
+        {
+            return false;
+        }
+
+        // the object read from is what that place holds: a read of the same field of the same object
+        // (the borrow check of that read sees to it that the place still holds it here)
+        auto held = rootOf(field.getObjectRef()).getDefiningOp<mlir_ts::LoadOp>();
+        auto heldPlace = held ? held.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto sameObjectHere = [&](mlir::Value object, mlir::Value other) {
+            if (sameObject(object, other))
+            {
+                return true;
+            }
+
+            // two reads of one local in a block, with no assignment of it between
+            auto first = object.getDefiningOp<mlir_ts::LoadOp>();
+            auto second = other.getDefiningOp<mlir_ts::LoadOp>();
+            if (!first || !second || first.getReference() != second.getReference() ||
+                !first.getReference().getDefiningOp<mlir_ts::VariableOp>() || first->getBlock() != second->getBlock())
+            {
+                return false;
+            }
+
+            if (!first->isBeforeInBlock(second))
+            {
+                std::swap(first, second);
+            }
+
+            for (auto *op = first->getNextNode(); op && op != second.getOperation(); op = op->getNextNode())
+            {
+                if (auto assigned = mlir::dyn_cast<mlir_ts::StoreOp>(op); assigned && assigned.getReference() == first.getReference())
+                {
+                    return false;
+                }
+
+                if (op->getNumRegions() > 0 || isCall(op))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+        if (!heldPlace || isHandle(held.getResult()) || heldPlace.getPosition() != place.getPosition() ||
+            heldPlace.getType() != place.getType() || !sameObjectHere(rootOf(heldPlace.getObjectRef()), rootOf(place.getObjectRef())))
+        {
+            return false;
+        }
+
+        // from the read to the store: reads, rc's retain and the release, nothing that runs other code
+        for (auto *op = read->getNextNode(); op && op != storeOp.getOperation(); op = op->getNextNode())
+        {
+            if (op != release.getOperation() &&
+                !mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainOp, mlir_ts::PropertyRefOp, mlir_ts::ConstantOp>(op) && !isView(op))
+            {
+                return false;
+            }
+        }
+
+        take.retain = retainOp;
+        take.taker = storeOp;
+        take.field = field.getResult();
+        take.release = release;
         return true;
     }
 

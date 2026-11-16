@@ -1946,6 +1946,14 @@ foreach(issues_mm gc rc none own)
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
 endforeach()
+# A singly linked list: walked by a local that steps down it, pushed on, appended to, cut, popped and unlinked;
+# and a node popped off a list that an append-only global keeps too
+foreach(issues_mm gc rc none own)
+    foreach(list_test 00linked_list 00linked_list_kept)
+        tslang_add_test(NAME test-jit-${list_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${list_test}.ts")
+        tslang_add_test(NAME test-compile-${list_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${list_test}.ts")
+    endforeach()
+endforeach()
 # TSLANG_ISSUES 37, 38: a program declares its own Symbol, as a function or as a class
 foreach(issues_mm gc rc none own)
     foreach(symbol_test 00tslang_issue_37 00tslang_issue_38)
@@ -5515,6 +5523,13 @@ set(own_error_cases
     "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten"
     "own_err_field_moved_call_between|:12:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_list_walk_dropped|:16:17: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_list_walk_call_drops|:16:17: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_list_lookahead_cut|:17:20: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_list_walk_up|:21:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_list_pop_used_after|:14:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_list_next_kept_twice|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_override_lends|:13:5: error: method 'read' returns a borrow .* but the method of 'Base' it overrides does not"
     "own_err_moved_field_overwritten|:15:25: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_moved_param_field_dropped|:13:15: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
@@ -6668,7 +6683,7 @@ endforeach()
 tslang_add_test(NAME test-compile-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 tslang_add_test(NAME test-jit-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 foreach(debug_own_test own/own_interface_getter_read own/own_immortal_keepers tests/00nullable_interface_to_interface
-                       stack-promotion/to_any)
+                       stack-promotion/to_any tests/00linked_list tests/00linked_list_kept)
     get_filename_component(debug_own_name ${debug_own_test} NAME)
     tslang_add_test(NAME test-jit-debug-own-${debug_own_name} COMMAND test-runner -jit -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
     tslang_add_test(NAME test-compile-debug-own-${debug_own_name} COMMAND test-runner -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")

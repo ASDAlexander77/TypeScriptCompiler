@@ -695,6 +695,22 @@ def TypeScript_MarkImmortalCellOp : TypeScript_Op<"MarkImmortalCell"> {
   let arguments = (ins TypeScript_Ref:$slot);
 }
 
+def TypeScript_TakeOutOfFieldOp : TypeScript_Op<"TakeOutOfField"> {
+  let summary = "hand a field's value over before its object is released";
+  let description = [{
+    -mm=own: `this.head = this.head.next`. The place that holds `object` is about to be given the
+    value `field` (a field of `object`) holds, and its release of `object` comes right after this.
+    A mortal `object` is freed by that release, so its field is emptied here and the release frees
+    nothing of the value. An immortal `object` (one an append-only global keeps, MakeImmortal)
+    is not freed: it keeps its field, and the value, which two places hold from then on, is made
+    immortal too.
+
+    Only OwnershipInferencePass makes it; under the other models it is never there.
+  }];
+
+  let arguments = (ins AnyType:$object, TypeScript_Ref:$field);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

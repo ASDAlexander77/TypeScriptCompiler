@@ -93,6 +93,7 @@ par with it on array loops — see [Performance](docs/performance.md).
 | WebAssembly | [docs/wasm.md](docs/wasm.md) |
 | Memory models (`gc`, `rc`, `none`) | [docs/memory-models.md](docs/memory-models.md) |
 | The `-mm=own` single-owner model | [docs/own-memory-model.md](docs/own-memory-model.md) |
+| How ready `-mm=own` is | [docs/own-readiness.md](docs/own-readiness.md) |
 | Benchmarks against Rust and C++ | [docs/performance.md](docs/performance.md) |
 | C and C++ bindings with `tsbindgen` | [docs/tsbindgen.md](docs/tsbindgen.md) |
 | Calling C++ classes (`@cpp`) | [docs/cpp-classes.md](docs/cpp-classes.md) |

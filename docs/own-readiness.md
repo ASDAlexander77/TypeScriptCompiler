@@ -1,0 +1,181 @@
+# `-mm=own`: readiness
+
+Where the single-owner memory model stands, measured on `main` at `363b13ce`, 2026-11-15, with the
+Release compiler on Windows x64. The linked-list rows of [Shapes that matter](#shapes-that-matter)
+were rejected in that measurement and are fixed by the change that adds this page; the table shows
+them as they are with it. The model itself is described in
+[own-memory-model.md](own-memory-model.md); the tiers and their exit criteria are in the
+[production-readiness plan](production-readiness-plan.md).
+
+## Verdict
+
+**`-mm=own` is not ready for production. It is usable for new code written for it, and it is a
+preview for porting existing TypeScript.**
+
+- Everything its design set out to build is built, and the tracker has no open defect against it.
+- Nothing unsound was found in this round of measurement.
+- It still rejects about one in five programs the other models accept, and it has no leak-free
+  way to write a back-reference.
+- Memory-safety bugs were still being found in real code in the three days before this was written.
+- None of the three tier 3 exit criteria in the plan is met.
+
+It stays in tier 3 ("experimental") in the plan's terms.
+
+## Scorecard
+
+| Area | Status | What it rests on |
+| --- | --- | --- |
+| Design | Complete | Spec phases 0-8 and the later designs (parameter decorators, facts from object files, immortal keepers, generic containers) are merged. One item is deferred: `WeakRef<T>` under own. |
+| Tracker | Clean | No open GitHub issue. The own items of `TSLANG_ISSUES.md` (31-33, 39-42, 47-85) are fixed, with one remnant: whole-program facts (item 48). |
+| Soundness | No failure found, not proven | See [Soundness](#soundness). |
+| Coverage of TypeScript | Partial | 707 of 882 corpus files (80%) compile. See [Coverage](#coverage). |
+| Default library | Nearly complete | Its `-mm=own` build passes its tests; 2 of 230 are skipped as refused by design (`array_flatMap_shared`, `map_groupBy`). |
+| Separate compilation | Works, with a cost | `--own-facts` and shared libraries carry facts. A call of a method of an exported class that is not `@final` still ends every borrow. |
+| Platforms | In the release matrix | Windows, Linux, wasm32/wasm64 and Android run the own legs in CI. Only Windows was run for this document. |
+| Tests | Broad | 560 files in `tslang/test/tester/own` (359 of them expected errors), and the general corpus runs under own in CI. |
+| Real code | One program | native_ts_graphics compiles and passes 525/525 under own, after a 55-file source change. See [Real code](#real-code). |
+| Tier 3 exit criteria | 0 of 3 | See [Exit criteria](#exit-criteria). |
+
+## Soundness
+
+The claim of the model is that an accepted program never frees a block twice, never reads a freed
+one and never leaks. What was checked:
+
+- **Differential fuzzing.** `tslang/test/fuzz/mm_fuzz.py`, 400 seeds from 915000: 738 programs
+  checked, 353 accepted by own, each built ahead of time and compared with `-mm=gc`. No mismatch,
+  no crash, under own or rc.
+- **Churn loops.** Four shapes that older notes or the guide called refused, and that compile today
+  (a parameter a generator assigns, a value merged from `?:` stored into a field and then used, a
+  new object passed through a function that returns its argument, a reassigned `Shared<T>`
+  parameter): one to three million iterations each, ahead of time. Output equal to gc's, and peak
+  memory flat at 5.7 MB.
+- **The corpus.** No file made the compiler crash under own.
+
+This is weak evidence, for three reasons. Half of what the fuzzer generates is rejected, so about
+350 programs ran. It was Windows only, and the Windows heap hides double frees that glibc reports.
+And compiling one real codebase turned up, between 2026-11-13 and 2026-11-15, a read of freed
+memory (item 50), a double free (item 83), a fix that leaked 2.7 GB and was backed out (item 80),
+and a compiler crash in about one run in 500 (#867). All are fixed. The rate says more are there.
+
+## Coverage
+
+Every file of `tslang/test/tester/tests` was compiled with `--no-default-lib --opt --opt_level=3`
+under gc and under own. Of 915 files, 882 compile under gc; of those, 707 compile under own and 175
+are rejected. The corpus holds own's own regression tests, which raises the figure, and a few
+multi-file tests compiled alone without their facts, which lowers it.
+
+The rejections, by message:
+
+| Count | Message | Kind |
+| --- | --- | --- |
+| 23 | takes a second reference; cannot prove a move or a borrow here yet | Not yet |
+| 19 | borrows a field but is used after it may be released or overwritten | Rule, often conservative |
+| 19 | used after its value was moved | Rule |
+| 15 | borrows a field and cannot be stored, returned or captured | Rule |
+| 9 | an object literal that holds a value it owns is moved only into a local or returned | Not yet |
+| 8 | a parameter, kept here, but the callers cannot be made to give it up | Needs `@keeps` |
+| 7 | merged from several branches (`?:`, `&&`, `\|\|`, `??`, a loop) | Not yet |
+| 7 + 6 | borrows an element (stored, or used after a release) | Rule |
+| 6 + 4 | borrows the result of a call | Rule |
+| 5 | captured by a closure that escapes, and still used | By design |
+| 5 | a global's value lent to a call that may release it | Conservative |
+| 42 | 22 other messages, one to five files each | Mixed |
+
+About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
+the model's rules; some of those are the single-owner design working as intended, and some are the
+analysis being more careful than the program needs.
+
+### Shapes that matter
+
+Probed one by one under the JIT:
+
+| Shape | Result |
+| --- | --- |
+| Walking a list: `for (let c = this.head; c; c = c.next)` | Compiles and runs |
+| List `push`: `n.next = this.head; this.head = n` | Compiles and runs |
+| Appending at the tail, cutting the tail: `c.next = n`, `c.next = null` after the walk | Compiles and runs |
+| List `pop`: `this.head = this.head.next`; unlinking: `c.next = c.next.next` | Compiles and runs |
+| Using the popped node afterwards: `this.head = h.next; return h.v` | Rejected: the node is freed by the assignment; read it first |
+| Push through a constructor: `this.head = new Node(v, this.head)` | Rejected |
+| Walking by assigning a parameter: `n = n.next` | Rejected |
+| Tree insert by recursion on a parameter: `t.l = ins(t.l, v)` | Rejected |
+| Tree insert and sum as methods recursing on `this` | Compiles and runs |
+| Parent link: `k.parent = this` | Rejected; the answer is `Shared<T>`, whose cycles leak |
+| `new WeakRef(a)` | Rejected: built on the collector |
+| `new Map<string, Node>()`, `filter` over class instances | Rejected by design; `Shared<Node>` |
+| Swap through a local: `let t = a[i]; a[i] = a[j]; a[j] = t` | Rejected by design; `[a[i], a[j]] = [a[j], a[i]]` |
+| `x ??= new B()` on a parameter | Rejected ("merged from several branches") |
+| A closure that assigns a parameter it captures | Rejected |
+| `m.forEach((v, k) => { total += v; })` on a `Map` or a `Set` | Compiles and runs |
+| `m.forEach((v, k) => { names.push(k); })` | Rejected, with no source position in the error |
+| try/catch/finally, unions, `any`, async functions (11 corpus files) | Compile; async was not run for this document |
+
+## Real code
+
+native_ts_graphics (the `build-own` of powder_sandbox) is the one outside codebase compiled under
+own. The sweep that got it there produced compiler items 50-85 in three days, and the source needed
+a 55-file change (+432 / -351): getters that return an object of the caller's own instead of a lent
+one, statements reordered so a value is used before it is given away, global rows copied where
+kept, `@final` on classes, and swaps in place of a sort through a temporary. With those it passes
+its 525 tests under own, as under gc and rc.
+
+That is the realistic cost of a port today: the program works, and a noticeable share of it is
+rewritten to say who owns what.
+
+## Performance
+
+Covered in [performance.md](performance.md) and [memory-models.md](memory-models.md). In short: the
+ray tracer under own runs within about 1.4x of the Rust version with `@value` vectors, memory stays
+at the working set, and there is no collector or count at run time. Performance is not what holds
+the model back.
+
+## Exit criteria
+
+From the plan's Phase 5 row for `-mm=own`:
+
+| Criterion | Met | Notes |
+| --- | --- | --- |
+| Close the open items: optional accessor fields, capturing callbacks | No | An optional interface field filled by an accessor is a clean error under every model, not supported. Capturing callbacks over `Map` and `Set` work for numbers and fail when the callback pushes a key into a captured array. |
+| A written specification of the ownership rules | No | The rules exist as a design log of about 5,000 lines (`tslang/docs/superpowers/specs/2026-09-24-own-memory-model-design.md`) and as the user guide. Neither is a specification someone could implement or check against. |
+| Error messages reviewed by someone new to the model | No | Not done. Without `--di` most messages say `'this value'` in place of the variable's name. |
+
+The tier also repeats the Phase 2 gate for its own scope: no open crash or miscompile, an
+assertions-enabled CI leg, and a soak run. The first holds today; the other two do not exist for own.
+
+## What is left, in order
+
+1. **A non-owning back-reference.** `WeakRef<T>` under own, or a declared borrowing field. Without
+   it a tree with parent links either does not compile or leaks.
+2. **The rest of linked structures.** A list now works; a node built from the old head, a walk
+   that assigns a parameter and the recursive tree insert do not. These are what a newcomer writes
+   first.
+3. **The "not yet" messages.** Second references the compiler cannot classify, values merged from
+   branches, object literals that hold owned values.
+4. **Capturing callbacks over `Map` and `Set`**, and a source position for the error they give.
+5. **Whole-program facts**, so a class nobody extends does not need `@final` to keep its callers'
+   borrows.
+6. **The exit criteria**: a rules specification, an outside review of the messages, variable names
+   in messages without `--di`.
+7. **Soundness evidence at scale**: fuzzing on Linux with a perturbing allocator, an AddressSanitizer
+   run of compiled own programs, a second and third outside codebase.
+
+## What it is ready for
+
+| Use | Ready |
+| --- | --- |
+| New code written for own: trees of owners, values, arrays, strings, `Shared<T>` where shared | Yes, as a preview |
+| Numeric and allocation-heavy kernels where a collector or counting costs too much | Yes, as a preview |
+| Porting an existing TypeScript program unchanged | No |
+| Programs built on graphs with back-references | No |
+| A release that promises memory safety to outside users | No |
+
+## How this was measured
+
+- Compiler: `main` at `363b13ce`, Release, Windows 11 x64. Default library built the same day.
+- Corpus sweep: each file of `tslang/test/tester/tests` with `--emit=llvm --no-default-lib --opt
+  --opt_level=3`, under `-mm=gc` and `-mm=own`, compile only.
+- Fuzzer: `python mm_fuzz.py --jobs 4 run --count 400 --seed 915000`.
+- Probes and churn loops: small files, JIT for accept or reject, ahead-of-time builds for output and
+  peak working set against gc.
+- Not run: the full ctest suite, the default library's tests, anything on Linux, wasm or Android.
+  Those lines of the scorecard come from the CI configuration and the repository's records.

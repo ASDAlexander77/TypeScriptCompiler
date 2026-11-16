@@ -329,6 +329,9 @@ namespace own_inference
         auto onlyBorrows = borrowsOnly(borrower);
         if (onlyBorrows)
         {
+            // its declaration gives it its initializer again, as an assignment gives it a value: what
+            // it held before, in an earlier round of a loop around the declaration, it holds no more
+            kills.push_back(borrower);
             for (auto *user : borrower.getResult().getUsers())
             {
                 if (isAssignmentOf(user, borrower))
@@ -654,6 +657,14 @@ namespace own_inference
                 // rc's reference for a borrowing box's copy goes with the closure (decideClosures), and
                 // one for a borrowing field's with the field (classifyBorrowingFields)
                 if (captureRetains.contains(user) || fieldBorrowRetains.contains(user))
+                {
+                    continue;
+                }
+
+                // the store of a value taken out of the object its place holds (`this.head =
+                // this.head.next`): the value is the place's from then on, which checkPlaceRead decides
+                // for the read of it. No use of the object, which the store's release frees.
+                if (splicedTakers.contains(user))
                 {
                     continue;
                 }

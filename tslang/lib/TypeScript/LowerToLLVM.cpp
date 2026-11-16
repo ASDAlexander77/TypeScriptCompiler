@@ -927,6 +927,34 @@ class MarkImmortalCellOpLowering : public TsLlvmPattern<mlir_ts::MarkImmortalCel
     }
 };
 
+// -mm=own: a field's value handed over to the place that holds its object, right before that place
+// releases the object (TypeScriptOps.td). A mortal object's field is emptied; an immortal one keeps
+// it, and what it holds is made immortal.
+class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TakeOutOfFieldOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto fieldType = cast<mlir_ts::RefType>(op.getField().getType()).getElementType();
+            if (!isa<LLVM::LLVMPointerType>(getTypeConverter()->convertType(fieldType)))
+            {
+                return op.emitError("-mm=own cannot take a value of this type out of a field");
+            }
+
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitTakeOutOfField(transformed.getObject(), transformed.getField());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -9957,7 +9985,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SwapOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering,
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SwapOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering, TakeOutOfFieldOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering, MarkSharedOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
