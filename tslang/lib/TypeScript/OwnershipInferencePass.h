@@ -1416,6 +1416,7 @@ class OwnershipInferencePass
 
     static llvm::StringRef nameAt(mlir::Location location);
     static llvm::StringRef declaredNameAt(mlir::Location location);
+    static std::string quotedFunctionName(llvm::StringRef name);
 
     static llvm::StringRef describe(mlir::Value value);
 

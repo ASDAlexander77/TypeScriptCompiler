@@ -475,16 +475,19 @@ namespace own_signature
                 continue;
             }
 
+            // a function expression's symbol (`.f_main..afL32C18...`) is MLIRGen's, not the reader's
+            auto named = funcOp.getSymName().starts_with(".") ? std::string("this function expression")
+                                                               : ("'" + funcOp.getSymName() + "'").str();
             if (takesAddress(funcOp, module))
             {
-                funcOp.emitError("'") << funcOp.getSymName() << "' keeps " << describe(funcOp, computed)
+                funcOp.emitError(named) << " keeps " << describe(funcOp, computed)
                                       << " for good, but -mm=own cannot make every caller make it immortal: the function is "
                                          "called through a value";
                 failed = true;
             }
             else if (!declared && open.contains(funcOp))
             {
-                funcOp.emitError("'") << funcOp.getSymName() << "' keeps " << describe(funcOp, computed)
+                funcOp.emitError(named) << " keeps " << describe(funcOp, computed)
                                       << " for good, but -mm=own cannot tell its callers in other modules; '@" IMMORTALIZES_DECORATOR
                                          "' would say it in its signature";
                 failed = true;
