@@ -61,7 +61,7 @@ These four calls shape everything below. Each one is a proposal and can be overr
 - The Debug-built compiler had 38 known suite failures on 2026-10-01, including a JIT `--opt` abort
   on any program. Not re-run since.
 - Known open items that are not in the tracker:
-  - `-mm=own`: optional accessor fields, capturing callbacks in Map/Set
+  - `-mm=own`: optional accessor fields (capturing callbacks in Map/Set work since 2026-11-16)
   - memory-model fuzzer findings R1-R10, O4, G1
   - run-time `Symbol` values and `obj[sym]`
   - a `(() => T) | null` field cast

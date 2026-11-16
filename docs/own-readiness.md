@@ -14,8 +14,8 @@ preview for porting existing TypeScript.**
 
 - Everything its design set out to build is built, and the tracker has no open defect against it.
 - Nothing unsound was found in this round of measurement.
-- It still rejects about one in five programs the other models accept, and it has no leak-free
-  way to write a back-reference.
+- It still rejects about one in five programs the other models accept. A back-reference is a
+  `WeakRef<T>` (spec 84), which a module that also spawns threads with closures cannot use.
 - Memory-safety bugs were still being found in real code in the three days before this was written.
 - None of the three tier 3 exit criteria in the plan is met.
 
@@ -25,7 +25,7 @@ It stays in tier 3 ("experimental") in the plan's terms.
 
 | Area | Status | What it rests on |
 | --- | --- | --- |
-| Design | Complete | Spec phases 0-8 and the later designs (parameter decorators, facts from object files, immortal keepers, generic containers) are merged. One item is deferred: `WeakRef<T>` under own. |
+| Design | Complete | Spec phases 0-8 and the later designs (parameter decorators, facts from object files, immortal keepers, generic containers, `WeakRef<T>`) are merged. |
 | Tracker | Clean | No open GitHub issue. The own items of `TSLANG_ISSUES.md` (31-33, 39-42, 47-85) are fixed, with one remnant: whole-program facts (item 48). |
 | Soundness | No failure found, not proven | See [Soundness](#soundness). |
 | Coverage of TypeScript | Partial | 707 of 882 corpus files (80%) compile. See [Coverage](#coverage). |
@@ -111,7 +111,7 @@ Probed one by one under the JIT:
 | `x ??= new B()` on a parameter | Rejected ("merged from several branches") |
 | A closure that assigns a parameter it captures | Rejected |
 | `m.forEach((v, k) => { total += v; })` on a `Map` or a `Set` | Compiles and runs |
-| `m.forEach((v, k) => { names.push(k); })` | Rejected, with no source position in the error |
+| `m.forEach((v, k) => { names.push(k); })` | Compiles and runs: a callback declaring fewer parameters than `forEach` passes is given a copy of a string it keeps |
 | try/catch/finally, unions, `any`, async functions (11 corpus files) | Compile; async was not run for this document |
 
 ## Real code
@@ -139,7 +139,7 @@ From the plan's Phase 5 row for `-mm=own`:
 
 | Criterion | Met | Notes |
 | --- | --- | --- |
-| Close the open items: optional accessor fields, capturing callbacks | No | An optional interface field filled by an accessor is a clean error under every model, not supported. Capturing callbacks over `Map` and `Set` work for numbers and fail when the callback pushes a key into a captured array. |
+| Close the open items: optional accessor fields, capturing callbacks | Half | An optional interface field filled by an accessor is a clean error under every model, not supported. Capturing callbacks over `Map` and `Set` work, keys and values pushed into a captured array included; an error found in such a callback points at its source. |
 | A written specification of the ownership rules | No | The rules exist as a design log of about 5,000 lines (`tslang/docs/superpowers/specs/2026-09-24-own-memory-model-design.md`) and as the user guide. Neither is a specification someone could implement or check against. |
 | Error messages reviewed by someone new to the model | No | Not done. Without `--di` most messages say `'this value'` in place of the variable's name. |
 
@@ -157,12 +157,11 @@ assertions-enabled CI leg, and a soak run. The first holds today; the other two 
    module, still cannot take a field this way, and the popped node cannot be used after the assignment that frees it.
 3. **The "not yet" messages.** Second references the compiler cannot classify, values merged from
    branches, object literals that hold owned values.
-4. **Capturing callbacks over `Map` and `Set`**, and a source position for the error they give.
-5. **Whole-program facts**, so a class nobody extends does not need `@final` to keep its callers'
+4. **Whole-program facts**, so a class nobody extends does not need `@final` to keep its callers'
    borrows.
-6. **The exit criteria**: a rules specification, an outside review of the messages, variable names
+5. **The exit criteria**: a rules specification, an outside review of the messages, variable names
    in messages without `--di`.
-7. **Soundness evidence at scale**: fuzzing on Linux with a perturbing allocator, an AddressSanitizer
+6. **Soundness evidence at scale**: fuzzing on Linux with a perturbing allocator, an AddressSanitizer
    run of compiled own programs, a second and third outside codebase.
 
 ## What it is ready for
@@ -172,7 +171,7 @@ assertions-enabled CI leg, and a soak run. The first holds today; the other two 
 | New code written for own: trees of owners, values, arrays, strings, `Shared<T>` where shared | Yes, as a preview |
 | Numeric and allocation-heavy kernels where a collector or counting costs too much | Yes, as a preview |
 | Porting an existing TypeScript program unchanged | No |
-| Programs built on graphs with back-references | No |
+| Programs built on graphs with back-references | As a preview, with `WeakRef<T>`; not with threads in the same module |
 | A release that promises memory safety to outside users | No |
 
 ## How this was measured
