@@ -1893,6 +1893,20 @@ inline bool isConstantData(mlir::Value value)
         return true;
     }
 
+    // null or undefined seen as what may hold a block (`on() ? mk(3) : null` as a `Node | null`):
+    // it holds none
+    auto root = value;
+    while (auto castOp = root.getDefiningOp<mlir_ts::CastOp>())
+    {
+        root = castOp.getIn();
+    }
+
+    if (root.getDefiningOp<mlir_ts::NullOp>() || root.getDefiningOp<mlir_ts::UndefOp>() ||
+        root.getDefiningOp<mlir_ts::OptionalUndefOp>())
+    {
+        return true;
+    }
+
     // a function, which a `ts.SymbolRef` names, seen as a function value: it has no capture box.
     // Seen through its views too - that function value given as a `(() => void) | null`
     if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def))

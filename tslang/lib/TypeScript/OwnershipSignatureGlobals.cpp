@@ -317,6 +317,14 @@ namespace own_signature
                     continue;
                 }
 
+                // data nothing owns - null on the way of `c ? mk() : null` that does not make one,
+                // wherever it goes - takes nothing
+                if (isConstantData(value) && !mlir::isa<mlir::BlockArgument>(value))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
                 // nothing in the region gives the block back, or takes a second reference to it:
                 // the global is its one owner
                 auto released = false;

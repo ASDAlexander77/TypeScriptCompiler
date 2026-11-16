@@ -221,6 +221,11 @@ namespace own_inference
             return true;
         }
 
+        if (mergeRetainOf(taker, value))
+        {
+            return true;
+        }
+
         auto acquires = false;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
             acquires = acquires || (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
@@ -228,6 +233,98 @@ namespace own_inference
         });
 
         return acquires;
+    }
+
+    mlir::Operation *OwnershipInferencePass::mergeRetainOf(mlir::Operation *taker, mlir::Value value)
+    {
+        auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(taker);
+        if (!branchOp)
+        {
+            return nullptr;
+        }
+
+        // the block argument this branch passes the value (or a view of it) as
+        auto root = rootOf(value);
+        mlir::BlockArgument merged;
+        for (auto &operand : taker->getOpOperands())
+        {
+            if (rootOf(operand.get()) != root)
+            {
+                continue;
+            }
+
+            auto arguments = mergedValuesOf(taker, operand.get());
+            if (arguments.size() != 1 || merged)
+            {
+                return nullptr;
+            }
+
+            merged = mlir::dyn_cast<mlir::BlockArgument>(arguments.front());
+        }
+
+        if (!merged)
+        {
+            return nullptr;
+        }
+
+        // rc's one retain of the merged value, in its block
+        mlir::Operation *retain = nullptr;
+        auto other = false;
+        forEachUse(merged, [&](mlir::Operation *user, mlir::Value) {
+            if (mlir::isa<mlir_ts::RetainOp>(user))
+            {
+                other = other || retain || user->getBlock() != merged.getOwner();
+                retain = user;
+            }
+        });
+
+        if (!retain || other)
+        {
+            return nullptr;
+        }
+
+        // every way in: null or undefined, or a fresh value - not a loop's back edge
+        auto *block = merged.getOwner();
+        mlir::DominanceInfo dominance(block->getParentOp());
+        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+        {
+            auto predecessorBranch = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+            if (!predecessorBranch || dominance.dominates(block, *predecessor))
+            {
+                return nullptr;
+            }
+
+            auto operands = predecessorBranch.getSuccessorOperands(predecessor.getSuccessorIndex());
+            if (merged.getArgNumber() < operands.getProducedOperandCount())
+            {
+                return nullptr;
+            }
+
+            auto incoming = operands[merged.getArgNumber()];
+            if (!incoming)
+            {
+                return nullptr;
+            }
+
+            auto constant = incoming;
+            while (auto castOp = constant.getDefiningOp<mlir_ts::CastOp>())
+            {
+                constant = castOp.getIn();
+            }
+
+            if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+                constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+            {
+                continue;
+            }
+
+            if (mlir::isa<mlir::BlockArgument>(rootOf(incoming)) || !isFresh(rootOf(incoming)))
+            {
+                return nullptr;
+            }
+        }
+
+        return retain;
     }
 
 } // namespace own_inference
