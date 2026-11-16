@@ -412,6 +412,16 @@ namespace own_inference
         captureRetains.clear();
         callCopies.clear();
         returnedParams.clear();
+        // the stores that take a value out of the object their place holds, for every walk of this
+        // function to see (never another function's: its operations are gone, their addresses reused)
+        splicedTakers.clear();
+        f->walk([&](mlir_ts::LoadOp loadOp) {
+            FieldTake take;
+            if (splicedFieldTakeOf(loadOp, take))
+            {
+                splicedTakers.insert(take.taker);
+            }
+        });
         returnsBorrowOf = resultBorrows(f);
         returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
         records.clear();

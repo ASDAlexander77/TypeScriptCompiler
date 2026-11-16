@@ -843,6 +843,7 @@ a reference gives it back on every path out of a function.
 ## Current limits
 
 `-mm=own` is still in development, and some valid TypeScript does not compile under it yet.
+[own-readiness.md](own-readiness.md) says how far it is, with measurements.
 
 - The default library has an `-mm=own` build, and arrays, strings and their methods work. `Map`
   and `Set` work with number, boolean and string keys and values (`new Map<string, number>()`,
@@ -890,6 +891,15 @@ a reference gives it back on every path out of a function.
   (`fill`) is copied each time.
 - A parameter with a default (`constructor(private items: T[] = [])`) is kept like any other
   parameter, whether the caller passes it or not.
+- A linked list whose nodes own their `next` works: a local that steps down it (`for (let c =
+  this.head; c; c = c.next)`) borrows the nodes, a new node goes in at the head (`n.next = this.head;
+  this.head = n`) or at the tail (`c.next = n`), and `this.head = this.head.next` or `c.next =
+  c.next.next` takes a node out. The node taken out is freed right there, so read what you need of
+  it first: `const h = this.head; const v = h.v; this.head = h.next; return v;`, not `return h.v`
+  after the assignment. Not accepted yet: a node made with the old head as an argument (`this.head =
+  new Node(v, this.head)`), a walk that assigns a parameter (`n = n.next`), and an insert that
+  recurses on a parameter and gives it back (`t.left = insert(t.left, v)`); write the last as a
+  method that recurses on `this`.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.

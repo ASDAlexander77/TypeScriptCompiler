@@ -562,6 +562,35 @@ class OwnershipRoutineLogic
         });
     }
 
+    // ts.TakeOutOfField: the pointer the field at `fieldPtr` holds goes to another owner right before
+    // the object at `objectPtr` (never null: the field was read through it) is released. A mortal
+    // object is freed by that release, so its field is emptied. An immortal one keeps the field,
+    // and what the field holds, which two places hold from then on, is made immortal.
+    void emitTakeOutOfField(mlir::Value objectPtr, mlir::Value fieldPtr)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        auto isMortal = emitIsMortal(objectPtr);
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *mortalBlock = rewriter.createBlock(continuationBlock);
+        auto *immortalBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(mortalBlock);
+        rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), fieldPtr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(immortalBlock);
+        auto held = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), fieldPtr);
+        emitMarkImmortalIfMortal(held);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, isMortal, mortalBlock, immortalBlock);
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
     // === Sharing between threads ===
     //
     // `Shared.share(v)` (ts.MarkShared) sets the shared bit (Defines.h, beside HEAP_BLOCK_IMMORTAL)
