@@ -129,6 +129,17 @@
 // tag at CLOSURE_TYPE_INDEX, as an interface over it does.
 #define BOUND_OBJECT_TYPE_ATTR_NAME "__bound_object_type"
 
+// -mm=own: on a `ts.ThisSymbolRef` read as a value (a method taken from an object, `h.f = v.get`) that
+// the object moved into (USER RULING 2026-11-16), and on the `ts.CreateBoundFunction` it lowers to:
+// the bound value owns the object, so it gets the object's type tag and its release frees it. Any
+// other bound method borrows its object and keeps a null tag.
+#define OWN_BOUND_OWNS_OBJECT_ATTR_NAME "__own_bound_owns_object"
+
+// On the module: each class it made that extends another, as [subclass type, base type]. A release
+// routine of the base (OwnershipRoutineLogic) compares an object's vtable with each subclass's and
+// releases the fields of the class it is, not only the base's (rc and own).
+#define CLASS_BASES_ATTR_NAME "ts.class_bases"
+
 // Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
 // `captured = true` only because that is how a variable asks to be allocated in the heap, and
 // without this marker it would be indistinguishable from the cell of a captured variable - and

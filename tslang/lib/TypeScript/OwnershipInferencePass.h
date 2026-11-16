@@ -1046,6 +1046,10 @@ class OwnershipInferencePass
     llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
     // The store of `value` into a field of the record whose retain `retain` is: the move's taker.
     static mlir::Operation *recordStoreOf(mlir::Operation *retain, mlir::Value value);
+    // A move of `value` into `taker` that goes through a method of it taken as a value (`h.f = v.get`,
+    // a view, isView): that bound value owns the object now, and is marked so
+    // (OWN_BOUND_OWNS_OBJECT_ATTR_NAME) - its release frees the object.
+    void markBoundMethodsTaking(mlir::Operation *taker, mlir::Value value);
 
     // rc's one `ts.Retain` of a record local's one read, where the read is only returned: stored
     // into a local that owns nothing and is read only by returns (the result slot), or copied into

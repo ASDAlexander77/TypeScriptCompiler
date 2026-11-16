@@ -1,7 +1,7 @@
-// -mm=own, phase 2 rejects: `f` is `b.m` bound to what `b` borrows, so calling it after `a` is
-// overwritten reads the old `a`. What a borrower's reads produce is the borrower too. (`a` is given
-// to two `let`s, so neither takes its value over: each borrows it. One `let` would take it over,
-// and `a.x` after it would read through it, spec 29.)
+// -mm=own, phase 2 rejects: `f` is `b.m`, a method value of `b`, which only borrows `a` (`a` is given
+// to two `let`s, so neither takes its value over: each borrows it). A method value is its object, so
+// `f` would hold what `b` borrows past the borrow; it is refused where it is made. (Before the method
+// value was its object: refused where `f()` ran after `a` was overwritten.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}

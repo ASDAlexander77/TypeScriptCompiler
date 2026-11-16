@@ -1355,6 +1355,113 @@ class OwnershipRoutineLogic
         rewriter.setInsertionPointToStart(continuationBlock);
     }
 
+    // The classes of this module that extend `classType`, at any depth (CLASS_BASES_ATTR_NAME), each with
+    // its vtable in the module.
+    llvm::SmallVector<mlir_ts::ClassType> subclassesOf(mlir_ts::ClassType classType)
+    {
+        llvm::SmallVector<mlir_ts::ClassType> found;
+        auto module = op->getParentOfType<ModuleOp>();
+        auto bases = module ? module->getAttrOfType<mlir::ArrayAttr>(CLASS_BASES_ATTR_NAME) : mlir::ArrayAttr();
+        if (!bases)
+        {
+            return found;
+        }
+
+        llvm::SmallVector<mlir_ts::ClassType> work{classType};
+        while (!work.empty())
+        {
+            auto current = work.pop_back_val();
+            for (auto entry : bases.getAsRange<mlir::ArrayAttr>())
+            {
+                auto sub = dyn_cast<mlir_ts::ClassType>(cast<mlir::TypeAttr>(entry[0]).getValue());
+                auto base = dyn_cast<mlir_ts::ClassType>(cast<mlir::TypeAttr>(entry[1]).getValue());
+                if (!sub || !base || base.getName() != current.getName() ||
+                    llvm::any_of(found, [&](mlir_ts::ClassType known) { return known.getName() == sub.getName(); }))
+                {
+                    continue;
+                }
+
+                found.push_back(sub);
+                work.push_back(sub);
+            }
+        }
+
+        // only a class whose vtable this module defines can be told by it: an imported class's is a
+        // declaration of another module's global, which that module need not export (a shared library's
+        // `M.B..vtbl` left the program's link with an undefined dllimport)
+        llvm::erase_if(found, [&](mlir_ts::ClassType sub) {
+            // (a declaration: external, with neither a value nor an initializer; `value` is an inherent
+            // attribute, which `hasAttr` does not see)
+            auto *vtable = LLVMGlobalsIndex::lookupSymbolIn(compileOptions, module, vtableNameOf(sub));
+            auto defined = false;
+            if (auto globalOp = mlir::dyn_cast_or_null<mlir_ts::GlobalOp>(vtable))
+            {
+                defined = globalOp.getLinkage() != LLVM::Linkage::External || globalOp.getValue().has_value() ||
+                          !globalOp.getInitializerRegion().empty();
+            }
+            else if (auto llvmGlobalOp = mlir::dyn_cast_or_null<LLVM::GlobalOp>(vtable))
+            {
+                defined = llvmGlobalOp.getLinkage() != LLVM::Linkage::External || llvmGlobalOp.getValueOrNull() ||
+                          !llvmGlobalOp.getInitializerRegion().empty();
+            }
+
+            return !defined;
+        });
+        return found;
+    }
+
+    static std::string vtableNameOf(mlir_ts::ClassType classType)
+    {
+        return (classType.getName().getValue() + "." VTABLE_NAME).str();
+    }
+
+    // What an object of `classType` holds, given back - or, when it is of a subclass the module made (its
+    // vtable, the object's first word, is that class's), what the subclass's fields hold too: a base's
+    // routine is what releases an object kept in a slot of the base's type (`const v: V = new V2()`).
+    void releaseClassFields(mlir_ts::ClassType classType, mlir::Value instanceValue)
+    {
+        // (a base of a class in CLASS_BASES_ATTR_NAME has a vtable, the first word of its objects, even
+        // where its own vtable was dropped for no object of it being made)
+        auto subclasses = subclassesOf(classType);
+        if (subclasses.empty())
+        {
+            releaseFields(classType.getStorageType(), instanceValue);
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto vtable = rewriter.create<LLVM::LoadOp>(loc, ptrTy, instanceValue);
+
+        // one block after all the tests, each test's body branching to it
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        rewriter.setInsertionPointToEnd(currentBlock);
+        for (auto sub : subclasses)
+        {
+            auto *thenBlock = rewriter.createBlock(continuationBlock);
+            auto *elseBlock = rewriter.createBlock(continuationBlock);
+
+            rewriter.setInsertionPointToEnd(thenBlock);
+            releaseFields(sub.getStorageType(), instanceValue);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+            rewriter.setInsertionPointToEnd(currentBlock);
+            auto subVTable = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, vtableNameOf(sub));
+            auto isSub = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, vtable, subVTable);
+            rewriter.create<LLVM::CondBrOp>(loc, isSub, thenBlock, elseBlock);
+
+            currentBlock = elseBlock;
+            rewriter.setInsertionPointToEnd(currentBlock);
+        }
+
+        // of the class itself, or of one the module does not know
+        releaseFields(classType.getStorageType(), instanceValue);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
     // Calls the release routine of `type` on `slotPtr`, if it has one.
     void releaseSlot(mlir::Type type, mlir::Value slotPtr)
     {
@@ -1887,7 +1994,14 @@ class OwnershipRoutineLogic
 
             auto instanceValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitIfLastReference(instanceValue, [&]() {
-                releaseFields(storageType, instanceValue);
+                if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+                {
+                    releaseClassFields(classType, instanceValue);
+                }
+                else
+                {
+                    releaseFields(storageType, instanceValue);
+                }
                 // under own, an object WeakRefs still refer to stays as a tombstone (spec 84)
                 if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::ClassType>(type))
                 {

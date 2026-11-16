@@ -7397,6 +7397,10 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTyped);
             boundFuncVal->setAttr(BOUND_OBJECT_TYPE_ATTR_NAME,
                                   mlir::TypeAttr::get(thisVirtualSymbolRefOp.getThisVal().getType()));
+            if (thisVirtualSymbolRefOp->hasAttr(OWN_BOUND_OWNS_OBJECT_ATTR_NAME))
+            {
+                boundFuncVal->setAttr(OWN_BOUND_OWNS_OBJECT_ATTR_NAME, rewriter.getUnitAttr());
+            }
             rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{boundFuncVal});
         }
         else
@@ -7435,8 +7439,13 @@ struct ThisSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisSymbolRefOp>
         auto method = rewriter.create<mlir_ts::SymbolRefOp>(
             loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
             thisSymbolRefOp.getIdentifierAttr());
+        auto ownsObject = thisSymbolRefOp->hasAttr(OWN_BOUND_OWNS_OBJECT_ATTR_NAME);
         auto boundFuncVal = rewriter.replaceOpWithNewOp<mlir_ts::CreateBoundFunctionOp>(thisSymbolRefOp, boundFunc, thisOpaque, method);
         boundFuncVal->setAttr(BOUND_OBJECT_TYPE_ATTR_NAME, mlir::TypeAttr::get(thisSymbolRefOp.getThisVal().getType()));
+        if (ownsObject)
+        {
+            boundFuncVal->setAttr(OWN_BOUND_OWNS_OBJECT_ATTR_NAME, rewriter.getUnitAttr());
+        }
         return success();
     }
 };
@@ -8085,7 +8094,12 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         // type beside it (ThisSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering)
         auto boundType = createBoundFunctionOp->getAttrOfType<mlir::TypeAttr>(BOUND_OBJECT_TYPE_ATTR_NAME);
         auto thisType = boundType ? boundType.getValue() : createBoundFunctionOp.getThisVal().getType();
-        if (!tsLlvmContext->compileOptions.isRefCounted() || !isa<mlir_ts::ClassType>(thisType))
+        // ...and under own one the object moved into (OWN_BOUND_OWNS_OBJECT_ATTR_NAME), whose release
+        // frees it
+        auto own = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn;
+        auto ownsObject = own && createBoundFunctionOp->hasAttr(OWN_BOUND_OWNS_OBJECT_ATTR_NAME);
+        auto tagged = own ? ownsObject : tsLlvmContext->compileOptions.isRefCounted();
+        if (!tagged || !isa<mlir_ts::ClassType>(thisType))
         {
             return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
         }
@@ -8100,7 +8114,8 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         // generated first: the descriptor's initializer takes their addresses
         OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+        // under own nothing retains: see TypeDescriptorOpLowering
+        auto retainRoutineName = own ? std::string() : orl.getOrCreateRetainRoutine(thisType);
         auto shareRoutineName = orl.getOrCreateShareRoutine(thisType);
 
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);

@@ -277,6 +277,16 @@ namespace own_inference
 
     bool OwnershipInferencePass::reportShapeOfSecondReference(mlir::Operation *op, mlir::Value root, llvm::StringRef name)
     {
+        // a method read through an interface (`return o.fn`): its object is whatever the interface
+        // shows, which a method value cannot own (a class's method value can: spec 89)
+        if (auto boundOp = root.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
+            boundOp && boundOp.getThisVal().getDefiningOp<mlir_ts::ExtractInterfaceThisOp>())
+        {
+            op->emitError("a method read through an interface cannot be stored or returned under -mm=own yet: "
+                          "call it where it is read, or take the method from the class");
+            return true;
+        }
+
         auto f = getFunction();
 
         // returned, where another return gives a borrow of an argument and this one does not, or
