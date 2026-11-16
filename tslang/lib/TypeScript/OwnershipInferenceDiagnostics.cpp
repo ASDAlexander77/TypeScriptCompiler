@@ -198,6 +198,12 @@ namespace own_inference
             }
         });
 
+        // a folded `const` without --di: its value's defining op carries the name
+        if (name == "this value" && value.getDefiningOp() && mlir::isa<mlir::NameLoc>(value.getDefiningOp()->getLoc()))
+        {
+            name = nameAt(value.getDefiningOp()->getLoc());
+        }
+
         return name;
     }
 
@@ -222,6 +228,12 @@ namespace own_inference
             {
                 return named.getName().getValue();
             }
+        }
+
+        // without --di, MLIRGen names a declared variable's defining op with a bare NameLoc
+        if (auto named = mlir::dyn_cast<mlir::NameLoc>(location))
+        {
+            return named.getName().getValue();
         }
 
         return "this value";
