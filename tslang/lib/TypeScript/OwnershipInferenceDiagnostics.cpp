@@ -204,6 +204,51 @@ namespace own_inference
             name = nameAt(value.getDefiningOp()->getLoc());
         }
 
+        // ...or a cast of it the declaration made (`const i: I = new B()`): the nearest named one, as
+        // casts further on may belong to later declarations (`const a: any = i`)
+        llvm::SmallVector<mlir::Value> level{value};
+        for (auto depth = 0; name == "this value" && !level.empty() && depth < 4; depth++)
+        {
+            llvm::SmallVector<mlir::Value> next;
+            for (auto current : level)
+            {
+                for (auto *user : current.getUsers())
+                {
+                    // stored into a declared local (a `var`, a `let` given its value later)
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == current)
+                    {
+                        // (not a slot MLIRGen made up, as `.return`)
+                        if (auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                            varOp && name == "this value" && !varName(varOp).starts_with("."))
+                        {
+                            name = varName(varOp);
+                        }
+                        // ...or a global
+                        else if (auto global = storeOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>(); global && name == "this value")
+                        {
+                            name = global.getGlobalName();
+                        }
+
+                        continue;
+                    }
+
+                    if (!mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::NewInterfaceOp>(user))
+                    {
+                        continue;
+                    }
+
+                    if (mlir::isa<mlir::NameLoc>(user->getLoc()) && name == "this value")
+                    {
+                        name = nameAt(user->getLoc());
+                    }
+
+                    next.push_back(user->getResult(0));
+                }
+            }
+
+            level = std::move(next);
+        }
+
         return name;
     }
 
