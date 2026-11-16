@@ -727,6 +727,22 @@ namespace own_inference
                 return false;
             }
 
+            // the object a WeakRef refers to (spec 84): owned anywhere, so freed by any call that may
+            // drop, unless all it overwrites are fields that cannot hold it
+            if (read && mlir::isa<mlir_ts::WeakRefDerefOp>(read))
+            {
+                auto targetType = mlir::cast<mlir_ts::WeakRefType>(read->getOperand(0).getType()).getElementType();
+                if (auto places = callDropFields(drop))
+                {
+                    return llvm::any_of(*places, [&](auto &place) {
+                        auto refType = mlir::dyn_cast<mlir_ts::RefType>(place.second);
+                        return !refType || typeMayHold(module, refType.getElementType(), targetType);
+                    });
+                }
+
+                return true;
+            }
+
             // a private field nothing writes after construction, read straight off a parameter or `this`
             // (TSLANG 73): no call overwrites it, and it is released only with its object, which the
             // caller holds while this function runs
