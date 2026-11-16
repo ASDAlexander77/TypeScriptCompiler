@@ -1390,9 +1390,21 @@ class OwnershipRoutineLogic
         // declaration of another module's global, which that module need not export (a shared library's
         // `M.B..vtbl` left the program's link with an undefined dllimport)
         llvm::erase_if(found, [&](mlir_ts::ClassType sub) {
+            // (a declaration: external, with neither a value nor an initializer; `value` is an inherent
+            // attribute, which `hasAttr` does not see)
             auto *vtable = LLVMGlobalsIndex::lookupSymbolIn(compileOptions, module, vtableNameOf(sub));
-            auto defined = vtable && ((vtable->getNumRegions() > 0 && !vtable->getRegion(0).empty()) ||
-                                      vtable->hasAttr("value"));
+            auto defined = false;
+            if (auto globalOp = mlir::dyn_cast_or_null<mlir_ts::GlobalOp>(vtable))
+            {
+                defined = globalOp.getLinkage() != LLVM::Linkage::External || globalOp.getValue().has_value() ||
+                          !globalOp.getInitializerRegion().empty();
+            }
+            else if (auto llvmGlobalOp = mlir::dyn_cast_or_null<LLVM::GlobalOp>(vtable))
+            {
+                defined = llvmGlobalOp.getLinkage() != LLVM::Linkage::External || llvmGlobalOp.getValueOrNull() ||
+                          !llvmGlobalOp.getInitializerRegion().empty();
+            }
+
             return !defined;
         });
         return found;
