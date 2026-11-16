@@ -6076,3 +6076,34 @@ Tests: `own_literal_let_fields`, `own_select_two_locals`, `own_literal_array_uni
 `own_record_literal_nested_pushed`, `own_value_record_returned_let` (own, rc, gc, none);
 `own_err_literal_let_used_after`, `own_err_literal_let_twice`, `own_err_select_used_after`,
 `own_err_select_in_loop`.
+
+## 89. A method value takes its object, 2026-11-16
+
+USER RULING (2026-11-16): a method of an object taken as a value and stored or returned (`h.f = v.get`,
+`return v.get`) takes the object - `v` moves into it - rather than being refused as a borrow.
+
+A method value is `{fn, this, tag}`, and a release of it goes through the tag beside `this`. So a
+`ts.ThisSymbolRef` or `ts.ThisVirtualSymbolRef` read as a value (not called: no `ts.GetThis` or
+`ts.GetMethod` of it) of a class object is a view of that object (`isView`), and the existing checks
+decide it as they decide the object: stored or returned, it moves; kept in a `let` while the object is
+still used, it borrows (`let f = v.get; f() + v.x`); `let f = v.get; v = mkv(2)` moves the old object
+into `f`. Given to two places, or used after, it is "used after its value was moved". A move through
+such a view marks the method value (`OWN_BOUND_OWNS_OBJECT_ATTR_NAME`, `markBoundMethodsTaking`), and
+the lowering gives that one the class's type tag (no retain routine, as every own descriptor), so its
+release frees the object. Every other bound method keeps the null tag it had and frees nothing.
+
+Not a view: a method of the member's own `this` (`this.m`), which borrows `this` - a back-reference
+stored in a field (spec 70) or what a keeper holds without owning; nor a method read through an
+interface (`return o.fn`), whose object is whatever the interface shows - now refused as "a method read
+through an interface cannot be stored or returned under -mm=own yet: call it where it is read, or take
+the method from the class".
+
+`own_err_const_bound_method_reassigned` compiles now (`own_method_value_reassigned`);
+`own_err_borrow_bound_method` is refused where `f = b.m` is made (`b` only borrows).
+
+Found on the way, not changed here: a subclass object released through a slot of its base class
+(`const v: V = new V2()`) leaks the fields the subclass adds, under rc and own alike - the class release
+routine is the static type's, and the class vtable has no overridden slot to dispatch on.
+
+Tests: `own_method_value_moves`, `own_method_value_reassigned` (own, rc, gc, none);
+`own_err_method_value_twice`, `own_err_method_value_used_after`, `own_err_interface_method_value_returned`.
