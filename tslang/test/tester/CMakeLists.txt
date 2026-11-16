@@ -5557,6 +5557,7 @@ set(own_error_cases
     "own_err_weakref_after_call|:5:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_weakref_after_release|:4:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_weakref_thread|:14:15: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
+    "own_err_capture_block_closure|:5:51: error: 'n4' is used here after its value was moved"
     "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
