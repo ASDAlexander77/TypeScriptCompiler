@@ -137,9 +137,14 @@ namespace own_inference
     mlir_ts::VariableOp OwnershipInferencePass::borrowerOf(mlir::Operation *acquisition, bool consumed)
     {
         mlir_ts::VariableOp varOp;
+        // a local declared in a `try` is declared without a value (the cleanup releases it) and given
+        // its value by a store right before rc's `ts.RetainSlot` (slotDeclarationStore): that store,
+        // or that retain, declares it
+        auto declaredByStore = false;
         if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(acquisition))
         {
             varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            declaredByStore = static_cast<bool>(slotDeclarationStore(acquisition));
         }
         else if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(acquisition))
         {
@@ -148,12 +153,18 @@ namespace own_inference
             varOp = consumingLetOf(retainOp.getReference());
             consumed = true;
         }
+        else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(acquisition); storeOp && declarationRetainOf(storeOp))
+        {
+            varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            declaredByStore = true;
+        }
         else
         {
             varOp = mlir::dyn_cast<mlir_ts::VariableOp>(acquisition);
         }
 
-        if (!varOp || !varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false))
+        if (!varOp || !(varOp.getInitializer() || declaredByStore) || !isOwningVariable(varOp) ||
+            varOp.getCaptured().value_or(false))
         {
             return {};
         }
@@ -360,6 +371,12 @@ namespace own_inference
             if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
             {
                 bookkeeping.push_back(user);
+                continue;
+            }
+
+            // the store that declares a local declared in a `try` (borrowerOf): its value, not an assignment
+            if (!borrower.getInitializer() && declarationRetainOf(user))
+            {
                 continue;
             }
 

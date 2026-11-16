@@ -627,7 +627,9 @@ namespace own_signature
             body.walk([&](mlir_ts::VariableOp varOp) {
                 // not a Shared<T> handle, which own counts (spec 23.2), nor a string and the like,
                 // which a local takes a copy of
-                auto type = varOp.getInitializer() ? varOp.getInitializer().getType() : mlir::Type();
+                // (a `let` declared in a `try` has no initializer: a store right after gives it its value)
+                auto type = varOp.getInitializer() ? varOp.getInitializer().getType()
+                                                   : mlir::cast<mlir_ts::RefType>(varOp.getType()).getElementType();
                 if (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) &&
                     type && !varOp.getCaptured().value_or(false) && !MLIRTypeHelper::isSharedHandleType(type) &&
                     !own_facts::isCopyableValueAt(varOp, type))
@@ -645,7 +647,14 @@ namespace own_signature
             };
 
             auto holdsOnlyParameters = [&](mlir_ts::VariableOp varOp) {
-                if (!aliased(varOp.getInitializer()))
+                // one declared without a value (in a `try`, where the cleanup releases it) is given
+                // its value by a store, followed by rc's `ts.RetainSlot`
+                if (varOp.getInitializer() ? !aliased(varOp.getInitializer())
+                                           : !llvm::any_of(varOp->getUsers(), [&](mlir::Operation *user) {
+                                                 auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                                                 return storeOp && storeOp.getReference() == varOp.getResult() &&
+                                                        mlir::isa_and_nonnull<mlir_ts::RetainSlotOp>(user->getNextNode());
+                                             }))
                 {
                     return false;
                 }
