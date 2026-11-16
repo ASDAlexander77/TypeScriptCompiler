@@ -5911,3 +5911,51 @@ and a borrow is not returned from a parameter's local).
 Tests: `00linked_list_build` (own, rc, gc, none; also `-noopt` under own), and
 `own_err_list_unlink_walk`, `_cut_in_step`, `_cut_through_alias`, `_push_ctor_throws`, `_push_through_this`,
 `own_err_tree_field_given_twice`, `own_err_param_walk_mixed`.
+
+## 84. `WeakRef<T>`, 2026-11-16
+
+The design and its decisions are in `2026-11-16-own-weakref-design.md`; this records what was built.
+
+**The type.** `!ts.weak_ref<T>`, built into the compiler and resolved before any declaration of the
+name (the default library's gc-only class is shadowed). `new WeakRef(x)` is `ts.WeakRefNew`, `w.deref()`
+and `w?.deref()` are `ts.WeakRefDeref`, whose result is an optional of `T`. gc lowers to a link block
+the collector clears (`GC_general_register_disappearing_link`, as the library class did), none to the
+target's pointer, and rc refuses it. Under own and none the target is a class object (narrowed out of
+`C | null` is fine); gc takes any object.
+
+**The count.** Under own a class object's header word held only 0 or the immortal mark. It now holds
+the number of WeakRefs to the object in the bits below the dead bit, `1 << (bits - 2)` (Defines.h). A
+WeakRef is a handle (`isSharedHandleType` is true for it): own leaves rc's retains and releases of it,
+and they become `emitWeakIncRef` / `emitWeakDecRef` on the target, which skip an immortal one. The
+class release routine under own ends in `emitFreeOrBury`: with a weak count it sets the dead bit and
+keeps the block (a tombstone, its fields released), else it frees it; the last WeakRef to a tombstone
+frees it (`newWord == dead bit`). `deref()` checks for null, then immortal or not dead.
+
+**What a WeakRef ends.** Its release frees at most a tombstone nobody can reach, so `releasesNothing`
+is true for a WeakRef slot and `dropsInBody` ignores its release: no borrow ends at it, no function
+drops because of it.
+
+**The object `deref()` gives** is a place read (`ops.placeReads`) with an `anyPlace` chain and no
+roots. A release of a slot or a value whose type may hold `T` (`typeMayHold`), anywhere in the
+function, ends it, a local's included (`let n; p = w.deref(); n = new Node(); p.v` was accepted and
+read freed memory before that rule); so does a call that may drop, unless all it overwrites are fields
+that cannot hold `T` (a call judged against a chain with no roots had counted as "caught" and never
+dropped). It cannot be stored, returned or captured: "borrows the object a WeakRef refers to".
+
+**Where it lives.** `new WeakRef(x)` is an escape of `x` for stack promotion (`"weak-target"`).
+
+**Threads.** The count is not atomic: the signature pass refuses a WeakRef to a class in a module
+whose `ts.MarkShared` (Thread.spawn, a worker, `Shared.share`) shares a value whose type may hold
+that class (`rejectWeakTargetsShared`), at the WeakRef with a note at the share. Thread.spawn shares a
+library `ThreadStart` holding a closure, so in practice a module that makes WeakRefs spawns no thread
+with a closure; a `@final` target and a shared `@final` class of numbers are fine.
+
+**Timing.** "Once its owner frees it" is when own frees: a discarded call result (`a.pop();`) is
+released at the end of its function, so the object dies there, not at the statement.
+
+**Across modules.** Every own class release now reads the weak count; an object file from an older
+own compiler frees without it. The default library is rebuilt with the compiler, as always.
+
+Tests: `00weakref_basic`, `00weakref`, `00weakref_frame` (own, gc, none; `-noopt` under own),
+`own_weakref_borrow`, `own_weakref_share_unrelated`; errors `own_err_weakref_rc`, `_not_class`,
+`_stored`, `_returned`, `_captured`, `_after_call`, `_after_release`, `_local_reassigned`, `_thread`.

@@ -89,9 +89,11 @@ holds exactly as much as `-mm=none` — that is, reference counting reclaims non
    done with the structure, or store a key/index instead of a pointer back to the owner.
 3. If neither fits, `-mm=rc` is not the right mode for that program.
 
-A `WeakRef<T>` that lets you declare a back-reference as non-owning is designed but not
-implemented; see `tslang/docs/reference-counting-evaluation.md` §9.8. When it lands it will be
-the fourth option here, and it does not change anything above.
+`WeakRef<T>` declares a back-reference that does not own what it refers to. It works under
+`-mm=gc`, `-mm=own` and `-mm=none`; under `-mm=rc` it is a compile error, because rc's header word
+is already the strong count and a weak count needs a second one (see
+`tslang/docs/reference-counting-evaluation.md` §9.8). So for a program with parent links, `-mm=own`
+with `WeakRef` is the fourth option here.
 
 ## The standard library
 
