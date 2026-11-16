@@ -104,6 +104,22 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
   ];
 }
 
+// WeakRef<T>: a reference that does not own what it refers to (own spec 84). Under own and none it
+// is the target's own pointer, under gc a collector-cleared link block.
+def TypeScript_WeakRef : TypeScript_Type<"WeakRef"> {
+  let mnemonic = "weak_ref";
+
+  let parameters = (ins "Type":$elementType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }]>
+  ];
+}
+
 // Shared<T> (own spec 23): a counted handle to a block whose payload is one T.
 def TypeScript_Shared : TypeScript_Type<"Shared"> {
   let mnemonic = "shared";

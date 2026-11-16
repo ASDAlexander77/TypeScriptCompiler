@@ -11472,6 +11472,10 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGenNewShared(mlir::Location location, NewExpression newExpression, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenNewWeakRef(mlir::Location location, NewExpression newExpression, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenWeakRefDeref(mlir::Location location, PropertyAccessExpression access, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGenSharedCount(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
     void markAtomicInstanceShared(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value instance);

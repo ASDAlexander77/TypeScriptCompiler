@@ -2438,6 +2438,43 @@ class MLIRTypeHelper
         return ownsHeapMemory(location, type, visiting);
     }
 
+    // A WeakRef<T> (own spec 84), an optional of one, or a union of one with members that own no
+    // heap memory (`WeakRef<Node> | null`). Under own it is counted on its target's header.
+    static bool isWeakRefType(mlir::Type type)
+    {
+        if (isa<mlir_ts::WeakRefType>(type))
+        {
+            return true;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return isWeakRefType(optionalType.getElementType());
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            auto weak = false;
+            for (auto member : unionType.getTypes())
+            {
+                if (isa<mlir_ts::WeakRefType>(member))
+                {
+                    weak = true;
+                    continue;
+                }
+
+                if (ownsHeapMemoryOfUnionMember(member))
+                {
+                    return false;
+                }
+            }
+
+            return weak;
+        }
+
+        return false;
+    }
+
     // A handle (own spec 23.2): a value counted in every model that tracks ownership. That is a
     // Shared<T>, an optional of a handle, or a union of at least one Shared<T> whose other members
     // own no heap memory: null, undefined, a number, a boolean, a literal, another Shared<U>.

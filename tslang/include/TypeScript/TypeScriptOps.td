@@ -2524,6 +2524,18 @@ def TypeScript_SharedValueRefOp : TypeScript_Op<"SharedValueRef"> {
   let results = (outs TypeScript_Ref:$result);
 }
 
+// `new WeakRef(x)` (own spec 84): a reference to x that does not own it.
+def TypeScript_WeakRefNewOp : TypeScript_Op<"WeakRefNew"> {
+  let arguments = (ins AnyType:$target);
+  let results = (outs TypeScript_WeakRef:$result);
+}
+
+// `w.deref()`: the target while it lives (an optional holding it), else an empty optional.
+def TypeScript_WeakRefDerefOp : TypeScript_Op<"WeakRefDeref"> {
+  let arguments = (ins TypeScript_WeakRef:$weakRef);
+  let results = (outs AnyType:$result);
+}
+
 // `Shared.count(s)`: the number of handles under rc and own, -1 under gc and none.
 def TypeScript_SharedCountOp : TypeScript_Op<"SharedCount"> {
   let arguments = (ins TypeScript_Shared:$shared);

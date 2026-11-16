@@ -1449,6 +1449,96 @@ class SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
     }
 };
 
+// `new WeakRef(x)` (own spec 84). none: x's own pointer, never freed. gc: a block holding x's
+// address complemented, which the collector does not take for a pointer to x, registered as a
+// disappearing link so that the collector zeroes it when x goes (gc.h's GC_HIDE_POINTER).
+class WeakRefNewOpLowering : public TsLlvmPattern<mlir_ts::WeakRefNewOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::WeakRefNewOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::WeakRefNewOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+        auto &compileOptions = tsLlvmContext->compileOptions;
+        if (compileOptions.tracksOwnership())
+        {
+            return op.emitError("WeakRef under -mm=own is not implemented yet");
+        }
+
+        if (!compileOptions.needsGCRuntime())
+        {
+            rewriter.replaceOp(op, ValueRange{transformed.getTarget()});
+            return success();
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), compileOptions);
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto link = ch.MemoryAlloc(th.getIndexType(), MemoryAllocSet::Zero);
+        auto address = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, transformed.getTarget());
+        auto allBits = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, -1));
+        auto hidden = rewriter.create<LLVM::XOrOp>(loc, llvmIndexType, address, allBits);
+        rewriter.create<LLVM::StoreOp>(loc, hidden, link);
+
+        auto registerLink = ch.getOrInsertFunction(
+            "GC_general_register_disappearing_link",
+            th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), th.getPtrType()}));
+        rewriter.create<LLVM::CallOp>(loc, registerLink, ValueRange{link, transformed.getTarget()});
+        rewriter.replaceOp(op, ValueRange{link});
+        return success();
+    }
+};
+
+// `w.deref()`: an optional holding the target, empty once it is gone. none: always the target.
+// gc: the link's word, which the collector zeroed if the target went.
+class WeakRefDerefOpLowering : public TsLlvmPattern<mlir_ts::WeakRefDerefOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::WeakRefDerefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::WeakRefDerefOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+        auto &compileOptions = tsLlvmContext->compileOptions;
+        if (compileOptions.tracksOwnership())
+        {
+            return op.emitError("WeakRef under -mm=own is not implemented yet");
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        mlir::Value target = transformed.getWeakRef();
+        if (compileOptions.needsGCRuntime())
+        {
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto hidden = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, transformed.getWeakRef());
+            auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+            auto allBits = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, -1));
+            auto cleared = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, hidden, zero);
+            auto address = rewriter.create<LLVM::XOrOp>(loc, llvmIndexType, hidden, allBits);
+            auto revealed = rewriter.create<LLVM::IntToPtrOp>(loc, th.getPtrType(), address.getResult());
+            auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+            target = rewriter.create<LLVM::SelectOp>(loc, cleared, null, revealed);
+        }
+
+        auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        auto alive = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, target, null);
+        auto llvmOptType = tch.convertType(op.getType());
+        mlir::Value optional = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
+        optional = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, optional, target,
+                                                        MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
+        rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(op, llvmOptType, optional, alive,
+                                                         MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
+        return success();
+    }
+};
+
 class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
 {
   public:
@@ -3879,6 +3969,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             auto  tsStorageType = referenceType.getElementType();
             if (isa<mlir_ts::ClassType>(tsStorageType) ||
                 isa<mlir_ts::SharedType>(tsStorageType) ||
+                isa<mlir_ts::WeakRefType>(tsStorageType) ||
                 isa<mlir_ts::StringType>(tsStorageType) ||
                 isa<mlir_ts::ArrayType>(tsStorageType) ||
                 isa<mlir_ts::ObjectType>(tsStorageType) ||
@@ -9000,6 +9091,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(m.getContext());
     });
 
+    // WeakRef<T> (own spec 84): the target's pointer under own and none, a link block under gc
+    converter.addConversion([&](mlir_ts::WeakRefType type) {
+        return LLVM::LLVMPointerType::get(m.getContext());
+    });
+
     converter.addConversion([&](mlir_ts::ValueRefType type) {
         return LLVM::LLVMPointerType::get(m.getContext());
     });
@@ -9988,6 +10084,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SwapOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering, TakeOutOfFieldOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering, MarkSharedOpLowering,
+        WeakRefNewOpLowering, WeakRefDerefOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

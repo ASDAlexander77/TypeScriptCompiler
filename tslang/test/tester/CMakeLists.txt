@@ -5087,6 +5087,20 @@ foreach(shared_mm ${shared_models})
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
 endforeach()
+# WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
+foreach(weakref_mm gc none)
+    foreach(weakref_test 00weakref_basic)
+        tslang_add_test(NAME test-jit-${weakref_test}-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
+        tslang_add_test(NAME test-compile-${weakref_test}-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
+    endforeach()
+endforeach()
+add_test(NAME test-rc-err-own_err_weakref_rc
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_weakref_rc.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/rc-err-own_err_weakref_rc.obj")
+set_tests_properties(test-rc-err-own_err_weakref_rc
+                     PROPERTIES PASS_REGULAR_EXPRESSION ":4:48: error: WeakRef is not supported under -mm=rc; use -mm=gc, -mm=own or -mm=none"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # Shared.count is a count only under rc and own.
 foreach(shared_count_mm rc own)
     tslang_add_test(NAME test-jit-${shared_count_mm}-own_shared_count COMMAND test-runner -jit -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
@@ -5530,6 +5544,7 @@ set(own_error_cases
     "own_err_list_walk_up|:21:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_pop_used_after|:14:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_next_kept_twice|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_weakref_not_class|:2:47: error: WeakRef needs a class object"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_cut_through_alias|:13:15: error: '[^']*' borrows a field and cannot be stored, returned or captured"

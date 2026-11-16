@@ -801,6 +801,16 @@ namespace mlirgen
 
             if (typeReferenceAST->typeArguments.size())
             {
+                // WeakRef<T> is the compiler's own whatever a library declares (own spec 84): the
+                // default library's gc-only class of that name is replaced by it
+                if (name == "WeakRef")
+                {
+                    if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
+                    {
+                        return embedType;
+                    }
+                }
+
                 if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
                 {
                     return type;
@@ -947,6 +957,7 @@ namespace mlirgen
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"Shared", true }, // a counted handle, own spec 23
+            {"WeakRef", true }, // a reference that does not own, own spec 84
             {"CVarArgs", true }, // a C variadic function type, see getCVarArgsType
             {"Readonly", true },
             {"Partial", true },
@@ -1041,6 +1052,7 @@ namespace mlirgen
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"Shared", true }, // a counted handle, own spec 23
+            {"WeakRef", true }, // a reference that does not own, own spec 84
             {"CVarArgs", true }, // a C variadic function type, see getCVarArgsType
             {"ThisType", true },
             {"Promise", true }, // an async function returns its value, see getEmbeddedTypeWithParam
@@ -1196,7 +1208,7 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, Shared, CVarArgs, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
+            None, TypeOf, Reference, BoxedObject, Shared, WeakRef, CVarArgs, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
             Parameters, ThisParameterType, OmitThisParameter, Uppercase, Lowercase, Capitalize, Uncapitalize
         };
 
@@ -1205,6 +1217,7 @@ namespace mlirgen
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("Shared", EmbeddedType::Shared)
+            .Case("WeakRef", EmbeddedType::WeakRef)
             .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
             // an async function runs to completion and returns its value (an `await` waits for
@@ -1246,6 +1259,8 @@ namespace mlirgen
                 return getObjectType(type);
             case EmbeddedType::Shared:
                 return mlir_ts::SharedType::get(type);
+            case EmbeddedType::WeakRef:
+                return mlir_ts::WeakRefType::get(type);
             case EmbeddedType::CVarArgs:
                 return getCVarArgsType(type);
             case EmbeddedType::FirstTypeArgument:
@@ -1304,7 +1319,7 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, Shared, CVarArgs, ThisType, Array
+            None, TypeOf, Reference, BoxedObject, Shared, WeakRef, CVarArgs, ThisType, Array
         };
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
@@ -1312,6 +1327,7 @@ namespace mlirgen
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("Shared", EmbeddedType::Shared)
+            .Case("WeakRef", EmbeddedType::WeakRef)
             .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Case("ThisType", EmbeddedType::ThisType)
             // a promise of T is T, see getEmbeddedTypeWithParamBuiltins
@@ -1338,6 +1354,8 @@ namespace mlirgen
             case EmbeddedType::Shared:
                 // the type argument is not checked above in this variant
                 return type ? mlir_ts::SharedType::get(type) : mlir::Type();
+            case EmbeddedType::WeakRef:
+                return type ? mlir_ts::WeakRefType::get(type) : mlir::Type();
             case EmbeddedType::CVarArgs:
                 return type ? getCVarArgsType(type) : mlir::Type();
             case EmbeddedType::ThisType:

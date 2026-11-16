@@ -464,6 +464,11 @@ class MLIRPrinter
                 printType(out, t.getElementType());
                 out << ">";
             })
+            .template Case<mlir_ts::WeakRefType>([&](auto t) {
+                out << "WeakRef<";
+                printType(out, t.getElementType());
+                out << ">";
+            })
             .template Case<mlir_ts::SharedType>([&](auto t) {
                 out << "Shared<";
                 printType(out, t.getElementType());
