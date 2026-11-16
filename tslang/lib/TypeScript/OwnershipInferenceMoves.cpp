@@ -163,6 +163,52 @@ namespace own_inference
         return loads;
     }
 
+    void OwnershipInferencePass::markBoundMethodsTaking(mlir::Operation *taker, mlir::Value value)
+    {
+        // does `from`, through its views, reach `taker`?
+        auto reaches = [&](mlir::Value from) {
+            llvm::SmallVector<mlir::Value> work{from};
+            while (!work.empty())
+            {
+                for (auto &use : work.pop_back_val().getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (user == taker)
+                    {
+                        return true;
+                    }
+
+                    if (isView(user) && use.getOperandNumber() == 0)
+                    {
+                        work.push_back(user->getResult(0));
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        llvm::SmallVector<mlir::Value> work{value};
+        while (!work.empty())
+        {
+            for (auto &use : work.pop_back_val().getUses())
+            {
+                auto *user = use.getOwner();
+                if (!isView(user) || use.getOperandNumber() != 0)
+                {
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(user) && reaches(user->getResult(0)))
+                {
+                    setAttrTracked(user, OWN_BOUND_OWNS_OBJECT_ATTR_NAME);
+                }
+
+                work.push_back(user->getResult(0));
+            }
+        }
+    }
+
     mlir::Operation *OwnershipInferencePass::recordStoreOf(mlir::Operation *retain, mlir::Value value)
     {
         // the value or a view of it (a union's member stored as the union)
@@ -1171,6 +1217,11 @@ namespace own_inference
             }
         }
 
+        for (auto *taker : takers)
+        {
+            markBoundMethodsTaking(taker, value);
+        }
+
         toErase.insert(moved.begin(), moved.end());
         return true;
     }
@@ -1614,6 +1665,7 @@ namespace own_inference
                 // others (spec 30)
                 if (placeReleases && placeOnUnmovedEdges(varOp, acquire, retain, taker, assignments, toErase))
                 {
+                    markBoundMethodsTaking(taker, value);
                     return true;
                 }
 
@@ -1629,6 +1681,7 @@ namespace own_inference
             slotClears.push_back({slot, clearAfter});
         }
 
+        markBoundMethodsTaking(taker, value);
         toErase.insert(moved.begin(), moved.end());
         return true;
     }

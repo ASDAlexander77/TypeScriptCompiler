@@ -375,9 +375,26 @@ inline llvm::SmallVector<mlir::Value> valuesStoredInto(mlir_ts::VariableOp varOp
 // either is one of the block, so the pass looks through them. A cast that converts (a number
 // printed into a string) or boxes (into `any`) makes a new block and is not one.
 inline bool isCopyableString(mlir::Type type);
+inline bool isMemberThis(mlir::Value value);
 
 inline bool isView(mlir::Operation *op)
 {
+    // a method of an object taken as a value (`h.f = v.get`, `return v.get`, `let f = v.get`), not
+    // called: `{fn, this, tag}` with the class's descriptor as the tag, so a release of it frees the
+    // object through the tag beside `this` - it is the object (USER RULING 2026-11-16: storing or
+    // returning it moves the object in)
+    // (or a virtual one, `ts.ThisVirtualSymbolRef`, whose `this` is its first operand too). Not a method
+    // of the member's own `this` (`this.m`): that one borrows `this` - a back-reference (spec 70), or
+    // what a keeper holds without owning
+    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(op))
+    {
+        return mlir::isa<mlir_ts::ClassType>(op->getOperand(0).getType()) && !isMemberThis(op->getOperand(0)) &&
+               !op->use_empty() &&
+               llvm::none_of(op->getUsers(), [](mlir::Operation *user) {
+                   return mlir::isa<mlir_ts::GetThisOp, mlir_ts::GetMethodOp>(user);
+               });
+    }
+
     // (`ts.ValueOrDefault` of a class: the optional's object, or null - the same block or none, spec 77)
     if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
                               mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op) ||
