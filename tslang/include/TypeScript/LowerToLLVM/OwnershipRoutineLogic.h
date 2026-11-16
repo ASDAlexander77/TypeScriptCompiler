@@ -1386,9 +1386,14 @@ class OwnershipRoutineLogic
             }
         }
 
-        // only a class whose vtable is in the module can be told by it
+        // only a class whose vtable this module defines can be told by it: an imported class's is a
+        // declaration of another module's global, which that module need not export (a shared library's
+        // `M.B..vtbl` left the program's link with an undefined dllimport)
         llvm::erase_if(found, [&](mlir_ts::ClassType sub) {
-            return !LLVMGlobalsIndex::lookupSymbolIn(compileOptions, module, vtableNameOf(sub));
+            auto *vtable = LLVMGlobalsIndex::lookupSymbolIn(compileOptions, module, vtableNameOf(sub));
+            auto defined = vtable && ((vtable->getNumRegions() > 0 && !vtable->getRegion(0).empty()) ||
+                                      vtable->hasAttr("value"));
+            return !defined;
         });
         return found;
     }
