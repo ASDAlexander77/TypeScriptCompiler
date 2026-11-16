@@ -2436,8 +2436,11 @@ namespace mlirgen
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
-            // compiler glue with no source to step through, as INSTANCEOF_NONE_NAME's
-            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            // compiler glue with no source to step through, as INSTANCEOF_NONE_NAME's; without --di it
+            // carries the place it is made for, so an error found in it (an own rule) points there
+            mlir::Location noLocation = compileOptions.generateDebugInfo
+                ? mlir::Location(mlir::UnknownLoc::get(builder.getContext()))
+                : stripMetadata(location);
             auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
             funcOp.setPrivate();
             funcOp->setAttr("internal_linkage", builder.getUnitAttr());
@@ -2466,8 +2469,18 @@ namespace mlirgen
 
             auto callee = builder.create<mlir_ts::SymbolRefOp>(noLocation, inFuncType,
                                                                mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName));
-            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee,
-                                                                  entryBlock.getArguments().take_front(inInputs.size()));
+            // what it passes on goes through its parameters, as any function's does: -mm=own reads a
+            // parameter given to a callee that keeps it as one this function keeps (its callers then
+            // give it, or a copy of a string they lend), where a bare argument is given without being owned
+            SmallVector<mlir::Value> passed;
+            for (auto [index, argument] : llvm::enumerate(entryBlock.getArguments().take_front(inInputs.size())))
+            {
+                auto paramOp = builder.create<mlir_ts::ParamOp>(noLocation, mlir_ts::RefType::get(argument.getType()), argument,
+                                                                builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
+                passed.push_back(builder.create<mlir_ts::LoadOp>(noLocation, argument.getType(), paramOp));
+            }
+
+            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee, passed);
             if (hasResult)
             {
                 // the callee's result is the thunk's, handed on as `return f(x)` hands it: owned, and

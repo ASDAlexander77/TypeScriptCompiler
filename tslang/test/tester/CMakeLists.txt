@@ -4662,7 +4662,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                  own_any_copies own_array_copies own_string_pushed_twice own_rest_takes own_shares_elements
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
-                 own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this)
+                 own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4702,7 +4702,7 @@ foreach(keeps_mm rc gc none)
                        own_callback_shapes own_callback_extended own_callback_interface
                        own_generic_specializations own_callback_cast own_callback_interface_slot own_equal_strings_into_any
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
-                       own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this)
+                       own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -5089,7 +5089,7 @@ foreach(shared_mm ${shared_models})
 endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
 foreach(weakref_mm gc none own)
-    foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame 00weakref_literal)
+    foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame 00weakref_literal 00weakref_narrowed)
         tslang_add_test(NAME test-jit-${weakref_test}-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
         tslang_add_test(NAME test-compile-${weakref_test}-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
     endforeach()
@@ -6718,7 +6718,7 @@ tslang_add_test(NAME test-compile-debug-shared-export-import-class-implements-in
 tslang_add_test(NAME test-jit-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 foreach(debug_own_test own/own_interface_getter_read own/own_immortal_keepers tests/00nullable_interface_to_interface
                        stack-promotion/to_any tests/00linked_list tests/00linked_list_kept tests/00linked_list_build
-                       tests/00weakref_basic tests/00weakref tests/00weakref_frame tests/00weakref_literal)
+                       tests/00weakref_basic tests/00weakref tests/00weakref_frame tests/00weakref_literal tests/00weakref_narrowed)
     get_filename_component(debug_own_name ${debug_own_test} NAME)
     tslang_add_test(NAME test-jit-debug-own-${debug_own_name} COMMAND test-runner -jit -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
     tslang_add_test(NAME test-compile-debug-own-${debug_own_name} COMMAND test-runner -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")

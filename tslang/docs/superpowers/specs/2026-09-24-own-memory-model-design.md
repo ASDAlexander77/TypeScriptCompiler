@@ -5959,3 +5959,29 @@ own compiler frees without it. The default library is rebuilt with the compiler,
 Tests: `00weakref_basic`, `00weakref`, `00weakref_frame` (own, gc, none; `-noopt` under own),
 `own_weakref_borrow`, `own_weakref_share_unrelated`; errors `own_err_weakref_rc`, `_not_class`,
 `_stored`, `_returned`, `_captured`, `_after_call`, `_after_release`, `_local_reassigned`, `_thread`.
+
+## 85. A callback declaring fewer parameters; a WeakRef of a nullable target, 2026-11-16
+
+**The adapter.** A function value with fewer parameters than the type it is given as (`(v) => ...` for
+`(value, key, map) => void`) is called through an adapter MLIRGen makes (`fewerParametersThunk`,
+`<callee>.args<N>`), which passes on its first parameters. It passed its block arguments straight
+to the call, so the signature pass never saw it keep a parameter its callee keeps, and the inference
+reported "given to ..., which keeps it, but -mm=own cannot move it here", at `<unknown>:0` (the adapter
+had no location). That was readiness item 4: `m.forEach((v, k) => { names.push(k); })` over a Map or a
+Set (their `forEach` type has three parameters). A callback declaring every parameter compiled.
+
+The adapter now takes its parameters into slots (`ts.Param`, as any function), so it keeps what its
+callee keeps and the callback family decides it as any member (spec 33). When the members disagree
+(one callback keeps the value, another the key) they are demoted, and a string the adapter then only
+borrows, given to a callee that keeps it, gets a copy (`callCopies`, spec 22), as a string read out of
+a place does: `giveKeptArguments` takes a load of a parameter slot that `copiesInto` the call as such a
+read. Without `--di` the adapter carries the location it is made at, so an error found in it points
+at the callback's use; with `--di` it keeps its own subprogram, as before.
+
+**WeakRef of a nullable declared target.** `let n: Node | null = new Node(); new WeakRef(n)`: this
+compiler keeps n's declared type where TypeScript narrows it by the assignment, so the WeakRef's `T`
+was `Node | null`: refused under own and none ("needs a class object"), and under gc a WeakRef that a
+later cast failed to verify. With no type argument `T` is now the target's type without null; a null
+target makes a WeakRef whose `deref()` gives undefined (copy, release and deref test for null).
+
+Tests: `own_callback_fewer_params` (own, rc, gc, none), `00weakref_narrowed` (own, gc, none).

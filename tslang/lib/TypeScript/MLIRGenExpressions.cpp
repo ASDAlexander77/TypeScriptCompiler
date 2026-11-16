@@ -1956,9 +1956,13 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
 
+        // T is the target's type without null: TypeScript reads `n` as `Node` after
+        // `let n: Node | null = new Node()`, where this compiler keeps the declared type. A null
+        // target makes a WeakRef whose deref() gives undefined (the copy, the release and deref
+        // all test for null).
         if (!elementType)
         {
-            elementType = mth.wideStorageType(value.getType());
+            elementType = mth.wideStorageType(mth.stripOptionalType(NonNullableTypes(value.getType())));
         }
 
         // a class object, or one a test narrowed out of `C | null` (`if (m) new WeakRef(m)`)

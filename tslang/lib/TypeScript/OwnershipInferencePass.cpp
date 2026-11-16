@@ -859,6 +859,20 @@ namespace own_inference
                 }
                 else if (!isFresh(root) && !placeReadOf(root))
                 {
+                    // a string read out of a parameter this function only borrows: the callee takes a
+                    // copy (spec 22), as it does of one read out of a place (callCopies). The adapter
+                    // that calls a callback declaring fewer parameters (`(v) => names.push(v)`) passes
+                    // its parameters on so, once the callbacks passed in its place disagree on them.
+                    // The dry run still fails here: its failure is what makes the copies, and the real
+                    // run then finds a fresh copy given
+                    auto loadOp = arg.getDefiningOp<mlir_ts::LoadOp>();
+                    auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                    auto position = -1;
+                    if (dryRun && varOp && isParameterSlot(varOp, position) && copiesInto(call, arg))
+                    {
+                        callCopies.push_back({loadOp, call});
+                    }
+
                     reportGivenNotOwned(call, arg);
                 }
             }
