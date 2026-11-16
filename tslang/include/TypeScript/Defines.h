@@ -135,6 +135,11 @@
 // other bound method borrows its object and keeps a null tag.
 #define OWN_BOUND_OWNS_OBJECT_ATTR_NAME "__own_bound_owns_object"
 
+// On the module: each class it made that extends another, as [subclass type, base type]. A release
+// routine of the base (OwnershipRoutineLogic) compares an object's vtable with each subclass's and
+// releases the fields of the class it is, not only the base's (rc and own).
+#define CLASS_BASES_ATTR_NAME "ts.class_bases"
+
 // Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
 // `captured = true` only because that is how a variable asks to be allocated in the heap, and
 // without this marker it would be indistinguishable from the cell of a captured variable - and

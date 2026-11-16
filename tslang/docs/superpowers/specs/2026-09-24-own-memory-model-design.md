@@ -6101,9 +6101,15 @@ the method from the class".
 `own_err_const_bound_method_reassigned` compiles now (`own_method_value_reassigned`);
 `own_err_borrow_bound_method` is refused where `f = b.m` is made (`b` only borrows).
 
-Found on the way, not changed here: a subclass object released through a slot of its base class
-(`const v: V = new V2()`) leaks the fields the subclass adds, under rc and own alike - the class release
-routine is the static type's, and the class vtable has no overridden slot to dispatch on.
+**A subclass's fields, released through its base** (rc and own; found on the way). An object kept in a
+slot of its base's type (`h.v: V = new V2()`, a `V[]`, a method value bound to it) was released by the
+base's routine, which gave back the base's fields only: what `V2` added leaked. MLIRGen records each
+class that extends another (`CLASS_BASES_ATTR_NAME`, `ts.class_bases` on the module: subclass, base;
+not a C++ class), and a class's release routine compares the object's vtable - its first word - with
+each subclass's in the module, at any depth, and releases the fields of the class it is. A subclass
+only another module makes is not known to the base's routine there: its added fields still leak when
+an object of it is released in that module through the base. Test: `own_subclass_fields_released`
+(every model).
 
 Tests: `own_method_value_moves`, `own_method_value_reassigned` (own, rc, gc, none);
 `own_err_method_value_twice`, `own_err_method_value_used_after`, `own_err_interface_method_value_returned`.

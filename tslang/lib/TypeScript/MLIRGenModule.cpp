@@ -552,6 +552,36 @@ namespace mlirgen
         {
             theModule->setAttr(OWN_FINAL_CLASSES_ATTR_NAME, builder.getArrayAttr(finals));
         }
+
+        // Each class of the module that extends another, with its base: a release routine of the base
+        // (OwnershipRoutineLogic) tells an object of a subclass by its vtable and releases the fields
+        // the subclass adds too. Not a C++ class, whose vtable is C++'s; not a generic declaration.
+        llvm::SmallVector<mlir::Attribute> bases;
+        for (auto &classInfo : moduleClasses)
+        {
+            if (classInfo->isCppVTable || !classInfo->classType || classInfo->baseClasses.empty() ||
+                !classInfo->hasVirtualTable)
+            {
+                continue;
+            }
+
+            auto &base = classInfo->baseClasses.front();
+            if (!base->classType || base->isCppVTable || !base->hasVirtualTable)
+            {
+                continue;
+            }
+
+            auto entry = builder.getArrayAttr({mlir::TypeAttr::get(classInfo->classType), mlir::TypeAttr::get(base->classType)});
+            if (!llvm::is_contained(bases, entry))
+            {
+                bases.push_back(entry);
+            }
+        }
+
+        if (!bases.empty())
+        {
+            theModule->setAttr(CLASS_BASES_ATTR_NAME, builder.getArrayAttr(bases));
+        }
     }
 
     void MLIRGenImpl::devirtualizeClosedMethods()
