@@ -28,10 +28,11 @@ class Table {
     }
 }
 
-function run() {
+function run(round: number) {
+    // strings made at run time, so that the table's are freed when it drops them
     const t = new Table();
-    t.add("a", "x", "ta");
-    t.add("b", "y", "tb");
+    t.add("a" + round, "x" + round, "ta" + round);
+    t.add("b" + round, "y" + round, "tb" + round);
 
     const values: string[] = [];
     t.forEach((v) => { values.push(v); });
@@ -40,15 +41,18 @@ function run() {
     const fromTuples: string[] = [];
     t.forEachTuple((k) => { fromTuples.push(k); });
 
-    t.add("c", "z", "tc");
-    assert(values.length == 2 && values[0] == "x" && values[1] == "y", "values");
-    assert(keys.length == 2 && keys[0] == "a" && keys[1] == "b", "keys");
-    assert(fromTuples.length == 2 && fromTuples[1] == "tb", "tuple keys");
+    // the table's entries go: what the callbacks kept is their own
+    t.entries = [];
+    t.tuples = [];
+    t.add("c" + round, "z" + round, "tc" + round);
+    assert(values.length == 2 && values[0] == "x" + round && values[1] == "y" + round, "values");
+    assert(keys.length == 2 && keys[0] == "a" + round && keys[1] == "b" + round, "keys");
+    assert(fromTuples.length == 2 && fromTuples[1] == "tb" + round, "tuple keys");
 }
 
 function main() {
     for (let i = 0; i < 200; i++) {
-        run();
+        run(i);
     }
 
     print("done.");
