@@ -46,6 +46,8 @@ using namespace own_facts;
 // -mm=own only, on a `ts.CreateArray` given to one call that borrows it: it borrows its elements
 // for the call (classifyArgumentArrays)
 #define OWN_BORROWING_ARRAY_ATTR_NAME "__own_borrowing_array"
+// an `any` box of a value it only borrows, to be cast back and read (classifyBorrowingBoxes, spec 92)
+#define OWN_BORROWING_BOX_ATTR_NAME "__own_borrowing_box"
 
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
@@ -309,6 +311,11 @@ class OwnershipInferencePass
     void classifyLocalBorrowingArrays();
     // `const w = a.view(0, 1)` only read borrows the elements it copies (spec 91)
     void classifyArrayViews();
+    // `(<T><any>s).f` - a box made of a value it does not own, only cast back and read, borrows it (spec 92)
+    void classifyBorrowingBoxes();
+    // what may free a value another owns, run between `made` and one of `uses` (spec 91)
+    mlir::Operation *freedWhileUsed(mlir::Operation *made, llvm::ArrayRef<mlir::Operation *> uses,
+                                    llvm::ArrayRef<mlir::Operation *> ownReleases);
     // An owning `let` given only reads of places and parameters, and assigned at least once
     // (TSLANG 56): each value it is given is a borrow until the next assignment.
     bool borrowsOnly(mlir_ts::VariableOp varOp);

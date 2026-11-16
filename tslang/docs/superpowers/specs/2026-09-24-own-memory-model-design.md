@@ -6162,3 +6162,24 @@ Tests: `own_array_view_borrows` (every model), `own_err_view_after_pop`.
 
 `own_subclass_fields_freed` (own): a WeakRef to an object a subclass's own field holds gives undefined
 once the object is released through its base (spec 89), which a test that only runs to the end cannot see.
+
+## 92. A round trip through `any`; `Opaque` borrows, 2026-11-16
+
+User rulings (2026-11-16). **A value boxed into `any` only to be cast straight back and read borrows**
+(`(<Failed><any>s).code`, `const box = a as any; (box as number[]).push(2)`): `classifyBorrowingBoxes`
+takes an `any` cast (`ts.Cast` to `any`) of a value it does not own - a parameter, a field, a local - or
+of a fresh value this function owns, whose box (held in a `const`, or used as it is) is only cast back
+(a `ts.Cast`, or `___unbox<T>` for a class, whose result borrows the box), tested (`typeof`, a tuple's
+layout) or given to a call that keeps nothing of it; what is cast back is only read, or held in a `const`
+that is. rc's reference for the payload goes (and the `const`'s counting), the box is marked
+`OWN_BORROWING_BOX_ATTR_NAME` - a read of the value (`isBorrow`) - and its releases free the box only
+(`OWN_SHALLOW_RELEASE_ATTR_NAME`, `emitReleaseAnyShallow`). Nothing that may free the value may run
+between the box and a use (`freedWhileUsed`, shared with spec 91), nor a fresh value's own release. A box
+stored, returned or kept follows the `any` rules as before.
+
+**`<Opaque>x` borrows `x`** (`isBorrow`): the raw pointer owns nothing, and what it points at stays its
+owner's - a local, a `const`, a field. It is not tracked further: an Opaque is a pointer the program
+manages. A temporary nothing else keeps (`<Opaque>new Item()`) is an error: "an Opaque only borrows what
+it points at, and nothing else keeps this object under -mm=own: keep the object in a variable first".
+
+Tests: `own_any_round_trip`, `own_opaque_borrows` (every model), `own_err_opaque_temporary`.

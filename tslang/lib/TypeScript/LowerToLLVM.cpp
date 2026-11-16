@@ -696,6 +696,11 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
             {
                 orl.emitReleaseArrayShallow(arrayType, transformed.getReference());
             }
+            else if (isa<mlir_ts::AnyType>(op.getReference().getType()) && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
+            {
+                // an `any` box that only borrowed what it holds (-mm=own's classifyBorrowingBoxes)
+                orl.emitReleaseAnyShallow(transformed.getReference());
+            }
             else if (op->hasAttr(OWN_CELL_READ_ATTR_NAME))
             {
                 // -mm=own: a read through an interface's field is freed only when a getter made it
@@ -794,6 +799,15 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
                     TypeHelper th(rewriter);
                     auto header = rewriter.create<LLVM::LoadOp>(op->getLoc(), th.getPtrType(), transformed.getSlot());
                     orl.emitReleaseArrayShallow(arrayType, header);
+                    return;
+                }
+
+                // a local `any` box that only borrowed what it holds (classifyBorrowingBoxes)
+                if (isa<mlir_ts::AnyType>(elementType) && op->hasAttr(OWN_SHALLOW_RELEASE_ATTR_NAME))
+                {
+                    TypeHelper th(rewriter);
+                    auto box = rewriter.create<LLVM::LoadOp>(op->getLoc(), th.getPtrType(), transformed.getSlot());
+                    orl.emitReleaseAnyShallow(box);
                     return;
                 }
 

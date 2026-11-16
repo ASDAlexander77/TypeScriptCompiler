@@ -125,6 +125,8 @@ Probed one by one under the JIT:
 | `x ??= new B()` on a parameter, a local or a field | Compiles and runs (spec 90): a plain assignment where `x` is null; `??=` of an accessor is still rejected |
 | `let t = p` inside `try`, `switch (s.kind)` over a union parameter | Compiles and runs (spec 90): borrows, as outside `try` and under `if` |
 | `const w = a.view(0, 1)` only read | Compiles and runs (spec 91): borrows the elements; a call or `pop` before a read of it is rejected |
+| `(<T><any>s).f`, `const box = a as any; (box as T[]).push(x)` | Compiles and runs (spec 92): the box borrows |
+| `<Opaque>x` of a local or a field; `<Opaque>new Item()` | Compiles and runs: borrows (spec 92); a temporary is rejected - keep it in a variable first |
 | `return set ? n : undefined`, `h.n = set ? n : null` of an owned local | Compiles and runs: `n` moves on the way that chooses it, and is released on the other |
 | `return first ? shared : other` of globals never reassigned, `c ? 1 : "one"` | Compiles and runs: the merge owns nothing |
 | `let p: Node \| null = on() ? mk(3) : null` at the top level | Compiles and runs |

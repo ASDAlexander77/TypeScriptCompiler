@@ -334,6 +334,14 @@ class OwnershipRoutineLogic
         });
     }
 
+    // An `any` box given back without what it holds (-mm=own, OWN_SHALLOW_RELEASE_ATTR_NAME): a box made
+    // of a value it only borrows, to be cast back and read (classifyBorrowingBoxes). The box's block
+    // goes; the payload stays its owner's.
+    void emitReleaseAnyShallow(mlir::Value boxValue)
+    {
+        emitIfLastReference(boxValue, [&]() { emitFreeBlock(boxValue); });
+    }
+
     // What destroying a block of `storageType` at `payloadPtr` releases, without freeing the block:
     // a promoted object's fields when its frame is done with it (ts.ReleaseContents). Each field
     // given back is nulled, so that the block never holds a reference it no longer owns: a second

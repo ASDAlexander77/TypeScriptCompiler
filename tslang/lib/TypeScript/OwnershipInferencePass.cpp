@@ -323,6 +323,7 @@ namespace own_inference
         // ...and whether an array literal in a local only borrows its elements (TSLANG 55)
         classifyLocalBorrowingArrays();
         classifyArrayViews();
+        classifyBorrowingBoxes();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {
@@ -569,6 +570,21 @@ namespace own_inference
                         op->emitError("'") << name << "' is a parameter and cannot be assigned under -mm=own yet";
                     }
 
+                    signalPassFailure();
+                }
+            }
+            else if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op);
+                     castOp && mlir::isa<mlir_ts::OpaqueType>(castOp.getType()) && ownsHeap(castOp.getIn()))
+            {
+                // `<Opaque>new Item()`: an Opaque only borrows, so a temporary nothing else holds would be
+                // freed under it (spec 92). A `const` or a local holding the object owns it.
+                auto *def = rootOf(castOp.getIn()).getDefiningOp();
+                if (def && isFresh(rootOf(castOp.getIn())) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
+                    llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); }) &&
+                    reporting())
+                {
+                    op->emitError("an Opaque only borrows what it points at, and nothing else keeps this object under "
+                                  "-mm=own: keep the object in a variable first");
                     signalPassFailure();
                 }
             }
@@ -929,7 +945,8 @@ namespace own_inference
                                OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME, OWN_STATE_BORROW_ATTR_NAME,
-                               OWN_CAPTURE_BORROW_ATTR_NAME, OWN_BORROWING_ARRAY_ATTR_NAME})
+                               OWN_CAPTURE_BORROW_ATTR_NAME, OWN_BORROWING_ARRAY_ATTR_NAME,
+                               OWN_BORROWING_BOX_ATTR_NAME})
             {
                 op->removeAttr(name);
             }
