@@ -1376,6 +1376,11 @@ class OwnershipInferencePass
     // (each moved as this one is): a borrow brought in would be given an owner. The retain, or null.
     static mlir::Operation *mergeRetainOf(mlir::Operation *taker, mlir::Value value);
 
+    // A value merged from branches (a block argument, through its views) where every way in brings
+    // what nothing owns: data (a literal, null), an immortal global's read, or such a merge. It owns
+    // nothing either, so a retain of it takes nothing.
+    static bool mergeOwnsNothing(mlir::Value value, unsigned depth = 0);
+
     // The declaration's name survives only as debug metadata (`--di`). At this level MLIRGen's
     // form of it is a NameLoc first inside the location fused with the scope - what LowerToLLVM's
     // preserveTypesForDebugInfo reads - and after that pass it is a DILocalVariable. Without
