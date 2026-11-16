@@ -676,6 +676,164 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::classifyArrayViews()
+    {
+        getFunction().walk([&](mlir_ts::ArrayViewOp viewOp) {
+            // `const w = a.view(0, 1)` (spec 91): a copy of the element pointers of a slice of `a`, which
+            // under own retains none of them. A view only read - its length and its elements - borrows
+            // them, as an array literal of borrowed elements does (TSLANG 55): rc's reference for the
+            // local goes, and its release gives back the copy without what it holds. Any other view
+            // keeps rc's reference, a second reference of each element, and is refused.
+            auto result = viewOp.getResult();
+            if (result.use_empty())
+            {
+                return;
+            }
+
+            // of an array that outlives it: not a temporary the view's statement releases
+            if (isFresh(rootOf(viewOp.getOp())))
+            {
+                return;
+            }
+
+            auto slot = result.hasOneUse() ? mlir::dyn_cast<mlir_ts::VariableOp>(*result.getUsers().begin()) : mlir_ts::VariableOp();
+            if (slot && (slot.getInitializer() != result || slot.getCaptured().value_or(false)))
+            {
+                return;
+            }
+
+            // the local: read, and given back - never written, never passed on
+            llvm::SmallVector<mlir::Operation *> releases;
+            llvm::SmallVector<mlir::Operation *> retains;
+            llvm::SmallVector<mlir::Value> reads;
+            if (slot)
+            {
+                for (auto *user : slot->getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        reads.push_back(loadOp.getResult());
+                    }
+                    else if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                    {
+                        releases.push_back(user);
+                    }
+                    else if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+                    {
+                        retains.push_back(user);
+                    }
+                    else if (!mlir::isa<mlir_ts::DebugVariableOp>(user))
+                    {
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                reads.push_back(result);
+            }
+
+            // each read: its length, or an element read out of it (and not written)
+            for (auto read : reads)
+            {
+                for (auto *user : read.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::LengthOfOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        continue;
+                    }
+
+                    if (!slot && mlir::isa<mlir_ts::ReleaseOp>(user))
+                    {
+                        releases.push_back(user);
+                        continue;
+                    }
+
+                    auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
+                    if (!elementRefOp || elementRefOp.getArray() != read ||
+                        llvm::any_of(elementRefOp->getUsers(), [](mlir::Operation *refUser) { return !mlir::isa<mlir_ts::LoadOp>(refUser); }))
+                    {
+                        return;
+                    }
+                }
+            }
+
+            RecordWalk walk;
+            walkRecord({result}, {}, walk);
+            if (walk.kept || !walk.returns.empty())
+            {
+                return;
+            }
+
+            // nothing that may free an element of the array between the view and a use of it: a call
+            // that may drop, a change of an array's length, a slot's release (the array's owner given
+            // a new value or ending, an element overwritten), a `delete`
+            llvm::SmallVector<mlir::Operation *> uses;
+            for (auto &use : walk.uses)
+            {
+                uses.push_back(use.op);
+            }
+
+            for (auto read : reads)
+            {
+                for (auto *user : read.getUsers())
+                {
+                    uses.push_back(user);
+                }
+            }
+
+            auto frees = [&](mlir::Operation *op) {
+                if (llvm::is_contained(releases, op))
+                {
+                    return false;
+                }
+
+                return (isCall(op) && !callNoDrops(op)) ||
+                       mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp,
+                                 mlir_ts::SwapOp, mlir_ts::ReleaseSlotOp, mlir_ts::DeleteOp>(op);
+            };
+
+            mlir::Operation *freer = nullptr;
+            getFunction().walk([&](mlir::Operation *op) {
+                if (freer || !frees(op) || !reachableAfter(viewOp, op, llvm::ArrayRef<mlir::Operation *>()))
+                {
+                    return;
+                }
+
+                // (in a loop, a use the next round reaches is of the view made again)
+                if (llvm::any_of(uses, [&](mlir::Operation *use) { return reachableAfter(op, use, viewOp.getOperation()); }))
+                {
+                    freer = op;
+                }
+            });
+
+            if (freer)
+            {
+                if (reporting())
+                {
+                    auto diag = viewOp->emitError("a view of an array borrows its elements, but something that may free "
+                                                  "one runs while the view is still read; read the view first, or copy it");
+                    diag.attachNote(freer->getLoc()) << "this may free an element";
+                    signalPassFailure();
+                }
+
+                // (reported: rc's reference for the local is not a second error)
+                fieldBorrowRetains.insert(retains.begin(), retains.end());
+                return;
+            }
+
+            setAttrTracked(viewOp, OWN_BORROWING_ARRAY_ATTR_NAME);
+            fieldBorrowRetains.insert(retains.begin(), retains.end());
+            // what borrows the array it is a view of (a field read, a `let`) is used wherever the view is
+            arrayElementUses[viewOp.getOperation()] = walk.uses;
+            // its releases give back the copy, without what it holds
+            for (auto *release : releases)
+            {
+                setAttrTracked(release, OWN_SHALLOW_RELEASE_ATTR_NAME);
+            }
+        });
+    }
+
     bool OwnershipInferencePass::isBorrowingCell(mlir::Value ref)
     {
         auto cellLoad = ref.getDefiningOp<mlir_ts::LoadOp>();

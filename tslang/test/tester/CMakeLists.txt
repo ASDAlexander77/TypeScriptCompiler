@@ -4676,7 +4676,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4718,7 +4718,7 @@ foreach(keeps_mm rc gc none)
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                        own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_array_view_borrows)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -5574,6 +5574,7 @@ set(own_error_cases
     "own_err_select_used_after|:11:11: error: '[^']*' is used here after its value was moved"
     "own_err_select_in_loop|:9:18: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_method_value_twice|:18:5: error: '[^']*' is used here after its value was moved"
+    "own_err_view_after_pop|:9:15: error: a view of an array borrows its elements"
     "own_err_method_value_used_after|:14:5: error: '[^']*' is used here after its value was moved"
     "own_err_interface_method_value_returned|:15:5: error: a method read through an interface cannot be stored or returned under -mm=own yet"
     "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"

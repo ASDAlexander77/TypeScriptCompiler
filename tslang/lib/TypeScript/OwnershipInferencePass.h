@@ -307,6 +307,8 @@ class OwnershipInferencePass
     // An array literal held in a local, made only of reads of places and parameters and only read
     // (TSLANG 55): it borrows its elements while it is used, and its releases are shallow.
     void classifyLocalBorrowingArrays();
+    // `const w = a.view(0, 1)` only read borrows the elements it copies (spec 91)
+    void classifyArrayViews();
     // An owning `let` given only reads of places and parameters, and assigned at least once
     // (TSLANG 56): each value it is given is a borrow until the next assignment.
     bool borrowsOnly(mlir_ts::VariableOp varOp);

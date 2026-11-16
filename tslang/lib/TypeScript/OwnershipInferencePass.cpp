@@ -322,6 +322,7 @@ namespace own_inference
         classifyArgumentArrays();
         // ...and whether an array literal in a local only borrows its elements (TSLANG 55)
         classifyLocalBorrowingArrays();
+        classifyArrayViews();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {

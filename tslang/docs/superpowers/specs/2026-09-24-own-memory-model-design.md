@@ -6144,3 +6144,21 @@ reference of what the setter took, so `??=` of an accessor stays refused. Tests:
 **Imported subclasses** (rc and own, spec 89's fix): a base's release routine compares with the vtables
 of subclasses this module defines only. An imported class's vtable is a declaration of another module's
 global, which a shared library need not export: the program's link failed with an undefined dllimport.
+
+## 91. A view of an array borrows its elements, 2026-11-16
+
+`a.view(from, to)` (`ts.ArrayView`) copies the element pointers of a slice of `a`; rc retains each, own
+retains none - so its release freed elements `a` still owned, and its local was "a second reference".
+A view held in a `const` or used as it is, that is only read - its length, its elements - and neither
+stored, returned, captured nor given to a call that keeps it, now borrows its elements
+(`classifyArrayViews`): rc's reference for the local goes, its releases give back the copy without what
+it holds (`OWN_SHALLOW_RELEASE_ATTR_NAME`), and whatever borrows the array it is a view of - a field
+read, a parameter, a local - is used wherever the view is (`arrayElementUses`). Nothing that may free an
+element may run between the view and a use of it: a call that may drop, `pop`/`shift`/`splice`, a change
+of length, an exchange, a slot's release (the array's owner given a new value or ending, an element
+overwritten), a `delete` - else "a view of an array borrows its elements, but something that may free
+one runs while the view is still read". A view of a temporary, or one kept, is refused as before.
+Tests: `own_array_view_borrows` (every model), `own_err_view_after_pop`.
+
+`own_subclass_fields_freed` (own): a WeakRef to an object a subclass's own field holds gives undefined
+once the object is released through its base (spec 89), which a test that only runs to the end cannot see.
