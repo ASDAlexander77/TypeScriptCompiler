@@ -2013,6 +2013,25 @@ inline mlir_ts::VariableOp recordLocalOf(mlir::Value value)
 // or a parameter is a borrow, and such a record is not this one. A read of an owning `let` (`return
 // { s, n }`) moves out of the local: the record's retain is that slot's receiver, whose move check
 // cancels the slot's release and refuses a use after it (OwnershipInferencePass::recordSlotLoads).
+// An owning record built in a local of its own and read once into the field (`{ t: [i, [i]] }`) moves
+// in whole (nestedRecordRead).
+inline bool isOwningRecord(mlir::Value value);
+
+// The one read of a record local (`[i, [i]]` inside `{ t: [i, [i]] }`) that owns what it holds, given
+// only as `value`: it moves into what takes it, with what it holds. Null for anything else.
+inline mlir_ts::LoadOp nestedRecordRead(mlir::Value value)
+{
+    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+    auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    if (!varOp || !isConstantRecordLocal(varOp) || !loadOp->hasOneUse())
+    {
+        return {};
+    }
+
+    auto reads = llvm::count_if(varOp->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+    return reads == 1 && isOwningRecord(loadOp.getResult()) ? loadOp : mlir_ts::LoadOp();
+}
+
 inline bool isOwningRecord(mlir::Value value)
 {
     auto varOp = recordLocalOf(value);
@@ -2047,7 +2066,8 @@ inline bool isOwningRecord(mlir::Value value)
 
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
             if (!storeOp || storeOp.getReference() != field ||
-                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue()) || slotLoadOf(storeOp.getValue())))
+                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue()) || slotLoadOf(storeOp.getValue()) ||
+                  nestedRecordRead(storeOp.getValue())))
             {
                 return false;
             }

@@ -258,6 +258,19 @@ namespace own_inference
                 return;
             }
 
+            // stored into a field of another record that owns it (`{ t: [i, [i]] }`): what that record's
+            // retain is, its own as well
+            auto outerField = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                                                    : mlir_ts::PropertyRefOp();
+            auto outer = outerField ? outerField->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (outer && outer != varOp && nestedRecordRead(used))
+            {
+                auto *outerRetain = recordRetainOf(outer);
+                bad = !outerRetain || retain;
+                retain = outerRetain;
+                return;
+            }
+
             // stored into the result slot, or into an owning local (`a = { item: new C() }`)
             auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                                               : mlir_ts::VariableOp();
