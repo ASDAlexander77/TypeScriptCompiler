@@ -257,6 +257,7 @@ namespace own_signature
         computeNoThrow();
         pinAssignedGlobals();
         rejectGlobalArgumentsDropped();
+        rejectWeakTargetsShared(module);
         findBoundedForwarders();
         findYieldedFields(module);
         findImportedStates(module);
@@ -1708,6 +1709,46 @@ namespace own_signature
         });
 
         computeDropsRound(true);
+    }
+
+    void OwnershipSignaturePass::rejectWeakTargetsShared(mlir::ModuleOp module)
+    {
+        llvm::SmallVector<mlir_ts::WeakRefNewOp> weakRefs;
+        llvm::SmallVector<mlir_ts::MarkSharedOp> shares;
+        module.walk([&](mlir::Operation *op) {
+            if (auto weakRefNewOp = mlir::dyn_cast<mlir_ts::WeakRefNewOp>(op))
+            {
+                weakRefs.push_back(weakRefNewOp);
+            }
+            else if (auto markSharedOp = mlir::dyn_cast<mlir_ts::MarkSharedOp>(op))
+            {
+                shares.push_back(markSharedOp);
+            }
+        });
+
+        for (auto weakRefNewOp : weakRefs)
+        {
+            auto targetType = mlir::cast<mlir_ts::WeakRefType>(weakRefNewOp.getType()).getElementType();
+            for (auto markSharedOp : shares)
+            {
+                if (!typeMayHold(module, markSharedOp->getOperand(0).getType(), targetType))
+                {
+                    continue;
+                }
+
+                llvm::SmallString<64> name;
+                llvm::raw_svector_ostream nameStream(name);
+                MLIRPrinter printer{};
+                printer.printType<llvm::raw_svector_ostream>(nameStream, targetType);
+
+                auto diag = weakRefNewOp->emitError("-mm=own cannot make a WeakRef to a '")
+                            << name
+                            << "' in a program that shares what may hold one with another thread: a weak count is not atomic";
+                diag.attachNote(markSharedOp->getLoc()) << "shared with another thread here";
+                signalPassFailure();
+                break;
+            }
+        }
     }
 
     void OwnershipSignaturePass::computeNoThrow()

@@ -1181,6 +1181,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // borrow of a place, which the inference already bounds by the call.)
     void rejectGlobalArgumentsDropped();
 
+    // A weak count is not atomic (own spec 84): a module that makes WeakRefs to a class may not share
+    // with another thread (ts.MarkShared: Thread.spawn, a worker, Shared.share) anything whose type may
+    // hold that class. Reported at the WeakRef, with a note where the value is shared.
+    void rejectWeakTargetsShared(mlir::ModuleOp module);
+
     // ---- Calls in a global's initializer ----
 
     // A global's region is no function: its calls get no facts pinned, and the inference never sees
