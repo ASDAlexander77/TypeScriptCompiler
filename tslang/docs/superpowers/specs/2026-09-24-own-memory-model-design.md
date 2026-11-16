@@ -6012,3 +6012,35 @@ constant data (`isConstantData`), and a global initializer's retain of constant 
 
 Tests: `own_merge_moves_local`, `own_merge_of_constants`, `own_optional_literal_result`,
 `own_global_merge_initializer` (own, rc, gc, none). Corpus: 717 -> 724 of 890 compile under own.
+
+## 87. Three fuzzer finds (seeds 920048, 920187, 920443), 2026-11-16
+
+The differential fuzzer's seed range 920000 found three crashes older than spec 86 (the same IR with
+and without it).
+
+**A closure's box dies with the closure.** `const n = new N(); { let c = () => n.v.get(); } return
+n.v.x;`: the box owns its copies (phase 4), and a read of `n` after the move counted as one through its
+new owner (spec 29, `readsThroughOwner`), whose ends were the box variable's - none. The box goes where
+the closure value is given back (the `let`'s release at the block's end), so the reads are now checked
+against the closure's ends too (`followClosure`); a closure that may go anywhere else is no owner to
+read through. "used after its value was moved", as when the closure is called.
+
+**Edge releases stay within the value's life.** `for (...) { const n = mk(); if (stop) break; if (c)
+keep(h, n); }`: the release on the ways that do not move `n` (TSLANG 81, `valueUnmovedEdges`) went on
+every edge into the blocks the move reaches, which ran through the loop's latch to its header and exit,
+where `n` does not live; the break's edge into the exit got a release on top of its own. The blocks are
+now those `n`'s definition dominates.
+
+**Locals of catch and finally clauses own what they hold** (rc and own). MLIRGen left them unowned
+while a call in an exception funclet was fragile (since fixed); under rc such a local read freed memory
+once its source was given a new value (`finally { const k = G; G = mk(5); k.items[0] }`). They are owned
+now, released where the clause ends, on a return or a break. A clause synthesizes no cleanup TryOp, so
+one an exception leaves the clause with leaks; and a clause that holds a `try` of its own keeps its
+locals unowned (`clausesWithNestedTry`), since that try's unwind leg (an exception out of its finally on
+the way back from a `return`) would leave one unreleased - the ownership verifier sees that leg. Under
+own a clause local is decided as any local: `own_err_borrow_catch_local` / `_finally_local` now report
+it where it is given what another only borrows.
+
+Tests: `own_err_capture_block_closure`, `own_moved_some_paths_break`, `00catch_finally_locals_own` (rc,
+gc, none; refused under own), `00catch_finally_owned_locals_eh` (every model). Fuzz seeds 920000 and
+921000 x500: no failure.
