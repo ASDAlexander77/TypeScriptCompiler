@@ -1888,7 +1888,8 @@ inline bool isConstantData(mlir::Value value)
         return false;
     }
 
-    if (mlir::isa<mlir_ts::ConstantOp, mlir_ts::SymbolRefOp>(def))
+    // (a type's descriptor - a union's tag - is its name, in read-only data)
+    if (mlir::isa<mlir_ts::ConstantOp, mlir_ts::SymbolRefOp, mlir_ts::TypeDescriptorOp>(def))
     {
         return true;
     }
@@ -1924,7 +1925,9 @@ inline bool isConstantData(mlir::Value value)
         return isConstantData(extractOp.getObject());
     }
 
-    if (mlir::isa<mlir_ts::CreateTupleOp>(def))
+    // ...and a union made of such data and its tag (`[{ c: "" }, { c: 0 }]` makes each `c` a
+    // `string | s32`): the same literal or number, tagged
+    if (mlir::isa<mlir_ts::CreateTupleOp, mlir_ts::CreateUnionInstanceOp>(def))
     {
         return llvm::all_of(def->getOperands(), [](mlir::Value operand) { return isConstantData(operand); });
     }
