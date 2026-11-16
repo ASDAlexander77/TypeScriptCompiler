@@ -39,6 +39,7 @@ set(not_compilable_alone
     00weakref.ts
     00weakref_basic.ts
     00weakref_frame.ts
+    00weakref_literal.ts
     # a @cpp class is an error under rc and own (cppvtable/memory_model.ts)
     00cpp_slot.ts
     00cpp_overloads.ts

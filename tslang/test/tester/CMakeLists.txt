@@ -5089,7 +5089,7 @@ foreach(shared_mm ${shared_models})
 endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
 foreach(weakref_mm gc none own)
-    foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame)
+    foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame 00weakref_literal)
         tslang_add_test(NAME test-jit-${weakref_test}-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
         tslang_add_test(NAME test-compile-${weakref_test}-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
     endforeach()
@@ -6718,7 +6718,7 @@ tslang_add_test(NAME test-compile-debug-shared-export-import-class-implements-in
 tslang_add_test(NAME test-jit-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 foreach(debug_own_test own/own_interface_getter_read own/own_immortal_keepers tests/00nullable_interface_to_interface
                        stack-promotion/to_any tests/00linked_list tests/00linked_list_kept tests/00linked_list_build
-                       tests/00weakref_basic tests/00weakref tests/00weakref_frame)
+                       tests/00weakref_basic tests/00weakref tests/00weakref_frame tests/00weakref_literal)
     get_filename_component(debug_own_name ${debug_own_test} NAME)
     tslang_add_test(NAME test-jit-debug-own-${debug_own_name} COMMAND test-runner -jit -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
     tslang_add_test(NAME test-compile-debug-own-${debug_own_name} COMMAND test-runner -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")

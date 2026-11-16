@@ -377,10 +377,35 @@ namespace own_inference
         // yielded field's old value: the yield gave the state's count to the caller, who owns the
         // record `next` returns and releases it; nor the retain for a box that borrows what it holds:
         // that box gives nothing back
+        // ...nor the release of a fresh handle stored into a record literal that moves (recordRetainOf:
+        // `const o = { w: new WeakRef(n) }`, `return { s: new Shared(k) }`): rc's retain of the record
+        // is erased as the move, so the handle's count moved in with it, and the record's release
+        // gives it back; the temporary's release would give it back twice
+        llvm::SmallPtrSet<mlir::Operation *, 4> movedHandleReleases;
+        getFunction().walk([&](mlir_ts::ReleaseOp releaseOp) {
+            auto value = releaseOp.getReference();
+            if (!isHandle(value))
+            {
+                return;
+            }
+
+            for (auto *user : value.getUsers())
+            {
+                auto *retain = recordRetainOfStore(user);
+                if (retain && toErase.contains(retain))
+                {
+                    movedHandleReleases.insert(releaseOp);
+                    return;
+                }
+            }
+        });
+
         toErase.remove_if([&](mlir::Operation *op) {
             auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
-            return touchesHandle(op) && !(releaseSlotOp && isYieldedField(releaseSlotOp.getSlot())) && !captureRetains.contains(op);
+            return touchesHandle(op) && !(releaseSlotOp && isYieldedField(releaseSlotOp.getSlot())) && !captureRetains.contains(op) &&
+                   !movedHandleReleases.contains(op);
         });
+        toErase.insert(movedHandleReleases.begin(), movedHandleReleases.end());
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
         dropUnboxedRecordCounts(toErase);
