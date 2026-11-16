@@ -1718,7 +1718,8 @@ namespace own_signature
             callsIn[call.op->getParentOfType<mlir_ts::FuncOp>()].push_back(&call);
         }
 
-        // the bodies first: no `throw` anywhere in them (a failed cast is one, made in the body)
+        // the bodies first: no `throw` anywhere in them (a failed cast is one, made in the body), and
+        // no async code, whose await rethrows what the awaited body threw
         noThrow.clear();
         for (auto &entry : functions)
         {
@@ -1729,7 +1730,9 @@ namespace own_signature
             }
 
             auto throws = funcOp->walk([](mlir::Operation *op) {
-                                    return mlir::isa<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>(op)
+                                    auto *dialect = op->getDialect();
+                                    return mlir::isa<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>(op) ||
+                                                   (dialect && dialect->getNamespace() == "async")
                                                ? mlir::WalkResult::interrupt()
                                                : mlir::WalkResult::advance();
                                 }).wasInterrupted();
@@ -2540,9 +2543,16 @@ namespace own_signature
         auto assigned = false;
         for (auto *user : varOp.getResult().getUsers())
         {
+            // reads, rc's counts and the debugger's record of it; anything else (a swap, its address
+            // given away) may give it a value no store here shows
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             if (!storeOp || storeOp.getReference() != varOp.getResult())
             {
+                if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user))
+                {
+                    return false;
+                }
+
                 continue;
             }
 

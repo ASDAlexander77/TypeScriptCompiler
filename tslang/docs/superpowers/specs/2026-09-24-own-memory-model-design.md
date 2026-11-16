@@ -5878,14 +5878,16 @@ path goes on in another block.
 
 **`__own_no_throw` (`OwnershipSignaturePass::computeNoThrow`).** A greatest fixpoint over the module: a
 function never throws while its body holds no `ts.Throw`, `ts.ThrowCall` or `ts.ThrowUnwind` (a failed
-cast is a `ts.Throw` MLIRGen writes into the body) and every call in it is resolved to functions of this
-module that never throw. An imported, unresolved or `instanceof` call may throw. The fact is put on
+cast is a `ts.Throw` MLIRGen writes into the body) and no op of the `async` dialect (an await rethrows),
+and every call in it is resolved to functions of this module that never throw. An imported, unresolved
+or `instanceof` call may throw, so a constructor of another module's class cannot take a field. The fact is put on
 each call, since inference reads no other function's body (#867).
 
 **A parameter that only walks down borrows (`walksDownOnly`).** Section 81 made an assigned parameter a
 kept one: its local owns what it holds. A local whose every assignment stores a value read out of what
 it holds, through fields of class objects (`n = n.next`, `n = n.left.right`; not through a handle),
-owns none of it: it walks down from what it was given. `keeps` no longer counts such a local as the
+owns none of it: it walks down from what it was given. Any other use of the local but reads, rc's counts
+and the debugger's record (a swap, its address given away) keeps the old rule. `keeps` no longer counts such a local as the
 parameter's taker, so the parameter stays a borrow, and inference treats the local as section 82's
 `let` given only borrows. One assignment of anything else (`n = new Node(9)` on some path) keeps the
 old rule (`own_err_param_walk_mixed`). The same holds for `let n = m` of a parameter `m`.
@@ -5897,8 +5899,9 @@ n.next = null; n = nx` reads `n` for the cut while it still holds the node above
 node `nx` names, and the walk goes on into it. Section 82 accepted it, and the program crashed
 (`own_err_list_unlink_walk`, refused before section 82). Now the read of the `let` that the released
 place hangs from must come after the assignment: every way from the read to it runs the assignment,
-and no way from it reaches the drop through the read again (which `const p = c; c = c.next; p.next =
-null` would: `own_err_list_cut_through_alias`). The cut after the walk (`if (c) c.next = null`) and a
+and no way from it reaches the drop through the read again. `c.next = (c = c.next, null)` reads `c`
+for the place before the step and stores after it: section 82 accepted it and the program crashed
+(`own_err_list_cut_in_step`). The cut after the walk (`if (c) c.next = null`) and a
 cut of the node just stepped to (`c = c.next; if (c && c.v == 2) c.next = null`) still compile.
 
 Still refused: a field given to a call that may throw, a node used after the assignment that frees
@@ -5906,5 +5909,5 @@ it, and a walk that keeps or returns the parameter it walks (`last(n)` returning
 and a borrow is not returned from a parameter's local).
 
 Tests: `00linked_list_build` (own, rc, gc, none; also `-noopt` under own), and
-`own_err_list_unlink_walk`, `_cut_through_alias`, `_push_ctor_throws`, `_push_through_this`,
+`own_err_list_unlink_walk`, `_cut_in_step`, `_cut_through_alias`, `_push_ctor_throws`, `_push_through_this`,
 `own_err_tree_field_given_twice`, `own_err_param_walk_mixed`.

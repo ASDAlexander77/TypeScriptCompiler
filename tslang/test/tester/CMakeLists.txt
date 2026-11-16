@@ -5533,6 +5533,7 @@ set(own_error_cases
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_cut_through_alias|:13:15: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_list_cut_in_step|:16:21: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_push_ctor_throws|:11:35: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_tree_field_given_twice|:13:11: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_push_through_this|:11:23: error: '[^']*' borrows a field and cannot be stored, returned or captured"

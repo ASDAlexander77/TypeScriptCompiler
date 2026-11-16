@@ -899,8 +899,9 @@ a reference gives it back on every path out of a function.
   after the assignment. A node can also be made with the old head as an argument (`this.head = new
   Node(v, this.head)`), and a tree grown by a function that recurses on a field and gives it back
   (`t.left = insert(t.left, v)`): the field is given up to the call, and its result refills it. That
-  takes a call that never throws (no `throw` in it or in anything it calls), whose other arguments are
-  values with no heap block or the object `new` made; anything else is an error. A walk may assign its
+  takes a call to a function of the same module that never throws (no `throw` and no `await` in it or
+  in anything it calls), whose other arguments are values with no heap block or the object `new` made;
+  anything else is an error. A walk may assign its
   parameter (`while (n) { k++; n = n.next; }`) when every value it gives it is read out of the one it
   holds: the parameter then borrows the caller's list. A parameter given anything else (`n = new
   Node(0)` on some path) is kept, and the caller gives it up.
