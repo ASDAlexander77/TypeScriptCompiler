@@ -1633,7 +1633,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it does not own outright: a literal nested by value, or one holding a borrowed or `let` field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_nested` (nested by value), `own_err_record_literal_let_field` (a `let`'s value, not an interface); the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone |
+| an object literal holding a value it does not own outright: one holding a borrowed field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one). A literal nested by value moves in whole, and a `let` moves into a literal that reaches the result (§88) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_let_field` (a `let`'s value, not an interface, kept in an array: a borrowing tuple, §36); the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone; `own_err_record_literal_nested` and `own_err_value_record_returned` are accepted since §88 |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
@@ -6044,3 +6044,35 @@ it where it is given what another only borrows.
 Tests: `own_err_capture_block_closure`, `own_moved_some_paths_break`, `00catch_finally_locals_own` (rc,
 gc, none; refused under own), `00catch_finally_owned_locals_eh` (every model). Fuzz seeds 920000 and
 921000 x500: no failure.
+
+## 88. Literals that take a `let`; `?:` of two fresh values; nested and global records, 2026-11-16
+
+**A literal takes a `let` it is given** when it owns what it holds (spec 27's owning record):
+`return { s, n }`, `const o = { s, node }; return o`, `o = { s }` for a global. The record's retain is
+the slot's receiver (`recordSlotLoads`), and the slot move check (`checkSlotMove`, taker the field's
+store) cancels the slot's release and refuses a later use. A `let` that cannot move in is refused, not
+borrowed by the record's owner, whose release would free the record's other fields too. The signature
+pass no longer makes a borrowing tuple (spec 36) of a record that reaches the result (`reachesResult`):
+`own_err_value_record_returned` is accepted. A record that stays local, and one a call reads as an
+interface (spec 32), still borrows the `let`.
+
+**`?:` of two fresh values** folded into `arith.select` (`return set ? n : m`): each moves into what is
+selected, at rc's one retain of it (`selectRetainOf`), and the one not selected is released there,
+chosen by the same condition the other way round. A select into a keeping call, of a `let`, or inside
+a loop over values made outside it is refused as before.
+
+**A record built inside another moves in whole** (`{ t: [i, [i]] }`, `{ inner: { v: new V(1) } }`):
+the inner record's one read, stored into the outer's field, takes the outer's retain as its own
+(`nestedRecordRead`). `own_err_record_literal_nested` is accepted.
+
+**An object literal assigned to a global** moves into it; its old record is released where it gets
+the new one.
+
+**Literals tagged into a union are constant data** (`[{ c: "" }, { c: 0 }]`): `ts.CreateUnionInstance`
+of a literal and its `ts.TypeDescriptor` tag owns nothing.
+
+Tests: `own_literal_let_fields`, `own_select_two_locals`, `own_literal_array_union_fields`,
+`own_record_nested_tuple`, `own_global_record_assigned`, `own_borrowing_record_let_field`,
+`own_record_literal_nested_pushed`, `own_value_record_returned_let` (own, rc, gc, none);
+`own_err_literal_let_used_after`, `own_err_literal_let_twice`, `own_err_select_used_after`,
+`own_err_select_in_loop`.

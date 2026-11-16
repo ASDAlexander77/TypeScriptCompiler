@@ -88,6 +88,10 @@ Measured again on 2026-11-16 after spec 86 (values merged by `?:`, constant merg
 field read): of 890 files that compile under gc, 724 compile under own; "takes a second reference"
 dropped from 24 files to 19 and "merged from several branches" from 7 to 5. No file went the other way.
 
+After spec 88 (a literal that takes a `let`, `?:` of two fresh values, nested and global records,
+literals tagged into a union): of 892 files that compile under gc, 728 compile under own; "an object literal that holds a value
+it owns" dropped from 9 files to 6 and "takes a second reference" from 19 to 18. No file went the other way.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -116,7 +120,8 @@ Probed one by one under the JIT:
 | `return set ? n : undefined`, `h.n = set ? n : null` of an owned local | Compiles and runs: `n` moves on the way that chooses it, and is released on the other |
 | `return first ? shared : other` of globals never reassigned, `c ? 1 : "one"` | Compiles and runs: the merge owns nothing |
 | `let p: Node \| null = on() ? mk(3) : null` at the top level | Compiles and runs |
-| `return set ? n : m` of two owned locals | Rejected ("takes a second reference"): an `arith.select` has no edge to release the other on |
+| `return set ? n : m` of two owned locals | Compiles and runs (spec 88): both move into what is selected, and the other is released there |
+| `return { s, n }`, `const o = { s, node }; return o` with `let`s | Compiles and runs (spec 88): the record takes them |
 | A closure that assigns a parameter it captures | Rejected |
 | `m.forEach((v, k) => { total += v; })` on a `Map` or a `Set` | Compiles and runs |
 | `m.forEach((v, k) => { names.push(k); })` | Compiles and runs: a callback declaring fewer parameters than `forEach` passes is given a copy of a string it keeps |
