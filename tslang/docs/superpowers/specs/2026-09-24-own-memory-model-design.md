@@ -5985,3 +5985,30 @@ later cast failed to verify. With no type argument `T` is now the target's type 
 target makes a WeakRef whose `deref()` gives undefined (copy, release and deref test for null).
 
 Tests: `own_callback_fewer_params` (own, rc, gc, none), `00weakref_narrowed` (own, gc, none).
+
+## 86. Merges: a moved local, constants, an optional record's field, 2026-11-16
+
+Readiness item 3, "not yet" messages; four shapes of the corpus.
+
+**A local moved through a merge.** `return set ? n : undefined` (or a store of it) of an owned local:
+the branch that carries `n` into the merge's block argument is its taker, and rc's one retain of the
+merged value in its block is the reference it moves into (`mergeRetainOf`, which `takerAcquires`
+accepts and `movesOf` erases). The release of `n` on the way that does not choose it goes on that edge
+(TSLANG 81, `valueUnmovedEdges`). Only when every way into the merge brings null, undefined or a fresh
+value: a borrow brought in (`set ? n : h.k`) would be given an owner, and stays refused. A use of `n`
+after the merge is a use after a move. An `arith.select` (`set ? n : m` of two locals) has no edge to
+release the other on, and stays refused.
+
+**A merge of what nothing owns.** Every way in brings a literal, null, an immortal global's read
+(spec 25) or such a merge: the merged value owns nothing, and a retain of it takes nothing
+(`mergeOwnsNothing`): `return first ? shared : other`, `typeof text === "string" ? 1 : "one"`.
+
+**An optional record's field read.** `object(true)?.v == "x"`: the field of the record merged with
+undefined and only read is a read of the record (`fieldOnlyRead` follows the merge), not a taker of
+the field, which had made it "a second reference".
+
+**A global initializer.** `let pick: Node | null = on() ? mk(3) : null`: null seen through its cast is
+constant data (`isConstantData`), and a global initializer's retain of constant data takes nothing.
+
+Tests: `own_merge_moves_local`, `own_merge_of_constants`, `own_optional_literal_result`,
+`own_global_merge_initializer` (own, rc, gc, none). Corpus: 717 -> 724 of 890 compile under own.

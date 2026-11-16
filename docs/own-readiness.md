@@ -84,6 +84,10 @@ The rejections, by message:
 | 5 | a global's value lent to a call that may release it | Conservative |
 | 42 | 22 other messages, one to five files each | Mixed |
 
+Measured again on 2026-11-16 after spec 86 (values merged by `?:`, constant merges, an optional record's
+field read): of 890 files that compile under gc, 724 compile under own; "takes a second reference"
+dropped from 24 files to 19 and "merged from several branches" from 7 to 5. No file went the other way.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -109,6 +113,10 @@ Probed one by one under the JIT:
 | `new Map<string, Node>()`, `filter` over class instances | Rejected by design; `Shared<Node>` |
 | Swap through a local: `let t = a[i]; a[i] = a[j]; a[j] = t` | Rejected by design; `[a[i], a[j]] = [a[j], a[i]]` |
 | `x ??= new B()` on a parameter | Rejected ("merged from several branches") |
+| `return set ? n : undefined`, `h.n = set ? n : null` of an owned local | Compiles and runs: `n` moves on the way that chooses it, and is released on the other |
+| `return first ? shared : other` of globals never reassigned, `c ? 1 : "one"` | Compiles and runs: the merge owns nothing |
+| `let p: Node \| null = on() ? mk(3) : null` at the top level | Compiles and runs |
+| `return set ? n : m` of two owned locals | Rejected ("takes a second reference"): an `arith.select` has no edge to release the other on |
 | A closure that assigns a parameter it captures | Rejected |
 | `m.forEach((v, k) => { total += v; })` on a `Map` or a `Set` | Compiles and runs |
 | `m.forEach((v, k) => { names.push(k); })` | Compiles and runs: a callback declaring fewer parameters than `forEach` passes is given a copy of a string it keeps |
