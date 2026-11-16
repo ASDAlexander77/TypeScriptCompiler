@@ -257,6 +257,9 @@ class OwnershipInferencePass
     // gets a copy instead, released after it (spec 22), read -> call; or stored into a place, which
     // owns the copy (spec 50), read -> store
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
+    // `arith.select`s that two fresh values moved into (selectRetainOf): the real run releases the one
+    // not selected right after each
+    llvm::SmallSetVector<mlir::Operation *, 2> selectMoves;
     // A move out of a field of an owning record local, being checked (spec 48): its retain and its
     // taker, which walkBorrowed takes for uses of the borrow and not for keeps
     llvm::SmallPtrSet<mlir::Operation *, 2> takenOps;
@@ -1038,6 +1041,11 @@ class OwnershipInferencePass
     // returned (`return {value: new C(), done: false}`, a `yield`'s result). rc's retain of it is
     // its reference for the values moved in, which own moves instead (recordRetainOf).
     bool holdsConstantsOrMoves(mlir::Value value);
+    // The reads of owning `let`s an owning record's fields are given (`return { s, n }`): each moves
+    // out of its local at the record's retain.
+    llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
+    // The store of `value` into a field of the record whose retain `retain` is: the move's taker.
+    static mlir::Operation *recordStoreOf(mlir::Operation *retain, mlir::Value value);
 
     // rc's one `ts.Retain` of a record local's one read, where the read is only returned: stored
     // into a local that owns nothing and is read only by returns (the result slot), or copied into
@@ -1375,6 +1383,12 @@ class OwnershipInferencePass
     // it on this way in. Only when every way into the merge brings null, undefined, or a fresh value
     // (each moved as this one is): a borrow brought in would be given an owner. The retain, or null.
     static mlir::Operation *mergeRetainOf(mlir::Operation *taker, mlir::Value value);
+
+    // A select of two fresh values (`return set ? n : m`, folded into `arith.select`) that carries
+    // `value`, where rc retains the selected value once, in its block: that retain is the reference
+    // the select takes, and each value moves into it. The one not selected is released right after
+    // it (selectMoves). The retain, or null.
+    static mlir::Operation *selectRetainOf(mlir::Operation *taker, mlir::Value value);
 
     // A value merged from branches (a block argument, through its views) where every way in brings
     // what nothing owns: data (a literal, null), an immortal global's read, or such a merge. It owns

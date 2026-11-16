@@ -212,6 +212,12 @@ namespace own_inference
             return retainSlot;
         }
 
+        // a select of two fresh values: rc's retain of the selected one
+        if (auto *retain = selectRetainOf(taker, value))
+        {
+            return retain;
+        }
+
         mlir::Operation *first = taker;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
             if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
@@ -249,7 +255,7 @@ namespace own_inference
             return true;
         }
 
-        if (mergeRetainOf(taker, value))
+        if (mergeRetainOf(taker, value) || selectRetainOf(taker, value))
         {
             return true;
         }
@@ -353,6 +359,46 @@ namespace own_inference
         }
 
         return retain;
+    }
+
+    mlir::Operation *OwnershipInferencePass::selectRetainOf(mlir::Operation *taker, mlir::Value value)
+    {
+        auto selectOp = mlir::dyn_cast_or_null<mlir::arith::SelectOp>(taker);
+        if (!selectOp)
+        {
+            return nullptr;
+        }
+
+        // two fresh values of this function, each made apart (not the same value chosen either way)
+        auto first = rootOf(selectOp.getTrueValue());
+        auto second = rootOf(selectOp.getFalseValue());
+        auto root = rootOf(value);
+        if (first == second || (root != first && root != second))
+        {
+            return nullptr;
+        }
+
+        for (auto chosen : {first, second})
+        {
+            if (mlir::isa<mlir::BlockArgument>(chosen) || !isFresh(chosen) ||
+                !own_facts::ownsHeap(chosen.getLoc(), chosen.getType()) || isHandle(chosen))
+            {
+                return nullptr;
+            }
+        }
+
+        // rc's one retain of the selected value, in its block, after it
+        mlir::Operation *retain = nullptr;
+        auto other = false;
+        forEachUse(selectOp.getResult(), [&](mlir::Operation *user, mlir::Value) {
+            if (mlir::isa<mlir_ts::RetainOp>(user))
+            {
+                other = other || retain || user->getBlock() != selectOp->getBlock() || !selectOp->isBeforeInBlock(user);
+                retain = user;
+            }
+        });
+
+        return retain && !other ? retain : nullptr;
     }
 
 } // namespace own_inference

@@ -1888,7 +1888,8 @@ inline bool isConstantData(mlir::Value value)
         return false;
     }
 
-    if (mlir::isa<mlir_ts::ConstantOp, mlir_ts::SymbolRefOp>(def))
+    // (a type's descriptor - a union's tag - is its name, in read-only data)
+    if (mlir::isa<mlir_ts::ConstantOp, mlir_ts::SymbolRefOp, mlir_ts::TypeDescriptorOp>(def))
     {
         return true;
     }
@@ -1924,7 +1925,9 @@ inline bool isConstantData(mlir::Value value)
         return isConstantData(extractOp.getObject());
     }
 
-    if (mlir::isa<mlir_ts::CreateTupleOp>(def))
+    // ...and a union made of such data and its tag (`[{ c: "" }, { c: 0 }]` makes each `c` a
+    // `string | s32`): the same literal or number, tagged
+    if (mlir::isa<mlir_ts::CreateTupleOp, mlir_ts::CreateUnionInstanceOp>(def))
     {
         return llvm::all_of(def->getOperands(), [](mlir::Value operand) { return isConstantData(operand); });
     }
@@ -2007,8 +2010,28 @@ inline mlir_ts::VariableOp recordLocalOf(mlir::Value value)
 // into it - a new object, a call's result, a literal, a `const` local folded into the value it holds.
 // Each such value moves into the record: its own check, against the record's retain, decides that
 // nothing uses it after (OwnershipInferencePass's recordRetainOf). A read out of a place (`this.pos`)
-// or a parameter is a borrow, and such a record is not this one. Neither is a `let` read into a field:
-// its slot keeps its own release, which nothing here cancels.
+// or a parameter is a borrow, and such a record is not this one. A read of an owning `let` (`return
+// { s, n }`) moves out of the local: the record's retain is that slot's receiver, whose move check
+// cancels the slot's release and refuses a use after it (OwnershipInferencePass::recordSlotLoads).
+// An owning record built in a local of its own and read once into the field (`{ t: [i, [i]] }`) moves
+// in whole (nestedRecordRead).
+inline bool isOwningRecord(mlir::Value value);
+
+// The one read of a record local (`[i, [i]]` inside `{ t: [i, [i]] }`) that owns what it holds, given
+// only as `value`: it moves into what takes it, with what it holds. Null for anything else.
+inline mlir_ts::LoadOp nestedRecordRead(mlir::Value value)
+{
+    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+    auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    if (!varOp || !isConstantRecordLocal(varOp) || !loadOp->hasOneUse())
+    {
+        return {};
+    }
+
+    auto reads = llvm::count_if(varOp->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+    return reads == 1 && isOwningRecord(loadOp.getResult()) ? loadOp : mlir_ts::LoadOp();
+}
+
 inline bool isOwningRecord(mlir::Value value)
 {
     auto varOp = recordLocalOf(value);
@@ -2043,7 +2066,8 @@ inline bool isOwningRecord(mlir::Value value)
 
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
             if (!storeOp || storeOp.getReference() != field ||
-                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue())))
+                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue()) || slotLoadOf(storeOp.getValue()) ||
+                  nestedRecordRead(storeOp.getValue())))
             {
                 return false;
             }

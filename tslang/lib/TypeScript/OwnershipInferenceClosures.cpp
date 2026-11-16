@@ -1907,6 +1907,27 @@ namespace own_inference
     {
         auto owner = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
 
+        // a `let` read into a field of a record that owns it (recordSlotLoads) moves, or is refused:
+        // the record's owner cannot borrow it instead, since its release frees the record's other
+        // fields too
+        if (llvm::any_of(receivers, [&](const SlotReceiver &receiver) { return recordStoreOf(receiver.retain, receiver.value); }))
+        {
+            for (auto &receiver : receivers)
+            {
+                if (!checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, receivers.size() == 1))
+                {
+                    return;
+                }
+
+                if (!isCall(receiver.retain))
+                {
+                    toErase.insert(receiver.retain);
+                }
+            }
+
+            return;
+        }
+
         // a `let` declared from a merge of this and other locals borrows it, so nothing moves it (TSLANG 58)
         auto merged = llvm::any_of(receivers, [&](const SlotReceiver &receiver) { return mergedSlotRetains.contains(receiver.retain); });
         if (!merged && (receivers.size() == 1 || takeValuesOfTheirOwn(slot, receivers)))

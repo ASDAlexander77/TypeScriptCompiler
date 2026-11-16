@@ -409,6 +409,28 @@ namespace own_inference
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
         dropUnboxedRecordCounts(toErase);
+        // a select of two fresh values moved both into what it selected: the other is released where
+        // rc's retain of the selected one was - the point the moves were checked from, after which
+        // nothing uses either - chosen by the same condition the other way round
+        for (auto *op : selectMoves)
+        {
+            auto selectOp = mlir::cast<mlir::arith::SelectOp>(op);
+            auto *retain = selectRetainOf(selectOp, selectOp.getTrueValue());
+            mlir::OpBuilder builder(selectOp->getContext());
+            if (retain)
+            {
+                builder.setInsertionPoint(retain);
+            }
+            else
+            {
+                builder.setInsertionPointAfter(selectOp);
+            }
+
+            auto notSelected = builder.create<mlir::arith::SelectOp>(selectOp.getLoc(), selectOp.getCondition(),
+                                                                      selectOp.getFalseValue(), selectOp.getTrueValue());
+            builder.create<mlir_ts::ReleaseOp>(selectOp.getLoc(), notSelected.getResult());
+        }
+
         for (auto *op : toErase)
         {
             op->erase();
@@ -436,6 +458,7 @@ namespace own_inference
         captureStores.clear();
         captureRetains.clear();
         callCopies.clear();
+        selectMoves.clear();
         returnedParams.clear();
         // the stores that take a value out of the object their place holds, for every walk of this
         // function to see (never another function's: its operations are gone, their addresses reused)
@@ -787,6 +810,12 @@ namespace own_inference
 
             if (value && holdsConstantsOrMoves(value))
             {
+                // the reads of owning `let`s stored into its fields move out of them, at this retain
+                for (auto load : recordSlotLoads(value))
+                {
+                    slotReceivers[load.getReference()].push_back({op, load.getResult(), load});
+                }
+
                 toErase.insert(op);
                 continue;
             }

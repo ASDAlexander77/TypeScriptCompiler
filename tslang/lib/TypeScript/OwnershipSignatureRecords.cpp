@@ -8,6 +8,68 @@
 namespace own_signature
 {
 
+    // Is the value a way to its function's result: the return, a store into the slot only returned,
+    // or the value an owning local starts with or is given, read again only into those?
+    static bool reachesResult(mlir::Value value, int depth = 0)
+    {
+        auto isResultUse = [](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::ReturnInternalOp>(user))
+            {
+                return true;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                              : mlir_ts::VariableOp();
+            return slot && !isOwningVariable(slot) && !slot.getInitializer() && !slot.getCaptured().value_or(false) &&
+                   llvm::all_of(slot->getUsers(), [&](mlir::Operation *slotUser) {
+                       if (auto otherStore = mlir::dyn_cast<mlir_ts::StoreOp>(slotUser))
+                       {
+                           return otherStore.getReference() == slot.getResult();
+                       }
+
+                       auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser);
+                       return loadOp && llvm::all_of(loadOp->getUsers(), [](mlir::Operation *loadUser) {
+                                  return mlir::isa<mlir_ts::ReturnInternalOp>(loadUser);
+                              });
+                   });
+        };
+
+        auto reaches = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            if (reaches || isResultUse(user, used))
+            {
+                reaches = true;
+                return;
+            }
+
+            // `const o = { node }; return o;`: the owning local it starts with or is given
+            auto ownerOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+            if (!ownerOp)
+            {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                ownerOp = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                                : mlir_ts::VariableOp();
+            }
+
+            if (!ownerOp || !isOwningVariable(ownerOp) || ownerOp.getCaptured().value_or(false) || depth > 0)
+            {
+                return;
+            }
+
+            for (auto *ownerUser : ownerOp->getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(ownerUser); loadOp && reachesResult(loadOp.getResult(), depth + 1))
+                {
+                    reaches = true;
+                    return;
+                }
+            }
+        });
+
+        return reaches;
+    }
+
     void OwnershipSignaturePass::classifyRecordBoxes()
     {
         recordBoxes.clear();
@@ -83,6 +145,17 @@ namespace own_signature
                     temporary = false;
                 }
             });
+        }
+
+        // a record that reaches the result (`return { node }`): an owning `let` read into it moves
+        // in, as a fresh value does, instead of being borrowed by what could not be returned
+        auto returned = false;
+        for (auto *user : varOp->getUsers())
+        {
+            if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+            {
+                returned = returned || reachesResult(loadOp.getResult());
+            }
         }
 
         RecordBox info;
@@ -172,6 +245,16 @@ namespace own_signature
                     borrows = true;
                     continue;
                 case RecordFieldSource::Slot:
+                    if (returned && slotLoadOf(value))
+                    {
+                        // an owning tuple: the `let` moves into it (OwnershipInferencePass's
+                        // recordSlotLoads)
+                        return;
+                    }
+
+                    info.returnable = false;
+                    borrows = true;
+                    continue;
                 case RecordFieldSource::Cell:
                     info.returnable = false;
                     borrows = true;
