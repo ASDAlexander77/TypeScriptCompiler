@@ -6113,3 +6113,34 @@ an object of it is released in that module through the base. Test: `own_subclass
 
 Tests: `own_method_value_moves`, `own_method_value_reassigned` (own, rc, gc, none);
 `own_err_method_value_twice`, `own_err_method_value_used_after`, `own_err_interface_method_value_returned`.
+
+## 90. A `let` in a `try`; a `switch`'s narrowed parameter; `??=` assigns only where needed, 2026-11-16
+
+**A `let` declared in a `try`.** MLIRGen declares a local of a `try` without a value, outside the
+`try`, where the cleanup can release it, and gives it its value by a store right before rc's
+`ts.RetainSlot` (`slotDeclarationStore`). The checks that make a `let` a borrower looked at the
+declaration's initializer only, so `try { let t = s; ... }` of a parameter was "a parameter, kept here",
+and `let back = <Node>n` of an `any` "borrows the result of '___unbox' and cannot be stored". Now the
+store is the declaration: `borrowParametersInLocals` (a local that only ever holds parameters) takes a
+local declared that way, `borrowerOf` takes the store or the retain after it as the declaration, and
+`collectBorrowerUses` does not count that store as an assignment. Test: `own_try_let_borrows`.
+
+**A `switch` over a union parameter's tag** narrows it in each case into a local declared the same way
+(no value, a store, then the retain): a copy of the caller's record that reads its fields (`s.code`,
+`s.response.title`, through `ts.PropertyRef` of the local). `borrowParametersInLocals` now accepts such
+reads, at any depth, but no store through them: that would release what the caller's record holds.
+Test: `own_switch_narrowed_param`.
+
+**`a ??= b`, `a ||= b`, `a &&= b`** (every model) evaluate `b` and store it only where `a` does not
+decide, as TypeScript has it. MLIRGen stored the merge of `a` and `b` back every time: a setter ran
+for nothing, and under own the place was given a merge of its own value and `b` ("merged from several
+branches"), so `results ??= []` and `f ??= (a) => a` on a parameter were refused. A place read by a load
+(a local, a parameter, a field) is now given `b` in an `if` of its own (`mlirGenLogicalAssignment`) and
+read again for the expression's value; under own that is a plain assignment. An accessor stores in the
+branch that evaluates `b`, and the expression's value is still the merge - which under own is a second
+reference of what the setter took, so `??=` of an accessor stays refused. Tests:
+`00logical_assignment_only_when_needed` (gc, rc, none), `own_logical_assignment` (every model).
+
+**Imported subclasses** (rc and own, spec 89's fix): a base's release routine compares with the vtables
+of subclasses this module defines only. An imported class's vtable is a declaration of another module's
+global, which a shared library need not export: the program's link failed with an undefined dllimport.
