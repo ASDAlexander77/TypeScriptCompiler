@@ -35,6 +35,10 @@ set(not_compilable_alone
     import_vars.ts
     # written for `-nostrictnull`
     raytrace-0.ts
+    # WeakRef<T> is an error under rc (own spec 84): rc has no weak count
+    00weakref.ts
+    00weakref_basic.ts
+    00weakref_frame.ts
     # a @cpp class is an error under rc and own (cppvtable/memory_model.ts)
     00cpp_slot.ts
     00cpp_overloads.ts
