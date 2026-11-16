@@ -1961,7 +1961,9 @@ namespace mlirgen
             elementType = mth.wideStorageType(value.getType());
         }
 
-        auto isClass = mlir::isa<mlir_ts::ClassType>(elementType) && mlir::isa<mlir_ts::ClassType>(value.getType());
+        // a class object, or one a test narrowed out of `C | null` (`if (m) new WeakRef(m)`)
+        auto isClass = mlir::isa<mlir_ts::ClassType>(elementType) &&
+                       mlir::isa<mlir_ts::ClassType>(mth.stripOptionalType(NonNullableTypes(value.getType())));
         if (!compileOptions.needsGCRuntime() && !isClass)
         {
             emitError(location, "WeakRef needs a class object");

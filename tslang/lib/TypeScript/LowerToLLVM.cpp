@@ -1510,7 +1510,7 @@ class WeakRefDerefOpLowering : public TsLlvmPattern<mlir_ts::WeakRefDerefOp>
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), compileOptions);
-            auto alive = orl.emitWeakTargetAlive(target);
+            auto alive = orl.emitWeakTargetAliveOrNull(target);
             auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
             target = rewriter.create<LLVM::SelectOp>(loc, alive, target, null);
         }

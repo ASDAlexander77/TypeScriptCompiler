@@ -965,6 +965,32 @@ class OwnershipRoutineLogic
     }
 
   public:
+    // is the target of a WeakRef there and alive: not null, and immortal, or mortal and not a tombstone
+    mlir::Value emitWeakTargetAliveOrNull(mlir::Value target)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto boolType = th.getLLVMBoolType();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto alive = continuationBlock->addArgument(boolType, loc);
+        auto *checkBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(checkBlock);
+        auto aliveHere = emitWeakTargetAlive(target);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{aliveHere}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        auto notNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, target, null);
+        auto no = rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 0));
+        rewriter.create<LLVM::CondBrOp>(loc, notNull, checkBlock, ValueRange{}, continuationBlock, ValueRange{no});
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+        return alive;
+    }
+
     // is the target of a WeakRef alive: immortal, or mortal and not a tombstone
     mlir::Value emitWeakTargetAlive(mlir::Value target)
     {
