@@ -694,8 +694,9 @@ class MLIRGenImpl
     //
     // Re-checked after the ToInvoke fix in Win32ExceptionPass, which retired the sibling
     // blockHasNestedUsing guard: this one is still needed, and the crash it avoids still has a
-    // cause of its own. Note it also costs ownership - localTakesOwnership consults it, so a
-    // heap local declared in a catch or finally clause is not owned and leaks under -mm=rc.
+    // cause of its own. It no longer costs ownership: a heap local declared in a catch or finally
+    // clause is owned (localTakesOwnership), released where the clause ends normally; with no
+    // synthesized TryOp there, one that an exception leaves the clause with leaks.
     bool blockIsInsideCatchOrFinally()
     {
         auto *block = builder.getInsertionBlock();
@@ -2387,7 +2388,7 @@ class MLIRGenImpl
         return genContext.ownedVars != nullptr && !variableDeclarationInfo.isGlobal &&
                !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
                variableDeclarationInfo.initial && variableDeclarationInfo.type &&
-               mth.ownsHeapMemory(location, variableDeclarationInfo.type) && !blockIsInsideCatchOrFinally();
+               mth.ownsHeapMemory(location, variableDeclarationInfo.type);
     }
 
     // `let s = 0`: no type given, and an integer literal to infer one from - integer literals are

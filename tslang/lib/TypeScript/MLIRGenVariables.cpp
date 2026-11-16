@@ -175,10 +175,12 @@ namespace mlirgen
     //    retaining at the declaration would read an uninitialized slot as a live reference.
     //    Consequently a `let s: string;` assigned later never becomes an owner - the
     //    assignment path below only fires on a slot this marked, so that stays balanced;
-    //  - locals declared in a catch or finally clause. A release there is a call inside an
-    //    exception funclet, and a call there is fragile independently of ownership: `catch (e:
-    //    int) { new Res(); throw 2; }` crashes at run time with nothing of this involved.
-    //    Rather than add a second way to reach it, those locals are not owned.
+    //
+    // A local declared in a catch or finally clause is owned like any other. It was not, while a
+    // call inside an exception funclet was fragile (`catch (e: int) { new Res(); throw 2; }`
+    // crashed, since fixed); a borrowing local there read freed memory under rc once its source
+    // was given a new value (a fuzzer find, seed 920443). The clause synthesizes no TryOp of its
+    // own (blockIsInsideCatchOrFinally), so one an exception leaves the clause with leaks.
     //
     // The test itself is localTakesOwnership, shared with the hoisting decision in
     // createLocalVariable so the two cannot disagree about which declarations these are.
