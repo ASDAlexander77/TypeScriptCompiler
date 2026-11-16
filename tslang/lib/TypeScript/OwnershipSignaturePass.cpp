@@ -254,6 +254,7 @@ namespace own_signature
         findBorrowingStates(module);
         computeFacts();
         computeDrops();
+        computeNoThrow();
         pinAssignedGlobals();
         rejectGlobalArgumentsDropped();
         findBoundedForwarders();
@@ -1205,11 +1206,12 @@ namespace own_signature
         // `let r = init; ... r = f(r, v)`: a local that owns what it is declared from and is given
         // another value is no borrow of the parameter - the assignment releases what it holds - so
         // the parameter moves into it (spec 33: `___array_reduce`'s accumulator). Not a string: the
-        // local copies it (spec 22)
+        // local copies it (spec 22). Nor a local that only walks down from it (`n = n.next`, spec 83):
+        // what it is given is read out of what it holds, and it borrows all of it.
         if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
         {
             return varOp.getInitializer() == used && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false) &&
-                   isAssigned(varOp) && !isCopyableString(used.getType());
+                   isAssigned(varOp) && !isCopyableString(used.getType()) && !walksDownOnly(varOp);
         }
 
         return false;
@@ -1706,6 +1708,68 @@ namespace own_signature
         });
 
         computeDropsRound(true);
+    }
+
+    void OwnershipSignaturePass::computeNoThrow()
+    {
+        llvm::DenseMap<mlir::Operation *, llvm::SmallVector<Call *>> callsIn;
+        for (auto &call : calls)
+        {
+            callsIn[call.op->getParentOfType<mlir_ts::FuncOp>()].push_back(&call);
+        }
+
+        // the bodies first: no `throw` anywhere in them (a failed cast is one, made in the body)
+        noThrow.clear();
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration())
+            {
+                continue;
+            }
+
+            auto throws = funcOp->walk([](mlir::Operation *op) {
+                                    return mlir::isa<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>(op)
+                                               ? mlir::WalkResult::interrupt()
+                                               : mlir::WalkResult::advance();
+                                }).wasInterrupted();
+            if (!throws)
+            {
+                noThrow.insert(funcOp);
+            }
+        }
+
+        // ...then the calls they make: to functions of this module, every one of which never throws
+        auto callNeverThrows = [&](const Callees &callees) {
+            return callees.known && !callees.imported && !callees.instanceOf && !callees.funcs.empty() &&
+                   llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return noThrow.contains(callee); });
+        };
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &entry : functions)
+            {
+                auto funcOp = entry.second;
+                if (noThrow.contains(funcOp) &&
+                    llvm::any_of(callsIn[funcOp], [&](Call *call) { return !callNeverThrows(call->callees); }))
+                {
+                    noThrow.erase(funcOp);
+                    changed = true;
+                }
+            }
+        }
+
+        for (auto &call : calls)
+        {
+            if (callNeverThrows(call.callees))
+            {
+                call.op->setAttr(OWN_NO_THROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+            else
+            {
+                call.op->removeAttr(OWN_NO_THROW_ATTR_NAME);
+            }
+        }
     }
 
     bool OwnershipSignaturePass::familyResultsFresh(int64_t index, mlir::StringAttr identifier)
@@ -2469,6 +2533,55 @@ namespace own_signature
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             return storeOp && storeOp.getReference() == varOp.getResult();
         });
+    }
+
+    bool OwnershipSignaturePass::walksDownOnly(mlir_ts::VariableOp varOp)
+    {
+        auto assigned = false;
+        for (auto *user : varOp.getResult().getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (!storeOp || storeOp.getReference() != varOp.getResult())
+            {
+                continue;
+            }
+
+            // the value, read out of a field of a class object, that read out of another... down to a
+            // read of the local itself. Not through a handle, whose payload others hold too.
+            auto value = storeOp.getValue();
+            auto throughField = false;
+            for (;;)
+            {
+                auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+                if (!loadOp || isHandle(loadOp.getResult()))
+                {
+                    return false;
+                }
+
+                if (loadOp.getReference() == varOp.getResult())
+                {
+                    break;
+                }
+
+                auto field = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+                if (!field || !mlir::isa<mlir_ts::ClassType>(field.getObjectRef().getType()))
+                {
+                    return false;
+                }
+
+                throughField = true;
+                value = field.getObjectRef();
+            }
+
+            if (!throughField)
+            {
+                return false;
+            }
+
+            assigned = true;
+        }
+
+        return assigned;
     }
 
     bool OwnershipSignaturePass::holdsOnlyFresh(mlir_ts::VariableOp varOp)

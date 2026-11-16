@@ -909,6 +909,15 @@ class OwnershipInferencePass
     // the field is emptied right before the release, and its value is the place's. `take.release` is
     // that release.
     bool splicedFieldTakeOf(mlir::Operation *read, FieldTake &take);
+    // ...or is `kept` a call that keeps `read`, a read of a field of a class object, whose result is
+    // stored into that same field right after it: `this.head = new Node(v, this.head)`, `t.left =
+    // insert(t.left, v)`. The field is given up right before the call (ts.TakeOutOfField), so that
+    // nothing the callee does through another way to the object sees the value twice, and the refill's
+    // release frees what the field holds then. `take.release` is that release.
+    bool calledFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take);
+    // Are `object` and `other` the same object: sameObject, or two reads of one local in a block
+    // with no assignment of it and nothing that runs other code between them?
+    static bool sameObjectInBlock(mlir::Value object, mlir::Value other);
     // Can `call` be given a copy of `value`, a string read out of a place, in its place (callCopies)?
     static bool copiesInto(mlir::Operation *call, mlir::Value value);
     // Does `store` put `value`, a string read out of a place, into another place with no retain of

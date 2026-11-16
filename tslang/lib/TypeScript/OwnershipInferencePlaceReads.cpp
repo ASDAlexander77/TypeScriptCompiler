@@ -1066,6 +1066,35 @@ namespace own_inference
             }
         }
 
+        // ...or given to a call that keeps it, whose result refills the field right after (`this.head =
+        // new Node(v, this.head)`, `t.left = insert(t.left, v)`): the field is given up before the call,
+        // and the refill's release frees what it holds then - nothing, unless the callee put something
+        // there through another way to the object.
+        if (FieldTake called; !take.taker && kept && !letKept && !countedHandle && !backReference &&
+                              calledFieldTakeOf(read, kept, called))
+        {
+            takenOps.insert(called.taker);
+            auto *stillKept = walk();
+            takenOps.clear();
+            auto usedAfter = llvm::any_of(uses, [&](auto &use) {
+                return use.op != called.taker && reachableAfter(called.taker, use.op, use.kills);
+            });
+            if (!stillKept && !letKept && !usedAfter)
+            {
+                if (!dryRun)
+                {
+                    mlir::OpBuilder builder(called.taker);
+                    auto object = called.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
+                    builder.create<mlir_ts::TakeOutOfFieldOp>(called.taker->getLoc(), object, called.field);
+                }
+
+                toErase.insert(bookkeeping.begin(), bookkeeping.end());
+                return true;
+            }
+
+            kept = walk();
+        }
+
         if (take.taker)
         {
             bookkeeping.push_back(take.retain);
@@ -1167,8 +1196,8 @@ namespace own_inference
                    !isBackReferenceField(propertyRefOp.getResult()) && !isBorrowingField(propertyRefOp.getResult());
         };
         // is `value` the value read (or, with `underLet`, what the local holds), or read out of it
-        // through such places
-        auto readUnder = [&](mlir::Value value, bool underLet) {
+        // through such places; `letRead` is then that read of the local
+        auto readUnder = [&](mlir::Value value, bool underLet, mlir::Operation **letRead = nullptr) {
             for (auto root = rootOf(value); root;)
             {
                 if (!underLet && root == result)
@@ -1184,6 +1213,11 @@ namespace own_inference
 
                 if (underLet && loadOp.getReference() == assignedLet.getResult())
                 {
+                    if (letRead)
+                    {
+                        *letRead = loadOp;
+                    }
+
                     return true;
                 }
 
@@ -1230,7 +1264,19 @@ namespace own_inference
                 return false;
             }
 
-            if (!assignedLet || !readUnder(object, true))
+            mlir::Operation *letRead = nullptr;
+            if (!assignedLet || !readUnder(object, true, &letRead))
+            {
+                return true;
+            }
+
+            // ...when the local is read for it after it is given the value read: every way from the
+            // read to that read of the local runs the assignment, and none from there reaches the
+            // drop through the read again. `const nx = n.next; n.next = null; n = nx` reads `n`
+            // while it still holds the object above, and frees what `nx` borrows.
+            if (!letRead || reachableAfter(read, letRead, llvm::ArrayRef<mlir::Operation *>{assignment}) ||
+                (reachableAfter(letRead, read, llvm::ArrayRef<mlir::Operation *>()) &&
+                 reachableAfter(read, drop, llvm::ArrayRef<mlir::Operation *>{letRead})))
             {
                 return true;
             }
@@ -1760,43 +1806,9 @@ namespace own_inference
         // (the borrow check of that read sees to it that the place still holds it here)
         auto held = rootOf(field.getObjectRef()).getDefiningOp<mlir_ts::LoadOp>();
         auto heldPlace = held ? held.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
-        auto sameObjectHere = [&](mlir::Value object, mlir::Value other) {
-            if (sameObject(object, other))
-            {
-                return true;
-            }
-
-            // two reads of one local in a block, with no assignment of it between
-            auto first = object.getDefiningOp<mlir_ts::LoadOp>();
-            auto second = other.getDefiningOp<mlir_ts::LoadOp>();
-            if (!first || !second || first.getReference() != second.getReference() ||
-                !first.getReference().getDefiningOp<mlir_ts::VariableOp>() || first->getBlock() != second->getBlock())
-            {
-                return false;
-            }
-
-            if (!first->isBeforeInBlock(second))
-            {
-                std::swap(first, second);
-            }
-
-            for (auto *op = first->getNextNode(); op && op != second.getOperation(); op = op->getNextNode())
-            {
-                if (auto assigned = mlir::dyn_cast<mlir_ts::StoreOp>(op); assigned && assigned.getReference() == first.getReference())
-                {
-                    return false;
-                }
-
-                if (op->getNumRegions() > 0 || isCall(op))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        };
         if (!heldPlace || isHandle(held.getResult()) || heldPlace.getPosition() != place.getPosition() ||
-            heldPlace.getType() != place.getType() || !sameObjectHere(rootOf(heldPlace.getObjectRef()), rootOf(place.getObjectRef())))
+            heldPlace.getType() != place.getType() ||
+            !sameObjectInBlock(rootOf(heldPlace.getObjectRef()), rootOf(place.getObjectRef())))
         {
             return false;
         }
@@ -1816,6 +1828,149 @@ namespace own_inference
         take.field = field.getResult();
         take.release = release;
         return true;
+    }
+
+    bool OwnershipInferencePass::sameObjectInBlock(mlir::Value object, mlir::Value other)
+    {
+        if (sameObject(object, other))
+        {
+            return true;
+        }
+
+        // two reads of one local in a block, with no assignment of it between
+        auto first = object.getDefiningOp<mlir_ts::LoadOp>();
+        auto second = other.getDefiningOp<mlir_ts::LoadOp>();
+        if (!first || !second || first.getReference() != second.getReference() ||
+            !first.getReference().getDefiningOp<mlir_ts::VariableOp>() || first->getBlock() != second->getBlock())
+        {
+            return false;
+        }
+
+        if (!first->isBeforeInBlock(second))
+        {
+            std::swap(first, second);
+        }
+
+        for (auto *op = first->getNextNode(); op && op != second.getOperation(); op = op->getNextNode())
+        {
+            if (auto assigned = mlir::dyn_cast<mlir_ts::StoreOp>(op); assigned && assigned.getReference() == first.getReference())
+            {
+                return false;
+            }
+
+            if (op->getNumRegions() > 0 || isCall(op))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool OwnershipInferencePass::calledFieldTakeOf(mlir::Operation *read, mlir::Operation *kept, FieldTake &take)
+    {
+        // a field of a class object that owns what it holds: not a string, which is copied where it is
+        // kept (spec 22), nor a handle, which is counted, nor a field a back-reference or a borrow is
+        // stored into
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+        auto field = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        if (!field || !mlir::isa<mlir_ts::ClassType>(field.getObjectRef().getType()) || isBackReferenceField(field.getResult()) ||
+            isBorrowingField(field.getResult()) || isCopyableValueAt(read, loadOp.getType()) || isHandle(loadOp.getResult()))
+        {
+            return false;
+        }
+
+        // ...that holds a class object or null: one pointer, which ts.TakeOutOfField empties
+        auto holdsObjectOrNull = mlir::isa<mlir_ts::ClassType>(loadOp.getType());
+        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(loadOp.getType()))
+        {
+            auto types = unionType.getTypes();
+            holdsObjectOrNull = llvm::all_of(types, [](mlir::Type type) { return mlir::isa<mlir_ts::ClassType, mlir_ts::NullType>(type); }) &&
+                                llvm::count_if(types, [](mlir::Type type) { return mlir::isa<mlir_ts::ClassType>(type); }) == 1;
+        }
+
+        if (!holdsObjectOrNull)
+        {
+            return false;
+        }
+
+        // The call keeps the read, given it once and nothing else uses it. One that never throws: a
+        // throw caught anywhere would find the field given up, where the other models keep it.
+        if (!kept || !isCall(kept) || !callNoThrow(kept) || mlir::isa<mlir_ts::InvokeOp, mlir_ts::InvokeHybridOp>(kept) ||
+            kept->getBlock() != read->getBlock() || !read->isBeforeInBlock(kept) || !loadOp->hasOneUse() ||
+            *loadOp->user_begin() != kept || !isKeptArgument(kept, loadOp.getResult()))
+        {
+            return false;
+        }
+
+        // Its other arguments hold nothing the callee could reach the value by: values with no block,
+        // and the object a `new` made for a constructor. Not the object the field is in (`this.wrap(
+        // this.head)`), nor another read of the field (`f(t.l, t.l.r)`).
+        for (auto arg : callArgs(kept))
+        {
+            if (arg == loadOp.getResult() || holdsNoBlock(arg) || isCopyableValueAt(kept, arg.getType()))
+            {
+                continue;
+            }
+
+            auto *def = rootOf(arg).getDefiningOp();
+            if (!mlir::isa_and_nonnull<mlir_ts::NewOp>(def))
+            {
+                return false;
+            }
+        }
+
+        // From the read to the call: reads, constants and views of the arguments - nothing that writes
+        // or runs other code.
+        for (auto *op = read->getNextNode(); op && op != kept; op = op->getNextNode())
+        {
+            if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp, mlir_ts::ConstantOp>(op) && !isView(op))
+            {
+                return false;
+            }
+        }
+
+        // From the call to the refill: views of its result and rc's retain of them, then the release
+        // of the same field of the same object right before the store of the result into it. A
+        // constructor's result is the object `new` made, its first argument.
+        auto args = callArgs(kept);
+        auto callResult = kept->getNumResults() == 1                                   ? kept->getResult(0)
+                          : kept->getNumResults() == 0 && !args.empty() &&
+                                    mlir::isa_and_nonnull<mlir_ts::NewOp>(args.front().getDefiningOp()) ? args.front()
+                                                                                                         : mlir::Value();
+        if (!callResult)
+        {
+            return false;
+        }
+
+        for (auto *op = kept->getNextNode(); op; op = op->getNextNode())
+        {
+            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+            {
+                auto place = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::PropertyRefOp>();
+                auto storeOp = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(op->getNextNode());
+                if (!place || !storeOp || storeOp.getReference() != releaseSlotOp.getSlot() ||
+                    rootOf(storeOp.getValue()) != callResult || place.getPosition() != field.getPosition() ||
+                    place.getType() != field.getType() || !sameObjectInBlock(rootOf(place.getObjectRef()), rootOf(field.getObjectRef())))
+                {
+                    return false;
+                }
+
+                take.taker = kept;
+                take.field = field.getResult();
+                take.release = op;
+                return true;
+            }
+
+            auto viewOfResult = isView(op) && rootOf(op->getResult(0)) == callResult;
+            auto retainOfResult = mlir::isa<mlir_ts::RetainOp>(op) && rootOf(op->getOperand(0)) == callResult;
+            if (!viewOfResult && !retainOfResult)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     bool OwnershipInferencePass::namedFieldTakeOf(mlir::Operation *read, mlir::Operation *retain,

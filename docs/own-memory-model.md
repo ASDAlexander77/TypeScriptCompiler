@@ -896,10 +896,14 @@ a reference gives it back on every path out of a function.
   this.head = n`) or at the tail (`c.next = n`), and `this.head = this.head.next` or `c.next =
   c.next.next` takes a node out. The node taken out is freed right there, so read what you need of
   it first: `const h = this.head; const v = h.v; this.head = h.next; return v;`, not `return h.v`
-  after the assignment. Not accepted yet: a node made with the old head as an argument (`this.head =
-  new Node(v, this.head)`), a walk that assigns a parameter (`n = n.next`), and an insert that
-  recurses on a parameter and gives it back (`t.left = insert(t.left, v)`); write the last as a
-  method that recurses on `this`.
+  after the assignment. A node can also be made with the old head as an argument (`this.head = new
+  Node(v, this.head)`), and a tree grown by a function that recurses on a field and gives it back
+  (`t.left = insert(t.left, v)`): the field is given up to the call, and its result refills it. That
+  takes a call that never throws (no `throw` in it or in anything it calls), whose other arguments are
+  values with no heap block or the object `new` made; anything else is an error. A walk may assign its
+  parameter (`while (n) { k++; n = n.next; }`) when every value it gives it is read out of the one it
+  holds: the parameter then borrows the caller's list. A parameter given anything else (`n = new
+  Node(0)` on some path) is kept, and the caller gives it up.
 - `Shared<T>` cycles are never freed.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.
