@@ -1232,6 +1232,16 @@ namespace mlirgen
                 return mlirGenSharedCount(location, callExpression, genContext);
             }
 
+            // `w.deref()`, `w?.deref()` of a WeakRef (own spec 84)
+            if (MLIRHelper::getName(access->name) == "deref" && callExpression->arguments.size() == 0)
+            {
+                auto objectType = evaluate(access->expression.as<Expression>(), genContext);
+                if (objectType && mth.isWeakRefType(objectType))
+                {
+                    return mlirGenWeakRefDeref(location, access, genContext);
+                }
+            }
+
             // `Shared.share(v)`: v, and every block it reaches, may be used by other threads
             if (access->expression == SyntaxKind::Identifier
                 && MLIRHelper::getName(access->expression.as<Identifier>()) == "Shared"
@@ -1661,6 +1671,12 @@ namespace mlirgen
         // Without type arguments, the type may come from the constructor's arguments or the receiver
         // (below): the generic is specialized by its defaults only when neither gives one. Done
         // first, `new Set([1, 2])` made all of Set<any> beside the Set<si32> it is.
+        // `new WeakRef(x)` is the compiler's own, whatever a library declares (own spec 84)
+        if (typeExpression == SyntaxKind::Identifier && MLIRHelper::getName(typeExpression.as<Identifier>()) == "WeakRef")
+        {
+            return mlirGenNewWeakRef(location, newExpression, genContext);
+        }
+
         auto deferDefaults = newExpression->typeArguments.size() == 0 &&
                              (newExpression->arguments.size() > 0 || genContext.receiverType);
         auto result = deferDefaults ? mlirGen(typeExpression, genContext)
@@ -1897,6 +1913,108 @@ namespace mlirgen
         auto handle = builder.create<mlir_ts::SharedNewOp>(location, mlir_ts::SharedType::get(elementType), stored);
         markFreshBlockOwned(location, handle);
         return V(handle);
+    }
+
+    // `new WeakRef(x)` (own spec 84): T is the type argument, else the receiver's, else x's. gc
+    // takes any object; own and none a class object, whose header holds the weak count under own.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenNewWeakRef(mlir::Location location, NewExpression newExpression,
+                                                        const GenContext &genContext)
+    {
+        if (compileOptions.isRefCounted())
+        {
+            emitError(location, "WeakRef is not supported under -mm=rc; use -mm=gc, -mm=own or -mm=none");
+            return mlir::failure();
+        }
+
+        if (newExpression->arguments.size() != 1 || newExpression->typeArguments.size() > 1)
+        {
+            emitError(location, "new WeakRef(target) takes one argument and one type argument");
+            return mlir::failure();
+        }
+
+        mlir::Type elementType;
+        if (newExpression->typeArguments.size() == 1)
+        {
+            elementType = getType(newExpression->typeArguments.front(), genContext);
+            if (!elementType)
+            {
+                return mlir::failure();
+            }
+        }
+        else if (auto receiver = genContext.receiverType
+                                     ? mlir::dyn_cast<mlir_ts::WeakRefType>(mth.stripOptionalType(NonNullableTypes(genContext.receiverType)))
+                                     : mlir_ts::WeakRefType())
+        {
+            elementType = receiver.getElementType();
+        }
+
+        GenContext valueGenContext(genContext);
+        valueGenContext.clearReceiverTypes();
+        valueGenContext.receiverType = elementType;
+
+        auto result = mlirGen(newExpression->arguments.front(), valueGenContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        if (!elementType)
+        {
+            elementType = mth.wideStorageType(value.getType());
+        }
+
+        // a class object, or one a test narrowed out of `C | null` (`if (m) new WeakRef(m)`)
+        auto isClass = mlir::isa<mlir_ts::ClassType>(elementType) &&
+                       mlir::isa<mlir_ts::ClassType>(mth.stripOptionalType(NonNullableTypes(value.getType())));
+        if (!compileOptions.needsGCRuntime() && !isClass)
+        {
+            emitError(location, "WeakRef needs a class object");
+            return mlir::failure();
+        }
+
+        CAST_A(target, location, elementType, value, genContext);
+        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, mlir_ts::WeakRefType::get(elementType), target);
+        // born with no weak count, as a Shared block with no count: the retain this adds is the first
+        markFreshBlockOwned(location, weakRef);
+        return V(weakRef);
+    }
+
+    // `w.deref()`: an optional of the target; `w?.deref()` on a WeakRef that may be null or
+    // undefined is the empty optional then.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenWeakRefDeref(mlir::Location location, PropertyAccessExpression access,
+                                                          const GenContext &genContext)
+    {
+        auto result = mlirGen(access->expression.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        auto weakRefType = mlir::dyn_cast<mlir_ts::WeakRefType>(value.getType());
+        auto deref = [&](mlir::Value weakRef) -> ValueOrLogicalResult {
+            auto type = mlir::cast<mlir_ts::WeakRefType>(weakRef.getType());
+            return V(builder.create<mlir_ts::WeakRefDerefOp>(location, mlir_ts::OptionalType::get(type.getElementType()), weakRef));
+        };
+
+        if (weakRefType)
+        {
+            return deref(value);
+        }
+
+        // a WeakRef that may be null or undefined
+        auto nonNullType = mth.stripOptionalType(NonNullableTypes(value.getType()));
+        weakRefType = mlir::dyn_cast<mlir_ts::WeakRefType>(nonNullType);
+        if (!weakRefType)
+        {
+            emitError(location, "deref() of a value that is no WeakRef");
+            return mlir::failure();
+        }
+
+        CAST_A(condValue, location, getBooleanType(), value, genContext);
+        return conditionalValue(location, condValue,
+            [&]() -> ValueOrLogicalResult {
+                CAST_A(weakRef, location, weakRefType, value, genContext);
+                return deref(weakRef);
+            },
+            [&](mlir::Type trueValueType) {
+                return ValueOrLogicalResult(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
+            });
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)

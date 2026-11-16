@@ -835,6 +835,182 @@ class OwnershipRoutineLogic
     //
     // Only ever reached from inside emitIfLastReference, so the block is known to be mortal
     // and to have just lost its last reference.
+    // === WeakRef<T> under own (spec 84; Defines.h, beside HEAP_BLOCK_IMMORTAL) ===
+
+    mlir::Value emitConstantIndex(mlir::Location loc, mlir::Type llvmIndexType, const llvm::APInt &value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, value));
+    }
+
+    mlir::Value emitConstantIndex(mlir::Location loc, mlir::Type llvmIndexType, int64_t value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, value));
+    }
+
+    llvm::APInt deadBit()
+    {
+        auto bits = compileOptions.sizeBits();
+        return llvm::APInt::getOneBitSet(bits, bits - 2);
+    }
+
+    llvm::APInt weakCountMask()
+    {
+        auto bits = compileOptions.sizeBits();
+        return llvm::APInt::getLowBitsSet(bits, bits - 2);
+    }
+
+    // `then` with the target's header word and its address, when the target is mortal
+    void emitIfMortalWord(mlir::Value target, llvm::function_ref<void(mlir::Value word, mlir::Value blockPtr)> then)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+        auto loc = op->getLoc();
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, target, llvmIndexType);
+        mlir::Value word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        auto mortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, word,
+                                                    emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL));
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        rewriter.setInsertionPointToEnd(thenBlock);
+        then(word, blockPtr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, mortal, thenBlock, continuationBlock);
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
+    // a WeakRef made or copied: one more weak count, unless the target is immortal
+    void emitWeakIncRef(mlir::Value target)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        emitIfMortalWord(target, [&](mlir::Value word, mlir::Value blockPtr) {
+            auto newWord = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
+            rewriter.create<LLVM::StoreOp>(loc, newWord, blockPtr);
+        });
+    }
+
+    // a WeakRef gone: one weak count less; the last one to a tombstone frees its block
+    void emitWeakDecRef(mlir::Value target)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        emitIfMortalWord(target, [&](mlir::Value word, mlir::Value blockPtr) {
+            auto newWord = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
+            rewriter.create<LLVM::StoreOp>(loc, newWord, blockPtr);
+            auto lastToTombstone = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newWord,
+                                                                 emitConstantIndex(loc, llvmIndexType, deadBit()));
+            emitIfTrueBlock(lastToTombstone, [&]() { emitFreeBlock(target); });
+        });
+    }
+
+    // `then` when `condition` holds
+    void emitIfTrueBlock(mlir::Value condition, llvm::function_ref<void()> then)
+    {
+        auto loc = op->getLoc();
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        rewriter.setInsertionPointToEnd(thenBlock);
+        then();
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, continuationBlock);
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
+    // the end of a class object's release under own: free its block, or keep it as a tombstone while
+    // WeakRefs refer to it (its fields are released already)
+    void emitFreeOrBury(mlir::Value instance)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+        auto loc = op->getLoc();
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, instance, llvmIndexType);
+        mlir::Value word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        auto count = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, weakCountMask()));
+        auto weaklyReferred = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, emitConstantIndex(loc, llvmIndexType, 0));
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *buryBlock = rewriter.createBlock(continuationBlock);
+        auto *freeBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(buryBlock);
+        auto dead = rewriter.create<LLVM::OrOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, deadBit()));
+        rewriter.create<LLVM::StoreOp>(loc, dead, blockPtr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(freeBlock);
+        emitFreeBlock(instance);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, weaklyReferred, buryBlock, freeBlock);
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
+  public:
+    // is the target of a WeakRef there and alive: not null, and immortal, or mortal and not a tombstone
+    mlir::Value emitWeakTargetAliveOrNull(mlir::Value target)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto boolType = th.getLLVMBoolType();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto alive = continuationBlock->addArgument(boolType, loc);
+        auto *checkBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(checkBlock);
+        auto aliveHere = emitWeakTargetAlive(target);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{aliveHere}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        auto notNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, target, null);
+        auto no = rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 0));
+        rewriter.create<LLVM::CondBrOp>(loc, notNull, checkBlock, ValueRange{}, continuationBlock, ValueRange{no});
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+        return alive;
+    }
+
+    // is the target of a WeakRef alive: immortal, or mortal and not a tombstone
+    mlir::Value emitWeakTargetAlive(mlir::Value target)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+        auto loc = op->getLoc();
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, target, llvmIndexType);
+        mlir::Value word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        auto isImmortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, word,
+                                                        emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        auto deadBits = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, deadBit()));
+        auto notDead = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, deadBits, emitConstantIndex(loc, llvmIndexType, 0));
+        return rewriter.create<LLVM::OrOp>(loc, isImmortal, notDead);
+    }
+
+  private:
+
     void emitFreeBlock(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
@@ -1712,8 +1888,25 @@ class OwnershipRoutineLogic
             auto instanceValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitIfLastReference(instanceValue, [&]() {
                 releaseFields(storageType, instanceValue);
-                emitFreeBlock(instanceValue);
+                // under own, an object WeakRefs still refer to stays as a tombstone (spec 84)
+                if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::ClassType>(type))
+                {
+                    emitFreeOrBury(instanceValue);
+                }
+                else
+                {
+                    emitFreeBlock(instanceValue);
+                }
             });
+            return;
+        }
+
+        // a WeakRef (own spec 84) is its target's pointer; it owns one weak count of the target, and
+        // the last one to a tombstone frees the block
+        if (isa<mlir_ts::WeakRefType>(type))
+        {
+            auto target = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitIfNonNull(target, [&]() { emitWeakDecRef(target); });
             return;
         }
 
@@ -1896,6 +2089,14 @@ class OwnershipRoutineLogic
             isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
         {
             emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr));
+            return;
+        }
+
+        // a WeakRef copied (own spec 84): one more weak count of its target
+        if (isa<mlir_ts::WeakRefType>(type))
+        {
+            auto target = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitIfNonNull(target, [&]() { emitWeakIncRef(target); });
             return;
         }
 

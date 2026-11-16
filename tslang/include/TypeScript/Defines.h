@@ -582,6 +582,14 @@
 // HEAP_BLOCK_IMMORTAL has the bit set too, so an immortal test always comes first. It is the
 // word's top bit, so the value depends on the word size: 1 << (bits - 1).
 
+// Under -mm=own a class object's header word holds no count of its own (one owner frees it), so it
+// holds the number of WeakRef<T>s to the object instead (own spec 84): the low bits up to the dead
+// bit, 1 << (bits - 2). An object freed while WeakRefs remain releases its fields and keeps its block
+// as a tombstone, its word the count with the dead bit set; WeakRef.deref() gives undefined for it,
+// and the last WeakRef to go frees the block (the word is then the dead bit alone). Immortal still
+// means every bit set, tested first. OwnershipRoutineLogic::emitWeakIncRef, emitWeakDecRef,
+// emitFreeOrBury.
+
 // Runtime type descriptor.
 //
 // The ANY_TYPE slot of an "any" box, and the UNION_TAG_INDEX slot of a tagged union, both

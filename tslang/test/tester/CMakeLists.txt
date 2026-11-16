@@ -5087,6 +5087,24 @@ foreach(shared_mm ${shared_models})
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
 endforeach()
+# WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
+foreach(weakref_mm gc none own)
+    foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame 00weakref_literal)
+        tslang_add_test(NAME test-jit-${weakref_test}-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
+        tslang_add_test(NAME test-compile-${weakref_test}-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
+    endforeach()
+    tslang_add_test(NAME test-jit-own_weakref_share_unrelated-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weakref_share_unrelated.ts")
+    tslang_add_test(NAME test-compile-own_weakref_share_unrelated-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weakref_share_unrelated.ts")
+    tslang_add_test(NAME test-jit-own_weakref_borrow-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weakref_borrow.ts")
+    tslang_add_test(NAME test-compile-own_weakref_borrow-${weakref_mm} COMMAND test-runner -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weakref_borrow.ts")
+endforeach()
+add_test(NAME test-rc-err-own_err_weakref_rc
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_weakref_rc.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/rc-err-own_err_weakref_rc.obj")
+set_tests_properties(test-rc-err-own_err_weakref_rc
+                     PROPERTIES PASS_REGULAR_EXPRESSION ":4:48: error: WeakRef is not supported under -mm=rc; use -mm=gc, -mm=own or -mm=none"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # Shared.count is a count only under rc and own.
 foreach(shared_count_mm rc own)
     tslang_add_test(NAME test-jit-${shared_count_mm}-own_shared_count COMMAND test-runner -jit -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
@@ -5530,6 +5548,14 @@ set(own_error_cases
     "own_err_list_walk_up|:21:24: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_pop_used_after|:14:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_next_kept_twice|:14:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_weakref_not_class|:2:47: error: WeakRef needs a class object"
+    "own_err_weakref_stored|:4:126: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
+    "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
+    "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"
+    "own_err_weakref_after_call|:5:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
+    "own_err_weakref_after_release|:4:137: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
+    "own_err_weakref_thread|:14:15: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
+    "own_err_weakref_local_reassigned|:5:108: error: '[^']*' borrows the object a WeakRef refers to but is used here after it may be released or overwritten"
     "own_err_list_refill_from_param|:13:9: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_list_cut_through_alias|:13:15: error: '[^']*' borrows a field and cannot be stored, returned or captured"
@@ -6691,7 +6717,8 @@ endforeach()
 tslang_add_test(NAME test-compile-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 tslang_add_test(NAME test-jit-debug-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 foreach(debug_own_test own/own_interface_getter_read own/own_immortal_keepers tests/00nullable_interface_to_interface
-                       stack-promotion/to_any tests/00linked_list tests/00linked_list_kept tests/00linked_list_build)
+                       stack-promotion/to_any tests/00linked_list tests/00linked_list_kept tests/00linked_list_build
+                       tests/00weakref_basic tests/00weakref tests/00weakref_frame tests/00weakref_literal)
     get_filename_component(debug_own_name ${debug_own_test} NAME)
     tslang_add_test(NAME test-jit-debug-own-${debug_own_name} COMMAND test-runner -jit -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")
     tslang_add_test(NAME test-compile-debug-own-${debug_own_name} COMMAND test-runner -mm=own -noopt "${PROJECT_SOURCE_DIR}/test/tester/${debug_own_test}.ts")

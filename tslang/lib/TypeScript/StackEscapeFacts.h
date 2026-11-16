@@ -682,6 +682,8 @@ class StackEscapeFacts
                 return argumentEscapes(candidates, use.getOperandNumber() - 1);
             })
             .Case<mlir_ts::ReturnInternalOp, mlir_ts::ReturnValOp>([&](auto) { return "returned"; })
+            // `new WeakRef(x)` (own spec 84): the WeakRef may outlive the frame and read x's header there
+            .Case<mlir_ts::WeakRefNewOp>([&](auto) { return "weak-target"; })
             // -mm=own's keepers: kept for good, it outlives every frame
             .Case<mlir_ts::MakeImmortalOp, mlir_ts::MarkImmortalCellOp>([&](auto) { return "kept for good"; })
             .Case<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>([&](auto) { return "thrown"; })

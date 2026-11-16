@@ -1245,10 +1245,13 @@ inline bool ownsHeap(mlir::Value value)
 
 // The release of a slot whose type owns no block - a captured number assigned (`t += v.n` in a
 // callback) - destroys nothing (spec 52)
+// A WeakRef's release (own spec 84) frees at most a tombstone, which nothing can reach: it ends no
+// borrow and makes no function one that drops.
 inline bool releasesNothing(mlir_ts::ReleaseSlotOp releaseSlotOp)
 {
     auto refType = mlir::dyn_cast<mlir_ts::RefType>(releaseSlotOp.getSlot().getType());
-    return refType && !ownsHeap(releaseSlotOp.getLoc(), refType.getElementType());
+    return refType && (!ownsHeap(releaseSlotOp.getLoc(), refType.getElementType()) ||
+                       MLIRTypeHelper::isWeakRefType(refType.getElementType()));
 }
 
 // ---- Fills (TSLANG 47) ----

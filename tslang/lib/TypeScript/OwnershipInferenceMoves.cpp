@@ -440,6 +440,13 @@ namespace own_inference
             return true;
         }
 
+        // `new WeakRef(x)` counts x's header and keeps nothing of it; `w.deref()` reads the WeakRef
+        // (spec 84)
+        if (mlir::isa<mlir_ts::WeakRefNewOp, mlir_ts::WeakRefDerefOp>(user))
+        {
+            return true;
+        }
+
         // `Shared.share(v)` sets bits in the headers of what `v` reaches, and keeps nothing
         if (mlir::isa<mlir_ts::MarkSharedOp>(user))
         {

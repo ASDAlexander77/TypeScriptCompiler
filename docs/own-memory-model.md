@@ -905,7 +905,16 @@ a reference gives it back on every path out of a function.
   parameter (`while (n) { k++; n = n.next; }`) when every value it gives it is read out of the one it
   holds: the parameter then borrows the caller's list. A parameter given anything else (`n = new
   Node(0)` on some path) is kept, and the caller gives it up.
-- `Shared<T>` cycles are never freed.
+- A back-reference is a `WeakRef<T>` (`parent: WeakRef<Node> | null`, `c.parent = new WeakRef(this)`,
+  `this.parent?.deref()`). It does not own its target: when the target's owner frees it, `deref()`
+  gives `undefined` from then on. The object `deref()` gives is a borrow: it cannot be stored,
+  returned or captured, and anything that may free an object of its type (a release of a holder of
+  that type, a call that may drop) ends it, so read what you need right away. A `@final` target class
+  keeps more of those borrows. The target is a class object. A module that makes WeakRefs may not
+  share with another thread (`Thread.spawn`, a worker, `Shared.share`) anything that may hold their
+  target, since the count is not atomic; in practice no `Thread.spawn` of a closure in such a module.
+  Each object carries the count in the header word it already has: no object grows.
+- `Shared<T>` cycles are never freed; break them with a `WeakRef` where one side only refers back.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.
 
