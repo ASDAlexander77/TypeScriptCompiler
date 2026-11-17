@@ -62,10 +62,11 @@ function* branchYield() {
     }
 }
 
-// a temporary between two yields belongs to the stretch after the first one's resume point
-function* twoSegments() {
-    yield ("x" + 1).length;
-    yield ("yy" + 22).length;
+// a temporary between two yields belongs to the stretch after the first one's resume point (the
+// numbers are parameters: `"x" + 1` of constants is a string constant, with no temporaries)
+function* twoSegments(one: int, twentyTwo: int) {
+    yield ("x" + one).length;
+    yield ("yy" + twentyTwo).length;
 }
 
 function main() {
@@ -95,7 +96,7 @@ function main() {
     assert(branchTotal == 6, "branchYield");
 
     let segments = 0;
-    for (const v of twoSegments()) segments += v;
+    for (const v of twoSegments(1, 22)) segments += v;
     assert(segments == 6, "twoSegments");
 
     assert(strerror(2).length > 0, "strerror");

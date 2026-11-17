@@ -74,6 +74,9 @@
 #include "OwnershipFacts.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <type_traits>
 
@@ -12180,6 +12183,307 @@ class MLIRGenImpl
 
         auto equal = leftAttr == rightAttr;
         return mlirGenBooleanValue(location, isEquals ? equal : !equal);
+    }
+
+    // A double as JS writes it (Number::toString), the same text as the run-time conversion
+    // (ConvertLogic::getOrCreateNumberToStringRoutine) gives: the fewest digits `%.*e` needs for
+    // strtod to read the same double back, laid out as plain decimal for a decimal exponent n in
+    // -6 < n <= 21 and as `d.ddde+N` otherwise
+    static std::string numberToJSString(double value)
+    {
+        if (std::isnan(value))
+        {
+            return "NaN";
+        }
+
+        if (std::isinf(value))
+        {
+            return value < 0 ? "-Infinity" : "Infinity";
+        }
+
+        // -0 too
+        if (value == 0)
+        {
+            return "0";
+        }
+
+        std::string sign = value < 0 ? "-" : "";
+        auto magnitude = std::fabs(value);
+
+        char buffer[48];
+        for (auto precision = 0; precision <= 16; precision++)
+        {
+            std::snprintf(buffer, sizeof(buffer), "%.*e", precision, magnitude);
+            if (std::strtod(buffer, nullptr) == magnitude)
+            {
+                break;
+            }
+        }
+
+        // d[.ddd]e(+|-)xx
+        std::string text(buffer);
+        auto exponentAt = text.find('e');
+        std::string digits;
+        for (auto c : text.substr(0, exponentAt))
+        {
+            if (c != '.')
+            {
+                digits += c;
+            }
+        }
+
+        while (digits.size() > 1 && digits.back() == '0')
+        {
+            digits.pop_back();
+        }
+
+        auto k = static_cast<int>(digits.size());
+        auto n = std::atoi(text.c_str() + exponentAt + 1) + 1;
+        if (k <= n && n <= 21)
+        {
+            return sign + digits + std::string(n - k, '0');
+        }
+
+        if (0 < n && n <= 21)
+        {
+            return sign + digits.substr(0, n) + "." + digits.substr(n);
+        }
+
+        if (-6 < n && n <= 0)
+        {
+            return sign + "0." + std::string(-n, '0') + digits;
+        }
+
+        auto result = sign + digits.substr(0, 1);
+        if (k > 1)
+        {
+            result += "." + digits.substr(1);
+        }
+
+        result += n - 1 >= 0 ? "e+" : "e-";
+        result += std::to_string(std::abs(n - 1));
+        return result;
+    }
+
+    // The constant a value is: a ConstantOp, or a literal constant cast to its own base type (a
+    // string literal passed as a string, a folded string, see mlirGenFoldedString)
+    static mlir_ts::ConstantOp foldableConstant(mlir::Value value)
+    {
+        if (!value)
+        {
+            return {};
+        }
+
+        if (auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return constantOp;
+        }
+
+        if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            if (auto constantOp = castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(constantOp.getType());
+                    literalType && literalType.getElementType() == castOp.getType())
+                {
+                    return constantOp;
+                }
+            }
+        }
+
+        return {};
+    }
+
+    // A string worked out here, as a string literal passed as a `string` is: the literal constant
+    // cast to string. Its type is `string` (`let s = "a" + "b"` takes any string after), and -mm=own
+    // sees the immortal literal it is, which a callee that keeps its parameter can be given.
+    mlir::Value mlirGenFoldedString(mlir::Location location, const std::string &text)
+    {
+        auto attrVal = getStringAttr(text);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
+        auto constantOp = builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal);
+        return builder.create<mlir_ts::CastOp>(location, getStringType(), constantOp);
+    }
+
+    static mlir::Type constantBaseType(mlir_ts::ConstantOp constantOp)
+    {
+        auto type = constantOp.getType();
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            return literalType.getElementType();
+        }
+
+        return type;
+    }
+
+    // The text a string, number, integer or boolean constant becomes in `"a" + x` or `${x}`, as the
+    // run-time conversion writes it; none for anything else (an enum member, a bigint, a char)
+    std::optional<std::string> constantAsJSString(mlir_ts::ConstantOp constantOp)
+    {
+        auto type = constantBaseType(constantOp);
+        auto value = constantOp.getValue();
+        if (isa<mlir_ts::StringType>(type))
+        {
+            if (auto stringAttr = dyn_cast_or_null<mlir::StringAttr>(value))
+            {
+                return stringAttr.str();
+            }
+
+            return std::nullopt;
+        }
+
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            if (auto boolAttr = dyn_cast_or_null<mlir::BoolAttr>(value))
+            {
+                return std::string(boolAttr.getValue() ? "true" : "false");
+            }
+
+            return std::nullopt;
+        }
+
+        if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        {
+            if (auto intAttr = dyn_cast_or_null<mlir::IntegerAttr>(value); intAttr && intType.getWidth() > 1)
+            {
+                return llvm::toString(intAttr.getValue(), 10, !intType.isUnsigned());
+            }
+
+            return std::nullopt;
+        }
+
+        if (isa<mlir_ts::NumberType>(type))
+        {
+            if (auto floatAttr = dyn_cast_or_null<mlir::FloatAttr>(value); floatAttr && floatAttr.getType().isF64())
+            {
+                return numberToJSString(floatAttr.getValueAsDouble());
+            }
+
+            return std::nullopt;
+        }
+
+        return std::nullopt;
+    }
+
+    // `1 + 2`, `"a" + "b"`, `1 + "a"` of constants, worked out here: a string concatenation of
+    // constants becomes the string constant (no allocation and no conversion at run time), and an
+    // arithmetic of two constants of one type the constant of that type, so that `1 + 2 + "x"` and
+    // `${n * 2}` of a const fold too. The result has the type the operation's would (`string`,
+    // `s32`, `number`), not a literal type, so `let s = "a" + "b"` still takes any string. Only what
+    // gives the same answer as the run-time operation: integer + - * & | ^ << >> wrapping at the
+    // type's width (as the lowered op does), and number + - * / in IEEE double.
+    std::optional<ValueOrLogicalResult> foldConstantBinary(mlir::Location location, SyntaxKind opCode,
+                                                           mlir::Value leftValue, mlir::Value rightValue)
+    {
+        auto leftConstant = foldableConstant(leftValue);
+        auto rightConstant = foldableConstant(rightValue);
+        if (!leftConstant || !rightConstant)
+        {
+            return std::nullopt;
+        }
+
+        auto leftType = constantBaseType(leftConstant);
+        auto rightType = constantBaseType(rightConstant);
+
+        if (opCode == SyntaxKind::PlusToken
+            && (isa<mlir_ts::StringType>(leftType) || isa<mlir_ts::StringType>(rightType)))
+        {
+            auto leftText = constantAsJSString(leftConstant);
+            auto rightText = constantAsJSString(rightConstant);
+            if (!leftText || !rightText)
+            {
+                return std::nullopt;
+            }
+
+            return V(mlirGenFoldedString(location, *leftText + *rightText));
+        }
+
+        if (leftType != rightType)
+        {
+            return std::nullopt;
+        }
+
+        if (auto intType = dyn_cast<mlir::IntegerType>(leftType))
+        {
+            auto leftAttr = dyn_cast_or_null<mlir::IntegerAttr>(leftConstant.getValue());
+            auto rightAttr = dyn_cast_or_null<mlir::IntegerAttr>(rightConstant.getValue());
+            auto width = intType.getWidth();
+            if (!leftAttr || !rightAttr || width <= 1 || leftAttr.getValue().getBitWidth() != width
+                || rightAttr.getValue().getBitWidth() != width)
+            {
+                return std::nullopt;
+            }
+
+            auto left = leftAttr.getValue();
+            auto right = rightAttr.getValue();
+            llvm::APInt result;
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+                result = left + right;
+                break;
+            case SyntaxKind::MinusToken:
+                result = left - right;
+                break;
+            case SyntaxKind::AsteriskToken:
+                result = left * right;
+                break;
+            case SyntaxKind::AmpersandToken:
+                result = left & right;
+                break;
+            case SyntaxKind::BarToken:
+                result = left | right;
+                break;
+            case SyntaxKind::CaretToken:
+                result = left ^ right;
+                break;
+            case SyntaxKind::LessThanLessThanToken:
+                result = left.shl(right.urem(width));
+                break;
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                result = intType.isUnsigned() ? left.lshr(right.urem(width)) : left.ashr(right.urem(width));
+                break;
+            default:
+                return std::nullopt;
+            }
+
+            return V(builder.create<mlir_ts::ConstantOp>(location, intType, mlir::IntegerAttr::get(leftAttr.getType(), result)));
+        }
+
+        if (isa<mlir_ts::NumberType>(leftType))
+        {
+            auto leftAttr = dyn_cast_or_null<mlir::FloatAttr>(leftConstant.getValue());
+            auto rightAttr = dyn_cast_or_null<mlir::FloatAttr>(rightConstant.getValue());
+            if (!leftAttr || !rightAttr || !leftAttr.getType().isF64() || !rightAttr.getType().isF64())
+            {
+                return std::nullopt;
+            }
+
+            auto result = leftAttr.getValue();
+            auto right = rightAttr.getValue();
+            auto rounding = llvm::APFloat::rmNearestTiesToEven;
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+                result.add(right, rounding);
+                break;
+            case SyntaxKind::MinusToken:
+                result.subtract(right, rounding);
+                break;
+            case SyntaxKind::AsteriskToken:
+                result.multiply(right, rounding);
+                break;
+            case SyntaxKind::SlashToken:
+                result.divide(right, rounding);
+                break;
+            default:
+                return std::nullopt;
+            }
+
+            return V(builder.create<mlir_ts::ConstantOp>(location, leftType, builder.getFloatAttr(leftAttr.getType(), result)));
+        }
+
+        return std::nullopt;
     }
 
     ValueOrLogicalResult mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,

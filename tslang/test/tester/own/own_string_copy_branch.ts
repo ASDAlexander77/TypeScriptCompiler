@@ -11,9 +11,10 @@ function churn() {
     return keep.length;
 }
 
-function stored(c: boolean) {
+function stored(c: boolean, three: int) {
     const h = new H();
-    const s = "some" + 3;
+    // `three` a parameter: `"some" + 3` of constants is a string constant, nothing to copy
+    const s = "some" + three;
     if (c) {
         h.text = s;
     }
@@ -22,8 +23,8 @@ function stored(c: boolean) {
 }
 
 function main() {
-    const both = stored(true);
-    const neither = stored(false);
+    const both = stored(true, 3);
+    const neither = stored(false, 3);
     assert(churn() == 1000);
     assert(both.text == "some3" && neither.text == "");
 
