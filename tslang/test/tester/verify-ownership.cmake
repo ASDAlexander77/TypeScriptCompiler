@@ -72,6 +72,11 @@ set(not_compilable_alone
     for_in_any_error.ts
     enum_variable_error.ts
     any_plus_any_error.ts
+    # errors by design (test-compile-new-function-error, test-compile-arguments-arrow-error,
+    # test-compile-type-as-value-error)
+    new_function_error.ts
+    arguments_arrow_error.ts
+    type_as_value_error.ts
     # an error by design (test-compile-mixin-runtime-base-error)
     mixin_runtime_base_error.ts
     # an error by design (test-compile-ref-element-layout-error)
