@@ -5189,6 +5189,8 @@ foreach(let_borrows_mm gc none rc own)
     tslang_add_test(NAME test-compile-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
     tslang_add_test(NAME test-jit-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
     tslang_add_test(NAME test-compile-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
+    tslang_add_test(NAME test-jit-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
+    tslang_add_test(NAME test-compile-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
 endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
