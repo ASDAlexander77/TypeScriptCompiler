@@ -12407,6 +12407,22 @@ class MLIRGenImpl
             }
         }
 
+        // a class named as an element (`[A, B]`) is its value, of `typeof A`: an array of them makes
+        // what it holds (`[A, B].map(c => new c())`)
+        if (item != SyntaxKind::SpreadElement)
+        {
+            if (auto classRefOp = itemValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classInfo = getClassInfoByFullName(classRefOp.getType().getName().getValue());
+                if (classInfo && !classInfo->isValue && !(classInfo->isCppVTable && !classInfo->isCppVTableImplementation))
+                {
+                    auto classValue = mlirGenClassValue(location, classRefOp.getType(), genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                    itemValue = V(classValue);
+                }
+            }
+        }
+
         auto type = itemValue.getType();
 
         if (item == SyntaxKind::SpreadElement)
@@ -12641,6 +12657,94 @@ class MLIRGenImpl
         }
 
         return V(builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar));
+    }
+
+    // A tuple of unnamed elements as an array of them, of the union of their types: what TypeScript
+    // gives `[1, "a"]` with no tuple wanted ((number | string)[]), so the members of Array are a
+    // tuple's too (`[1, "a"].map(f)`). Null for a tuple with named fields: that is an object.
+    mlir::Value mlirGenTupleAsArray(mlir::Location location, mlir::Value tupleValue, const GenContext &genContext)
+    {
+        if (auto refType = dyn_cast<mlir_ts::RefType>(tupleValue.getType()))
+        {
+            tupleValue = builder.create<mlir_ts::LoadOp>(location, refType.getElementType(), tupleValue);
+        }
+
+        auto tupleType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(tupleValue.getType()));
+        if (!tupleType || tupleType.size() == 0
+            || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+        {
+            return mlir::Value();
+        }
+
+        if (tupleValue.getType() != tupleType)
+        {
+            auto result = cast(location, tupleType, tupleValue, genContext);
+            if (result.failed_or_no_value())
+            {
+                return mlir::Value();
+            }
+
+            tupleValue = V(result);
+        }
+
+        SmallVector<mlir::Type> fieldTypes;
+        SmallVector<mlir::Type> elementTypes;
+        for (auto &field : tupleType.getFields())
+        {
+            fieldTypes.push_back(field.type);
+            elementTypes.push_back(mth.wideStorageType(field.type));
+        }
+
+        // -mm=own: the array takes the tuple's elements. A tuple just made gives them up; one read from
+        // where it is kept (`t.map(f)` of a local `t`) keeps its own, and an element owning memory
+        // would have two owners
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto source = tupleValue;
+            while (auto *def = source.getDefiningOp())
+            {
+                if (!mlir::isa<mlir_ts::CastOp>(def) && !own_facts::isView(def))
+                {
+                    break;
+                }
+
+                source = def->getOperand(0);
+            }
+
+            if (source.getDefiningOp<mlir_ts::LoadOp>()
+                && llvm::any_of(fieldTypes, [&](mlir::Type type) { return mth.ownsHeapMemory(location, type); }))
+            {
+                emitError(location) << "-mm=own: an element of '" << to_print(tupleType)
+                                    << "' would have two owners as an element of an array; give it an array type";
+                return mlir::Value();
+            }
+        }
+
+        auto elementType = mth.getUnionTypeWithMerge(location, elementTypes);
+
+        auto fields = builder.create<mlir_ts::DeconstructTupleOp>(location, fieldTypes, tupleValue);
+        SmallVector<mlir::Value> elements;
+        for (auto field : fields.getResults())
+        {
+            mlir::Value element = field;
+            if (element.getType() != elementType)
+            {
+                auto result = cast(location, elementType, element, genContext);
+                if (result.failed_or_no_value())
+                {
+                    return mlir::Value();
+                }
+
+                element = V(result);
+            }
+
+            elements.push_back(element);
+        }
+
+        // the data block about to be filled releases every element when it dies
+        mlirGenRetainCaptured(location, elements);
+
+        return builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), elements);
     }
 
     ValueOrLogicalResult createFixedSizeArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
@@ -16182,6 +16286,22 @@ class MLIRGenImpl
     // `new c(args)` for `c: typeof A`: `.new` through the value, then its constructor
     ValueOrLogicalResult NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
                                                         NodeArray<Expression> arguments, const GenContext &genContext);
+    // ...of the arguments already generated for the constructor of `classInfo`, the class the value is of
+    ValueOrLogicalResult NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
+                                                        ClassInfo::TypePtr classInfo, ArrayRef<mlir::Value> operands,
+                                                        const GenContext &genContext);
+    // Whether every member of a tagged union is a class with a method `name` taking the same parameters
+    // (`o.name()` of `A | B`); their class infos in the union's order
+    bool unionMethodMembers(mlir::Location location, mlir_ts::UnionType unionType, StringRef name,
+                            SmallVectorImpl<ClassInfo::TypePtr> &memberClassInfos);
+    // `o.name(args)` of such a union: the arguments once, then the method of the class the tag names
+    ValueOrLogicalResult mlirGenUnionMethodCall(mlir::Location location, mlir::Value funcResult, mlir::Value unionValue,
+                                                StringRef name, CallExpression callExpression, const GenContext &genContext);
+    // the method values read through the union's first member (property access), waiting for their call
+    llvm::DenseMap<mlir::Value, std::pair<mlir::Value, std::string>> unionMethodAccesses;
+    // `new c(args)` for `c: typeof A | typeof B`: the class the union's tag names, made as above
+    ValueOrLogicalResult NewClassInstanceFromClassValueUnion(mlir::Location location, mlir::Value classValues,
+                                                             NodeArray<Expression> arguments, const GenContext &genContext);
 
     mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext);
 

@@ -1868,6 +1868,28 @@ add_test(NAME test-compile-class-value-constructor-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_value_constructor_error.ts")
 set_tests_properties(test-compile-class-value-constructor-error PROPERTIES PASS_REGULAR_EXPRESSION "the constructor of class 'Named' does not take the arguments the constructor of 'Base' does"
                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...nor can `new` through a value of a union of class types one of them abstract
+add_test(NAME test-compile-class-value-union-abstract-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_value_union_abstract_error.ts")
+set_tests_properties(test-compile-class-value-union-abstract-error PROPERTIES PASS_REGULAR_EXPRESSION "Cannot create an instance of an abstract class through a value of 'typeof AbstractA \\| typeof ConcreteA': 'AbstractA' is abstract"
+                                                                           FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A tuple has the members of Array (`[1, "a"].map(f)`); classes in an array literal are their values,
+# and `new` through a union of them makes the class it holds - under every memory model
+foreach(tuple_array_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# A method of every class a union may hold is called on the class of the object (it called the
+# first member's for any of them)
+foreach(union_method_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-union-method-dispatch-${union_method_mm} COMMAND test-runner -jit -mm=${union_method_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-union-method-dispatch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
+# -mm=own: a tuple kept in a local used as an array would give its owned elements a second owner
+add_test(NAME test-compile-own-tuple-as-array-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_tuple_as_array_error.ts")
+set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, string\\]' would have two owners as an element of an array"
+                                                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # Mixins (a generic function given a class) under every memory model
 foreach(mixin_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-mixins-${mixin_mm} COMMAND test-runner -jit -mm=${mixin_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")

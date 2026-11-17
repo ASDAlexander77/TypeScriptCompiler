@@ -1291,6 +1291,35 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
+        // `o.name(args)` of `A | B`: the method of the class `o` holds
+        if (auto found = unionMethodAccesses.find(funcResult); found != unionMethodAccesses.end())
+        {
+            auto [unionValue, name] = found->second;
+            unionMethodAccesses.erase(found);
+
+            // the value recorded, not another one made since where an erased one was: it reads the
+            // method through the union's first member
+            std::function<bool(mlir::Value, int)> readsThrough = [&](mlir::Value value, int depth) {
+                auto *op = value.getDefiningOp();
+                if (!op || depth > 4)
+                {
+                    return false;
+                }
+
+                if (isa<mlir_ts::GetValueFromUnionOp, mlir_ts::CastOp>(op) && op->getOperand(0) == unionValue)
+                {
+                    return true;
+                }
+
+                return llvm::any_of(op->getOperands(), [&](mlir::Value operand) { return readsThrough(operand, depth + 1); });
+            };
+
+            if (readsThrough(funcResult, 0))
+            {
+                return mlirGenUnionMethodCall(location, funcResult, unionValue, name, callExpression, genContext);
+            }
+        }
+
         // `(() => void) | null` has no tag: it is the function's own value (isUnionTypeNeedsTag), as
         // `C | null` is the class's pointer, and is called as that function - a field `this.f` read
         // again after `if (this.f)` is the union still

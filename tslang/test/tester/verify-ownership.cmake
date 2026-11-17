@@ -59,6 +59,8 @@ set(not_compilable_alone
     import_value_types_structural.ts
     # errors by design (test-compile-class-value-constructor-error, test-compile-class-local-capture-error)
     class_value_constructor_error.ts
+    class_value_union_abstract_error.ts
+    own_tuple_as_array_error.ts
     class_local_capture_error.ts
     class_field_capture_error.ts
     cpp_class_value_error.ts

@@ -162,11 +162,13 @@ namespace mlirgen
         }
 
         // collapse union type
-        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType)) 
+        mlir::Value collapsedUnionValue;
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType))
         {
             mlir::Type baseType;
             if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
+                collapsedUnionValue = objectValue;
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mlirGenPropertyAccessExpressionBaseLogic: union type " << baseType << "\n";);
                 actualType = baseType;
                 // The value is the base type as well: a union of object types sharing one layout
@@ -243,11 +245,48 @@ namespace mlirgen
 
         auto castFn = [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); };
 
-        mlir::Value value = 
+        // A tuple is an array as well: `[1, "a"].map(f)`, `[A, B].map(c => new c())`. A member of Array
+        // that reads it, a tuple of unnamed elements has not got, is the member of an array of its
+        // elements (mlirGenTupleAsArray). Not one that changes it (`t.reverse()`, `t.push(x)`): it would
+        // change that array, not the tuple. Nor the protocols (iterator, toString): a tuple has its own.
+        auto isArrayReadMember = [](StringRef name) {
+            return llvm::is_contained({"map", "filter", "forEach", "every", "some", "reduce", "reduceRight", "find",
+                                       "findIndex", "findLast", "findLastIndex", "indexOf", "lastIndexOf", "includes",
+                                       "join", "slice", "concat", "flat", "flatMap", "at", "toReversed", "toSorted",
+                                       "with"}, name);
+        };
+        auto tupleAccess = [&](auto tupleType) -> mlir::Value {
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto [fieldIndex, fieldType, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, cl.getAttribute());
+            if (fieldIndex < 0)
+            {
+                // a tuple's length is its number of elements, known here
+                if (name == LENGTH_FIELD_NAME && tupleType.size() > 0
+                    && llvm::none_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+                {
+                    return builder.create<mlir_ts::ConstantOp>(location, getNumberType(),
+                                                               builder.getF64FloatAttr(tupleType.size()));
+                }
+
+                if (!isArrayReadMember(name))
+                {
+                    return cl.Tuple(tupleType);
+                }
+
+                if (auto arrayValue = mlirGenTupleAsArray(location, objectValue, genContext))
+                {
+                    return mlirGenPropertyAccessExpression(location, arrayValue, name, false, genContext);
+                }
+            }
+
+            return cl.Tuple(tupleType);
+        };
+
+        mlir::Value value =
             mlir::TypeSwitch<mlir::Type, mlir::Value>(actualType)
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
-                .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
-                .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
+                .Case<mlir_ts::ConstTupleType>(tupleAccess)
+                .Case<mlir_ts::TupleType>(tupleAccess)
                 // a field of a @value value is a field of its storage tuple
                 .Case<mlir_ts::ValueType>([&](auto valueType) {
                     cl.setExpression(valueStorage(location, objectValue));
@@ -501,7 +540,17 @@ namespace mlirgen
                     //auto casted = cast(location, frontType, objectValue, genContext);
                     auto casted = builder.create<mlir_ts::GetValueFromUnionOp>(location, frontType, objectValue);
 
-                    return mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+                    mlir::Value access = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+
+                    // a method of every class the union may hold (`o.name()` of `A | B`) is the method of
+                    // the one it holds: a call of it dispatches on the tag (mlirGenUnionMethodCall)
+                    SmallVector<ClassInfo::TypePtr> memberClassInfos;
+                    if (access && unionMethodMembers(location, unionType, name, memberClassInfos))
+                    {
+                        unionMethodAccesses[access] = {objectValue, name.str()};
+                    }
+
+                    return access;
                 })
                 .Case<mlir_ts::LiteralType>([&](auto literalType) {
                     auto elementType = literalType.getElementType();
@@ -512,6 +561,18 @@ namespace mlirgen
                     LLVM_DEBUG(llvm::dbgs() << "\n\tCan't resolve property '" << name << "' of type " << objectValue.getType(););
                     return mlir::Value();
                 });
+
+        // a union of classes laid out as one, read as the first: a method of each is the method of the
+        // class of the object, which a call of it asks (mlirGenUnionMethodCall)
+        if (value && collapsedUnionValue)
+        {
+            SmallVector<ClassInfo::TypePtr> memberClassInfos;
+            if (unionMethodMembers(location, mlir::cast<mlir_ts::UnionType>(collapsedUnionValue.getType()), name,
+                                   memberClassInfos))
+            {
+                unionMethodAccesses[value] = {collapsedUnionValue, name.str()};
+            }
+        }
 
         // extention logic: <obj>.<functionName>(this)
         if (!value)
@@ -3147,6 +3208,13 @@ namespace mlirgen
         if (isa<mlir_ts::ClassValueType>(value.getType()) && !suppressConstructorCall)
         {
             return NewClassInstanceFromClassValue(location, value, arguments, genContext);
+        }
+
+        // `new c(args)` with `c: typeof A | typeof B`: whichever class the union holds
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()); unionType && !suppressConstructorCall
+            && llvm::all_of(unionType.getTypes(), [](auto type) { return isa<mlir_ts::ClassValueType>(type); }))
+        {
+            return NewClassInstanceFromClassValueUnion(location, value, arguments, genContext);
         }
 
         auto type = value.getType();
