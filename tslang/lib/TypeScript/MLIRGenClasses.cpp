@@ -1476,12 +1476,15 @@ namespace mlirgen
             mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
         }
 
-        // non-static first
+        // non-static first. A field that fails still leaves the class its fields: a class with no layout
+        // at all sent a later read of a base class's field into endless recursion (a stack overflow)
+        auto fieldFailed = false;
         for (auto &classMember : classDeclarationAST->members)
         {
             if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, false, genContext)))
             {
-                return mlir::failure();
+                fieldFailed = true;
+                break;
             }
         }
 
@@ -1498,7 +1501,7 @@ namespace mlirgen
 
         mlirGenClassTypeSetFields(newClassPtr, fieldInfos);
 
-        return mlir::success();
+        return mlir::failure(fieldFailed);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFields(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
@@ -2379,6 +2382,13 @@ namespace mlirgen
 
         if (hasModifier(propertyDeclaration, SyntaxKind::AbstractKeyword))
         {
+            // an abstract field is a getter and a setter: the class that implements it has the slot
+            if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+            {
+                emitError(location) << "'@" WEAK_DECORATOR "' cannot be on an abstract field: it has no storage of its own";
+                return mlir::failure();
+            }
+
             return mlirGenClassAbstractFieldAccessors(location, newClassPtr, propertyDeclaration, genContext);
         }
 
@@ -2470,7 +2480,37 @@ namespace mlirgen
 #endif
         }
 
-        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        // a field over a base class's field is that field (redeclaresBaseField): `@weak` on one and not the
+        // other would give the one slot two layouts under own. The field is still laid out as the base
+        // has it: a class left half made sent a later read of the field into endless recursion.
+        auto isWeak = MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR);
+        auto weakMismatch = false;
+        if (!isAccessor && baseFieldType(newClassPtr, fieldId))
+        {
+            auto fieldName = MLIRHelper::getName(propertyDeclaration->name);
+            for (auto &baseClass : newClassPtr->baseClasses)
+            {
+                auto found = false;
+                baseClass->findField(fieldId, found);
+                if (!found)
+                {
+                    continue;
+                }
+
+                if (baseClass->isWeakField(fieldName) != isWeak)
+                {
+                    emitError(location) << "the field '" << fieldName << "' is " << (isWeak ? "not " : "") << "@" WEAK_DECORATOR
+                                        << " in '" << baseClass->name << "', so a redeclaration of it "
+                                        << (isWeak ? "cannot be" : "must be") << " @" WEAK_DECORATOR << (isWeak ? "" : " as well");
+                    weakMismatch = true;
+                    isWeak = !isWeak;
+                }
+
+                break;
+            }
+        }
+
+        if (isWeak)
         {
             if (isAccessor)
             {
@@ -2501,7 +2541,7 @@ namespace mlirgen
             mlirGenClassFieldAccessorsForBase(newClassPtr, propertyDeclaration);
         }
 
-        return mlir::success();
+        return mlir::failure(weakMismatch);
     }
 
     mlir::LogicalResult MLIRGenImpl::refuseWeakDecorator(Node node)

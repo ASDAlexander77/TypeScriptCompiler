@@ -927,11 +927,12 @@ a reference gives it back on every path out of a function.
 
   It is a `WeakRef` underneath, so it owns nothing and has the same limits (a class object, no
   threads). Each read is checked: reading it after its object was freed stops the program with "the
-  @weak field 'Node.parent' was read after its object was freed". `===`, `!==` and `== null` compare
-  the stored pointer and never stop, so `if (c.parent === this) c.parent = null` is always safe. A read
+  @weak field 'Node.parent' was read after its object was freed". `===`, `!==`, `== null` and
+  `switch (c.parent)` compare the stored pointer and never stop, so `if (c.parent === this) c.parent = null` is always safe. A read
   borrows, as `deref()` does: it cannot be stored, returned or captured, and it cannot be the object or
   an argument of a call that may free objects (`@nodrops` on the method or `@final` on its class says
-  it frees nothing). Writing a new object into it is an error: nothing would own it. A class with a
+  it frees nothing). Writing a new object into it is an error, in either arm of a `?:` too: nothing would own it. A
+  field that redeclares a base class's `@weak` field is `@weak` as well, and an abstract field cannot be. A class with a
   `@weak` field cannot be seen through an interface that names the field. Under gc and none it is an
   ordinary field; under rc it is an error.
 - `Shared<T>` cycles are never freed; break them with a `WeakRef` where one side only refers back.

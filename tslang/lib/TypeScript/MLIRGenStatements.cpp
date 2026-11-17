@@ -1412,6 +1412,8 @@ namespace mlirgen
         auto result = mlirGen(switchExpr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto switchValue = V(result);
+        // `switch (c.parent)` only compares, as `===` does: a @weak field's stored pointer, not a checked read
+        rawWeakFieldRead(location, switchValue, genContext);
 
         auto &clauses = switchStatementAST->caseBlock->clauses;
 
