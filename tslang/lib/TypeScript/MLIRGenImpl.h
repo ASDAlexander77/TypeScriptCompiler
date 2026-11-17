@@ -12411,16 +12411,9 @@ class MLIRGenImpl
         // what it holds (`[A, B].map(c => new c())`)
         if (item != SyntaxKind::SpreadElement)
         {
-            if (auto classRefOp = itemValue.getDefiningOp<mlir_ts::ClassRefOp>())
-            {
-                auto classInfo = getClassInfoByFullName(classRefOp.getType().getName().getValue());
-                if (classInfo && !classInfo->isValue && !(classInfo->isCppVTable && !classInfo->isCppVTableImplementation))
-                {
-                    auto classValue = mlirGenClassValue(location, classRefOp.getType(), genContext);
-                    EXIT_IF_FAILED_OR_NO_VALUE(classValue)
-                    itemValue = V(classValue);
-                }
-            }
+            auto classValue = classRefAsValue(location, itemValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+            itemValue = V(classValue);
         }
 
         auto type = itemValue.getType();
@@ -12657,6 +12650,26 @@ class MLIRGenImpl
         }
 
         return V(builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar));
+    }
+
+    // A class named where a value is made of it (an array literal's element, a branch of `c ? A : B`):
+    // its value, of `typeof A`. Any other value as it is, and a class that has no value (a @value class,
+    // a @cpp one C++ makes) left a reference, for what is done with it to say so.
+    ValueOrLogicalResult classRefAsValue(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>();
+        if (!classRefOp)
+        {
+            return value;
+        }
+
+        auto classInfo = getClassInfoByFullName(classRefOp.getType().getName().getValue());
+        if (!classInfo || classInfo->isValue || (classInfo->isCppVTable && !classInfo->isCppVTableImplementation))
+        {
+            return value;
+        }
+
+        return mlirGenClassValue(location, classRefOp.getType(), genContext);
     }
 
     // A tuple of unnamed elements as an array of them, of the union of their types: what TypeScript

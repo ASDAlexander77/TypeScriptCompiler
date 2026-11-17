@@ -10,6 +10,8 @@
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
+#include "OwnershipFacts.h"
+
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -2767,11 +2769,13 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
     }
 
     // what LowerToLLVM makes the call's argument attributes from (CPP_CALL_ATTR_NAME,
-    // SRET_ARG_ATTR_NAME): the call they are on is replaced, and they go on its replacement
+    // SRET_ARG_ATTR_NAME): the call they are on is replaced, and they go on its replacement. So does
+    // what -mm=own knows of its result (OWN_FRESH_RESULT_ATTR_NAME: a class value's `.new`, which
+    // MLIRGen marks), read after this lowering: lost, `<A | B>new c()` was a second reference
     static SmallVector<NamedAttribute> getCallABIAttrs(mlir_ts::CallIndirectOp op)
     {
         SmallVector<NamedAttribute> callAttrs;
-        for (auto name : {CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME})
+        for (auto name : {CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME})
         {
             if (auto attr = op->getAttr(name))
             {

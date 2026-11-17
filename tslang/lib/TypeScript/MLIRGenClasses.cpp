@@ -5922,52 +5922,20 @@ genContext);
             return NewClassInstanceFromClassValue(location, classValue, baseClassInfo, operands, genContext);
         }
 
-        // `.new` and the constructor are read from the value, so the class it holds is made whichever
-        // member it is read as (their constructors take the same arguments, above). The union's tag
-        // names a layout, which every class value shares, so it does not pick the member either.
-        // The instance is still made in a branch per member, the last one the else: -mm=own proves
-        // the move of a `new` through a class value into a union only through the branches' merge
-        // (`(c: typeof A): A | B => new c()` straight is refused, as it was before this).
+        // Every class value is laid out alike ({vtable, .new, constructor, rtti}), and a union's tag
+        // names a layout, not a class: it can't tell the members apart, and needn't. `.new` and the
+        // constructor are read from the value, so the class it holds is made whichever member it is
+        // read as; their constructors take the same arguments (above).
         auto resultType = mth.getUnionTypeWithMerge(location, instanceTypes);
+        auto classValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members.front(), classValues);
+        auto instance = NewClassInstanceFromClassValue(location, classValue, memberClassInfos.front(), operands, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(instance)
+        if (V(instance).getType() == resultType)
+        {
+            return instance;
+        }
 
-        auto newOfMember = [&](size_t index) -> ValueOrLogicalResult {
-            auto classValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], classValues);
-            auto instance = NewClassInstanceFromClassValue(location, classValue, memberClassInfos[index], operands, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(instance)
-            if (V(instance).getType() == resultType)
-            {
-                return instance;
-            }
-
-            return cast(location, resultType, V(instance), genContext);
-        };
-
-        std::function<ValueOrLogicalResult(size_t)> newOf = [&](size_t index) -> ValueOrLogicalResult {
-            if (index + 1 == members.size())
-            {
-                return newOfMember(index);
-            }
-
-            auto holds = mlirGenUnionHoldsOneOf(location, classValues, {members[index]});
-            EXIT_IF_FAILED_OR_NO_VALUE(holds)
-
-            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, V(holds), true);
-
-            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-            auto thenValue = newOfMember(index);
-            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
-            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
-
-            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-            auto elseValue = newOf(index + 1);
-            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
-            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
-
-            builder.setInsertionPointAfter(ifOp);
-            return V(ifOp.getResults().front());
-        };
-
-        return newOf(0);
+        return cast(location, resultType, V(instance), genContext);
     }
 
     bool MLIRGenImpl::unionMethodMembers(mlir::Location location, mlir_ts::UnionType unionType, StringRef name,
