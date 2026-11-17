@@ -4,6 +4,9 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringSet.h"
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -187,6 +190,21 @@ struct GenContext
     FunctionPrototypeDOM::TypePtr bodyFuncProto;
     // ...and that function is an arrow, which has no `arguments` of its own
     bool bodyIsArrow = false;
+    // The `var`s of the function whose body is generated (mlirGenFunctionBody): a `var` belongs to its
+    // function, not to the block it is written in, and a second declaration of it is an assignment.
+    // `functionVars` names the ones declared so far; one that could not be declared before the body
+    // (its type is not known there) is declared when it is reached, into the function's symbol scope
+    // (`functionVarScope`), with the function's context (`functionVarContext`) and its storage after
+    // the function's prologue (`functionVarAnchor`, the last prologue op, or null for the block's start).
+    llvm::StringSet<> *functionVars = nullptr;
+    // the positions of the `var` declarations written directly in the body (not in a block of it)
+    llvm::DenseSet<int> *functionTopLevelVars = nullptr;
+    void *functionVarScope = nullptr;
+    const GenContext *functionVarContext = nullptr;
+    mlir::Operation *functionVarAnchor = nullptr;
+    mlir::Block *functionVarBlock = nullptr;
+    // declare() puts the name in this symbol scope instead of the current one
+    void *declareIntoScope = nullptr;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars = nullptr;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars = nullptr;
     // Storage of the locals declared in this scope that took a reference of their own and owe

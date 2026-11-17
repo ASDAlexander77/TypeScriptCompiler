@@ -2202,6 +2202,8 @@ namespace mlirgen
 
         // if we need params only we do not need to process body
         auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
+        llvm::StringSet<> functionVars;
+        llvm::DenseSet<int> functionTopLevelVars;
         if (!discoverParamsOnly)
         {
             // after the list is wired in: the copy is the function's to give back at exit
@@ -2240,6 +2242,24 @@ namespace mlirgen
                         return mlir::failure();
                     }
                 }
+            }
+
+            // the function's `var`s (MDN `var`): one variable each for the whole function, whichever block declares
+            // it, declared before the body; a parameter of the same name is that variable
+            for (const auto &param : funcProto->getParams())
+            {
+                functionVars.insert(param->getName());
+            }
+
+            funcGenContext.functionVars = &functionVars;
+            funcGenContext.functionTopLevelVars = &functionTopLevelVars;
+            funcGenContext.functionVarScope = symbolTable.getCurScope();
+            funcGenContext.functionVarContext = &funcGenContext;
+            funcGenContext.functionVarBlock = &entryBlock;
+            funcGenContext.functionVarAnchor = entryBlock.empty() ? nullptr : &entryBlock.back();
+            if (failed(declareFunctionVars(functionLikeDeclarationBaseAST->body, funcGenContext)))
+            {
+                return mlir::failure();
             }
 
             // we need it to skip lexical block
@@ -2338,6 +2358,11 @@ namespace mlirgen
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.discardReturnValue = false;
+        // a synthesized function has no `var`s of its own, and is not the function it may be made in
+        funcGenContext.functionVars = nullptr;
+        funcGenContext.functionTopLevelVars = nullptr;
+        funcGenContext.functionVarContext = nullptr;
+        funcGenContext.functionVarScope = nullptr;
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;

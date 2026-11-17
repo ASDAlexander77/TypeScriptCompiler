@@ -376,6 +376,7 @@ tslang_add_test(NAME test-compile-00-globals-entry-point COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-main-argc-argv COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
 tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
+tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 tslang_add_test(NAME test-compile-00-array-reference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
@@ -1062,6 +1063,7 @@ tslang_add_test(NAME test-jit-00-main-argc-argv COMMAND test-runner -jit "${PROJ
 tslang_add_test(NAME test-jit-00-main-number-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_number_result.ts")
 tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
+tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 tslang_add_test(NAME test-jit-00-array-reference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
@@ -2871,6 +2873,7 @@ set(TSLANG_CORPUS
     00globals.ts
     00globals2.ts
     00globals3.ts
+    00var_function_scope.ts
     00globals_entry_point.ts
     00if_conditional_compile.ts
     00if_return.ts
@@ -4758,6 +4761,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_for_of_borrowed_iterator own_generator_keeps own_generator_keeps_bounded
                  own_generator_this_param own_copy_within_returned_param own_swap_elements
                  own_callback_forwarded own_optional_record_read own_param_default_kept own_literal_into_array
+                 own_var_local_rest_result own_var_function_scope
                  own_generator_take own_rest_array_borrows own_string_copies
                  own_captured_string_callback own_callback_and_call own_callback_captured own_literal_closures own_literal_variable_closures own_temporary_field_take own_union_narrowed_calls own_named_field_take own_let_field_take own_literal_captures own_literal_object_captures own_literal_interface_captures own_literal_let_captures own_interface_generic_method own_back_reference own_field_function_result
                  own_callback_shapes own_callback_extended own_callback_interface
@@ -5778,7 +5782,6 @@ set(own_error_cases
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
     "own_err_named_walk_let|:10:33: error: 'node' borrows 'node[.]next' and cannot be stored, returned or captured"
-    "own_err_named_var_local|:8:9: error: 'h' borrows the result of 'tag' and cannot be stored, returned or captured"
     "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)

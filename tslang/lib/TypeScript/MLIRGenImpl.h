@@ -3108,6 +3108,16 @@ class MLIRGenImpl
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false);
 
+    // `var` in a function (MDN `var`): one variable of the function, declared before its body
+    void collectFunctionVarDeclarations(Node node, SmallVector<VariableDeclaration> &declarations, bool inLoopHeader = false);
+
+    mlir::LogicalResult declareFunctionVar(mlir::Location location, StringRef name, mlir::Type type, bool typeProvided,
+                                           const GenContext &genContext);
+
+    mlir::LogicalResult declareFunctionVars(Node body, const GenContext &genContext);
+
+    mlir::LogicalResult mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
+
     // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
@@ -16869,7 +16879,11 @@ class MLIRGenImpl
             }
         }
 
-        if (!genContext.insertIntoParentScope)
+        if (genContext.declareIntoScope)
+        {
+            symbolTable.insertIntoScope(static_cast<SymbolTableScopeT *>(genContext.declareIntoScope), name, {value, var});
+        }
+        else if (!genContext.insertIntoParentScope)
         {
             symbolTable.insert(name, {value, var});
         }
