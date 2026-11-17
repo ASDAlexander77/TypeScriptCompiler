@@ -2836,6 +2836,12 @@ namespace mlirgen
             }
         }
 
+        // `static 0 = 1`: a numeric name is the string of its digits, as a property key is (`C[0]` is `C["0"]`)
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId))
+        {
+            fieldId = builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
+        }
+
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
@@ -2843,6 +2849,23 @@ namespace mlirgen
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
         varClass.isPublic = isPublic;
+
+        // the class is processed again when a member could not be resolved the first time (`x = C.foo`, an
+        // instance field reading the class's own static): the static's global made then is the one it has
+        if (auto existingGlobal = lookupModuleSymbol<mlir_ts::GlobalOp>(fullClassStaticFieldName);
+            existingGlobal && fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            auto &staticFieldInfos = newClassPtr->staticFields;
+            pushStaticField(staticFieldInfos, fieldId, existingGlobal.getType(), fullClassStaticFieldName, -1, accessLevel);
+            if (isAccessor)
+            {
+                auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name,
+                                                         existingGlobal.getType(), genContext);
+                EXIT_IF_FAILED(res)
+            }
+
+            return mlir::success();
+        }
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
