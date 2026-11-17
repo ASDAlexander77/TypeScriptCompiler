@@ -480,6 +480,9 @@
 // `@atomic class`: objects several threads may use at once (ClassInfo::isAtomic). On a variable,
 // an atomic load and store (MLIRGenVariables).
 #define ATOMIC_DECORATOR "atomic"
+// `@weak parent: Node | null`: a field that does not own its object (own spec 93). Under -mm=own a
+// WeakRef whose every read is checked; under gc and none an ordinary field; an error under rc.
+#define WEAK_DECORATOR "weak"
 // `@sharedElements class Map<K, V>`: a container that keeps what it is given and hands out
 // borrows of it. Under -mm=own each of its type arguments has to be a value, a string (copied) or
 // a Shared<T> handle (counted): an object, whose block has one owner, goes through Shared<T>.

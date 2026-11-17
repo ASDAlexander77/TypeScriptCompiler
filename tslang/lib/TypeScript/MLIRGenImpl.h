@@ -16086,6 +16086,13 @@ class MLIRGenImpl
 
     mlir::Type NonNullableTypes(mlir::Type type);
 
+    // own spec 93: `@weak` on a node that is no instance field of a class
+    mlir::LogicalResult refuseWeakDecorator(Node node);
+    // own spec 93: a @weak field's checks; records it on the class
+    mlir::LogicalResult mlirGenWeakField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                         PropertyDeclaration propertyDeclaration, mlir::Type type,
+                                         const GenContext &genContext);
+
     // TODO: remove using those types as there issue with generic types
     mlir::Type ExcludeTypes(mlir::Location location, mlir::Type type, mlir::Type exclude);
 

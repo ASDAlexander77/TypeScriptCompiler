@@ -229,6 +229,11 @@ namespace mlirgen
         auto formalParams = parametersContextAST->parameters;
         for (auto [index, arg] : enumerate(formalParams))
         {
+            if (MLIRHelper::hasDecorator(arg, WEAK_DECORATOR))
+            {
+                return {refuseWeakDecorator(arg), false, params};
+            }
+
             auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
             {

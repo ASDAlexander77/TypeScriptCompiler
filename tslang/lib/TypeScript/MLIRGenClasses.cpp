@@ -2470,6 +2470,16 @@ namespace mlirgen
 #endif
         }
 
+        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        {
+            if (isAccessor)
+            {
+                return refuseWeakDecorator(propertyDeclaration);
+            }
+
+            EXIT_IF_FAILED(mlirGenWeakField(location, newClassPtr, propertyDeclaration, type, genContext))
+        }
+
         if (isAccessor || !redeclaresBaseField(newClassPtr, fieldId, type))
         {
             fieldInfos.push_back({fieldId, type, false, accessLevel});
@@ -2489,8 +2499,50 @@ namespace mlirgen
         return mlir::success();
     }
 
+    mlir::LogicalResult MLIRGenImpl::refuseWeakDecorator(Node node)
+    {
+        emitError(loc(node)) << "'@" WEAK_DECORATOR "' applies only to a field of a class";
+        return mlir::failure();
+    }
+
+    // `@weak parent: Node | null` (own spec 93): a field typed by one class (`C`, `C | null`,
+    // `C | undefined`, `p?: C`) that does not own its object. Under rc there is no weak count.
+    mlir::LogicalResult MLIRGenImpl::mlirGenWeakField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                      PropertyDeclaration propertyDeclaration, mlir::Type type,
+                                                      const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel == MemoryModelRC)
+        {
+            emitError(location) << "'@" WEAK_DECORATOR "' is not supported under -mm=rc; use -mm=gc, -mm=own or -mm=none";
+            return mlir::failure();
+        }
+
+        auto target = mth.stripOptionalType(NonNullableTypes(type));
+        auto classType = dyn_cast_or_null<mlir_ts::ClassType>(target);
+        auto classInfo = classType ? getClassInfoByFullName(classType.getName().getValue()) : ClassInfo::TypePtr();
+        if (!classInfo || classInfo->isValue)
+        {
+            emitError(location) << "a @" WEAK_DECORATOR " field needs a class type";
+            return mlir::failure();
+        }
+
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            emitError(location) << "@" WEAK_DECORATOR " fields under -mm=own are not implemented yet";
+            return mlir::failure();
+        }
+
+        newClassPtr->weakFieldTypes[MLIRHelper::getName(propertyDeclaration->name)] = type;
+        return mlir::success();
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
+        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        {
+            return refuseWeakDecorator(propertyDeclaration);
+        }
+
         auto accessLevel = getAccessLevel(propertyDeclaration);
         auto isPublic = accessLevel == mlir_ts::AccessLevel::Public;
         auto name = propertyDeclaration->name;

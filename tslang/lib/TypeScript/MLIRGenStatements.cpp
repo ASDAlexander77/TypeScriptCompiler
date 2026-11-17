@@ -536,6 +536,11 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
     {
+        if (MLIRHelper::hasDecorator(variableStatementAST, WEAK_DECORATOR))
+        {
+            return refuseWeakDecorator(variableStatementAST);
+        }
+
         // `const v = yield x;`
         SupportedYieldScope supportedYieldScope(*this);
         for (auto declaration : variableStatementAST->declarationList->declarations)

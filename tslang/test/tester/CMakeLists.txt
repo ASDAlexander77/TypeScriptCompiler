@@ -5104,6 +5104,18 @@ foreach(shared_mm ${shared_models})
     endforeach()
 endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
+# @weak fields (own spec 93): ordinary fields under gc and none
+foreach(weak_field_mm gc none)
+    tslang_add_test(NAME test-jit-00weak_field-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+    tslang_add_test(NAME test-compile-00weak_field-${weak_field_mm} COMMAND test-runner -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+endforeach()
+add_test(NAME test-rc-err-own_err_weak_field_rc
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_weak_field_rc.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/rc-err-own_err_weak_field_rc.obj")
+set_tests_properties(test-rc-err-own_err_weak_field_rc
+                     PROPERTIES PASS_REGULAR_EXPRESSION ":1:14: error: '@weak' is not supported under -mm=rc. use -mm=gc, -mm=own or -mm=none"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 foreach(weakref_mm gc none own)
     foreach(weakref_test 00weakref_basic 00weakref 00weakref_frame 00weakref_literal 00weakref_narrowed)
         tslang_add_test(NAME test-jit-${weakref_test}-${weakref_mm} COMMAND test-runner -jit -mm=${weakref_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${weakref_test}.ts")
@@ -5562,6 +5574,13 @@ set(own_error_cases
     "own_err_list_pop_used_after|:14:16: error: 'h' borrows 'this[.]head' but is used here after it may be released or overwritten"
     "own_err_list_next_kept_twice|:14:9: error: a value that borrows 'this[.]head[.]next' cannot be stored, returned or captured"
     "own_err_weakref_not_class|:2:47: error: WeakRef needs a class object"
+    "own_err_weak_field_static|:2:16: error: '@weak' applies only to a field of a class"
+    "own_err_weak_field_local|:2:19: error: '@weak' applies only to a field of a class"
+    "own_err_weak_field_param|:1:33: error: '@weak' applies only to a field of a class"
+    "own_err_weak_field_array|:1:16: error: a @weak field needs a class type"
+    "own_err_weak_field_value|:2:16: error: a @weak field needs a class type"
+    "own_err_weak_field_union|:3:16: error: a @weak field needs a class type"
+    "own_err_weak_field_generic|:1:14: error: a @weak field needs a class type"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"
