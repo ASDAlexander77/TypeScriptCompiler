@@ -1805,24 +1805,43 @@ inline bool isCopyableString(mlir::Type type)
         return mlir::isa<mlir_ts::StringType>(member);
     };
 
+    // data nothing owns beside a string in a tagged union (`number | string`): copied as it is
+    std::function<bool(mlir::Type)> isPlainData = [&](mlir::Type member) {
+        if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(member))
+        {
+            return isPlainData(literalType.getElementType());
+        }
+
+        return mlir::isa<mlir::IntegerType, mlir::FloatType, mlir::IndexType, mlir_ts::NumberType, mlir_ts::BooleanType,
+                         mlir_ts::CharType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+    };
+
     if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
     {
+        // `{ptr, i1}` only: an optional of a tagged union is not copied (ts.StringCopy's lowering)
+        auto elementUnion = mlir::dyn_cast<mlir_ts::UnionType>(optionalType.getElementType());
         return !mlir::isa<mlir_ts::OptionalType>(optionalType.getElementType()) &&
+               !(elementUnion && typeHelper(type.getContext()).isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), elementUnion)) &&
                isCopyableString(optionalType.getElementType());
     }
 
     if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
     {
-        if (!llvm::any_of(unionType.getTypes(), isText) ||
-            !llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
-                return isText(member) || mlir::isa<mlir_ts::NullType>(member);
-            }))
+        if (!llvm::any_of(unionType.getTypes(), isText))
         {
             return false;
         }
 
-        // only a union that lowers to one pointer: a tagged union is a struct
-        return !typeHelper(type.getContext()).isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), unionType);
+        // one that lowers to one pointer (strings and null): copied as a string is
+        if (!typeHelper(type.getContext()).isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), unionType))
+        {
+            return llvm::all_of(unionType.getTypes(),
+                                [&](mlir::Type member) { return isText(member) || mlir::isa<mlir_ts::NullType>(member); });
+        }
+
+        // a tagged one, `{tag, payload}`: its string payload copied when the tag says string, any other
+        // member, data nothing owns, as it is (ts.StringCopy's lowering)
+        return llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isText(member) || isPlainData(member); });
     }
 
     return isText(type);

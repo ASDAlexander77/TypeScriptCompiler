@@ -3857,7 +3857,10 @@ class MLIRGenImpl
                 for (auto &entry : genContext.typeParamsWithArgs)
                 {
                     auto type = mth.stripLiteralType(std::get<1>(entry.getValue()));
+                    // a string, and a union of one with data nothing owns (`number | string`), is copied
+                    // rather than given a second owner (own_facts::isCopyableValue)
                     if (!type || mlir::isa<mlir_ts::NamedGenericType, mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::UnknownType>(type) ||
+                        own_facts::isCopyableValue(type) ||
                         MLIRTypeHelper::isSharedHandleType(type) || !mth.ownsHeapMemory(location, type))
                     {
                         continue;

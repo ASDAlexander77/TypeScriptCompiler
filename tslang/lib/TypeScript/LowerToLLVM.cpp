@@ -1373,6 +1373,33 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
             return success();
         }
 
+        // A tagged union of a string and data nothing owns (`number | string`, isCopyableString):
+        // `{tag, payload}`, its payload a copy of the string when the tag says string, and the union
+        // itself when it holds anything else
+        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(op.getIn().getType());
+            unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType))
+        {
+            TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
+            CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
+
+            // the union seen as {tag, string pointer}, as GetValueFromUnionOp reads a member
+            auto partialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {i8PtrTy, i8PtrTy}, UNION_TYPE_PACKED);
+            auto tag = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, in, MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
+            auto unionCopy = clh.conditionalExpressionLowering(
+                loc, in.getType(), tdl.isKind(tag, TYPE_KIND_STRING),
+                [&](OpBuilder &, Location) -> mlir::Value {
+                    auto asText = castLogic.castLLVMTypes(in, in.getType(), partialType, partialType, /*sizesMayDiffer=*/true);
+                    auto text = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, asText,
+                                                                      MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
+                    auto withCopy = rewriter.create<LLVM::InsertValueOp>(loc, asText, copyOf(text, isSet(text)),
+                                                                         MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
+                    return castLogic.castLLVMTypes(withCopy, partialType, in.getType(), in.getType(), /*sizesMayDiffer=*/true);
+                },
+                [&](OpBuilder &, Location) -> mlir::Value { return in; });
+            rewriter.replaceOp(op, ValueRange{unionCopy});
+            return success();
+        }
+
         if (mlir::isa<LLVM::LLVMPointerType>(in.getType()))
         {
             rewriter.replaceOp(op, ValueRange{copyOf(in, isSet(in))});

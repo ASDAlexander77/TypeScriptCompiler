@@ -1879,6 +1879,11 @@ foreach(tuple_array_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# map and filter of a `(number | string)[]`: own copies a string element of the union, as of a string[]
+foreach(string_union_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-string-union-elements-${string_union_mm} COMMAND test-runner -jit -mm=${string_union_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_union_elements.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-string-union-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_union_elements.ts")
 # Class values and instances with `| null` / `| undefined`: stored with their null, made, tested as
 # conditions, and a method of `A | B | null` called on the object's class
 foreach(class_value_null_mm gc rc none own)
