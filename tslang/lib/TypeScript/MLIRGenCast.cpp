@@ -867,6 +867,40 @@ namespace mlirgen
             return castToClassValue(location, classValueType, value, genContext);
         }
 
+        // a class value as a condition (`if (k)`): it always names a class, so it is true; with `| null` or
+        // `| undefined`, true when it holds one. It was an invalid cast of its four pointers to a boolean,
+        // and of a union of them "not supported"
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            auto isClassValueMember = [](mlir::Type member) {
+                return isa<mlir_ts::ClassValueType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+            };
+            auto unionType = dyn_cast<mlir_ts::UnionType>(valueType);
+            auto optType = dyn_cast<mlir_ts::OptionalType>(valueType);
+            auto optUnion = optType ? dyn_cast<mlir_ts::UnionType>(optType.getElementType()) : mlir_ts::UnionType();
+            if (isa<mlir_ts::ClassValueType>(valueType)
+                || (unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassValueType>(member); })
+                    && llvm::all_of(unionType.getTypes(), isClassValueMember))
+                || (optType && (isa<mlir_ts::ClassValueType>(optType.getElementType())
+                                || (optUnion && llvm::all_of(optUnion.getTypes(), isClassValueMember)))))
+            {
+                if (optType)
+                {
+                    return V(builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value));
+                }
+
+                if (unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) {
+                        return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+                    }))
+                {
+                    auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                    return mlirGenBinaryValues(location, SyntaxKind::ExclamationEqualsToken, value, nullValue, genContext);
+                }
+
+                return V(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true)));
+            }
+        }
+
         // ...and a class given where a union holding class values is expected (`make(B)` for
         // `c: typeof A | typeof B`): the value of the member it is, else of one it extends
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))

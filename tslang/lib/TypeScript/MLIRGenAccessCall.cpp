@@ -3235,11 +3235,33 @@ namespace mlirgen
             return NewClassInstanceFromClassValue(location, value, arguments, genContext);
         }
 
-        // `new c(args)` with `c: typeof A | typeof B`: whichever class the union holds
+        // `new c(args)` with `c: typeof A | typeof B`: whichever class the union holds. With `| null` or
+        // `| undefined` too, a run-time check that a class is there (NewClassInstanceFromClassValueUnion)
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()); unionType && !suppressConstructorCall
-            && llvm::all_of(unionType.getTypes(), [](auto type) { return isa<mlir_ts::ClassValueType>(type); }))
+            && llvm::any_of(unionType.getTypes(), [](auto type) { return isa<mlir_ts::ClassValueType>(type); })
+            && llvm::all_of(unionType.getTypes(), [](auto type) {
+                   return isa<mlir_ts::ClassValueType, mlir_ts::NullType, mlir_ts::UndefinedType>(type);
+               }))
         {
             return NewClassInstanceFromClassValueUnion(location, value, arguments, genContext);
+        }
+
+        // `c: typeof A | undefined` laid out as an optional: the class it holds, checked to be there
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(value.getType()); optType && !suppressConstructorCall)
+        {
+            auto elementType = optType.getElementType();
+            auto elementUnion = dyn_cast<mlir_ts::UnionType>(elementType);
+            if (isa<mlir_ts::ClassValueType>(elementType)
+                || (elementUnion && llvm::all_of(elementUnion.getTypes(), [](auto type) { return isa<mlir_ts::ClassValueType>(type); })))
+            {
+                if (mlir::failed(mlirGenClassValuePresent(location, value, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                auto present = builder.create<mlir_ts::ValueOp>(location, elementType, value);
+                return NewClassInstance(location, present, arguments, typeArguments, suppressConstructorCall, genContext);
+            }
         }
 
         auto type = value.getType();

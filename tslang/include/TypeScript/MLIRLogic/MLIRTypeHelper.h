@@ -3766,8 +3766,10 @@ class MLIRTypeHelper
         {
             typesAll.push_back(type);
             // a @value type with null is not a union with a null member: how it is stored is its own
-            // (`T | null`, docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values")
-            isAllValueTypes &= isValueType(type) && !isa<mlir_ts::ValueType>(type);
+            // (`T | null`, docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values").
+            // A class value (`typeof A | null`) is four pointers with no null of its own, as a number has
+            // none: dropped, null was stored as a class value, an invalid cast from a pointer
+            isAllValueTypes &= (isValueType(type) && !isa<mlir_ts::ValueType>(type)) || isa<mlir_ts::ClassValueType>(type);
             isAllLiteralTypes &= isa<mlir_ts::LiteralType>(type);
         }
 

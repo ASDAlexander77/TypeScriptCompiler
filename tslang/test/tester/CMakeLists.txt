@@ -1879,6 +1879,12 @@ foreach(tuple_array_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# Class values and instances with `| null` / `| undefined`: stored with their null, made, tested as
+# conditions, and a method of `A | B | null` called on the object's class
+foreach(class_value_null_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-class-value-union-null-${class_value_null_mm} COMMAND test-runner -jit -mm=${class_value_null_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-class-value-union-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
 # for...of over a tuple, and `t[i]` at a run-time index: each element as the union of their types
 foreach(tuple_for_of_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-for-of-${tuple_for_of_mm} COMMAND test-runner -jit -mm=${tuple_for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_for_of.ts")

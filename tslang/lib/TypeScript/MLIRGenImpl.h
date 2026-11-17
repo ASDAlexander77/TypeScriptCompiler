@@ -10240,6 +10240,47 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, valueType, unionValue));
     }
 
+    // `new c()` of `c: typeof A | null` (or `| undefined`): it throws when `c` holds no class, as a member
+    // of a missing @value value does (mlirGenPresentValue): `.new` read out of null had no function to call
+    mlir::LogicalResult mlirGenClassValuePresent(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        // an optional (`typeof A | undefined`) has a value or none; a union holds null or undefined as a member
+        auto isOptional = isa<mlir_ts::OptionalType>(value.getType());
+        mlir::Value condition;
+        if (isOptional)
+        {
+            condition = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+        }
+        else
+        {
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            auto missing = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsToken, value, nullValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(missing)
+            condition = V(missing);
+        }
+
+        auto stubName = ".class_value.missing";
+        auto stubType = getFunctionType({getOpaqueType()}, {}, false);
+        if (mlir::failed(mlirGenThrowingMethodStub(location, ".missing", stubName, stubType, genContext,
+                                                   "a class value is null or undefined: there is no class to make")))
+        {
+            return mlir::failure();
+        }
+
+        // the throw goes where no class is: the `then` of `c == null`, the `else` of `c has a value`
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, condition, isOptional);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(isOptional ? &ifOp.getElseRegion().front() : &ifOp.getThenRegion().front());
+
+        auto stubRef = builder.create<mlir_ts::SymbolRefOp>(location, stubType,
+                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), stubName));
+        auto nullThis = builder.create<mlir_ts::CastOp>(location, getOpaqueType(),
+                                                        builder.create<mlir_ts::NullOp>(location, getNullType()));
+        builder.create<mlir_ts::CallIndirectOp>(MLIRHelper::getCallSiteLocation(stubRef, location), stubRef,
+                                                mlir::ValueRange{nullThis});
+        return mlir::success();
+    }
+
     // `value` as an optional of its type (getOptionalType): a @value value is the present value of
     // the one optional every missing value of its type is
     mlir::Value mlirGenOptionalValueOf(mlir::Location location, mlir::Value value)
