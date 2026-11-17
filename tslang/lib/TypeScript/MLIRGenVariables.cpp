@@ -1164,6 +1164,46 @@ namespace mlirgen
                 continue;
             }
 
+            // `var v = 1; var v = 2;` of the module or a namespace: one variable. Declared again it is nothing,
+            // and with a value an assignment, where the module's code runs in a function of its own. (Each
+            // declaration made a global of its own: "redefinition of symbol named 'v'".)
+            if (itemVarClass.type == VariableType::Var && !genContext.functionVars && !declarationMode
+                && !itemVarClass.isImport && !itemVarClass.isDynamicImport && item->name == SyntaxKind::Identifier)
+            {
+                auto fullName = concatFullNamespaceName(MLIRHelper::getName(item->name));
+                auto [first, inserted] = moduleVarFirstDeclaration.try_emplace(fullName, item->pos.pos);
+                if (!inserted && first->second != item->pos.pos)
+                {
+                    if (!item->initializer)
+                    {
+                        continue;
+                    }
+
+                    if (genContext.funcOp || genContext.dummyRun)
+                    {
+                        if (!genContext.funcOp)
+                        {
+                            // a dummy run of the module's statements: the assignment is the real run's
+                            continue;
+                        }
+
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        auto identifier = nf.createIdentifier(stows(MLIRHelper::getName(item->name)));
+                        auto assignment = nf.createBinaryExpression(identifier, nf.createToken(SyntaxKind::EqualsToken),
+                                                                    item->initializer);
+                        for (Node node : {Node(identifier), Node(assignment)})
+                        {
+                            node->pos = item->pos;
+                            node->_end = item->_end;
+                        }
+
+                        auto result = mlirGen(assignment.as<Expression>(), genContext);
+                        EXIT_IF_FAILED(result)
+                        continue;
+                    }
+                }
+            }
+
             if (mlir::failed(mlirGen(item, itemVarClass, genContext)))
             {
                 return mlir::failure();
