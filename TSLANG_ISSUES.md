@@ -1148,6 +1148,13 @@ Narrowed again in the third batch: no loop is needed, a module-level block is en
 (`{ let x = 1; let a = () => x; }`). The arrow is made without capturing `x`, so its body loads `.main`'s
 local directly; the same block in a function, or with `const a`, captures `x`.
 
+Fixed (fourth batch). The module's discovery pass is a dummy run of the top-level statements outside any
+function, and in it the block's `x` is not a local of anything. That pass discovered the arrow and
+registered its type, so where the arrow was really generated it was not discovered again: it captured
+nothing. An arrow or a function expression met by that pass is no longer registered.
+`asyncSuperDefaultParameters.ts` (`super` in an async arrow's default parameter) is a different failure and
+is still open.
+
 106 (a module-level arrow: "'llvm.mlir.addressof' op must reference a global defined by
 'llvm.mlir.global'"): 21 tests. Only `--emit=obj` and `--emit=exe` fail. The JIT, with its cache, runs
 them. Tests: `parenthesizedAsyncArrowFunction.ts` (`let foo = (async bar => bar);`),
@@ -1376,7 +1383,15 @@ declared at module level.
 
 Still open:
 - `var v = 1; var v = 2;` at module or namespace level is still "redefinition of symbol" (module `var`s stay
-  globals; the second one's assignment would have to run in the module's init code).
+  globals; the second one's assignment would have to run in the module's init code). Fixed in the fourth
+  batch:
+  - A module `var` declared again with no value is nothing, and with a value it is an assignment.
+  - A repeated `var` with a value counts as module code (`hasGlobalCode`), so the file's top level runs in
+    its entry function, in order: `var v = 1; var w = v + 1; var v = 5;` gives v 5 and w 2.
+  - Test: `00module_var_redeclared.ts`.
+  - Still open: a namespace `var` declared in two `for` headers (`duplicateVariablesByScope.ts` compiles, but
+    a function of the namespace reading it does not resolve it), and names that clash between namespace
+    members (`importInTypePosition.ts`, `declarationEmitNameConflicts3.ts`).
 - A `var` read before its declaration gets its hoisted slot only when its type is known before the body runs
   (a type annotation, or a first declaration inside a block, loop or `if`); `x = 7; var x = one();` in one body is "can't resolve
   name: x".
@@ -1496,5 +1511,22 @@ Still open:
 
 Not fixed in the third batch (design calls):
 - 107 (a namespace as a run-time value): left as it is, by the decision above.
-- `var v = 1; var v = 2;` at module level (still "redefinition of symbol"). With no module code, module
-  `var`s are globals with initializer regions, and nothing runs between them where the second could assign.
+
+128 (found in the fourth batch: a closure made in `for (let i ...)` saw the one `i` the loop had moved past;
+every closure returned 3, where JavaScript gives each iteration its own `i`, 0 1 2). Fixed: when the body
+makes a closure and nothing in it assigns the loop's variables, the body's `i` is a variable of its own,
+made from the loop's at the start of each iteration (CreatePerIterationEnvironment). This applies to
+value-type variables (numbers, booleans...). Under -mm=own the loop now compiles: each iteration's `i` is
+made inside the loop and moved into the closure, which was "'i' is moved inside a loop but was made outside
+it" before.
+- Still open:
+  - A body that assigns the variable keeps the one binding. Its value would have to be copied back, which
+    `continue` skips.
+  - A string or object loop variable keeps the one binding.
+- Test: `00for_let_per_iteration.ts`.
+
+129 (a parameter in the types after it: `function f1(a: number, b: typeof a)`, `(a: number): typeof a`, `{ a:
+typeof a }`; "can't resolve name: a"). Fixed (fourth batch): the parameters are declared, by type, for a
+later parameter's `typeof` type, as they were for its default, and while the return type is evaluated.
+Tests: `unusedParameterUsedInTypeOf.ts`, `newLineInTypeofInstantiation.ts`,
+`indirectTypeParameterReferences.ts`; `00module_var_redeclared.ts`.

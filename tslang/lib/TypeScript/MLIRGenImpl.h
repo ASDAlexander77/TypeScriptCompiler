@@ -3830,7 +3830,53 @@ class MLIRGenImpl
             GenContext paramsGenContext(genContext);
             paramsGenContext.funcProto = funcProto;
 
+            // the parameters are names in a return type that queries them (`(a: number): typeof a`, `{ a: typeof
+            // a }`). Only there: the type references made for them stay in the module as they are made here.
+            auto queriesNames = false;
+            {
+                ts::FuncT<> visitNode;
+                ts::ArrayFuncT<> visitArray;
+                visitNode = [&](Node node) -> Node {
+                    if (!node || queriesNames)
+                    {
+                        return undefined;
+                    }
+
+                    if (node == SyntaxKind::TypeQuery)
+                    {
+                        queriesNames = true;
+                        return undefined;
+                    }
+
+                    ts::forEachChild(node, visitNode, visitArray);
+                    return undefined;
+                };
+                visitArray = [&](NodeArray<Node> array) -> Node {
+                    for (auto node : array)
+                    {
+                        visitNode(node);
+                    }
+
+                    return undefined;
+                };
+                visitNode(typeParameter);
+            }
+
+            SymbolTableScopeT paramsScope(symbolTable);
+            for (const auto &param : params)
+            {
+                if (!queriesNames || param->getName().empty() || param->getName() == THIS_NAME || !param->getType())
+                {
+                    continue;
+                }
+
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(param->getName(), param->getType(), param->getLoc());
+                auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(param->getLoc(), param->getType());
+                declare(param->getLoc(), varDecl, typeRefVal, paramsGenContext);
+            }
+
             auto returnType = getType(typeParameter, paramsGenContext);
+
             if (!returnType)
             {
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
@@ -19152,6 +19198,10 @@ class MLIRGenImpl
     // no local of any other function (resolveIdentifierAsVariable).
     bool isolateGeneratedBodies = false;
     SmallVector<mlir_ts::FuncOp> lexicalFuncOps;
+
+    // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
+    // of the same name is the same variable)
+    llvm::StringMap<int> moduleVarFirstDeclaration;
 
     // The yields standing where nothing is computed before them, marked by the statement around
     // them (the AST has no parent links to look up): yield node -> its value is used. See

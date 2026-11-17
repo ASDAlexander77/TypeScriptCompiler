@@ -378,6 +378,8 @@ tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOU
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-compile-00-generic-arrow-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arrow_any.ts")
 tslang_add_test(NAME test-compile-00-class-value-inferred COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
+tslang_add_test(NAME test-compile-00-for-let-per-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-compile-00-module-var-redeclared COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
 tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -1071,6 +1073,10 @@ tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SO
 tslang_add_test(NAME test-jit-00-generic-arrow-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arrow_any.ts")
 tslang_add_test(NAME test-jit-00-class-value-inferred COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
 tslang_add_test(NAME test-jit-own-00-class-value-inferred COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
+tslang_add_test(NAME test-jit-00-for-let-per-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-jit-own-00-for-let-per-iteration COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-jit-00-module-var-redeclared COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
+tslang_add_test(NAME test-jit-own-00-module-var-redeclared COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
 tslang_add_test(NAME test-jit-00-import-equals-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -2886,6 +2892,8 @@ set(TSLANG_CORPUS
     00globals3.ts
     00generic_arrow_any.ts
     00class_value_inferred.ts
+    00for_let_per_iteration.ts
+    00module_var_redeclared.ts
     00import_equals_value.ts
     00var_function_scope.ts
     00constant_folding.ts
