@@ -6364,6 +6364,9 @@ class MLIRGenImpl
             return boolValue;
         };
 
+        // `x.parent == null` of a @weak field (own spec 93): its stored pointer, never stopping
+        rawWeakFieldRead(location, value, genContext);
+
         auto type = value.getType();
         if (isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type))
         {
@@ -7560,6 +7563,21 @@ class MLIRGenImpl
             return accessorType;
         };
 
+        // a @weak field (own spec 93): the WeakRef of the value goes into the slot, and the read of the
+        // left side, which would stop on a freed object, is not made
+        if (auto viewOp = weakFieldView(leftExpressionValueBeforeCast))
+        {
+            auto loaded = viewOp.getValue();
+            savingValue = weakFieldWrite(location, viewOp, savingValue, genContext);
+            dropWeakFieldView(viewOp);
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            leftExpressionValueBeforeCast = loaded;
+        }
+
         // TODO: logic to support safe cast
         if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
         {
@@ -8720,6 +8738,15 @@ class MLIRGenImpl
         if (opCode == SyntaxKind::CommaToken)
         {
             return mlir::success();
+        }
+
+        // a @weak field compared (own spec 93): its stored pointer, which never stops - a tombstone's
+        // block is not reused while a WeakRef points at it
+        if (opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken ||
+            opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+        {
+            rawWeakFieldRead(location, leftExpressionValue, genContext);
+            rawWeakFieldRead(location, rightExpressionValue, genContext);
         }
 
         if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken)
@@ -16086,6 +16113,25 @@ class MLIRGenImpl
 
     mlir::Type NonNullableTypes(mlir::Type type);
 
+    // own spec 93: a read of a @weak field under own: `loaded` is the !ts.weak_ref slot's load; gives
+    // the declared type, checked (WEAK_FIELD_VIEW_ATTR_NAME)
+    mlir::Value weakFieldRead(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name,
+                              mlir::Value loaded, const GenContext &genContext);
+    mlir::Value weakFieldValue(mlir::Location location, mlir::Value pointer, mlir::Type declaredType,
+                               const GenContext &genContext);
+    // own spec 93: the view weakFieldRead made, if `value` is one
+    mlir_ts::SafeCastOp weakFieldView(mlir::Value value);
+    // own spec 93: removes a view whose checked read nothing uses (the left side of a store, an
+    // operand replaced by its raw pointer)
+    void dropWeakFieldView(mlir_ts::SafeCastOp viewOp);
+    // own spec 93: `value`, a @weak field read, as its stored pointer untested (identity comparisons)
+    void rawWeakFieldRead(mlir::Location location, mlir::Value &value, const GenContext &genContext);
+    // own spec 93: `value` as the WeakRef a store into the @weak field `viewOp` reads writes
+    mlir::Value weakFieldWrite(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value value,
+                               const GenContext &genContext);
+    // own spec 93: a checked read of a @weak field nothing uses (a test's narrowing reads the field
+    // again for each branch) would stop the program on a freed object the program never reads
+    void eraseUnusedWeakFieldReads();
     // own spec 93: `@weak` on a node that is no instance field of a class
     mlir::LogicalResult refuseWeakDecorator(Node node);
     // own spec 93: a @weak field's checks; records it on the class

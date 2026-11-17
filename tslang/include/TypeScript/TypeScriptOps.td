@@ -2524,15 +2524,19 @@ def TypeScript_SharedValueRefOp : TypeScript_Op<"SharedValueRef"> {
   let results = (outs TypeScript_Ref:$result);
 }
 
-// `new WeakRef(x)` (own spec 84): a reference to x that does not own it.
+// `new WeakRef(x)` (own spec 84): a reference to x that does not own it. `weakField` names the
+// @weak field written (`"Node.parent"`, own spec 93).
 def TypeScript_WeakRefNewOp : TypeScript_Op<"WeakRefNew"> {
-  let arguments = (ins AnyType:$target);
+  let arguments = (ins AnyType:$target, OptionalAttr<StrAttr>:$weakField);
   let results = (outs TypeScript_WeakRef:$result);
 }
 
 // `w.deref()`: the target while it lives (an optional holding it), else an empty optional.
+// A read of a @weak field (own spec 93, `weakField` = `"Node.parent"`) gives the class pointer
+// instead: `checked`, the target or null, stopping the program on a freed target; `raw`, the
+// stored pointer untested (an identity comparison).
 def TypeScript_WeakRefDerefOp : TypeScript_Op<"WeakRefDeref"> {
-  let arguments = (ins TypeScript_WeakRef:$weakRef);
+  let arguments = (ins TypeScript_WeakRef:$weakRef, UnitAttr:$checked, UnitAttr:$raw, OptionalAttr<StrAttr>:$weakField);
   let results = (outs AnyType:$result);
 }
 

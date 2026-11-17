@@ -64,14 +64,17 @@ function tree() {
     print("move");
 }
 
+// a subtree freed when this returns, while `keep` still points into it
+function dropSubtree(keep: Node) {
+    const root = new Node(1);
+    root.add(new Node(2));
+    keep.parent = root;
+    if (keep.parent.v != 1) throw "drop before";
+}
+
 function drop() {
     const keep = new Node(9);
-    {
-        const root = new Node(1);
-        root.add(new Node(2));
-        keep.parent = root;
-        if (keep.parent.v != 1) throw "drop before";
-    }
+    dropSubtree(keep);
     churn(1000);
     // the parent is gone: the link is cleared without reading it
     keep.parent = null;

@@ -2478,6 +2478,11 @@ namespace mlirgen
             }
 
             EXIT_IF_FAILED(mlirGenWeakField(location, newClassPtr, propertyDeclaration, type, genContext))
+            // under own the slot holds a WeakRef of the class (a null pointer is null or undefined)
+            if (compileOptions.memoryModel == MemoryModelOwn)
+            {
+                type = mlir_ts::WeakRefType::get(mth.stripOptionalType(NonNullableTypes(type)));
+            }
         }
 
         if (isAccessor || !redeclaresBaseField(newClassPtr, fieldId, type))
@@ -2526,14 +2531,197 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (compileOptions.memoryModel == MemoryModelOwn)
-        {
-            emitError(location) << "@" WEAK_DECORATOR " fields under -mm=own are not implemented yet";
-            return mlir::failure();
-        }
-
         newClassPtr->weakFieldTypes[MLIRHelper::getName(propertyDeclaration->name)] = type;
         return mlir::success();
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldRead(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name,
+                                           mlir::Value loaded, const GenContext &genContext)
+    {
+        // the class that declares the field names it in the message: `Node.parent`
+        auto declaring = classInfo;
+        while (declaring && !declaring->weakFieldTypes.count(name))
+        {
+            declaring = declaring->baseClasses.empty() ? ClassInfo::TypePtr() : declaring->baseClasses.front();
+        }
+
+        auto declaredType = classInfo->weakFieldType(name);
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto fieldName = (declaring ? declaring->name : classInfo->name).str() + "." + name.str();
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setChecked(true);
+        derefOp.setWeakFieldAttr(builder.getStringAttr(fieldName));
+
+        auto castValue = weakFieldValue(location, derefOp.getResult(), declaredType, genContext);
+        if (!castValue)
+        {
+            return mlir::Value();
+        }
+
+        auto viewOp = builder.create<mlir_ts::SafeCastOp>(location, declaredType, castValue, loaded);
+        viewOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        return viewOp;
+    }
+
+    // the class pointer a @weak field holds as its declared type: null is `undefined` for `p?: C`
+    mlir::Value MLIRGenImpl::weakFieldValue(mlir::Location location, mlir::Value pointer, mlir::Type declaredType,
+                                            const GenContext &genContext)
+    {
+        if (!isa<mlir_ts::OptionalType>(declaredType))
+        {
+            return cast(location, declaredType, pointer, genContext);
+        }
+
+        auto condValue = cast(location, getBooleanType(), pointer, genContext);
+        if (!condValue)
+        {
+            return mlir::Value();
+        }
+
+        auto result = conditionalValue(location, condValue,
+            [&]() -> ValueOrLogicalResult { return V(cast(location, declaredType, pointer, genContext)); },
+            [&](mlir::Type trueValueType) {
+                return ValueOrLogicalResult(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
+            });
+        return result ? V(result) : mlir::Value();
+    }
+
+    void MLIRGenImpl::eraseUnusedWeakFieldReads()
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir_ts::WeakRefDerefOp> reads;
+        theModule.walk([&](mlir_ts::WeakRefDerefOp derefOp) {
+            if (derefOp.getChecked())
+            {
+                reads.push_back(derefOp);
+            }
+        });
+
+        for (auto read : reads)
+        {
+            // the read and the casts and views made of it, when nothing else uses any of them
+            llvm::SetVector<mlir::Operation *> closure;
+            closure.insert(read);
+            auto removable = true;
+            for (size_t index = 0; index < closure.size() && removable; index++)
+            {
+                for (auto user : closure[index]->getUsers())
+                {
+                    if (!mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::GetValueFromUnionOp>(user))
+                    {
+                        removable = false;
+                        break;
+                    }
+
+                    closure.insert(user);
+                }
+            }
+
+            if (!removable)
+            {
+                continue;
+            }
+
+            for (auto op : closure)
+            {
+                op->dropAllReferences();
+            }
+
+            for (auto op : llvm::reverse(closure))
+            {
+                op->erase();
+            }
+        }
+    }
+
+    mlir_ts::SafeCastOp MLIRGenImpl::weakFieldView(mlir::Value value)
+    {
+        auto viewOp = value ? value.getDefiningOp<mlir_ts::SafeCastOp>() : mlir_ts::SafeCastOp();
+        return viewOp && viewOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME) ? viewOp : mlir_ts::SafeCastOp();
+    }
+
+    void MLIRGenImpl::dropWeakFieldView(mlir_ts::SafeCastOp viewOp)
+    {
+        if (!viewOp.getResult().use_empty())
+        {
+            return;
+        }
+
+        // the view, then the casts and the checked read under it, each once nothing uses it
+        auto next = viewOp->getOperand(0).getDefiningOp();
+        viewOp->erase();
+        while (next && next->use_empty())
+        {
+            auto isRead = mlir::isa<mlir_ts::WeakRefDerefOp>(next);
+            auto below = !isRead && next->getNumOperands() > 0 ? next->getOperand(0).getDefiningOp() : nullptr;
+            next->erase();
+            if (isRead)
+            {
+                break;
+            }
+
+            next = below;
+        }
+    }
+
+    void MLIRGenImpl::rawWeakFieldRead(mlir::Location location, mlir::Value &value, const GenContext &genContext)
+    {
+        auto viewOp = weakFieldView(value);
+        if (!viewOp)
+        {
+            return;
+        }
+
+        auto loaded = viewOp.getValue();
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setRaw(true);
+        auto rawValue = weakFieldValue(location, derefOp.getResult(), viewOp.getType(), genContext);
+        if (!rawValue)
+        {
+            return;
+        }
+
+        value = rawValue;
+        dropWeakFieldView(viewOp);
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldWrite(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value value,
+                                            const GenContext &genContext)
+    {
+        auto loaded = viewOp.getValue();
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto declared = cast(location, viewOp.getType(), value, genContext);
+        if (!declared)
+        {
+            return mlir::Value();
+        }
+
+        auto target = cast(location, weakRefType.getElementType(), declared, genContext);
+        if (!target)
+        {
+            return mlir::Value();
+        }
+
+        auto derefOp = viewOp->getOperand(0).getDefiningOp();
+        while (derefOp && !mlir::isa<mlir_ts::WeakRefDerefOp>(derefOp))
+        {
+            derefOp = derefOp->getNumOperands() > 0 ? derefOp->getOperand(0).getDefiningOp() : nullptr;
+        }
+
+        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, weakRefType, target, mlir::StringAttr());
+        if (derefOp)
+        {
+            weakRef.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(derefOp).getWeakFieldAttr());
+        }
+
+        // born with no weak count: the retain the store adds is the first (as `new WeakRef(x)`)
+        markFreshBlockOwned(location, weakRef);
+        return weakRef;
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)

@@ -498,6 +498,10 @@
 // store to a field of the subclass's own would be - unlike a variable a test narrowed, which may
 // still be given anything its declaration allows
 #define DECLARED_FIELD_VIEW_ATTR_NAME "__declared_field_view"
+// On a ts.SafeCastOp: a read of a @weak field under -mm=own (own spec 93), the declared type over the
+// !ts.weak_ref slot's load. A store writes a WeakRef through it; an identity comparison reads the raw
+// pointer instead (MLIRGenImpl::weakFieldRead / rawWeakFieldRead).
+#define WEAK_FIELD_VIEW_ATTR_NAME "__weak_field_view"
 // the old name of @cpp, an error now: unknown, it would leave the class an ordinary one
 #define CPP_VTABLE_OLD_NAME "cppvtable"
 // A @cpp method's C++ return type has a destructor or a copy constructor (see

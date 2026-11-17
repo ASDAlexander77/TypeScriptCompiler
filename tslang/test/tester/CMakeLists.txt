@@ -5104,11 +5104,28 @@ foreach(shared_mm ${shared_models})
     endforeach()
 endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
-# @weak fields (own spec 93): ordinary fields under gc and none
-foreach(weak_field_mm gc none)
-    tslang_add_test(NAME test-jit-00weak_field-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
-    tslang_add_test(NAME test-compile-00weak_field-${weak_field_mm} COMMAND test-runner -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+# @weak fields (own spec 93): a checked WeakRef under own, ordinary fields under gc and none
+foreach(weak_field_mm gc none own)
+    foreach(weak_field_test tests/00weak_field own/own_weak_field_compare_dead)
+        get_filename_component(weak_field_name ${weak_field_test} NAME)
+        tslang_add_test(NAME test-jit-${weak_field_name}-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")
+        tslang_add_test(NAME test-compile-${weak_field_name}-${weak_field_mm} COMMAND test-runner -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")
+    endforeach()
 endforeach()
+tslang_add_test(NAME test-compile-noopt-00weak_field-own COMMAND test-runner -noopt -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+# gc keeps the parent alive and none never frees: the freed read prints the value there
+foreach(weak_field_mm gc none)
+    tslang_add_test(NAME test-jit-own_weak_field_freed_read-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts")
+endforeach()
+add_test(NAME test-own-weak-field-stop
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts"
+                 "-DFIELD=Node.parent"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-weak-field-stop"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-weak-field-stop.cmake")
 add_test(NAME test-rc-err-own_err_weak_field_rc
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_weak_field_rc.ts"

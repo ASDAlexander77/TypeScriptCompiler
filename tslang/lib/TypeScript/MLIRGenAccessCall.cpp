@@ -185,13 +185,32 @@ namespace mlirgen
             auto accessingFromLevel = detectAccessLevel(classType, genContext);
             LLVM_DEBUG(llvm::dbgs() << "\n\t = Accessing from level '" << accessingFromLevel << "'\n\n";);
 
+            // a @weak field (own spec 93): the slot holds a WeakRef, read as the declared type
+            auto weakField = [&](mlir::Value value) {
+                if (value && compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::WeakRefType>(value.getType()) &&
+                    value.getDefiningOp<mlir_ts::LoadOp>())
+                {
+                    if (auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                        classInfo && classInfo->isWeakField(name))
+                    {
+                        return weakFieldRead(location, classInfo, name, value, genContext);
+                    }
+                }
+
+                return value;
+            };
+
             if (auto value = cl.Class(classType, accessingFromLevel))
             {
-                return value;
+                return weakField(value);
             }
 
             auto value = ClassMembersAccess(location, objectValue, classType.getName().getValue(), name,
                 false, argument, accessingFromLevel, genContext);
+            if (value && isa<mlir_ts::WeakRefType>(value.getType()))
+            {
+                return weakField(value);
+            }
 
             // a base's field this class (or one between) declared again with a type of its own: the
             // base's slot, seen as that type. Stores see through the SafeCastOp to the slot
