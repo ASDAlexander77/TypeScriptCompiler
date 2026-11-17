@@ -1095,6 +1095,14 @@ namespace mlirgen
             return mlirGenSaveLogic(binaryExpressionAST, genContext);
         }
 
+        // `a + "-" + b + "!"`: one string built for the whole chain, not one per `+`
+        if (opCode == SyntaxKind::PlusToken && !genContext.allowConstEval
+            && leftExpression == SyntaxKind::BinaryExpression
+            && (SyntaxKind)leftExpression.as<BinaryExpression>()->operatorToken == SyntaxKind::PlusToken)
+        {
+            return mlirGenPlusChain(binaryExpressionAST, genContext);
+        }
+
         auto result = mlirGen(leftExpression, genContext);
         if (opCode == SyntaxKind::CommaToken)
         {
@@ -1143,6 +1151,155 @@ namespace mlirgen
         }
 
         return mlirGenBinaryValues(location, opCode, leftExpressionValue, rightExpressionValue, genContext, saveResult);
+    }
+
+    // `a + "-" + b + "!"` built as one string: `+` groups from the left, so as separate operations
+    // every `+` allocated a string, copied what the one before built and left it to be given back
+    // (three allocations here), and `"c" + "d"` in `"a" + b + "c" + "d"` were never two constants
+    // side by side to fold.
+    //
+    // The operands are generated from the left, as before. Up to the first string the `+`s are what
+    // they always were, so `1 + 2 + "x"` still adds before it concatenates ("3x"). From there each
+    // string, number, integer or boolean is converted to a string as `"a" + x` converts it (a
+    // run of constants merged into one constant), and the run ends in one StringConcat, as a
+    // template literal does. An operand of any other type (any, a union, an object) ends the run:
+    // the string built so far and that operand go through the `+` they always did.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenPlusChain(BinaryExpression root, const GenContext &genContext)
+    {
+        SmallVector<Expression> operands;
+        SmallVector<BinaryExpression> plusNodes;
+        collectPlusChain(root, operands, plusNodes);
+
+        auto stringType = getStringType();
+        auto baseType = [](mlir::Type type) {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+            {
+                return literalType.getElementType();
+            }
+
+            return type;
+        };
+        auto isString = [&](mlir::Value value) { return isa<mlir_ts::StringType>(baseType(value.getType())); };
+        auto isPart = [&](mlir::Value value) {
+            auto type = baseType(value.getType());
+            if (auto intType = dyn_cast<mlir::IntegerType>(type))
+            {
+                return intType.getWidth() > 1;
+            }
+
+            return isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::BooleanType>(type);
+        };
+
+        // the run being built: string values, constant text not yet given a value
+        SmallVector<mlir::Value> parts;
+        std::string pendingText;
+        auto hasPendingText = false;
+        auto flushText = [&](mlir::Location location) {
+            if (hasPendingText)
+            {
+                parts.push_back(builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(pendingText)));
+                pendingText.clear();
+                hasPendingText = false;
+            }
+        };
+
+        auto addPart = [&](mlir::Location location, mlir::Value value) -> mlir::LogicalResult {
+            if (auto constantOp = foldableConstant(value))
+            {
+                if (auto text = constantAsJSString(constantOp))
+                {
+                    pendingText += *text;
+                    hasPendingText = true;
+                    return mlir::success();
+                }
+            }
+
+            flushText(location);
+            if (value.getType() != stringType)
+            {
+                CAST(value, location, stringType, value, genContext);
+            }
+
+            parts.push_back(value);
+            return mlir::success();
+        };
+
+        auto inRun = false;
+        auto finishRun = [&](mlir::Location location) -> mlir::Value {
+            inRun = false;
+            if (parts.empty())
+            {
+                auto text = pendingText;
+                pendingText.clear();
+                hasPendingText = false;
+                return mlirGenFoldedString(location, text);
+            }
+
+            flushText(location);
+            auto concatValue =
+                builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{parts});
+            parts.clear();
+
+            // a new string, as `"a" + b` builds: its receiver takes it over, or it is given back at
+            // the end of the block
+            markFreshBlockOwned(location, concatValue);
+            return concatValue;
+        };
+
+        auto result = mlirGen(operands.front(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        mlir::Value acc = V(result);
+
+        for (auto index = 1u; index < operands.size(); index++)
+        {
+            auto location = loc(plusNodes[index - 1]);
+
+            auto operandResult = mlirGen(operands[index], genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(operandResult)
+            auto value = V(operandResult);
+
+            if (inRun)
+            {
+                if (isPart(value))
+                {
+                    if (mlir::failed(addPart(location, value)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    continue;
+                }
+
+                acc = finishRun(location);
+            }
+            else if (isPart(acc) && isPart(value) && (isString(acc) || isString(value)))
+            {
+                inRun = true;
+                if (mlir::failed(addPart(location, acc)) || mlir::failed(addPart(location, value)))
+                {
+                    return mlir::failure();
+                }
+
+                continue;
+            }
+
+            if (auto folded = foldConstantBinary(location, SyntaxKind::PlusToken, acc, value))
+            {
+                acc = V(*folded);
+                continue;
+            }
+
+            auto stepResult = mlirGenBinaryValues(location, SyntaxKind::PlusToken, acc, value, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(stepResult)
+            acc = V(stepResult);
+        }
+
+        if (inRun)
+        {
+            acc = finishRun(loc(root));
+        }
+
+        return V(acc);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
