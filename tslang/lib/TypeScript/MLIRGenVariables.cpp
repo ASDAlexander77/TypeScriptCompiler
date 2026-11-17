@@ -655,6 +655,20 @@ namespace mlirgen
             {
                 value = cl.Tuple(constTupleType, true);
             }
+            else if (isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ConstArrayType>(type))
+            {
+                // `const { 0: a } = [0, 1, 2]` reads the element, as `[0, 1, 2][0]`
+                auto indexValue = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), fieldName);
+                auto result = mlirGenElementAccess(location, init, indexValue, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                value = V(result);
+            }
+            else
+            {
+                emitError(location) << "a numeric property name can't be read from a value of type '" << to_print(type)
+                                    << "'";
+                return mlir::failure();
+            }
         }
         else
         {
@@ -708,6 +722,15 @@ namespace mlirgen
         mlir::Value subInit;
         mlir::Type subInitType;
 
+        // the rest of an array is an object of its other indices and `length`; nothing here makes one
+        // (it was cast to an empty tuple, with an "invalid cast" warning)
+        if (isa<mlir_ts::ArrayType>(init.getType()) || isa<mlir_ts::ConstArrayType>(init.getType()))
+        {
+            emitError(location) << "the rest element of an object pattern can't take the rest of an array: "
+                                << "use an array pattern, `[a, ...b]`";
+            return mlir::failure();
+        }
+
         SmallVector<mlir::Attribute> names;
 
         // take all used fields
@@ -756,6 +779,12 @@ namespace mlirgen
         mlir::Type type = typeRef;
         mlir::Value init = initRef;
         //TypeProvided typeProvided = typeProvidedRef;
+
+        // the value failed: its error is out already (each field read from no value crashed)
+        if (!init)
+        {
+            return mlir::failure();
+        }
 
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
@@ -1684,6 +1713,31 @@ namespace mlirgen
             }
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
+        }
+
+        // `super` in an arrow in a method (`() => super.m()`): the arrow has the method's `this`, captured, and
+        // no type of `this` of its own; `super` is that object's base (it was "can't resolve name: super")
+        if (!genContext.thisType && name == SUPER_NAME)
+        {
+            if (auto thisValue = resolveIdentifier(location, THIS_NAME, genContext))
+            {
+                auto thisType = thisValue.getType();
+                if (auto refType = dyn_cast<mlir_ts::RefType>(thisType))
+                {
+                    thisType = refType.getElementType();
+                    thisValue = builder.create<mlir_ts::LoadOp>(location, thisType, thisValue);
+                }
+
+                if (auto classType = dyn_cast<mlir_ts::ClassType>(thisType))
+                {
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    if (classInfo && !classInfo->baseClasses.empty())
+                    {
+                        return mlirGenPropertyAccessExpression(location, thisValue, classInfo->baseClasses.front()->fullName,
+                                                               genContext);
+                    }
+                }
+            }
         }
 
         // built-in types

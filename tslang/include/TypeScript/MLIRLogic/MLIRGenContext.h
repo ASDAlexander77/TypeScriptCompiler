@@ -183,6 +183,10 @@ struct GenContext
     // exported one is exported (#448). A function nested in them has a funcOp of its own.
     mlir_ts::FuncOp rootStatementsFuncOp;
     FunctionPrototypeDOM::TypePtr funcProto;
+    // the prototype of the function whose body is generated: its parameters are `arguments`
+    FunctionPrototypeDOM::TypePtr bodyFuncProto;
+    // ...and that function is an arrow, which has no `arguments` of its own
+    bool bodyIsArrow = false;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars = nullptr;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars = nullptr;
     // Storage of the locals declared in this scope that took a reference of their own and owe

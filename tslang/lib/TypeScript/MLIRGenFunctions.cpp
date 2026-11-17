@@ -1279,9 +1279,12 @@ namespace mlirgen
         auto parentKind = (SyntaxKind)functionLikeDeclarationBaseAST->parent;
         auto isObjectLiteralMember = parentKind == SyntaxKind::PropertyAssignment
             || parentKind == SyntaxKind::ObjectLiteralExpression;
+        // ...nor is a constructor, which can't have type parameters: `constructor(public x, y)` takes `any`s
+        // (made generic, its class failed with "can't find type by name: TGenParam_x")
+        auto isConstructor = functionLikeDeclarationBaseAST == SyntaxKind::Constructor;
         auto isGenericFunction =
             functionLikeDeclarationBaseAST->typeParameters.size() > 0
-            || !genContext.isGlobalVarReceiver && !isObjectLiteralMember
+            || !genContext.isGlobalVarReceiver && !isObjectLiteralMember && !isConstructor
                 && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !instantiateSpecializedFunction)
         {
@@ -2085,6 +2088,9 @@ namespace mlirgen
 
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
+        // its parameters, for `arguments` (mlirGenArguments)
+        funcGenContext.bodyFuncProto = funcProto;
+        funcGenContext.bodyIsArrow = functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction;
         funcGenContext.discardReturnValue = funcProto->getDiscardsReturnValue();
 
         auto *blockPtr = funcOp.addEntryBlock();

@@ -1,9 +1,11 @@
 // @strict-null false
 // TODO: add cast 'string[]' -> 'any[]'
 //function tag(...x: any[]): any
-function tag(...x: string[]): string
+// a tag takes the strings, then the values (`(...x: string[])` took the strings array as one of its strings, and
+// the call was dropped with no error)
+function tag(strs: TemplateStringsArray, ...x: any[]): string
 {
-    return x[0];
+    return strs[0];
 }
 
 function main() {

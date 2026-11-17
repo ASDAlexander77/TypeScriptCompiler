@@ -1260,7 +1260,12 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         results = hybridFuncType.getResults();
     }
 
-    auto e = (int)input.size(); 
+    auto e = (int)input.size();
+    if ((int)getNumOperands() - 1 < e)
+    {
+        return emitOpError("expected ") << e << " operands after the callee, but provided " << (getNumOperands() - 1);
+    }
+
     for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i + 1).getType() != input[i])

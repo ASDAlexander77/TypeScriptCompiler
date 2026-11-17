@@ -1776,6 +1776,7 @@ namespace mlirgen
 
         auto deferDefaults = newExpression->typeArguments.size() == 0 &&
                              (newExpression->arguments.size() > 0 || genContext.receiverType);
+        auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
         auto result = deferDefaults ? mlirGen(typeExpression, genContext)
                                     : mlirGen(typeExpression, newExpression->typeArguments, genContext);
         if (result.failed())
@@ -1792,6 +1793,12 @@ namespace mlirgen
                 type = findEmbeddedType(location, name, newExpression->typeArguments, genContext);
                 if (type)
                 {
+                    // the name is a type after all: "'Object' is a type here, not a value" is not this one's error
+                    if (genContext.postponedMessages)
+                    {
+                        rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+                    }
+
                     result = V(builder.create<mlir_ts::TypeRefOp>(location, type));
                 }
             }
@@ -1799,6 +1806,16 @@ namespace mlirgen
 
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+
+        // a constructor function (`function Point(x) { this.x = x; }`, `new Point(3)`) makes an object of
+        // what its body assigns to `this`, which is known only at run time; a class says it ('ts.New' failed
+        // verification, with a function type for the object)
+        if (isa<mlir_ts::FunctionType>(value.getType()) || isa<mlir_ts::HybridFunctionType>(value.getType())
+            || isa<mlir_ts::BoundFunctionType>(value.getType()))
+        {
+            emitError(location) << "'new' on a function is not supported: declare a class with a constructor";
+            return mlir::failure();
+        }
 
         // `new Object()` is an object with no fields, `{}`: `Object` names the type `object`, which has no
         // constructor of its own to call
@@ -2564,42 +2581,10 @@ namespace mlirgen
 
         VALIDATE_FUNC(callee.getType(), location)
 
-        auto inputs = mth.getParamsFromFuncRef(callee.getType());
-
-        SmallVector<mlir::Value, 4> operands;
-
-        auto i = 0;
-        for (auto value : vals)
-        {
-            if (inputs.size() <= i)
-            {
-                emitError(location, "not matching to tag parameters count");
-                return mlir::Value();
-            }
-
-            if (value.getType() != inputs[i])
-            {
-                CAST_A(castValue, location, inputs[i], value, genContext);
-                operands.push_back(castValue);
-            }
-            else
-            {
-                operands.push_back(value);
-            }
-
-            i++;
-        }
-
-        // call
-        auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
-            MLIRHelper::getCallSiteLocation(callee, location),
-            callee, operands);
-        if (callIndirectOp.getNumResults() > 0)
-        {
-            return callIndirectOp.getResult(0);
-        }
-
-        return mlir::success();
+        // a call as any other: the values go to a rest parameter as its array, an optional one left out
+        // is undefined (`tag \`foo\`` gave a tag `(parts, ...values)` one operand for its two inputs, and
+        // the verifier read past the operands)
+        return mlirGenCall(location, callee, vals, genContext);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
@@ -3066,8 +3051,61 @@ namespace mlirgen
         // resolve name
         auto name = MLIRHelper::getName(identifier);
 
+        if (name == "arguments" && !resolveIdentifier(location, name, genContext))
+        {
+            return mlirGenArguments(location, identifier, genContext);
+        }
+
         // info: can't validate it here, in case of "print" etc
         return mlirGen(location, name, genContext);
+    }
+
+    // `arguments` in a function: an `any[]` of the values of its parameters. An arrow has none of its own: it
+    // would be the function's around it, which the arrow would have to capture.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenArguments(mlir::Location location, Identifier identifier, const GenContext &genContext)
+    {
+        if (genContext.bodyIsArrow)
+        {
+            emitError(location) << "'arguments' in an arrow function is not supported: use a rest parameter, "
+                                << "`(...args) => ...`";
+            return mlir::failure();
+        }
+
+        if (!genContext.bodyFuncProto)
+        {
+            emitError(location) << "'arguments' can only be used in a function";
+            return mlir::failure();
+        }
+
+        SmallVector<mlir::Value, 4> values;
+        for (auto &param : genContext.bodyFuncProto->getParams())
+        {
+            // a method's object is not one of its arguments
+            if (param->getName() == THIS_NAME)
+            {
+                continue;
+            }
+
+            if (param->getIsMultiArgsParam() || param->getBindingPattern())
+            {
+                emitError(location) << "'arguments' of a function with a rest or destructured parameter is not supported";
+                return mlir::failure();
+            }
+
+            auto result = mlirGen(location, param->getName(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto value = V(result);
+            if (!isa<mlir_ts::AnyType>(value.getType()))
+            {
+                CAST(value, location, getAnyType(), value, genContext);
+            }
+
+            values.push_back(value);
+        }
+
+        // the array releases what it holds when it dies (as a rest parameter's array does)
+        mlirGenRetainCaptured(location, values);
+        return V(builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values));
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -3145,7 +3183,15 @@ namespace mlirgen
         // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted
         // as embeded type "index"
         if (!isEmbededType(name) && !circularTypeAliases.contains(name) && !valueTypesHoldingThemselves.contains(name))
+        {
             emitError(location, "can't resolve name: ") << name;
+        }
+        else if (isEmbededType(name))
+        {
+            // a caller that tries a type next (`new Array<number>()`) succeeds and the module shows no
+            // diagnostics; one that doesn't said only "failed statement" (`Object.freeze(...)`, `x = Object`)
+            emitError(location) << "'" << name << "' is a type here, not a value";
+        }
 
         return mlir::failure();
     }

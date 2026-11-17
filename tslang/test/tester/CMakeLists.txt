@@ -2017,6 +2017,26 @@ add_test(NAME test-compile-any-plus-any-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/any_plus_any_error.ts")
 set_tests_properties(test-compile-any-plus-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'\\+' of two values of type 'any' is not supported"
                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# TSLANG_ISSUES 92-124, the second batch: a tagged template with no substitutions, `instanceof Object`, a numeric
+# name in an object pattern, untyped statics and parameter properties, `arguments`, `super` in an arrow, computed
+# field names
+foreach(issues_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issues_92_124-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_92_124.ts")
+    tslang_add_test(NAME test-compile-00tslang_issues_92_124-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_92_124.ts")
+endforeach()
+# ...and what stays refused, with an error that says why instead of a verifier failure or "failed statement"
+add_test(NAME test-compile-new-function-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/new_function_error.ts")
+set_tests_properties(test-compile-new-function-error PROPERTIES PASS_REGULAR_EXPRESSION "'new' on a function is not supported"
+                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-arguments-arrow-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arguments_arrow_error.ts")
+set_tests_properties(test-compile-arguments-arrow-error PROPERTIES PASS_REGULAR_EXPRESSION "'arguments' in an arrow function is not supported"
+                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-type-as-value-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/type_as_value_error.ts")
+set_tests_properties(test-compile-type-as-value-error PROPERTIES PASS_REGULAR_EXPRESSION "'Object' is a type here, not a value"
+                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # A singly linked list: walked by a local that steps down it, pushed on, appended to, cut, popped and unlinked;
 # a node popped off a list that an append-only global keeps too; a node made with the old head, a tree grown
 # by recursion on a field, walks that assign their parameter
@@ -2059,7 +2079,7 @@ foreach(failed_field_mm gc own)
     add_test(NAME test-compile-subclass-field-failed-error-${failed_field_mm}
              COMMAND test-runner -mm=${failed_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/subclass_field_failed_error.ts")
     set_tests_properties(test-compile-subclass-field-failed-error-${failed_field_mm} PROPERTIES
-                         PASS_REGULAR_EXPRESSION "not supported 'Computed Property Name' expression"
+                         PASS_REGULAR_EXPRESSION "a computed property name must be a constant"
                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 # TSLANG_ISSUES 31, 33: a const Shared<T> in several closures; a callback's result stored in a field

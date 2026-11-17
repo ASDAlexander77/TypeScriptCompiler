@@ -7,6 +7,27 @@ namespace typescript
 namespace mlirgen
 {
 
+    // A class field named by a number (`1 = 2`, `0.0 = 1`, `static 0 = 1`) is named by the string of its
+    // digits, as a property key is: `this["1"]` and `C["0"]` reach it. Any other name is kept.
+    static mlir::Attribute numericFieldNameAsString(mlir::Attribute fieldId, mlir::OpBuilder &builder)
+    {
+        if (auto intAttr = dyn_cast_or_null<mlir::IntegerAttr>(fieldId))
+        {
+            return builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
+        }
+
+        if (auto floatAttr = dyn_cast_or_null<mlir::FloatAttr>(fieldId))
+        {
+            auto value = floatAttr.getValueAsDouble();
+            if (value == static_cast<double>(static_cast<int64_t>(value)))
+            {
+                return builder.getStringAttr(std::to_string(static_cast<int64_t>(value)));
+            }
+        }
+
+        return fieldId;
+    }
+
     mlir::LogicalResult MLIRGenImpl::registerGenericClass(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto name = className(classDeclarationAST, genContext);
@@ -2290,6 +2311,9 @@ namespace mlirgen
             }
 
             auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+            // as mlirGenClassDataFieldMember names a numeric field
+            fieldId = numericFieldNameAsString(fieldId, builder);
+
             for (auto &fieldInfo : fieldInfos)
             {
                 if (fieldInfo.id == fieldId)
@@ -2411,6 +2435,10 @@ namespace mlirgen
         }
 
         auto fieldId = TupleFieldName(name, genContext);
+        // `1 = 2`: a numeric field name is the string of its digits, as a property key is, so `this["1"]` reaches
+        // it (an integer id was reached by no access, and the field's initializer failed)
+        fieldId = numericFieldNameAsString(fieldId, builder);
+
         if (!fieldId)
         {
             // e.g. a computed field name (`[key] = 42;`) that doesn't resolve to a compile-time
@@ -2907,10 +2935,7 @@ namespace mlirgen
         }
 
         // `static 0 = 1`: a numeric name is the string of its digits, as a property key is (`C[0]` is `C["0"]`)
-        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId))
-        {
-            fieldId = builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
-        }
+        fieldId = numericFieldNameAsString(fieldId, builder);
 
         // process static field - register global
         auto fullClassStaticFieldName =
@@ -2940,6 +2965,14 @@ namespace mlirgen
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
             [&](mlir::Location location, const GenContext &genContext) {
+                // `static x` with no type and no initializer is `any`, as an instance field is (it failed
+                // with no type, and no error)
+                if (!propertyDeclaration->type && !propertyDeclaration->initializer)
+                {
+                    emitWarning(location) << "type for field '" << fieldId << "' is any";
+                    return std::make_tuple(mlir::Type(getAnyType()), mlir::Value(), TypeProvided::No);
+                }
+
                 auto isConst = false;
                 mlir::Type typeInit;
                 evaluate(
@@ -3088,6 +3121,14 @@ namespace mlirgen
             auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, loc(parameter),
                                                 MLIRHelper::getName(parameter->name));
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
+
+            // `constructor(public x)`, with no type and no default, is an `any` field, as a parameter
+            // with neither is `any` (it failed with no type, and no error)
+            if (mth.isNoneType(type) && !parameter->type && !parameter->initializer && !parameter->dotDotDotToken)
+            {
+                emitWarning(loc(parameter)) << "type for field '" << fieldId << "' is any";
+                type = getAnyType();
+            }
 
             if (mth.isNoneType(type))
             {
@@ -5302,8 +5343,12 @@ genContext);
                 createGlobalConstructor(classMember, genContext);
             }
 
-            // adding missing statements
-            generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, classMember, funcGenContext);
+            // adding missing statements; a failure here left the constructor without its field initializers, and no error
+            if (mlir::failed(generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, classMember,
+                                                           funcGenContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         // process dynamic import
@@ -5544,28 +5589,60 @@ genContext);
                     }
                 }
 
-                auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
-                if (memberNamePtr.empty())
-                {
-                    // e.g. a computed property name (`[expr] = value;`) reaches here with no
-                    // plain-identifier name; tried as a repro but it hits a different, earlier
-                    // bug first (an LLVM Casting.h assertion, undocumented/unfixed - see
-                    // docs/not-implemented-audit.md), so this specific branch's reachability is
-                    // unconfirmed. Fail cleanly rather than crash regardless.
-                    emitError(loc(propertyDeclaration), "computed property name is not supported here");
-                    return mlir::failure();
-                }
-
                 auto _this = nf.createIdentifier(S(THIS_NAME));
-                auto _name = nf.createIdentifier(stows(std::string(memberNamePtr)));
-                auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+                Node _name;
+                Expression _this_name;
+                if (propertyDeclaration->name != SyntaxKind::Identifier
+                    && propertyDeclaration->name != SyntaxKind::PrivateIdentifier)
+                {
+                    // `[k] = 10`, `1 = 2`, `"a b" = 3`: `this["k"] = 10`, the name a constant as the field's own
+                    // (getNameFromComputedPropertyName, TupleFieldName). Refused here, the class lost every field
+                    // initializer, with no error.
+                    auto nameAttr = TupleFieldName(propertyDeclaration->name, genContext);
+                    if (!nameAttr)
+                    {
+                        return mlir::failure();
+                    }
+
+                    std::string keyText;
+                    if (auto strAttr = dyn_cast<mlir::StringAttr>(numericFieldNameAsString(nameAttr, builder)))
+                    {
+                        keyText = strAttr.getValue().str();
+                    }
+                    else
+                    {
+                        emitError(loc(propertyDeclaration), "this field name is not supported here");
+                        return mlir::failure();
+                    }
+
+                    auto keyLiteral = nf.createStringLiteral(stows(keyText));
+                    keyLiteral->pos = propertyDeclaration->pos;
+                    keyLiteral->_end = propertyDeclaration->_end;
+                    _name = keyLiteral;
+                    _this_name = nf.createElementAccessExpression(_this, keyLiteral);
+                }
+                else
+                {
+                    auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
+                    if (memberNamePtr.empty())
+                    {
+                        emitError(loc(propertyDeclaration), "this field name is not supported here");
+                        return mlir::failure();
+                    }
+
+                    auto nameIdentifier = nf.createIdentifier(stows(std::string(memberNamePtr)));
+                    nameIdentifier->pos = propertyDeclaration->pos;
+                    nameIdentifier->_end = propertyDeclaration->_end;
+                    _name = nameIdentifier;
+                    _this_name = nf.createPropertyAccessExpression(_this, nameIdentifier);
+                }
                 auto _this_name_equal = nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken),
                                                                   propertyDeclaration->initializer);
                 auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
                 // errors in the assignment (the initializer's cast to the field type) are reported at
                 // the field, not at the start of the file
-                for (Node node : {Node(_this), Node(_name), Node(_this_name), Node(_this_name_equal), Node(expr_statement)})
+                for (Node node : {Node(_this), Node(_this_name), Node(_this_name_equal), Node(expr_statement)})
                 {
                     node->pos = propertyDeclaration->pos;
                     node->_end = propertyDeclaration->_end;

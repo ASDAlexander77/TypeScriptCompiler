@@ -833,6 +833,11 @@ The first batch of fixes (86-91, 98, 99, 103, 109, 111, 113, 116, 117, 122) took
 compile from 1,575 to 1,633, and the crashes and hangs over all 7,107 tests from 361 to 287, with no test that
 compiled before failing after. Each fixed item says what is still open in it.
 
+The second batch (92, 95, 96, 110, 114, 115, 124, and part of 121) took them to 1,659, and the crashes and hangs to
+258. One test that compiled before fails after, `classMemberInitializerScoping.ts`, which tsc rejects too: its
+constructor, with an untyped parameter, was an implicit generic that was never generated, so `this.y = ''` into a
+`number` went unchecked.
+
 ### Crashes (137 tests) and hangs (3)
 
 86 (a `var` in a namespace, used by a statement in that namespace, crashes the compiler): 8+ tests.
@@ -950,6 +955,11 @@ function foo() {
 function main() { foo(); print("done."); }
 ```
 
+Fixed (the crash): a tagged template is a call like any other, so a tag with a rest parameter gets its rest array.
+It was given one operand for its two inputs, whatever the scope, when there were no `${}` parts, and the verifier
+read past the operands. The verifier checks the count first now. Still open: a tag typed `(strs: string[], ...)`
+given `any[]`.
+
 93 (the JSX parser crashes): 21 `.tsx` tests. These fail in the parser, before any JSX support is
 needed. An access violation in `tagNamesAreEquivalent` (the closing tag of a nested element or a
 fragment), and fail-fast in `parseJsxElementOrSelfClosingElementOrFragment` (a tag after a `@jsx`
@@ -995,6 +1005,10 @@ declare function id<T>(x: T): T;
 const { f = (x: string) => x.length } = id({ f: x => x.charAt });
 ```
 
+Fixed (the crash): an object pattern whose value failed stops there; each of its fields read from no value.
+The example is now an error, "Can't resolve property 'charAt' of type any", since the arrow's `x` is not
+typed from the default.
+
 96 (`instanceof` narrowing of a union that holds an intersection crashes in
 `isSafeTypeTheSameAndNoNeedToCast`): 3 tests. Tests: `inKeywordAndIntersection.ts`, `narrowByInstanceof.ts`,
 `controlFlowInstanceofWithSymbolHasInstance.ts`. Smallest:
@@ -1008,6 +1022,12 @@ function f10(obj: A & { x: string } | B) {
     }
 }
 ```
+
+Fixed: in the release build it was not the intersection. `Object` is only a type to tslang, and naming it as a
+value failed with no error ("failed statement"). `x instanceof Object` is now decided from the type of `x`: true
+for an object of any kind (each type of a union one), false for a primitive, and an error for a type that may be
+either. A type name used as a value elsewhere is an error that says so, "'Object' is a type here, not a value"
+(regression test `type_as_value_error.ts`).
 
 97 (a type parameter constrained by its own type overflows the stack): 5 tests. Tests: `recursiveTypes1.ts`
 (`getTypeByTypeReference` from `zipTypeParametersWithArguments`), `instantiatedBaseTypeConstraints.ts`
@@ -1118,6 +1138,9 @@ for (let x; false;) {
 }
 ```
 
+Narrowed in the second batch: at the module level, an arrow held by a `const` in the loop (`const f = () => x`)
+works; held by a `let` (`let a = () => x`, as the tests do) or left unused, it fails. Not fixed yet.
+
 106 (a module-level arrow: "'llvm.mlir.addressof' op must reference a global defined by
 'llvm.mlir.global'"): 21 tests. Only `--emit=obj` and `--emit=exe` fail. The JIT, with its cache, runs
 them. Tests: `parenthesizedAsyncArrowFunction.ts` (`let foo = (async bar => bar);`),
@@ -1180,6 +1203,9 @@ function Point(x: number) { }
 function main() { var o = new Point(3); print("done."); }
 ```
 
+Fixed (the error): constructor functions stay unsupported, and `new` on a function is now the error "'new' on a
+function is not supported: declare a class with a constructor" (regression test `new_function_error.ts`).
+
 111 (`++`, `--` and compound assignment on an untyped `var x;`: "Binary operation is not supported for
 type: '!llvm.ptr'"): 7 tests. Tests: `systemModule8.ts`, `assignmentCompatBug3.ts`,
 `commentsArgumentsOfCallExpression2.ts`, `nestedBlockScopedBindings3.ts`, `nestedBlockScopedBindings4.ts`.
@@ -1235,10 +1261,18 @@ function f(x: number, y: number) {
 function main() { print(f(1, 2)); }
 ```
 
+Fixed for functions with plain parameters: `arguments` is an `any[]` of the values of the function's parameters
+(a method's object is not one of them). Still errors that say so: `arguments` in an arrow (it would be the
+enclosing function's, regression test `arguments_arrow_error.ts`), and in a function with a rest or destructured
+parameter. More arguments than parameters are not seen.
+
 115 (`super` in an arrow in a method, or in a default parameter: "can't resolve name: super"): 6 tests.
 Tests: `superAccessInFatArrow1.ts`, `captureSuperPropertyAccessInSuperCall01.ts`
 (`super(() => { return super.blah(); })`), `asyncSuperDefaultParameters.ts` (`async (b = super.m()) => b`),
 `collisionThisExpressionAndLocalVarWithSuperExperssion.ts`.
+
+Fixed for an arrow in a method: `super` there is the base of the method's `this`, which the arrow captures
+(`() => super.m()`). Still open: `super` in a default parameter, and in an arrow given to `super(...)`.
 
 116 (a parameter's default that reads an earlier parameter: "can't resolve name: x"): 5 tests,
 `optionalParamReferencingOtherParams1.ts`, `inferParameterWithMethodCallInitializer.ts`. Run:
@@ -1277,6 +1311,22 @@ class C { }
 function main() { print("done."); }
 ```
 
+Found in the second batch: most of the 48 tests are not redeclarations at all. A `var` in a function is kept
+in a module global named by the variable alone (`VariableDeclarationInfo::detectFlags`: `isGlobal` for every
+`var`), so any two functions, methods or constructors that each declare `var x` fail with "redefinition of symbol
+named 'x'". Worse, as that is one static, a recursive function's `var` is shared by every call (and thread):
+
+```typescript
+function f(n: number): number { var x = n; if (n > 0) f(n - 1); return x; }
+function main() { print(f(3)); }   // prints 0, not 3
+```
+
+Giving the global a per-function name is not enough: the variable is looked up in the namespace's globals map by
+its name alone (`registerVariableDeclaration`), first one wins, so the second function read the first one's
+global. The fix is a `var` that lives in its function (hoisted to the function's top), which changes what owns
+it under rc and own (a global slot is a root; a local is released at the function's exit): a design decision of
+its own.
+
 119 (a type parameter used in a mapped type or a callback type of a generic declaration: "can't find type
 by name: K" / "T" / "V" / "A"): about 50 tests. Tests: `reverseMappedContravariantInference.ts`
 (`declare function conforms<T>(source: { [K in keyof T]: (val: T[K]) => boolean }): ...`),
@@ -1304,6 +1354,20 @@ const { 0: a, ...b } = [0, 1, 2];   // error: failed statement
 function main() { print(a); }
 ```
 
+Second batch, 2026-11-17: making the silent failures speak (a probe build) sorted the 65 tests into the items
+above and these causes. Fixed here:
+- a numeric name in an object pattern over an array, `const { 1: b } = [10, 20, 30]`, reads the element; the rest
+  of an array in an object pattern (`...b` above) is an error that says so.
+- a built-in type name used as a value (`Object.freeze(...)`, `x = Object`, 11 tests): "'Object' is a type here,
+  not a value". `Object.keys` and the like are not in the default library.
+- an untyped `static x` and an untyped parameter property, `constructor(public x, public y)`, are `any`s, as an
+  untyped instance field is (`autoAsiForStaticsInClassDeclaration.ts`, `classExpressionWithStaticProperties2.ts`,
+  `topLevel.ts`). A constructor's untyped parameters are `any`s; it was made an implicit generic, which no
+  constructor can be.
+
+Still silent: an object given to an interface with an index signature (`const m: IMap = {}`, `objectIndexer.ts`),
+a variable whose type has a generic method (`var a1: { fn<T>(x: T): T }`), and about 15 others.
+
 122 (an untyped rest parameter with a binding pattern: "can't resolve type for binding pattern, provide
 default initializer"): 9 tests, `restParameterWithBindingPattern1.ts` (`function a(...{a, b}) { }`),
 `restParameterWithBindingPattern2.ts` (`function a(...[a, b]) { }`), `commentsAfterSpread.ts`,
@@ -1322,6 +1386,12 @@ work (see 38).
 124 (a computed property name in a class: "not supported 'Computed Property Name' expression"): 9 tests,
 `declarationEmitMultipleComputedNamesSameDomain.ts` (`[x] = 10;`), `declarationEmitComputedNameWithQuestionToken.ts`
 (`[dataSomething]?() {}`), `classExpressionWithComputedPropertyInLoop.ts`, `capturedLetConstInLoop13.ts`.
+
+Fixed for constant names: a module-level `const` that holds a literal is a constant name (it is read from its
+global, whose type still says what it holds), and a computed field initializes its field. Before, the
+constructor's field initializers refused any computed name and the failure was dropped, so every field of such a
+class kept its zero value, with no error: `class C { ["k"] = 10; j = 5 }` gave `k` and `j` 0. A name that is not a
+constant (a `let`, a parameter, an `unique symbol`) is still an error, which now says what a name must be.
 
 125 (missing default-library types and type arguments): "generic type Iterable can't be found" (6:
 `forAwaitForUnion.ts`, `mapConstructor.ts`, `contextualTypeIterableUnions.ts`), "generic type Generator
