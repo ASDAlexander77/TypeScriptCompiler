@@ -7079,6 +7079,73 @@ class MLIRGenImpl
     {
         auto location = loc(binaryExpressionAST);
 
+        // `x instanceof Object`, where `Object` is only a type here: true for an object of any kind, false for a
+        // primitive, known from the type (the name failed with no error, so "failed statement" was all it said)
+        if (binaryExpressionAST->right == SyntaxKind::Identifier
+            && MLIRHelper::getName(binaryExpressionAST->right.as<Identifier>()) == "Object"
+            && !evaluate(binaryExpressionAST->right, genContext))
+        {
+            auto leftType = evaluate(binaryExpressionAST->left, genContext);
+            if (!leftType)
+            {
+                return mlir::failure();
+            }
+
+            if (auto refType = dyn_cast<mlir_ts::RefType>(leftType))
+            {
+                leftType = refType.getElementType();
+            }
+
+            // 1: an object, 0: a primitive, -1: may be either
+            auto kindOf = [&](mlir::Type type) {
+                type = mth.wideStorageType(mth.stripLiteralType(type));
+                if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::InterfaceType>(type) || isa<mlir_ts::ObjectType>(type)
+                    || isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ArrayType>(type)
+                    || isa<mlir_ts::ConstArrayType>(type) || isa<mlir_ts::IntersectionType>(type)
+                    || mth.isAnyFunctionType(type))
+                {
+                    return 1;
+                }
+
+                if (mth.isNumericType(type) || isa<mlir_ts::StringType>(type) || isa<mlir_ts::BooleanType>(type)
+                    || isa<mlir_ts::BigIntType>(type) || isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type))
+                {
+                    return 0;
+                }
+
+                return -1;
+            };
+
+            auto kind = kindOf(leftType);
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(leftType))
+            {
+                // each type of the union an object (`A & { x: string } | B`), or each a primitive
+                kind = kindOf(unionType.getTypes().front());
+                for (auto subType : unionType.getTypes())
+                {
+                    if (kindOf(subType) != kind)
+                    {
+                        kind = -1;
+                        break;
+                    }
+                }
+            }
+
+            auto isObject = kind == 1;
+            if (kind < 0)
+            {
+                emitError(location) << "'instanceof Object' of a value of type '" << to_print(leftType)
+                                    << "' is not supported: it is known from the type only, and this one may or may not be an object";
+                return mlir::failure();
+            }
+
+            // the left side still runs, for what it does
+            auto resultLeft = mlirGen(binaryExpressionAST->left, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(resultLeft)
+
+            return mlirGenBooleanValue(location, isObject);
+        }
+
         // check if we need to call hasInstance
         if (auto hasInstanceType = evaluateProperty(binaryExpressionAST->right, SYMBOL_HAS_INSTANCE, genContext))
         {
