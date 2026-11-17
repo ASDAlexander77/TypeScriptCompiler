@@ -3051,8 +3051,61 @@ namespace mlirgen
         // resolve name
         auto name = MLIRHelper::getName(identifier);
 
+        if (name == "arguments" && !resolveIdentifier(location, name, genContext))
+        {
+            return mlirGenArguments(location, identifier, genContext);
+        }
+
         // info: can't validate it here, in case of "print" etc
         return mlirGen(location, name, genContext);
+    }
+
+    // `arguments` in a function: an `any[]` of the values of its parameters. An arrow has none of its own: it
+    // would be the function's around it, which the arrow would have to capture.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenArguments(mlir::Location location, Identifier identifier, const GenContext &genContext)
+    {
+        if (genContext.bodyIsArrow)
+        {
+            emitError(location) << "'arguments' in an arrow function is not supported: use a rest parameter, "
+                                << "`(...args) => ...`";
+            return mlir::failure();
+        }
+
+        if (!genContext.bodyFuncProto)
+        {
+            emitError(location) << "'arguments' can only be used in a function";
+            return mlir::failure();
+        }
+
+        SmallVector<mlir::Value, 4> values;
+        for (auto &param : genContext.bodyFuncProto->getParams())
+        {
+            // a method's object is not one of its arguments
+            if (param->getName() == THIS_NAME)
+            {
+                continue;
+            }
+
+            if (param->getIsMultiArgsParam() || param->getBindingPattern())
+            {
+                emitError(location) << "'arguments' of a function with a rest or destructured parameter is not supported";
+                return mlir::failure();
+            }
+
+            auto result = mlirGen(location, param->getName(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto value = V(result);
+            if (!isa<mlir_ts::AnyType>(value.getType()))
+            {
+                CAST(value, location, getAnyType(), value, genContext);
+            }
+
+            values.push_back(value);
+        }
+
+        // the array releases what it holds when it dies (as a rest parameter's array does)
+        mlirGenRetainCaptured(location, values);
+        return V(builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values));
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)

@@ -2088,6 +2088,9 @@ namespace mlirgen
 
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
+        // its parameters, for `arguments` (mlirGenArguments)
+        funcGenContext.bodyFuncProto = funcProto;
+        funcGenContext.bodyIsArrow = functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction;
         funcGenContext.discardReturnValue = funcProto->getDiscardsReturnValue();
 
         auto *blockPtr = funcOp.addEntryBlock();

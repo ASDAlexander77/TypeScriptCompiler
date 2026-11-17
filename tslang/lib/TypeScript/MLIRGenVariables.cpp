@@ -1715,6 +1715,31 @@ namespace mlirgen
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
 
+        // `super` in an arrow in a method (`() => super.m()`): the arrow has the method's `this`, captured, and
+        // no type of `this` of its own; `super` is that object's base (it was "can't resolve name: super")
+        if (!genContext.thisType && name == SUPER_NAME)
+        {
+            if (auto thisValue = resolveIdentifier(location, THIS_NAME, genContext))
+            {
+                auto thisType = thisValue.getType();
+                if (auto refType = dyn_cast<mlir_ts::RefType>(thisType))
+                {
+                    thisType = refType.getElementType();
+                    thisValue = builder.create<mlir_ts::LoadOp>(location, thisType, thisValue);
+                }
+
+                if (auto classType = dyn_cast<mlir_ts::ClassType>(thisType))
+                {
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    if (classInfo && !classInfo->baseClasses.empty())
+                    {
+                        return mlirGenPropertyAccessExpression(location, thisValue, classInfo->baseClasses.front()->fullName,
+                                                               genContext);
+                    }
+                }
+            }
+        }
+
         // built-in types
         if (name == UNDEFINED_NAME)
         {

@@ -14012,6 +14012,8 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(Identifier identifier, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenArguments(mlir::Location location, Identifier identifier, const GenContext &genContext);
+
     mlir::Value resolveIdentifierAsVariable(mlir::Location location, StringRef name, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenResolveCapturedVars(mlir::Location location,
