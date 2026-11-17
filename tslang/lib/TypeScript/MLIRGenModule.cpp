@@ -1575,7 +1575,38 @@ namespace mlirgen
             mdi.setNamespace(location, namePtr, hasModifier(moduleDeclarationAST, SyntaxKind::ExportKeyword));
         }
 
-        return mlirGenBody(moduleDeclarationAST->body, genContext);
+        // A namespace at the module level has no function to put its code in: `namespace M { var a = 10; a++; }`
+        // emitted `a++` among the module's globals, and LLVM crashed on the parentless load. Its declarations
+        // stay where they are, and its code statements run from a global constructor of their own, as an
+        // imported module's do (generateModuleInitCode).
+        auto body = moduleDeclarationAST->body;
+        if (!genContext.funcOp && body == SyntaxKind::ModuleBlock)
+        {
+            auto statements = body.as<ModuleBlock>()->statements;
+            if (hasGlobalCode(statements))
+            {
+                for (auto &statement : statements)
+                {
+                    if (isCodeStatment(statement))
+                    {
+                        statement->processed = true;
+                    }
+                }
+
+                auto result = mlirGen(statements, genContext);
+                clearState(statements);
+                EXIT_IF_FAILED(result)
+
+                if (declarationMode)
+                {
+                    return mlir::success();
+                }
+
+                return generateModuleInitCode(location, statements, genContext);
+            }
+        }
+
+        return mlirGenBody(body, genContext);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)

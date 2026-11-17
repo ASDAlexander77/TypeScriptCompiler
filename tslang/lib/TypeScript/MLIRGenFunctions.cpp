@@ -1256,9 +1256,16 @@ namespace mlirgen
 
         auto instantiateSpecializedFunction = funcDeclGenContext.instantiateSpecializedFunction;
                 
-        auto isGenericFunction = 
-            functionLikeDeclarationBaseAST->typeParameters.size() > 0 
-            || !genContext.isGlobalVarReceiver && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
+        // A field of an object literal holds one function, not a generic one: `{ f: (a) => 0 }` and `{ f(a) {} }`
+        // take an untyped parameter as `any`, as a global variable's function does. Made generic, they crashed
+        // in getNameOfFunction or failed with "can't find type by name: TGenParam_a".
+        auto parentKind = (SyntaxKind)functionLikeDeclarationBaseAST->parent;
+        auto isObjectLiteralMember = parentKind == SyntaxKind::PropertyAssignment
+            || parentKind == SyntaxKind::ObjectLiteralExpression;
+        auto isGenericFunction =
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0
+            || !genContext.isGlobalVarReceiver && !isObjectLiteralMember
+                && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
