@@ -1081,6 +1081,14 @@ namespace mlirgen
             }
         }
 
+        if (!saveResult)
+        {
+            if (auto folded = foldConstantBinary(location, opCode, leftExpressionValue, rightExpressionValue))
+            {
+                return *folded;
+            }
+        }
+
         return mlirGenBinaryValues(location, opCode, leftExpressionValue, rightExpressionValue, genContext, saveResult);
     }
 
@@ -2495,7 +2503,18 @@ namespace mlirgen
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto exprValue = V(result);
 
-            if (exprValue.getType() != stringType)
+            // `${1 + 1}`, `${"a"}`: the text is known here, as `"n=" + 2` folds
+            std::optional<std::string> constantText;
+            if (auto constantOp = foldableConstant(exprValue))
+            {
+                constantText = constantAsJSString(constantOp);
+            }
+
+            if (constantText)
+            {
+                exprValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(*constantText));
+            }
+            else if (exprValue.getType() != stringType)
             {
                 CAST(exprValue, location, stringType, exprValue, genContext);
             }
@@ -2513,6 +2532,24 @@ namespace mlirgen
         if (strs.size() <= 1)
         {
             return V(head);
+        }
+
+        // every piece known here: one string constant, nothing to build at run time
+        std::string constantText;
+        auto allConstant = llvm::all_of(strs, [&](mlir::Value str) {
+            auto constantOp = str.getDefiningOp<mlir_ts::ConstantOp>();
+            auto stringAttr = constantOp ? dyn_cast_or_null<mlir::StringAttr>(constantOp.getValue()) : mlir::StringAttr();
+            if (!stringAttr)
+            {
+                return false;
+            }
+
+            constantText += stringAttr.getValue();
+            return true;
+        });
+        if (allConstant)
+        {
+            return V(mlirGenFoldedString(location, constantText));
         }
 
         auto concatValues =

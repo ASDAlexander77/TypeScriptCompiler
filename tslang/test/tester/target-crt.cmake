@@ -28,7 +28,9 @@ class Foo {
 
 function main() {
     const f = new Foo();
-    const n = 3.5;
+    // a variable: `"v" + 3.5` of constants is a string constant, with no conversion to check
+    let n = 3.5;
+    n = n + f.x;
     const s = "v" + n;
     assert(s.length > f.x, "too short");
     print(s);
