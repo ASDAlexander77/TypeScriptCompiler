@@ -1114,12 +1114,337 @@ namespace mlirgen
                 itemVarClass.type = VariableType::Let;
             }
 
+            // a `var` in a function belongs to the function (MDN `var`): declared before the body, assigned here
+            if (itemVarClass.type == VariableType::Var && genContext.functionVars && !declarationMode
+                && !itemVarClass.isImport && !itemVarClass.isDynamicImport)
+            {
+                if (mlir::failed(mlirGenFunctionVar(item, itemVarClass, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                continue;
+            }
+
             if (mlir::failed(mlirGen(item, itemVarClass, genContext)))
             {
                 return mlir::failure();
             }
         }
 
+        return mlir::success();
+    }
+
+    // The `var` declarations of a function body, in source order: in its blocks, branches, loops, `try`, `switch` and
+    // labels, not in the functions and classes it declares, which have their own. A `for...in`/`for...of` header's
+    // `var` is marked: its type comes from what the loop iterates (`inLoopHeader`, kept out of the early pass).
+    void MLIRGenImpl::collectFunctionVarDeclarations(Node node, SmallVector<VariableDeclaration> &declarations,
+                                                     bool inLoopHeader)
+    {
+        if (!node)
+        {
+            return;
+        }
+
+        auto collectList = [&](VariableDeclarationList list, bool header) {
+            if ((list->flags & (NodeFlags::Let | NodeFlags::Const | NodeFlags::Using | NodeFlags::Ambient)) != NodeFlags::None)
+            {
+                return;
+            }
+
+            if (header)
+            {
+                return;
+            }
+
+            for (auto declaration : list->declarations)
+            {
+                declarations.push_back(declaration);
+            }
+        };
+
+        switch ((SyntaxKind)node)
+        {
+        case SyntaxKind::Block:
+            for (auto statement : node.as<ts::Block>()->statements)
+            {
+                collectFunctionVarDeclarations(statement, declarations);
+            }
+
+            break;
+        case SyntaxKind::VariableStatement:
+            collectList(node.as<VariableStatement>()->declarationList, false);
+            break;
+        case SyntaxKind::IfStatement:
+            collectFunctionVarDeclarations(node.as<IfStatement>()->thenStatement, declarations);
+            collectFunctionVarDeclarations(node.as<IfStatement>()->elseStatement, declarations);
+            break;
+        case SyntaxKind::ForStatement:
+        {
+            auto forStatement = node.as<ForStatement>();
+            if (forStatement->initializer == SyntaxKind::VariableDeclarationList)
+            {
+                collectList(forStatement->initializer.as<VariableDeclarationList>(), false);
+            }
+
+            collectFunctionVarDeclarations(forStatement->statement, declarations);
+            break;
+        }
+        case SyntaxKind::ForInStatement:
+            collectFunctionVarDeclarations(node.as<ForInStatement>()->statement, declarations);
+            break;
+        case SyntaxKind::ForOfStatement:
+            collectFunctionVarDeclarations(node.as<ForOfStatement>()->statement, declarations);
+            break;
+        case SyntaxKind::WhileStatement:
+            collectFunctionVarDeclarations(node.as<WhileStatement>()->statement, declarations);
+            break;
+        case SyntaxKind::DoStatement:
+            collectFunctionVarDeclarations(node.as<DoStatement>()->statement, declarations);
+            break;
+        case SyntaxKind::LabeledStatement:
+            collectFunctionVarDeclarations(node.as<LabeledStatement>()->statement, declarations);
+            break;
+        case SyntaxKind::TryStatement:
+        {
+            auto tryStatement = node.as<TryStatement>();
+            collectFunctionVarDeclarations(tryStatement->tryBlock, declarations);
+            if (tryStatement->catchClause)
+            {
+                collectFunctionVarDeclarations(tryStatement->catchClause->block, declarations);
+            }
+
+            collectFunctionVarDeclarations(tryStatement->finallyBlock, declarations);
+            break;
+        }
+        case SyntaxKind::SwitchStatement:
+            for (auto clause : node.as<SwitchStatement>()->caseBlock->clauses)
+            {
+                for (auto statement : clause->statements)
+                {
+                    collectFunctionVarDeclarations(statement, declarations);
+                }
+            }
+
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Declares the `var` named `name` as a variable of the function (a `let` with no value yet): in the function's
+    // own symbol scope, its storage after the function's prologue, owned by the function's frame, so the blocks of
+    // the function all see one variable that lives as long as the call.
+    mlir::LogicalResult MLIRGenImpl::declareFunctionVar(mlir::Location location, StringRef name, mlir::Type type,
+                                                        bool typeProvided, const GenContext &genContext)
+    {
+        GenContext varGenContext(*genContext.functionVarContext);
+        varGenContext.declareIntoScope = genContext.functionVarScope;
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        if (genContext.functionVarAnchor)
+        {
+            builder.setInsertionPointAfter(genContext.functionVarAnchor);
+        }
+        else
+        {
+            builder.setInsertionPointToStart(genContext.functionVarBlock);
+        }
+
+        genContext.functionVars->insert(name);
+
+        auto declaredType = registerVariable(
+            location, name, false, VariableType::Let,
+            [&](mlir::Location, const GenContext &) {
+                return std::make_tuple(type, mlir::Value(), typeProvided ? TypeProvided::Yes : TypeProvided::No);
+            },
+            varGenContext);
+
+        return declaredType ? mlir::success() : mlir::failure();
+    }
+
+    // Before a function's body: each `var` the body declares whose type can be known there (written, or of an
+    // initializer that reads what is already declared: parameters, the `var`s before it) is declared, so it can be
+    // read and written anywhere in the function, before its declaration too. A `var` with neither type nor
+    // initializer anywhere is an `any`. The others are declared where they are first reached (mlirGenFunctionVar).
+    mlir::LogicalResult MLIRGenImpl::declareFunctionVars(Node body, const GenContext &genContext)
+    {
+        SmallVector<VariableDeclaration> declarations;
+        collectFunctionVarDeclarations(body, declarations);
+
+        // the declarations written directly in the body, not in a block of it
+        auto &topLevel = *genContext.functionTopLevelVars;
+        if (body == SyntaxKind::Block)
+        {
+            for (auto statement : body.as<ts::Block>()->statements)
+            {
+                if (statement == SyntaxKind::VariableStatement)
+                {
+                    for (auto declaration : statement.as<VariableStatement>()->declarationList->declarations)
+                    {
+                        topLevel.insert(declaration->pos.pos);
+                    }
+                }
+            }
+        }
+
+        llvm::StringSet<> deferred;
+        for (auto declaration : declarations)
+        {
+            if (declaration->name != SyntaxKind::Identifier)
+            {
+                continue;
+            }
+
+            auto name = MLIRHelper::getName(declaration->name, stringAllocator);
+            if (genContext.functionVars->contains(name) || deferred.contains(name))
+            {
+                continue;
+            }
+
+            // first declared, with its value, directly in the body: declared there, with the value, as `let` is
+            // (-mm=own refuses a variable declared without a value that is given one later)
+            if (declaration->initializer && topLevel.contains(declaration->pos.pos))
+            {
+                deferred.insert(name);
+                continue;
+            }
+
+            // the declaration that gives the type: the first one with a type, else the first with an initializer
+            VariableDeclaration typing;
+            auto anyTyped = false;
+            auto anyInitialized = false;
+            for (auto other : declarations)
+            {
+                if (other->name != SyntaxKind::Identifier || MLIRHelper::getName(other->name) != name.str())
+                {
+                    continue;
+                }
+
+                if (other->type && !anyTyped)
+                {
+                    typing = other;
+                    anyTyped = true;
+                }
+                else if (other->initializer && !anyTyped && !anyInitialized)
+                {
+                    typing = other;
+                    anyInitialized = true;
+                }
+            }
+
+            mlir::Type type;
+            if (!typing)
+            {
+                type = getAnyType();
+            }
+            else
+            {
+                auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+                auto [evaluatedType, hasInit, typeProvided] = evaluateTypeAndInit(typing, genContext);
+                if (genContext.postponedMessages)
+                {
+                    rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+                }
+
+                type = evaluatedType;
+                if (!type)
+                {
+                    // known only where it is reached
+                    deferred.insert(name);
+                    continue;
+                }
+
+                if (!typeProvided)
+                {
+                    // as `let x = 1` holds any number
+                    type = mth.wideStorageType(mth.stripLiteralType(type));
+                }
+            }
+
+            if (mlir::failed(declareFunctionVar(loc(declaration), name, type, anyTyped, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
+    // `var x = e` in a function: an assignment to the function's `x`, declared before the body or here, the first time
+    // it is reached. `var x` again is nothing. A destructuring `var` is a variable of the block it is in, as `let`.
+    mlir::LogicalResult MLIRGenImpl::mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass,
+                                                        const GenContext &genContext)
+    {
+        auto location = loc(item);
+        if (item->name != SyntaxKind::Identifier)
+        {
+            VariableClass letClass = varClass;
+            letClass.type = VariableType::Let;
+            return mlirGen(item, letClass, genContext);
+        }
+
+        auto name = MLIRHelper::getName(item->name, stringAllocator);
+        // first reached directly in the body, with its value: a `let` of the function's own scope, declared with it
+        if (!genContext.functionVars->contains(name) && item->initializer && genContext.functionTopLevelVars
+            && genContext.functionTopLevelVars->contains(item->pos.pos))
+        {
+            VariableClass letClass = varClass;
+            letClass.type = VariableType::Let;
+            if (mlir::failed(mlirGen(item, letClass, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            genContext.functionVars->insert(name);
+            return mlir::success();
+        }
+
+        if (!genContext.functionVars->contains(name))
+        {
+            auto [type, hasInit, typeProvided] = evaluateTypeAndInit(item, genContext);
+            if (!type && !hasInit)
+            {
+                type = getAnyType();
+            }
+
+            if (!type)
+            {
+                // the initializer's own error
+                auto result = mlirGen(item->initializer, genContext);
+                EXIT_IF_FAILED(result)
+                emitError(location) << "Can't resolve variable '" << name << "' type";
+                return mlir::failure();
+            }
+
+            if (!typeProvided)
+            {
+                type = mth.wideStorageType(mth.stripLiteralType(type));
+            }
+
+            if (mlir::failed(declareFunctionVar(location, name, type, typeProvided, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        if (!item->initializer)
+        {
+            return mlir::success();
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto identifier = nf.createIdentifier(stows(name.str()));
+        auto assignment =
+            nf.createBinaryExpression(identifier, nf.createToken(SyntaxKind::EqualsToken), item->initializer);
+        for (Node node : {Node(identifier), Node(assignment)})
+        {
+            node->pos = item->pos;
+            node->_end = item->_end;
+        }
+
+        auto result = mlirGen(assignment.as<Expression>(), genContext);
+        EXIT_IF_FAILED(result)
         return mlir::success();
     }
 

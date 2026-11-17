@@ -1327,6 +1327,31 @@ global. The fix is a `var` that lives in its function (hoisted to the function's
 it under rc and own (a global slot is a root; a local is released at the function's exit): a design decision of
 its own.
 
+Fixed (third batch, the MDN `var` rules): a `var` written in a function, method, accessor, constructor, arrow,
+generator or async function is a local of that function. Before the body is generated, every `var` in it (in
+blocks, `if`, loops and their headers, `try`/`catch`/`finally`, `switch`, labels; not in nested functions) is
+declared once at the function's top, so it is hoisted, block-free (`if (c) { var x = 1 } return x`), the same
+variable when declared again (`var v = 1; var v = 2;` assigns), and one per call (`f(3)` above prints 3). A name
+that is also a parameter is that parameter. Its type is the first declaration's type, else its initializer's
+widened type, else `any`. Under rc and own the value it holds is released when the function returns, like a
+`let`'s. Tests: `00var_function_scope.ts` (gc/rc/none), `own_var_function_scope.ts` (all four models);
+`00globals3.ts` read `main`'s `var a` from another function, which JavaScript does not allow, so its `a` is now
+declared at module level.
+
+Still open:
+- `var v = 1; var v = 2;` at module or namespace level is still "redefinition of symbol" (module `var`s stay
+  globals; the second one's assignment would have to run in the module's init code).
+- A `var` read before its declaration gets its hoisted slot only when its type is known before the body runs
+  (a type annotation, or a first declaration inside a block, loop or `if`); `x = 7; var x = one();` in one body is "can't resolve
+  name: x".
+- A `var` holding a destructuring pattern (`var [a, b] = t;`) is block-scoped like a `let`.
+- A generic function value in a `let` or `var` with no declared type (`var f = <U>(u?: U) => { };`) crashed
+  in `instantiateSpecializedFunction` (it did for `let` before; `methodContainingLocalFunction.ts` reached it
+  through `var`). It now fails without crashing ("can't find type by name: U", as for 119); keeping such a value
+  generic, as a `const` does, is still open.
+- -mm=own: a closure that escapes in a loop and captures a `var` the loop shares is refused ("'i' is moved
+  inside a loop but was made outside it"), as it is for a `let` declared before the loop.
+
 119 (a type parameter used in a mapped type or a callback type of a generic declaration: "can't find type
 by name: K" / "T" / "V" / "A"): about 50 tests. Tests: `reverseMappedContravariantInference.ts`
 (`declare function conforms<T>(source: { [K in keyof T]: (val: T[K]) => boolean }): ...`),

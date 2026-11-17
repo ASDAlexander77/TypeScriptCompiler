@@ -681,6 +681,14 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // nothing was instantiated (the receiver gave no type arguments, e.g. a generic arrow stored in
+            // a `let`/`var` with no declared type): it stays generic, which only a `const` can hold
+            if (!specFuncOp)
+            {
+                emitError(currValue.getLoc()) << "generic function should be used in 'const' variable declaration.";
+                return mlir::failure();
+            }
+
             LLVM_DEBUG(llvm::dbgs() << "\n!! fixing spec. func: " << specFuncName << " type: ["
                                     << specFuncOp.getFunctionType() << "\n";);
 

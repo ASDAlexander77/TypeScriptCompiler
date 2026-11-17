@@ -1,7 +1,9 @@
+// `a` is a module-level var: a `var` written inside main() would be local to main (MDN var rules),
+// so f() and rrr.t() could not see it.
+var a = 10;
+
 function main()
 {
-	var a = 10;
-
 	print(a);
 
 	assert(a == 10);
