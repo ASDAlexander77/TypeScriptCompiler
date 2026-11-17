@@ -1415,6 +1415,7 @@ class OwnershipInferencePass
     static llvm::StringRef varName(mlir_ts::VariableOp varOp);
 
     static llvm::StringRef nameAt(mlir::Location location);
+    static llvm::StringRef declaredNameAt(mlir::Location location);
 
     static llvm::StringRef describe(mlir::Value value);
 
