@@ -760,6 +760,16 @@ namespace mlirgen
         {
             auto foundField = false;                                        
             auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
+            // a @weak field read through an object type would skip its check and its count (own spec 93)
+            if (auto fieldName = dyn_cast<mlir::StringAttr>(fieldInfo.id);
+                foundField && fieldName && compileOptions.memoryModel == MemoryModelOwn &&
+                classInfo->isWeakField(fieldName.getValue()))
+            {
+                emitError(location) << "'" << classInfo->name << "' cannot be seen as '" << to_print(mlir_ts::TupleType::get(builder.getContext(), fields))
+                                    << "': its field '" << fieldName.getValue() << "' is @" WEAK_DECORATOR;
+                return mlir::failure();
+            }
+
             if (!foundField)
             {
                 // TODO: generate method wrapper for calling new/ctor method

@@ -617,7 +617,11 @@ namespace own_inference
                 }
 
                 auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp>(source);
-                if (def && !isNull && ownsHeap(target) && isFresh(target) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
+                // a read of a variable, a parameter or a field has an owner: that place; so does a value a
+                // `const` holds (declare() names its defining op)
+                auto isRead = mlir::isa_and_nonnull<mlir_ts::LoadOp>(source) ||
+                              (def && nameAt(def->getLoc()) != "this value");
+                if (def && !isNull && !isRead && ownsHeap(target) && isFresh(target) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
                     llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); }) &&
                     reporting())
                 {

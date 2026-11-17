@@ -1,6 +1,6 @@
-# own spec 93: a read of a @weak field whose object was freed stops the program. Builds SOURCE (and
-# the optional EXTRA, a module it imports) under -mm=own with `tslang --emit=exe` and runs it: the
-# run must fail, print the message naming the field, and print nothing after it ("after").
+# own spec 93: a read of a @weak field whose object was freed stops the program. Builds SOURCE under
+# -mm=own with `tslang --emit=exe` and runs it: the run must fail, print the message naming the
+# field, and print nothing after it ("after").
 
 cmake_minimum_required(VERSION 3.17.3)
 
@@ -13,15 +13,10 @@ endforeach()
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
-set(sources "${SOURCE}")
-if(DEFINED EXTRA)
-    list(APPEND sources "${EXTRA}")
-endif()
-
 execute_process(
     COMMAND "${TSLANG}" --emit=exe -mm=own --no-default-lib --opt --opt_level=3
             "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
-            ${sources} -o=program.exe
+            "${SOURCE}" -o=program.exe
     WORKING_DIRECTORY "${WORK_DIR}"
     OUTPUT_VARIABLE out
     ERROR_VARIABLE err

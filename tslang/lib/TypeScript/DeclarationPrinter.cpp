@@ -631,11 +631,23 @@ namespace typescript
             if (classType->isValue)
                 os << "readonly ";
 
+            // a @weak field (own spec 93): its slot holds a WeakRef under own; the importer reads the
+            // declared type and lays the slot out again from the decorator
+            auto fieldType = field.type;
+            if (auto strId = dyn_cast<mlir::StringAttr>(field.id))
+            {
+                if (auto found = classType->weakFieldTypes.find(strId.getValue()); found != classType->weakFieldTypes.end())
+                {
+                    os << "@" WEAK_DECORATOR " ";
+                    fieldType = found->second;
+                }
+            }
+
             printAsFieldName(field.id);
             if (field.isConditional)
                 os << "?";
             os << ": ";
-            print(field.type);
+            print(fieldType);
             os << ";";
             newline();
         }

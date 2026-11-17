@@ -3965,6 +3965,15 @@ genContext);
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
                 auto accessorName = dyn_cast<mlir::StringAttr>(id);
+                // a @weak field read through an interface would skip its check and its count (own spec 93)
+                if (found && accessorName && compileOptions.memoryModel == MemoryModelOwn &&
+                    newClassPtr->isWeakField(accessorName.getValue()))
+                {
+                    emitError(location) << "'" << newClassPtr->name << "' cannot be seen as '" << newInterfacePtr->name
+                                        << "': its field '" << accessorName.getValue() << "' is @" WEAK_DECORATOR;
+                    return {emptyFieldInfo, mlir::failure()};
+                }
+
                 auto *foundAccessor = !found && accessorName && !isa<mlir_ts::FunctionType>(fieldType)
                     ? findAccessor(newClassPtr, accessorName.getValue()) : nullptr;
                 if (foundAccessor)

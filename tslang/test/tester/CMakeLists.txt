@@ -5117,6 +5117,18 @@ tslang_add_test(NAME test-compile-noopt-00weak_field-own COMMAND test-runner -no
 foreach(weak_field_mm gc none)
     tslang_add_test(NAME test-jit-own_weak_field_freed_read-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts")
 endforeach()
+# a class with a @weak field declared in another module (-shared): its declaration carries @weak
+foreach(weak_field_mm gc none own)
+    tslang_add_test(NAME test-jit-${weak_field_mm}-shared-weak-field COMMAND test-runner -jit -shared -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/import_weak_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_weak_field.ts")
+    tslang_add_test(NAME test-compile-${weak_field_mm}-shared-weak-field COMMAND test-runner -shared -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/import_weak_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_weak_field.ts")
+endforeach()
+# ...and a freed read through it stops the importer (the program fails: the message, never "after")
+add_test(NAME test-jit-own-shared-weak-field-stop
+         COMMAND test-runner -jit -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/import_weak_field_freed.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_weak_field.ts")
+set_tests_properties(test-jit-own-shared-weak-field-stop
+                     PROPERTIES PASS_REGULAR_EXPRESSION "the @weak field .Node.parent. was read after its object was freed"
+                                FAIL_REGULAR_EXPRESSION "(^|
+)after")
 add_test(NAME test-own-weak-field-stop
          COMMAND ${CMAKE_COMMAND}
                  "-DTSLANG=$<TARGET_FILE:tslang>"
@@ -5606,6 +5618,8 @@ set(own_error_cases
     "own_err_weak_field_captured|:3:54: error: a value that borrows the object the @weak field 'parent' refers to cannot be stored, returned or captured"
     "own_err_weak_field_held|:5:141: error: a value that borrows the object the @weak field 'parent' refers to is used here after it may be released or overwritten"
     "own_err_weak_field_thread|:3:14: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
+    "own_err_weak_field_interface|:4:62: error: 'Node' cannot be seen as 'HasParent': its field 'parent' is @weak"
+    "own_err_weak_field_object_type|:4:47: error: 'Node' cannot be seen as '.parent:Node . null.': its field 'parent' is @weak"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"
