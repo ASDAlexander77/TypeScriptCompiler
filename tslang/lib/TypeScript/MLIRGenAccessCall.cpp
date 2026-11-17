@@ -1159,16 +1159,18 @@ namespace mlirgen
             auto currentObject = thisValue;
             for (auto &chain : fieldPath)
             {
-                auto fieldValue =
+                // a class whose fields failed has no base to read (no value, though no failure either): the
+                // next read was given a null object and crashed
+                auto fieldResult =
                     mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
+                auto fieldValue = fieldResult.failed() ? mlir::Value() : V(fieldResult);
                 if (!fieldValue)
                 {
                     emitError(location) << "Can't resolve field/property/base '" << chain->fullName
                                         << "' of class '" << classInfo->fullName << "'\n";
-                    return fieldValue;
+                    return mlir::Value();
                 }
 
-                assert(fieldValue);
                 currentObject = fieldValue;
             }
 

@@ -47,6 +47,12 @@ function main() {
     if (o.up === undefined) throw "optional";
     o.up = undefined;
     if (child.parent === p) throw "same as a new object";
+    // a switch only compares, as === does
+    switch (child.parent) {
+        case p: throw "switch matched a new object";
+        case null: throw "switch null";
+        default: print("switch");
+    }
     if (!(child.parent !== null)) throw "null";
     if (child.parent == null) throw "loose null";
     child.parent = null;
