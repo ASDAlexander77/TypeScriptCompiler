@@ -2940,6 +2940,14 @@ namespace mlirgen
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
             [&](mlir::Location location, const GenContext &genContext) {
+                // `static x` with no type and no initializer is `any`, as an instance field is (it failed
+                // with no type, and no error)
+                if (!propertyDeclaration->type && !propertyDeclaration->initializer)
+                {
+                    emitWarning(location) << "type for field '" << fieldId << "' is any";
+                    return std::make_tuple(mlir::Type(getAnyType()), mlir::Value(), TypeProvided::No);
+                }
+
                 auto isConst = false;
                 mlir::Type typeInit;
                 evaluate(
@@ -3088,6 +3096,14 @@ namespace mlirgen
             auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, loc(parameter),
                                                 MLIRHelper::getName(parameter->name));
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
+
+            // `constructor(public x)`, with no type and no default, is an `any` field, as a parameter
+            // with neither is `any` (it failed with no type, and no error)
+            if (mth.isNoneType(type) && !parameter->type && !parameter->initializer && !parameter->dotDotDotToken)
+            {
+                emitWarning(loc(parameter)) << "type for field '" << fieldId << "' is any";
+                type = getAnyType();
+            }
 
             if (mth.isNoneType(type))
             {
