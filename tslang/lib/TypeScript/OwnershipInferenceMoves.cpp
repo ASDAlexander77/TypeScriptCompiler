@@ -92,8 +92,84 @@ namespace own_inference
         return own_facts::ownsHeap(location, type);
     }
 
+    bool OwnershipInferencePass::mergedRecordReads(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &reads,
+                                                   unsigned depth)
+    {
+        auto *block = argument.getOwner();
+        if (block->isEntryBlock() || block->hasNoPredecessors() || depth > 8)
+        {
+            return false;
+        }
+
+        // (a loop's back edge is no `?:`)
+        mlir::DominanceInfo dominanceInfo(block->getParentOp());
+        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+        {
+            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+            if (!branchOp || dominanceInfo.dominates(block, *predecessor))
+            {
+                return false;
+            }
+
+            auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+            if (argument.getArgNumber() < operands.getProducedOperandCount())
+            {
+                return false;
+            }
+
+            auto incoming = operands[argument.getArgNumber()];
+            if (!incoming)
+            {
+                return false;
+            }
+
+            auto root = rootOf(incoming);
+            // (null made into the union, or the optional, is no view of anything)
+            auto constant = root;
+            while (mlir::isa_and_nonnull<mlir_ts::CastOp, mlir_ts::OptionalValueOp>(constant.getDefiningOp()))
+            {
+                constant = constant.getDefiningOp()->getOperand(0);
+            }
+
+            if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+                constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+            {
+                continue;
+            }
+
+            if (auto nested = mlir::dyn_cast<mlir::BlockArgument>(root))
+            {
+                if (!nested.hasOneUse() || !mergedRecordReads(nested, reads, depth + 1))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+            auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (!varOp || !isConstantRecordLocal(varOp))
+            {
+                return false;
+            }
+
+            reads.push_back(loadOp);
+        }
+
+        return !reads.empty();
+    }
+
     bool OwnershipInferencePass::holdsConstantsOrMoves(mlir::Value value)
     {
+        // a merge of such records (`c ? { h: new H(1) } : { h: new H(2) }`), each moving into what takes it
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+        {
+            llvm::SmallVector<mlir_ts::LoadOp> reads;
+            return mergedRecordReads(argument, reads) &&
+                   llvm::all_of(reads, [&](mlir_ts::LoadOp read) { return holdsConstantsOrMoves(read.getResult()); });
+        }
+
         auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
         auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
         // a borrowing record (spec 32) takes nothing for what it borrows, and its fresh values move in
@@ -256,10 +332,44 @@ namespace own_inference
         auto boxed = false;
         auto other = false;
         auto bad = false;
+        llvm::SmallPtrSet<mlir::Value, 4> merges;
+        std::function<void(mlir::Operation *, mlir::Value)> visit;
         // the read and its views (a `@value` value seen as its tuple, or the other way round)
-        forEachUse(read.getResult(), [&](mlir::Operation *user, mlir::Value used) {
+        visit = [&](mlir::Operation *user, mlir::Value used) {
             if (bad)
             {
+                return;
+            }
+
+            // one of the values a `?:` chooses between (`c ? { h: new H(1) } : { h: new H(2) }`): what
+            // takes the merge takes the record, when every value merged is such a record or null
+            if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+            {
+                for (auto index = 0u; index < user->getNumSuccessors(); ++index)
+                {
+                    auto operands = branchOp.getSuccessorOperands(index);
+                    for (auto position = operands.getProducedOperandCount(); position < operands.size(); ++position)
+                    {
+                        if (operands[position] != used)
+                        {
+                            continue;
+                        }
+
+                        auto argument = user->getSuccessor(index)->getArgument(position);
+                        llvm::SmallVector<mlir_ts::LoadOp> reads;
+                        if (!mergedRecordReads(argument, reads) || !llvm::is_contained(reads, read))
+                        {
+                            bad = true;
+                            return;
+                        }
+
+                        if (merges.insert(argument).second)
+                        {
+                            forEachUse(argument, visit);
+                        }
+                    }
+                }
+
                 return;
             }
 
@@ -330,15 +440,17 @@ namespace own_inference
             auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                                               : mlir_ts::VariableOp();
             bad = !slot || !(isResultSlot(slot) || isOwningVariable(slot));
-        });
+        };
+        forEachUse(read.getResult(), visit);
 
         if (bad)
         {
             return nullptr;
         }
 
-        // a boxed record goes nowhere else: the box is its one owner
-        if (boxed && other)
+        // a boxed record goes nowhere else: the box is its one owner; and a merge given to a box
+        // (`const o: I = c ? { h: new H(1) } : ...` of an interface) is left to the box's own rules
+        if (boxed && (other || !merges.empty()))
         {
             return nullptr;
         }
@@ -484,12 +596,35 @@ namespace own_inference
         auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
         auto varOp = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
         auto *retain = varOp ? recordRetainOf(varOp) : nullptr;
-        if (!retain || retain->getBlock() != taker->getBlock() || !taker->isBeforeInBlock(retain))
+        if (!retain)
         {
             return nullptr;
         }
 
-        return retain;
+        if (retain->getBlock() == taker->getBlock())
+        {
+            return taker->isBeforeInBlock(retain) ? retain : nullptr;
+        }
+
+        // the retain of a merge the record is one of (recordRetainOf): where the branch the record is
+        // made in goes on to, through the merges of nested `?:`s
+        auto *block = taker->getBlock();
+        for (auto depth = 0; depth < 8; ++depth)
+        {
+            auto *terminator = block->getTerminator();
+            if (!terminator || terminator->getNumSuccessors() != 1)
+            {
+                return nullptr;
+            }
+
+            block = terminator->getSuccessor(0);
+            if (block == retain->getBlock())
+            {
+                return retain;
+            }
+        }
+
+        return nullptr;
     }
 
     bool OwnershipInferencePass::isImmortalLiteral(mlir::Value value)

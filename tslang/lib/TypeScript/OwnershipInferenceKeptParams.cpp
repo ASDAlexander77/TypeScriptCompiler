@@ -166,27 +166,70 @@ namespace own_inference
     {
         auto ends = slotEnds(slot);
         mlir_ts::VariableOp someBorrower;
+        // the uses of borrows by `let`s that only borrow (`let b = q; ... b = r`), each up to the
+        // `let`'s next assignment: when every borrower is one, a move none of them reaches is a move
+        llvm::SmallVector<BorrowUse> localUses;
+        auto onlyLocalBorrowers = true;
         for (auto &receiver : receivers)
         {
-            if (auto borrower = borrowerOf(receiver.retain))
+            mlir::Operation *from = nullptr;
+            if (auto borrower = localBorrowerOf(receiver.retain, from))
             {
                 someBorrower = borrower;
+                if (borrowWith(borrower, receiver.retain, ends, owner, toErase, from))
+                {
+                    llvm::SmallVector<mlir::Operation *> bookkeeping;
+                    mlir::Operation *declaration = borrower;
+                    collectBorrowerUses(borrower, declaration, localUses, bookkeeping, from);
+                }
+            }
+            else if (auto borrower = borrowerOf(receiver.retain))
+            {
+                someBorrower = borrower;
+                onlyLocalBorrowers = false;
                 borrowWith(borrower, receiver.retain, ends, owner, toErase);
             }
         }
 
+        auto moves = 0;
         for (auto &receiver : receivers)
         {
-            if (borrowerOf(receiver.retain))
+            mlir::Operation *from = nullptr;
+            if (borrowerOf(receiver.retain) || localBorrowerOf(receiver.retain, from))
+            {
+                continue;
+            }
+
+            ++moves;
+        }
+
+        for (auto &receiver : receivers)
+        {
+            mlir::Operation *from = nullptr;
+            if (borrowerOf(receiver.retain) || localBorrowerOf(receiver.retain, from))
             {
                 continue;
             }
 
             llvm::SetVector<mlir::Operation *> unused;
-            if (checkSlotMove(receiver.retain, receiver.value, receiver.load, unused))
+            if (!checkSlotMove(receiver.retain, receiver.value, receiver.load, unused))
             {
-                reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : llvm::StringRef());
+                continue;
             }
+
+            auto reached = llvm::any_of(localUses, [&](BorrowUse &use) { return reachableAfter(receiver.retain, use.op, use.kills); });
+            if (moves == 1 && onlyLocalBorrowers && !reached)
+            {
+                checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, true);
+                if (!isCall(receiver.retain))
+                {
+                    toErase.insert(receiver.retain);
+                }
+
+                continue;
+            }
+
+            reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : llvm::StringRef());
         }
     }
 

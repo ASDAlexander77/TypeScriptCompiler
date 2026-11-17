@@ -6229,3 +6229,44 @@ Tests: `00weak_field` (own, own `-noopt`, gc, none), `own_weak_field_compare_dea
 returned, stored, captured, held, thread, interface, object type, abstract, redeclare either way,
 a conditional's new arm). A class whose field fails still gets the fields it has, so a later read of an
 inherited field no longer recurses until the stack overflows.
+
+## 94. A `let` that borrows other locals; a `?:` of `@value` literals; one literal given twice, 2026-11-17
+
+**A `let` given reads of other owning locals and assigned again borrows each value**
+(`classifyLocalBorrowingLets`): `let b = q; ... b = r`, and `qq = r && q` of their merge, were "'b' borrows
+'q' and cannot be assigned; -mm=own cannot prove that yet". A `let` - not a parameter's local - every value
+of which reads owning locals other than itself (one, or a merge of several and null), places or parameters,
+that is assigned at least once and of whose reads nothing is kept, now borrows each value until its next
+assignment, as a `let` given only field reads does (TSLANG 56) - but only a `let` the dry run refused (for an assignment, a borrow it keeps, a use after a move into it, a move into it inside a loop: `noteLocalLetCandidate`), so a function today's analysis accepts keeps every move it had (`x = n` takes `n` over): its declaration's `ts.RetainSlot`, rc's
+retain at each assignment and its releases go, and each owner's ends - its releases and assignments - are
+checked against the reads the declaration or the assignment reaches before the next one (`tryBorrow`'s
+`from`). No owner moves into it. When every borrower of an owner is such a `let`, a move of the owner that
+none of their reads reaches is a move (`let b = q; ... b = r; return q`). Such a `let` takes nothing out of
+its owner, so it is no end of the owner for the borrows of what is read through it either (`rootEnds`):
+`let node = head; while (node) { ...; node = node.next }`, and the `for` form, walk a list from a local
+head. An owner reassigned, released, moved or cut (`head.next = undefined`, a call that may cut it) while
+the `let` still reads it is refused, with the read and the end named.
+
+**A `?:` between `@value` literals that hold new objects** (`return c ? { h: new H(1) } : { h: new H(2) }`,
+or `c ? null : { ... }`) was "an object literal that holds a value it owns is moved only into a local or
+returned as it is". The literals a merge chooses between (`mergedRecordReads`: each way brings a literal's
+read, null or undefined, through views and nested merges) move into what takes the merge - the result, or
+an owning `let` - at rc's retain of the merge, which `recordRetainOf` now follows the literal's read to; the
+merge holds constants or moves when each literal does. A new object stored into a literal moves in at the
+store when the literal's retain is past the branch (`acquirePoint`): rc gives the branch's temporary back
+before the branch ends. A merge given to an interface's box, or held by a folded `const` (which takes no
+reference), is still refused.
+
+**An object literal given to interface parameters more than once** (`use(o); use(o)`) was "a value takes a
+second reference": each argument is a view of the literal's block (`ts.NewInterface`) that rc retains
+before its call and releases at the end of the scope, and own saw each retain as an owner.
+`joinViewRetainPairs`, when the dry run fails, keeps the first retain - where the block is taken - and the
+last release - where it is freed - and drops the pairs in between, when every view is in one block, used
+only by calls that do not keep it or read for one (`(<I>o).toString()`, a number field), all before that
+release.
+
+Tests: `own_let_borrows_locals`, `own_conditional_value_records`, `own_interface_literal_views` (every
+model), `own_err_let_borrows_local_owner_assigned`, `_local_loop`, `_local_moved`, `_merge_assigned`,
+`own_err_walk_local_head_assigned`, `own_err_walk_local_head_cut`, `own_err_conditional_value_records_mixed` (one arm borrows, the other owns: refused); `own_err_interface_two_views` is gone (the shape compiles); `own_err_named_walk_let` now gives the
+head up inside the walk. Corpus 748 -> 751 of 900 (`00for_optional_class_condition`, `00interface_object`,
+`00conditional_nested_record_literal_temporary`), none lost.

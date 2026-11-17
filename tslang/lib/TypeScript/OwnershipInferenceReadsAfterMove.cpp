@@ -203,7 +203,9 @@ namespace own_inference
         // a store into a record, which rc retains as a whole after it is filled
         if (auto *retain = recordRetainOfStore(taker))
         {
-            return retain;
+            // ...or as one of the records a `?:` chooses between, after the merge: rc gives back the
+            // branch's temporary before the branch ends, so the record holds it from the store on
+            return retain->getBlock() == taker->getBlock() ? retain : taker;
         }
 
         // a store that declares a local in a `try`: the local acquires it at rc's `ts.RetainSlot`

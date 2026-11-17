@@ -5208,6 +5208,15 @@ foreach(abstract_field_mm gc none own)
     tslang_add_test(NAME test-jit-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -jit -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
     tslang_add_test(NAME test-compile-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
 endforeach()
+# `let b = q; ... b = r` of owning locals (and of their merges) borrows each value until it is assigned again
+foreach(let_borrows_mm gc none rc own)
+    tslang_add_test(NAME test-jit-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
+    tslang_add_test(NAME test-compile-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
+    tslang_add_test(NAME test-jit-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
+    tslang_add_test(NAME test-compile-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
+    tslang_add_test(NAME test-jit-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
+    tslang_add_test(NAME test-compile-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
+endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
     tslang_add_test(NAME test-jit-own_weak_field_freed_read-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts")
@@ -5392,7 +5401,6 @@ set(own_error_cases
     "own_err_cell_assigned_in_closure|:18:11: error: 'y' borrows 'a[.]c' but is used here after it may be released or overwritten"
     "own_err_closure_assigns_captured_field|:19:11: error: 'y' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_unknown_producer|:5:11: error: '[^']*' takes a second reference"
-    "own_err_interface_two_views|:20:11: error: a value takes a second reference. -mm=own cannot prove a move or a borrow here yet"
     "own_err_field_function_reassigned|:7:17: error: a value that borrows a field is used here after it may be released or overwritten"
     "own_err_generator_outlives_arg|:12:11: error: 'it' is used here after the value it borrows is released or overwritten"
     "own_err_generator_bounded_escapes|:8:17: error: a value that borrows its generator's arguments cannot be stored, returned or captured"
@@ -5720,6 +5728,13 @@ set(own_error_cases
     "own_err_weak_field_redeclare_weak|:3:27: error: the field 'parent' is not @weak in 'Node', so a redeclaration of it cannot be @weak"
     "own_err_weak_field_abstract_impl|:4:21: error: the @weak field 'parent' cannot implement an abstract field of a base class"
     "own_err_weak_field_fresh_conditional|:3:63: error: the @weak field 'parent' cannot own a new object. it would be freed at once"
+    "own_err_let_borrows_local_owner_assigned|:3:79: error: 'b' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_let_borrows_local_loop|:4:41: error: 'b' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_let_borrows_local_moved|:5:5: error: 'q' is moved here while 'b' borrows it. a borrowed value cannot be moved"
+    "own_err_let_borrows_merge_assigned|:3:97: error: 'qq' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_walk_local_head_assigned|:4:64: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
+    "own_err_walk_local_head_cut|:4:90: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
+    "own_err_conditional_value_records_mixed|:4:48: error: a value that borrows what it holds and owns nothing [(]a tuple that holds a borrow[)] meets a value that owns a block here. -mm=own cannot release them alike"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"
@@ -5777,7 +5792,7 @@ set(own_error_cases
     "own_err_escaped_this_field_read|:24:28: error: '[^']*' is used here after its value was moved"
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
-    "own_err_named_walk_let|:10:33: error: 'node' borrows 'node[.]next' and cannot be stored, returned or captured"
+    "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_named_var_local|:8:9: error: 'h' borrows the result of 'tag' and cannot be stored, returned or captured"
     "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
