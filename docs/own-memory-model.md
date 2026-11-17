@@ -94,6 +94,10 @@ literal owns it, as it owns a new object, and reading the parameter after that i
 parameter given a default by `??=` or `||=` can be copied into a `let` (`let a = <number[]>results`),
 which borrows it.
 
+A catch clause owns what was thrown: the value is freed where the clause ends, unless the clause
+gives it on (`return e`, `throw e`, storing it). Inside another `try` of the same function, or with a
+`finally`, it is still not freed.
+
 Inside a module the compiler also infers each function's facts from its body: a function that
 stores a parameter keeps it, so its callers have to move the argument in; a function that
 returns a field of its argument returns a borrow, so its callers may only borrow the result.

@@ -1748,9 +1748,10 @@ namespace mlirgen
         // scopes have no landing pad of their own to release their locals from - the function's
         // body, a `catch` clause's enclosing scopes. So the throw gives them back itself, as a
         // `return` would, and first takes a reference for the exception, as a `return` does for
-        // its caller: `throw s` must not be freed by the release of `s`. Nothing gives that
-        // reference back - a caught value is not owned (takeOwnershipOfLocal) - so a thrown heap
-        // value leaks rather than dangles.
+        // its caller: `throw s` must not be freed by the release of `s`. The catch clause takes that
+        // reference over (mlirGen(TryStatement)) and gives it back where it ends; where the clause
+        // cannot own it - an exception out of it could land in this function - it leaks rather than
+        // dangles.
         mlirGenRetainCaptured(location, mlir::ValueRange{exception}, /*atLastUse=*/true);
         mlirGenReleaseOwnedOnUnwind(location, &genContext);
 

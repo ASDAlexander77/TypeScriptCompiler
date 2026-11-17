@@ -6308,3 +6308,40 @@ method's object); a class object given as `object` (the cast moves it, `00bound_
 Tests: `own_return_in_using`, `own_param_assign_merge_let`, `own_conditional_record_boxes`,
 `own_kept_param_record` (every model), `own_err_param_assign_merge_let_reassigned`,
 `own_err_kept_param_record_used`.
+
+## 96. The catch clause owns what was thrown, 2026-11-17
+
+USER RULING 2026-11-17: under rc and own the catch variable owns the thrown value. Before, the `throw`
+took a reference for the exception and nothing gave it back (mlirGen(ThrowStatement): "a caught value is
+not owned"): every throw of a heap value leaked it - about 30 bytes for a literal string (Windows' copy
+thunk boxes the value into a 32-byte `any` for the catch), 60 for a class object, 110 for a string built at
+run time.
+
+**One reference, handed over.** The `throw` keeps taking the exception's reference. The catch takes it
+over: on Windows the copy thunk (`.eh.copy.box.*`) boxes the value without a retain of its own (rc now
+marks the thunk's read of the exception owned; own already moved it, `isReadOutOfException`), and on
+Itanium `SaveCatchVar` boxes it the same way. No destructor on the exception object: under own the box
+already holds the value, and a destructor would free it a second time.
+
+**The clause declares the variable.** The catch fills a slot of its own (`.caught`, unowned, as the catch
+variable was). The clause then declares the variable as one of its own locals, given that slot's value
+and the reference it came with (an owned read), so it is released where the clause ends and on a `return`,
+`break` or `throw` out of it (the clause's scope), or moved like any local (`return e`, `throw e`,
+`errs.push(e)`, `saved = e`). A `catch {}` declares a hidden one. The clause keeps the value unowned, as
+before, where an exception out of a call in it could land in this function - a `try` around it, a block
+wrapped for its unwind cleanup, its own `finally` - since a clause has no cleanup of its own and the value
+would be lost on that edge (a clause's locals are, the same way), and where it holds a `try` of its own
+(`clausesWithNestedTry`).
+
+**The temporaries of a thrown expression.** `throw "x" + i`'s number printed into a string was released
+at the end of the block, after the throw, where it never runs: a `throw` is now one of the exits a
+discarded temporary is released in front of (OwnedReturnConsumptionPass, `firstExitingOpAfter`).
+
+**A copy thunk at RVA 0 (Windows JIT).** The JIT lays its image out code first (section 9.66), so the
+object's first function sits at RVA 0 - which a CatchableType's copy function reads as "none". Where that
+function was the box thunk of a number thrown and caught in the same function, the runtime copied the
+number's bytes into the catch variable as if they were a box: `typeof e` read garbage under every model,
+and the clause's release now followed it. Every JIT'd object starts with a function nothing names
+(`addJitImageStart`).
+
+Tests: `own_caught_value_owned` (every model).
