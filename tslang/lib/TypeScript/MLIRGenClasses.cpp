@@ -5318,8 +5318,12 @@ genContext);
                 createGlobalConstructor(classMember, genContext);
             }
 
-            // adding missing statements
-            generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, classMember, funcGenContext);
+            // adding missing statements; a failure here left the constructor without its field initializers, and no error
+            if (mlir::failed(generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, classMember,
+                                                           funcGenContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         // process dynamic import
@@ -5560,28 +5564,62 @@ genContext);
                     }
                 }
 
-                auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
-                if (memberNamePtr.empty())
-                {
-                    // e.g. a computed property name (`[expr] = value;`) reaches here with no
-                    // plain-identifier name; tried as a repro but it hits a different, earlier
-                    // bug first (an LLVM Casting.h assertion, undocumented/unfixed - see
-                    // docs/not-implemented-audit.md), so this specific branch's reachability is
-                    // unconfirmed. Fail cleanly rather than crash regardless.
-                    emitError(loc(propertyDeclaration), "computed property name is not supported here");
-                    return mlir::failure();
-                }
-
                 auto _this = nf.createIdentifier(S(THIS_NAME));
-                auto _name = nf.createIdentifier(stows(std::string(memberNamePtr)));
-                auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+                Node _name;
+                Expression _this_name;
+                if (propertyDeclaration->name == SyntaxKind::ComputedPropertyName)
+                {
+                    // `[k] = 10`: `this[k] = 10`, the name a constant as the field's own (getNameFromComputedPropertyName).
+                    // Refused here, the class lost every field initializer, with no error.
+                    auto [nameAttr, nameResult] = getNameFromComputedPropertyName(propertyDeclaration->name, genContext);
+                    if (mlir::failed(nameResult) || !nameAttr)
+                    {
+                        return mlir::failure();
+                    }
+
+                    std::string keyText;
+                    if (auto strAttr = dyn_cast<mlir::StringAttr>(nameAttr))
+                    {
+                        keyText = strAttr.getValue().str();
+                    }
+                    else if (auto intAttr = dyn_cast<mlir::IntegerAttr>(nameAttr))
+                    {
+                        keyText = std::to_string(intAttr.getValue().getSExtValue());
+                    }
+                    else
+                    {
+                        emitError(loc(propertyDeclaration), "this field name is not supported here");
+                        return mlir::failure();
+                    }
+
+                    auto keyLiteral = nf.createStringLiteral(stows(keyText));
+                    keyLiteral->pos = propertyDeclaration->pos;
+                    keyLiteral->_end = propertyDeclaration->_end;
+                    _name = keyLiteral;
+                    _this_name = nf.createElementAccessExpression(_this, keyLiteral);
+                }
+                else
+                {
+                    auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
+                    if (memberNamePtr.empty())
+                    {
+                        emitError(loc(propertyDeclaration), "this field name is not supported here");
+                        return mlir::failure();
+                    }
+
+                    auto nameIdentifier = nf.createIdentifier(stows(std::string(memberNamePtr)));
+                    nameIdentifier->pos = propertyDeclaration->pos;
+                    nameIdentifier->_end = propertyDeclaration->_end;
+                    _name = nameIdentifier;
+                    _this_name = nf.createPropertyAccessExpression(_this, nameIdentifier);
+                }
                 auto _this_name_equal = nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken),
                                                                   propertyDeclaration->initializer);
                 auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
                 // errors in the assignment (the initializer's cast to the field type) are reported at
                 // the field, not at the start of the file
-                for (Node node : {Node(_this), Node(_name), Node(_this_name), Node(_this_name_equal), Node(expr_statement)})
+                for (Node node : {Node(_this), Node(_this_name), Node(_this_name_equal), Node(expr_statement)})
                 {
                     node->pos = propertyDeclaration->pos;
                     node->_end = propertyDeclaration->_end;

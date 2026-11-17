@@ -2611,9 +2611,19 @@ namespace mlirgen
             auto value = V(result);
             LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
             auto attr = mcl.ExtractAttr(value);
+            // `const k = "x"` at the module level is read from its global, whose type still says what it holds
             if (!attr)
             {
-                emitError(loc(name), "not supported 'Computed Property Name' expression");
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(value.getType()))
+                {
+                    attr = literalType.getValue();
+                }
+            }
+
+            if (!attr)
+            {
+                emitError(loc(name), "a computed property name must be a constant (a literal, or a `const` "
+                                     "holding one), or a well-known symbol");
             }
 
             return {attr, attr ? mlir::success() : mlir::failure()};
