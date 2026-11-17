@@ -1473,6 +1473,10 @@ class OwnershipInferencePass
 
     void reportBorrowOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef name, llvm::StringRef owner);
 
+    // spec 93: "Node.parent" -> "parent"
+    static llvm::StringRef weakFieldShortName(llvm::StringRef weakField);
+    // spec 93: a @weak field's read given to a call that may free objects (its receiver or an argument)
+    void reportWeakFieldCallDrops(mlir::Operation *call, mlir_ts::WeakRefDerefOp read);
     void reportPlaceBorrowOutlives(mlir::Operation *use, mlir::Operation *drop, llvm::StringRef name,
                                    llvm::StringRef place);
 

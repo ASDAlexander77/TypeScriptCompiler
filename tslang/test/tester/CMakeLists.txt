@@ -5106,7 +5106,7 @@ endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
 # @weak fields (own spec 93): a checked WeakRef under own, ordinary fields under gc and none
 foreach(weak_field_mm gc none own)
-    foreach(weak_field_test tests/00weak_field own/own_weak_field_compare_dead)
+    foreach(weak_field_test tests/00weak_field own/own_weak_field_compare_dead own/own_weak_field_reread)
         get_filename_component(weak_field_name ${weak_field_test} NAME)
         tslang_add_test(NAME test-jit-${weak_field_name}-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")
         tslang_add_test(NAME test-compile-${weak_field_name}-${weak_field_mm} COMMAND test-runner -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")
@@ -5598,6 +5598,14 @@ set(own_error_cases
     "own_err_weak_field_value|:2:16: error: a @weak field needs a class type"
     "own_err_weak_field_union|:3:16: error: a @weak field needs a class type"
     "own_err_weak_field_generic|:1:14: error: a @weak field needs a class type"
+    "own_err_weak_field_fresh|:3:41: error: the @weak field 'parent' cannot own a new object. it would be freed at once"
+    "own_err_weak_field_call_drops|:8:42: error: 'parent' is a @weak field and 'Node.removeLast' may free objects. the call could free the object it runs on"
+    "own_err_weak_field_arg_drops|:11:50: error: 'parent' is a @weak field and 'Node.visit' may free objects. the call could free the object it runs on"
+    "own_err_weak_field_returned|:3:37: error: a value that borrows the object the @weak field 'parent' refers to cannot be stored, returned or captured"
+    "own_err_weak_field_stored|:3:77: error: a value that borrows the object the @weak field 'parent' refers to cannot be stored, returned or captured"
+    "own_err_weak_field_captured|:3:54: error: a value that borrows the object the @weak field 'parent' refers to cannot be stored, returned or captured"
+    "own_err_weak_field_held|:5:141: error: a value that borrows the object the @weak field 'parent' refers to is used here after it may be released or overwritten"
+    "own_err_weak_field_thread|:3:14: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"

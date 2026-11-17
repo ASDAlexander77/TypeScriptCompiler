@@ -13,8 +13,15 @@ namespace own_inference
 
     std::string OwnershipInferencePass::describeCall(mlir::Operation *call)
     {
-        if (mlir::isa<mlir_ts::WeakRefDerefOp>(call))
+        if (auto derefOp = mlir::dyn_cast<mlir_ts::WeakRefDerefOp>(call))
         {
+            // a read of a @weak field (spec 93)
+            if (derefOp.getChecked())
+            {
+                return "the object the @" WEAK_DECORATOR " field '" +
+                       weakFieldShortName(derefOp.getWeakField().value_or("")).str() + "' refers to";
+            }
+
             return "the object a WeakRef refers to";
         }
 
@@ -848,6 +855,28 @@ namespace own_inference
                         : use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
                                               << "' is released or overwritten";
         diag.attachNote(end->getLoc()) << "'" << owner << "' is released or overwritten here";
+        signalPassFailure();
+    }
+
+    llvm::StringRef OwnershipInferencePass::weakFieldShortName(llvm::StringRef weakField)
+    {
+        auto dot = weakField.rfind('.');
+        return dot == llvm::StringRef::npos ? weakField : weakField.drop_front(dot + 1);
+    }
+
+    void OwnershipInferencePass::reportWeakFieldCallDrops(mlir::Operation *call, mlir_ts::WeakRefDerefOp read)
+    {
+        if (!reporting())
+        {
+            return;
+        }
+
+        auto callee = calleeName(call);
+        auto diag = call->emitError("'") << weakFieldShortName(read.getWeakField().value_or("")) << "' is a @" WEAK_DECORATOR
+                                         << " field and " << (callee.empty() ? std::string("the call") : "'" + callee + "'")
+                                         << " may free objects; the call could free the object it runs on";
+        diag.attachNote(call->getLoc()) << "'@" NO_DROPS_DECORATOR "' on the method, or '@" FINAL_DECORATOR
+                                        "' on its class, says it frees nothing; else read the field after the call";
         signalPassFailure();
     }
 
