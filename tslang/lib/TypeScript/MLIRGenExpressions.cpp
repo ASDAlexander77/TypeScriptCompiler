@@ -920,6 +920,59 @@ namespace mlirgen
             auto merged = false;
             auto resultType = mth.findBaseType(trueType, falseType, merged, defaultUnionType);
 
+            // a union holding an object literal (`c ? null : { h, n }`, `null | {h, n}`) cannot be cast
+            // to anything after the merge: no `typeof` tells a tuple apart. Given what receives it
+            // (`Two | null`, a return or a declaration's type), each branch is cast to that instead
+            // (or an optional one, `c ? undefined : { h, n }`: it boxes the literal only after the merge)
+            auto unionHoldsTuple = [](mlir::Type type) {
+                if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+                {
+                    return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(optionalType.getElementType());
+                }
+
+                auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+                return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) {
+                    return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member);
+                });
+            };
+            // Only a receiver that is an interface, with null or undefined: the receiver type reaches
+            // nested expressions too (`(c ? undefined : { n: 1 })?.n` given to a `number`), where the
+            // `?:` is not what is received
+            auto interfaceReceiver = [&](mlir::Type type) {
+                if (!type)
+                {
+                    return false;
+                }
+
+                type = mth.stripOptionalType(type);
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+                {
+                    mlir::Type member;
+                    for (auto subType : unionType.getTypes())
+                    {
+                        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(subType))
+                        {
+                            continue;
+                        }
+
+                        if (member)
+                        {
+                            return false;
+                        }
+
+                        member = subType;
+                    }
+
+                    type = member;
+                }
+
+                return type && isa<mlir_ts::InterfaceType>(type);
+            };
+            if (interfaceReceiver(genContext.receiverType) && unionHoldsTuple(resultType))
+            {
+                resultType = genContext.receiverType;
+            }
+
             ifOp.getResult(0).setType(resultType);
 
             // The array a branch makes of its literal is a new block, and the branch hands it out
