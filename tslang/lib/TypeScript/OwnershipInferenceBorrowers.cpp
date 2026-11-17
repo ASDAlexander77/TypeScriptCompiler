@@ -180,9 +180,9 @@ namespace own_inference
     }
 
     bool OwnershipInferencePass::borrowWith(mlir_ts::VariableOp borrower, mlir::Operation *acquisition, llvm::ArrayRef<mlir::Operation *> ends,
-                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase)
+                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from)
     {
-        if (!tryBorrow(borrower, ends, owner, toErase))
+        if (!tryBorrow(borrower, ends, owner, toErase, from))
         {
             return false;
         }
@@ -224,13 +224,13 @@ namespace own_inference
     }
 
     bool OwnershipInferencePass::tryBorrow(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> ends, llvm::StringRef owner,
-                   llvm::SetVector<mlir::Operation *> &toErase)
+                   llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from)
     {
         auto name = varName(borrower);
         llvm::SmallVector<BorrowUse> uses;
         llvm::SmallVector<mlir::Operation *> bookkeeping;
         mlir::Operation *declaration = borrower;
-        if (auto *kept = collectBorrowerUses(borrower, declaration, uses, bookkeeping))
+        if (auto *kept = collectBorrowerUses(borrower, declaration, uses, bookkeeping, from))
         {
             if (isAssignmentOf(kept, borrower))
             {
@@ -274,7 +274,9 @@ namespace own_inference
     {
         // `let layout = this.computeLayout; if (fp16) layout = this.computeLayoutFP16;` (TSLANG 56):
         // an owning `let` given only reads of places and parameters, each a borrow of its own
-        auto borrowed = [&](mlir::Value value) { return letBorrows(value); };
+        // ...or reads of other owning locals (`let b = q; ... b = r`): classifyLocalBorrowingLets
+        auto localReads = localBorrowingLets.contains(varOp);
+        auto borrowed = [&](mlir::Value value) { return letBorrows(value) || (localReads && readsOwningLocals(value, varOp)); };
 
         if (!varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false) ||
             !borrowed(varOp.getInitializer()))
@@ -323,6 +325,155 @@ namespace own_inference
                 {
                     break;
                 }
+            }
+        }
+
+        return {};
+    }
+
+    mlir_ts::VariableOp OwnershipInferencePass::owningLocalReadOf(mlir::Value value)
+    {
+        auto root = rootOf(value);
+        auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+        auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto index = -1;
+        if (!slot || !isOwningVariable(slot) || slot.getCaptured().value_or(false) || isParameterSlot(slot, index) ||
+            slot->hasAttr(OWN_LET_HOLDER_ATTR_NAME))
+        {
+            return {};
+        }
+
+        return slot;
+    }
+
+    bool OwnershipInferencePass::readsOwningLocals(mlir::Value value, mlir_ts::VariableOp self)
+    {
+        if (auto owner = owningLocalReadOf(value))
+        {
+            return owner != self;
+        }
+
+        // `qq = r && q`: a merge of reads of owning locals (and of null)
+        auto argument = mlir::dyn_cast<mlir::BlockArgument>(rootOf(value));
+        llvm::SmallVector<mlir_ts::LoadOp> loads;
+        if (!argument || !slotLoadsOfMerge(argument, loads) || loads.empty())
+        {
+            return false;
+        }
+
+        return llvm::all_of(loads, [&](mlir_ts::LoadOp load) {
+            auto owner = owningLocalReadOf(load.getResult());
+            return owner && owner != self;
+        });
+    }
+
+    void OwnershipInferencePass::classifyLocalBorrowingLets()
+    {
+        localBorrowingLets.clear();
+        llvm::SmallVector<mlir_ts::VariableOp> candidates;
+        getFunction()->walk([&](mlir_ts::VariableOp varOp) {
+            if (!varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false))
+            {
+                return;
+            }
+
+            auto local = false;
+            auto borrowed = [&](mlir::Value value) {
+                if (letBorrows(value))
+                {
+                    return true;
+                }
+
+                if (!readsOwningLocals(value, varOp))
+                {
+                    return false;
+                }
+
+                local = true;
+                return true;
+            };
+
+            if (!borrowed(varOp.getInitializer()))
+            {
+                return;
+            }
+
+            auto assigned = false;
+            for (auto *user : varOp.getResult().getUsers())
+            {
+                if (isAssignmentOf(user, varOp))
+                {
+                    if (!borrowed(mlir::cast<mlir_ts::StoreOp>(user).getValue()))
+                    {
+                        return;
+                    }
+
+                    assigned = true;
+                }
+            }
+
+            if (local && assigned)
+            {
+                candidates.push_back(varOp);
+            }
+        });
+
+        // ...and nothing read out of it is kept: stored, returned, captured (else it stays an owner,
+        // and its values move into it as before)
+        for (auto varOp : candidates)
+        {
+            localBorrowingLets.insert(varOp);
+            auto keeps = quietly([&] {
+                llvm::SmallVector<BorrowUse> uses;
+                llvm::SmallVector<mlir::Operation *> bookkeeping;
+                mlir::Operation *declaration = varOp;
+                return collectBorrowerUses(varOp, declaration, uses, bookkeeping) != nullptr;
+            });
+            if (keeps)
+            {
+                localBorrowingLets.erase(varOp);
+            }
+        }
+    }
+
+    mlir_ts::VariableOp OwnershipInferencePass::localBorrowerOf(mlir::Operation *acquisition, mlir::Operation *&from)
+    {
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(acquisition))
+        {
+            auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            if (varOp && localBorrowingLets.contains(varOp))
+            {
+                from = varOp;
+                return varOp;
+            }
+
+            return {};
+        }
+
+        auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(acquisition);
+        if (!retainOp)
+        {
+            return {};
+        }
+
+        // rc's reference for an assignment: right before the store, past the release of the old value
+        for (auto *next = retainOp->getNextNode(); next; next = next->getNextNode())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(next); storeOp && storeOp.getValue() == retainOp->getOperand(0))
+            {
+                auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                if (varOp && localBorrowingLets.contains(varOp))
+                {
+                    from = storeOp;
+                    return varOp;
+                }
+
+                return {};
+            }
+
+            if (!mlir::isa<mlir_ts::ReleaseSlotOp>(next))
+            {
+                break;
             }
         }
 

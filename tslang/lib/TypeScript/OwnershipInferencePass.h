@@ -324,6 +324,19 @@ class OwnershipInferencePass
     // The `let` (borrowsOnly) that `user` assigns `value` to - the store itself, or rc's retain right
     // before it - or null.
     mlir_ts::VariableOp borrowingAssignmentOf(mlir::Operation *user, mlir::Value value);
+    // `let b = q; ... b = r;` of owning locals: a `let` given reads of other owning locals (and of
+    // places and parameters), assigned at least once, and whose reads nothing keeps. Each value it is
+    // given is a borrow of its owner until the next assignment, never a move (borrowsOnly).
+    llvm::SmallPtrSet<mlir::Operation *, 4> localBorrowingLets;
+    void classifyLocalBorrowingLets();
+    // The owning, uncaptured local whose slot `value` reads, other than a parameter's, or null.
+    mlir_ts::VariableOp owningLocalReadOf(mlir::Value value);
+    // Does `value` read owning locals other than `self` - one, or a merge of several (and of null)?
+    bool readsOwningLocals(mlir::Value value, mlir_ts::VariableOp self);
+    // The `let` of localBorrowingLets that an acquisition gives `value` to - its declaration's
+    // `ts.RetainSlot`, or rc's retain right before an assignment - and in `from`, that declaration or
+    // assignment; else null.
+    mlir_ts::VariableOp localBorrowerOf(mlir::Operation *acquisition, mlir::Operation *&from);
 
     // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
     // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
@@ -515,7 +528,7 @@ class OwnershipInferencePass
     // consuming `let` takes over is that `let`'s, and goes with the borrow; a `ts.RetainSlot` is the
     // `let`'s own bookkeeping already.
     bool borrowWith(mlir_ts::VariableOp borrower, mlir::Operation *acquisition, llvm::ArrayRef<mlir::Operation *> ends,
-                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase);
+                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from = nullptr);
 
     // The owning `let` declared from `value` that takes over its reference, or none.
     static mlir_ts::VariableOp consumingLetOf(mlir::Value value);
@@ -529,9 +542,10 @@ class OwnershipInferencePass
     // the borrower can run after any of `ends` - the owner's releases and assignments - and while
     // nothing it holds is kept: not stored, returned, retained or assigned. A path back to a use
     // through the borrower's own declaration is a new borrow, not this one. Reports and returns
-    // false otherwise.
+    // false otherwise. With `from` (a declaration or an assignment of a `let` that only borrows), only
+    // the reads it reaches before another assignment are this borrow's.
     bool tryBorrow(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> ends, llvm::StringRef owner,
-                   llvm::SetVector<mlir::Operation *> &toErase);
+                   llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from = nullptr);
 
     // A use of a borrowed value, and where the value it sees is made again: a path from a release
     // to the use through one of `kills` reaches a new value, not this one. For the borrow's own

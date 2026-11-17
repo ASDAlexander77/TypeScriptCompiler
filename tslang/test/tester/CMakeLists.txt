@@ -5183,6 +5183,11 @@ foreach(abstract_field_mm gc none own)
     tslang_add_test(NAME test-jit-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -jit -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
     tslang_add_test(NAME test-compile-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
 endforeach()
+# `let b = q; ... b = r` of owning locals (and of their merges) borrows each value until it is assigned again
+foreach(let_borrows_mm gc none rc own)
+    tslang_add_test(NAME test-jit-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
+    tslang_add_test(NAME test-compile-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
+endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
     tslang_add_test(NAME test-jit-own_weak_field_freed_read-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts")
@@ -5695,6 +5700,10 @@ set(own_error_cases
     "own_err_weak_field_redeclare_weak|:3:27: error: the field 'parent' is not @weak in 'Node', so a redeclaration of it cannot be @weak"
     "own_err_weak_field_abstract_impl|:4:21: error: the @weak field 'parent' cannot implement an abstract field of a base class"
     "own_err_weak_field_fresh_conditional|:3:63: error: the @weak field 'parent' cannot own a new object. it would be freed at once"
+    "own_err_let_borrows_local_owner_assigned|:3:79: error: 'b' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_let_borrows_local_loop|:4:41: error: 'b' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_let_borrows_local_moved|:5:5: error: 'q' is moved here while 'b' borrows it. a borrowed value cannot be moved"
+    "own_err_let_borrows_merge_assigned|:3:97: error: 'qq' borrows 'r' but is used here after 'r' is released or overwritten"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"

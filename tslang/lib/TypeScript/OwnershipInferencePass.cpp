@@ -324,6 +324,8 @@ namespace own_inference
         classifyLocalBorrowingArrays();
         classifyArrayViews();
         classifyBorrowingBoxes();
+        // ...and whether a `let` given reads of owning locals borrows each of them
+        classifyLocalBorrowingLets();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {
@@ -457,6 +459,7 @@ namespace own_inference
         fieldBorrowReleases.clear();
         mergeBorrowRetains.clear();
         mergedSlotRetains.clear();
+        localBorrowingLets.clear();
         captureStores.clear();
         captureRetains.clear();
         callCopies.clear();
@@ -902,9 +905,11 @@ namespace own_inference
                 continue;
             }
 
-            // a `let` declared from a merge of owning locals (TSLANG 58): it borrows each of them
+            // a `let` declared from a merge of owning locals (TSLANG 58): it borrows each of them;
+            // and one that only borrows, assigned a merge (`qq = r && q`)
+            mlir::Operation *from = nullptr;
             if (auto argument = value ? mlir::dyn_cast<mlir::BlockArgument>(rootOf(value)) : mlir::BlockArgument();
-                argument && mlir::isa<mlir_ts::RetainSlotOp>(op) && borrowerOf(op))
+                argument && ((mlir::isa<mlir_ts::RetainSlotOp>(op) && borrowerOf(op)) || localBorrowerOf(op, from)))
             {
                 llvm::SmallVector<mlir_ts::LoadOp> loads;
                 if (slotLoadsOfMerge(argument, loads) && !loads.empty())
