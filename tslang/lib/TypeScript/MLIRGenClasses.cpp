@@ -7,6 +7,27 @@ namespace typescript
 namespace mlirgen
 {
 
+    // A class field named by a number (`1 = 2`, `0.0 = 1`, `static 0 = 1`) is named by the string of its
+    // digits, as a property key is: `this["1"]` and `C["0"]` reach it. Any other name is kept.
+    static mlir::Attribute numericFieldNameAsString(mlir::Attribute fieldId, mlir::OpBuilder &builder)
+    {
+        if (auto intAttr = dyn_cast_or_null<mlir::IntegerAttr>(fieldId))
+        {
+            return builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
+        }
+
+        if (auto floatAttr = dyn_cast_or_null<mlir::FloatAttr>(fieldId))
+        {
+            auto value = floatAttr.getValueAsDouble();
+            if (value == static_cast<double>(static_cast<int64_t>(value)))
+            {
+                return builder.getStringAttr(std::to_string(static_cast<int64_t>(value)));
+            }
+        }
+
+        return fieldId;
+    }
+
     mlir::LogicalResult MLIRGenImpl::registerGenericClass(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto name = className(classDeclarationAST, genContext);
@@ -2290,6 +2311,9 @@ namespace mlirgen
             }
 
             auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+            // as mlirGenClassDataFieldMember names a numeric field
+            fieldId = numericFieldNameAsString(fieldId, builder);
+
             for (auto &fieldInfo : fieldInfos)
             {
                 if (fieldInfo.id == fieldId)
@@ -2411,6 +2435,10 @@ namespace mlirgen
         }
 
         auto fieldId = TupleFieldName(name, genContext);
+        // `1 = 2`: a numeric field name is the string of its digits, as a property key is, so `this["1"]` reaches
+        // it (an integer id was reached by no access, and the field's initializer failed)
+        fieldId = numericFieldNameAsString(fieldId, builder);
+
         if (!fieldId)
         {
             // e.g. a computed field name (`[key] = 42;`) that doesn't resolve to a compile-time
@@ -2907,10 +2935,7 @@ namespace mlirgen
         }
 
         // `static 0 = 1`: a numeric name is the string of its digits, as a property key is (`C[0]` is `C["0"]`)
-        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId))
-        {
-            fieldId = builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
-        }
+        fieldId = numericFieldNameAsString(fieldId, builder);
 
         // process static field - register global
         auto fullClassStaticFieldName =
@@ -5567,24 +5592,22 @@ genContext);
                 auto _this = nf.createIdentifier(S(THIS_NAME));
                 Node _name;
                 Expression _this_name;
-                if (propertyDeclaration->name == SyntaxKind::ComputedPropertyName)
+                if (propertyDeclaration->name != SyntaxKind::Identifier
+                    && propertyDeclaration->name != SyntaxKind::PrivateIdentifier)
                 {
-                    // `[k] = 10`: `this[k] = 10`, the name a constant as the field's own (getNameFromComputedPropertyName).
-                    // Refused here, the class lost every field initializer, with no error.
-                    auto [nameAttr, nameResult] = getNameFromComputedPropertyName(propertyDeclaration->name, genContext);
-                    if (mlir::failed(nameResult) || !nameAttr)
+                    // `[k] = 10`, `1 = 2`, `"a b" = 3`: `this["k"] = 10`, the name a constant as the field's own
+                    // (getNameFromComputedPropertyName, TupleFieldName). Refused here, the class lost every field
+                    // initializer, with no error.
+                    auto nameAttr = TupleFieldName(propertyDeclaration->name, genContext);
+                    if (!nameAttr)
                     {
                         return mlir::failure();
                     }
 
                     std::string keyText;
-                    if (auto strAttr = dyn_cast<mlir::StringAttr>(nameAttr))
+                    if (auto strAttr = dyn_cast<mlir::StringAttr>(numericFieldNameAsString(nameAttr, builder)))
                     {
                         keyText = strAttr.getValue().str();
-                    }
-                    else if (auto intAttr = dyn_cast<mlir::IntegerAttr>(nameAttr))
-                    {
-                        keyText = std::to_string(intAttr.getValue().getSExtValue());
                     }
                     else
                     {

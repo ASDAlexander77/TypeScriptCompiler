@@ -70,6 +70,13 @@ class Computed {
     }
 }
 
+// ...and so does a field named by a number or a string literal, which is reached by the string of its name
+class LiteralNames {
+    1 = 2;
+    "a b" = 3;
+    plain = 4;
+}
+
 function main() {
     assert(tagInFunction() == 10, "a tagged template with no substitutions");
     assert(isObject(new B96()), "instanceof Object of a union of objects");
@@ -91,6 +98,9 @@ function main() {
     assert(c["lit"] == 10 && c["k"] == 20 && c.k == 20, "computed field names");
     assert(c.plain == 5, "the other fields keep their initializers");
     assert(c.go() == 3, "a computed method name");
+
+    const l = new LiteralNames();
+    assert(l["1"] == 2 && l["a b"] == 3 && l.plain == 4, "numeric and string literal field names");
 
     print("done.");
 }
