@@ -2638,8 +2638,10 @@ namespace mlirgen
     {
         // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
         // says so where it is given; an adapter would only add an error of its own, without a place in the source
+        // (a value already of the type takes no more parameters: a closure returned as its own type,
+        // `function f(n) { return m => m + n; }`, was wrapped and its captures read as the box)
         auto boundType = dyn_cast<mlir_ts::BoundFunctionType>(value.getType());
-        if (compileOptions.memoryModel == MemoryModelOwn || !boundType
+        if (compileOptions.memoryModel == MemoryModelOwn || !boundType || value.getType() == type
             || !isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type))
         {
             return mlir::Value();
@@ -3814,6 +3816,13 @@ namespace mlirgen
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(tupleTypeIn);
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        if (!interfaceInfo)
+        {
+            // an instance of a generic interface not made where the cast is (a generic arrow's `W<p>` return
+            // type, instantiated as the arrow is given a type): it was read through a null pointer
+            emitError(location) << "can't find interface '" << interfaceType.getName().getValue() << "'";
+            return mlir::failure();
+        }
 
         auto inEffective = in;
 

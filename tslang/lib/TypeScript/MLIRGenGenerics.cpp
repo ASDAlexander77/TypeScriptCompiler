@@ -538,6 +538,72 @@ namespace mlirgen
         return false;
     }
 
+    // The function type a generic function value is instantiated against when nothing gives its type
+    // parameters: its declared parameters, each generic one `any`, and no result (the instance infers
+    // it). The value's own type may start with the captures' parameter, which the receiver leaves out.
+    mlir_ts::FunctionType MLIRGenImpl::anyReceiverOfGenericFunction(mlir::Value functionRefValue)
+    {
+        auto currValue = functionRefValue;
+        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            currValue = createBoundFunctionOp.getFunc();
+        }
+
+        auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
+        auto funcType = dyn_cast<mlir_ts::FunctionType>(currValue.getType());
+        if (!symbolOp || !funcType)
+        {
+            return mlir_ts::FunctionType();
+        }
+
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.getIdentifier());
+        if (!functionGenericTypeInfo || !functionGenericTypeInfo->functionDeclaration)
+        {
+            return mlir_ts::FunctionType();
+        }
+
+        auto declaredParams = functionGenericTypeInfo->functionDeclaration->parameters.size();
+        auto allInputs = funcType.getInputs();
+        if (allInputs.size() < declaredParams)
+        {
+            return mlir_ts::FunctionType();
+        }
+
+        SmallVector<mlir::Type> inputs;
+        for (auto inputType : allInputs.take_back(declaredParams))
+        {
+            inputs.push_back(mth.isGenericType(inputType) ? mlir::Type(getAnyType()) : inputType);
+        }
+
+        return getFunctionType(inputs, {}, funcType.isVarArg());
+    }
+
+    // A generic function value (an arrow with an untyped parameter, `x => x`, or `<U>(u: U) => u`)
+    // that nothing gives types to - held by a `let`/`var`, or returned from a function with no
+    // declared return type. TypeScript types an untyped parameter with no context as `any`, so its
+    // type parameters become `any`; the instance infers its return type from its body. Returns the
+    // instantiated value, or the value itself when it is not a generic function (TSLANG 106).
+    ValueOrLogicalResult MLIRGenImpl::instantiateGenericFunctionWithAny(mlir::Location location,
+        mlir::Value functionRefValue, const GenContext &genContext)
+    {
+        if (!isGenericFunctionReference(functionRefValue))
+        {
+            return functionRefValue;
+        }
+
+        auto receiverType = anyReceiverOfGenericFunction(functionRefValue);
+        if (!receiverType)
+        {
+            return functionRefValue;
+        }
+
+        auto instantiated = instantiateSpecializedFunction(location, functionRefValue, receiverType, genContext);
+        EXIT_IF_FAILED(instantiated)
+
+        // a new value when the instance captures, else the reference retyped in place
+        return instantiated.value ? instantiated.value : functionRefValue;
+    }
+
     mlir::Type MLIRGenImpl::instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
                                                         const GenContext &genContext, bool *capturesFirst)
@@ -642,6 +708,23 @@ namespace mlirgen
         {
             emitError(location) << "can't find information about generic function. " << functionName;
             return mlir::failure();            
+        }
+
+        // A receiver that is an instance's own type (the inferred return type of `function f(n) {
+        // return m => m + n; }`) starts with the captures' parameter; the type parameters are matched
+        // against the declared parameters only (TSLANG 106)
+        // A bound function's first input is its captures; a receiver with more parameters than declared
+        // is otherwise a callback that ignores some, kept as it is.
+        if (auto receiverBoundType = dyn_cast_or_null<mlir_ts::BoundFunctionType>(recieverType);
+            receiverBoundType && functionGenericTypeInfo->functionDeclaration)
+        {
+            auto declaredParams = functionGenericTypeInfo->functionDeclaration->parameters.size();
+            auto receiverInputs = receiverBoundType.getInputs();
+            if (receiverInputs.size() == declaredParams + 1)
+            {
+                recieverType = getFunctionType(receiverInputs.drop_front(), receiverBoundType.getResults(),
+                                               receiverBoundType.isVarArg());
+            }
         }
 
         GenContext funcGenContext(genContext);

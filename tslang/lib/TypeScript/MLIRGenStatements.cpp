@@ -633,6 +633,15 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // `return r => r` with no declared return type: the function returns one function, its
+            // untyped parameters `any` (TSLANG 106)
+            if (!exactReturnType && isGenericFunctionReference(expressionValue))
+            {
+                auto instantiated = instantiateGenericFunctionWithAny(location, expressionValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                expressionValue = V(instantiated);
+            }
+
             // The scope exit below releases every owned local in the frame, and the value being
             // returned is very often held by one of them - `return x` after `let x = new C()`
             // being the whole of it. Once an allocation is born unowned (§9.24) that local's
