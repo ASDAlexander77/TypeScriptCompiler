@@ -1721,6 +1721,8 @@ class MLIRGenImpl
 
     mlir_ts::FunctionType anyReceiverOfGenericFunction(mlir::Value functionRefValue);
 
+    ValueOrLogicalResult classRefAsClassValue(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
     ValueOrLogicalResult instantiateGenericFunctionWithAny(mlir::Location location, mlir::Value functionRefValue,
                                                            const GenContext &genContext);
 
@@ -13859,6 +13861,17 @@ class MLIRGenImpl
                 auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
                 itemValue = V(instantiated);
+            }
+
+            // `{ cls: C }`: the class's value. Not `{ self: this }`: in an instance field's initializer `this`
+            // is a class reference only while the field's type is discovered, and the instance after.
+            auto isThisField = item == SyntaxKind::PropertyAssignment
+                && item.as<PropertyAssignment>()->initializer == SyntaxKind::ThisKeyword;
+            if (itemValue && !receiverElementType && !isThisField && itemValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, itemValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                itemValue = V(classValue);
             }
 
             if (mlir::failed(addObjectFieldInfo(location, oli, fieldId, itemValue, receiverElementType, genContext))) {

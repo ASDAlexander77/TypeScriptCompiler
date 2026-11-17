@@ -538,6 +538,29 @@ namespace mlirgen
         return false;
     }
 
+    // A class named as a value that is stored, returned or put in a field with no declared type (`let k = C`,
+    // `return this` in a static method, `{ cls: C }`): the class's value, `typeof C` - its statics, `new` and
+    // `instanceof` through the vtable of the class it holds, as `let k: typeof C = C` has them. Kept a bare
+    // reference, it typed as an instance of C and had nothing to lower to ("failed to legalize ts.ClassRef").
+    // Other values are returned as they are.
+    ValueOrLogicalResult MLIRGenImpl::classRefAsClassValue(mlir::Location location, mlir::Value value,
+                                                           const GenContext &genContext)
+    {
+        auto classRefOp = value ? value.getDefiningOp<mlir_ts::ClassRefOp>() : mlir_ts::ClassRefOp();
+        if (!classRefOp)
+        {
+            return value;
+        }
+
+        // a @value class has no vtable to be a class value through
+        if (getValueClassInfo(classRefOp.getType()))
+        {
+            return value;
+        }
+
+        return cast(location, mlir_ts::ClassValueType::get(classRefOp.getType()), value, genContext);
+    }
+
     // The function type a generic function value is instantiated against when nothing gives its type
     // parameters: its declared parameters, each generic one `any`, and no result (the instance infers
     // it). The value's own type may start with the captures' parameter, which the receiver leaves out.

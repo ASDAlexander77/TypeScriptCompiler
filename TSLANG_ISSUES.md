@@ -1475,10 +1475,26 @@ supported"): 25 tests, e.g. `internalAliasEnum*.ts`, `es6ModuleInternalImport.ts
 again where `b` is used. As a type it is the referenced value's type, so an enum alias works as one. Test:
 `00import_equals_value.ts`.
 
+108 fixed (third batch, USER DECISION 11-17: a class referenced as a value is resolved as an interface-like
+value whose members are the class's own `new`, statics and `instanceof`; namespaces unchanged). A class named
+as a value with no declared type is now the class's value, `typeof C`. That is the `ClassValueType` that
+`let k: typeof C = C` already had (#742, #889), with statics, `new` and `instanceof` through the vtable of the
+class it holds. This applies when the class is:
+- held by a `let`/`var` (module, local or hoisted);
+- returned (`return C`, `return this` in a static method, `() => C`);
+- put in an object literal field;
+- boxed as `any`/`unknown`/`Object`;
+- compared (`token === C`).
+
+A `const` still names the class itself. Test: `00class_value_inferred.ts` (gc/rc/none, and own JIT).
+
+Still open:
+- `this` in a static method is the class that declares the method, also when the method is called through a
+  subclass (`Derived.me()` returns `Base`). In JavaScript it is `Derived`; static methods are not given the
+  class they were called through. It was already the case before this change.
+- `class X extends k` where `k` is a class value ("its class is known at run time only").
+
 Not fixed in the third batch (design calls):
-- 107/108 (a class or namespace as a run-time value). A `const` works because it stays a compile-time name.
-  `let k = C` would need a run-time value for the class. Lowering `ts.ClassRef` to a placeholder would
-  compile, but every access goes by the static type, so `let k: typeof Base = Derived; k.create()` would call
-  `Base`'s static. Real class values need a class object (a vtable of the statics), not a placeholder.
+- 107 (a namespace as a run-time value): left as it is, by the decision above.
 - `var v = 1; var v = 2;` at module level (still "redefinition of symbol"). With no module code, module
   `var`s are globals with initializer regions, and nothing runs between them where the second could assign.

@@ -867,6 +867,15 @@ namespace mlirgen
             return castToClassValue(location, classValueType, value, genContext);
         }
 
+        // a class boxed as `any` / `unknown` / `Object` (`let a: any = C`, `token === C`): its value, which
+        // compares by the class it names; a bare class reference has nothing to lower to
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::ObjectType>(type) && value.getDefiningOp<mlir_ts::ClassRefOp>()
+            && !getValueClassInfo(valueType))
+        {
+            CAST_A(classValue, location, mlir_ts::ClassValueType::get(valueType), value, genContext);
+            return cast(location, type, classValue, genContext, disableStrictNullCheck);
+        }
+
         // a class value as a condition (`if (k)`): it always names a class, so it is true; with `| null` or
         // `| undefined`, true when it holds one. It was an invalid cast of its four pointers to a boolean,
         // and of a union of them "not supported"

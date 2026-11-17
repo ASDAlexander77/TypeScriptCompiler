@@ -935,6 +935,23 @@ namespace mlirgen
                 return std::make_tuple(instantiatedValue.getType(), instantiatedValue, TypeProvided::No);
             }
 
+            // `let k = C`: the class's value (a `const` keeps the name of the class itself)
+            if (auto initValue = std::get<1>(typeAndInit);
+                initValue && std::get<2>(typeAndInit) == TypeProvided::No
+                && varClass.type != VariableType::Const && varClass.type != VariableType::ConstRef
+                && (item->internalFlags & InternalFlags::ForceConst) != InternalFlags::ForceConst
+                && (item->internalFlags & InternalFlags::ForceConstRef) != InternalFlags::ForceConstRef
+                && initValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, initValue, genContext);
+                if (classValue.failed_or_no_value())
+                {
+                    return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No);
+                }
+
+                return std::make_tuple(V(classValue).getType(), V(classValue), TypeProvided::No);
+            }
+
             if (varClass.isDynamicImport)
             {
                 auto nameStr = varClass.dllName.empty()
@@ -1294,6 +1311,22 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::functionVarTypeOfGenericInit(VariableDeclaration typing, mlir::Type type,
                                                          const GenContext &genContext)
     {
+        // `var k = C`: the class's value; the evaluated type alone is that of an instance
+        if (isa_and_nonnull<mlir_ts::ClassType>(type) && typing->initializer)
+        {
+            mlir::Type classValueType;
+            evaluate(
+                typing->initializer,
+                [&](mlir::Value value) {
+                    if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>(); classRefOp && !getValueClassInfo(classRefOp.getType()))
+                    {
+                        classValueType = mlir_ts::ClassValueType::get(classRefOp.getType());
+                    }
+                },
+                genContext);
+            return classValueType ? classValueType : type;
+        }
+
         auto funcType = dyn_cast_or_null<mlir_ts::FunctionType>(type);
         if (!funcType || !mth.isGenericType(funcType) || !typing->initializer)
         {

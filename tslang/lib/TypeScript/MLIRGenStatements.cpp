@@ -67,6 +67,25 @@ namespace mlirgen
                 // §9.27's classification checks for exactly this retain, so without it every
                 // arrow function would be excluded.
                 //
+                // as at the return statement below: with no declared return type, a generic function
+                // is one function (its untyped parameters `any`) and a class is its value
+                if (!getExplicitReturnTypeOfCurrentFunction(genContext))
+                {
+                    if (isGenericFunctionReference(resultValue))
+                    {
+                        auto instantiated = instantiateGenericFunctionWithAny(loc(body), resultValue, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                        resultValue = V(instantiated);
+                    }
+
+                    if (resultValue.getDefiningOp<mlir_ts::ClassRefOp>())
+                    {
+                        auto classValue = classRefAsClassValue(loc(body), resultValue, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                        resultValue = V(classValue);
+                    }
+                }
+
                 // Cast first, for the reason spelled out at the return statement below.
                 EXIT_IF_FAILED(castToDeclaredReturnType(loc(body), resultValue, genContext))
 
@@ -640,6 +659,15 @@ namespace mlirgen
                 auto instantiated = instantiateGenericFunctionWithAny(location, expressionValue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
                 expressionValue = V(instantiated);
+            }
+
+            // `return C`, `return this` in a static method: the class's value. With a declared return type
+            // (`(): typeof C`) the cast to it below makes the same.
+            if (!exactReturnType && expressionValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, expressionValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                expressionValue = V(classValue);
             }
 
             // The scope exit below releases every owned local in the frame, and the value being
