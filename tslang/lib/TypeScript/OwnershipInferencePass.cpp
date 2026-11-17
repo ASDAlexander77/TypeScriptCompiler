@@ -55,6 +55,13 @@ namespace own_inference
                     return;
                 }
 
+                // (`--di`'s record of a `const` that holds the view)
+                if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+                {
+                    view.uses.push_back(user);
+                    continue;
+                }
+
                 if (mlir::isa<mlir_ts::RetainOp>(user) && !view.retain)
                 {
                     view.retain = user;
@@ -136,8 +143,9 @@ namespace own_inference
             auto viewsOnly = llvm::all_of(views, [&](View &view) { return view.view->getBlock() == block; });
             forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
                 auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-                // (the store that fills the block)
-                if (storeOp && storeOp.getReference() == root)
+                // (the store that fills the block, and `--di`'s record of the local for the debugger,
+                // which names it and keeps nothing)
+                if ((storeOp && storeOp.getReference() == root) || mlir::isa<mlir_ts::DebugVariableOp>(user))
                 {
                     return;
                 }
