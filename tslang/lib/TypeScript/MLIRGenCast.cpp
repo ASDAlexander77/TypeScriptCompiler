@@ -3823,19 +3823,6 @@ namespace mlirgen
             SmallVector<mlir_ts::FieldInfo> fields;
             if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
             {
-                // the reason was not reported: "failed statement" was all that was said (`const m: IMap = {}`)
-                if (!interfaceInfo->indexes.empty())
-                {
-                    emitError(location) << "an object can't be given to the interface '" << interfaceInfo->fullName
-                                        << "', which has an index signature: its keys are known only at run time; "
-                                        << "use a Map";
-                }
-                else
-                {
-                    emitError(location) << "an object of type '" << to_print(tupleTypeIn)
-                                        << "' can't be given to the interface '" << interfaceInfo->fullName << "'";
-                }
-
                 return mlir::failure();
             }
 
