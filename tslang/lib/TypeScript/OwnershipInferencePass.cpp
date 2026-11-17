@@ -22,8 +22,182 @@ namespace own_inference
         return getOperation();
     }
 
+    // `testIFace(o); testIFace(o)` of an object literal `o`: each argument is a view of the literal's
+    // block made for its call (`ts.NewInterface`), retained before the call and released at the end
+    // of the scope. Under rc each pair gives back what it took. Under own the first retain takes the
+    // block and the last release frees it: the pairs in between take nothing and give nothing back,
+    // as long as every view is used before that release, and only by calls that do not keep it.
+    static void joinViewRetainPairs(mlir::FunctionOpInterface f)
+    {
+        struct View
+        {
+            mlir::Operation *view;
+            mlir::Operation *retain;
+            mlir::Operation *release;
+            llvm::SmallVector<mlir::Operation *> uses;
+        };
+
+        llvm::MapVector<mlir::Value, llvm::SmallVector<View>> groups;
+        f->walk([&](mlir_ts::NewInterfaceOp viewOp) {
+            auto root = rootOf(viewOp.getResult());
+            auto newOp = root.getDefiningOp<mlir_ts::NewOp>();
+            if (!newOp || !mlir::isa<mlir_ts::ValueRefType>(newOp.getType()))
+            {
+                return;
+            }
+
+            View view{viewOp, nullptr, nullptr, {}};
+            for (auto &use : viewOp->getUses())
+            {
+                auto *user = use.getOwner();
+                if (user->getBlock() != viewOp->getBlock())
+                {
+                    return;
+                }
+
+                // (`--di`'s record of a `const` that holds the view)
+                if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+                {
+                    view.uses.push_back(user);
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::RetainOp>(user) && !view.retain)
+                {
+                    view.retain = user;
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::ReleaseOp>(user) && !view.release)
+                {
+                    view.release = user;
+                    continue;
+                }
+
+                // an argument of a call that does not keep it
+                if (isCall(user) && !llvm::is_contained(ownedParams(user), static_cast<int32_t>(
+                                                                                 use.getOperandNumber() - callArgs(user).getBeginOperandIndex())))
+                {
+                    view.uses.push_back(user);
+                    continue;
+                }
+
+                // ...or its object and its methods, read for a call (`o.toString()` through the view): the
+                // object, the method, the method bound to the object, each only on its way to a call
+                std::function<bool(mlir::Operation *, mlir::Value, int)> forCall = [&](mlir::Operation *op, mlir::Value from, int depth) {
+                    if (depth > 6 || op->getBlock() != viewOp->getBlock())
+                    {
+                        return false;
+                    }
+
+                    view.uses.push_back(op);
+                    if (isCall(op))
+                    {
+                        // (not kept by it)
+                        auto args = callArgs(op);
+                        return llvm::none_of(ownedParams(op), [&](int32_t index) {
+                            return static_cast<size_t>(index) < args.size() && args[index] == from;
+                        });
+                    }
+
+                    // ...or a field read out of it that owns nothing (`o.r` of a number)
+                    if (mlir::isa<mlir_ts::LoadOp>(op) && op->getNumResults() == 1 && !ownsHeap(op->getResult(0)))
+                    {
+                        return true;
+                    }
+
+                    if (!mlir::isa<mlir_ts::ExtractInterfaceThisOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::LoadOp,
+                                   mlir_ts::CreateBoundFunctionOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp>(op) ||
+                        op->getNumResults() != 1)
+                    {
+                        return false;
+                    }
+
+                    return llvm::all_of(op->getUsers(), [&](mlir::Operation *next) { return forCall(next, op->getResult(0), depth + 1); });
+                };
+
+                if (mlir::isa<mlir_ts::ExtractInterfaceThisOp, mlir_ts::InterfaceSymbolRefOp>(user) &&
+                    forCall(user, viewOp.getResult(), 0))
+                {
+                    continue;
+                }
+
+                return;
+            }
+
+            if (view.retain && view.release && view.retain->isBeforeInBlock(view.release))
+            {
+                groups[root].push_back(view);
+            }
+        });
+
+        for (auto &[root, views] : groups)
+        {
+            if (views.size() < 2)
+            {
+                continue;
+            }
+
+            // every view in one block, and nothing else made of the block but these views
+            auto *block = views.front().view->getBlock();
+            auto viewsOnly = llvm::all_of(views, [&](View &view) { return view.view->getBlock() == block; });
+            forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                // (the store that fills the block, and `--di`'s record of the local for the debugger,
+                // which names it and keeps nothing)
+                if ((storeOp && storeOp.getReference() == root) || mlir::isa<mlir_ts::DebugVariableOp>(user))
+                {
+                    return;
+                }
+
+                viewsOnly = viewsOnly && llvm::any_of(views, [&](View &view) {
+                                return view.retain == user || view.release == user || llvm::is_contained(view.uses, user);
+                            });
+            });
+
+            if (!viewsOnly)
+            {
+                continue;
+            }
+
+            auto *first = views.front().retain;
+            auto *last = views.front().release;
+            for (auto &view : views)
+            {
+                first = view.retain->isBeforeInBlock(first) ? view.retain : first;
+                last = last->isBeforeInBlock(view.release) ? view.release : last;
+            }
+
+            // every use before the one release left
+            auto before = llvm::all_of(views, [&](View &view) {
+                return llvm::all_of(view.uses, [&](mlir::Operation *use) { return use->isBeforeInBlock(last); });
+            });
+            if (!before)
+            {
+                continue;
+            }
+
+            for (auto &view : views)
+            {
+                if (view.retain != first)
+                {
+                    view.retain->erase();
+                }
+
+                if (view.release != last)
+                {
+                    view.release->erase();
+                }
+            }
+        }
+    }
+
     void OwnershipInferencePass::runOnFunction()
     {
+        // what the real run may do that the dry run did not: only where the dry run failed, so a
+        // function today's analysis accepts is decided as it was
+        localLetCandidates.clear();
+
         // the dry run (spec 22.3): does today's analysis pass as it is?
         {
             llvm::SetVector<mlir::Operation *> toErase;
@@ -39,6 +213,12 @@ namespace own_inference
             {
                 makeStringCopies(toErase);
                 splitBorrowingLets();
+                // (after the copies, which read the dry run's erased retains)
+                joinViewRetainPairs(getFunction());
+            }
+            else
+            {
+                localLetCandidates.clear();
             }
 
             splitLetCandidates.clear();
@@ -324,6 +504,8 @@ namespace own_inference
         classifyLocalBorrowingArrays();
         classifyArrayViews();
         classifyBorrowingBoxes();
+        // ...and whether a `let` given reads of owning locals borrows each of them
+        classifyLocalBorrowingLets();
         // a kept parameter the body may not move on every path is released at its exits (spec 33)
         releaseKeptParamsAtExits();
         auto exitReleasesGone = llvm::make_scope_exit([&]() {
@@ -457,6 +639,7 @@ namespace own_inference
         fieldBorrowReleases.clear();
         mergeBorrowRetains.clear();
         mergedSlotRetains.clear();
+        localBorrowingLets.clear();
         captureStores.clear();
         captureRetains.clear();
         callCopies.clear();
@@ -902,9 +1085,11 @@ namespace own_inference
                 continue;
             }
 
-            // a `let` declared from a merge of owning locals (TSLANG 58): it borrows each of them
+            // a `let` declared from a merge of owning locals (TSLANG 58): it borrows each of them;
+            // and one that only borrows, assigned a merge (`qq = r && q`)
+            mlir::Operation *from = nullptr;
             if (auto argument = value ? mlir::dyn_cast<mlir::BlockArgument>(rootOf(value)) : mlir::BlockArgument();
-                argument && mlir::isa<mlir_ts::RetainSlotOp>(op) && borrowerOf(op))
+                argument && ((mlir::isa<mlir_ts::RetainSlotOp>(op) && borrowerOf(op)) || localBorrowerOf(op, from)))
             {
                 llvm::SmallVector<mlir_ts::LoadOp> loads;
                 if (slotLoadsOfMerge(argument, loads) && !loads.empty())

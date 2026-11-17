@@ -84,6 +84,11 @@ function main() {
 5 1
 ```
 
+A `let` that is only given other locals' values, or fields', and is assigned again (`let cur = a;
+... cur = b;`) borrows each value until its next assignment: none of them moves into it. Walking a
+list from a local head is that case (`let node = head; while (node) { ...; node = node.next; }`).
+Giving the head up, or cutting the list, while the walk still reads it is an error.
+
 Inside a module the compiler also infers each function's facts from its body: a function that
 stores a parameter keeps it, so its callers have to move the argument in; a function that
 returns a field of its argument returns a borrow, so its callers may only borrow the result.

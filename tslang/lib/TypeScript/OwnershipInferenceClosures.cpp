@@ -2355,6 +2355,14 @@ namespace own_inference
     void OwnershipInferencePass::decideSlotReceiver(mlir::Value slot, const SlotReceiver &receiver, llvm::StringRef owner,
                             llvm::SetVector<mlir::Operation *> &toErase, bool sole)
     {
+        // given to a `let` that only borrows (`let b = q; ... b = r`): never a move
+        mlir::Operation *from = nullptr;
+        if (auto borrower = localBorrowerOf(receiver.retain, from))
+        {
+            borrowWith(borrower, receiver.retain, slotEnds(slot), owner, toErase, from);
+            return;
+        }
+
         if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, sole); }))
         {
             // rc's retain goes with the move; a call that keeps the argument is the move itself

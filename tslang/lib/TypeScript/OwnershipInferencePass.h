@@ -324,6 +324,24 @@ class OwnershipInferencePass
     // The `let` (borrowsOnly) that `user` assigns `value` to - the store itself, or rc's retain right
     // before it - or null.
     mlir_ts::VariableOp borrowingAssignmentOf(mlir::Operation *user, mlir::Value value);
+    // `let b = q; ... b = r;` of owning locals: a `let` given reads of other owning locals (and of
+    // places and parameters), assigned at least once, and whose reads nothing keeps. Each value it is
+    // given is a borrow of its owner until the next assignment, never a move (borrowsOnly).
+    llvm::SmallPtrSet<mlir::Operation *, 4> localBorrowingLets;
+    void classifyLocalBorrowingLets();
+    // The `let`s the dry run refused for being assigned or for keeping what they borrow: the only
+    // ones classifyLocalBorrowingLets may make borrowers of, in the real run. A `let` today's
+    // analysis accepts keeps its moves.
+    llvm::SmallPtrSet<mlir::Operation *, 4> localLetCandidates;
+    void noteLocalLetCandidate(mlir::Operation *op, llvm::StringRef name);
+    // The owning, uncaptured local whose slot `value` reads, other than a parameter's, or null.
+    mlir_ts::VariableOp owningLocalReadOf(mlir::Value value);
+    // Does `value` read owning locals other than `self` - one, or a merge of several (and of null)?
+    bool readsOwningLocals(mlir::Value value, mlir_ts::VariableOp self);
+    // The `let` of localBorrowingLets that an acquisition gives `value` to - its declaration's
+    // `ts.RetainSlot`, or rc's retain right before an assignment - and in `from`, that declaration or
+    // assignment; else null.
+    mlir_ts::VariableOp localBorrowerOf(mlir::Operation *acquisition, mlir::Operation *&from);
 
     // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
     // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
@@ -515,7 +533,7 @@ class OwnershipInferencePass
     // consuming `let` takes over is that `let`'s, and goes with the borrow; a `ts.RetainSlot` is the
     // `let`'s own bookkeeping already.
     bool borrowWith(mlir_ts::VariableOp borrower, mlir::Operation *acquisition, llvm::ArrayRef<mlir::Operation *> ends,
-                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase);
+                    llvm::StringRef owner, llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from = nullptr);
 
     // The owning `let` declared from `value` that takes over its reference, or none.
     static mlir_ts::VariableOp consumingLetOf(mlir::Value value);
@@ -529,9 +547,10 @@ class OwnershipInferencePass
     // the borrower can run after any of `ends` - the owner's releases and assignments - and while
     // nothing it holds is kept: not stored, returned, retained or assigned. A path back to a use
     // through the borrower's own declaration is a new borrow, not this one. Reports and returns
-    // false otherwise.
+    // false otherwise. With `from` (a declaration or an assignment of a `let` that only borrows), only
+    // the reads it reaches before another assignment are this borrow's.
     bool tryBorrow(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> ends, llvm::StringRef owner,
-                   llvm::SetVector<mlir::Operation *> &toErase);
+                   llvm::SetVector<mlir::Operation *> &toErase, mlir::Operation *from = nullptr);
 
     // A use of a borrowed value, and where the value it sees is made again: a path from a release
     // to the use through one of `kills` reaches a new value, not this one. For the borrow's own
@@ -1050,6 +1069,10 @@ class OwnershipInferencePass
     // returned (`return {value: new C(), done: false}`, a `yield`'s result). rc's retain of it is
     // its reference for the values moved in, which own moves instead (recordRetainOf).
     bool holdsConstantsOrMoves(mlir::Value value);
+    // The reads of record literals a merge chooses between (`c ? { h: new H(1) } : { h: new H(2) }`,
+    // through views and nested merges; null and undefined hold nothing). False when any value merged is
+    // something else, or there is none.
+    static bool mergedRecordReads(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &reads, unsigned depth = 0);
     // The reads of owning `let`s an owning record's fields are given (`return { s, n }`): each moves
     // out of its local at the record's retain.
     llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
