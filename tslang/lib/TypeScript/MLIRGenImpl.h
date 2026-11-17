@@ -7568,11 +7568,19 @@ class MLIRGenImpl
         };
 
         // a @weak field (own spec 93): the WeakRef of the value goes into the slot, and the read of the
-        // left side, which would stop on a freed object, is not made
+        // left side, which would stop on a freed object, is not made. The assignment's value is the
+        // value assigned, as the field's declared type
+        mlir::Value assignedValue;
         if (auto viewOp = weakFieldView(leftExpressionValueBeforeCast))
         {
             auto loaded = viewOp.getValue();
-            savingValue = weakFieldWrite(location, viewOp, savingValue, genContext);
+            assignedValue = cast(location, viewOp.getType(), savingValue, genContext);
+            if (!assignedValue)
+            {
+                return mlir::failure();
+            }
+
+            savingValue = weakFieldWrite(location, viewOp, assignedValue, genContext);
             dropWeakFieldView(viewOp);
             if (!savingValue)
             {
@@ -7870,7 +7878,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        return savingValue;
+        return assignedValue ? assignedValue : savingValue;
     }
 
     ValueOrLogicalResult mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -7925,9 +7933,11 @@ class MLIRGenImpl
         // after `s.kind === "sq"`, `s = { kind: "ci", r: 1 }` is an `Sq | Ci`, and typed as the narrowed
         // `Sq` it became a `{ kind: "sq", r }` that was never stored
         auto receiverType = leftExpressionValue.getType();
-        // - but a field a subclass declared again takes one of the type it declared (DECLARED_FIELD_VIEW_ATTR_NAME)
+        // - but a field a subclass declared again takes one of the type it declared (DECLARED_FIELD_VIEW_ATTR_NAME),
+        // and a @weak field one of its declared type, not its WeakRef slot's (own spec 93)
         if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
-            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME) &&
+            !safeCastOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
         {
             receiverType = safeCastOp.getValue().getType();
         }

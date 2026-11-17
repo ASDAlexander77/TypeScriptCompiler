@@ -1,4 +1,4 @@
-// own spec 93: `??`, `??=`, `||=` and `&&=` on a @weak field: reads of it (checked), writes of it (counted),
+// own spec 93: `??`, `??=`, `||=`, `&&=` and `=` on a @weak field: reads of it (checked), writes of it (counted),
 // and the value of the expression is the field's declared type, as under gc and none
 class Node {
     @weak parent: Node | null = null;
@@ -26,5 +26,9 @@ function main() {
 
     const f = (c.parent &&= root);
     if (f === null || f.v != 1 || c.parent !== root) throw "&&=";
+
+    // a plain assignment's value is the value assigned, as the field's declared type
+    const g = (c.parent = other);
+    if (g === null || g.v != 5 || c.parent !== other) throw "=";
     print("done.");
 }
