@@ -11751,6 +11751,12 @@ class MLIRGenImpl
 
         arrayInfo.adjustArrayType(getAnyType());
 
+        // the rest parameter is a `T[]` the callee may change, never the static `const_array` an
+        // array literal of constants is: with every argument a constant of the element's own type
+        // (`f(a, a)` of a folded `const a = 2.0 * scale`), it was one, and the call cast it to the
+        // element type and passed a one-element array of garbage
+        arrayInfo.isConst = false;
+
         auto varArgOperandValue = createArrayFromArrayInfo(location, values, arrayInfo, genContext);
         operandsProcessingInfo.addOperand(varArgOperandValue);
 
