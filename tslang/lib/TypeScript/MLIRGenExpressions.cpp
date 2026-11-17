@@ -935,8 +935,40 @@ namespace mlirgen
                     return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member);
                 });
             };
-            if (genContext.receiverType && unionHoldsTuple(resultType) && !unionHoldsTuple(genContext.receiverType)
-                && !isa<mlir_ts::AnyType, mlir_ts::UnknownType>(genContext.receiverType))
+            // Only a receiver that is an interface, with null or undefined: the receiver type reaches
+            // nested expressions too (`(c ? undefined : { n: 1 })?.n` given to a `number`), where the
+            // `?:` is not what is received
+            auto interfaceReceiver = [&](mlir::Type type) {
+                if (!type)
+                {
+                    return false;
+                }
+
+                type = mth.stripOptionalType(type);
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+                {
+                    mlir::Type member;
+                    for (auto subType : unionType.getTypes())
+                    {
+                        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(subType))
+                        {
+                            continue;
+                        }
+
+                        if (member)
+                        {
+                            return false;
+                        }
+
+                        member = subType;
+                    }
+
+                    type = member;
+                }
+
+                return type && isa<mlir_ts::InterfaceType>(type);
+            };
+            if (interfaceReceiver(genContext.receiverType) && unionHoldsTuple(resultType))
             {
                 resultType = genContext.receiverType;
             }
