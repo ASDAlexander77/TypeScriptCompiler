@@ -1977,6 +1977,30 @@ foreach(issues_mm gc rc none own)
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
 endforeach()
+# TSLANG_ISSUES 86-122, from TypeScript's own compiler tests: a namespace's code statements, object literal
+# functions with untyped parameters, for...in into a declared variable, new Object(), binding defaults, statics
+# read by instance fields, function expression callbacks, arithmetic on any, `this` at the module level,
+# parameter defaults reading earlier parameters, number members of integers, untyped rest patterns; and a
+# source file saved as UTF-16
+foreach(issues_mm gc rc none own)
+    foreach(issues_test 00tslang_issues_86_122 00utf16_source)
+        tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+        tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+    endforeach()
+endforeach()
+# ...and what stays refused there, with an error that says why instead of a crash, a hang or a lowering failure
+add_test(NAME test-compile-for-in-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/for_in_any_error.ts")
+set_tests_properties(test-compile-for-in-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'for\\.\\.\\.in' over a value of type 'any' is not supported"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-enum-variable-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_variable_error.ts")
+set_tests_properties(test-compile-enum-variable-error PROPERTIES PASS_REGULAR_EXPRESSION "variable 'daysValue' can't hold the enum 'Days' itself"
+                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-any-plus-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/any_plus_any_error.ts")
+set_tests_properties(test-compile-any-plus-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'\\+' of two values of type 'any' is not supported"
+                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # A singly linked list: walked by a local that steps down it, pushed on, appended to, cut, popped and unlinked;
 # a node popped off a list that an append-only global keeps too; a node made with the old head, a tree grown
 # by recursion on a field, walks that assign their parameter

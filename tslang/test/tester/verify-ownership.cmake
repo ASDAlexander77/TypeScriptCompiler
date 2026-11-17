@@ -67,6 +67,11 @@ set(not_compilable_alone
     final_interface_export_error.ts
     final_interface_extends_error.ts
     final_interface_object_error.ts
+    # errors by design (test-compile-for-in-any-error, test-compile-enum-variable-error,
+    # test-compile-any-plus-any-error)
+    for_in_any_error.ts
+    enum_variable_error.ts
+    any_plus_any_error.ts
     # an error by design (test-compile-mixin-runtime-base-error)
     mixin_runtime_base_error.ts
     # an error by design (test-compile-ref-element-layout-error)

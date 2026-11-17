@@ -829,6 +829,10 @@ parameters, recursive type aliases, `null` into `string`, `@noCheck` tests and J
 were run as written with `tslang --emit=jit` on the release build. The others are the tsc test file
 itself, which failed in the sweep.
 
+The first batch of fixes (86-91, 98, 99, 103, 109, 111, 113, 116, 117, 122) took the tsc-clean tests that
+compile from 1,575 to 1,633, and the crashes and hangs over all 7,107 tests from 361 to 287, with no test that
+compiled before failing after. Each fixed item says what is still open in it.
+
 ### Crashes (137 tests) and hangs (3)
 
 86 (a `var` in a namespace, used by a statement in that namespace, crashes the compiler): 8+ tests.
@@ -843,6 +847,11 @@ function main() { print("done."); }
 Also crashes: `namespace M { export interface I { salt: number; } export function f(i: I) {} f({ salt: 2 }); }`
 and `namespace M { var x = function bar(a: number) { return a; }; print(x(1)); }`.
 
+Fixed: a namespace at the module level holds back its code statements and runs them from a global
+constructor of its own, as an imported module's top level runs (`generateModuleInitCode`); its declarations
+stay where they were. All 8 tests compile. A nested namespace's code runs before its parent's code, not where
+the nested namespace stands in it.
+
 87 (an arrow with an untyped parameter in an object literal crashes in `getNameOfFunction`, from
 `registerGenericFunctionLike`): 5 tests. Tests: `commentsBeforeFunctionExpression1.ts`,
 `commentsAfterFunctionExpression1.ts`, `contextualComputedNonBindablePropertyType.ts`,
@@ -855,6 +864,12 @@ var v = {
 };
 function main() { print(v.f(1)); }
 ```
+
+Fixed: a function that is a field of an object literal (`{ f: (a) => 0 }`, `{ f(a) {} }`, `{ f: function (a) {} }`)
+takes an untyped parameter as `any`, with the warning a global variable's function gets. It was made generic,
+which a field can't hold: it crashed, or failed with "can't find type by name: TGenParam_a". A parameter the
+receiver types (`const o: I = { f: (a) => a + 1 }`) still takes the receiver's type. The 5 tests no longer
+crash; 4 stop at other items (106, 119, 120, and a field read of an `any`).
 
 88 (`for (a in expr)` with `expr: any`): 3 crashes in `mlirGen` from `processStatements`, plus 7
 tests that fail with "Can't resolve property 'length' of type any". In an async function it crashes
@@ -870,6 +885,11 @@ for (a in expr) {
 function main() { print("done."); }
 ```
 
+Fixed: `for (k in obj)` assigns a variable declared before the loop (it read the initializer as a
+declaration list and crashed). `for...in` over an `any` or `unknown` is an error that says so: "'for...in'
+over a value of type 'any' is not supported: its keys are not known; give it an object, a tuple or an array
+type", in place of "Can't resolve property 'length' of type any". Regression test `for_in_any_error.ts`.
+
 89 (`<Foo> new Object()`, with `Foo` an empty interface, crashes in
 `mlirGenObjectVirtualTableDefinitionForInterface` from `castObjectToInterface`): `castNewObjectBug.ts`.
 Run, crashes:
@@ -880,6 +900,10 @@ var xx = <Foo> new Object();
 function main() { print("done."); }
 ```
 
+Fixed: `new Object()` with no arguments is `{}`; `Object` names the type `object`, which has no constructor
+of its own (`ts.New` of it failed verification). An object with no known fields cast to an interface reads as an
+empty tuple, so an interface with no members takes it, and any other is told what it misses.
+
 90 (a module-level object binding pattern with a default crashes): 8 tests, all
 `sourceMapValidationDestructuring*DefaultValues.ts` and `*ObjectBindingPattern3/4.ts`, and
 `noImplicitAnyDestructuringVarDeclaration2.ts`, `parameterInitializerBeforeDestructuringEmit.ts`. Run,
@@ -889,6 +913,11 @@ crashes:
 var { x = 500 } = { x: 20 };
 function main() { print(x); }
 ```
+
+Fixed: a default applies to a field that may be missing (an optional one); one the value always has keeps its
+value, as in TypeScript, where the default is then never used (`var { x = 500 } = { x: 20 }` cast the field to an
+optional type it isn't, and crashed). `sourceMapValidationDestructuringForOfObjectBindingPattern.ts` still
+crashes: a `for...of` over an array of objects with a nested pattern, not looked at yet.
 
 91 (a destructuring assignment whose value is another assignment crashes in `mlirGenSaveLogicOneItem`):
 3 tests. Tests: `destructuringTempOccursAfterPrologue.ts`,
@@ -901,6 +930,9 @@ function test(p: any) {
 }
 function main() { print("done."); }
 ```
+
+Fixed (the crash): a field the value hasn't got is an error, where its missing value was saved. The three
+tests now fail with "Can't resolve property 'prop' of type any": reading a field of an `any` is not supported.
 
 92 (tagged templates): a tagged template in a function crashes (`taggedTemplatesInDifferentScopes.ts`,
 `taggedTemplateNestedInvalidEscape.ts`). A tag typed `(strs: string[], ...)` given `any[]` fails with
@@ -1001,6 +1033,11 @@ A JSDoc comment whose line is 100+ spaces fail-fasts in `Parser::extractPragmas`
 (`commentWithUnreasonableIndentationLevel01.ts`). UTF-16 should be converted. Invalid UTF-8 should
 be a diagnostic, not an abort.
 
+Fixed: a source file is read as UTF-16 when it starts with a UTF-16 byte order mark (FF FE or FE FF), and
+otherwise as UTF-8, where a byte that is not valid UTF-8 becomes U+FFFD. A comment with no `@` is not run
+through the pragma regular expressions, whose `\s*` recursed once per character over a long run of spaces until
+the stack overflowed. All 4 tests compile. Regression test `00utf16_source.ts`, a UTF-16 file.
+
 99 (a class member with a string-literal or numeric name): `static "foo" = 0` is "redefinition of
 symbol named 'C.foo'", and `staticMemberWithStringAndNumberNames.ts` (`static 0 = 1`, `C['0']`, `C[0]`)
 crashes. Run:
@@ -1012,6 +1049,12 @@ class C {
 }
 function main() { print(new C().x); }
 ```
+
+Fixed: the cause was not the string-literal name. An instance field reading a static of its own class
+(`x = C.foo`, `x = C["foo"]`) made the class be processed again, and the static's global was made a second time.
+The global made the first time is now the one it has. A numeric static name (`static 0 = 1`) is the string of
+its digits, as a property key is (it crashed); `C["0"]` reads it, but `C[0]` still looks for an indexer
+("Class member '.index' can't be found").
 
 100 (`import M = Z.M` inside a namespace also named `M`, and merged namespaces): crashes in the debug
 build, "Failed to emit LLVM IR" in release. Tests: `moduleSharesNameWithImportDeclarationInsideIt.ts`,
@@ -1043,6 +1086,13 @@ own initializer), `stringMappingSpecialCasing.ts`, `templateLiteralInferenceSupp
 103 (the compiler doesn't finish in 60 s): `declFileEnumUsedAsValue.ts`, `declFileTypeofEnum.ts`,
 `declarationEmitClassMemberNameConflict2.ts`. All three store an enum itself as a value: `enum e { a, b, c }
 var x = e;`, or a field `Hello = Hello`.
+
+Fixed (the hang): the lowering's clean-up of conversion casts replaced a value's uses with itself when two
+casts took each other's result, which asserts in a debug build and never finished in a release build. An enum
+named as a value is its members at compile time, with nothing a variable could hold at run time: `const x = E`
+stands for it, as before, and a `var` or `let` is now an error, "variable 'x' can't hold the enum 'e' itself:
+use 'const', or its members". `declarationEmitClassMemberNameConflict2.ts` (a field `Hello = Hello`) fails with
+"operand #0 does not dominate this use" instead of hanging. Regression test `enum_variable_error.ts`.
 
 ### Internal IR and codegen errors (about 140 tests)
 
@@ -1114,6 +1164,12 @@ class Board {
 function main() { print(new Board().allPositive()); }
 ```
 
+Fixed for function expressions: one whose untyped parameters take their types from where it goes (a
+callback, `this.ships.every(function (val) { ... })`) is generic, as an arrow function is, and is now passed as
+such, so it is instantiated for its receiver. `2dArrays.ts` and `argumentsAsPropertyName.ts` compile. Still open:
+a module-level arrow calling one declared after it (`defineVariables_useDefineForClassFields.ts`) and `super()`
+to a base constructor (`checkSuperCallBeforeThisAccessing6.ts`).
+
 110 (`new` on a plain function: "'ts.New' op result #0 must be  or , but got '!ts.func<...>'"): 5 tests,
 plus `classFunctionMerging.ts` and `classFunctionMerging2.ts` (a class merged with a function). Tests:
 `avoid.ts`, `contextualReturnTypeOfIIFE.ts`, `anyAsReturnTypeForNewOnCall.ts`. If constructor functions
@@ -1133,6 +1189,13 @@ Run:
 var x;
 function main() { x = 1; x++; print(x); }
 ```
+
+Fixed: an `any` in arithmetic, a bitwise operator or an ordering comparison is the number it holds, or,
+beside a string in `+`, the string. `++` and `--` on an `any` add or subtract one from the number it holds and
+store the result back boxed; the value is a number, the old one for a postfix operator. `+` of two `any`s may
+add or join, which is known only at run time, so it is an error that asks for a cast: "'+' of two values of type
+'any' is not supported: cast one of them to 'number' or 'string'" (2 of the tests). Regression test
+`any_plus_any_error.ts`.
 
 112 (narrowing that leaves an `unrealized_conversion_cast`: "LLVM Translation failed for operation:
 builtin.unrealized_conversion_cast"): 4 tests, `--emit=obj` and `--emit=exe`. Tests:
@@ -1155,6 +1218,11 @@ function label(options: { label: string; alias: string } | { label: object; alia
 var f = () => this;             // error: can't resolve name: this
 function main() { print("done."); }
 ```
+
+Fixed: `this` where nothing gives it one (the module's top level, an arrow there, a plain function) is
+`undefined`, as in an ES module and in strict mode. Inside a class it is left as it was: a static field's arrow
+(`static i = async () => this.h`, `asyncArrowStaticFieldThis.ts`, `classNameReferencesInStaticElements.ts`)
+still fails, since `this` there is the class.
 
 114 (`arguments`: "can't resolve name: arguments"): 18 tests, e.g. `argsInScope.ts`,
 `argumentsObjectIterator01_ES6.ts`, `argumentsObjectIterator03_ES6.ts`, `modularizeLibrary_UsingES5LibAndES6ArrayLib.ts`.
@@ -1180,6 +1248,10 @@ function strange(x: number, y = x * 2) { return y; }   // error: can't resolve n
 function main() { print(strange(2)); }
 ```
 
+Fixed: each parameter is known by name while the parameters after it are read, so a default can read the
+ones before it (it is evaluated for its type before the function exists). `inferParameterWithMethodCallInitializer.ts`
+still fails, on a return type `typeof a`.
+
 117 (`toString` on a number literal, which is an `s32`: "Can't resolve property 'toString' of type s32"):
 9 tests, e.g. `toStringOnPrimitives.ts`, `destructuringInVariableDeclarations1/2/5/6.ts`
 (`export let { toString } = 1;`). Run:
@@ -1187,6 +1259,10 @@ function main() { print(strange(2)); }
 ```typescript
 function main() { print(1..toString()); }   // error: Can't resolve property 'toString' of type s32
 ```
+
+Fixed: an integer value with no member of the name has the members of `number` (the value converted), so
+`1..toString()`, `i.toFixed(1)` and `(255).toString(16)` work. Still open: a method taken as a value from a
+number, `export let { toString } = 1;` ("failed to legalize operation 'ts.CreateExtensionFunction'").
 
 118 (redeclarations JavaScript allows: "redefinition of symbol named ..."): 47 tests. `var v = 1; var v = 2;`
 (`duplicateVariableDeclaration1.ts`, `redeclarationOfVarWithGenericType.ts`), and a class declared again
@@ -1233,6 +1309,10 @@ default initializer"): 9 tests, `restParameterWithBindingPattern1.ts` (`function
 `restParameterWithBindingPattern2.ts` (`function a(...[a, b]) { }`), `commentsAfterSpread.ts`,
 `asyncFunctionTempVariableScoping.ts`. An untyped rest parameter is `any[]`, so its pattern can take
 `any` (with `...[x, y]: number[]` it works).
+
+Fixed for array patterns: an untyped rest parameter is an `any[]`, and `...[a, b]` reads that
+(`restParameterWithBindingPattern2.ts`). An untyped object pattern (`...{ a, b }`, or a plain parameter
+`({ foo, bar })`) would read fields of an `any`, which is not supported, and still fails.
 
 123 (calling a value of type `any`: "not a function to call"): part of 47 tests, e.g.
 `castFunctionExpressionShouldBeParenthesized.ts` (`(function a() { } as any)().foo()`), `anonterface.ts`,
