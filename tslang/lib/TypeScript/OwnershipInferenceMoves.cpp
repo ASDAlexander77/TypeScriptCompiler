@@ -201,7 +201,7 @@ namespace own_inference
         return !movesIn || recordRetainOf(varOp) != nullptr;
     }
 
-    llvm::SmallVector<mlir_ts::LoadOp> OwnershipInferencePass::recordSlotLoads(mlir::Value value)
+    llvm::SmallVector<mlir_ts::LoadOp> OwnershipInferencePass::recordSlotLoads(mlir::Value value, bool keptParams)
     {
         // not a borrowing record (spec 32, 36): it borrows the `let` instead, and its release leaves
         // that field to the `let`
@@ -229,7 +229,8 @@ namespace own_inference
                     continue;
                 }
 
-                if (auto load = slotLoadOf(storeOp.getValue()); load && !isFresh(rootOf(storeOp.getValue())))
+                auto load = keptParams ? keptParamRead(storeOp.getValue()) : slotLoadOf(storeOp.getValue());
+                if (load && !isFresh(rootOf(storeOp.getValue())))
                 {
                     loads.push_back(load);
                 }
@@ -391,6 +392,23 @@ namespace own_inference
                 return;
             }
 
+            // ...or the merge copied into its box (`return c ? { h: new H(1) } : { h: new H(2) }` of an
+            // interface): the box filled once, by that store (spec 95)
+            if (storeOp && storeOp.getValue() == used && merges.contains(rootOf(used)))
+            {
+                auto newOp = storeOp.getReference().getDefiningOp<mlir_ts::NewOp>();
+                auto fills = newOp ? llvm::count_if(newOp->getUsers(), [&](mlir::Operation *boxUser) {
+                    auto fill = mlir::dyn_cast<mlir_ts::StoreOp>(boxUser);
+                    return fill && fill.getReference() == newOp.getResult();
+                }) : 0;
+                if (newOp && mlir::isa<mlir_ts::ValueRefType>(newOp.getType()) && fills == 1)
+                {
+                    bad = boxed;
+                    boxed = true;
+                    return;
+                }
+            }
+
             other = true;
             if (mlir::isa<mlir_ts::ReturnInternalOp>(user))
             {
@@ -450,7 +468,7 @@ namespace own_inference
 
         // a boxed record goes nowhere else: the box is its one owner; and a merge given to a box
         // (`const o: I = c ? { h: new H(1) } : ...` of an interface) is left to the box's own rules
-        if (boxed && (other || !merges.empty()))
+        if (boxed && other)
         {
             return nullptr;
         }

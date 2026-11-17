@@ -2021,6 +2021,64 @@ class MLIRGenImpl
         //   a new instance made for it (#485).
         // A value taken out of another record (`{ ...o }`) stays with that record's count, and a
         // literal string is immortal.
+        // A merge of such literals (`const o: One = c ? { h: new H(1) } : { h: new H(2) }`): folded, the
+        // merge held none of the arms' fields, and each arm's new instance was released at the end of
+        // its arm (own spec 95). Null or undefined may come in too; at least one literal must.
+        static bool mergesLiteralSlots(MLIRTypeHelper &mth, mlir::Location location, mlir::Value value, unsigned depth = 0)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            auto result = value ? dyn_cast<mlir::OpResult>(value) : mlir::OpResult();
+            auto ifOp = result ? dyn_cast<mlir_ts::IfOp>(result.getOwner()) : mlir_ts::IfOp();
+            if (!ifOp || depth > 8)
+            {
+                return false;
+            }
+
+            auto literals = false;
+            for (auto *region : {&ifOp.getThenRegion(), &ifOp.getElseRegion()})
+            {
+                auto resultOp = region->empty() ? mlir_ts::ResultOp() : dyn_cast<mlir_ts::ResultOp>(region->back().getTerminator());
+                if (!resultOp || resultOp->getNumOperands() <= result.getResultNumber())
+                {
+                    return false;
+                }
+
+                auto incoming = resultOp->getOperand(result.getResultNumber());
+
+                auto constant = incoming;
+                while (auto castOp = constant.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    constant = castOp.getIn();
+                }
+
+                if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+                    constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+                {
+                    continue;
+                }
+
+                auto record = incoming;
+                if (auto valueCast = record.getDefiningOp<mlir_ts::CastOp>(); valueCast && isa<mlir_ts::ValueType>(valueCast.getType()))
+                {
+                    record = valueCast.getIn();
+                }
+
+                if (readsLiteralSlot(mth, location, record) || mergesLiteralSlots(mth, location, incoming, depth + 1))
+                {
+                    literals = true;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return literals;
+        }
+
         static bool readsLiteralSlot(MLIRTypeHelper &mth, mlir::Location location, mlir::Value value)
         {
             auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
@@ -2197,8 +2255,8 @@ class MLIRGenImpl
                              || readsField(viewedValue(initial)) || readsElement(viewedValue(initial))
                              || readsGlobal(viewedValue(initial)))
                          && mth.ownsHeapMemory(location, type))
-                     || (readsLiteralSlot(mth, location, initialRecord) && isa<mlir_ts::TupleType>(recordType)
-                         && mth.ownsHeapMemory(location, type))
+                     || ((readsLiteralSlot(mth, location, initialRecord) || mergesLiteralSlots(mth, location, initial))
+                         && isa<mlir_ts::TupleType>(recordType) && mth.ownsHeapMemory(location, type))
                      || (initialRecord && initialRecord.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(recordType)
                          && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)

@@ -1075,7 +1075,7 @@ class OwnershipInferencePass
     static bool mergedRecordReads(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &reads, unsigned depth = 0);
     // The reads of owning `let`s an owning record's fields are given (`return { s, n }`): each moves
     // out of its local at the record's retain.
-    llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
+    llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value, bool keptParams = false);
     // The store of `value` into a field of the record whose retain `retain` is: the move's taker.
     static mlir::Operation *recordStoreOf(mlir::Operation *retain, mlir::Value value);
     // A move of `value` into `taker` that goes through a method of it taken as a value (`h.f = v.get`,
