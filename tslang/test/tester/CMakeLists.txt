@@ -1992,6 +1992,14 @@ add_test(NAME test-compile-computed-name-failed-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
 set_tests_properties(test-compile-computed-name-failed-error PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'x'"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# a subclass whose field fails, then a read of a field it inherits: that error, not a crash
+foreach(failed_field_mm gc own)
+    add_test(NAME test-compile-subclass-field-failed-error-${failed_field_mm}
+             COMMAND test-runner -mm=${failed_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/subclass_field_failed_error.ts")
+    set_tests_properties(test-compile-subclass-field-failed-error-${failed_field_mm} PROPERTIES
+                         PASS_REGULAR_EXPRESSION "not supported 'Computed Property Name' expression"
+                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 # TSLANG_ISSUES 31, 33: a const Shared<T> in several closures; a callback's result stored in a field
 foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issues-31-33-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_31_33.ts")
