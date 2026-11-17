@@ -6345,3 +6345,21 @@ and the clause's release now followed it. Every JIT'd object starts with a funct
 (`addJitImageStart`).
 
 Tests: `own_caught_value_owned` (every model).
+
+## 97. An array literal given straight to a call is given back, 2026-11-17
+
+`len([i, 1, 2])` under own made the array and never gave it back: about 400 bytes a call. The optimizer
+deleted the allocation where the array went nowhere but the call, which hid the leak; at `-O0`, or where a
+callee returned a record that borrows the array (`mh([...])` returning `{ a }`), 1M calls kept about a
+gigabyte. Under rc OwnedReturnConsumptionPass holds such an array across the call and releases it after
+(`arrayMadeFor`); under own nothing claimed it. It is now marked owned, as `new C()` is, so
+releaseDiscardedTemporaries gives it back at the end of the block when nothing takes it, inference moves
+it into a callee that keeps it, and a record the callee returns borrowing it keeps it alive as for any new
+value.
+
+Only an array of elements that own nothing. An array of strings or objects given to a call is already
+given back (its elements are what MLIRGen marks), and a rest parameter's array of them borrows them
+(spec 83): owned, it would take them over (`logParts(text); this.message = text` became "used after
+moved").
+
+Tests: `own_array_argument_released` (every model).

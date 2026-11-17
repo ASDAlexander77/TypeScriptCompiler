@@ -681,8 +681,12 @@ class OwnedReturnConsumptionPass
                 // optimizer hid it where the array went nowhere else, and a callee returning a record that
                 // borrows it - `mh([...])` returning `{ a }` - leaked it at any level). It is a new value
                 // as `new C()` is: marked owned, it is released at the end of the block when nothing takes
-                // it (releaseDiscardedTemporaries), and moved into a callee that keeps it.
-                if (compileOptions.memoryModel == MemoryModelOwn && arrayMadeFor(argument, op))
+                // it (releaseDiscardedTemporaries), and moved into a callee that keeps it. Only an array of
+                // elements that own nothing: one of strings or objects - a rest parameter's
+                // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over.
+                auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(argument.getType());
+                if (compileOptions.memoryModel == MemoryModelOwn && arrayType &&
+                    !mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) && arrayMadeFor(argument, op))
                 {
                     if (auto *definingOp = argument.getDefiningOp())
                     {
