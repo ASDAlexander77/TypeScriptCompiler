@@ -370,6 +370,14 @@ class MLIRPrinter
     template <typename T>
     void printType(T &out, mlir::Type type)
     {
+        // a type that could not be made (`() => Generator<T>` with no Generator type): printed in the diagnostic
+        // that reports it, where it crashed
+        if (!type)
+        {
+            out << "<unresolved>";
+            return;
+        }
+
         llvm::TypeSwitch<mlir::Type>(type)
             .template Case<mlir_ts::ArrayType>([&](auto t) {
                 printType(out, t.getElementType());

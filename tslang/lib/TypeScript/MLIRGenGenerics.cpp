@@ -1132,6 +1132,40 @@ namespace mlirgen
             anyNamedGenericType = hasNamedGenericType;
         }
 
+        // A type parameter nothing gives a type (`compare((): number => 0)` for `compare<T>(f?: () => T, x?: T)`,
+        // `[].map(...)`): as TypeScript's inference does, its constraint, else what nothing is known of - `any`
+        // here, as an erased instantiation takes (instantiateErasedGenericFunction). It failed with "not all
+        // types could be inferred".
+        if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
+        {
+            for (auto &typeParam : typeParams)
+            {
+                if (genericTypeGenContext.typeParamsWithArgs.count(typeParam->getName()))
+                {
+                    continue;
+                }
+
+                mlir::Type uninferredType;
+                if (typeParam->hasConstraint())
+                {
+                    auto savedErrorMessagesCount = genericTypeGenContext.postponedMessages ? genericTypeGenContext.postponedMessages->size() : 0;
+                    uninferredType = getType(typeParam->getConstraint(), genericTypeGenContext);
+                    if (genericTypeGenContext.postponedMessages)
+                    {
+                        rollbackPostponedErrorMessages(genericTypeGenContext.postponedMessages, savedErrorMessagesCount);
+                    }
+
+                    if (uninferredType && mth.isGenericType(uninferredType))
+                    {
+                        uninferredType = mlir::Type();
+                    }
+                }
+
+                genericTypeGenContext.typeParamsWithArgs[typeParam->getName()] =
+                    std::make_pair(typeParam, uninferredType ? uninferredType : mlir::Type(getAnyType()));
+            }
+        }
+
         // TODO: check if all typeParams are there
         if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
         {
