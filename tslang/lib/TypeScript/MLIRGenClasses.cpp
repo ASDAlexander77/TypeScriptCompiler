@@ -2650,11 +2650,12 @@ namespace mlirgen
             {
                 for (auto user : closure[index]->getUsers())
                 {
-                    // the optional of `p?: C` (weakFieldValue): an if whose branches give the value
+                    // the optional of `p?: C` (weakFieldValue): an if whose branches give the value; under --di a
+                    // narrowing's debug record of the read (ts.DebugVariable) goes with it
                     auto isReadIf = mlir::isa<mlir_ts::IfOp>(user) && user->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME);
                     if (!isReadIf && !mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::GetValueFromUnionOp,
                                                 mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::HasValueOp,
-                                                mlir_ts::ValueOp, mlir_ts::ResultOp>(user))
+                                                mlir_ts::ValueOp, mlir_ts::ResultOp, mlir_ts::DebugVariableOp>(user))
                     {
                         removable = false;
                         break;
