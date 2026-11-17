@@ -2281,7 +2281,10 @@ class OwnedReturnConsumptionPass
         auto *block = op->getBlock();
         for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
         {
-            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp>(*it))
+            // (and a `throw`: what follows it in the block never runs, so a temporary of the thrown
+            // expression - `throw "x" + i`'s number printed into a string - was never given back)
+            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp,
+                          mlir_ts::ThrowOp>(*it))
             {
                 return &*it;
             }

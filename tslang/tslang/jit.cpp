@@ -13,6 +13,7 @@
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ConvertUTF.h"
@@ -850,6 +851,27 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
 // pointer, and the result converted to the exit code. A `Ref<string>` second parameter is C's
 // `char **`; a `string[]` one is not supported (it is an array header, not C's
 // `char **`). LowerToAffineLoops has already refused any other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
+// The image's first byte is code (JitSectionMemoryManager, 4), and the first function of a JIT'd
+// object is laid out there, at RVA 0. RVA 0 is the MSVC C++ EH encoding's "none" in a code field too:
+// a CatchableType's copy function. A catch of a thrown number into `any` goes through such a function
+// (the box thunk), and where it was the object's first, the runtime read "no copy function" and
+// copied the number's bytes into the catch variable as if they were a box - which the clause's
+// release of its caught value then followed. A function that nothing names takes that byte instead.
+void addJitImageStart(llvm::Module &llvmModule)
+{
+#ifdef _WIN64
+    auto &context = llvmModule.getContext();
+    auto *imageStart = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(context), false),
+                                              llvm::Function::InternalLinkage, "__tslang_jit_image_start", llvmModule);
+    imageStart->addFnAttr(llvm::Attribute::NoUnwind);
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(context, "entry", imageStart));
+    builder.CreateRetVoid();
+    imageStart->removeFromParent();
+    llvmModule.getFunctionList().push_front(imageStart);
+    llvm::appendToCompilerUsed(llvmModule, {imageStart});
+#endif
+}
+
 llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
 {
     auto *entry = llvmModule.getFunction(entryName);
@@ -1667,6 +1689,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         llvm::consumeError(std::move(err));
         return -1;
     }
+
+    addJitImageStart(*llvmModule);
 
     auto jit = createJit(std::move(*tmBuilderOrError), needsGCEnableThreadsStandIn);
     if (!jit)
