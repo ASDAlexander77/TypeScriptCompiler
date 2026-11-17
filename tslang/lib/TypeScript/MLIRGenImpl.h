@@ -12548,6 +12548,28 @@ class MLIRGenImpl
                                              mlir::Value rightExpressionValue, const GenContext &genContext,
                                              bool saveResult = false);
 
+    // `a + b + c + ...` (left-nested, unparenthesized): its operands from the leftmost, with the
+    // `+` expression that adds each one after the first
+    static void collectPlusChain(BinaryExpression root, SmallVector<Expression> &operands,
+                                 SmallVector<BinaryExpression> &plusNodes)
+    {
+        Expression node = root;
+        while (node == SyntaxKind::BinaryExpression
+               && (SyntaxKind)node.as<BinaryExpression>()->operatorToken == SyntaxKind::PlusToken)
+        {
+            auto binExpr = node.as<BinaryExpression>();
+            operands.push_back(binExpr->right);
+            plusNodes.push_back(binExpr);
+            node = binExpr->left;
+        }
+
+        operands.push_back(node);
+        std::reverse(operands.begin(), operands.end());
+        std::reverse(plusNodes.begin(), plusNodes.end());
+    }
+
+    ValueOrLogicalResult mlirGenPlusChain(BinaryExpression root, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext);
