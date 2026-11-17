@@ -583,6 +583,17 @@ namespace mlirgen
             }
         }
 
+        // an integer (`1..toString()`: an integer literal is an s32) has the members a number has: the default
+        // library declares them on `number`
+        if (!value && isa<mlir::IntegerType>(objectValue.getType()))
+        {
+            auto numberValue = cast(location, getNumberType(), objectValue, genContext);
+            if (!numberValue.failed_or_no_value())
+            {
+                return mlirGenPropertyAccessExpression(location, V(numberValue), name, false, genContext);
+            }
+        }
+
         // Without the default library, an array's map/filter/forEach/every/some are builtins, and
         // what map and filter give is a generator. An iterator has them too, as the default
         // library's __Iterator gives them (`a.map(f).map(g)`, `g().filter(f)`): each builtin is a
