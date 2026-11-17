@@ -1879,6 +1879,12 @@ foreach(tuple_array_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# Class values and instances with `| null` / `| undefined`: stored with their null, made, tested as
+# conditions, and a method of `A | B | null` called on the object's class
+foreach(class_value_null_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-class-value-union-null-${class_value_null_mm} COMMAND test-runner -jit -mm=${class_value_null_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-class-value-union-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
 # A method of every class a union may hold is called on the class of the object (it called the
 # first member's for any of them)
 foreach(union_method_mm gc rc none own)

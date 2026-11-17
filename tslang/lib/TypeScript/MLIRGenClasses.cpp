@@ -5841,8 +5841,16 @@ genContext);
         SmallVector<mlir::Type> members;
         SmallVector<ClassInfo::TypePtr> memberClassInfos;
         SmallVector<mlir::Type> instanceTypes;
+        auto nullable = false;
         for (auto member : unionType.getTypes())
         {
+            // `| null`, `| undefined`: checked below, before anything is made
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+            {
+                nullable = true;
+                continue;
+            }
+
             auto classType = mlir::cast<mlir_ts::ClassType>(mlir::cast<mlir_ts::ClassValueType>(member).getClassType());
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             if (!classInfo)
@@ -5900,6 +5908,12 @@ genContext);
             }
         }
 
+        // `| null`, `| undefined`: after the arguments, as JavaScript asks whether it has a constructor
+        if (nullable && mlir::failed(mlirGenClassValuePresent(location, classValues, genContext)))
+        {
+            return mlir::failure();
+        }
+
         // members laid out as one (a union merged into a single class value) have no tag to tell them apart
         mlir::Type baseType;
         if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
@@ -5944,6 +5958,12 @@ genContext);
         mlir_ts::FunctionType firstFuncType;
         for (auto member : unionType.getTypes())
         {
+            // `A | B | null`: a call of a member of null is null's own fault, as it is of `A | null`
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+            {
+                continue;
+            }
+
             auto classType = dyn_cast<mlir_ts::ClassType>(member);
             if (!classType)
             {
