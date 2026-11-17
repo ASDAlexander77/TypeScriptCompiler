@@ -67,6 +67,25 @@ namespace mlirgen
                 // §9.27's classification checks for exactly this retain, so without it every
                 // arrow function would be excluded.
                 //
+                // as at the return statement below: with no declared return type, a generic function
+                // is one function (its untyped parameters `any`) and a class is its value
+                if (!getExplicitReturnTypeOfCurrentFunction(genContext))
+                {
+                    if (isGenericFunctionReference(resultValue))
+                    {
+                        auto instantiated = instantiateGenericFunctionWithAny(loc(body), resultValue, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                        resultValue = V(instantiated);
+                    }
+
+                    if (resultValue.getDefiningOp<mlir_ts::ClassRefOp>())
+                    {
+                        auto classValue = classRefAsClassValue(loc(body), resultValue, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                        resultValue = V(classValue);
+                    }
+                }
+
                 // Cast first, for the reason spelled out at the return statement below.
                 EXIT_IF_FAILED(castToDeclaredReturnType(loc(body), resultValue, genContext))
 
@@ -633,6 +652,24 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // `return r => r` with no declared return type: the function returns one function, its
+            // untyped parameters `any` (TSLANG 106)
+            if (!exactReturnType && isGenericFunctionReference(expressionValue))
+            {
+                auto instantiated = instantiateGenericFunctionWithAny(location, expressionValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                expressionValue = V(instantiated);
+            }
+
+            // `return C`, `return this` in a static method: the class's value. With a declared return type
+            // (`(): typeof C`) the cast to it below makes the same.
+            if (!exactReturnType && expressionValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, expressionValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                expressionValue = V(classValue);
+            }
+
             // The scope exit below releases every owned local in the frame, and the value being
             // returned is very often held by one of them - `return x` after `let x = new C()`
             // being the whole of it. Once an allocation is born unowned (§9.24) that local's
@@ -936,6 +973,99 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // Whether a `for (let i ...)` body needs an `i` of its own each iteration: a function made in it (an arrow, a
+    // function expression, a class) may capture one, and nothing in it assigns one (so the loop's variable
+    // still has the value the body's started with when the iteration ends).
+    static bool loopBodyNeedsPerIterationBindings(Node body, const llvm::StringSet<> &names)
+    {
+        auto hasClosure = false;
+        auto assigned = false;
+        auto isLoopName = [&](Node node) {
+            while (node == SyntaxKind::ParenthesizedExpression)
+            {
+                node = node.as<ParenthesizedExpression>()->expression;
+            }
+
+            return node == SyntaxKind::Identifier && names.contains(MLIRHelper::getName(node.as<Identifier>()));
+        };
+
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+        visitNode = [&](Node node) -> Node {
+            if (!node || assigned)
+            {
+                return undefined;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::ArrowFunction:
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::ClassExpression:
+            case SyntaxKind::ClassDeclaration:
+                hasClosure = true;
+                break;
+            case SyntaxKind::BinaryExpression:
+            {
+                auto binary = node.as<BinaryExpression>();
+                auto op = (SyntaxKind)binary->operatorToken;
+                if (op >= SyntaxKind::FirstAssignment && op <= SyntaxKind::LastAssignment && isLoopName(binary->left))
+                {
+                    assigned = true;
+                    return undefined;
+                }
+
+                break;
+            }
+            case SyntaxKind::PrefixUnaryExpression:
+            {
+                auto unary = node.as<PrefixUnaryExpression>();
+                if ((unary->_operator == SyntaxKind::PlusPlusToken || unary->_operator == SyntaxKind::MinusMinusToken)
+                    && isLoopName(unary->operand))
+                {
+                    assigned = true;
+                    return undefined;
+                }
+
+                break;
+            }
+            case SyntaxKind::PostfixUnaryExpression:
+            {
+                auto unary = node.as<PostfixUnaryExpression>();
+                if ((unary->_operator == SyntaxKind::PlusPlusToken || unary->_operator == SyntaxKind::MinusMinusToken)
+                    && isLoopName(unary->operand))
+                {
+                    assigned = true;
+                    return undefined;
+                }
+
+                break;
+            }
+            default:
+                break;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        visitNode(body);
+        return hasClosure && !assigned;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(ForStatement forStatementAST, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -1030,6 +1160,52 @@ namespace mlirgen
             if (narrowBody)
             {
                 checkSafeCast(forStatementAST->condition, testedValue, nullptr, loopGenContext);
+            }
+
+            // `for (let i = 0; ...; i++) { fs.push(() => i); }`: each iteration has an `i` of its own (a new binding
+            // per iteration, ECMAScript CreatePerIterationEnvironment), so each closure keeps the `i` of the
+            // iteration it was made in. The body's `i` is a variable of its own, made from the loop's at its
+            // start. Only a value-type variable (a number, a boolean...), and only when the body makes a closure
+            // and nothing in it (its closures neither) assigns one, so the loop's needs no value back: every
+            // closure saw the one `i`, which the loop had moved past (3 3 3, not 0 1 2).
+            if (forStatementAST->initializer == SyntaxKind::VariableDeclarationList)
+            {
+                auto declarationList = forStatementAST->initializer.as<VariableDeclarationList>();
+                auto isLet = (declarationList->flags & NodeFlags::Let) == NodeFlags::Let;
+                llvm::StringSet<> names;
+                if (isLet)
+                {
+                    for (auto declaration : declarationList->declarations)
+                    {
+                        if (declaration->name == SyntaxKind::Identifier)
+                        {
+                            names.insert(MLIRHelper::getName(declaration->name));
+                        }
+                    }
+                }
+
+                if (!names.empty() && loopBodyNeedsPerIterationBindings(forStatementAST->statement, names))
+                {
+                    for (auto &entry : names)
+                    {
+                        auto name = StringRef(entry.getKey()).copy(stringAllocator);
+                        auto outer = symbolTable.lookup(name);
+                        auto outerRefType = outer.first ? dyn_cast<mlir_ts::RefType>(outer.first.getType()) : mlir_ts::RefType();
+                        if (!outerRefType || !outer.second || !mth.isValueType(outerRefType.getElementType()))
+                        {
+                            continue;
+                        }
+
+                        auto elementType = outerRefType.getElementType();
+                        auto current = builder.create<mlir_ts::LoadOp>(location, elementType, outer.first);
+                        auto varDecl = std::make_shared<VariableDeclarationDOM>(name, elementType, location);
+                        varDecl->setReadWriteAccess();
+                        auto inner = builder.create<mlir_ts::VariableOp>(
+                            location, mlir_ts::RefType::get(elementType), current, builder.getBoolAttr(false),
+                            builder.getIndexAttr(0));
+                        declare(location, varDecl, inner, loopGenContext);
+                    }
+                }
             }
 
             auto bodyResult = mlirGenBranchStatement(forStatementAST->statement, loopGenContext);

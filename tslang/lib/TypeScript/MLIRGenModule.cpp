@@ -1162,17 +1162,37 @@ namespace mlirgen
     }
 
     bool MLIRGenImpl::hasGlobalCode(NodeArray<Statement> statements) {
-        auto anyCode = false;
+        // `var v = 1; var v = 2;`: the second is an assignment to the first, which has to run somewhere - the
+        // module's code (see mlirGen(VariableDeclarationList))
+        llvm::StringSet<> varNames;
         for (auto &statement : statements)
         {
             if (isCodeStatment(statement))
             {
-                anyCode = true;
-                break;
+                return true;
+            }
+
+            if (statement == SyntaxKind::VariableStatement)
+            {
+                auto declarationList = statement.as<VariableStatement>()->declarationList;
+                auto isVar = (declarationList->flags & (NodeFlags::Let | NodeFlags::Const | NodeFlags::Using | NodeFlags::Ambient)) == NodeFlags::None;
+                for (auto declaration : declarationList->declarations)
+                {
+                    if (!isVar || declaration->name != SyntaxKind::Identifier)
+                    {
+                        continue;
+                    }
+
+                    auto name = MLIRHelper::getName(declaration->name);
+                    if (!varNames.insert(name).second && declaration->initializer)
+                    {
+                        return true;
+                    }
+                }
             }
         }
 
-        return anyCode;        
+        return false;
     }
 
     // Whether anything at the root runs when the program starts - code, or a variable whose

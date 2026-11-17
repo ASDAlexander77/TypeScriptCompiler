@@ -1722,6 +1722,13 @@ class MLIRGenImpl
 
     bool isGenericFunctionReference(mlir::Value functionRefValue);
 
+    mlir_ts::FunctionType anyReceiverOfGenericFunction(mlir::Value functionRefValue);
+
+    ValueOrLogicalResult classRefAsClassValue(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
+    ValueOrLogicalResult instantiateGenericFunctionWithAny(mlir::Location location, mlir::Value functionRefValue,
+                                                           const GenContext &genContext);
+
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
                                                         const GenContext &genContext, bool *capturesFirst = nullptr);
@@ -1892,6 +1899,13 @@ class MLIRGenImpl
             isFullName = isFullName_;
             
             if (isFullName_ || !genContext.funcOp)
+            {
+                scope = VariableScope::Global;
+            }
+
+            // a `declare var` names a global defined elsewhere, also where module code runs in a function
+            // of its own (`declare var c: C; new Foo();`: functions read @c, which was never declared)
+            if (varClass_ == VariableType::External)
             {
                 scope = VariableScope::Global;
             }
@@ -2905,6 +2919,23 @@ class MLIRGenImpl
     {
         // generate only for real pass
         mlir_ts::GlobalOp globalOp;
+
+        // `declare var x` again (TypeScript allows it): the global declared the first time
+        if (variableDeclarationInfo.isExternal && !genContext.dummyRun)
+        {
+            if (auto existing = theModule.lookupSymbol<mlir_ts::GlobalOp>(variableDeclarationInfo.fullName))
+            {
+                if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext))
+                    || mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                variableDeclarationInfo.globalOp = existing;
+                return mlir::success();
+            }
+        }
+
         // get constant
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -3036,7 +3067,16 @@ class MLIRGenImpl
                     if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
                     {
                         return mlir::failure();
-                    }                      
+                    }
+
+                    // as for a local: a global of a type with an unresolved type parameter has no storage
+                    // (`declare const wat: Wat<number>` of `typeof Class<T> & typeof fn<T>` aborted in lowering)
+                    if (mth.isGenericType(variableDeclarationInfo.type))
+                    {
+                        emitError(location) << "variable '" << variableDeclarationInfo.variableName
+                                            << "' is referencing generic type.";
+                        return mlir::failure();
+                    }
 
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                 }
@@ -3176,6 +3216,7 @@ class MLIRGenImpl
                                            const GenContext &genContext);
 
     mlir::LogicalResult declareFunctionVars(Node body, const GenContext &genContext);
+    mlir::Type functionVarTypeOfGenericInit(VariableDeclaration typing, mlir::Type type, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
 
@@ -3789,7 +3830,53 @@ class MLIRGenImpl
             GenContext paramsGenContext(genContext);
             paramsGenContext.funcProto = funcProto;
 
+            // the parameters are names in a return type that queries them (`(a: number): typeof a`, `{ a: typeof
+            // a }`). Only there: the type references made for them stay in the module as they are made here.
+            auto queriesNames = false;
+            {
+                ts::FuncT<> visitNode;
+                ts::ArrayFuncT<> visitArray;
+                visitNode = [&](Node node) -> Node {
+                    if (!node || queriesNames)
+                    {
+                        return undefined;
+                    }
+
+                    if (node == SyntaxKind::TypeQuery)
+                    {
+                        queriesNames = true;
+                        return undefined;
+                    }
+
+                    ts::forEachChild(node, visitNode, visitArray);
+                    return undefined;
+                };
+                visitArray = [&](NodeArray<Node> array) -> Node {
+                    for (auto node : array)
+                    {
+                        visitNode(node);
+                    }
+
+                    return undefined;
+                };
+                visitNode(typeParameter);
+            }
+
+            SymbolTableScopeT paramsScope(symbolTable);
+            for (const auto &param : params)
+            {
+                if (!queriesNames || param->getName().empty() || param->getName() == THIS_NAME || !param->getType())
+                {
+                    continue;
+                }
+
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(param->getName(), param->getType(), param->getLoc());
+                auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(param->getLoc(), param->getType());
+                declare(param->getLoc(), varDecl, typeRefVal, paramsGenContext);
+            }
+
             auto returnType = getType(typeParameter, paramsGenContext);
+
             if (!returnType)
             {
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
@@ -11710,6 +11797,12 @@ class MLIRGenImpl
 
         arrayInfo.adjustArrayType(getAnyType());
 
+        // the rest parameter is a `T[]` the callee may change, never the static `const_array` an
+        // array literal of constants is: with every argument a constant of the element's own type
+        // (`f(a, a)` of a folded `const a = 2.0 * scale`), it was one, and the call cast it to the
+        // element type and passed a one-element array of garbage
+        arrayInfo.isConst = false;
+
         auto varArgOperandValue = createArrayFromArrayInfo(location, values, arrayInfo, genContext);
         operandsProcessingInfo.addOperand(varArgOperandValue);
 
@@ -12547,6 +12640,28 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
                                              mlir::Value rightExpressionValue, const GenContext &genContext,
                                              bool saveResult = false);
+
+    // `a + b + c + ...` (left-nested, unparenthesized): its operands from the leftmost, with the
+    // `+` expression that adds each one after the first
+    static void collectPlusChain(BinaryExpression root, SmallVector<Expression> &operands,
+                                 SmallVector<BinaryExpression> &plusNodes)
+    {
+        Expression node = root;
+        while (node == SyntaxKind::BinaryExpression
+               && (SyntaxKind)node.as<BinaryExpression>()->operatorToken == SyntaxKind::PlusToken)
+        {
+            auto binExpr = node.as<BinaryExpression>();
+            operands.push_back(binExpr->right);
+            plusNodes.push_back(binExpr);
+            node = binExpr->left;
+        }
+
+        operands.push_back(node);
+        std::reverse(operands.begin(), operands.end());
+        std::reverse(plusNodes.begin(), plusNodes.end());
+    }
+
+    ValueOrLogicalResult mlirGenPlusChain(BinaryExpression root, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext);
 
@@ -14175,6 +14290,26 @@ class MLIRGenImpl
 
             assert(genContext.allowPartialResolve || itemValue);
 
+            // a field holds one function: a generic one nothing gives types to is instantiated with `any`
+            // (`{ g: (a => 0) }`, `{ genericFunction }`) (TSLANG 106)
+            if (itemValue && !receiverElementType && isGenericFunctionReference(itemValue))
+            {
+                auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                itemValue = V(instantiated);
+            }
+
+            // `{ cls: C }`: the class's value. Not `{ self: this }`: in an instance field's initializer `this`
+            // is a class reference only while the field's type is discovered, and the instance after.
+            auto isThisField = item == SyntaxKind::PropertyAssignment
+                && item.as<PropertyAssignment>()->initializer == SyntaxKind::ThisKeyword;
+            if (itemValue && !receiverElementType && !isThisField && itemValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, itemValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                itemValue = V(classValue);
+            }
+
             if (mlir::failed(addObjectFieldInfo(location, oli, fieldId, itemValue, receiverElementType, genContext))) {
                 return ValueOrLogicalResult(mlir::failure());
             }
@@ -14767,8 +14902,14 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            // e.g. `import X = SomeEnum` or `import X = someFunction` - only
-            // namespace/class/interface targets are supported for import-equals.
+            // `import X = a.SomeEnum`, `import f = a.someFunction`, `import v = a.someVariable`: X names
+            // that reference, generated again where X is used (as a value, or as a type: the value's type)
+            if (value)
+            {
+                currentNamespace->importEqualsValueMap[name] = importEqualsDeclarationAST->moduleReference;
+                return mlir::success();
+            }
+
             emitError(loc(importEqualsDeclarationAST), "this import-equals target is not supported");
             return mlir::failure();
         }
@@ -19063,6 +19204,10 @@ class MLIRGenImpl
     // no local of any other function (resolveIdentifierAsVariable).
     bool isolateGeneratedBodies = false;
     SmallVector<mlir_ts::FuncOp> lexicalFuncOps;
+
+    // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
+    // of the same name is the same variable)
+    llvm::StringMap<int> moduleVarFirstDeclaration;
 
     // The yields standing where nothing is computed before them, marked by the statement around
     // them (the AST has no parent links to look up): yield node -> its value is used. See

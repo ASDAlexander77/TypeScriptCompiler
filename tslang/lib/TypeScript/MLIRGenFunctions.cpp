@@ -375,6 +375,14 @@ namespace mlirgen
                 return {mlir::failure(), isGenericTypes, params};
             }
 
+            // `function assertNever(x: never)`: only a value narrowed to nothing reaches it, and its body
+            // reports what that value was. Written as `never`, it takes whatever it is given, as `any`.
+            // A `never` tslang computed (an intersection it can't express) stays an error.
+            if (isa<mlir_ts::NeverType>(type) && typeParameter && typeParameter == SyntaxKind::NeverKeyword)
+            {
+                type = getAnyType();
+            }
+
             if (isa<mlir_ts::NeverType>(type))
             {
                 emitError(location, "'Never' can't be used as parameter type");
@@ -407,8 +415,12 @@ namespace mlirgen
 
                 // a later parameter's default may read this one (`function f(x: number, y = x * 2)`): its type is
                 // evaluated here, so the name has to be known by then
+                // ...and so may its type (`function f(a: number, b: typeof a)`)
                 auto laterHasInitializer = std::any_of(formalParams.begin() + index + 1, formalParams.end(),
-                                                       [](auto later) { return !!later->initializer; });
+                                                       [](auto later) {
+                                                           return !!later->initializer
+                                                               || (later->type && later->type == SyntaxKind::TypeQuery);
+                                                       });
                 if (laterHasInitializer)
                 {
                     auto varDecl = std::make_shared<VariableDeclarationDOM>(namePtr, type, loc(arg));
@@ -780,7 +792,15 @@ namespace mlirgen
             }
         }
 
-        if (!funcProto->getIsGeneric())
+        // An arrow or a function expression met by the module's discovery pass (a dummy run of the top-level
+        // statements outside any function) is not registered: a local of the module's code it reads
+        // (`{ let x = 1; let a = () => x; }`) is not one there, so what it captures is not known yet. Registered,
+        // it was not discovered again where it is generated, captured nothing, and read `x` across its isolated
+        // region ("'ts.Load' op using value defined outside the region", TSLANG 105).
+        auto isModuleDiscoveryExpression = genContext.dummyRun && !genContext.funcOp
+            && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
+        if (!funcProto->getIsGeneric() && !isModuleDiscoveryExpression)
         {
             auto funcTypeIt = getFunctionTypeMap().find(fullName);
             if (funcTypeIt != getFunctionTypeMap().end())

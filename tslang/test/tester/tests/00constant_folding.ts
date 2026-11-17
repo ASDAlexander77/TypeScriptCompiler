@@ -26,6 +26,22 @@ function makeName(): string {
     return "na" + "me";
 }
 
+function restText(...values: number[]): string {
+    let text = "" + values.length + ":";
+    for (const v of values) {
+        text = text + " " + v;
+    }
+    return text;
+}
+
+function restStrings(...values: string[]): string {
+    let text = "";
+    for (const v of values) {
+        text = text + v + ";";
+    }
+    return text;
+}
+
 function main() {
     // strings and strings
     assert("a" + "b" == "ab", "string + string");
@@ -97,6 +113,17 @@ function main() {
         built = built + i;
     }
     assert(built == "ab012", "grown from a folded string");
+
+    // folded constants as rest arguments: every argument a constant of the element's type made a
+    // static array literal, which the call passed as one element of garbage
+    const scale = 1.5;
+    const three = 2.0 * scale;
+    assert(restText(three, three) == "2: 3 3", "the same folded number twice");
+    assert(restText(three, 0.5 * scale) == "2: 3 0.75", "two folded numbers");
+    assert(restText(three) == "1: 3", "one folded number");
+    assert(restText(three, 2.0 * scale) == "2: 3 3", "the same value folded twice");
+    const ab = "a" + "b";
+    assert(restStrings(ab, ab, "c" + "d") == "ab;ab;cd;", "folded strings");
 
     print("done.");
 }

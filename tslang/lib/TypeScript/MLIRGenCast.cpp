@@ -867,6 +867,15 @@ namespace mlirgen
             return castToClassValue(location, classValueType, value, genContext);
         }
 
+        // a class boxed as `any` / `unknown` / `Object` (`let a: any = C`, `token === C`): its value, which
+        // compares by the class it names; a bare class reference has nothing to lower to
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::ObjectType>(type) && value.getDefiningOp<mlir_ts::ClassRefOp>()
+            && !getValueClassInfo(valueType))
+        {
+            CAST_A(classValue, location, mlir_ts::ClassValueType::get(valueType), value, genContext);
+            return cast(location, type, classValue, genContext, disableStrictNullCheck);
+        }
+
         // a class value as a condition (`if (k)`): it always names a class, so it is true; with `| null` or
         // `| undefined`, true when it holds one. It was an invalid cast of its four pointers to a boolean,
         // and of a union of them "not supported"
@@ -2638,8 +2647,10 @@ namespace mlirgen
     {
         // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
         // says so where it is given; an adapter would only add an error of its own, without a place in the source
+        // (a value already of the type takes no more parameters: a closure returned as its own type,
+        // `function f(n) { return m => m + n; }`, was wrapped and its captures read as the box)
         auto boundType = dyn_cast<mlir_ts::BoundFunctionType>(value.getType());
-        if (compileOptions.memoryModel == MemoryModelOwn || !boundType
+        if (compileOptions.memoryModel == MemoryModelOwn || !boundType || value.getType() == type
             || !isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type))
         {
             return mlir::Value();
@@ -3814,6 +3825,13 @@ namespace mlirgen
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(tupleTypeIn);
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        if (!interfaceInfo)
+        {
+            // an instance of a generic interface not made where the cast is (a generic arrow's `W<p>` return
+            // type, instantiated as the arrow is given a type): it was read through a null pointer
+            emitError(location) << "can't find interface '" << interfaceType.getName().getValue() << "'";
+            return mlir::failure();
+        }
 
         auto inEffective = in;
 

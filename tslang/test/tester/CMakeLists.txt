@@ -376,8 +376,14 @@ tslang_add_test(NAME test-compile-00-globals-entry-point COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-main-argc-argv COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
 tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
+tslang_add_test(NAME test-compile-00-generic-arrow-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arrow_any.ts")
+tslang_add_test(NAME test-compile-00-class-value-inferred COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
+tslang_add_test(NAME test-compile-00-for-let-per-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-compile-00-module-var-redeclared COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
+tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
+tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 tslang_add_test(NAME test-compile-00-array-reference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
@@ -1064,8 +1070,17 @@ tslang_add_test(NAME test-jit-00-main-argc-argv COMMAND test-runner -jit "${PROJ
 tslang_add_test(NAME test-jit-00-main-number-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_number_result.ts")
 tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
+tslang_add_test(NAME test-jit-00-generic-arrow-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arrow_any.ts")
+tslang_add_test(NAME test-jit-00-class-value-inferred COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
+tslang_add_test(NAME test-jit-own-00-class-value-inferred COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_inferred.ts")
+tslang_add_test(NAME test-jit-00-for-let-per-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-jit-own-00-for-let-per-iteration COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_let_per_iteration.ts")
+tslang_add_test(NAME test-jit-00-module-var-redeclared COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
+tslang_add_test(NAME test-jit-own-00-module-var-redeclared COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
+tslang_add_test(NAME test-jit-00-import-equals-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
+tslang_add_test(NAME test-jit-00-string-concat-chain COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 tslang_add_test(NAME test-jit-00-array-reference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
@@ -2875,8 +2890,14 @@ set(TSLANG_CORPUS
     00globals.ts
     00globals2.ts
     00globals3.ts
+    00generic_arrow_any.ts
+    00class_value_inferred.ts
+    00for_let_per_iteration.ts
+    00module_var_redeclared.ts
+    00import_equals_value.ts
     00var_function_scope.ts
     00constant_folding.ts
+    00string_concat_chain.ts
     00globals_entry_point.ts
     00if_conditional_compile.ts
     00if_return.ts
@@ -3737,6 +3758,16 @@ foreach(ownership_shard RANGE ${ownership_last})
                      "-DSHARD=${ownership_shard}"
                      "-DSHARDS=${TSLANG_OWNERSHIP_SHARDS}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
+endforeach()
+
+# Programs that reference what only another object defines: compiled to an object, which must succeed.
+foreach(obj_only_test declared_generic_call declare_var_module_code)
+    add_test(NAME test-compile-obj-only-${obj_only_test}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj
+                     "${PROJECT_SOURCE_DIR}/test/tester/obj-only/${obj_only_test}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/obj-only-${obj_only_test}.obj")
+    set_tests_properties(test-compile-obj-only-${obj_only_test}
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
@@ -5233,6 +5264,8 @@ foreach(let_borrows_mm gc none rc own)
     tslang_add_test(NAME test-compile-own_kept_param_record-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_record.ts")
     tslang_add_test(NAME test-jit-own_caught_value_owned-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_owned.ts")
     tslang_add_test(NAME test-compile-own_caught_value_owned-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_owned.ts")
+    tslang_add_test(NAME test-jit-own_conditional_null_record-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_null_record.ts")
+    tslang_add_test(NAME test-compile-own_conditional_null_record-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_null_record.ts")
 endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
