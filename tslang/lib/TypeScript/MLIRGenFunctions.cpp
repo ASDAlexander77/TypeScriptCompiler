@@ -315,6 +315,12 @@ namespace mlirgen
                 isGenericTypes |= mth.isGenericType(type);
             }
 
+            // an untyped rest parameter is an `any[]`, and a pattern over it (`...[a, b]`) reads that
+            if (mth.isNoneType(type) && isBindingPattern && isMultiArgs && !initializer)
+            {
+                type = getArrayType(getAnyType());
+            }
+
             // in case of binding
             if (mth.isNoneType(type) && isBindingPattern)
             {
