@@ -398,6 +398,17 @@ namespace mlirgen
                 params.push_back(
                     std::make_shared<FunctionParamDOM>(
                         namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
+
+                // a later parameter's default may read this one (`function f(x: number, y = x * 2)`): its type is
+                // evaluated here, so the name has to be known by then
+                auto laterHasInitializer = std::any_of(formalParams.begin() + index + 1, formalParams.end(),
+                                                       [](auto later) { return !!later->initializer; });
+                if (laterHasInitializer)
+                {
+                    auto varDecl = std::make_shared<VariableDeclarationDOM>(namePtr, type, loc(arg));
+                    auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(loc(arg), type);
+                    declare(loc(arg), varDecl, typeRefVal, genContext);
+                }
             }
         }
 
