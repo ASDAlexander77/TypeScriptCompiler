@@ -812,3 +812,441 @@ A chain on another global's object (`const A = SHARED.add("q")`) is still refuse
 owner. So is a function returning its parameter (`const c = id(new V(1))`, #638): only a method's
 `this` is taken over. Regression tests `tslang/test/tester/tests/00tslang_issue_85.ts` (every model),
 `own/own_err_global_concat_borrowed.ts` and `own/own_err_global_chain_other_global.ts`.
+
+## TypeScript compiler tests sweep (2026-11-17)
+
+Items 86-125 were found on 2026-11-17 by compiling TypeScript's own compiler tests
+(`testdata/tests/cases/compiler` of the tsc repo, 7,107 files) with a release build of 03aaab9d, as
+`tslang --emit=obj <test> -o x.o` (no `main`: each test's code is module-level). Only the 3,597 tests
+tsc compiles without errors (no `.errors.txt` baseline) count here. tslang compiles 1,575 of them.
+731 more are multi-file tests (`// @filename:` sections that tsc's harness splits) and aren't tslang
+bugs. That leaves 1,291 single-file failures. The items below are the ones worth fixing, grouped by
+cause, with the number of tests each one fails. Names in "Tests:" are files in that folder. The
+by-design limits seen in the sweep are not listed: overloads of a declared function, `import x = A.B`
+and `import x = require()`, non-constant `obj[key]`, generic interface methods with `T[]`
+parameters, recursive type aliases, `null` into `string`, `@noCheck` tests and JSX tests that need
+`/.lib/react16.d.ts`. Crash stacks came from the debug build (built 2026-11-13). Repros marked "run"
+were run as written with `tslang --emit=jit` on the release build. The others are the tsc test file
+itself, which failed in the sweep.
+
+### Crashes (137 tests) and hangs (3)
+
+86 (a `var` in a namespace, used by a statement in that namespace, crashes the compiler): 8+ tests.
+Tests: `compoundVarDecl1.ts`, `structural1.ts`, `sourceMapValidationModule.ts`,
+`namedFunctionExpressionInModule.ts`, `internalAliasUninitializedModule*.ts`. Run, crashes:
+
+```typescript
+namespace M { var a = 10; a++; }
+function main() { print("done."); }
+```
+
+Also crashes: `namespace M { export interface I { salt: number; } export function f(i: I) {} f({ salt: 2 }); }`
+and `namespace M { var x = function bar(a: number) { return a; }; print(x(1)); }`.
+
+87 (an arrow with an untyped parameter in an object literal crashes in `getNameOfFunction`, from
+`registerGenericFunctionLike`): 5 tests. Tests: `commentsBeforeFunctionExpression1.ts`,
+`commentsAfterFunctionExpression1.ts`, `contextualComputedNonBindablePropertyType.ts`,
+`mappedTypeContextualTypesApplied.ts`, `mappedTypeGenericIndexedAccess.ts`. Run, crashes (with
+`(a: number) => 0` it prints `0`):
+
+```typescript
+var v = {
+    f: (a) => 0
+};
+function main() { print(v.f(1)); }
+```
+
+88 (`for (a in expr)` with `expr: any`): 3 crashes in `mlirGen` from `processStatements`, plus 7
+tests that fail with "Can't resolve property 'length' of type any". In an async function it crashes
+too (`es5-asyncFunctionForInStatements.ts`). Tests: `forInStatement5.ts`, `forInStatement6.ts`,
+`forStatementInnerComments.ts`, `forInStatement1.ts`, `controlFlowArrays.ts`,
+`es5-asyncFunctionHoisting.ts`, `yieldInForInInDownlevelGenerator.ts`. Run, crashes:
+
+```typescript
+var a: any;
+var expr: any;
+for (a in expr) {
+}
+function main() { print("done."); }
+```
+
+89 (`<Foo> new Object()`, with `Foo` an empty interface, crashes in
+`mlirGenObjectVirtualTableDefinitionForInterface` from `castObjectToInterface`): `castNewObjectBug.ts`.
+Run, crashes:
+
+```typescript
+interface Foo { }
+var xx = <Foo> new Object();
+function main() { print("done."); }
+```
+
+90 (a module-level object binding pattern with a default crashes): 8 tests, all
+`sourceMapValidationDestructuring*DefaultValues.ts` and `*ObjectBindingPattern3/4.ts`, and
+`noImplicitAnyDestructuringVarDeclaration2.ts`, `parameterInitializerBeforeDestructuringEmit.ts`. Run,
+crashes:
+
+```typescript
+var { x = 500 } = { x: 20 };
+function main() { print(x); }
+```
+
+91 (a destructuring assignment whose value is another assignment crashes in `mlirGenSaveLogicOneItem`):
+3 tests. Tests: `destructuringTempOccursAfterPrologue.ts`,
+`classFieldsNamedEvaluationDestructuringAssignment.ts`, `shorthandPropertyAssignmentNoCrash.ts`. Run,
+crashes:
+
+```typescript
+function test(p: any) {
+    p = { prop: p } = p;
+}
+function main() { print("done."); }
+```
+
+92 (tagged templates): a tagged template in a function crashes (`taggedTemplatesInDifferentScopes.ts`,
+`taggedTemplateNestedInvalidEscape.ts`). A tag typed `(strs: string[], ...)` given `any[]` fails with
+"cast from array type '!ts.array<!ts.string>' to array type '!ts.array<!ts.any>' is not supported"
+(7 tests: `taggedTemplateStringsWithMultilineTemplate*.ts`, `taggedTemplateStringsWithWhitespaceEscapes*.ts`,
+`arrayConcat2.ts`, `arrayConstructors1.ts`, `regexpOptionalCaptureStringArray.ts`). Run, crashes:
+
+```typescript
+export function tag(parts: TemplateStringsArray, ...values: any[]) {
+    return parts[0];
+}
+function foo() {
+    tag `foo`;
+}
+function main() { foo(); print("done."); }
+```
+
+93 (the JSX parser crashes): 21 `.tsx` tests. These fail in the parser, before any JSX support is
+needed. An access violation in `tagNamesAreEquivalent` (the closing tag of a nested element or a
+fragment), and fail-fast in `parseJsxElementOrSelfClosingElementOrFragment` (a tag after a `@jsx`
+pragma comment, a nested child). Tests: `jsxNestedIndentation.tsx`, `jsxPartialSpread.tsx`,
+`jsxPragmaAfterTags.tsx`, `jsxPragmaAfterTokenSameLine.tsx`, `contextuallyTypedJsxAttribute2.tsx`,
+`expandoContextualTypes.tsx`, `contextuallyTypedJsxChildren*.tsx`, `jsxFunctionTypeChildren*.tsx`,
+`jsxEmptyExpressionNotCountedAsChild.tsx`, `jsxIntrinsicUnions.tsx`, `booleanLiteralsContextuallyTypedFromUnion.tsx`.
+Smallest:
+
+```typescript
+declare var React: any;
+declare function Child(props: { children?: any }): any;
+function Test() {
+    return <Child>
+        <Child>
+            <Child></Child>
+        </Child>
+    </Child>
+}
+```
+
+94 (generic function specialization crashes in `instantiateSpecializedFunction`): 11 tests, 6 from
+`cast`/`verifyFunctionCastRules` and 5 from `mlirGenSpecialized`/`mlirGenCallExpression`. Tests:
+`nestedGenericSpreadInference.ts`, `returnInfiniteIntersection.ts`, `genericFunctionsNotContextSensitive.ts`,
+`conditionalPromptInference.ts`, `genericCallInferenceConditionalType2.ts`,
+`genericTypeParameterEquivalence2.ts`, `mixinIntersectionIsValidbaseType.ts`,
+`genericIndexedAccessMethodIntersectionCanBeAccessed.ts`, `declarationEmitArrowFunctionNoRenaming.ts`.
+Smallest:
+
+```typescript
+declare function wrap<X>(x: X): { x: X };
+declare function call<A extends unknown[], T>(x: { x: (...args: A) => T }, ...args: A): T;
+const leak = call(wrap(<T>(x: T) => x), 1);
+```
+
+95 (a property read in a contextually typed callback crashes in
+`mlirGenPropertyAccessExpressionBaseLogic`): 5 tests. Tests: `objectBindingPatternContextuallyTypesArgument.ts`,
+`destructureOfVariableSameAsShorthand.ts`, `dependentDestructuringDeferredCallback.ts`,
+`regexMatchAll.ts`, `regexMatchAll-esnext.ts`. Smallest:
+
+```typescript
+declare function id<T>(x: T): T;
+const { f = (x: string) => x.length } = id({ f: x => x.charAt });
+```
+
+96 (`instanceof` narrowing of a union that holds an intersection crashes in
+`isSafeTypeTheSameAndNoNeedToCast`): 3 tests. Tests: `inKeywordAndIntersection.ts`, `narrowByInstanceof.ts`,
+`controlFlowInstanceofWithSymbolHasInstance.ts`. Smallest:
+
+```typescript
+class A { a = 0 }
+class B { b = 0 }
+function f10(obj: A & { x: string } | B) {
+    if (obj instanceof Object) {
+        obj;
+    }
+}
+```
+
+97 (a type parameter constrained by its own type overflows the stack): 5 tests. Tests: `recursiveTypes1.ts`
+(`getTypeByTypeReference` from `zipTypeParametersWithArguments`), `instantiatedBaseTypeConstraints.ts`
+(`loc2Fuse`), `checkInfiniteExpansionTermination.ts`, `checkInfiniteExpansionTermination2.ts`,
+`inferredReturnTypeIncorrectReuse1.ts`, and `stableTypeMapperOrdering.ts`,
+`varianceProblingAndZeroOrderIndexSignatureRelationsAlign*.ts`. Smallest:
+
+```typescript
+interface Entity<T extends Entity<T>> {
+   X: T;
+}
+interface Person<U extends Person<U>> extends Entity<U> {
+    n: number;
+}
+interface Customer extends Person<Customer> {
+    s: string;
+}
+```
+
+98 (source files tslang can't read): a UTF-16 file with a BOM (`bom-utf16le.ts`, `bom-utf16be.ts`) and
+invalid UTF-8 in a regex literal (`regexInvalidUtf8WithUnicodeFlag.ts`) fail-fast in `loadSourceBuf`.
+A JSDoc comment whose line is 100+ spaces fail-fasts in `Parser::extractPragmas`
+(`commentWithUnreasonableIndentationLevel01.ts`). UTF-16 should be converted. Invalid UTF-8 should
+be a diagnostic, not an abort.
+
+99 (a class member with a string-literal or numeric name): `static "foo" = 0` is "redefinition of
+symbol named 'C.foo'", and `staticMemberWithStringAndNumberNames.ts` (`static 0 = 1`, `C['0']`, `C[0]`)
+crashes. Run:
+
+```typescript
+class C {
+    static "foo" = 0;               // error: redefinition of symbol named 'C.foo'
+    x = C['foo'];
+}
+function main() { print(new C().x); }
+```
+
+100 (`import M = Z.M` inside a namespace also named `M`, and merged namespaces): crashes in the debug
+build, "Failed to emit LLVM IR" in release. Tests: `moduleSharesNameWithImportDeclarationInsideIt.ts`,
+`...It2.ts`, `...It4.ts`, `mergedNamespaceDeclarationMemberReferences.ts`, `es6ModuleFunctionDeclaration.ts`,
+`importOnAliasedIdentifiers.ts`, `privacyGloImport.ts`, `collisionExportsRequireAndInternalModuleAliasInGlobalFile.ts`,
+`nameCollisionWithBlockScopedVariable1.ts` (a block-scoped `let M` in namespace `M`, then `new C()`).
+
+101 (a built-in error class used as a value, `x = RangeError`, crashes in `globalVariableAccess`):
+`errorConstructorSubtypes.ts`, `discriminantOrderIndependence.ts`.
+
+102 (other crashes; these `abort()` in the debug build, so no stack was taken): `unionTypeWithIndexedLiteralType.ts`
+(`const u: U = { x: "lit" }` with `U = Idx | I | "lit"`), `typeParameterConstrainedToOuterTypeParameter2.ts`,
+`recursiveTypeInference.ts`, `recursiveTypeInference2.ts`, `recursiveTypeAliasWithSpreadConditionalReturnNotCircular.ts`,
+`reverseMappedTypeInferenceWidening1.ts`, `reverseMappedTypePrivateMembers.ts`, `promiseTypeInference.ts`,
+`inferenceContextualReturnTypeUnion2.ts`, `lazyInheritedMemberLookup.ts`, `circularDeclaredPropertyAccess.ts`
+(`MLIRTypeHelper::extendsType` from `testConstraint`), `crashInGetTextOfComputedPropertyName.ts`,
+`crossProductUnionIntersectionRepeatedPropDeclarationsNoOOM1.ts`, `contextualGenericReturnToOptionalClassField.ts`,
+`controlFlowPropertyDeclarations.ts`, `discriminantNarrowingCouldBeCircular.ts`,
+`expandoFunctionNestedAssigmentsDeclared.ts`, `implicitAnyInCatch.ts`, `metadataOfUnionWithNull.ts`,
+`narrowByClauseExpressionInSwitchTrue5.ts`, `genericFunctionsAndConditionalInference.ts` (`tryInferInterface`),
+`narrowingUnionToUnion.ts` (`resolveIdentifierAsVariable`), `noUsedBeforeDefinedErrorInTypeContext.ts`
+(`getInterfaceVirtualTableForObject` from `castTupleToInterface`: `{} as IThing<typeof foo>` in `foo`'s
+own initializer), `stringMappingSpecialCasing.ts`, `templateLiteralInferenceSupplementarySplit.ts`,
+`templateLiteralIntersection4.ts`, `superPropertyAccessInComputedPropertiesOfNestedType_ES5/ES6.ts`,
+`staticFieldWithInterfaceContext.ts`, `typePartameterConstraintInstantiatedWithDefaultWhenCheckingDefault.ts`,
+`unionOfEnumInference.ts`, `unusedLocalsAndParametersDeferred.ts`, `unusedLocalsAndParametersTypeAliases.ts`,
+`workerSubtypeHandlerThis.ts`.
+
+103 (the compiler doesn't finish in 60 s): `declFileEnumUsedAsValue.ts`, `declFileTypeofEnum.ts`,
+`declarationEmitClassMemberNameConflict2.ts`. All three store an enum itself as a value: `enum e { a, b, c }
+var x = e;`, or a field `Hello = Hello`.
+
+### Internal IR and codegen errors (about 140 tests)
+
+104 (a generic `declare function` called with an arrow: "'llvm.func' op external functions must have
+'external' or 'extern_weak' linkage"): 33 tests. Tests: `typeInferenceWithTypeAnnotation.ts`,
+`inferTupleFromBindingPattern.ts`, `assertionFunctionsCanNarrowByDiscriminant.ts`,
+`asyncFunctionsAndStrictNullChecks.ts`, `bindingPatternContextualTypeDoesNotCauseWidening.ts`,
+`circularMappedTypeConstraint.ts`. Run (also with `--emit=exe`):
+
+```typescript
+declare function f<T>(p: (t: T) => T): T;
+function main() { f((n: number) => n); }
+```
+
+105 (a closure over a module-level `let` declared in a `for` header or loop body: "'ts.Load' op using
+value defined outside the region"): 21 tests. Tests: `nestedBlockScopedBindings*.ts`,
+`blockScopedBindingsReassignedInLoop2/3/5.ts`, `capturedLetConstInLoop11.ts`. The same loop in a
+function compiles. `nestedBlockScopedBindings7.ts`, run as a file:
+
+```typescript
+for (let x; false;) {
+    () => x;
+}
+```
+
+106 (a module-level arrow: "'llvm.mlir.addressof' op must reference a global defined by
+'llvm.mlir.global'"): 21 tests. Only `--emit=obj` and `--emit=exe` fail. The JIT, with its cache, runs
+them. Tests: `parenthesizedAsyncArrowFunction.ts` (`let foo = (async bar => bar);`),
+`thisExpressionInIndexExpression.ts` (`function f() { return r => r[this]; }`),
+`collisionRestParameterUnderscoreIUsage.ts`, `collisionThisExpressionAndNameResolution.ts`,
+`declarationEmitIndexTypeArray.ts`, `declarationEmitTypeParameterNameInOuterScope.ts`.
+
+107 (a namespace used as a value: "failed to legalize operation 'ts.NamespaceRef'"): 18 tests.
+Tests: `moduleWithTryStatement1.ts`, `structuralTypeInDeclareFileForModule.ts`, `cloduleWithRecursiveReference.ts`,
+`commentsClass.ts`, `declFileModuleAssignmentInObjectLiteralProperty.ts`. Run:
+
+```typescript
+namespace M { export var x = 1; }
+var m = M;                      // error: failed to legalize operation 'ts.NamespaceRef'
+function main() { print(m.x); }
+```
+
+108 (a class used as a value, `this` in a static member or a class named in an arrow: "failed to legalize
+operation 'ts.ClassRef' that was explicitly marked illegal"): 11 tests. Tests: `staticGetter1.ts`,
+`noCollisionThisExpressionAndClassInGlobal.ts`, `abstractClassInLocalScope.ts`, `complexNarrowingWithAny.ts`,
+`controlFlowForCatchAndFinally.ts`, `declFileClassWithStaticMethodReturningConstructor.ts`. Run:
+
+```typescript
+class C {
+    static n = 1;
+    static get x() { return this; }     // error: failed to legalize operation 'ts.ClassRef'
+}
+function main() { print(C.x.n); }
+```
+
+109 (a call to a function expression or arrow that is defined after it, or inside a method: "'ts.Call'
+op '...' does not reference a valid function"): 6 tests. Tests: `2dArrays.ts`,
+`defineVariables_useDefineForClassFields.ts` (module-level `const a = () => b()` then `const b = ...`),
+`checkSuperCallBeforeThisAccessing6.ts` (`super()` to `Base.constructor`), `argumentsAsPropertyName.ts`.
+Run:
+
+```typescript
+class Board {
+    ships: number[] = [1, 2];
+    allPositive() {
+        return this.ships.every(function (val) { return val > 0; });   // error: 'ts.Call' op does not reference a valid function
+    }
+}
+function main() { print(new Board().allPositive()); }
+```
+
+110 (`new` on a plain function: "'ts.New' op result #0 must be  or , but got '!ts.func<...>'"): 5 tests,
+plus `classFunctionMerging.ts` and `classFunctionMerging2.ts` (a class merged with a function). Tests:
+`avoid.ts`, `contextualReturnTypeOfIIFE.ts`, `anyAsReturnTypeForNewOnCall.ts`. If constructor functions
+stay unsupported, this should be an error that says so. Run:
+
+```typescript
+function Point(x: number) { }
+function main() { var o = new Point(3); print("done."); }
+```
+
+111 (`++`, `--` and compound assignment on an untyped `var x;`: "Binary operation is not supported for
+type: '!llvm.ptr'"): 7 tests. Tests: `systemModule8.ts`, `assignmentCompatBug3.ts`,
+`commentsArgumentsOfCallExpression2.ts`, `nestedBlockScopedBindings3.ts`, `nestedBlockScopedBindings4.ts`.
+Run:
+
+```typescript
+var x;
+function main() { x = 1; x++; print(x); }
+```
+
+112 (narrowing that leaves an `unrealized_conversion_cast`: "LLVM Translation failed for operation:
+builtin.unrealized_conversion_cast"): 4 tests, `--emit=obj` and `--emit=exe`. Tests:
+`correlatedLabelNullishFallback.ts`, `narrowingInCaseClauseAfterCaseClauseWithReturn.ts`,
+`narrowingTypeofUndefined1.ts`, `dependentDestructuringCrossFilePosition.ts`. Smallest:
+
+```typescript
+function label(options: { label: string; alias: string } | { label: object; alias?: string }) {
+    if (typeof options.label === "string") return options.alias ?? options.label;
+}
+```
+
+### Common language gaps
+
+113 (`this` at module level, in an arrow: "can't resolve name: this"): 22 tests, e.g.
+`collisionThisExpressionAndVarInGlobal.ts`, `asyncArrowStaticFieldThis.ts`, `castExpressionParentheses.ts`,
+`classNameReferencesInStaticElements.ts`. Module-level `this` is `undefined` in an ES module. Run:
+
+```typescript
+var f = () => this;             // error: can't resolve name: this
+function main() { print("done."); }
+```
+
+114 (`arguments`: "can't resolve name: arguments"): 18 tests, e.g. `argsInScope.ts`,
+`argumentsObjectIterator01_ES6.ts`, `argumentsObjectIterator03_ES6.ts`, `modularizeLibrary_UsingES5LibAndES6ArrayLib.ts`.
+Run:
+
+```typescript
+function f(x: number, y: number) {
+    return arguments.length;    // error: can't resolve name: arguments
+}
+function main() { print(f(1, 2)); }
+```
+
+115 (`super` in an arrow in a method, or in a default parameter: "can't resolve name: super"): 6 tests.
+Tests: `superAccessInFatArrow1.ts`, `captureSuperPropertyAccessInSuperCall01.ts`
+(`super(() => { return super.blah(); })`), `asyncSuperDefaultParameters.ts` (`async (b = super.m()) => b`),
+`collisionThisExpressionAndLocalVarWithSuperExperssion.ts`.
+
+116 (a parameter's default that reads an earlier parameter: "can't resolve name: x"): 5 tests,
+`optionalParamReferencingOtherParams1.ts`, `inferParameterWithMethodCallInitializer.ts`. Run:
+
+```typescript
+function strange(x: number, y = x * 2) { return y; }   // error: can't resolve name: x
+function main() { print(strange(2)); }
+```
+
+117 (`toString` on a number literal, which is an `s32`: "Can't resolve property 'toString' of type s32"):
+9 tests, e.g. `toStringOnPrimitives.ts`, `destructuringInVariableDeclarations1/2/5/6.ts`
+(`export let { toString } = 1;`). Run:
+
+```typescript
+function main() { print(1..toString()); }   // error: Can't resolve property 'toString' of type s32
+```
+
+118 (redeclarations JavaScript allows: "redefinition of symbol named ..."): 47 tests. `var v = 1; var v = 2;`
+(`duplicateVariableDeclaration1.ts`, `redeclarationOfVarWithGenericType.ts`), and a class declared again
+in a nested block, which should shadow the outer one: "redefinition of symbol named 'C..instanceOf'"
+(`classDeclarationBlockScoping1.ts`, `classDeclarationBlockScoping2.ts`). Run:
+
+```typescript
+class C { }
+{
+    class C { }                 // error: redefinition of symbol named 'C..instanceOf'
+}
+function main() { print("done."); }
+```
+
+119 (a type parameter used in a mapped type or a callback type of a generic declaration: "can't find type
+by name: K" / "T" / "V" / "A"): about 50 tests. Tests: `reverseMappedContravariantInference.ts`
+(`declare function conforms<T>(source: { [K in keyof T]: (val: T[K]) => boolean }): ...`),
+`comparisonAnonymousMappedTypes.ts`, `conditionalFunctionUnionInference.ts`, `typeInferenceFixEarly.ts`,
+`contextualTypingTwoInstancesOfSameTypeParameter.ts`, `inferentialTypingWithFunctionType.ts`,
+`inferentialTypingWithFunctionType2.ts`, `contextualSigInstantiationRestParams.ts`, `enumIndexer.ts`.
+
+120 ("not all types could be inferred"): 29 tests, e.g. `simpleArrowFunctionParameterReferencedInObjectLiteral1.ts`,
+`arrayFlatMap.ts`, `contextualSignatureInstantiation1.ts`. Run:
+
+```typescript
+function main() {
+    const r = [1].map(() => [2].map(p => ({ X: p })));   // error: not all types could be inferred
+    print(r.length);
+}
+```
+
+121 ("failed statement" with no other error): 67 tests. The error that caused it is lost, so these
+can't be grouped further. Fix the reporting first, then sort them. Tests:
+`restElementWithNumberPropertyName.ts`, `asConstReadonlyTupleInferenceThroughNestedGenericCall.ts`,
+`asyncYieldStarContextualType.ts`, `autoAsiForStaticsInClassDeclaration.ts`. Run:
+
+```typescript
+const { 0: a, ...b } = [0, 1, 2];   // error: failed statement
+function main() { print(a); }
+```
+
+122 (an untyped rest parameter with a binding pattern: "can't resolve type for binding pattern, provide
+default initializer"): 9 tests, `restParameterWithBindingPattern1.ts` (`function a(...{a, b}) { }`),
+`restParameterWithBindingPattern2.ts` (`function a(...[a, b]) { }`), `commentsAfterSpread.ts`,
+`asyncFunctionTempVariableScoping.ts`. An untyped rest parameter is `any[]`, so its pattern can take
+`any` (with `...[x, y]: number[]` it works).
+
+123 (calling a value of type `any`: "not a function to call"): part of 47 tests, e.g.
+`castFunctionExpressionShouldBeParenthesized.ts` (`(function a() { } as any)().foo()`), `anonterface.ts`,
+`callbackAssignedNonNull.ts`. The rest are `Symbol(...)`/`Symbol.for`, which are default-library
+work (see 38).
+
+124 (a computed property name in a class: "not supported 'Computed Property Name' expression"): 9 tests,
+`declarationEmitMultipleComputedNamesSameDomain.ts` (`[x] = 10;`), `declarationEmitComputedNameWithQuestionToken.ts`
+(`[dataSomething]?() {}`), `classExpressionWithComputedPropertyInLoop.ts`, `capturedLetConstInLoop13.ts`.
+
+125 (missing default-library types and type arguments): "generic type Iterable can't be found" (6:
+`forAwaitForUnion.ts`, `mapConstructor.ts`, `contextualTypeIterableUnions.ts`), "generic type Generator
+can't be found" (4: `contextualTypeOnYield1.ts`, `contextualTypeOnYield2.ts`), "can't resolve name:
+Uint8ClampedArray" (5: `typedArrays.ts`, `typedArraysSubarray.ts`, `arrayToLocaleString*.ts`), and
+`new WeakMap()` / `new SS()` with no type arguments, which tsc infers or defaults: "Generic class
+'WeakMap' is missing type arguments" (5: `defaultWeakMapInferredPropertyAssignment.ts`,
+`genericObjectCreationWithoutTypeArgs.ts`, `inheritanceOfGenericConstructorMethod1.ts`).
