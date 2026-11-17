@@ -794,6 +794,13 @@ namespace mlirgen
             }
 
             resultTrue = V(result);
+            // `c ? A : B` chooses between classes: their values, of `typeof A | typeof B`
+            if (resultTrue)
+            {
+                auto classValue = classRefAsValue(location, resultTrue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                resultTrue = V(classValue);
+            }
         }
         else
         {
@@ -819,6 +826,12 @@ namespace mlirgen
             }
 
             resultFalse = V(result2);
+            if (resultFalse)
+            {
+                auto classValue = classRefAsValue(location, resultFalse, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                resultFalse = V(classValue);
+            }
         }
         else
         {
