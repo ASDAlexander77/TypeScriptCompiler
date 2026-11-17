@@ -6183,3 +6183,43 @@ manages. A temporary nothing else keeps (`<Opaque>new Item()`) is an error: "an 
 it points at, and nothing else keeps this object under -mm=own: keep the object in a variable first".
 
 Tests: `own_any_round_trip`, `own_opaque_borrows` (every model), `own_err_opaque_temporary`.
+
+## 93. `@weak` fields: a back-reference read as a plain field, 2026-11-17
+
+Design: `tslang/docs/superpowers/specs/2026-11-17-own-weak-field-design.md`. User decisions (2026-11-17):
+a back-reference is read as `this.parent.v`, with no `deref()`; it is a `WeakRef` underneath, checked on
+every read, and a read of a freed object stops the program; a `@weak` read may not be the receiver or
+an argument of a call that may free objects.
+
+`@weak parent: Node | null = null` on an instance field of a class (typed `C`, `C | null`,
+`C | undefined` or `p?: C`, `C` a class that is not `@value`) is recorded on the class
+(`ClassInfo::weakFieldTypes`). Under own its slot is `!ts.weak_ref<C>`; under gc and none the field
+is ordinary; under rc it is an error. Anywhere else `@weak` is "'@weak' applies only to a field of a
+class"; on another type, "a @weak field needs a class type".
+
+Under own a read of the field is the slot's load, a `ts.WeakRefDeref` marked `checked` (with
+`weakField = "Node.parent"`) giving the class pointer, and a cast to the declared type, under a
+`ts.SafeCast` marked `WEAK_FIELD_VIEW_ATTR_NAME`. The lowering tests the pointer: null is null
+(`undefined` for `p?: C`), a live object is itself, a tombstone stops the program through
+`AssertLogic::check` with "the @weak field 'Node.parent' was read after its object was freed". A store
+through the view writes `ts.WeakRefNew` of the value (the store's handle retain is the first count) and
+removes the left side's read. `===`, `!==`, `==`, `!=` and `== null` read the stored pointer
+(`WeakRefDeref` marked `raw`), which never stops: a tombstone's block is not reused while a WeakRef points
+at it. Truthiness, `??` and `?.` are reads. A checked read nothing uses (a test's narrowing reads the
+field again per branch) is erased after the module is generated (`eraseUnusedWeakFieldReads`).
+
+Every `WeakRef` rule of spec 84 holds: the result is a borrow of an unknown place, the class is a weak
+target (no stack promotion, no sharing with other threads), the slot's release frees at most a
+tombstone. Spec 84's borrow rule already refuses a read given to a call that may drop; for a `@weak`
+read the message is "'parent' is a @weak field and 'Node.removeLast' may free objects; the call could
+free the object it runs on". A write of a value nothing else owns is "the @weak field 'parent' cannot own
+a new object; it would be freed at once" (null, a read of a place and a named `const` are owned). A class
+with a `@weak` field cannot be seen as an interface or object type naming the field ("'Node' cannot be
+seen as 'HasParent': its field 'parent' is @weak"). The declaration a module exports prints `@weak` and
+the declared type, so an importer lays the slot out again.
+
+Tests: `00weak_field` (own, own `-noopt`, gc, none), `own_weak_field_compare_dead`,
+`own_weak_field_reread`, `own_weak_field_freed_read` (gc, none; under own `own-weak-field-stop.cmake`),
+`import_weak_field` with `export_weak_field` (`-shared`, every model) and `import_weak_field_freed`,
+`own_err_weak_field_*` (position, type, generic, rc, fresh, call and argument through a dropping call,
+returned, stored, captured, held, thread, interface, object type).

@@ -2470,6 +2470,21 @@ namespace mlirgen
 #endif
         }
 
+        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        {
+            if (isAccessor)
+            {
+                return refuseWeakDecorator(propertyDeclaration);
+            }
+
+            EXIT_IF_FAILED(mlirGenWeakField(location, newClassPtr, propertyDeclaration, type, genContext))
+            // under own the slot holds a WeakRef of the class (a null pointer is null or undefined)
+            if (compileOptions.memoryModel == MemoryModelOwn)
+            {
+                type = mlir_ts::WeakRefType::get(mth.stripOptionalType(NonNullableTypes(type)));
+            }
+        }
+
         if (isAccessor || !redeclaresBaseField(newClassPtr, fieldId, type))
         {
             fieldInfos.push_back({fieldId, type, false, accessLevel});
@@ -2489,8 +2504,308 @@ namespace mlirgen
         return mlir::success();
     }
 
+    mlir::LogicalResult MLIRGenImpl::refuseWeakDecorator(Node node)
+    {
+        emitError(loc(node)) << "'@" WEAK_DECORATOR "' applies only to a field of a class";
+        return mlir::failure();
+    }
+
+    // `@weak parent: Node | null` (own spec 93): a field typed by one class (`C`, `C | null`,
+    // `C | undefined`, `p?: C`) that does not own its object. Under rc there is no weak count.
+    mlir::LogicalResult MLIRGenImpl::mlirGenWeakField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                      PropertyDeclaration propertyDeclaration, mlir::Type type,
+                                                      const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel == MemoryModelRC)
+        {
+            emitError(location) << "'@" WEAK_DECORATOR "' is not supported under -mm=rc; use -mm=gc, -mm=own or -mm=none";
+            return mlir::failure();
+        }
+
+        auto target = mth.stripOptionalType(NonNullableTypes(type));
+        auto classType = dyn_cast_or_null<mlir_ts::ClassType>(target);
+        auto classInfo = classType ? getClassInfoByFullName(classType.getName().getValue()) : ClassInfo::TypePtr();
+        if (!classInfo || classInfo->isValue)
+        {
+            emitError(location) << "a @" WEAK_DECORATOR " field needs a class type";
+            return mlir::failure();
+        }
+
+        newClassPtr->weakFieldTypes[MLIRHelper::getName(propertyDeclaration->name)] = type;
+        return mlir::success();
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldRead(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name,
+                                           mlir::Value loaded, const GenContext &genContext)
+    {
+        // the class that declares the field names it in the message: `Node.parent`
+        auto declaring = classInfo;
+        while (declaring && !declaring->weakFieldTypes.count(name))
+        {
+            declaring = declaring->baseClasses.empty() ? ClassInfo::TypePtr() : declaring->baseClasses.front();
+        }
+
+        auto declaredType = classInfo->weakFieldType(name);
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto fieldName = (declaring ? declaring->name : classInfo->name).str() + "." + name.str();
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setChecked(true);
+        derefOp.setWeakFieldAttr(builder.getStringAttr(fieldName));
+
+        auto castValue = weakFieldValue(location, derefOp.getResult(), declaredType, genContext);
+        if (!castValue)
+        {
+            return mlir::Value();
+        }
+
+        auto viewOp = builder.create<mlir_ts::SafeCastOp>(location, declaredType, castValue, loaded);
+        viewOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        return viewOp;
+    }
+
+    // the class pointer a @weak field holds as its declared type: null is `undefined` for `p?: C`
+    mlir::Value MLIRGenImpl::weakFieldValue(mlir::Location location, mlir::Value pointer, mlir::Type declaredType,
+                                            const GenContext &genContext)
+    {
+        if (!isa<mlir_ts::OptionalType>(declaredType))
+        {
+            return cast(location, declaredType, pointer, genContext);
+        }
+
+        auto condValue = cast(location, getBooleanType(), pointer, genContext);
+        if (!condValue)
+        {
+            return mlir::Value();
+        }
+
+        auto result = conditionalValue(location, condValue,
+            [&]() -> ValueOrLogicalResult { return V(cast(location, declaredType, pointer, genContext)); },
+            [&](mlir::Type trueValueType) {
+                return ValueOrLogicalResult(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
+            });
+        if (!result)
+        {
+            return mlir::Value();
+        }
+
+        // marked: eraseUnusedWeakFieldReads takes this if, and no other, as part of the read
+        if (auto *ifOp = V(result).getDefiningOp())
+        {
+            ifOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return V(result);
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldReread(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value loaded,
+                                             const GenContext &genContext)
+    {
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setChecked(true);
+        auto *below = viewOp->getOperand(0).getDefiningOp();
+        while (below && !mlir::isa<mlir_ts::WeakRefDerefOp>(below))
+        {
+            below = below->getNumOperands() > 0 ? below->getOperand(0).getDefiningOp() : nullptr;
+        }
+
+        if (below)
+        {
+            derefOp.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(below).getWeakFieldAttr());
+        }
+
+        auto castValue = weakFieldValue(location, derefOp.getResult(), viewOp.getType(), genContext);
+        if (!castValue)
+        {
+            return mlir::Value();
+        }
+
+        auto rereadOp = builder.create<mlir_ts::SafeCastOp>(location, viewOp.getType(), castValue, loaded);
+        rereadOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        return rereadOp;
+    }
+
+    void MLIRGenImpl::eraseUnusedWeakFieldReads()
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir_ts::WeakRefDerefOp> reads;
+        theModule.walk([&](mlir_ts::WeakRefDerefOp derefOp) {
+            if (derefOp.getChecked())
+            {
+                reads.push_back(derefOp);
+            }
+        });
+
+        for (auto read : reads)
+        {
+            // the read and the casts and views made of it, when nothing else uses any of them
+            llvm::SetVector<mlir::Operation *> closure;
+            closure.insert(read);
+            auto removable = true;
+            for (size_t index = 0; index < closure.size() && removable; index++)
+            {
+                for (auto user : closure[index]->getUsers())
+                {
+                    // the optional of `p?: C` (weakFieldValue): an if whose branches give the value; under --di a
+                    // narrowing's debug record of the read (ts.DebugVariable) goes with it
+                    auto isReadIf = mlir::isa<mlir_ts::IfOp>(user) && user->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME);
+                    if (!isReadIf && !mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::GetValueFromUnionOp,
+                                                mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::HasValueOp,
+                                                mlir_ts::ValueOp, mlir_ts::ResultOp, mlir_ts::DebugVariableOp>(user))
+                    {
+                        removable = false;
+                        break;
+                    }
+
+                    closure.insert(user);
+                }
+            }
+
+            if (!removable)
+            {
+                continue;
+            }
+
+            // a result op stays only inside an if of the closure, which goes with it
+            if (llvm::any_of(closure, [&](mlir::Operation *op) {
+                    return mlir::isa<mlir_ts::ResultOp>(op) && !closure.contains(op->getParentOp());
+                }))
+            {
+                continue;
+            }
+
+            // what an erased if holds goes with it: only the outermost ops are erased, found before any is
+            llvm::SmallVector<mlir::Operation *> outermost;
+            for (auto op : llvm::reverse(closure))
+            {
+                auto nested = false;
+                for (auto *parent = op->getParentOp(); parent && !nested; parent = parent->getParentOp())
+                {
+                    nested = closure.contains(parent);
+                }
+
+                if (!nested)
+                {
+                    outermost.push_back(op);
+                }
+            }
+
+            for (auto op : closure)
+            {
+                op->dropAllReferences();
+            }
+
+            for (auto op : outermost)
+            {
+                op->erase();
+            }
+        }
+    }
+
+    mlir_ts::SafeCastOp MLIRGenImpl::weakFieldView(mlir::Value value)
+    {
+        // a test's narrowing of the field (`if (c.parent !== null) ...`) is a SafeCast over the view
+        auto viewOp = value ? value.getDefiningOp<mlir_ts::SafeCastOp>() : mlir_ts::SafeCastOp();
+        while (viewOp && !viewOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
+        {
+            viewOp = viewOp.getValue().getDefiningOp<mlir_ts::SafeCastOp>();
+        }
+
+        return viewOp;
+    }
+
+    void MLIRGenImpl::dropWeakFieldView(mlir_ts::SafeCastOp viewOp)
+    {
+        if (!viewOp.getResult().use_empty())
+        {
+            return;
+        }
+
+        // the view, then the casts and the checked read under it, each once nothing uses it
+        auto next = viewOp->getOperand(0).getDefiningOp();
+        viewOp->erase();
+        while (next && next->use_empty())
+        {
+            auto isRead = mlir::isa<mlir_ts::WeakRefDerefOp>(next);
+            auto below = !isRead && next->getNumOperands() > 0 ? next->getOperand(0).getDefiningOp() : nullptr;
+            next->erase();
+            if (isRead)
+            {
+                break;
+            }
+
+            next = below;
+        }
+    }
+
+    void MLIRGenImpl::rawWeakFieldRead(mlir::Location location, mlir::Value &value, const GenContext &genContext)
+    {
+        auto viewOp = weakFieldView(value);
+        if (!viewOp)
+        {
+            return;
+        }
+
+        auto loaded = viewOp.getValue();
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setRaw(true);
+        auto rawValue = weakFieldValue(location, derefOp.getResult(), viewOp.getType(), genContext);
+        if (!rawValue)
+        {
+            return;
+        }
+
+        // the checked read is left to the caller's other uses, or erased once the module is generated
+        // (eraseUnusedWeakFieldReads): a caller may still hold it
+        value = rawValue;
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldWrite(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value value,
+                                            const GenContext &genContext)
+    {
+        auto loaded = viewOp.getValue();
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto declared = cast(location, viewOp.getType(), value, genContext);
+        if (!declared)
+        {
+            return mlir::Value();
+        }
+
+        auto target = cast(location, weakRefType.getElementType(), declared, genContext);
+        if (!target)
+        {
+            return mlir::Value();
+        }
+
+        auto derefOp = viewOp->getOperand(0).getDefiningOp();
+        while (derefOp && !mlir::isa<mlir_ts::WeakRefDerefOp>(derefOp))
+        {
+            derefOp = derefOp->getNumOperands() > 0 ? derefOp->getOperand(0).getDefiningOp() : nullptr;
+        }
+
+        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, weakRefType, target, mlir::StringAttr());
+        if (derefOp)
+        {
+            weakRef.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(derefOp).getWeakFieldAttr());
+        }
+
+        // born with no weak count: the retain the store adds is the first (as `new WeakRef(x)`)
+        markFreshBlockOwned(location, weakRef);
+        return weakRef;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
+        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        {
+            return refuseWeakDecorator(propertyDeclaration);
+        }
+
         auto accessLevel = getAccessLevel(propertyDeclaration);
         auto isPublic = accessLevel == mlir_ts::AccessLevel::Public;
         auto name = propertyDeclaration->name;
@@ -3725,6 +4040,15 @@ genContext);
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
                 auto accessorName = dyn_cast<mlir::StringAttr>(id);
+                // a @weak field read through an interface would skip its check and its count (own spec 93)
+                if (found && accessorName && compileOptions.memoryModel == MemoryModelOwn &&
+                    newClassPtr->isWeakField(accessorName.getValue()))
+                {
+                    emitError(location) << "'" << newClassPtr->name << "' cannot be seen as '" << newInterfacePtr->name
+                                        << "': its field '" << accessorName.getValue() << "' is @" WEAK_DECORATOR;
+                    return {emptyFieldInfo, mlir::failure()};
+                }
+
                 auto *foundAccessor = !found && accessorName && !isa<mlir_ts::FunctionType>(fieldType)
                     ? findAccessor(newClassPtr, accessorName.getValue()) : nullptr;
                 if (foundAccessor)

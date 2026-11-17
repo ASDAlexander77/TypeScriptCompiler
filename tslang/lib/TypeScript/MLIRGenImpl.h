@@ -6514,7 +6514,14 @@ class MLIRGenImpl
             reference = builder.clone(*elementRefOp)->getResult(0);
         }
 
-        return V(builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference));
+        auto reloaded = builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference);
+        // a @weak field (own spec 93): read again as its declared type, checked
+        if (auto viewOp = weakFieldView(leftExpressionValue))
+        {
+            return V(weakFieldReread(location, viewOp, reloaded, genContext));
+        }
+
+        return V(reloaded);
     }
 
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
@@ -7560,6 +7567,29 @@ class MLIRGenImpl
             return accessorType;
         };
 
+        // a @weak field (own spec 93): the WeakRef of the value goes into the slot, and the read of the
+        // left side, which would stop on a freed object, is not made. The assignment's value is the
+        // value assigned, as the field's declared type
+        mlir::Value assignedValue;
+        if (auto viewOp = weakFieldView(leftExpressionValueBeforeCast))
+        {
+            auto loaded = viewOp.getValue();
+            assignedValue = cast(location, viewOp.getType(), savingValue, genContext);
+            if (!assignedValue)
+            {
+                return mlir::failure();
+            }
+
+            savingValue = weakFieldWrite(location, viewOp, assignedValue, genContext);
+            dropWeakFieldView(viewOp);
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            leftExpressionValueBeforeCast = loaded;
+        }
+
         // TODO: logic to support safe cast
         if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
         {
@@ -7848,7 +7878,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        return savingValue;
+        return assignedValue ? assignedValue : savingValue;
     }
 
     ValueOrLogicalResult mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -7903,9 +7933,11 @@ class MLIRGenImpl
         // after `s.kind === "sq"`, `s = { kind: "ci", r: 1 }` is an `Sq | Ci`, and typed as the narrowed
         // `Sq` it became a `{ kind: "sq", r }` that was never stored
         auto receiverType = leftExpressionValue.getType();
-        // - but a field a subclass declared again takes one of the type it declared (DECLARED_FIELD_VIEW_ATTR_NAME)
+        // - but a field a subclass declared again takes one of the type it declared (DECLARED_FIELD_VIEW_ATTR_NAME),
+        // and a @weak field one of its declared type, not its WeakRef slot's (own spec 93)
         if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>();
-            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME))
+            safeCastOp && !safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME) &&
+            !safeCastOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
         {
             receiverType = safeCastOp.getValue().getType();
         }
@@ -8720,6 +8752,15 @@ class MLIRGenImpl
         if (opCode == SyntaxKind::CommaToken)
         {
             return mlir::success();
+        }
+
+        // a @weak field compared (own spec 93): its stored pointer, which never stops - a tombstone's
+        // block is not reused while a WeakRef points at it
+        if (opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken ||
+            opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+        {
+            rawWeakFieldRead(location, leftExpressionValue, genContext);
+            rawWeakFieldRead(location, rightExpressionValue, genContext);
         }
 
         if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken)
@@ -16085,6 +16126,35 @@ class MLIRGenImpl
     mlir::Type UncapitalizeType(mlir::Type type);
 
     mlir::Type NonNullableTypes(mlir::Type type);
+
+    // own spec 93: a read of a @weak field under own: `loaded` is the !ts.weak_ref slot's load; gives
+    // the declared type, checked (WEAK_FIELD_VIEW_ATTR_NAME)
+    mlir::Value weakFieldRead(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name,
+                              mlir::Value loaded, const GenContext &genContext);
+    mlir::Value weakFieldValue(mlir::Location location, mlir::Value pointer, mlir::Type declaredType,
+                               const GenContext &genContext);
+    // own spec 93: `loaded`, the slot read again, as the checked read `viewOp` is
+    mlir::Value weakFieldReread(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value loaded,
+                                const GenContext &genContext);
+    // own spec 93: the view weakFieldRead made, if `value` is one (or a test's narrowing of one)
+    mlir_ts::SafeCastOp weakFieldView(mlir::Value value);
+    // own spec 93: removes a view whose checked read nothing uses (the left side of a store, an
+    // operand replaced by its raw pointer)
+    void dropWeakFieldView(mlir_ts::SafeCastOp viewOp);
+    // own spec 93: `value`, a @weak field read, as its stored pointer untested (identity comparisons)
+    void rawWeakFieldRead(mlir::Location location, mlir::Value &value, const GenContext &genContext);
+    // own spec 93: `value` as the WeakRef a store into the @weak field `viewOp` reads writes
+    mlir::Value weakFieldWrite(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value value,
+                               const GenContext &genContext);
+    // own spec 93: a checked read of a @weak field nothing uses (a test's narrowing reads the field
+    // again for each branch) would stop the program on a freed object the program never reads
+    void eraseUnusedWeakFieldReads();
+    // own spec 93: `@weak` on a node that is no instance field of a class
+    mlir::LogicalResult refuseWeakDecorator(Node node);
+    // own spec 93: a @weak field's checks; records it on the class
+    mlir::LogicalResult mlirGenWeakField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                         PropertyDeclaration propertyDeclaration, mlir::Type type,
+                                         const GenContext &genContext);
 
     // TODO: remove using those types as there issue with generic types
     mlir::Type ExcludeTypes(mlir::Location location, mlir::Type type, mlir::Type exclude);

@@ -1179,6 +1179,14 @@ namespace own_inference
                         callCopies.push_back({read, drop});
                     }
 
+                    // a @weak field's read given to the call that may free it (spec 93)
+                    if (auto derefOp = mlir::dyn_cast<mlir_ts::WeakRefDerefOp>(read);
+                        derefOp && derefOp.getChecked() && use.op == drop)
+                    {
+                        reportWeakFieldCallDrops(drop, derefOp);
+                        return true;
+                    }
+
                     reportPlaceBorrowOutlives(use.op, drop, name, place);
                     return true;
                 }

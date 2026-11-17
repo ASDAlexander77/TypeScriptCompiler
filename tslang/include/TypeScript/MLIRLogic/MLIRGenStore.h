@@ -835,6 +835,9 @@ struct ClassInfo
     // a base's field this class declares again with a type of its own (`v: number` over Base's
     // `v: number | string`): one slot, the base's; read through this class it is of this type
     llvm::StringMap<mlir::Type> redeclaredFieldTypes;
+    // the @weak fields this class declares (own spec 93), by name: the type the program reads and
+    // writes (`Node | null`); under -mm=own the slot holds a !ts.weak_ref of the class
+    llvm::StringMap<mlir::Type> weakFieldTypes;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
@@ -1318,6 +1321,31 @@ struct ClassInfo
         }
 
         return mlir_ts::FieldInfo();
+    }
+
+    // the declared type of a @weak field named `name`, this class's or a base's (own spec 93); null
+    // when the field is no @weak one
+    mlir::Type weakFieldType(llvm::StringRef name)
+    {
+        if (auto found = weakFieldTypes.find(name); found != weakFieldTypes.end())
+        {
+            return found->second;
+        }
+
+        for (auto &baseClass : baseClasses)
+        {
+            if (auto type = baseClass->weakFieldType(name))
+            {
+                return type;
+            }
+        }
+
+        return mlir::Type();
+    }
+
+    bool isWeakField(llvm::StringRef name)
+    {
+        return !!weakFieldType(name);
     }
 
     mlir_ts::FieldInfo findField(mlir::Attribute id, bool &foundField)

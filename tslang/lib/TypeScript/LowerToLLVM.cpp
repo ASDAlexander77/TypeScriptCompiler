@@ -1520,6 +1520,27 @@ class WeakRefDerefOpLowering : public TsLlvmPattern<mlir_ts::WeakRefDerefOp>
         TypeConverterHelper tch(getTypeConverter());
 
         mlir::Value target = transformed.getWeakRef();
+
+        // a read of a @weak field (own spec 93): the class pointer itself. `raw` leaves it untested;
+        // `checked` stops the program when it points at a tombstone (a null pointer is null)
+        if (op.getChecked() || op.getRaw())
+        {
+            if (op.getChecked() && compileOptions.memoryModel == MemoryModelOwn)
+            {
+                OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), compileOptions);
+                auto alive = orl.emitWeakTargetAliveOrNull(target);
+                auto null = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+                auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, target, null);
+                auto readable = rewriter.create<LLVM::OrOp>(loc, isNull, alive);
+                AssertLogic al(op, rewriter, getTypeConverter(), loc, compileOptions);
+                al.check(readable, "the @weak field '" + op.getWeakField().value_or("").str() +
+                                       "' was read after its object was freed");
+            }
+
+            rewriter.replaceOp(op, target);
+            return success();
+        }
+
         // own: the target, unless its block is a tombstone (Defines.h, beside HEAP_BLOCK_IMMORTAL)
         if (compileOptions.memoryModel == MemoryModelOwn)
         {

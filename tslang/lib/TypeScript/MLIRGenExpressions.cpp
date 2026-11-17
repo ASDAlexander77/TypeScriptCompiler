@@ -1982,7 +1982,7 @@ namespace mlirgen
         }
 
         CAST_A(target, location, elementType, value, genContext);
-        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, mlir_ts::WeakRefType::get(elementType), target);
+        auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, mlir_ts::WeakRefType::get(elementType), target, mlir::StringAttr());
         // born with no weak count, as a Shared block with no count: the retain this adds is the first
         markFreshBlockOwned(location, weakRef);
         return V(weakRef);

@@ -602,6 +602,36 @@ namespace own_inference
                     signalPassFailure();
                 }
             }
+            else if (auto weakRefNewOp = mlir::dyn_cast<mlir_ts::WeakRefNewOp>(op);
+                     weakRefNewOp && weakRefNewOp.getWeakField())
+            {
+                // a @weak field owns nothing (spec 93): a new object written to it, which nothing else
+                // holds, would be freed at once and leave the field pointing at a tombstone
+                auto target = rootOf(weakRefNewOp.getTarget());
+                auto *def = target.getDefiningOp();
+                // `= null`: casts of a null or undefined constant
+                auto *source = weakRefNewOp.getTarget().getDefiningOp();
+                while (source && mlir::isa<mlir_ts::CastOp, mlir_ts::ValueOrDefaultOp, mlir_ts::ValueOp>(source) &&
+                       source->getNumOperands() > 0)
+                {
+                    source = source->getOperand(0).getDefiningOp();
+                }
+
+                auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(source);
+                // a read of a variable, a parameter or a field has an owner: that place; so does a value a
+                // `const` holds (declare() names its defining op)
+                auto isRead = mlir::isa_and_nonnull<mlir_ts::LoadOp>(source) ||
+                              (def && nameAt(def->getLoc()) != "this value");
+                if (def && !isNull && !isRead && ownsHeap(target) && isFresh(target) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
+                    llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); }) &&
+                    reporting())
+                {
+                    op->emitError("the @" WEAK_DECORATOR " field '")
+                        << weakFieldShortName(weakRefNewOp.getWeakField().value_or(""))
+                        << "' cannot own a new object; it would be freed at once";
+                    signalPassFailure();
+                }
+            }
             else if (mlir::isa<mlir_ts::DeleteOp>(op))
             {
                 if (reporting())

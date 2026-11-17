@@ -25,7 +25,7 @@ It stays in tier 3 ("experimental") in the plan's terms.
 
 | Area | Status | What it rests on |
 | --- | --- | --- |
-| Design | Complete | Spec phases 0-8 and the later designs (parameter decorators, facts from object files, immortal keepers, generic containers, `WeakRef<T>`) are merged. |
+| Design | Complete | Spec phases 0-8 and the later designs (parameter decorators, facts from object files, immortal keepers, generic containers, `WeakRef<T>`, `@weak` fields) are merged. |
 | Tracker | Clean | No open GitHub issue. The own items of `TSLANG_ISSUES.md` (31-33, 39-42, 47-85) are fixed, with one remnant: whole-program facts (item 48). |
 | Soundness | No failure found, not proven | See [Soundness](#soundness). |
 | Coverage of TypeScript | Partial | 707 of 882 corpus files (80%) compile. See [Coverage](#coverage). |
@@ -124,6 +124,7 @@ Probed one by one under the JIT:
 | Tree insert and sum as methods recursing on `this` | Compiles and runs |
 | Parent link: `k.parent = new WeakRef(this)` | Compiles and runs (spec 84); `deref()` gives `undefined` once the parent is freed |
 | `new WeakRef(a)` | Compiles and runs under own, gc and none; rc refuses it |
+| Parent link as a field: `@weak parent: Node \| null`, `c.parent = this`, `this.parent.v` | Compiles and runs (spec 93); a read after the parent was freed stops the program |
 | `new Map<string, Node>()`, `filter` over class instances | Rejected by design; `Shared<Node>` |
 | Swap through a local: `let t = a[i]; a[i] = a[j]; a[j] = t` | Rejected by design; `[a[i], a[j]] = [a[j], a[i]]` |
 | `x ??= new B()` on a parameter, a local or a field | Compiles and runs (spec 90): a plain assignment where `x` is null; `??=` of an accessor is still rejected |
@@ -178,9 +179,9 @@ assertions-enabled CI leg, and a soak run. The first holds today; the other two 
 ## What is left, in order
 
 1. **Back-references beyond WeakRef.** `WeakRef<T>` works (spec 84): the target's header word holds
-   the weak count, and a freed target is a tombstone until its last WeakRef goes. Left: a module that
-   makes WeakRefs cannot spawn threads with closures, and a zero-cost borrowing field for shapes the
-   compiler can prove.
+   the weak count, and a freed target is a tombstone until its last WeakRef goes. A `@weak` field reads
+   it as a plain field, checked on every read (spec 93). Left: a module that makes WeakRefs cannot spawn
+   threads with closures, and dropping the check where the compiler can prove the parent alive.
 2. **The rest of linked structures.** A list, a node built from the old head, a walk that assigns a
    parameter and the recursive tree insert work (spec 83). A call that may throw, or one into another
    module, still cannot take a field this way, and the popped node cannot be used after the assignment that frees it.

@@ -1485,6 +1485,8 @@ namespace mlirgen
 
         clearTempModule();
 
+        eraseUnusedWeakFieldReads();
+
         // Verify the module after we have finished constructing it, this will check
         // the structural properties of the IR and invoke any specific verifiers we
         // have on the TypeScript operations.
