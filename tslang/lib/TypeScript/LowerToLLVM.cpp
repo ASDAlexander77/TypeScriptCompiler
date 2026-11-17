@@ -4398,7 +4398,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         // a promoted literal: the elements in a block in the frame, immortal like a heap block that
         // is never freed (StackBlockAlloc)
         auto onStack = createArrayOp->hasAttr(STACK_ALLOC_ATTR_NAME);
-        auto allocated = onStack ? ch.StackBlockAlloc(LLVM::LLVMArrayType::get(llvmElementType, createArrayOp.getItems().size()))
+        auto allocated = onStack ? ch.StackBlockAlloc(TypeHelper::arrayTypeOf(llvmElementType, createArrayOp.getItems().size()))
                                  : ch.MemoryAlloc(multSizeOfTypeValue);
 
         mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
@@ -9167,7 +9167,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::ConstArrayValueType type) {
-        return LLVM::LLVMArrayType::get(converter.convertType(type.getElementType()), type.getSize());
+        return TypeHelper::arrayTypeOf(converter.convertType(type.getElementType()), type.getSize());
     });
 
     // an array is a reference to its header { data, length, capacity } (ArrayLayout.h)
@@ -9197,7 +9197,15 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         SmallVector<mlir::Type> convertedTypes;
         for (auto subType : type.getFields())
         {
-            convertedTypes.push_back(converter.convertType(subType.type));
+            // a `never` or `void` element (`[never, string]`) holds no value: a byte holds its place, as LLVM
+            // has no struct of void
+            auto convertedType = converter.convertType(subType.type);
+            if (isa_and_nonnull<LLVM::LLVMVoidType>(convertedType))
+            {
+                convertedType = mlir::IntegerType::get(type.getContext(), 8);
+            }
+
+            convertedTypes.push_back(convertedType);
         }
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, TUPLE_TYPE_PACKED);
@@ -9207,7 +9215,15 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         SmallVector<mlir::Type> convertedTypes;
         for (auto subType : type.getFields())
         {
-            convertedTypes.push_back(converter.convertType(subType.type));
+            // a `never` or `void` element (`[never, string]`) holds no value: a byte holds its place, as LLVM
+            // has no struct of void
+            auto convertedType = converter.convertType(subType.type);
+            if (isa_and_nonnull<LLVM::LLVMVoidType>(convertedType))
+            {
+                convertedType = mlir::IntegerType::get(type.getContext(), 8);
+            }
+
+            convertedTypes.push_back(convertedType);
         }
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, TUPLE_TYPE_PACKED);

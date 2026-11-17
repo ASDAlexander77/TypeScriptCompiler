@@ -160,9 +160,20 @@ class TypeHelper
         return LLVM::LLVMArrayType::get(getI32Type(), size);
     }
 
+    // an array of `void` (`[[]] as [void[]]`) holds nothing a byte can't stand for: LLVM has no array of void
+    static LLVM::LLVMArrayType arrayTypeOf(mlir::Type elementType, size_t size)
+    {
+        if (!LLVM::LLVMArrayType::isValidElementType(elementType))
+        {
+            elementType = mlir::IntegerType::get(elementType.getContext(), 8);
+        }
+
+        return LLVM::LLVMArrayType::get(elementType, size);
+    }
+
     LLVM::LLVMArrayType getArrayType(mlir::Type elementType, size_t size)
     {
-        return LLVM::LLVMArrayType::get(elementType, size);
+        return arrayTypeOf(elementType, size);
     }
 
     LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)

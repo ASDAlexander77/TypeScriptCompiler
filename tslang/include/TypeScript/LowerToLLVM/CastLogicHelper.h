@@ -1314,7 +1314,7 @@ class CastLogicHelper
 
         // a constant array's data is static: the array gets a copy of it, so a push reallocates
         // the copy and never the read-only original
-        auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
+        auto arrayValueSize = TypeHelper::arrayTypeOf(llvmSrcElementType, size);
         auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
         auto copyAllocated = ch.MemoryAlloc(bytesSize);
         rewriter.create<mlir_ts::MemoryCopyOp>(loc, copyAllocated, in, bytesSize);

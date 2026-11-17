@@ -1561,6 +1561,30 @@ Still open:
     reporting the mismatch; this already happened with explicit type arguments. A type that could not be
     made now prints as `<unresolved>`.
   - `contextualGenericReturnToOptionalClassField.ts` crashes about every other run, with this batch's
-    compiler and the one before it: a nondeterministic crash, not caused by this batch.
+    compiler and the one before it: a nondeterministic crash, not caused by this batch. Fixed (sixth batch,
+    133).
+
+133 (crashes, sixth batch). Fixed:
+- `contextualGenericReturnToOptionalClassField.ts` crashed in about half its runs. The debug build asserts
+  every time: casting a boxed object to a tuple read its storage as a tuple, and the storage of `object`
+  itself (`lookup<T extends object = object>()`) is not one. Now it is the error "can't cast 'object' to
+  '{label:string}': the object's fields are not known".
+- `[...A, ...A]` of a tuple `A` crashed in getRestType, which took every rest element for an array. A
+  spread tuple now has its elements in place. A rest element of any other type that is not an array is
+  an error.
+- `[[]] as [void[]]` crashed making an LLVM array of `void`. A byte stands in for an element that LLVM
+  can't hold, wherever the lowering makes an array type.
+- `[undefined, ''] as [never, string]` (`tupleTypeInference2.ts`) crashed lowering a value of type `never`
+  (an LLVM `void`) into a tuple. Converting a value to `never` is now an error ("a value of type 'undefined'
+  can't be converted to 'never'"). A `never` element in a tuple's LLVM struct takes a byte, and a
+  `void`/`never` array element does too. A rest element of a type parameter (`[...TArgs, TLast]`) stays
+  generic.
+- A class field holding a class (`static self = X;`, `cls = B;`) holds the class's value, `typeof X`, as a
+  `let` does (108). It failed with "failed to legalize operation 'ts.ClassRef'".
+- Still open: a rest parameter typed as a tuple (`fn(...args: [...A, number])`) cannot be called with
+  separate arguments ("'ts.CreateArray' op result #0 must be ..."), and a class given where a constructor
+  type is expected (`reg.register(B)`).
+
+Test: `00class_field_values_tuple_spread.ts` (all four models).
 
 Test: `00satisfies_object_builtins.ts` (all four models).

@@ -3372,6 +3372,21 @@ class MLIRGenImpl
             }
 
             init = V(result);
+
+            // a class field holding a class (`static X = X;`, `cls = Base;`): the class's value, `typeof X`, as a
+            // `let` holds one (classRefAsClassValue)
+            if (init && !type && item == SyntaxKind::PropertyDeclaration && init.getDefiningOp<mlir_ts::ClassRefOp>()
+                && initializer != SyntaxKind::ThisKeyword)
+            {
+                auto classValue = classRefAsClassValue(loc(initializer), init, genContext);
+                if (classValue.failed_or_no_value())
+                {
+                    return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                }
+
+                init = V(classValue);
+            }
+
             if (init)
             {
                 if (!type)

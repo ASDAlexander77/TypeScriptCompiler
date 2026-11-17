@@ -283,6 +283,18 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning)
     {
+        // `[undefined, ""] as [never, string]`: a `never` element holds no value, and storing one crashed the
+        // lowering (an LLVM `void` in a struct)
+        for (auto &field : fields)
+        {
+            if (isa<mlir_ts::NeverType>(field.type))
+            {
+                emitError(location) << "a tuple element of type 'never' can't hold a value: '" << to_print(srcTupleType)
+                                    << "' to '" << to_print(mlir_ts::TupleType::get(builder.getContext(), fields)) << "'";
+                return mlir::failure();
+            }
+        }
+
         SmallVector<mlir::Value> values;
 
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
@@ -865,6 +877,14 @@ namespace mlirgen
         if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))
         {
             return castToClassValue(location, classValueType, value, genContext);
+        }
+
+        // `[undefined, ""] as [never, string]`: a value of type `never` does not exist, and one made of
+        // another (lowered as an LLVM `void`) crashed the lowering, or failed it where it was stored
+        if (isa<mlir_ts::NeverType>(type) && !isa<mlir_ts::NeverType>(valueType))
+        {
+            emitError(location) << "a value of type '" << to_print(valueType) << "' can't be converted to 'never'";
+            return mlir::failure();
         }
 
         // a class boxed as `any` / `unknown` / `Object` (`let a: any = C`, `token === C`): its value, which
@@ -1990,12 +2010,22 @@ namespace mlirgen
         // This is a copy -- the destination tuple/const-tuple no longer aliases the boxed object.
         if (auto srcObjectType = dyn_cast<mlir_ts::ObjectType>(valueType))
         {
+            // (only a boxed tuple: `object` itself (`lookup<T extends object = object>()`) has no fields to read,
+            // and its storage read as a tuple was garbage - a crash about every other run)
+            auto boxedTupleType = dyn_cast_or_null<mlir_ts::TupleType>(
+                mth.convertConstTupleTypeToTupleType(srcObjectType.getStorageType()));
+            if ((isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type)) && !boxedTupleType)
+            {
+                emitError(location) << "can't cast '" << to_print(valueType) << "' to '" << to_print(type)
+                                    << "': the object's fields are not known";
+                return mlir::failure();
+            }
+
             if (isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type))
             {
                 // storage type is whatever was boxed (tuple/const-tuple); normalize to a
                 // mutable TupleType, both for the load and for castTupleToTuple's src param.
-                auto srcTupleType = mlir::cast<mlir_ts::TupleType>(
-                    mth.convertConstTupleTypeToTupleType(srcObjectType.getStorageType()));
+                auto srcTupleType = boxedTupleType;
 
                 // RefType (not ValueRefType -- PropertyRefOp's operand is restricted to
                 // AnyStructRefLike, which ValueRefType is not part of); mapTupleToFields
