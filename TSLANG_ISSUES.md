@@ -1530,3 +1530,37 @@ typeof a }`; "can't resolve name: a"). Fixed (fourth batch): the parameters are 
 later parameter's `typeof` type, as they were for its default, and while the return type is evaluated.
 Tests: `unusedParameterUsedInTypeOf.ts`, `newLineInTypeofInstantiation.ts`,
 `indirectTypeParameterReferences.ts`; `00module_var_redeclared.ts`.
+
+130 (`e satisfies T`: "unsupported expression"): `parenthesizedSatisfiesExpressionWithComments.ts`,
+`spreadParameterTupleType.ts`, `declarationEmitAsConstSatisfiesNonReadonlyResult.ts`. Fixed (fifth batch):
+`e satisfies T` is `e` and keeps its own type. When `e` is a function, it takes its untyped parameters' types
+from `T`. `spreadParameterTupleType.ts` then reaches a crash of its own, which happens without `satisfies`
+too: a rest parameter typed as a spread tuple, `function fn(...args: [...A, ...A])`.
+
+131 (`Object` as a value: "'Object' is a type here, not a value", 27 tests). Fixed (fifth batch), unless the
+program declares its own `Object`:
+- `Object.freeze`, `Object.seal` and `Object.preventExtensions` give their argument back (tslang's objects
+  have no frozen state).
+- `Object.keys`, `Object.values` and `Object.entries` of an object or a tuple are made of its fields at
+  compile time, the keys `for...in` walks. The result is a fresh, mutable array.
+
+Still open:
+- `any`, `object` or record arguments ("its keys are not known").
+- `Object.assign`, `Object.fromEntries`, `Object.defineProperty`, `Object.create`.
+- `push` on the call result itself (`Object.keys(o).push(...)`: "Can't get reference of the array").
+
+132 (a type parameter nothing gives a type: "not all types could be inferred", 31 tests). Fixed (fifth batch):
+- An uninferred type parameter is its constraint, else `any`, as TypeScript falls back to the constraint and
+  as tslang's erased instantiation does. A declared default was already used.
+- 6 of those tests compile now; most of the rest stop at a later, unrelated error.
+- Still open:
+  - `tupleTypeInference2.ts` now reaches a crash that `g<void[], any>([[]] as [void[]])` already had: a union of
+    tuples holding `void[]`.
+  - Passing a generic class as a constructor type (`fruitFactory1(Banana)`) fails on the class reference.
+  - A function given for `() => Generator<T>` (no `Generator` type, 125) crashed in the type printer while
+    reporting the mismatch; this already happened with explicit type arguments. A type that could not be
+    made now prints as `<unresolved>`.
+  - `contextualGenericReturnToOptionalClassField.ts` crashes about every other run, with this batch's
+    compiler and the one before it: a nondeterministic crash, not caused by this batch.
+
+Test: `00satisfies_object_builtins.ts` (all four models).

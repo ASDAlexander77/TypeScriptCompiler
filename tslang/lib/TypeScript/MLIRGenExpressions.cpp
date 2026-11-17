@@ -129,6 +129,30 @@ namespace mlirgen
         {
             return mlirGen(expressionAST.as<AsExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::SatisfiesExpression)
+        {
+            // `e satisfies T` is `e`, checked against T and keeping its own type: T is the context only of a
+            // function, whose untyped parameters take their types from it ("unsupported expression" before)
+            auto satisfiesAST = expressionAST.as<SatisfiesExpression>();
+            auto inner = satisfiesAST->expression;
+            while (inner == SyntaxKind::ParenthesizedExpression)
+            {
+                inner = inner.as<ParenthesizedExpression>()->expression;
+            }
+
+            GenContext innerGenContext(genContext);
+            if (inner == SyntaxKind::ArrowFunction || inner == SyntaxKind::FunctionExpression)
+            {
+                if (auto satisfiedType = getType(satisfiesAST->type, genContext); satisfiedType && mth.isAnyFunctionType(satisfiedType))
+                {
+                    innerGenContext.clearReceiverTypes();
+                    innerGenContext.receiverType = satisfiedType;
+                    innerGenContext.receiverFuncType = satisfiedType;
+                }
+            }
+
+            return mlirGen(satisfiesAST->expression, innerGenContext);
+        }
         else if (kind == SyntaxKind::TemplateExpression)
         {
             return mlirGen(expressionAST.as<TemplateLiteralLikeNode>(), genContext);
@@ -1516,6 +1540,78 @@ namespace mlirgen
             });
     }
 
+    // `Object.freeze(o)` (and seal, preventExtensions) is `o`: tslang's objects have no frozen state to set.
+    // `Object.keys(o)`, `Object.values(o)` and `Object.entries(o)` of an object or a tuple, whose fields are
+    // known when it is compiled, are made of them: `["a", "b"]`, `[o.a, o.b]`, `[["a", o.a], ["b", o.b]]` - the
+    // keys `for...in` walks (forInFieldKeys). `Object` was a type only: "'Object' is a type here, not a value".
+    ValueOrLogicalResult MLIRGenImpl::mlirGenObjectBuiltin(mlir::Location location, StringRef method,
+                                                           Expression argument, const GenContext &genContext)
+    {
+        if (method == "freeze" || method == "seal" || method == "preventExtensions")
+        {
+            return mlirGen(argument, genContext);
+        }
+
+        auto result = mlirGen(argument, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto objectValue = V(result);
+
+        SmallVector<std::string> keys;
+        if (!forInFieldKeys(objectValue.getType(), keys))
+        {
+            emitError(location) << "'Object." << method << "' of a value of type '" << to_print(objectValue.getType())
+                                << "' is not supported: its keys are not known; give it an object or a tuple";
+            return mlir::failure();
+        }
+
+        // the object, by a name of its own, read once
+        SymbolTableScopeT objectScope(symbolTable);
+        auto objectName = StringRef(".object_builtin_arg");
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(objectName, objectValue.getType(), location);
+        declare(location, varDecl, objectValue, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        NodeArray<Expression> elements;
+        for (auto &key : keys)
+        {
+            auto keyLiteral = nf.createStringLiteral(stows(key));
+            auto read = nf.createElementAccessExpression(nf.createIdentifier(stows(objectName.str())),
+                                                         nf.createStringLiteral(stows(key)));
+            if (method == "keys")
+            {
+                elements.push_back(keyLiteral);
+            }
+            else if (method == "values")
+            {
+                elements.push_back(read);
+            }
+            else
+            {
+                NodeArray<Expression> pair;
+                pair.push_back(keyLiteral);
+                pair.push_back(read);
+                elements.push_back(nf.createArrayLiteralExpression(pair, false));
+            }
+        }
+
+        auto arrayLiteral = nf.createArrayLiteralExpression(elements, false);
+        // the positions of the call, for the diagnostics of what is made of it
+        arrayLiteral->pos = argument->pos;
+        arrayLiteral->_end = argument->_end;
+        auto arrayResult = mlirGen(arrayLiteral.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(arrayResult)
+
+        // a new array each call, as mutable as any (`Object.keys(o).push("b")`): not a constant literal's
+        auto arrayValue = V(arrayResult);
+        if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(arrayValue.getType()))
+        {
+            auto elementType = mth.wideStorageType(mth.stripLiteralType(constArrayType.getElementType()));
+            return cast(location, mlir_ts::ArrayType::get(elementType), arrayValue, genContext);
+        }
+
+        return arrayValue;
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(CallExpression callExpression, const GenContext &genContext)
     {
         auto location = loc(callExpression);
@@ -1542,6 +1638,29 @@ namespace mlirgen
                 if (objectType && mth.isWeakRefType(objectType))
                 {
                     return mlirGenWeakRefDeref(location, access, genContext);
+                }
+            }
+
+            // `Object.keys(o)`, `Object.freeze(o)`, ... unless the program declares its own `Object` value
+            if (access->expression == SyntaxKind::Identifier
+                && MLIRHelper::getName(access->expression.as<Identifier>()) == "Object")
+            {
+                auto method = MLIRHelper::getName(access->name);
+                if ((method == "keys" || method == "values" || method == "entries" || method == "freeze"
+                     || method == "seal" || method == "preventExtensions")
+                    && callExpression->arguments.size() == 1)
+                {
+                    auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+                    auto declared = resolveIdentifier(location, "Object", genContext);
+                    if (genContext.postponedMessages)
+                    {
+                        rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+                    }
+
+                    if (!declared)
+                    {
+                        return mlirGenObjectBuiltin(location, method, callExpression->arguments.front(), genContext);
+                    }
                 }
             }
 
