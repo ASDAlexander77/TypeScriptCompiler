@@ -5765,7 +5765,7 @@ set(own_error_cases
     "own_err_escaped_this_field_read|:24:28: error: '[^']*' is used here after its value was moved"
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
-    "own_err_named_walk_let|:10:33: error: 'node' borrows 'node[.]next' and cannot be stored, returned or captured"
+    "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_named_var_local|:8:9: error: 'h' borrows the result of 'tag' and cannot be stored, returned or captured"
     "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})

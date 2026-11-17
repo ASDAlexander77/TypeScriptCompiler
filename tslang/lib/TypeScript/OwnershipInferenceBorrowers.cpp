@@ -377,6 +377,22 @@ namespace own_inference
                 return;
             }
 
+            // (a parameter's local given a local's value takes it over: `x = n`)
+            // (the owning local an assigned parameter is given, declared from the parameter's slot)
+            auto initial = rootOf(varOp.getInitializer());
+            if (auto initialRead = initial.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto paramSlot = initialRead.getReference().getDefiningOp<mlir_ts::VariableOp>(); paramSlot && paramSlot.getInitializer())
+                {
+                    initial = paramSlot.getInitializer();
+                }
+            }
+
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(initial); argument && argument.getOwner()->isEntryBlock())
+            {
+                return;
+            }
+
             auto local = false;
             auto borrowed = [&](mlir::Value value) {
                 if (letBorrows(value))
