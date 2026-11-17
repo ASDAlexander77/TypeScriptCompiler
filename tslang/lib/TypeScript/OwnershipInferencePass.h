@@ -329,6 +329,11 @@ class OwnershipInferencePass
     // given is a borrow of its owner until the next assignment, never a move (borrowsOnly).
     llvm::SmallPtrSet<mlir::Operation *, 4> localBorrowingLets;
     void classifyLocalBorrowingLets();
+    // The `let`s the dry run refused for being assigned or for keeping what they borrow: the only
+    // ones classifyLocalBorrowingLets may make borrowers of, in the real run. A `let` today's
+    // analysis accepts keeps its moves.
+    llvm::SmallPtrSet<mlir::Operation *, 4> localLetCandidates;
+    void noteLocalLetCandidate(mlir::Operation *op, llvm::StringRef name);
     // The owning, uncaptured local whose slot `value` reads, other than a parameter's, or null.
     mlir_ts::VariableOp owningLocalReadOf(mlir::Value value);
     // Does `value` read owning locals other than `self` - one, or a merge of several (and of null)?

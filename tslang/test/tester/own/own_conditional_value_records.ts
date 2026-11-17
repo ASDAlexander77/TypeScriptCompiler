@@ -32,6 +32,19 @@ function inLet(d: number) {
     return o.h.x + o.n;
 }
 
+let G: One | null = null;
+
+// into an array literal, and into a global
+function inArray(d: number) {
+    const a = [d < 0 ? { h: new H(-d), n: 1 } : { h: new H(d), n: 3 }];
+    churn();
+    return a[0].h.x;
+}
+
+function intoGlobal(d: number) {
+    G = d < 0 ? { h: new H(-d), n: 1 } : { h: new H(d), n: 3 };
+}
+
 function main() {
     let s: number = 0;
     for (let i = -2; i < 3; i++) {
@@ -44,8 +57,12 @@ function main() {
         if (m) s += m.h.x + m.n;
 
         s += inLet(i);
+        s += inArray(i);
+        intoGlobal(i);
+        churn();
+        s += G.h.x;
     }
 
-    assert(s == 17 + 18 + 17, "sum");
+    assert(s == 17 + 18 + 17 + 6 + 6, "sum");
     print("done.");
 }

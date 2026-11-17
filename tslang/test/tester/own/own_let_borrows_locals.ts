@@ -113,6 +113,26 @@ function returned(): T {
     return b;
 }
 
+// a `let` today's analysis accepts keeps its moves: `x = n` takes `n` over, and `n` is free to hold another
+function movesStay() {
+    let a = new T(1);
+    let x = a;
+    let n = new T(30);
+    x = n;
+    n = new T(31);
+    return x.v + n.v;
+}
+
+function bestOf(k: number) {
+    let first = new T(0);
+    let best = first;
+    for (let i = 1; i < k; i++) {
+        let c = new T(i);
+        if (c.v % 3 == 0) best = c;
+    }
+
+    return best.v;
+}
 function main() {
     for (let i = 0; i < 1000; i++) {
         reassigned();
@@ -123,6 +143,8 @@ function main() {
         merges();
         walkWhile();
         walkFor();
+        assert(movesStay() == 61);
+        assert(bestOf(10) == 9);
         assert(returned().v == 2);
     }
 

@@ -186,7 +186,9 @@ namespace own_inference
 
     void OwnershipInferencePass::runOnFunction()
     {
-        joinViewRetainPairs(getFunction());
+        // what the real run may do that the dry run did not: only where the dry run failed, so a
+        // function today's analysis accepts is decided as it was
+        localLetCandidates.clear();
 
         // the dry run (spec 22.3): does today's analysis pass as it is?
         {
@@ -203,6 +205,12 @@ namespace own_inference
             {
                 makeStringCopies(toErase);
                 splitBorrowingLets();
+                // (after the copies, which read the dry run's erased retains)
+                joinViewRetainPairs(getFunction());
+            }
+            else
+            {
+                localLetCandidates.clear();
             }
 
             splitLetCandidates.clear();

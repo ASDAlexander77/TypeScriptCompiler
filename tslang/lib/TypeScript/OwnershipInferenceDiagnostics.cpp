@@ -793,6 +793,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
     {
+        noteLocalLetCandidate(move, llvm::StringRef());
         if (!reporting())
         {
             return;
@@ -815,6 +816,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportMovedInLoop(mlir::Operation *move, llvm::StringRef name)
     {
+        noteLocalLetCandidate(move, llvm::StringRef());
         if (!reporting())
         {
             return;
@@ -924,6 +926,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportPlaceBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
     {
+        noteLocalLetCandidate(op, name);
         if (!reporting())
         {
             return;
@@ -935,6 +938,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportPlaceBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
     {
+        noteLocalLetCandidate(op, name);
         if (!reporting())
         {
             return;
@@ -970,6 +974,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
     {
+        noteLocalLetCandidate(op, name);
         if (!reporting())
         {
             return;
@@ -987,6 +992,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
     {
+        noteLocalLetCandidate(op, name);
         if (!reporting())
         {
             return;

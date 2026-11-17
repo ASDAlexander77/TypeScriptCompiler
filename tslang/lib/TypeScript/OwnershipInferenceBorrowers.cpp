@@ -367,12 +367,72 @@ namespace own_inference
         });
     }
 
+    void OwnershipInferencePass::noteLocalLetCandidate(mlir::Operation *op, llvm::StringRef name)
+    {
+        if (!dryRun || !op)
+        {
+            return;
+        }
+
+        // the `let` the error is about: assigned (the store, or rc's retain right before it), declared,
+        // or the one named
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+        if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
+        {
+            for (auto *next = op->getNextNode(); next && !storeOp; next = next->getNextNode())
+            {
+                storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(next);
+                if (!storeOp && !mlir::isa<mlir_ts::ReleaseSlotOp>(next))
+                {
+                    break;
+                }
+            }
+
+            if (storeOp && storeOp.getValue() != retainOp->getOperand(0))
+            {
+                storeOp = {};
+            }
+        }
+
+        if (auto varOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp())
+        {
+            localLetCandidates.insert(varOp);
+        }
+
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(op))
+        {
+            if (auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>())
+            {
+                localLetCandidates.insert(varOp);
+            }
+        }
+
+        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(op))
+        {
+            localLetCandidates.insert(varOp);
+        }
+
+        getFunction()->walk([&](mlir_ts::VariableOp varOp) {
+            if (!name.empty() && name != "this value" && varName(varOp) == name)
+            {
+                localLetCandidates.insert(varOp);
+            }
+        });
+    }
+
     void OwnershipInferencePass::classifyLocalBorrowingLets()
     {
         localBorrowingLets.clear();
+        // only in the real run, and only a `let` the dry run refused (noteLocalLetCandidate)
+        if (dryRun || localLetCandidates.empty())
+        {
+            return;
+        }
+
         llvm::SmallVector<mlir_ts::VariableOp> candidates;
         getFunction()->walk([&](mlir_ts::VariableOp varOp) {
-            if (!varOp.getInitializer() || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false))
+            if (!localLetCandidates.contains(varOp) || !varOp.getInitializer() || !isOwningVariable(varOp) ||
+                varOp.getCaptured().value_or(false))
             {
                 return;
             }
