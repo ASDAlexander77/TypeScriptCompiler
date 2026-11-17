@@ -104,6 +104,8 @@ back borrows; `<Opaque>x` borrows): 740 compile under own (`00any_types`, `00any
 
 After spec 94 (a `let` reassigned from other locals borrows each value, a list walked from a local head, a `?:` of `@value` literals holding new objects, one object literal given to interface parameters more than once): 751 of 900 compile under own (`00for_optional_class_condition`, `00interface_object`, `00conditional_nested_record_literal_temporary`). No file went the other way.
 
+After spec 95 (`return` inside `using`, a parameter's `let` after `??=` or `||=`, a `?:` of literals given to an interface or held by a `const`, a kept parameter in a returned literal): 758 of 944 compile under own (`00array7`, `00using_unwind_outer_locals`, and five more from the corpus growing and from other fixes on main: `00generator6`, `00owned_unions`, `00safe_cast_bug`, `00string_union_elements`, `00tslang_issues_92_124`). No file went the other way.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -117,6 +119,9 @@ Probed one by one under the JIT:
 | Walking a list: `for (let c = this.head; c; c = c.next)` | Compiles and runs |
 | Walking a list from a local head: `let node = head; while (node) node = node.next` | Compiles and runs (spec 94); giving the head up or cutting the list during the walk is rejected |
 | Reassigning a `let` from other locals: `let b = q; ... b = r` | Compiles and runs (spec 94): it borrows each |
+| `return s` inside a `using` block | Compiles and runs (spec 95), also when dispose or the constructor throws |
+| A literal holding a kept parameter, returned: `return { k }` | Compiles and runs (spec 95); not from an exported function, whose parameters are not kept |
+| A `?:` of literals holding new objects, as an interface or in a `const` | Compiles and runs (spec 95) |
 | List `push`: `n.next = this.head; this.head = n` | Compiles and runs |
 | Appending at the tail, cutting the tail: `c.next = n`, `c.next = null` after the walk | Compiles and runs |
 | List `pop`: `this.head = this.head.next`; unlinking: `c.next = c.next.next` | Compiles and runs |

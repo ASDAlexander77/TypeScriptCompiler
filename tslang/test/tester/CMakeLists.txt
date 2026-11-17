@@ -5216,6 +5216,14 @@ foreach(let_borrows_mm gc none rc own)
     tslang_add_test(NAME test-compile-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
     tslang_add_test(NAME test-jit-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
     tslang_add_test(NAME test-compile-own_interface_literal_views-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_literal_views.ts")
+    tslang_add_test(NAME test-jit-own_return_in_using-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_return_in_using.ts")
+    tslang_add_test(NAME test-compile-own_return_in_using-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_return_in_using.ts")
+    tslang_add_test(NAME test-jit-own_param_assign_merge_let-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_assign_merge_let.ts")
+    tslang_add_test(NAME test-compile-own_param_assign_merge_let-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_assign_merge_let.ts")
+    tslang_add_test(NAME test-jit-own_conditional_record_boxes-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_record_boxes.ts")
+    tslang_add_test(NAME test-compile-own_conditional_record_boxes-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_record_boxes.ts")
+    tslang_add_test(NAME test-jit-own_kept_param_record-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_record.ts")
+    tslang_add_test(NAME test-compile-own_kept_param_record-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_record.ts")
 endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
@@ -5735,6 +5743,8 @@ set(own_error_cases
     "own_err_walk_local_head_assigned|:4:64: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_walk_local_head_cut|:4:90: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_conditional_value_records_mixed|:4:48: error: a value that borrows what it holds and owns nothing [(]a tuple that holds a borrow[)] meets a value that owns a block here. -mm=own cannot release them alike"
+    "own_err_param_assign_merge_let_reassigned|:3:23: error: 'a' borrows 'results' but is used here after 'results' is released or overwritten"
+    "own_err_kept_param_record_used|:3:55: error: 'k' is used here after its value was moved"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"

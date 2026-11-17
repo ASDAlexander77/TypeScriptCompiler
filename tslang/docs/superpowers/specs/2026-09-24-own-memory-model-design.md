@@ -6270,3 +6270,41 @@ model), `own_err_let_borrows_local_owner_assigned`, `_local_loop`, `_local_moved
 `own_err_walk_local_head_assigned`, `own_err_walk_local_head_cut`, `own_err_conditional_value_records_mixed` (one arm borrows, the other owns: refused); `own_err_interface_two_views` is gone (the shape compiles); `own_err_named_walk_let` now gives the
 head up inside the walk. Corpus 748 -> 751 of 900 (`00for_optional_class_condition`, `00interface_object`,
 `00conditional_nested_record_literal_temporary`), none lost.
+
+## 95. `return` inside `using`; a parameter's `let` after `??=`; literal merges in a box or a `const`; a kept parameter in a literal, 2026-11-17
+
+**`return s` inside a `using` block** was "'s' is moved here on some paths only; -mm=own cannot release it
+on the others yet". The read of `s` comes before the block's dispose call and its move into the result
+after it, so the block's handler - reached when dispose or the constructor throws - is reached from the
+read but never from the move. Such a release, in a handler that no path from the move reaches and from
+which the move cannot be reached (`unmovedInHandler`), stays: the read becomes the move, so the slot still
+holds the value there. Only where every other way to place the release failed.
+
+**A `let` given a parameter through a cast out of its optional type** after `results ??= []` or
+`results ||= []` (`let a = <number[]>results`) was "'a' is merged from several branches". The cast is a
+merge of the parameter local's value and a typed default (`ts.Default`), which owns nothing: the merge of
+owning locals' reads (`slotLoadsOfMerge`) now passes it as it passes null, and the `let` borrows the local.
+
+**A `?:` of literals given to an interface** (`return c ? { h: new H(1) } : { h: new H(2) }` of a non-value
+interface, or a `const` of one) was refused (spec 94): rc copies the merge into one box after the paths
+join. `recordRetainOf` now takes a value box filled once by the merge as the literal's box, as it takes the
+box of one literal's read. **A `const` of a merge of `@value` literals** that hold new objects was folded
+into the merge, holding no reference, while each arm freed its new object at the end of the arm. MLIRGen
+now gives it storage, as it gives a `const` of one such literal (`mergesLiteralSlots`: each arm of the
+`ts.If` a literal's read, null or undefined) - in every model.
+
+**A parameter the function keeps, put into a literal it returns** (`return { k }` of a string `k`, a union,
+an optional, an earlier record) was "an object literal that holds a value it owns is moved only into a
+local or returned as it is". The caller gave the value up, so the literal owns it as it owns a new object:
+`isOwningRecord` takes a kept parameter's read (`keptParamRead`), and rc's retain of the record is the
+parameter's receiver. A read of the parameter after the literal took it is a use after a move. An
+exported function's parameters are not kept, so `export function addPath(prev, key) { return { prev, key } }`
+(`path.ts`) is still refused.
+
+Not here: a method value given to a callback type with more parameters (the adapter's box would take the
+method's object); a class object given as `object` (the cast moves it, `00bound_method_wider_callback`); a
+`let` cast out of an optional parameter that is never assigned (`let a = <T[]>param`).
+
+Tests: `own_return_in_using`, `own_param_assign_merge_let`, `own_conditional_record_boxes`,
+`own_kept_param_record` (every model), `own_err_param_assign_merge_let_reassigned`,
+`own_err_kept_param_record_used`.
