@@ -61,7 +61,13 @@ namespace own_inference
             }
         }
 
-        return callee ? callee.getValue().str() : std::string();
+        // a function expression's symbol (`.f_main..feL47C14...`) is MLIRGen's, not the reader's
+        return callee && !callee.getValue().starts_with(".") ? callee.getValue().str() : std::string();
+    }
+
+    std::string OwnershipInferencePass::quotedFunctionName(llvm::StringRef name)
+    {
+        return name.starts_with(".") ? std::string("this function expression") : ("'" + name + "'").str();
     }
 
     std::string OwnershipInferencePass::describePlace(mlir::Value ref)
@@ -428,13 +434,13 @@ namespace own_inference
             auto diag = op->emitError("'") << (name == "this value" ? paramName(param) : name);
             if (isReturned(root))
             {
-                diag << "' is a parameter, returned here, but -mm=own cannot tell the callers of '" << f.getName()
-                     << "' that the result borrows it";
+                diag << "' is a parameter, returned here, but -mm=own cannot tell the callers of "
+                     << quotedFunctionName(f.getName()) << " that the result borrows it";
             }
             else
             {
-                diag << "' is a parameter, kept here, but -mm=own cannot make the callers of '" << f.getName()
-                     << "' give it up";
+                diag << "' is a parameter, kept here, but -mm=own cannot make the callers of "
+                     << quotedFunctionName(f.getName()) << " give it up";
             }
 
             noteLostFacts(diag);
@@ -582,7 +588,7 @@ namespace own_inference
         auto f = getFunction();
         if (auto why = f->getAttrOfType<mlir::StringAttr>(OWN_FACTS_LOST_ATTR_NAME))
         {
-            diag.attachNote(f.getLoc()) << "'" << f.getName() << "' could return a borrow or keep a parameter, but "
+            diag.attachNote(f.getLoc()) << quotedFunctionName(f.getName()) << " could return a borrow or keep a parameter, but "
                                         << why.getValue();
         }
     }
@@ -940,7 +946,12 @@ namespace own_inference
             return;
         }
 
-        auto diag = op->emitError("'") << name << "' borrows '" << owner << "' and cannot be stored, returned or captured";
+        // an owner no variable holds (a tuple a call returned, destructured): a temporary
+        auto diag = owner == "this value"
+                        ? op->emitError(name == "this value" ? std::string("a value") : ("'" + name + "'").str())
+                              << " borrows a temporary and cannot be stored, returned or captured"
+                        : op->emitError(name == "this value" ? std::string("a value that borrows '") : ("'" + name + "' borrows '").str())
+                              << owner << (name == "this value" ? "' cannot" : "' and cannot") << " be stored, returned or captured";
         noteLostFacts(diag);
         signalPassFailure();
     }
