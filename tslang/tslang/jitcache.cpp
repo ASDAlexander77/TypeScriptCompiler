@@ -72,6 +72,7 @@ mlir::TimingScope &compileTiming();
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 llvm::Error addEntryThunk(llvm::Module &, llvm::StringRef);
+void addJitImageStart(llvm::Module &);
 
 #define JIT_CACHE_FORMAT "tslang-jit-cache 1"
 #define JIT_CACHE_DIR "__jit"
@@ -615,6 +616,8 @@ class JitUnitBuilder
             llvm::consumeError(std::move(err));
             return -1;
         }
+
+        addJitImageStart(*llvmModule);
 
         if (isMain)
         {

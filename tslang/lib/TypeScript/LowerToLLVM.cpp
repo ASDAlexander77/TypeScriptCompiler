@@ -7196,6 +7196,15 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
             auto value = rewriter.create<LLVM::LoadOp>(loc, llvmType, exceptionInfo);
             TypeOfOpHelper toh(rewriter);
             auto boxed = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(ctx), value, toh.typeOfLogic(loc, type));
+            // the box takes over the reference the `throw` took for the payload, and the catch
+            // variable owns the box (mlirGen(TryStatement)): under rc it needs its own count, as
+            // the Windows copy thunk's box has - a box left at 0 was freed by `throw e`'s release of
+            // the variable, after the throw had taken it
+            if (compileOptions.isRefCounted())
+            {
+                rewriter.create<mlir_ts::RetainOp>(loc, boxed);
+            }
+
             return rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxed);
         };
 

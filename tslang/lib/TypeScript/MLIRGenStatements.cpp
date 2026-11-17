@@ -1813,6 +1813,14 @@ namespace mlirgen
 
         auto arguments = entryBlock.getArguments();
         auto value = builder.create<mlir_ts::LoadOp>(location, source, arguments[1]);
+        // Under rc the read carries the reference the `throw` took for the exception: the box takes
+        // it over rather than adding one, and the catch variable gives it back (mlirGen(TryStatement)).
+        // Under own the inference makes the same move (isReadOutOfException).
+        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, source))
+        {
+            value->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+
         auto result = cast(location, target, value, thunkGenContext);
         if (result.failed_or_no_value())
         {
@@ -1916,9 +1924,10 @@ namespace mlirgen
         // scopes have no landing pad of their own to release their locals from - the function's
         // body, a `catch` clause's enclosing scopes. So the throw gives them back itself, as a
         // `return` would, and first takes a reference for the exception, as a `return` does for
-        // its caller: `throw s` must not be freed by the release of `s`. Nothing gives that
-        // reference back - a caught value is not owned (takeOwnershipOfLocal) - so a thrown heap
-        // value leaks rather than dangles.
+        // its caller: `throw s` must not be freed by the release of `s`. The catch clause takes that
+        // reference over (mlirGen(TryStatement)) and gives it back where it ends; where the clause
+        // cannot own it - an exception out of it could land in this function - it leaks rather than
+        // dangles.
         mlirGenRetainCaptured(location, mlir::ValueRange{exception}, /*atLastUse=*/true);
         mlirGenReleaseOwnedOnUnwind(location, &genContext);
 
@@ -1946,7 +1955,43 @@ namespace mlirgen
 
         std::string varName;
         auto catchClause = tryStatementAST->catchClause;
-        if (catchClause)
+
+        // Under rc and own the caught value is the catch variable's (USER RULING 2026-11-17): the
+        // `throw` took a reference for the exception, and the catch takes that reference over - on
+        // Windows the copy thunk boxes it into an `any`, on Itanium SaveCatchVar does - into a slot
+        // of its own (`.caught`, unowned, as a catch variable was). The clause then declares the
+        // variable as one of its own locals, given that slot's value and its reference, so it is
+        // released where the clause ends, on a `return` or a `break` out of it, or moved like any
+        // local; a `catch {}` declares a hidden one. A clause that holds a `try` of its own keeps
+        // its locals unowned (clausesWithNestedTry), and so its caught value. So does a clause an
+        // exception out of a call can leave for somewhere in this function - a `try` around it, a
+        // block wrapped for its unwind cleanup, its own `finally`: a clause has no cleanup of its
+        // own, so the value would be lost on that edge (a clause's locals are, the same way).
+        auto ownsCaught = compileOptions.tracksOwnership() && catchClause && catchClause->block &&
+                          !blockHasTry(catchClause->block) && !tryStatementAST->finallyBlock &&
+                          !isInsideUnwindCleanupScope(genContext);
+        auto caughtOwned = std::make_unique<SmallVector<mlir::Value>>();
+        auto caughtUsing = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        std::string caughtName;
+        mlir::Type caughtType;
+        if (ownsCaught)
+        {
+            auto varDecl = catchClause->variableDeclaration;
+            caughtName = varDecl ? MLIRHelper::getName(varDecl->name) : std::string(".caught.value");
+            caughtType = varDecl && varDecl->type ? getType(varDecl->type, genContext) : getAnyType();
+            varName = ".caught";
+            auto declaredType = registerVariable(
+                location, varName, false, VariableType::Let,
+                [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                    return {caughtType, mlir::Value(), TypeProvided::Yes};
+                },
+                genContext);
+            if (!declaredType)
+            {
+                return mlir::failure();
+            }
+        }
+        else if (catchClause)
         {
             auto varDecl = catchClause->variableDeclaration;
             if (varDecl)
@@ -2073,9 +2118,56 @@ namespace mlirgen
 
             auto nestedTry = blockHasTry(tryStatementAST->catchClause->block) ? 1 : 0;
             clausesWithNestedTry += nestedTry;
-            auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
-            clausesWithNestedTry -= nestedTry;
-            EXIT_IF_FAILED(result)
+            if (ownsCaught)
+            {
+                // the clause's own scope, holding the caught value, around the clause's block
+                GenContext clauseGenContext(catchGenContext);
+                clauseGenContext.parentBlockContext = &catchGenContext;
+                clauseGenContext.ownedVars = caughtOwned.get();
+                clauseGenContext.usingVars = caughtUsing.get();
+                clauseGenContext.isLoopBodyScope = false;
+                clauseGenContext.loopBodyLabel.clear();
+                clauseGenContext.labelledScopeLabel.clear();
+                clauseGenContext.isSwitchScope = false;
+                clauseGenContext.isUnwindCleanupScope = false;
+                clauseGenContext.isLoop = false;
+
+                // the clause's variable, given what was caught and the reference it came with
+                auto caughtValue = resolveIdentifier(location, varName, tryGenContext);
+                if (!caughtValue)
+                {
+                    clausesWithNestedTry -= nestedTry;
+                    return mlir::failure();
+                }
+
+                if (auto *readOp = caughtValue.getDefiningOp())
+                {
+                    readOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                auto declaredType = registerVariable(
+                    location, caughtName, false, VariableType::Let,
+                    [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                        return {caughtType, caughtValue, TypeProvided::Yes};
+                    },
+                    clauseGenContext);
+                if (!declaredType)
+                {
+                    clausesWithNestedTry -= nestedTry;
+                    return mlir::failure();
+                }
+
+                auto result = mlirGen(tryStatementAST->catchClause->block, clauseGenContext);
+                clausesWithNestedTry -= nestedTry;
+                EXIT_IF_FAILED(result)
+                EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &clauseGenContext));
+            }
+            else
+            {
+                auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
+                clausesWithNestedTry -= nestedTry;
+                EXIT_IF_FAILED(result)
+            }
         }
 
         // terminator
