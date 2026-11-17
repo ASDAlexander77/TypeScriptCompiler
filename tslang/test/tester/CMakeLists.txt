@@ -1980,8 +1980,8 @@ endforeach()
 # TSLANG_ISSUES 86-122, from TypeScript's own compiler tests: a namespace's code statements, object literal
 # functions with untyped parameters, for...in into a declared variable, new Object(), binding defaults, statics
 # read by instance fields, function expression callbacks, arithmetic on any, `this` at the module level,
-# parameter defaults reading earlier parameters, number members of integers, untyped rest patterns; and a
-# source file saved as UTF-16
+# parameter defaults reading earlier parameters, untyped rest patterns; and a source file saved as UTF-16
+# (117, a number's members on an integer, needs the default library, which these tests are run without)
 foreach(issues_mm gc rc none own)
     foreach(issues_test 00tslang_issues_86_122 00utf16_source)
         tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")

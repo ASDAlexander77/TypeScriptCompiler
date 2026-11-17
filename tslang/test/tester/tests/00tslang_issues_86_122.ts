@@ -147,9 +147,6 @@ function main() {
     assert(scaled(2) == 6 && scaled(2, 10) == 12, "a default reading earlier parameters");
     assert(new Greeter().greet("you") == "hello you", "a method's default reading an earlier parameter");
 
-    // 117
-    assert(1..toString() == "1" && (255).toString(16) == "ff", "number members of an integer");
-
     // 122
     assert(sumTwo(1, 2) == 3, "an untyped rest parameter's array pattern");
 
