@@ -2262,6 +2262,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // an enum named as a value (`var x = E`) is its members at compile time, with nothing at run time a
+            // variable could hold; a `const` stands for it, any other made invalid code (it hung the compiler)
+            if (auto enumType = dyn_cast<mlir_ts::EnumType>(type); enumType && !isConst && init
+                && init.getDefiningOp<mlir_ts::ConstantOp>()
+                && isa<mlir::DictionaryAttr>(init.getDefiningOp<mlir_ts::ConstantOp>().getValue()))
+            {
+                emitError(location) << "variable '" << variableName << "' can't hold the enum '"
+                                    << enumType.getName().getValue() << "' itself: use 'const', or its members";
+                return mlir::failure();
+            }
+
             assert(type);
             setType(type);
             setInitial(init);
