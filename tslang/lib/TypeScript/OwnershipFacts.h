@@ -1216,7 +1216,9 @@ inline bool slotLoadsOfMerge(mlir::BlockArgument argument, llvm::SmallVectorImpl
         }
 
         if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
-            constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+            constant.getDefiningOp<mlir_ts::OptionalUndefOp>() ||
+            // the empty arm of a cast out of an optional (`<T[]>results` when it holds nothing)
+            constant.getDefiningOp<mlir_ts::DefaultOp>())
         {
             continue;
         }
@@ -2068,6 +2070,25 @@ inline mlir_ts::LoadOp nestedRecordRead(mlir::Value value)
     return reads == 1 && isOwningRecord(loadOp.getResult()) ? loadOp : mlir_ts::LoadOp();
 }
 
+inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index);
+
+// The read of a parameter its function keeps (OWN_PARAMS_ATTR_NAME): the caller gave it up, so what
+// it is stored into owns it (`return { k }` of a kept string `k`, own spec 95). Null for anything else.
+inline mlir_ts::LoadOp keptParamRead(mlir::Value value)
+{
+    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+    auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    auto index = -1;
+    auto *function = varOp ? varOp->getParentOfType<mlir_ts::FuncOp>().getOperation() : nullptr;
+    if (!function || varOp.getCaptured().value_or(false) || !isParameterSlot(varOp, index) ||
+        !llvm::is_contained(ownedParams(function), index))
+    {
+        return {};
+    }
+
+    return loadOp;
+}
+
 inline bool isOwningRecord(mlir::Value value)
 {
     auto varOp = recordLocalOf(value);
@@ -2103,7 +2124,7 @@ inline bool isOwningRecord(mlir::Value value)
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
             if (!storeOp || storeOp.getReference() != field ||
                 !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue()) || slotLoadOf(storeOp.getValue()) ||
-                  nestedRecordRead(storeOp.getValue())))
+                  nestedRecordRead(storeOp.getValue()) || keptParamRead(storeOp.getValue())))
             {
                 return false;
             }

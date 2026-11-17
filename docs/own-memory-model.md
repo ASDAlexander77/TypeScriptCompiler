@@ -89,6 +89,11 @@ A `let` that is only given other locals' values, or fields', and is assigned aga
 list from a local head is that case (`let node = head; while (node) { ...; node = node.next; }`).
 Giving the head up, or cutting the list, while the walk still reads it is an error.
 
+A parameter a function keeps can go into an object literal it returns (`return { key, prev }`): the
+literal owns it, as it owns a new object, and reading the parameter after that is an error. A
+parameter given a default by `??=` or `||=` can be copied into a `let` (`let a = <number[]>results`),
+which borrows it.
+
 Inside a module the compiler also infers each function's facts from its body: a function that
 stores a parameter keeps it, so its callers have to move the argument in; a function that
 returns a field of its argument returns a borrow, so its callers may only borrow the result.

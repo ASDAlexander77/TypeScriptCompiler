@@ -1075,7 +1075,7 @@ class OwnershipInferencePass
     static bool mergedRecordReads(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &reads, unsigned depth = 0);
     // The reads of owning `let`s an owning record's fields are given (`return { s, n }`): each moves
     // out of its local at the record's retain.
-    llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
+    llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value, bool keptParams = false);
     // The store of `value` into a field of the record whose retain `retain` is: the move's taker.
     static mlir::Operation *recordStoreOf(mlir::Operation *retain, mlir::Value value);
     // A move of `value` into `taker` that goes through a method of it taken as a value (`h.f = v.get`,
@@ -1282,6 +1282,12 @@ class OwnershipInferencePass
 
     // Can control reach `to` from the start of `start`, without passing `kills` on the way?
     bool reachableFrom(mlir::Block *start, mlir::Operation *to, llvm::ArrayRef<mlir::Operation *> kills);
+
+    // `release`, in an exception handler, is reached from the read at `acquire` only on paths that
+    // never come to its `taker`, nor come to it after the taker: the value has not moved there
+    // (spec 95).
+    bool unmovedInHandler(mlir::Operation *acquire, mlir::Operation *taker, mlir::Operation *release,
+                          llvm::ArrayRef<mlir::Operation *> kills);
 
     // The blocks of an exception handler: from a landing pad to the end of its catch. A release there
     // would be a call inside an exception funclet.

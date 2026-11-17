@@ -1122,6 +1122,13 @@ namespace own_inference
                     slotReceivers[load.getReference()].push_back({op, load.getResult(), load});
                 }
 
+                // ...and the reads of parameters this function keeps, as rc's reference for the record
+                // (spec 95)
+                for (auto load : recordSlotLoads(value, /*keptParams=*/true))
+                {
+                    paramReceivers[load.getReference()].push_back({op, load.getResult(), load});
+                }
+
                 toErase.insert(op);
                 continue;
             }
