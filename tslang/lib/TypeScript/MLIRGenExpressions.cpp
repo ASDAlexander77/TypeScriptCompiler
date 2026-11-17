@@ -620,6 +620,37 @@ namespace mlirgen
         return prefix ? mlir::Value(newValue) : accessorValue;
     }
 
+    // `++`/`--` on an `any` (`var x; x = 1; x++`): the number it holds plus or minus one, stored back boxed. The
+    // value is a number, the new one for a prefix operator and the old one for a postfix one, as in TypeScript.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAnyIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value anyValue,
+                                                          bool prefix, const GenContext &genContext)
+    {
+        mlir::Value numberValue;
+        {
+            CAST(numberValue, location, getNumberType(), anyValue, genContext);
+        }
+
+        mlir::Value one;
+        {
+            CAST(one, location, getNumberType(),
+                 builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(1)), genContext);
+        }
+
+        auto binaryOpCode = opCode == SyntaxKind::PlusPlusToken ? SyntaxKind::PlusToken : SyntaxKind::MinusToken;
+        mlir::Value newValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, getNumberType(), builder.getI32IntegerAttr(static_cast<int32_t>(binaryOpCode)), numberValue, one);
+
+        mlir::Value boxed;
+        {
+            CAST(boxed, location, anyValue.getType(), newValue, genContext);
+        }
+
+        auto saved = mlirGenSaveLogicOneItem(location, anyValue, boxed, genContext);
+        EXIT_IF_FAILED(saved)
+
+        return prefix ? newValue : numberValue;
+    }
+
     static bool isAccessorValue(mlir::Value value)
     {
         auto *defOp = value.getDefiningOp();
@@ -706,6 +737,11 @@ namespace mlirgen
                 return mlirGenAccessorIncrement(location, opCode, expressionValue, true, genContext);
             }
 
+            if (isa<mlir_ts::AnyType>(expressionValue.getType()))
+            {
+                return mlirGenAnyIncrement(location, opCode, expressionValue, true, genContext);
+            }
+
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -740,6 +776,11 @@ namespace mlirgen
             if (isAccessorValue(expressionValue) && mth.isNumericType(expressionValue.getType()))
             {
                 return mlirGenAccessorIncrement(location, opCode, expressionValue, false, genContext);
+            }
+
+            if (isa<mlir_ts::AnyType>(expressionValue.getType()))
+            {
+                return mlirGenAnyIncrement(location, opCode, expressionValue, false, genContext);
             }
 
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
@@ -3072,6 +3113,13 @@ namespace mlirgen
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, type, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));            
             return V(symbOp);
+        }
+
+        // `this` where nothing gives it one - the module's top level, an arrow there, a plain function - is
+        // `undefined`, as in an ES module and in strict mode
+        if (name == THIS_NAME && !genContext.thisType && !genContext.thisClassType)
+        {
+            return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
         }
 
         // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted

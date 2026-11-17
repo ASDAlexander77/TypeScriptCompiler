@@ -6141,6 +6141,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenAccessorIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value accessorValue,
                                                   bool prefix, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenAnyIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value anyValue,
+                                             bool prefix, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext);
@@ -8756,12 +8759,73 @@ class MLIRGenImpl
     }
 
     // TODO: review it, seems like big hack
+    static bool isArithmeticOrOrderingOp(SyntaxKind opCode)
+    {
+        switch (opCode)
+        {
+        case SyntaxKind::PlusToken:
+        case SyntaxKind::MinusToken:
+        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::AsteriskAsteriskToken:
+        case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::CaretToken:
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         if (opCode == SyntaxKind::CommaToken)
         {
             return mlir::success();
+        }
+
+        // an `any` in arithmetic, or compared by order, is the number it holds - or, beside a string in `+`, the
+        // string. Left an `any`, the operator reached the lowering as a pointer and failed there, with no location.
+        if (isArithmeticOrOrderingOp(opCode))
+        {
+            auto unboxAny = [&](mlir::Value &value, mlir::Value other) -> mlir::LogicalResult {
+                if (!isa<mlir_ts::AnyType>(value.getType()))
+                {
+                    return mlir::success();
+                }
+
+                // two `any`s added may be numbers or strings, which is known only at run time
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::AnyType>(other.getType()))
+                {
+                    emitError(location, "'+' of two values of type 'any' is not supported: cast one of them to "
+                                        "'number' or 'string'");
+                    return mlir::failure();
+                }
+
+                mlir::Type toType = getNumberType();
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::StringType>(other.getType()))
+                {
+                    toType = getStringType();
+                }
+
+                CAST(value, location, toType, value, genContext);
+                return mlir::success();
+            };
+
+            if (mlir::failed(unboxAny(leftExpressionValue, rightExpressionValue))
+                || mlir::failed(unboxAny(rightExpressionValue, leftExpressionValue)))
+            {
+                return mlir::failure();
+            }
         }
 
         // a @weak field compared (own spec 93): its stored pointer, which never stops - a tombstone's

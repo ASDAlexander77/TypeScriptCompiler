@@ -115,6 +115,60 @@ namespace mlirgen
         return convertWideToUTF8(sourceFile->resolvedPath);
     }
 
+    // A source file's text as the parser's UTF-16 units. A file saved as UTF-16 (a byte order mark FF FE or
+    // FE FF) is read as UTF-16; any other is UTF-8, and a byte that isn't valid UTF-8 there is U+FFFD. Read
+    // with stows() as UTF-8 regardless, a UTF-16 file and an invalid byte (`/\xA0/u`) aborted the compiler.
+    static std::wstring decodeSourceText(llvm::StringRef bytes)
+    {
+        std::wstring text;
+        auto *data = reinterpret_cast<const unsigned char *>(bytes.data());
+        auto size = bytes.size();
+        if (size >= 2 && ((data[0] == 0xFF && data[1] == 0xFE) || (data[0] == 0xFE && data[1] == 0xFF)))
+        {
+            auto littleEndian = data[0] == 0xFF;
+            text.reserve(size / 2);
+            for (size_t i = 2; i + 1 < size; i += 2)
+            {
+                auto unit = littleEndian ? (data[i] | (data[i + 1] << 8)) : ((data[i] << 8) | data[i + 1]);
+                text.push_back(static_cast<wchar_t>(unit));
+            }
+
+            return text;
+        }
+
+        text.reserve(size);
+        llvm::SmallVector<llvm::UTF16, 2> units(2);
+        auto *source = reinterpret_cast<const llvm::UTF8 *>(data);
+        auto *sourceEnd = source + size;
+        while (source < sourceEnd)
+        {
+            if (*source < 0x80)
+            {
+                text.push_back(static_cast<wchar_t>(*source++));
+                continue;
+            }
+
+            // one character at a time, so that a bad one costs only itself
+            auto length = static_cast<size_t>(llvm::getNumBytesForUTF8(*source));
+            auto *target = units.data();
+            if (length > static_cast<size_t>(sourceEnd - source)
+                || llvm::ConvertUTF8toUTF16(&source, source + length, &target, units.data() + units.size(),
+                                            llvm::strictConversion) != llvm::conversionOK)
+            {
+                text.push_back(static_cast<wchar_t>(0xFFFD));
+                source++;
+                continue;
+            }
+
+            for (auto *unit = units.data(); unit < target; ++unit)
+            {
+                text.push_back(static_cast<wchar_t>(*unit));
+            }
+        }
+
+        return text;
+    }
+
     std::pair<SourceFile, std::vector<SourceFile>> MLIRGenImpl::loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain)
     {
         std::vector<SourceFile> includeFiles;
@@ -134,8 +188,8 @@ namespace mlirgen
 
         Parser parser;
         auto sourceFile = parser.parseSourceFile(
-            fullPathW, 
-            stows(sourceBuf->getBuffer().str()), 
+            fullPathW,
+            decodeSourceText(sourceBuf->getBuffer()),
             ScriptTarget::Latest);
         auto sourceFilePath = canonicalFilePath(fullPath);
         sourceFile->resolvedPath = convertUTF8toWide(sourceFilePath);
@@ -248,7 +302,7 @@ namespace mlirgen
             auto includeFile =
                 parser.parseSourceFile(
                     actualFilePathW,
-                    stows(sourceBuf->getBuffer().str()),
+                    decodeSourceText(sourceBuf->getBuffer()),
                     ScriptTarget::Latest);
             includeFile->resolvedPath = convertUTF8toWide(includeFilePath);
 
