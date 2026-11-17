@@ -2262,6 +2262,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // an enum named as a value (`var x = E`) is its members at compile time, with nothing at run time a
+            // variable could hold; a `const` stands for it, any other made invalid code (it hung the compiler)
+            if (auto enumType = dyn_cast<mlir_ts::EnumType>(type); enumType && !isConst && init
+                && init.getDefiningOp<mlir_ts::ConstantOp>()
+                && isa<mlir::DictionaryAttr>(init.getDefiningOp<mlir_ts::ConstantOp>().getValue()))
+            {
+                emitError(location) << "variable '" << variableName << "' can't hold the enum '"
+                                    << enumType.getName().getValue() << "' itself: use 'const', or its members";
+                return mlir::failure();
+            }
+
             assert(type);
             setType(type);
             setInitial(init);
@@ -6141,6 +6152,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenAccessorIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value accessorValue,
                                                   bool prefix, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenAnyIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value anyValue,
+                                             bool prefix, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext);
@@ -8286,8 +8300,11 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ident = V(result);
 
-                auto subInit =
+                // a field the value hasn't got is an error, not a value of nothing to save
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -8302,9 +8319,16 @@ class MLIRGenImpl
                 auto varName = propertyName;
 
                 auto ident = resolveIdentifier(location, varName, genContext);
+                if (!ident)
+                {
+                    emitError(location, "can't resolve name: ") << varName;
+                    return mlir::failure();
+                }
 
-                auto subInit =
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -8746,12 +8770,73 @@ class MLIRGenImpl
     }
 
     // TODO: review it, seems like big hack
+    static bool isArithmeticOrOrderingOp(SyntaxKind opCode)
+    {
+        switch (opCode)
+        {
+        case SyntaxKind::PlusToken:
+        case SyntaxKind::MinusToken:
+        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::AsteriskAsteriskToken:
+        case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::CaretToken:
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         if (opCode == SyntaxKind::CommaToken)
         {
             return mlir::success();
+        }
+
+        // an `any` in arithmetic, or compared by order, is the number it holds - or, beside a string in `+`, the
+        // string. Left an `any`, the operator reached the lowering as a pointer and failed there, with no location.
+        if (isArithmeticOrOrderingOp(opCode))
+        {
+            auto unboxAny = [&](mlir::Value &value, mlir::Value other) -> mlir::LogicalResult {
+                if (!isa<mlir_ts::AnyType>(value.getType()))
+                {
+                    return mlir::success();
+                }
+
+                // two `any`s added may be numbers or strings, which is known only at run time
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::AnyType>(other.getType()))
+                {
+                    emitError(location, "'+' of two values of type 'any' is not supported: cast one of them to "
+                                        "'number' or 'string'");
+                    return mlir::failure();
+                }
+
+                mlir::Type toType = getNumberType();
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::StringType>(other.getType()))
+                {
+                    toType = getStringType();
+                }
+
+                CAST(value, location, toType, value, genContext);
+                return mlir::success();
+            };
+
+            if (mlir::failed(unboxAny(leftExpressionValue, rightExpressionValue))
+                || mlir::failed(unboxAny(rightExpressionValue, leftExpressionValue)))
+            {
+                return mlir::failure();
+            }
         }
 
         // a @weak field compared (own spec 93): its stored pointer, which never stops - a tombstone's

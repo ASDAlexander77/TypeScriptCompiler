@@ -9058,7 +9058,9 @@ struct Parser
             }            
         }
 
-        if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
+        // a pragma is `@name`: a comment with no `@` has none, and std::regex's `\s*` recursed once per character
+        // over a long run of spaces until the stack overflowed (commentWithUnreasonableIndentationLevel01.ts)
+        if (range->kind == SyntaxKind::MultiLineCommentTrivia && text.find(S('@')) != string::npos) {
             auto multiLinePragma_begin =
                 sregex_iterator(text.begin(), text.end(), multiLinePragmaRegEx);
             auto multiLinePragma_end = sregex_iterator();       

@@ -1133,7 +1133,17 @@ namespace mlirgen
         //   for (let .i = 0; .i < N; .i++) { if (.i == 0) { const key = "a"; body } else if (.i == 1) { ... } }
         // The loop is still a loop, so `break` and `continue` keep their meaning.
         SmallVector<std::string> fieldKeys;
-        if (forInFieldKeys(evaluate(forInStatementAST->expression, genContext), fieldKeys))
+        auto iteratedType = evaluate(forInStatementAST->expression, genContext);
+        // an `any` holds a value whose keys are known only at run time, which nothing here reads
+        if (iteratedType && (isa<mlir_ts::AnyType>(iteratedType) || isa<mlir_ts::UnknownType>(iteratedType)))
+        {
+            emitError(loc(forInStatementAST->expression))
+                << "'for...in' over a value of type '" << to_print(iteratedType)
+                << "' is not supported: its keys are not known; give it an object, a tuple or an array type";
+            return mlir::failure();
+        }
+
+        if (forInFieldKeys(iteratedType, fieldKeys))
         {
             auto _i = nf.createIdentifier(S(".i"));
             NodeArray<VariableDeclaration> declarations;
@@ -1215,10 +1225,20 @@ namespace mlirgen
         // block
         NodeArray<ts::Statement> statements;
 
-        auto varDeclList = forInStatementAST->initializer.as<VariableDeclarationList>();
-        varDeclList->declarations.front()->initializer = _i;
+        // `for (let k in a)` declares the key; `for (k in a)` assigns a variable declared before the loop
+        auto initializer = forInStatementAST->initializer;
+        if (initializer == SyntaxKind::VariableDeclarationList)
+        {
+            auto varDeclList = initializer.as<VariableDeclarationList>();
+            varDeclList->declarations.front()->initializer = _i;
+            statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+        }
+        else
+        {
+            statements.push_back(nf.createExpressionStatement(
+                nf.createBinaryExpression(initializer.as<Expression>(), nf.createToken(SyntaxKind::EqualsToken), _i)));
+        }
 
-        statements.push_back(nf.createVariableStatement(undefined, varDeclList));
         statements.push_back(forInStatementAST->statement);
         auto block = nf.createBlock(statements);
 

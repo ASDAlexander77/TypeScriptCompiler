@@ -9747,7 +9747,11 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
                     << " -> input: " << unrealizedConversionCastOp.getOperand(0).getType() 
                     << "\n";);
 
-                if (nextUnrealizedConversionCastOp.getResult(0).getType() == unrealizedConversionCastOp.getOperand(0).getType())
+                // two casts of each other's result (a cycle) are not a pair to fold: replacing a value's uses
+                // with itself asserts, and in a release build never finished (an enum stored as a value,
+                // declFileEnumUsedAsValue.ts)
+                if (nextUnrealizedConversionCastOp.getResult(0).getType() == unrealizedConversionCastOp.getOperand(0).getType()
+                    && nextUnrealizedConversionCastOp.getResult(0) != unrealizedConversionCastOp.getOperand(0))
                 {
                     // remove both
                     nextUnrealizedConversionCastOp->getResult(0).replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
