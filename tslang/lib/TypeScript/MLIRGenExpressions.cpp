@@ -209,6 +209,7 @@ namespace mlirgen
         auto location = loc(functionExpressionAST);
         mlir_ts::FuncOp funcOp;
         std::string funcName;
+        bool isGeneric;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -228,6 +229,7 @@ namespace mlirgen
 
             funcOp = funcOpRet;
             funcName = funcNameRet;
+            isGeneric = isGenericRet;
         }
 
         // if funcOp is null, means lambda is generic]
@@ -237,8 +239,10 @@ namespace mlirgen
             if (getGenericFunctionMap().count(funcName))
             {
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+                auto funcType = genericFunctionInfo->funcType ? genericFunctionInfo->funcType : getFunctionType({}, {}, false);
+
                 // info: it will not take any capture now
-                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, funcType,
                                                   mlir::Value(), true, genContext);
             }
             else
@@ -248,7 +252,10 @@ namespace mlirgen
             }
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), false, genContext);
+        // a function expression whose untyped parameters take their types from where it goes (a callback) is
+        // generic, as an arrow function is: passed as such, it is instantiated for the receiver. Passed as
+        // not generic, the call named a function never made ("does not reference a valid function", 2dArrays.ts)
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), isGeneric, genContext);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
