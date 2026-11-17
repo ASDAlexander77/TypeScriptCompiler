@@ -857,6 +857,47 @@ namespace mlirgen
             return castToClassValue(location, classValueType, value, genContext);
         }
 
+        // ...and a class given where a union holding class values is expected (`make(B)` for
+        // `c: typeof A | typeof B`): the value of the member it is, else of one it extends
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classInfo = getClassInfoByFullName(classRefOp.getType().getName().getValue());
+                std::function<bool(ClassInfo::TypePtr, mlir::Type)> isOrExtends = [&](ClassInfo::TypePtr info, mlir::Type classType) {
+                    return info->classType == classType
+                        || llvm::any_of(info->baseClasses, [&](ClassInfo::TypePtr base) { return isOrExtends(base, classType); });
+                };
+
+                mlir_ts::ClassValueType memberType;
+                for (auto member : unionType.getTypes())
+                {
+                    auto memberClassValueType = dyn_cast<mlir_ts::ClassValueType>(member);
+                    if (!memberClassValueType || !classInfo)
+                    {
+                        continue;
+                    }
+
+                    if (memberClassValueType.getClassType() == classRefOp.getType())
+                    {
+                        memberType = memberClassValueType;
+                        break;
+                    }
+
+                    if (!memberType && isOrExtends(classInfo, memberClassValueType.getClassType()))
+                    {
+                        memberType = memberClassValueType;
+                    }
+                }
+
+                if (memberType)
+                {
+                    CAST_A(classValue, location, memberType, value, genContext);
+                    return cast(location, type, classValue, genContext, disableStrictNullCheck);
+                }
+            }
+        }
+
         // A @value class is nominal. Its value seen as `any`, `unknown`, `Object` or an ordinary
         // interface would be a boxed copy that has lost its class (no vtable to call its methods by);
         // seen as another @value type, a value of a class it is not. With null or undefined it is

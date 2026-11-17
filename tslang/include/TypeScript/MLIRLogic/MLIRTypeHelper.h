@@ -4442,8 +4442,19 @@ protected:
             if (isUnionTypeNeedsTag(location, unionType, baseType))
             {
                 // which member it holds is only known at run time, so the tag's descriptor
-                // decides - assume it may own something
-                return true;
+                // decides - assume it may own something. Unless every member is known to be plain
+                // data (`number | boolean`, `typeof A | typeof B`): that owns nothing whichever it holds
+                std::function<bool(mlir::Type)> isPlainData = [&](mlir::Type member) {
+                    if (auto literalType = dyn_cast<mlir_ts::LiteralType>(member))
+                    {
+                        return isPlainData(literalType.getElementType());
+                    }
+
+                    return isa<mlir::IntegerType, mlir::FloatType, mlir::IndexType, mlir_ts::NumberType,
+                               mlir_ts::BooleanType, mlir_ts::CharType, mlir_ts::NullType, mlir_ts::UndefinedType,
+                               mlir_ts::ClassValueType>(member);
+                };
+                return !llvm::all_of(unionType.getTypes(), isPlainData);
             }
 
             return ownsHeapMemory(location, baseType, visiting);

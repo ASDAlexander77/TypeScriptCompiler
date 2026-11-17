@@ -5464,6 +5464,17 @@ genContext);
             }
         }
 
+        return NewClassInstanceFromClassValue(location, classValue, classInfo, operands, genContext);
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
+                                                                     ClassInfo::TypePtr classInfo,
+                                                                     ArrayRef<mlir::Value> operands,
+                                                                     const GenContext &genContext)
+    {
+        auto classType = classInfo->classType;
+        auto *constructorInfo = classInfo->getHasConstructor() ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr;
+
         // allocate: the class's own `.new`, which sets its vtable
         auto newFuncType = getFunctionType({}, {classType}, false);
         auto newFunc = builder.create<mlir_ts::CastOp>(location, newFuncType, classValuePart(location, classValue, 1));
@@ -5483,7 +5494,8 @@ genContext);
         builder.create<mlir_ts::IfOp>(
             location, hasConstructor, [&](mlir::OpBuilder &opBuilder, mlir::Location loc) {
                 auto constructorFunc = builder.create<mlir_ts::CastOp>(location, constructorFuncType, constructorPart);
-                auto result = mlirGenCallFunction(location, constructorFuncType, constructorFunc, instance, operands, genContext);
+                SmallVector<mlir::Value, 4> callOperands(operands.begin(), operands.end());
+                auto result = mlirGenCallFunction(location, constructorFuncType, constructorFunc, instance, callOperands, genContext);
                 failed = mlir::failed(result);
                 builder.create<mlir_ts::ResultOp>(loc);
             });
@@ -5493,6 +5505,140 @@ genContext);
         }
 
         return instance;
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::NewClassInstanceFromClassValueUnion(mlir::Location location, mlir::Value classValues,
+                                                                          NodeArray<Expression> arguments,
+                                                                          const GenContext &genContext)
+    {
+        auto unionType = mlir::cast<mlir_ts::UnionType>(classValues.getType());
+
+        // every member a class TypeScript lets `new` make: none of them abstract
+        SmallVector<mlir::Type> members;
+        SmallVector<ClassInfo::TypePtr> memberClassInfos;
+        SmallVector<mlir::Type> instanceTypes;
+        for (auto member : unionType.getTypes())
+        {
+            auto classType = mlir::cast<mlir_ts::ClassType>(mlir::cast<mlir_ts::ClassValueType>(member).getClassType());
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                emitError(location) << "Can't find class " << to_print(classType);
+                return mlir::failure();
+            }
+
+            if (classInfo->isAbstract)
+            {
+                emitError(location) << "Cannot create an instance of an abstract class through a value of '"
+                                    << to_print(unionType) << "': '" << to_print(classType) << "' is abstract";
+                return mlir::failure();
+            }
+
+            members.push_back(member);
+            memberClassInfos.push_back(classInfo);
+            instanceTypes.push_back(classType);
+        }
+
+        // the arguments are generated once, before the class is known: every member's constructor has
+        // to take the same, as a subclass's value given as its base's must (castToClassValue)
+        auto parametersOf = [&](ClassInfo::TypePtr info) {
+            auto *constructorInfo = info->getHasConstructor() ? info->findMethod(CONSTRUCTOR_NAME) : nullptr;
+            return constructorInfo ? constructorInfo->funcType.getInputs().drop_front() : llvm::ArrayRef<mlir::Type>();
+        };
+        auto *firstConstructorInfo = memberClassInfos.front()->getHasConstructor()
+                                         ? memberClassInfos.front()->findMethod(CONSTRUCTOR_NAME)
+                                         : nullptr;
+        auto parameters = parametersOf(memberClassInfos.front());
+        for (auto classInfo : memberClassInfos)
+        {
+            if (parametersOf(classInfo) != parameters)
+            {
+                emitError(location) << "Cannot create an instance through a value of '" << to_print(unionType)
+                                    << "': the constructors of '" << to_print(memberClassInfos.front()->classType)
+                                    << "' and '" << to_print(classInfo->classType) << "' take different arguments";
+                return mlir::failure();
+            }
+        }
+
+        if (!firstConstructorInfo && arguments.size() > 0)
+        {
+            emitError(location) << "Expected 0 arguments, but got " << arguments.size();
+            return mlir::failure();
+        }
+
+        SmallVector<mlir::Value, 4> operands;
+        if (firstConstructorInfo)
+        {
+            if (mlir::failed(mlirGenOperands(arguments, operands, firstConstructorInfo->funcType, genContext, 1/*this params shift*/)))
+            {
+                emitError(location) << "Call constructor: can't resolve values of all parameters";
+                return mlir::failure();
+            }
+        }
+
+        // members laid out as one (a union merged into a single class value) have no tag to tell them apart
+        mlir::Type baseType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+        {
+            if (!isa<mlir_ts::ClassValueType>(baseType))
+            {
+                emitError(location) << "Cannot create an instance through a value of '" << to_print(unionType) << "'";
+                return mlir::failure();
+            }
+
+            auto classValue = builder.create<mlir_ts::CastOp>(location, baseType, classValues);
+            auto baseClassType = mlir::cast<mlir_ts::ClassType>(mlir::cast<mlir_ts::ClassValueType>(baseType).getClassType());
+            auto baseClassInfo = getClassInfoByFullName(baseClassType.getName().getValue());
+            if (!baseClassInfo)
+            {
+                emitError(location) << "Can't find class " << to_print(baseClassType);
+                return mlir::failure();
+            }
+
+            return NewClassInstanceFromClassValue(location, classValue, baseClassInfo, operands, genContext);
+        }
+
+        auto resultType = mth.getUnionTypeWithMerge(location, instanceTypes);
+
+        // the member the union holds, made as `new` through a value of it makes it, of the arguments above
+        auto newOfMember = [&](size_t index) -> ValueOrLogicalResult {
+            auto classValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], classValues);
+            auto instance = NewClassInstanceFromClassValue(location, classValue, memberClassInfos[index], operands, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(instance)
+            if (V(instance).getType() == resultType)
+            {
+                return instance;
+            }
+
+            return cast(location, resultType, V(instance), genContext);
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> newOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == members.size())
+            {
+                return newOfMember(index);
+            }
+
+            auto holds = mlirGenUnionHoldsOneOf(location, classValues, {members[index]});
+            EXIT_IF_FAILED_OR_NO_VALUE(holds)
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, V(holds), true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = newOfMember(index);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = newOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return newOf(0);
     }
 
     mlir::LogicalResult MLIRGenImpl::checkOverrideResultFacts(mlir::Location location, ClassInfo::TypePtr classInfo,
