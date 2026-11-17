@@ -315,6 +315,12 @@ namespace mlirgen
                 isGenericTypes |= mth.isGenericType(type);
             }
 
+            // an untyped rest parameter is an `any[]`, and a pattern over it (`...[a, b]`) reads that
+            if (mth.isNoneType(type) && isBindingPattern && isMultiArgs && !initializer)
+            {
+                type = getArrayType(getAnyType());
+            }
+
             // in case of binding
             if (mth.isNoneType(type) && isBindingPattern)
             {
@@ -398,6 +404,17 @@ namespace mlirgen
                 params.push_back(
                     std::make_shared<FunctionParamDOM>(
                         namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
+
+                // a later parameter's default may read this one (`function f(x: number, y = x * 2)`): its type is
+                // evaluated here, so the name has to be known by then
+                auto laterHasInitializer = std::any_of(formalParams.begin() + index + 1, formalParams.end(),
+                                                       [](auto later) { return !!later->initializer; });
+                if (laterHasInitializer)
+                {
+                    auto varDecl = std::make_shared<VariableDeclarationDOM>(namePtr, type, loc(arg));
+                    auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(loc(arg), type);
+                    declare(loc(arg), varDecl, typeRefVal, genContext);
+                }
             }
         }
 
@@ -1256,9 +1273,16 @@ namespace mlirgen
 
         auto instantiateSpecializedFunction = funcDeclGenContext.instantiateSpecializedFunction;
                 
-        auto isGenericFunction = 
-            functionLikeDeclarationBaseAST->typeParameters.size() > 0 
-            || !genContext.isGlobalVarReceiver && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
+        // A field of an object literal holds one function, not a generic one: `{ f: (a) => 0 }` and `{ f(a) {} }`
+        // take an untyped parameter as `any`, as a global variable's function does. Made generic, they crashed
+        // in getNameOfFunction or failed with "can't find type by name: TGenParam_a".
+        auto parentKind = (SyntaxKind)functionLikeDeclarationBaseAST->parent;
+        auto isObjectLiteralMember = parentKind == SyntaxKind::PropertyAssignment
+            || parentKind == SyntaxKind::ObjectLiteralExpression;
+        auto isGenericFunction =
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0
+            || !genContext.isGlobalVarReceiver && !isObjectLiteralMember
+                && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);

@@ -209,6 +209,7 @@ namespace mlirgen
         auto location = loc(functionExpressionAST);
         mlir_ts::FuncOp funcOp;
         std::string funcName;
+        bool isGeneric;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -228,6 +229,7 @@ namespace mlirgen
 
             funcOp = funcOpRet;
             funcName = funcNameRet;
+            isGeneric = isGenericRet;
         }
 
         // if funcOp is null, means lambda is generic]
@@ -237,8 +239,10 @@ namespace mlirgen
             if (getGenericFunctionMap().count(funcName))
             {
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+                auto funcType = genericFunctionInfo->funcType ? genericFunctionInfo->funcType : getFunctionType({}, {}, false);
+
                 // info: it will not take any capture now
-                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, funcType,
                                                   mlir::Value(), true, genContext);
             }
             else
@@ -248,7 +252,10 @@ namespace mlirgen
             }
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), false, genContext);
+        // a function expression whose untyped parameters take their types from where it goes (a callback) is
+        // generic, as an arrow function is: passed as such, it is instantiated for the receiver. Passed as
+        // not generic, the call named a function never made ("does not reference a valid function", 2dArrays.ts)
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), isGeneric, genContext);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
@@ -620,6 +627,37 @@ namespace mlirgen
         return prefix ? mlir::Value(newValue) : accessorValue;
     }
 
+    // `++`/`--` on an `any` (`var x; x = 1; x++`): the number it holds plus or minus one, stored back boxed. The
+    // value is a number, the new one for a prefix operator and the old one for a postfix one, as in TypeScript.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAnyIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value anyValue,
+                                                          bool prefix, const GenContext &genContext)
+    {
+        mlir::Value numberValue;
+        {
+            CAST(numberValue, location, getNumberType(), anyValue, genContext);
+        }
+
+        mlir::Value one;
+        {
+            CAST(one, location, getNumberType(),
+                 builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(1)), genContext);
+        }
+
+        auto binaryOpCode = opCode == SyntaxKind::PlusPlusToken ? SyntaxKind::PlusToken : SyntaxKind::MinusToken;
+        mlir::Value newValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, getNumberType(), builder.getI32IntegerAttr(static_cast<int32_t>(binaryOpCode)), numberValue, one);
+
+        mlir::Value boxed;
+        {
+            CAST(boxed, location, anyValue.getType(), newValue, genContext);
+        }
+
+        auto saved = mlirGenSaveLogicOneItem(location, anyValue, boxed, genContext);
+        EXIT_IF_FAILED(saved)
+
+        return prefix ? newValue : numberValue;
+    }
+
     static bool isAccessorValue(mlir::Value value)
     {
         auto *defOp = value.getDefiningOp();
@@ -706,6 +744,11 @@ namespace mlirgen
                 return mlirGenAccessorIncrement(location, opCode, expressionValue, true, genContext);
             }
 
+            if (isa<mlir_ts::AnyType>(expressionValue.getType()))
+            {
+                return mlirGenAnyIncrement(location, opCode, expressionValue, true, genContext);
+            }
+
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -740,6 +783,11 @@ namespace mlirgen
             if (isAccessorValue(expressionValue) && mth.isNumericType(expressionValue.getType()))
             {
                 return mlirGenAccessorIncrement(location, opCode, expressionValue, false, genContext);
+            }
+
+            if (isa<mlir_ts::AnyType>(expressionValue.getType()))
+            {
+                return mlirGenAnyIncrement(location, opCode, expressionValue, false, genContext);
             }
 
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
@@ -1751,6 +1799,20 @@ namespace mlirgen
 
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+
+        // `new Object()` is an object with no fields, `{}`: `Object` names the type `object`, which has no
+        // constructor of its own to call
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(value.getType());
+            objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()) && newExpression->arguments.size() == 0)
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            NodeArray<ObjectLiteralElementLike> noProperties;
+            auto emptyObject = nf.createObjectLiteralExpression(noProperties, false);
+            emptyObject->pos = newExpression->pos;
+            emptyObject->_end = newExpression->_end;
+            return mlirGen(emptyObject.as<Expression>(), genContext);
+        }
+
         auto unspecialized = deferDefaults ? value : mlir::Value();
         MLIRValueGuard<bool> sharedElementsRefusedGuard(sharedElementsRefused);
         sharedElementsRefused = false;
@@ -3071,6 +3133,13 @@ namespace mlirgen
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, type, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));            
             return V(symbOp);
+        }
+
+        // `this` where nothing gives it one - the module's top level, an arrow there, a plain function - is
+        // `undefined`, as in an ES module and in strict mode
+        if (name == THIS_NAME && !genContext.thisType && !genContext.thisClassType)
+        {
+            return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
         }
 
         // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted

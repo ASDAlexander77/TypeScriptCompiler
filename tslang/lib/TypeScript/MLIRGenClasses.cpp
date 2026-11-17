@@ -1477,6 +1477,7 @@ namespace mlirgen
         }
 
         // non-static first
+        newClassPtr->fieldDeclarationError = false;
         for (auto &classMember : classDeclarationAST->members)
         {
             if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, false, genContext)))
@@ -1498,7 +1499,9 @@ namespace mlirgen
 
         mlirGenClassTypeSetFields(newClassPtr, fieldInfos);
 
-        return mlir::success();
+        // a field declared wrongly (fieldDeclarationError) is laid out anyway, and the class fails only now: a
+        // class left with no layout sent a later read of a base class's field into endless recursion
+        return mlir::failure(newClassPtr->fieldDeclarationError);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFields(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
@@ -1881,8 +1884,18 @@ namespace mlirgen
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto modifiers = [&]() {
+        // under own the getter returns a borrow of the field and the setter keeps its value, which a method that
+        // can be called through the base from another module says in its signature (`@lends`, `@keeps`)
+        auto ownsHeap = compileOptions.memoryModel == MemoryModelOwn && mth.ownsHeapMemory(loc(propertyDeclaration), type);
+        auto modifiers = [&](const wchar_t *decorator = nullptr, const wchar_t *argument = nullptr) {
             NodeArray<ModifierLike> modifiers;
+            if (ownsHeap && decorator)
+            {
+                NodeArray<Expression> arguments;
+                arguments.push_back(nf.createStringLiteral(argument));
+                modifiers.push_back(nf.createDecorator(nf.createCallExpression(nf.createIdentifier(decorator), undefined, arguments)));
+            }
+
             for (auto modifier : propertyDeclaration->modifiers)
             {
                 if (modifier == SyntaxKind::PublicKeyword || modifier == SyntaxKind::ProtectedKeyword
@@ -1917,7 +1930,8 @@ namespace mlirgen
                 body = nf.createBlock(statements, /*multiLine*/ false);
             }
 
-            newClassPtr->extraMembersPost.push_back(nf.createGetAccessorDeclaration(modifiers(), name, {}, typeNode(), body));
+            newClassPtr->extraMembersPost.push_back(
+                nf.createGetAccessorDeclaration(modifiers(L"" LENDS_DECORATOR, L"this"), name, {}, typeNode(), body));
         }
 
         if (setter)
@@ -1932,7 +1946,7 @@ namespace mlirgen
             }
 
             newClassPtr->extraMembersPost.push_back(nf.createSetAccessorDeclaration(
-                modifiers(), name,
+                modifiers(L"" KEEPS_DECORATOR, L"value"), name,
                 {nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined, typeNode())},
                 body));
         }
@@ -2379,6 +2393,13 @@ namespace mlirgen
 
         if (hasModifier(propertyDeclaration, SyntaxKind::AbstractKeyword))
         {
+            // an abstract field is a getter and a setter: the class that implements it has the slot
+            if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+            {
+                emitError(location) << "'@" WEAK_DECORATOR "' cannot be on an abstract field: it has no storage of its own";
+                newClassPtr->fieldDeclarationError = true;
+            }
+
             return mlirGenClassAbstractFieldAccessors(location, newClassPtr, propertyDeclaration, genContext);
         }
 
@@ -2470,17 +2491,66 @@ namespace mlirgen
 #endif
         }
 
-        if (MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR))
+        // `@weak` declared where it cannot be is reported, and the field laid out as an ordinary one (or as
+        // the base's): the class fails once its layout is set (fieldDeclarationError)
+        auto isWeak = MLIRHelper::hasDecorator(propertyDeclaration, WEAK_DECORATOR);
+        auto fieldName = MLIRHelper::getName(propertyDeclaration->name);
+        auto weakError = [&]() -> mlir::InFlightDiagnostic {
+            newClassPtr->fieldDeclarationError = true;
+            return emitError(location);
+        };
+
+        // a field over a base class's field is that field (redeclaresBaseField): `@weak` on one and not the
+        // other would give the one slot two layouts under own
+        if (!isAccessor && baseFieldType(newClassPtr, fieldId))
+        {
+            for (auto &baseClass : newClassPtr->baseClasses)
+            {
+                auto found = false;
+                baseClass->findField(fieldId, found);
+                if (!found)
+                {
+                    continue;
+                }
+
+                if (baseClass->isWeakField(fieldName) != isWeak)
+                {
+                    weakError() << "the field '" << fieldName << "' is " << (isWeak ? "not " : "") << "@" WEAK_DECORATOR
+                                << " in '" << baseClass->name << "', so a redeclaration of it "
+                                << (isWeak ? "cannot be" : "must be") << " @" WEAK_DECORATOR << (isWeak ? "" : " as well");
+                    isWeak = !isWeak;
+                }
+
+                break;
+            }
+        }
+
+        // a base's abstract field is an accessor pair, which would read and write the slot unchecked and
+        // uncounted, as an interface would (own spec 93)
+        if (isWeak && !isAccessor && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto *accessor = nearestBaseAccessor(newClassPtr, fieldName);
+            if (accessor && !accessor->isStatic && accessor->isAbstract)
+            {
+                weakError() << "the @" WEAK_DECORATOR " field '" << fieldName << "' cannot implement an abstract field of a base class";
+                isWeak = false;
+            }
+        }
+
+        if (isWeak)
         {
             if (isAccessor)
             {
                 return refuseWeakDecorator(propertyDeclaration);
             }
 
-            EXIT_IF_FAILED(mlirGenWeakField(location, newClassPtr, propertyDeclaration, type, genContext))
-            // under own the slot holds a WeakRef of the class (a null pointer is null or undefined)
-            if (compileOptions.memoryModel == MemoryModelOwn)
+            if (mlir::failed(mlirGenWeakField(location, newClassPtr, propertyDeclaration, type, genContext)))
             {
+                newClassPtr->fieldDeclarationError = true;
+            }
+            else if (compileOptions.memoryModel == MemoryModelOwn)
+            {
+                // under own the slot holds a WeakRef of the class (a null pointer is null or undefined)
                 type = mlir_ts::WeakRefType::get(mth.stripOptionalType(NonNullableTypes(type)));
             }
         }
@@ -2836,6 +2906,12 @@ namespace mlirgen
             }
         }
 
+        // `static 0 = 1`: a numeric name is the string of its digits, as a property key is (`C[0]` is `C["0"]`)
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId))
+        {
+            fieldId = builder.getStringAttr(std::to_string(intAttr.getValue().getSExtValue()));
+        }
+
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
@@ -2843,6 +2919,23 @@ namespace mlirgen
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
         varClass.isPublic = isPublic;
+
+        // the class is processed again when a member could not be resolved the first time (`x = C.foo`, an
+        // instance field reading the class's own static): the static's global made then is the one it has
+        if (auto existingGlobal = lookupModuleSymbol<mlir_ts::GlobalOp>(fullClassStaticFieldName);
+            existingGlobal && fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            auto &staticFieldInfos = newClassPtr->staticFields;
+            pushStaticField(staticFieldInfos, fieldId, existingGlobal.getType(), fullClassStaticFieldName, -1, accessLevel);
+            if (isAccessor)
+            {
+                auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name,
+                                                         existingGlobal.getType(), genContext);
+                EXIT_IF_FAILED(res)
+            }
+
+            return mlir::success();
+        }
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,

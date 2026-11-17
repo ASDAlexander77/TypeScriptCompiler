@@ -1885,6 +1885,11 @@ foreach(class_value_null_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-class-value-union-null-${class_value_null_mm} COMMAND test-runner -jit -mm=${class_value_null_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-class-value-union-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_value_union_null.ts")
+# for...of over a tuple, and `t[i]` at a run-time index: each element as the union of their types
+foreach(tuple_for_of_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tuple-for-of-${tuple_for_of_mm} COMMAND test-runner -jit -mm=${tuple_for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_for_of.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-tuple-for-of COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_for_of.ts")
 # A method of every class a union may hold is called on the class of the object (it called the
 # first member's for any of them)
 foreach(union_method_mm gc rc none own)
@@ -1983,6 +1988,30 @@ foreach(issues_mm gc rc none own)
         tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
     endforeach()
 endforeach()
+# TSLANG_ISSUES 86-122, from TypeScript's own compiler tests: a namespace's code statements, object literal
+# functions with untyped parameters, for...in into a declared variable, new Object(), binding defaults, statics
+# read by instance fields, function expression callbacks, arithmetic on any, `this` at the module level,
+# parameter defaults reading earlier parameters, untyped rest patterns; and a source file saved as UTF-16
+# (117, a number's members on an integer, needs the default library, which these tests are run without)
+foreach(issues_mm gc rc none own)
+    foreach(issues_test 00tslang_issues_86_122 00utf16_source)
+        tslang_add_test(NAME test-jit-${issues_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+        tslang_add_test(NAME test-compile-${issues_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issues_test}.ts")
+    endforeach()
+endforeach()
+# ...and what stays refused there, with an error that says why instead of a crash, a hang or a lowering failure
+add_test(NAME test-compile-for-in-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/for_in_any_error.ts")
+set_tests_properties(test-compile-for-in-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'for\\.\\.\\.in' over a value of type 'any' is not supported"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-enum-variable-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_variable_error.ts")
+set_tests_properties(test-compile-enum-variable-error PROPERTIES PASS_REGULAR_EXPRESSION "variable 'daysValue' can't hold the enum 'Days' itself"
+                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-any-plus-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/any_plus_any_error.ts")
+set_tests_properties(test-compile-any-plus-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'\\+' of two values of type 'any' is not supported"
+                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # A singly linked list: walked by a local that steps down it, pushed on, appended to, cut, popped and unlinked;
 # a node popped off a list that an append-only global keeps too; a node made with the old head, a tree grown
 # by recursion on a field, walks that assign their parameter
@@ -2020,6 +2049,14 @@ add_test(NAME test-compile-computed-name-failed-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
 set_tests_properties(test-compile-computed-name-failed-error PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'x'"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# a subclass whose field fails, then a read of a field it inherits: that error, not a crash
+foreach(failed_field_mm gc own)
+    add_test(NAME test-compile-subclass-field-failed-error-${failed_field_mm}
+             COMMAND test-runner -mm=${failed_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/subclass_field_failed_error.ts")
+    set_tests_properties(test-compile-subclass-field-failed-error-${failed_field_mm} PROPERTIES
+                         PASS_REGULAR_EXPRESSION "not supported 'Computed Property Name' expression"
+                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 # TSLANG_ISSUES 31, 33: a const Shared<T> in several closures; a callback's result stored in a field
 foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tslang-issues-31-33-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_31_33.ts")
@@ -5141,6 +5178,11 @@ foreach(weak_field_mm gc none own)
     endforeach()
 endforeach()
 tslang_add_test(NAME test-compile-noopt-00weak_field-own COMMAND test-runner -noopt -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+# an abstract field of a class type implemented by a field: under own its accessors say @lends and @keeps
+foreach(abstract_field_mm gc none own)
+    tslang_add_test(NAME test-jit-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -jit -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
+    tslang_add_test(NAME test-compile-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
+endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
     tslang_add_test(NAME test-jit-own_weak_field_freed_read-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_field_freed_read.ts")
@@ -5648,6 +5690,11 @@ set(own_error_cases
     "own_err_weak_field_thread|:3:14: error: -mm=own cannot make a WeakRef to a 'Node' in a program that shares what may hold one with another thread"
     "own_err_weak_field_interface|:4:62: error: 'Node' cannot be seen as 'HasParent': its field 'parent' is @weak"
     "own_err_weak_field_object_type|:4:47: error: 'Node' cannot be seen as '.parent:Node . null.': its field 'parent' is @weak"
+    "own_err_weak_field_abstract|:3:20: error: '@weak' cannot be on an abstract field: it has no storage of its own"
+    "own_err_weak_field_redeclare|:3:27: error: the field 'parent' is @weak in 'Node', so a redeclaration of it must be @weak as well"
+    "own_err_weak_field_redeclare_weak|:3:27: error: the field 'parent' is not @weak in 'Node', so a redeclaration of it cannot be @weak"
+    "own_err_weak_field_abstract_impl|:4:21: error: the @weak field 'parent' cannot implement an abstract field of a base class"
+    "own_err_weak_field_fresh_conditional|:3:63: error: the @weak field 'parent' cannot own a new object. it would be freed at once"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"

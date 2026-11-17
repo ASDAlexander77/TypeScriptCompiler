@@ -2262,6 +2262,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // an enum named as a value (`var x = E`) is its members at compile time, with nothing at run time a
+            // variable could hold; a `const` stands for it, any other made invalid code (it hung the compiler)
+            if (auto enumType = dyn_cast<mlir_ts::EnumType>(type); enumType && !isConst && init
+                && init.getDefiningOp<mlir_ts::ConstantOp>()
+                && isa<mlir::DictionaryAttr>(init.getDefiningOp<mlir_ts::ConstantOp>().getValue()))
+            {
+                emitError(location) << "variable '" << variableName << "' can't hold the enum '"
+                                    << enumType.getName().getValue() << "' itself: use 'const', or its members";
+                return mlir::failure();
+            }
+
             assert(type);
             setType(type);
             setInitial(init);
@@ -6141,6 +6152,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenAccessorIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value accessorValue,
                                                   bool prefix, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenAnyIncrement(mlir::Location location, SyntaxKind opCode, mlir::Value anyValue,
+                                             bool prefix, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext);
@@ -8286,8 +8300,11 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ident = V(result);
 
-                auto subInit =
+                // a field the value hasn't got is an error, not a value of nothing to save
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -8302,9 +8319,16 @@ class MLIRGenImpl
                 auto varName = propertyName;
 
                 auto ident = resolveIdentifier(location, varName, genContext);
+                if (!ident)
+                {
+                    emitError(location, "can't resolve name: ") << varName;
+                    return mlir::failure();
+                }
 
-                auto subInit =
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -8746,12 +8770,73 @@ class MLIRGenImpl
     }
 
     // TODO: review it, seems like big hack
+    static bool isArithmeticOrOrderingOp(SyntaxKind opCode)
+    {
+        switch (opCode)
+        {
+        case SyntaxKind::PlusToken:
+        case SyntaxKind::MinusToken:
+        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::AsteriskAsteriskToken:
+        case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::CaretToken:
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         if (opCode == SyntaxKind::CommaToken)
         {
             return mlir::success();
+        }
+
+        // an `any` in arithmetic, or compared by order, is the number it holds - or, beside a string in `+`, the
+        // string. Left an `any`, the operator reached the lowering as a pointer and failed there, with no location.
+        if (isArithmeticOrOrderingOp(opCode))
+        {
+            auto unboxAny = [&](mlir::Value &value, mlir::Value other) -> mlir::LogicalResult {
+                if (!isa<mlir_ts::AnyType>(value.getType()))
+                {
+                    return mlir::success();
+                }
+
+                // two `any`s added may be numbers or strings, which is known only at run time
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::AnyType>(other.getType()))
+                {
+                    emitError(location, "'+' of two values of type 'any' is not supported: cast one of them to "
+                                        "'number' or 'string'");
+                    return mlir::failure();
+                }
+
+                mlir::Type toType = getNumberType();
+                if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::StringType>(other.getType()))
+                {
+                    toType = getStringType();
+                }
+
+                CAST(value, location, toType, value, genContext);
+                return mlir::success();
+            };
+
+            if (mlir::failed(unboxAny(leftExpressionValue, rightExpressionValue))
+                || mlir::failed(unboxAny(rightExpressionValue, leftExpressionValue)))
+            {
+                return mlir::failure();
+            }
         }
 
         // a @weak field compared (own spec 93): its stored pointer, which never stops - a tombstone's
@@ -10471,6 +10556,84 @@ class MLIRGenImpl
 
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo, 
         mlir::Attribute id, mlir::Value argument, const GenContext &genContext);
+
+    // `t[i]` of a tuple of unnamed elements at an index known at run time only (`for (const x of t)`
+    // reads the elements so): each element, read where it is, as the union of their types, chosen by
+    // the index. An index past the last element reads the last one. None for a constant index, or a
+    // tuple with named fields (an object): those are a field, as before.
+    template <typename T>
+    std::optional<ValueOrLogicalResult> mlirGenTupleElementAtIndex(mlir::Location location, mlir::Value expression,
+                                                                   mlir::Value index, T tupleType,
+                                                                   const GenContext &genContext)
+    {
+        if (index.getDefiningOp<mlir_ts::ConstantOp>() || tupleType.size() == 0
+            || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; })
+            || !(isa<mlir::IntegerType, mlir::FloatType, mlir::IndexType, mlir_ts::NumberType>(index.getType())))
+        {
+            return std::nullopt;
+        }
+
+        SmallVector<mlir::Type> elementTypes;
+        for (auto &field : tupleType.getFields())
+        {
+            elementTypes.push_back(mth.wideStorageType(field.type));
+        }
+
+        auto resultType = mth.getUnionTypeWithMerge(location, elementTypes);
+
+        auto elementOf = [&](int position) -> ValueOrLogicalResult {
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, expression, builder.getI32IntegerAttr(position));
+            mlir::Value element = cl.Tuple(tupleType, true);
+            if (!element)
+            {
+                return mlir::failure();
+            }
+
+            if (element.getType() == resultType)
+            {
+                return element;
+            }
+
+            return cast(location, resultType, element, genContext);
+        };
+
+        std::function<ValueOrLogicalResult(int)> elementFrom = [&](int position) -> ValueOrLogicalResult {
+            if (position + 1 == (int)tupleType.size())
+            {
+                return elementOf(position);
+            }
+
+            auto positionValue = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, true),
+                                                                     builder.getIntegerAttr(builder.getIntegerType(32, true), position));
+            mlir::Value positionAsIndex = positionValue;
+            if (index.getType() != positionAsIndex.getType())
+            {
+                auto result = cast(location, index.getType(), positionAsIndex, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                positionAsIndex = V(result);
+            }
+
+            auto isPosition = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), index, positionAsIndex);
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, isPosition, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = elementOf(position);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = elementFrom(position + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return elementFrom(0);
+    }
 
     template <typename T>
     ValueOrLogicalResult mlirGenElementAccessTuple(mlir::Location location, mlir::Value expression,

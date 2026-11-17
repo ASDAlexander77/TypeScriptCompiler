@@ -838,6 +838,9 @@ struct ClassInfo
     // the @weak fields this class declares (own spec 93), by name: the type the program reads and
     // writes (`Node | null`); under -mm=own the slot holds a !ts.weak_ref of the class
     llvm::StringMap<mlir::Type> weakFieldTypes;
+    // a field was declared wrongly (a @weak that cannot be): reported, laid out as if it were right, and the
+    // class fails once its layout is set (mlirGenClassStorageType)
+    bool fieldDeclarationError = false;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 

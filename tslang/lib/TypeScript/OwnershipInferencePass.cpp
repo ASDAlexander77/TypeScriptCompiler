@@ -607,24 +607,84 @@ namespace own_inference
             {
                 // a @weak field owns nothing (spec 93): a new object written to it, which nothing else
                 // holds, would be freed at once and leave the field pointing at a tombstone
-                auto target = rootOf(weakRefNewOp.getTarget());
-                auto *def = target.getDefiningOp();
-                // `= null`: casts of a null or undefined constant
-                auto *source = weakRefNewOp.getTarget().getDefiningOp();
-                while (source && mlir::isa<mlir_ts::CastOp, mlir_ts::ValueOrDefaultOp, mlir_ts::ValueOp>(source) &&
-                       source->getNumOperands() > 0)
-                {
-                    source = source->getOperand(0).getDefiningOp();
-                }
+                std::function<bool(mlir::Value, unsigned)> newUnheld = [&](mlir::Value value, unsigned depth) -> bool {
+                    // `= null`: casts of a null or undefined constant
+                    auto *source = value.getDefiningOp();
+                    while (source && mlir::isa<mlir_ts::CastOp, mlir_ts::ValueOrDefaultOp, mlir_ts::ValueOp>(source) &&
+                           source->getNumOperands() > 0)
+                    {
+                        source = source->getOperand(0).getDefiningOp();
+                    }
 
-                auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(source);
-                // a read of a variable, a parameter or a field has an owner: that place; so does a value a
-                // `const` holds (declare() names its defining op)
-                auto isRead = mlir::isa_and_nonnull<mlir_ts::LoadOp>(source) ||
-                              (def && nameAt(def->getLoc()) != "this value");
-                if (def && !isNull && !isRead && ownsHeap(target) && isFresh(target) && !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
-                    llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); }) &&
-                    reporting())
+                    auto target = rootOf(value);
+                    // `cond ? new Node() : p`: what either arm gives, merged into a block argument
+                    if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(target))
+                    {
+                        auto *block = argument.getOwner();
+                        if (block->isEntryBlock() || depth > 8)
+                        {
+                            return false;
+                        }
+
+                        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+                        {
+                            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+                            if (!branchOp)
+                            {
+                                continue;
+                            }
+
+                            auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+                            if (argument.getArgNumber() < operands.getProducedOperandCount())
+                            {
+                                continue;
+                            }
+
+                            if (auto incoming = operands[argument.getArgNumber()]; incoming && newUnheld(incoming, depth + 1))
+                            {
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    }
+
+                    auto *def = target.getDefiningOp();
+                    if (!def)
+                    {
+                        return false;
+                    }
+
+                    // the same, before the conditional is flattened into blocks
+                    if (auto ifOp = mlir::dyn_cast<mlir_ts::IfOp>(def))
+                    {
+                        auto index = mlir::cast<mlir::OpResult>(target).getResultNumber();
+                        for (auto &region : ifOp->getRegions())
+                        {
+                            for (auto &block : region)
+                            {
+                                auto resultOp = mlir::dyn_cast_or_null<mlir_ts::ResultOp>(block.getTerminator());
+                                if (resultOp && index < resultOp->getNumOperands() &&
+                                    newUnheld(resultOp->getOperand(index), depth + 1))
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+
+                        return false;
+                    }
+
+                    auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(source);
+                    // a read of a variable, a parameter or a field has an owner: that place; so does a value a
+                    // `const` holds (declare() names its defining op)
+                    auto isRead = mlir::isa_and_nonnull<mlir_ts::LoadOp>(source) || nameAt(def->getLoc()) != "this value";
+                    return !isNull && !isRead && ownsHeap(target) && isFresh(target) &&
+                           !def->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) &&
+                           llvm::none_of(def->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::VariableOp>(user); });
+                };
+
+                if (newUnheld(weakRefNewOp.getTarget(), 0) && reporting())
                 {
                     op->emitError("the @" WEAK_DECORATOR " field '")
                         << weakFieldShortName(weakRefNewOp.getWeakField().value_or(""))

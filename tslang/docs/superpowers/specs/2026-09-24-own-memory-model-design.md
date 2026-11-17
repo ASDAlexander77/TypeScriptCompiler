@@ -6205,7 +6205,7 @@ Under own a read of the field is the slot's load, a `ts.WeakRefDeref` marked `ch
 through the view writes `ts.WeakRefNew` of the value (the store's handle retain is the first count) and
 removes the left side's read. `===`, `!==`, `==`, `!=` and `== null` read the stored pointer
 (`WeakRefDeref` marked `raw`), which never stops: a tombstone's block is not reused while a WeakRef points
-at it. Truthiness, `??` and `?.` are reads. A checked read nothing uses (a test's narrowing reads the
+at it. So does `switch (c.parent)`, which only compares. Truthiness, `??` and `?.` are reads. A checked read nothing uses (a test's narrowing reads the
 field again per branch) is erased after the module is generated (`eraseUnusedWeakFieldReads`).
 
 Every `WeakRef` rule of spec 84 holds: the result is a borrow of an unknown place, the class is a weak
@@ -6213,7 +6213,11 @@ target (no stack promotion, no sharing with other threads), the slot's release f
 tombstone. Spec 84's borrow rule already refuses a read given to a call that may drop; for a `@weak`
 read the message is "'parent' is a @weak field and 'Node.removeLast' may free objects; the call could
 free the object it runs on". A write of a value nothing else owns is "the @weak field 'parent' cannot own
-a new object; it would be freed at once" (null, a read of a place and a named `const` are owned). A class
+a new object; it would be freed at once" (null, a read of a place and a named `const` are owned;
+either arm of `cond ? new Node() : p` is checked). `@weak` on an abstract field is "'@weak' cannot be on
+an abstract field: it has no storage of its own". A field that redeclares a base class's field is that
+field, so both are `@weak` or neither is ("the field 'parent' is @weak in 'Node', so a redeclaration of
+it must be @weak as well", and the reverse). A class
 with a `@weak` field cannot be seen as an interface or object type naming the field ("'Node' cannot be
 seen as 'HasParent': its field 'parent' is @weak"). The declaration a module exports prints `@weak` and
 the declared type, so an importer lays the slot out again.
@@ -6222,4 +6226,6 @@ Tests: `00weak_field` (own, own `-noopt`, gc, none), `own_weak_field_compare_dea
 `own_weak_field_reread`, `own_weak_field_freed_read` (gc, none; under own `own-weak-field-stop.cmake`),
 `import_weak_field` with `export_weak_field` (`-shared`, every model) and `import_weak_field_freed`,
 `own_err_weak_field_*` (position, type, generic, rc, fresh, call and argument through a dropping call,
-returned, stored, captured, held, thread, interface, object type).
+returned, stored, captured, held, thread, interface, object type, abstract, redeclare either way,
+a conditional's new arm). A class whose field fails still gets the fields it has, so a later read of an
+inherited field no longer recurses until the stack overflows.

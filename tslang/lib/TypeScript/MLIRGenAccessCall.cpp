@@ -583,6 +583,19 @@ namespace mlirgen
             }
         }
 
+        // an integer (`1..toString()`: an integer literal is an s32) has the members a number has: the default
+        // library declares them on `number`. A member `number` has not got either is reported for the integer.
+        if (!value && isa<mlir::IntegerType>(objectValue.getType()))
+        {
+            auto numberValue = builder.create<mlir_ts::CastOp>(location, getNumberType(), objectValue);
+            if (evaluateProperty(location, numberValue, name.str(), genContext))
+            {
+                return mlirGenPropertyAccessExpression(location, numberValue, name, false, genContext);
+            }
+
+            numberValue->erase();
+        }
+
         // Without the default library, an array's map/filter/forEach/every/some are builtins, and
         // what map and filter give is a generator. An iterator has them too, as the default
         // library's __Iterator gives them (`a.map(f).map(g)`, `g().filter(f)`): each builtin is a
@@ -1159,16 +1172,18 @@ namespace mlirgen
             auto currentObject = thisValue;
             for (auto &chain : fieldPath)
             {
-                auto fieldValue =
+                // a class whose fields failed has no base to read (no value, though no failure either): the
+                // next read was given a null object and crashed
+                auto fieldResult =
                     mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
+                auto fieldValue = fieldResult.failed() ? mlir::Value() : V(fieldResult);
                 if (!fieldValue)
                 {
                     emitError(location) << "Can't resolve field/property/base '" << chain->fullName
                                         << "' of class '" << classInfo->fullName << "'\n";
-                    return fieldValue;
+                    return mlir::Value();
                 }
 
-                assert(fieldValue);
                 currentObject = fieldValue;
             }
 
@@ -1530,6 +1545,11 @@ namespace mlirgen
         }
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(arrayType))
         {
+            if (auto element = mlirGenTupleElementAtIndex(location, expression, argumentExpression, tupleType, genContext))
+            {
+                return *element;
+            }
+
             return mlirGenElementAccessTuple(location, expression, argumentExpression, tupleType);
         }
         // `v["f"]` of a @value value is a field of its storage tuple
@@ -1540,6 +1560,11 @@ namespace mlirgen
         }
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(arrayType))
         {
+            if (auto element = mlirGenTupleElementAtIndex(location, expression, argumentExpression, constTupleType, genContext))
+            {
+                return *element;
+            }
+
             return mlirGenElementAccessTuple(location, expression, argumentExpression, constTupleType);
         }
         else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(arrayType))
