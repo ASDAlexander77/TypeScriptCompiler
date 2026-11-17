@@ -1216,7 +1216,9 @@ inline bool slotLoadsOfMerge(mlir::BlockArgument argument, llvm::SmallVectorImpl
         }
 
         if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
-            constant.getDefiningOp<mlir_ts::OptionalUndefOp>())
+            constant.getDefiningOp<mlir_ts::OptionalUndefOp>() ||
+            // the empty arm of a cast out of an optional (`<T[]>results` when it holds nothing)
+            constant.getDefiningOp<mlir_ts::DefaultOp>())
         {
             continue;
         }

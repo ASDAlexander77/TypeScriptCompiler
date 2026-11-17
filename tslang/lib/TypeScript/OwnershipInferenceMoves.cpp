@@ -1648,6 +1648,17 @@ namespace own_inference
         return {};
     }
 
+    bool OwnershipInferencePass::unmovedInHandler(mlir::Operation *acquire, mlir::Operation *taker, mlir::Operation *release,
+                                                  llvm::ArrayRef<mlir::Operation *> kills)
+    {
+        if (acquire == taker || !handlerBlocks().contains(release->getBlock()))
+        {
+            return false;
+        }
+
+        return !reachableAfter(taker, release, kills) && !reachableAfter(release, taker, llvm::ArrayRef<mlir::Operation *>());
+    }
+
     bool OwnershipInferencePass::checkSlotMove(mlir::Operation *retain, mlir::Value value, mlir_ts::LoadOp load,
                        llvm::SetVector<mlir::Operation *> &toErase, bool placeReleases)
     {
@@ -1815,6 +1826,15 @@ namespace own_inference
                 {
                     markBoundMethodsTaking(taker, value);
                     return true;
+                }
+
+                // ...or no path reaching it ever moves the value: the scope's release in a handler
+                // that the paths between the read and its taker unwind to (`return s` inside a
+                // `using` block, whose dispose comes in between). The read becomes the move, so on
+                // those paths the slot still holds the value and the handler frees it (spec 95)
+                if (placeReleases && unmovedInHandler(acquire, taker, use, kills))
+                {
+                    continue;
                 }
 
                 reportMovedOnSomePaths(taker, use, name, placeReleases ? joinedUse : nullptr);
