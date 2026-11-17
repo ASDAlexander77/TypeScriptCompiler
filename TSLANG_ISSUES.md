@@ -833,6 +833,11 @@ The first batch of fixes (86-91, 98, 99, 103, 109, 111, 113, 116, 117, 122) took
 compile from 1,575 to 1,633, and the crashes and hangs over all 7,107 tests from 361 to 287, with no test that
 compiled before failing after. Each fixed item says what is still open in it.
 
+The second batch (92, 95, 96, 110, 114, 115, 124, and part of 121) took them to 1,659, and the crashes and hangs to
+258. One test that compiled before fails after, `classMemberInitializerScoping.ts`, which tsc rejects too: its
+constructor, with an untyped parameter, was an implicit generic that was never generated, so `this.y = ''` into a
+`number` went unchecked.
+
 ### Crashes (137 tests) and hangs (3)
 
 86 (a `var` in a namespace, used by a statement in that namespace, crashes the compiler): 8+ tests.
