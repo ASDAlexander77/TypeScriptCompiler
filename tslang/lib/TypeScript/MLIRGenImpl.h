@@ -6364,9 +6364,6 @@ class MLIRGenImpl
             return boolValue;
         };
 
-        // `x.parent == null` of a @weak field (own spec 93): its stored pointer, never stopping
-        rawWeakFieldRead(location, value, genContext);
-
         auto type = value.getType();
         if (isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type))
         {
@@ -6517,7 +6514,14 @@ class MLIRGenImpl
             reference = builder.clone(*elementRefOp)->getResult(0);
         }
 
-        return V(builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference));
+        auto reloaded = builder.create<mlir_ts::LoadOp>(location, leftLoad.getType(), reference);
+        // a @weak field (own spec 93): read again as its declared type, checked
+        if (auto viewOp = weakFieldView(leftExpressionValue))
+        {
+            return V(weakFieldReread(location, viewOp, reloaded, genContext));
+        }
+
+        return V(reloaded);
     }
 
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
@@ -16119,7 +16123,10 @@ class MLIRGenImpl
                               mlir::Value loaded, const GenContext &genContext);
     mlir::Value weakFieldValue(mlir::Location location, mlir::Value pointer, mlir::Type declaredType,
                                const GenContext &genContext);
-    // own spec 93: the view weakFieldRead made, if `value` is one
+    // own spec 93: `loaded`, the slot read again, as the checked read `viewOp` is
+    mlir::Value weakFieldReread(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value loaded,
+                                const GenContext &genContext);
+    // own spec 93: the view weakFieldRead made, if `value` is one (or a test's narrowing of one)
     mlir_ts::SafeCastOp weakFieldView(mlir::Value value);
     // own spec 93: removes a view whose checked read nothing uses (the left side of a store, an
     // operand replaced by its raw pointer)

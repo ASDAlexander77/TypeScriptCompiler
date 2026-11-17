@@ -5106,7 +5106,7 @@ endforeach()
 # WeakRef<T> (own spec 84): built into the compiler under gc, none and own; rc has no weak count
 # @weak fields (own spec 93): a checked WeakRef under own, ordinary fields under gc and none
 foreach(weak_field_mm gc none own)
-    foreach(weak_field_test tests/00weak_field own/own_weak_field_compare_dead own/own_weak_field_reread)
+    foreach(weak_field_test tests/00weak_field own/own_weak_field_compare_dead own/own_weak_field_reread own/own_weak_field_logical)
         get_filename_component(weak_field_name ${weak_field_test} NAME)
         tslang_add_test(NAME test-jit-${weak_field_name}-${weak_field_mm} COMMAND test-runner -jit -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")
         tslang_add_test(NAME test-compile-${weak_field_name}-${weak_field_mm} COMMAND test-runner -mm=${weak_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/${weak_field_test}.ts")

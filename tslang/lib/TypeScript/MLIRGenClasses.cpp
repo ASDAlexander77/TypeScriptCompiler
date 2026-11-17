@@ -2583,7 +2583,46 @@ namespace mlirgen
             [&](mlir::Type trueValueType) {
                 return ValueOrLogicalResult(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
             });
-        return result ? V(result) : mlir::Value();
+        if (!result)
+        {
+            return mlir::Value();
+        }
+
+        // marked: eraseUnusedWeakFieldReads takes this if, and no other, as part of the read
+        if (auto *ifOp = V(result).getDefiningOp())
+        {
+            ifOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return V(result);
+    }
+
+    mlir::Value MLIRGenImpl::weakFieldReread(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value loaded,
+                                             const GenContext &genContext)
+    {
+        auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
+        auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
+        derefOp.setChecked(true);
+        auto *below = viewOp->getOperand(0).getDefiningOp();
+        while (below && !mlir::isa<mlir_ts::WeakRefDerefOp>(below))
+        {
+            below = below->getNumOperands() > 0 ? below->getOperand(0).getDefiningOp() : nullptr;
+        }
+
+        if (below)
+        {
+            derefOp.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(below).getWeakFieldAttr());
+        }
+
+        auto castValue = weakFieldValue(location, derefOp.getResult(), viewOp.getType(), genContext);
+        if (!castValue)
+        {
+            return mlir::Value();
+        }
+
+        auto rereadOp = builder.create<mlir_ts::SafeCastOp>(location, viewOp.getType(), castValue, loaded);
+        rereadOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        return rereadOp;
     }
 
     void MLIRGenImpl::eraseUnusedWeakFieldReads()
@@ -2611,7 +2650,11 @@ namespace mlirgen
             {
                 for (auto user : closure[index]->getUsers())
                 {
-                    if (!mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::GetValueFromUnionOp>(user))
+                    // the optional of `p?: C` (weakFieldValue): an if whose branches give the value
+                    auto isReadIf = mlir::isa<mlir_ts::IfOp>(user) && user->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME);
+                    if (!isReadIf && !mlir::isa<mlir_ts::CastOp, mlir_ts::SafeCastOp, mlir_ts::GetValueFromUnionOp,
+                                                mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::HasValueOp,
+                                                mlir_ts::ValueOp, mlir_ts::ResultOp>(user))
                     {
                         removable = false;
                         break;
@@ -2626,12 +2669,36 @@ namespace mlirgen
                 continue;
             }
 
+            // a result op stays only inside an if of the closure, which goes with it
+            if (llvm::any_of(closure, [&](mlir::Operation *op) {
+                    return mlir::isa<mlir_ts::ResultOp>(op) && !closure.contains(op->getParentOp());
+                }))
+            {
+                continue;
+            }
+
+            // what an erased if holds goes with it: only the outermost ops are erased, found before any is
+            llvm::SmallVector<mlir::Operation *> outermost;
+            for (auto op : llvm::reverse(closure))
+            {
+                auto nested = false;
+                for (auto *parent = op->getParentOp(); parent && !nested; parent = parent->getParentOp())
+                {
+                    nested = closure.contains(parent);
+                }
+
+                if (!nested)
+                {
+                    outermost.push_back(op);
+                }
+            }
+
             for (auto op : closure)
             {
                 op->dropAllReferences();
             }
 
-            for (auto op : llvm::reverse(closure))
+            for (auto op : outermost)
             {
                 op->erase();
             }
@@ -2640,8 +2707,14 @@ namespace mlirgen
 
     mlir_ts::SafeCastOp MLIRGenImpl::weakFieldView(mlir::Value value)
     {
+        // a test's narrowing of the field (`if (c.parent !== null) ...`) is a SafeCast over the view
         auto viewOp = value ? value.getDefiningOp<mlir_ts::SafeCastOp>() : mlir_ts::SafeCastOp();
-        return viewOp && viewOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME) ? viewOp : mlir_ts::SafeCastOp();
+        while (viewOp && !viewOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
+        {
+            viewOp = viewOp.getValue().getDefiningOp<mlir_ts::SafeCastOp>();
+        }
+
+        return viewOp;
     }
 
     void MLIRGenImpl::dropWeakFieldView(mlir_ts::SafeCastOp viewOp)
@@ -2686,8 +2759,9 @@ namespace mlirgen
             return;
         }
 
+        // the checked read is left to the caller's other uses, or erased once the module is generated
+        // (eraseUnusedWeakFieldReads): a caller may still hold it
         value = rawValue;
-        dropWeakFieldView(viewOp);
     }
 
     mlir::Value MLIRGenImpl::weakFieldWrite(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value value,

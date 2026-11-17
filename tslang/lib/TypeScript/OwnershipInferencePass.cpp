@@ -611,12 +611,13 @@ namespace own_inference
                 auto *def = target.getDefiningOp();
                 // `= null`: casts of a null or undefined constant
                 auto *source = weakRefNewOp.getTarget().getDefiningOp();
-                while (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(source))
+                while (source && mlir::isa<mlir_ts::CastOp, mlir_ts::ValueOrDefaultOp, mlir_ts::ValueOp>(source) &&
+                       source->getNumOperands() > 0)
                 {
-                    source = castOp.getIn().getDefiningOp();
+                    source = source->getOperand(0).getDefiningOp();
                 }
 
-                auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp>(source);
+                auto isNull = mlir::isa_and_nonnull<mlir_ts::NullOp, mlir_ts::UndefOp, mlir_ts::OptionalUndefOp>(source);
                 // a read of a variable, a parameter or a field has an owner: that place; so does a value a
                 // `const` holds (declare() names its defining op)
                 auto isRead = mlir::isa_and_nonnull<mlir_ts::LoadOp>(source) ||
