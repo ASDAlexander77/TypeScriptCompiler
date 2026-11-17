@@ -2212,6 +2212,30 @@ namespace mlirgen
                     }
                 }
 
+                // every member a class that is or derives from the class cast to (`c ? new Sq(1) :
+                // new Ci(1)` given to a `Shape`): the union holds a pointer to one of them, read as
+                // the base - an upcast. Through `___cast` the result was a call's, which -mm=own
+                // took for a borrow of the union and refused to return or store.
+                if (auto classType = dyn_cast<mlir_ts::ClassType>(type);
+                    classType && llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                        auto memberClass = dyn_cast<mlir_ts::ClassType>(member);
+                        if (!memberClass)
+                        {
+                            return false;
+                        }
+
+                        if (memberClass == classType)
+                        {
+                            return true;
+                        }
+
+                        auto memberInfo = getClassInfoByFullName(memberClass.getName().getValue());
+                        return memberInfo && memberInfo->hasBase(classType);
+                    }))
+                {
+                    return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, value));
+                }
+
                 if (auto result = castFromNullableUnion(location, type, value, unionType, genContext))
                 {
                     return *result;
