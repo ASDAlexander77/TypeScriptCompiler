@@ -93,7 +93,9 @@ holds exactly as much as `-mm=none` — that is, reference counting reclaims non
 `-mm=gc`, `-mm=own` and `-mm=none`; under `-mm=rc` it is a compile error, because rc's header word
 is already the strong count and a weak count needs a second one (see
 `tslang/docs/reference-counting-evaluation.md` §9.8). So for a program with parent links, `-mm=own`
-with `WeakRef` is the fourth option here.
+with `WeakRef` is the fourth option here. A `@weak` field (`@weak parent: Node | null`) is the same
+back-reference read as a plain field: checked on every read under own, an ordinary field under gc and
+none, an error under rc.
 
 ## The standard library
 

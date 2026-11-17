@@ -914,6 +914,26 @@ a reference gives it back on every path out of a function.
   share with another thread (`Thread.spawn`, a worker, `Shared.share`) anything that may hold their
   target, since the count is not atomic; in practice no `Thread.spawn` of a closure in such a module.
   Each object carries the count in the header word it already has: no object grows.
+- A back-reference can also be a `@weak` field, read and written like any other field:
+
+  ```ts
+  class Node {
+      @weak parent: Node | null = null;
+      children: Node[] = [];
+      add(c: Node) { c.parent = this; this.children.push(c); }
+      depth(): number { return this.parent ? 1 + this.parent.depth() : 0; }
+  }
+  ```
+
+  It is a `WeakRef` underneath, so it owns nothing and has the same limits (a class object, no
+  threads). Each read is checked: reading it after its object was freed stops the program with "the
+  @weak field 'Node.parent' was read after its object was freed". `===`, `!==` and `== null` compare
+  the stored pointer and never stop, so `if (c.parent === this) c.parent = null` is always safe. A read
+  borrows, as `deref()` does: it cannot be stored, returned or captured, and it cannot be the object or
+  an argument of a call that may free objects (`@nodrops` on the method or `@final` on its class says
+  it frees nothing). Writing a new object into it is an error: nothing would own it. A class with a
+  `@weak` field cannot be seen through an interface that names the field. Under gc and none it is an
+  ordinary field; under rc it is an error.
 - `Shared<T>` cycles are never freed; break them with a `WeakRef` where one side only refers back.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
   when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.
