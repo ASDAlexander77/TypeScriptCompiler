@@ -1530,6 +1530,11 @@ namespace mlirgen
         }
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(arrayType))
         {
+            if (auto element = mlirGenTupleElementAtIndex(location, expression, argumentExpression, tupleType, genContext))
+            {
+                return *element;
+            }
+
             return mlirGenElementAccessTuple(location, expression, argumentExpression, tupleType);
         }
         // `v["f"]` of a @value value is a field of its storage tuple
@@ -1540,6 +1545,11 @@ namespace mlirgen
         }
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(arrayType))
         {
+            if (auto element = mlirGenTupleElementAtIndex(location, expression, argumentExpression, constTupleType, genContext))
+            {
+                return *element;
+            }
+
             return mlirGenElementAccessTuple(location, expression, argumentExpression, constTupleType);
         }
         else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(arrayType))

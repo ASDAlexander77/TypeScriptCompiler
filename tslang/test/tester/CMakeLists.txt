@@ -1879,6 +1879,11 @@ foreach(tuple_array_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# for...of over a tuple, and `t[i]` at a run-time index: each element as the union of their types
+foreach(tuple_for_of_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-tuple-for-of-${tuple_for_of_mm} COMMAND test-runner -jit -mm=${tuple_for_of_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_for_of.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-tuple-for-of COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_for_of.ts")
 # A method of every class a union may hold is called on the class of the object (it called the
 # first member's for any of them)
 foreach(union_method_mm gc rc none own)

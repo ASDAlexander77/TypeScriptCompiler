@@ -10431,6 +10431,84 @@ class MLIRGenImpl
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo, 
         mlir::Attribute id, mlir::Value argument, const GenContext &genContext);
 
+    // `t[i]` of a tuple of unnamed elements at an index known at run time only (`for (const x of t)`
+    // reads the elements so): each element, read where it is, as the union of their types, chosen by
+    // the index. An index past the last element reads the last one. None for a constant index, or a
+    // tuple with named fields (an object): those are a field, as before.
+    template <typename T>
+    std::optional<ValueOrLogicalResult> mlirGenTupleElementAtIndex(mlir::Location location, mlir::Value expression,
+                                                                   mlir::Value index, T tupleType,
+                                                                   const GenContext &genContext)
+    {
+        if (index.getDefiningOp<mlir_ts::ConstantOp>() || tupleType.size() == 0
+            || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; })
+            || !(isa<mlir::IntegerType, mlir::FloatType, mlir::IndexType, mlir_ts::NumberType>(index.getType())))
+        {
+            return std::nullopt;
+        }
+
+        SmallVector<mlir::Type> elementTypes;
+        for (auto &field : tupleType.getFields())
+        {
+            elementTypes.push_back(mth.wideStorageType(field.type));
+        }
+
+        auto resultType = mth.getUnionTypeWithMerge(location, elementTypes);
+
+        auto elementOf = [&](int position) -> ValueOrLogicalResult {
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, expression, builder.getI32IntegerAttr(position));
+            mlir::Value element = cl.Tuple(tupleType, true);
+            if (!element)
+            {
+                return mlir::failure();
+            }
+
+            if (element.getType() == resultType)
+            {
+                return element;
+            }
+
+            return cast(location, resultType, element, genContext);
+        };
+
+        std::function<ValueOrLogicalResult(int)> elementFrom = [&](int position) -> ValueOrLogicalResult {
+            if (position + 1 == (int)tupleType.size())
+            {
+                return elementOf(position);
+            }
+
+            auto positionValue = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, true),
+                                                                     builder.getIntegerAttr(builder.getIntegerType(32, true), position));
+            mlir::Value positionAsIndex = positionValue;
+            if (index.getType() != positionAsIndex.getType())
+            {
+                auto result = cast(location, index.getType(), positionAsIndex, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                positionAsIndex = V(result);
+            }
+
+            auto isPosition = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), index, positionAsIndex);
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, isPosition, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = elementOf(position);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = elementFrom(position + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return elementFrom(0);
+    }
+
     template <typename T>
     ValueOrLogicalResult mlirGenElementAccessTuple(mlir::Location location, mlir::Value expression,
                                               mlir::Value argumentExpression, T tupleType)
