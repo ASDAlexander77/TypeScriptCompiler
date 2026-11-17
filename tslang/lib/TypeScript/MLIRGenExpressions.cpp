@@ -1738,6 +1738,20 @@ namespace mlirgen
 
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+
+        // `new Object()` is an object with no fields, `{}`: `Object` names the type `object`, which has no
+        // constructor of its own to call
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(value.getType());
+            objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()) && newExpression->arguments.size() == 0)
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            NodeArray<ObjectLiteralElementLike> noProperties;
+            auto emptyObject = nf.createObjectLiteralExpression(noProperties, false);
+            emptyObject->pos = newExpression->pos;
+            emptyObject->_end = newExpression->_end;
+            return mlirGen(emptyObject.as<Expression>(), genContext);
+        }
+
         auto unspecialized = deferDefaults ? value : mlir::Value();
         MLIRValueGuard<bool> sharedElementsRefusedGuard(sharedElementsRefused);
         sharedElementsRefused = false;

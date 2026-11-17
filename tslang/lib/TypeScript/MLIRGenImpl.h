@@ -8286,8 +8286,11 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ident = V(result);
 
-                auto subInit =
+                // a field the value hasn't got is an error, not a value of nothing to save
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -8302,9 +8305,16 @@ class MLIRGenImpl
                 auto varName = propertyName;
 
                 auto ident = resolveIdentifier(location, varName, genContext);
+                if (!ident)
+                {
+                    emitError(location, "can't resolve name: ") << varName;
+                    return mlir::failure();
+                }
 
-                auto subInit =
+                auto subInitResult =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
+                auto subInit = V(subInitResult);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {

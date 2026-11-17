@@ -779,7 +779,13 @@ namespace mlirgen
             storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
         }
 
-        auto tupleStorageType = mlir::cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(storeType));
+        // an object with no fields known (`<Foo> new Object()`) has none to give an interface: one with no members
+        // takes it, and any other is told what it misses
+        auto tupleStorageType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(storeType));
+        if (!tupleStorageType)
+        {
+            tupleStorageType = mlir_ts::TupleType::get(builder.getContext(), ArrayRef<mlir_ts::FieldInfo>{});
+        }
 
         SmallVector<VirtualMethodOrFieldInfo, 1> virtualTable;
         auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);

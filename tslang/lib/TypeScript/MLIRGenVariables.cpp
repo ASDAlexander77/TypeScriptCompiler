@@ -668,13 +668,28 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (objectBindingElement->initializer)
+        // the default applies to a field that may be missing; one the source always has (`var { x = 500 } = { x: 20 }`,
+        // a const tuple) keeps its value, as in TypeScript, where the default is then never used
+        mlir_ts::OptionalType optionalFieldType = dyn_cast<mlir_ts::OptionalType>(value.getType());
+        if (!optionalFieldType)
         {
-            auto tupleType = mlir::cast<mlir_ts::TupleType>(type);
-            auto subType = mlir::cast<mlir_ts::OptionalType>(tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type).getElementType();
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+            {
+                auto index = tupleType.getIndex(fieldName);
+                if (index >= 0)
+                {
+                    optionalFieldType = dyn_cast<mlir_ts::OptionalType>(tupleType.getFieldInfo(index).type);
+                }
+            }
+        }
+
+        if (objectBindingElement->initializer && optionalFieldType)
+        {
+            auto subType = optionalFieldType.getElementType();
             auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(res)
             subInit = V(res);
-            subInitType = subInit.getType();                    
+            subInitType = subInit.getType();
         }
         else
         {
