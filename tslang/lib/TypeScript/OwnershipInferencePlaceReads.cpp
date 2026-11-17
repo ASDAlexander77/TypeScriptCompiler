@@ -507,6 +507,14 @@ namespace own_inference
                     else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
                     {
                         forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
+                            // (a `let` that only borrows it takes nothing: `let node = head; ... node = node.next`)
+                            mlir::Operation *from = nullptr;
+                            if (localBorrowerOf(use, from) ||
+                                (mlir::isa<mlir_ts::VariableOp>(use) && localBorrowingLets.contains(use)))
+                            {
+                                return;
+                            }
+
                             auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(use);
                             if (mlir::isa<mlir_ts::RetainOp>(use) || (varOp && isOwningVariable(varOp)) ||
                                 (isCall(use) && isKeptArgument(use, used)))
@@ -1196,8 +1204,7 @@ namespace own_inference
         };
 
         for (auto *end : rootEnds(chain))
-        {
-            if (outlives(end))
+        {            if (outlives(end))
             {
                 return false;
             }

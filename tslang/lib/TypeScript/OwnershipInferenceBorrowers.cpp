@@ -432,8 +432,7 @@ namespace own_inference
             if (keeps)
             {
                 localBorrowingLets.erase(varOp);
-            }
-        }
+            }        }
     }
 
     mlir_ts::VariableOp OwnershipInferencePass::localBorrowerOf(mlir::Operation *acquisition, mlir::Operation *&from)

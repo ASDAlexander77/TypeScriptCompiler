@@ -5187,6 +5187,8 @@ endforeach()
 foreach(let_borrows_mm gc none rc own)
     tslang_add_test(NAME test-jit-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
     tslang_add_test(NAME test-compile-own_let_borrows_locals-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_let_borrows_locals.ts")
+    tslang_add_test(NAME test-jit-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
+    tslang_add_test(NAME test-compile-own_conditional_value_records-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_value_records.ts")
 endforeach()
 # gc keeps the parent alive and none never frees: the freed read prints the value there
 foreach(weak_field_mm gc none)
@@ -5704,6 +5706,8 @@ set(own_error_cases
     "own_err_let_borrows_local_loop|:4:41: error: 'b' borrows 'r' but is used here after 'r' is released or overwritten"
     "own_err_let_borrows_local_moved|:5:5: error: 'q' is moved here while 'b' borrows it. a borrowed value cannot be moved"
     "own_err_let_borrows_merge_assigned|:3:97: error: 'qq' borrows 'r' but is used here after 'r' is released or overwritten"
+    "own_err_walk_local_head_assigned|:4:64: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
+    "own_err_walk_local_head_cut|:4:90: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_weakref_stored|:4:126: error: a value that borrows the object a WeakRef refers to cannot be stored, returned or captured"
     "own_err_weakref_returned|:4:55: error: '[^']*' borrows the object a WeakRef refers to and cannot be stored, returned or captured"
     "own_err_weakref_captured|:5:92: error: '[^']*' is used here after its value was moved"

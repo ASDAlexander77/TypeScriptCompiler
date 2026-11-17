@@ -76,6 +76,34 @@ function merges() {
     assert(qq.v == 4);
 }
 
+class Node {
+    constructor(public value: number, public next: Node | undefined) {}
+}
+
+// a list walked from a local head: `node` borrows `head`, then each `node.next`
+function walkWhile() {
+    let head: Node | undefined = new Node(1, new Node(2, new Node(3, undefined)));
+    let sum: number = 0;
+    let node = head;
+    while (node) {
+        sum += node.value;
+        node = node.next;
+    }
+
+    assert(sum == 6 && head.value == 1);
+}
+
+function walkFor() {
+    let head: Node | undefined = new Node(1, new Node(2, undefined));
+    let sum: number = 0;
+    for (let node = head; node; node = node.next) {
+        if (node.value == 1) node.next = new Node(5, undefined);
+        sum += node.value;
+    }
+
+    assert(sum == 6);
+}
+
 // returned: it owns what it is given, as before
 function returned(): T {
     let q = new T(1);
@@ -93,6 +121,8 @@ function main() {
         assert(ownerMovedAfter().v == 1);
         ownerStoredAfter();
         merges();
+        walkWhile();
+        walkFor();
         assert(returned().v == 2);
     }
 

@@ -1064,6 +1064,10 @@ class OwnershipInferencePass
     // returned (`return {value: new C(), done: false}`, a `yield`'s result). rc's retain of it is
     // its reference for the values moved in, which own moves instead (recordRetainOf).
     bool holdsConstantsOrMoves(mlir::Value value);
+    // The reads of record literals a merge chooses between (`c ? { h: new H(1) } : { h: new H(2) }`,
+    // through views and nested merges; null and undefined hold nothing). False when any value merged is
+    // something else, or there is none.
+    static bool mergedRecordReads(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir_ts::LoadOp> &reads, unsigned depth = 0);
     // The reads of owning `let`s an owning record's fields are given (`return { s, n }`): each moves
     // out of its local at the record's retain.
     llvm::SmallVector<mlir_ts::LoadOp> recordSlotLoads(mlir::Value value);
