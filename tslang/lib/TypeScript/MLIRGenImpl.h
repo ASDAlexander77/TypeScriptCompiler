@@ -1722,6 +1722,13 @@ class MLIRGenImpl
 
     bool isGenericFunctionReference(mlir::Value functionRefValue);
 
+    mlir_ts::FunctionType anyReceiverOfGenericFunction(mlir::Value functionRefValue);
+
+    ValueOrLogicalResult classRefAsClassValue(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
+    ValueOrLogicalResult instantiateGenericFunctionWithAny(mlir::Location location, mlir::Value functionRefValue,
+                                                           const GenContext &genContext);
+
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
                                                         const GenContext &genContext, bool *capturesFirst = nullptr);
@@ -1892,6 +1899,13 @@ class MLIRGenImpl
             isFullName = isFullName_;
             
             if (isFullName_ || !genContext.funcOp)
+            {
+                scope = VariableScope::Global;
+            }
+
+            // a `declare var` names a global defined elsewhere, also where module code runs in a function
+            // of its own (`declare var c: C; new Foo();`: functions read @c, which was never declared)
+            if (varClass_ == VariableType::External)
             {
                 scope = VariableScope::Global;
             }
@@ -2905,6 +2919,23 @@ class MLIRGenImpl
     {
         // generate only for real pass
         mlir_ts::GlobalOp globalOp;
+
+        // `declare var x` again (TypeScript allows it): the global declared the first time
+        if (variableDeclarationInfo.isExternal && !genContext.dummyRun)
+        {
+            if (auto existing = theModule.lookupSymbol<mlir_ts::GlobalOp>(variableDeclarationInfo.fullName))
+            {
+                if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext))
+                    || mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                variableDeclarationInfo.globalOp = existing;
+                return mlir::success();
+            }
+        }
+
         // get constant
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -3036,7 +3067,16 @@ class MLIRGenImpl
                     if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
                     {
                         return mlir::failure();
-                    }                      
+                    }
+
+                    // as for a local: a global of a type with an unresolved type parameter has no storage
+                    // (`declare const wat: Wat<number>` of `typeof Class<T> & typeof fn<T>` aborted in lowering)
+                    if (mth.isGenericType(variableDeclarationInfo.type))
+                    {
+                        emitError(location) << "variable '" << variableDeclarationInfo.variableName
+                                            << "' is referencing generic type.";
+                        return mlir::failure();
+                    }
 
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                 }
@@ -3176,6 +3216,7 @@ class MLIRGenImpl
                                            const GenContext &genContext);
 
     mlir::LogicalResult declareFunctionVars(Node body, const GenContext &genContext);
+    mlir::Type functionVarTypeOfGenericInit(VariableDeclaration typing, mlir::Type type, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
 
@@ -14197,6 +14238,26 @@ class MLIRGenImpl
 
             assert(genContext.allowPartialResolve || itemValue);
 
+            // a field holds one function: a generic one nothing gives types to is instantiated with `any`
+            // (`{ g: (a => 0) }`, `{ genericFunction }`) (TSLANG 106)
+            if (itemValue && !receiverElementType && isGenericFunctionReference(itemValue))
+            {
+                auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+                itemValue = V(instantiated);
+            }
+
+            // `{ cls: C }`: the class's value. Not `{ self: this }`: in an instance field's initializer `this`
+            // is a class reference only while the field's type is discovered, and the instance after.
+            auto isThisField = item == SyntaxKind::PropertyAssignment
+                && item.as<PropertyAssignment>()->initializer == SyntaxKind::ThisKeyword;
+            if (itemValue && !receiverElementType && !isThisField && itemValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, itemValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                itemValue = V(classValue);
+            }
+
             if (mlir::failed(addObjectFieldInfo(location, oli, fieldId, itemValue, receiverElementType, genContext))) {
                 return ValueOrLogicalResult(mlir::failure());
             }
@@ -14789,8 +14850,14 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            // e.g. `import X = SomeEnum` or `import X = someFunction` - only
-            // namespace/class/interface targets are supported for import-equals.
+            // `import X = a.SomeEnum`, `import f = a.someFunction`, `import v = a.someVariable`: X names
+            // that reference, generated again where X is used (as a value, or as a type: the value's type)
+            if (value)
+            {
+                currentNamespace->importEqualsValueMap[name] = importEqualsDeclarationAST->moduleReference;
+                return mlir::success();
+            }
+
             emitError(loc(importEqualsDeclarationAST), "this import-equals target is not supported");
             return mlir::failure();
         }

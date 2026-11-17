@@ -375,6 +375,14 @@ namespace mlirgen
                 return {mlir::failure(), isGenericTypes, params};
             }
 
+            // `function assertNever(x: never)`: only a value narrowed to nothing reaches it, and its body
+            // reports what that value was. Written as `never`, it takes whatever it is given, as `any`.
+            // A `never` tslang computed (an intersection it can't express) stays an error.
+            if (isa<mlir_ts::NeverType>(type) && typeParameter && typeParameter == SyntaxKind::NeverKeyword)
+            {
+                type = getAnyType();
+            }
+
             if (isa<mlir_ts::NeverType>(type))
             {
                 emitError(location, "'Never' can't be used as parameter type");

@@ -2659,6 +2659,13 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         {
             auto name = attr.getName();
             if (name == "specialization") {
+                // a specialization of a `declare function` has no body: it stays an external
+                // declaration (linkonce_odr/private are only for definitions) (TSLANG 104)
+                if (funcOp.getBody().empty())
+                {
+                    continue;
+                }
+
                 auto inlineLinkage = LLVM::linkage::Linkage::LinkonceODR;
                 auto linkage = LLVM::LinkageAttr::get(getContext(), inlineLinkage);
                 newFuncOp->setAttr("llvm.linkage", linkage);

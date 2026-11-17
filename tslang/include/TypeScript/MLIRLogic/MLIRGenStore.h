@@ -1477,6 +1477,10 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir::StringRef> importEqualsMap;
 
+    // `import b = a.weekend` of anything else (an enum, a function, a variable): b is that reference,
+    // generated again where b is used, in this namespace
+    llvm::StringMap<Node> importEqualsValueMap;
+
     // `import { a as b }`: b -> a, a name the imported module declares
     llvm::StringMap<mlir::StringRef> importAliasMap;
 

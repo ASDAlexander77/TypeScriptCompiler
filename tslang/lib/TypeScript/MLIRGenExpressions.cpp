@@ -1321,6 +1321,23 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // a class compared (`token === C`): by its value, the class it names; a bare class reference has
+        // nothing to lower to
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue)
+        {
+            for (auto *operand : {&leftExpressionValue, &rightExpressionValue})
+            {
+                if ((*operand).getDefiningOp<mlir_ts::ClassRefOp>())
+                {
+                    auto classValue = classRefAsClassValue(location, *operand, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(classValue)
+                    *operand = V(classValue);
+                }
+            }
+        }
+
         if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;

@@ -1127,6 +1127,10 @@ declare function f<T>(p: (t: T) => T): T;
 function main() { f((n: number) => n); }
 ```
 
+Fixed (third batch): a specialization of a `declare function` has no body, and the lowering gave every
+specialization `linkonce_odr` linkage, which LLVM allows only on a definition. A body-less one now stays an
+external declaration. Test: `obj-only/declared_generic_call.ts` (compiled to an object; nothing defines `f`).
+
 105 (a closure over a module-level `let` declared in a `for` header or loop body: "'ts.Load' op using
 value defined outside the region"): 21 tests. Tests: `nestedBlockScopedBindings*.ts`,
 `blockScopedBindingsReassignedInLoop2/3/5.ts`, `capturedLetConstInLoop11.ts`. The same loop in a
@@ -1140,6 +1144,9 @@ for (let x; false;) {
 
 Narrowed in the second batch: at the module level, an arrow held by a `const` in the loop (`const f = () => x`)
 works; held by a `let` (`let a = () => x`, as the tests do) or left unused, it fails. Not fixed yet.
+Narrowed again in the third batch: no loop is needed, a module-level block is enough
+(`{ let x = 1; let a = () => x; }`). The arrow is made without capturing `x`, so its body loads `.main`'s
+local directly; the same block in a function, or with `const a`, captures `x`.
 
 106 (a module-level arrow: "'llvm.mlir.addressof' op must reference a global defined by
 'llvm.mlir.global'"): 21 tests. Only `--emit=obj` and `--emit=exe` fail. The JIT, with its cache, runs
@@ -1147,6 +1154,35 @@ them. Tests: `parenthesizedAsyncArrowFunction.ts` (`let foo = (async bar => bar)
 `thisExpressionInIndexExpression.ts` (`function f() { return r => r[this]; }`),
 `collisionRestParameterUnderscoreIUsage.ts`, `collisionThisExpressionAndNameResolution.ts`,
 `declarationEmitIndexTypeArray.ts`, `declarationEmitTypeParameterNameInOuterScope.ts`.
+
+Fixed (third batch). There were two causes.
+- An arrow with an untyped parameter is generic in tslang. Held by a `let`/`var`, returned from a function
+  with no declared return type, or set as an object literal field, it stayed generic. The name then pointed
+  at a function that was never made, and a local `let` crashed. Each of these now holds one function, with
+  its untyped parameters typed `any`, as TypeScript types them (`instantiateGenericFunctionWithAny`). Only
+  a `const` keeps the function generic. A `var` hoisted from a nested block gets that instance's type up
+  front.
+- `declare var c` in a module that has code of its own was made a local of the function that code runs in
+  (`.main`), so functions reading `c` named a global nobody declared. An ambient variable is always a
+  global now. A second `declare var c` uses the global the first one declared.
+  - In such a file, an ambient name that is also a C library function (`declare const log: (s: string) =>
+    void;` in `downlevelIterationDeprecated.ts`) now collides with it, as any global by that name does.
+    Before, that file compiled only because `log` was a local.
+
+Related fixes:
+- A returned closure (`return m => m + n`) was wrapped in a bound-method adapter that read its captures
+  from the wrong box (`boundMethodWiderTypeAdapter` now skips a value already of the type).
+- Instantiating a closure against its own type matched its captures parameter to the first declared
+  parameter.
+- The crash guard in `instantiateSpecializedFunction` from the `var` batch stays.
+
+Tests: `00generic_arrow_any.ts`, `obj-only/declare_var_module_code.ts`.
+
+Still open:
+- `return r => r[this]` (`thisExpressionInIndexExpression.ts`, "not supported").
+- A generic arrow returning a generic interface (`<p>(a: p): W<p> => ({ a })`) given a function type crashed
+  in `castTupleToInterface`: `W<any>` has no interface info where the cast is. It is now the error "can't
+  find type by name: p" (it crashed for a typed `const` before this batch too).
 
 107 (a namespace used as a value: "failed to legalize operation 'ts.NamespaceRef'"): 18 tests.
 Tests: `moduleWithTryStatement1.ts`, `structuralTypeInDeclareFileForModule.ts`, `cloduleWithRecursiveReference.ts`,
@@ -1425,3 +1461,40 @@ Uint8ClampedArray" (5: `typedArrays.ts`, `typedArraysSubarray.ts`, `arrayToLocal
 `new WeakMap()` / `new SS()` with no type arguments, which tsc infers or defaults: "Generic class
 'WeakMap' is missing type arguments" (5: `defaultWeakMapInferredPropertyAssignment.ts`,
 `genericObjectCreationWithoutTypeArgs.ts`, `inheritanceOfGenericConstructorMethod1.ts`).
+
+126 (a parameter of type `never`: "'Never' can't be used as parameter type"): 18 tests, e.g.
+`discriminantsAndNullOrUndefined.ts`, `enumPropertyExhaustiveNullableReceiver.ts` (`function assertNever(x:
+never)`). Fixed (third batch): a parameter written `never` takes whatever it is given, as `any`. Only a value
+narrowed to nothing reaches it. A `never` that tslang computed itself (from an intersection it can't express,
+`callableWeakMetadata.ts`, `jsEmitIntersectionProperty.ts`) is still the error. Under -mm=own, passing a
+borrowed parameter on to it is refused ("kept here"), as for any `any` parameter. Test: `00import_equals_value.ts`.
+
+127 (`import b = a.member` of an enum, a function or a variable: "this import-equals target is not
+supported"): 25 tests, e.g. `internalAliasEnum*.ts`, `es6ModuleInternalImport.ts`,
+`exportImportCanSubstituteConstEnumForValue.ts`. Fixed (third batch): `b` names that reference, generated
+again where `b` is used. As a type it is the referenced value's type, so an enum alias works as one. Test:
+`00import_equals_value.ts`.
+
+108 fixed (third batch, USER DECISION 11-17: a class referenced as a value is resolved as an interface-like
+value whose members are the class's own `new`, statics and `instanceof`; namespaces unchanged). A class named
+as a value with no declared type is now the class's value, `typeof C`. That is the `ClassValueType` that
+`let k: typeof C = C` already had (#742, #889), with statics, `new` and `instanceof` through the vtable of the
+class it holds. This applies when the class is:
+- held by a `let`/`var` (module, local or hoisted);
+- returned (`return C`, `return this` in a static method, `() => C`);
+- put in an object literal field;
+- boxed as `any`/`unknown`/`Object`;
+- compared (`token === C`).
+
+A `const` still names the class itself. Test: `00class_value_inferred.ts` (gc/rc/none, and own JIT).
+
+Still open:
+- `this` in a static method is the class that declares the method, also when the method is called through a
+  subclass (`Derived.me()` returns `Base`). In JavaScript it is `Derived`; static methods are not given the
+  class they were called through. It was already the case before this change.
+- `class X extends k` where `k` is a class value ("its class is known at run time only").
+
+Not fixed in the third batch (design calls):
+- 107 (a namespace as a run-time value): left as it is, by the decision above.
+- `var v = 1; var v = 2;` at module level (still "redefinition of symbol"). With no module code, module
+  `var`s are globals with initializer regions, and nothing runs between them where the second could assign.

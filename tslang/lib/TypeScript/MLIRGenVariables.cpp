@@ -914,6 +914,44 @@ namespace mlirgen
 
             auto typeAndInit = getTypeAndInit(item, genContext);
 
+            // A generic function value can only stay generic in a `const`, which binds the name to the
+            // function itself. A `let`/`var` holds one function, instantiated with `any`. Kept generic,
+            // a module variable named a function that was never instantiated (TSLANG 106) and a local
+            // one crashed.
+            if (auto initValue = std::get<1>(typeAndInit);
+                initValue && std::get<2>(typeAndInit) == TypeProvided::No
+                && varClass.type != VariableType::Const && varClass.type != VariableType::ConstRef
+                && (item->internalFlags & InternalFlags::ForceConst) != InternalFlags::ForceConst
+                && (item->internalFlags & InternalFlags::ForceConstRef) != InternalFlags::ForceConstRef
+                && isGenericFunctionReference(initValue))
+            {
+                auto instantiated = instantiateGenericFunctionWithAny(location, initValue, genContext);
+                if (instantiated.failed_or_no_value())
+                {
+                    return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No);
+                }
+
+                auto instantiatedValue = V(instantiated);
+                return std::make_tuple(instantiatedValue.getType(), instantiatedValue, TypeProvided::No);
+            }
+
+            // `let k = C`: the class's value (a `const` keeps the name of the class itself)
+            if (auto initValue = std::get<1>(typeAndInit);
+                initValue && std::get<2>(typeAndInit) == TypeProvided::No
+                && varClass.type != VariableType::Const && varClass.type != VariableType::ConstRef
+                && (item->internalFlags & InternalFlags::ForceConst) != InternalFlags::ForceConst
+                && (item->internalFlags & InternalFlags::ForceConstRef) != InternalFlags::ForceConstRef
+                && initValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto classValue = classRefAsClassValue(location, initValue, genContext);
+                if (classValue.failed_or_no_value())
+                {
+                    return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No);
+                }
+
+                return std::make_tuple(V(classValue).getType(), V(classValue), TypeProvided::No);
+            }
+
             if (varClass.isDynamicImport)
             {
                 auto nameStr = varClass.dllName.empty()
@@ -1267,6 +1305,53 @@ namespace mlirgen
     // initializer that reads what is already declared: parameters, the `var`s before it) is declared, so it can be
     // read and written anywhere in the function, before its declaration too. A `var` with neither type nor
     // initializer anywhere is an `any`. The others are declared where they are first reached (mlirGenFunctionVar).
+    // A `var` typed by a generic function value (`var f = x => x`) holds that function instantiated with
+    // `any` (instantiateGenericFunctionWithAny): its type is that instance's, found without making it. The
+    // assignment that gives the var its value instantiates the function against this type.
+    mlir::Type MLIRGenImpl::functionVarTypeOfGenericInit(VariableDeclaration typing, mlir::Type type,
+                                                         const GenContext &genContext)
+    {
+        // `var k = C`: the class's value; the evaluated type alone is that of an instance
+        if (isa_and_nonnull<mlir_ts::ClassType>(type) && typing->initializer)
+        {
+            mlir::Type classValueType;
+            evaluate(
+                typing->initializer,
+                [&](mlir::Value value) {
+                    if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>(); classRefOp && !getValueClassInfo(classRefOp.getType()))
+                    {
+                        classValueType = mlir_ts::ClassValueType::get(classRefOp.getType());
+                    }
+                },
+                genContext);
+            return classValueType ? classValueType : type;
+        }
+
+        auto funcType = dyn_cast_or_null<mlir_ts::FunctionType>(type);
+        if (!funcType || !mth.isGenericType(funcType) || !typing->initializer)
+        {
+            return type;
+        }
+
+        mlir::Type instanceType;
+        evaluate(
+            typing->initializer,
+            [&](mlir::Value value) {
+                if (!isGenericFunctionReference(value))
+                {
+                    return;
+                }
+
+                if (auto receiverType = anyReceiverOfGenericFunction(value))
+                {
+                    instanceType = instantiateSpecializedFunctionTypeHelper(loc(typing), value, receiverType,
+                                                                            true, genContext);
+                }
+            },
+            genContext);
+        return instanceType;
+    }
+
     mlir::LogicalResult MLIRGenImpl::declareFunctionVars(Node body, const GenContext &genContext)
     {
         SmallVector<VariableDeclaration> declarations;
@@ -1342,6 +1427,11 @@ namespace mlirgen
             {
                 auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
                 auto [evaluatedType, hasInit, typeProvided] = evaluateTypeAndInit(typing, genContext);
+                if (!typeProvided)
+                {
+                    evaluatedType = functionVarTypeOfGenericInit(typing, evaluatedType, genContext);
+                }
+
                 if (genContext.postponedMessages)
                 {
                     rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
@@ -1406,6 +1496,11 @@ namespace mlirgen
             if (!type && !hasInit)
             {
                 type = getAnyType();
+            }
+
+            if (type && !typeProvided)
+            {
+                type = functionVarTypeOfGenericInit(item, type, genContext);
             }
 
             if (!type)
@@ -1790,6 +1885,30 @@ namespace mlirgen
             }
         }
 
+        // `import E = a.SomeEnum` as a type: the enum's (the referenced value's) type
+        if (auto it = currentNamespace->importEqualsValueMap.find(name); it != currentNamespace->importEqualsValueMap.end())
+        {
+            // as evaluate() does, in a scratch module: a qualified name is not an expression mlirGen takes
+            mlir::Type type;
+            {
+                TempModuleScope tempModuleScope(*this);
+                SymbolTableScopeT varScope(symbolTable);
+                GenContext evalGenContext(genContext);
+                evalGenContext.allowPartialResolve = true;
+                evalGenContext.funcOp = tempFuncOp;
+                auto result = mlirGenModuleReference(it->second, evalGenContext);
+                if (!result.failed_or_no_value())
+                {
+                    type = V(result).getType();
+                }
+            }
+
+            if (type)
+            {
+                return type;
+            }
+        }
+
         // `import { T as U }`: U is T - one step, so `import { a as b, b as a }` cannot loop
         if (auto target = resolveImportAlias(name); !target.empty() && !resolvingImportAlias)
         {
@@ -1893,6 +2012,17 @@ namespace mlirgen
                 auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
                 return builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
             }
+        }
+
+        if (auto it = currentNamespace->importEqualsValueMap.find(name); it != currentNamespace->importEqualsValueMap.end())
+        {
+            auto result = mlirGenModuleReference(it->second, genContext);
+            if (result.failed_or_no_value())
+            {
+                return mlir::Value();
+            }
+
+            return V(result);
         }
 
         // `import { a as b }`: b is a - one step, so `import { a as b, b as a }` cannot loop.
