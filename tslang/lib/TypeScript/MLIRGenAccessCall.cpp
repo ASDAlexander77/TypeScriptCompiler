@@ -162,11 +162,13 @@ namespace mlirgen
         }
 
         // collapse union type
-        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType)) 
+        mlir::Value collapsedUnionValue;
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType))
         {
             mlir::Type baseType;
             if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
+                collapsedUnionValue = objectValue;
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mlirGenPropertyAccessExpressionBaseLogic: union type " << baseType << "\n";);
                 actualType = baseType;
                 // The value is the base type as well: a union of object types sharing one layout
@@ -519,7 +521,17 @@ namespace mlirgen
                     //auto casted = cast(location, frontType, objectValue, genContext);
                     auto casted = builder.create<mlir_ts::GetValueFromUnionOp>(location, frontType, objectValue);
 
-                    return mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+                    mlir::Value access = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+
+                    // a method of every class the union may hold (`o.name()` of `A | B`) is the method of
+                    // the one it holds: a call of it dispatches on the tag (mlirGenUnionMethodCall)
+                    SmallVector<ClassInfo::TypePtr> memberClassInfos;
+                    if (access && unionMethodMembers(location, unionType, name, memberClassInfos))
+                    {
+                        unionMethodAccesses[access] = {objectValue, name.str()};
+                    }
+
+                    return access;
                 })
                 .Case<mlir_ts::LiteralType>([&](auto literalType) {
                     auto elementType = literalType.getElementType();
@@ -530,6 +542,18 @@ namespace mlirgen
                     LLVM_DEBUG(llvm::dbgs() << "\n\tCan't resolve property '" << name << "' of type " << objectValue.getType(););
                     return mlir::Value();
                 });
+
+        // a union of classes laid out as one, read as the first: a method of each is the method of the
+        // class of the object, which a call of it asks (mlirGenUnionMethodCall)
+        if (value && collapsedUnionValue)
+        {
+            SmallVector<ClassInfo::TypePtr> memberClassInfos;
+            if (unionMethodMembers(location, mlir::cast<mlir_ts::UnionType>(collapsedUnionValue.getType()), name,
+                                   memberClassInfos))
+            {
+                unionMethodAccesses[value] = {collapsedUnionValue, name.str()};
+            }
+        }
 
         // extention logic: <obj>.<functionName>(this)
         if (!value)

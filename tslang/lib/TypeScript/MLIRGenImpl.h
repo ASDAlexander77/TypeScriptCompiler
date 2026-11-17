@@ -16220,6 +16220,15 @@ class MLIRGenImpl
     ValueOrLogicalResult NewClassInstanceFromClassValue(mlir::Location location, mlir::Value classValue,
                                                         ClassInfo::TypePtr classInfo, ArrayRef<mlir::Value> operands,
                                                         const GenContext &genContext);
+    // Whether every member of a tagged union is a class with a method `name` taking the same parameters
+    // (`o.name()` of `A | B`); their class infos in the union's order
+    bool unionMethodMembers(mlir::Location location, mlir_ts::UnionType unionType, StringRef name,
+                            SmallVectorImpl<ClassInfo::TypePtr> &memberClassInfos);
+    // `o.name(args)` of such a union: the arguments once, then the method of the class the tag names
+    ValueOrLogicalResult mlirGenUnionMethodCall(mlir::Location location, mlir::Value funcResult, mlir::Value unionValue,
+                                                StringRef name, CallExpression callExpression, const GenContext &genContext);
+    // the method values read through the union's first member (property access), waiting for their call
+    llvm::DenseMap<mlir::Value, std::pair<mlir::Value, std::string>> unionMethodAccesses;
     // `new c(args)` for `c: typeof A | typeof B`: the class the union's tag names, made as above
     ValueOrLogicalResult NewClassInstanceFromClassValueUnion(mlir::Location location, mlir::Value classValues,
                                                              NodeArray<Expression> arguments, const GenContext &genContext);
