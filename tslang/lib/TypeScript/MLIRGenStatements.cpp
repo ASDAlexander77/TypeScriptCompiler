@@ -279,6 +279,7 @@ namespace mlirgen
         genContextUsing.isSwitchScope = false;
         genContextUsing.isUnwindCleanupScope = false;
         genContextUsing.isLoop = false;
+        stopHoistingAtLoopBody(genContext, genContextUsing);
 
         DITableScopeT debugBlockScope(debugScope);
         if (compileOptions.generateDebugInfo && !blockAST->parent)
@@ -929,6 +930,7 @@ namespace mlirgen
         branchContext.labelledScopeLabel.clear();
         branchContext.isSwitchScope = false;
         branchContext.isUnwindCleanupScope = false;
+        stopHoistingAtLoopBody(genContext, branchContext);
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         branchContext.usingVars = usingVars.get();
