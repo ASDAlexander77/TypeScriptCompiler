@@ -2638,7 +2638,7 @@ namespace own_signature
     }
 
     // Is a value read out of the slot kept - by a store into a place, a push, a call that keeps it, a
-    // return, a local declared from it whose own reads are?
+    // return, a local declared from it?
     bool OwnershipSignaturePass::readKept(mlir::Value slot, int depth)
     {
         if (depth > 4)
@@ -2661,10 +2661,11 @@ namespace own_signature
                     return;
                 }
 
-                auto local = mlir::dyn_cast<mlir_ts::VariableOp>(use);
-                if (local && local.getInitializer() == used)
+                // a local declared from it takes it - inference moves the value into it, and frees it
+                // with it (`const n = p; p = G.n;`, fuzz 952414: the caller's value freed)
+                if (mlir::isa<mlir_ts::VariableOp>(use))
                 {
-                    kept = local.getCaptured().value_or(false) || readKept(local.getResult(), depth + 1);
+                    kept = true;
                     return;
                 }
 

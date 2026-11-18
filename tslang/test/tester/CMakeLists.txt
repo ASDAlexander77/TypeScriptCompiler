@@ -6022,7 +6022,8 @@ set(own_error_cases
     "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten"
     "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured"
-    "own_err_moved_borrowing_let|:21:9: error: 'p4' is moved here, but it is given a value it borrows elsewhere")
+    "own_err_moved_borrowing_let|:21:9: error: 'p4' is moved here, but it is given a value it borrows elsewhere"
+    "own_err_param_copy_then_global|:19:10: error: a value that borrows 'HG.n' cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
