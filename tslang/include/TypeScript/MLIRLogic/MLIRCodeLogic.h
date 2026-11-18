@@ -122,6 +122,11 @@ class MLIRCodeLogic
 
     mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
+        if (!object)
+        {
+            return mlir::Value();
+        }
+
         MLIRTypeHelper mth(builder.getContext(), compileOptions);
         if (auto refVal = mth.GetReferenceOfLoadOp(object))
         {

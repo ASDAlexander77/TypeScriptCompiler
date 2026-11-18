@@ -1558,7 +1558,11 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenClassInterfaceVTable(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-        assert(classInfo);
+        // a class still being declared has no info yet
+        if (!classInfo)
+        {
+            return mlir::failure();
+        }
 
         auto implementIndex = classInfo->getImplementIndex(interfaceType.getName().getValue());
         if (implementIndex >= 0)

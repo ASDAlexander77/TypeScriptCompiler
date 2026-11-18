@@ -3897,6 +3897,59 @@ foreach(atomic_error_case ${atomic_error_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|<unknown>")
 endforeach()
 
+# Code from TypeScript's compiler tests (tests/cases/compiler) that crashed tslang: in the parser
+# (JSX tag names), on statements MLIRGen has no code for (export lists, `export =`, `with`), on a
+# `break`/`continue` with nothing to jump to, on circular bases, and on types that did not resolve.
+# Each file in crash-errors/ is one of them; the test passes when the compiler reports the error.
+set(crash_error_cases
+    "jsx_mismatched_closing_tag.tsx|jsx_mismatched_closing_tag\\.tsx:1:16: error: Expected corresponding JSX closing tag for 'div'"
+    "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: unsupported expression"
+    "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: unsupported expression"
+    "export_list.ts|export_list\\.ts:2:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
+    "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
+    "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
+    "export_default_expression.ts|export_default_expression\\.ts:1:1: error: 'export default <expression>' is not supported"
+    "with_statement.ts|with_statement\\.ts:2:1: error: 'with' statement is not supported"
+    "break_outside_loop.ts|break_outside_loop\\.ts:2:5: error: A 'break' statement can only be used within an enclosing iteration or switch statement"
+    "continue_outside_loop.ts|continue_outside_loop\\.ts:2:5: error: A 'continue' statement can only be used within an enclosing iteration statement"
+    "class_extends_itself.ts|class_extends_itself\\.ts:1:17: error: 'A' is referenced directly or indirectly in its own base expression"
+    "class_extends_cycle.ts|class_extends_cycle\\.ts:1:17: error: 'B' is referenced directly or indirectly in its own base expression"
+    "interface_extends_itself.ts|interface_extends_itself\\.ts:1:21: error: type 'I' recursively references itself as a base type"
+    "interface_extends_cycle.ts|interface_extends_cycle\\.ts:1:22: error: type 'I8' recursively references itself as a base type"
+    "for_in_unresolved.ts|for_in_unresolved\\.ts:2:19: error: can't resolve name: something"
+    "index_signature_unresolved.ts|index_signature_unresolved\\.ts:2:21: error: can't find type by name: Missing"
+    "template_literal_unresolved.ts|template_literal_unresolved\\.ts:1:14: error: can't find type by name: Missing"
+    "record_unresolved.ts|record_unresolved\\.ts:1:23: error: can't find type by name: Missing"
+    "overload_more_params.ts|overload_more_params\\.ts:2:14: error: function 'bar' has more parameters than another declaration of the same name"
+    "method_redeclared_more_params.ts|method_redeclared_more_params\\.ts:5:14: error: function 'C\\.f' has more parameters than another declaration of the same name")
+foreach(crash_error_case ${crash_error_cases})
+    string(FIND "${crash_error_case}" "|" crash_error_sep)
+    string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
+    math(EXPR crash_error_sep "${crash_error_sep} + 1")
+    string(SUBSTRING "${crash_error_case}" ${crash_error_sep} -1 crash_error_message)
+    get_filename_component(crash_error_name "${crash_error_file}" NAME_WE)
+    string(REPLACE "_" "-" crash_error_slug "${crash_error_name}")
+    add_test(NAME test-compile-crash-errors-${crash_error_slug}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${crash_error_file}"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${crash_error_slug}.obj")
+    set_tests_properties(test-compile-crash-errors-${crash_error_slug}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${crash_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
+endforeach()
+# a JSX element closed by its own tag is not a closing-tag mismatch (the parser dropped tag names)
+set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL_REGULAR_EXPRESSION "closing tag")
+# `export {}` and `export as namespace` make no code: they compile
+foreach(crash_ok_name export_empty export_as_namespace)
+    string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
+    add_test(NAME test-compile-crash-errors-${crash_ok_slug}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${crash_ok_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${crash_ok_slug}.obj")
+    set_tests_properties(test-compile-crash-errors-${crash_ok_slug}
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump|Assertion failed")
+endforeach()
+
 # A JIT'd object with more read-only data than its code reservation has room to spare (see
 # tests/00jit_rodata_layout.ts). Read-only sections came from the code pool and spilled out of the
 # reserved block, below it in some runs: "IMAGE_REL_AMD64_ADDR32NB relocation requires an ordered

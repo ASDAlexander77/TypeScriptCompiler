@@ -31,6 +31,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/CodeGen/CommandFlags.h"
@@ -465,6 +466,10 @@ int main(int argc, char **argv)
     _set_error_mode(_OUT_TO_STDERR);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
+
+    // A compiler crash (an access violation, a stack overflow, a failed assert) prints its stack
+    // to stderr instead of ending with nothing but an exit code.
+    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
 
     // version printer
     cl::SetVersionPrinter(TslangPrintVersion);

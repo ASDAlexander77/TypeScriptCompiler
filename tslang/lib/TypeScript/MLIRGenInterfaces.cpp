@@ -1239,7 +1239,7 @@ namespace mlirgen
         for (auto &extendsType : heritageClause->types)
         {
             auto result = mlirGen(extendsType, genContext);
-            EXIT_IF_FAILED(result);
+            EXIT_IF_FAILED_OR_NO_VALUE(result);
             auto ifaceType = V(result);
 
             // `interface TagClass extends Tag<Self, Type>` where a generic function is named `Tag` too: the name
@@ -1294,6 +1294,14 @@ namespace mlirgen
             mlir::TypeSwitch<mlir::Type>(baseType)
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                    // `interface I extends I`, or `I extends J` where J already extends I (TS2310)
+                    if (interfaceInfo && interfaceInfo->isOrExtends(newInterfacePtr.get()))
+                    {
+                        emitError(loc(extendsType)) << "type '" << newInterfacePtr->name
+                                                    << "' recursively references itself as a base type";
+                        return;
+                    }
+
                     if (interfaceInfo)
                     {
                         // mlirGen(InterfaceDeclaration) can run more than once for the same
@@ -1688,6 +1696,12 @@ namespace mlirgen
             mlir_ts::FunctionType funcType;
             if (mlir::failed(getInterfaceMethodNameAndType(
                 location, newInterfacePtr->interfaceType, methodSignature, methodName, propertyName, funcType, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // a type that is not resolved yet (`[name: string]: NotYetDeclared`) gives no function type
+            if (!funcType)
             {
                 return mlir::failure();
             }

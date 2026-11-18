@@ -1651,6 +1651,16 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
+        // the function was made from another signature of the same name (an overload) with fewer
+        // parameters than this body has
+        if (firstIndex + funcProto->getParams().size() > arguments.size())
+        {
+            auto &firstExtraParam = funcProto->getParams()[std::max(0, (int)arguments.size() - firstIndex)];
+            emitError(firstExtraParam->getLoc()) << "function '" << funcProto->getName()
+                                           << "' has more parameters than another declaration of the same name";
+            return mlir::failure();
+        }
+
         for (auto [paramIndex, param] : enumerate(funcProto->getParams()))
         {
             auto index = firstIndex + (int)paramIndex;

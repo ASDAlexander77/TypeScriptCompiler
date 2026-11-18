@@ -1684,10 +1684,18 @@ namespace mlirgen
                 mlir::TypeSwitch<mlir::Type>(baseType)
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
+                        auto classInfo = getClassInfoByFullName(baseName);
+                        // `class A extends A`, or `A extends B` where B already derives from A (TS2506)
+                        if (classInfo && classInfo->isOrDerivesFrom(newClassPtr.get()))
+                        {
+                            emitError(loc(extendingType)) << "'" << newClassPtr->name
+                                                          << "' is referenced directly or indirectly in its own base expression";
+                            return;
+                        }
+
                         auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Public});
 
-                        auto classInfo = getClassInfoByFullName(baseName);
                         // a value has no base layout, and nothing extends one: no vtable to override
                         // through
                         if (newClassPtr->isValue)
@@ -1769,6 +1777,7 @@ namespace mlirgen
                 auto result = mlirGen(implementingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ifaceType = V(result);
+                auto notDeclaredYet = false;
                 mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](mlir_ts::InterfaceType interfaceType) {
 
@@ -1778,7 +1787,13 @@ namespace mlirgen
                         });
 
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-                        assert(interfaceInfo);
+                        // an interface still being declared has no info yet
+                        if (!interfaceInfo)
+                        {
+                            notDeclaredYet = true;
+                            return;
+                        }
+
                         if (found != interfaceInfos.end()) {
                             found->interface = interfaceInfo;
                         } else {
@@ -1795,6 +1810,12 @@ namespace mlirgen
                         // interface from it, a separate, scoped feature. Fail cleanly for now.
                         emitError(loc(implementingType)) << "class cannot implement type: " << to_print(type);
                     });
+
+                if (notDeclaredYet)
+                {
+                    emitError(loc(implementingType)) << "interface '" << to_print(ifaceType.getType()) << "' is not declared yet";
+                    return mlir::failure();
+                }
             }
         }
 
