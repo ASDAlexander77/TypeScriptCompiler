@@ -5567,6 +5567,13 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
+        // a guard to a type tslang computed as `never` (`this is State<C> & { value: V }`, an intersection it can't
+        // express) is not a test that nothing passes: it narrows nothing, rather than the value to nothing
+        if (isa<mlir_ts::NeverType>(typePredicateType.getElementType()))
+        {
+            return mlir::success();
+        }
+
         return addSafeCastStatement(expr, typePredicateType.getElementType(), inverse, elseSafeCase, genContext);
     }
 

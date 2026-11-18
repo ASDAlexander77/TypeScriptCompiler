@@ -1758,8 +1758,12 @@ namespace mlirgen
         // The literals the cases compare with, when every case is one: a `default` they leave nothing for (every
         // member of the switched-on union handled) narrows to `never` - `const _x: never = s` there is the check
         // that a member added later gets a case.
+        // `case undefined:` and `case null:` handle a member that is one (`T | undefined`, `source?.type` of a
+        // `source` that may be undefined).
         SmallVector<mlir::Attribute> caseLiterals;
         auto everyCaseIsLiteral = true;
+        auto hasUndefinedCase = false;
+        auto hasNullCase = false;
         for (auto &clause : clauses)
         {
             if ((SyntaxKind)clause != SyntaxKind::CaseClause)
@@ -1772,6 +1776,14 @@ namespace mlirgen
             {
                 caseLiterals.push_back(literalType.getValue());
             }
+            else if (isa_and_nonnull<mlir_ts::UndefinedType>(caseType))
+            {
+                hasUndefinedCase = true;
+            }
+            else if (isa_and_nonnull<mlir_ts::NullType>(caseType))
+            {
+                hasNullCase = true;
+            }
             else
             {
                 everyCaseIsLiteral = false;
@@ -1779,26 +1791,49 @@ namespace mlirgen
         }
 
         auto isHandledByCase = [&](mlir::Type type) {
+            if (isa_and_nonnull<mlir_ts::UndefinedType>(type))
+            {
+                return hasUndefinedCase;
+            }
+
+            if (isa_and_nonnull<mlir_ts::NullType>(type))
+            {
+                return hasNullCase;
+            }
+
             auto literalType = dyn_cast_if_present<mlir_ts::LiteralType>(type);
             return literalType && llvm::is_contained(caseLiterals, literalType.getValue());
         };
 
-        auto membersOf = [](mlir::Type type) {
-            SmallVector<mlir::Type> members;
+        // the members of a union, an optional's element's and `undefined`
+        std::function<void(mlir::Type, SmallVector<mlir::Type> &)> addMembers = [&](mlir::Type type, SmallVector<mlir::Type> &members) {
             if (auto unionType = dyn_cast_if_present<mlir_ts::UnionType>(type))
             {
-                members.append(unionType.getTypes().begin(), unionType.getTypes().end());
+                for (auto member : unionType.getTypes())
+                {
+                    addMembers(member, members);
+                }
+            }
+            else if (auto optionalType = dyn_cast_if_present<mlir_ts::OptionalType>(type))
+            {
+                addMembers(optionalType.getElementType(), members);
+                members.push_back(getUndefinedType());
             }
             else if (type)
             {
                 members.push_back(type);
             }
+        };
 
+        auto membersOf = [&](mlir::Type type) {
+            SmallVector<mlir::Type> members;
+            addMembers(type, members);
             return members;
         };
 
         // (not in an instance of a generic function, whose default is written for any T - see mlirGen(IfStatement))
-        auto defaultHandlesNothing = everyCaseIsLiteral && !caseLiterals.empty() && genContext.typeParamsWithArgs.empty();
+        auto defaultHandlesNothing = everyCaseIsLiteral && (!caseLiterals.empty() || hasUndefinedCase || hasNullCase)
+            && genContext.typeParamsWithArgs.empty();
 
         // to support safe cast
         std::function<void(Expression, mlir::Value)> safeCastLogic;
@@ -1815,6 +1850,12 @@ namespace mlirgen
                 auto fieldNameAttr = TupleFieldName(name, switchGenContext);
                 auto members = membersOf(typeOfObject);
                 defaultHandlesNothing = !members.empty() && llvm::all_of(members, [&](mlir::Type member) {
+                    // `source?.type` of an undefined `source` is undefined
+                    if (isa<mlir_ts::UndefinedType, mlir_ts::NullType>(member))
+                    {
+                        return isHandledByCase(member);
+                    }
+
                     if (auto tupleType = dyn_cast<mlir_ts::TupleType>(member))
                     {
                         auto fieldIndex = tupleType.getIndex(fieldNameAttr);
