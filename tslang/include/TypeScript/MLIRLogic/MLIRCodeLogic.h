@@ -1934,6 +1934,12 @@ class MLIRPropertyAccessCodeLogic
             return value;
         }
 
+        // a field whose type was not made (its error is reported where it was made)
+        if (!elementTypeForRef)
+        {
+            return value;
+        }
+
         bool isBoundRef = false;
         auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 

@@ -167,21 +167,21 @@ static auto formatStringFromArgs(int& replaceIndex, string text, string arg0, st
     auto pos = text.find('{', replaceIndex);
     if (pos != std::string::npos)
     {
-        auto end = text.find('}', replaceIndex + 1);
-        if (end != std::string::npos)
+        // `{N}` with digits only: the closing brace after this `{` (it was looked for after the previous
+        // replacement, which could be in text an argument put there), and its digits (they were read to the end
+        // of the message, and a `}` or `<` in them threw from stoi)
+        auto end = text.find('}', pos + 1);
+        auto digits = end != std::string::npos ? text.substr(pos + 1, end - pos - 1) : string();
+        if (!digits.empty() && digits.size() < 4 && std::all_of(digits.begin(), digits.end(), [](auto c) { return c >= '0' && c <= '9'; }))
         {
-            auto index = to_number_base(text.substr(pos + 1, end - 1), 10);
-
-            if (end != std::string::npos)
-            {
-                auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
-                text.replace(pos, end - pos + 1, subText);
-                replaceIndex = pos + subText.size() + 1;
-            }
+            auto index = to_number_base(digits, 10);
+            auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
+            text.replace(pos, end - pos + 1, subText);
+            replaceIndex = static_cast<int>(pos + subText.size());
         }
         else
         {
-            replaceIndex = pos + 1;
+            replaceIndex = static_cast<int>(pos + 1);
         }
     }
 

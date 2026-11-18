@@ -67,6 +67,12 @@ namespace mlirgen
         }
 
         auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
+        // the argument's class not declared (yet): nothing to infer from it (as in tryInferInterface)
+        if (!typeClassInfo)
+        {
+            return false;
+        }
+
         if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
         {
             for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
@@ -1360,6 +1366,13 @@ namespace mlirgen
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, 
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        if (instantiationTooDeep(location))
+        {
+            return {mlir::failure(), mlir_ts::FunctionType(), ""};
+        }
+
+        MLIRValueGuard<int> instantiationDepthGuard(instantiationDepth, instantiationDepth + 1);
+
         // local copy so the 'this'-type override below stays scoped to this instantiation
         GenContext instantiateGenContext(genContext);
 
@@ -1702,6 +1715,13 @@ namespace mlirgen
                                                                                const GenContext &genContext,
                                                                                bool allowNamedGenerics)
     {
+        if (instantiationTooDeep(location))
+        {
+            return {mlir::failure(), mlir::Type()};
+        }
+
+        MLIRValueGuard<int> instantiationDepthGuard(instantiationDepth, instantiationDepth + 1);
+
         auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
         auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
         if (genericClassInfo)
@@ -1781,6 +1801,13 @@ namespace mlirgen
                                                                                const GenContext &genContext,
                                                                                bool allowNamedGenerics)
     {
+        if (instantiationTooDeep(location))
+        {
+            return {mlir::failure(), mlir::Type()};
+        }
+
+        MLIRValueGuard<int> instantiationDepthGuard(instantiationDepth, instantiationDepth + 1);
+
         auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
         auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
         if (genericClassInfo)
@@ -2031,6 +2058,13 @@ namespace mlirgen
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
         const GenContext &genContext, bool allowNamedGenerics)
     {
+        if (instantiationTooDeep(location))
+        {
+            return {mlir::failure(), mlir::Type()};
+        }
+
+        MLIRValueGuard<int> instantiationDepthGuard(instantiationDepth, instantiationDepth + 1);
+
         auto fullNameGenericInterfaceTypeName = genericInterfaceType.getName().getValue();
         auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
         if (genericInterfaceInfo)

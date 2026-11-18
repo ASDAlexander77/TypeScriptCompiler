@@ -1652,6 +1652,11 @@ class MLIRTypeHelper
                                                           SmallVector<VirtualMethodOrFieldInfo, 1> &virtualTable,
                                                           bool suppressErrors = false)
     {
+        // an interface not declared (yet) has no vtable to lay out
+        if (!newInterfacePtr)
+        {
+            return mlir::failure();
+        }
 
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
@@ -3940,6 +3945,12 @@ class MLIRTypeHelper
 
     mlir::Type normalizeUnionType(mlir::SmallVector<mlir::Type> &types)
     {
+        // a member that could not be made (its error is reported where it was made)
+        if (llvm::any_of(types, [](mlir::Type type) { return !type; }))
+        {
+            return mlir::Type();
+        }
+
         mlir::SmallPtrSet<mlir::Type, 2> normalizedTypes;
         auto isUndefined = false;
         for (auto type : types)

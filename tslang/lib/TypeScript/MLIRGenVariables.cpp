@@ -919,6 +919,33 @@ namespace mlirgen
         }
 #endif
 
+        // `declare const c: any = 0`: an ambient variable is defined elsewhere, and code for its initializer had no
+        // function to go in - it went into the module itself, and LLVM's translation crashed on it. tsc allows only
+        // a string or numeric literal or a literal enum reference, with no type (TS1039, TS1254).
+        if (varClass == VariableType::External && item->initializer)
+        {
+            auto initializer = item->initializer;
+            auto isNumericOrStringLiteral = [](Expression expr) {
+                if (expr == SyntaxKind::PrefixUnaryExpression
+                    && expr.as<PrefixUnaryExpression>()->_operator == SyntaxKind::MinusToken)
+                {
+                    expr = expr.as<PrefixUnaryExpression>()->operand;
+                }
+
+                // ... or a literal enum member reference (`Bar.a`, `Bar['b']`)
+                return expr == SyntaxKind::NumericLiteral || expr == SyntaxKind::StringLiteral
+                    || expr == SyntaxKind::NoSubstitutionTemplateLiteral || expr == SyntaxKind::BigIntLiteral
+                    || expr == SyntaxKind::PropertyAccessExpression || expr == SyntaxKind::ElementAccessExpression;
+            };
+
+            if (item->type || !isNumericOrStringLiteral(initializer))
+            {
+                emitError(loc(initializer)) << "initializers are not allowed in ambient contexts, except a string or "
+                                               "numeric literal of a 'const' with no type";
+                return mlir::failure();
+            }
+        }
+
         if (!item->type && item->initializer == SyntaxKind::ObjectLiteralExpression)
         {
             item->initializer->internalFlags |= InternalFlags::UntypedVariableInitializer;

@@ -48,6 +48,14 @@
 #include "TypeScript/Defines.h"
 
 #ifdef _MSC_VER
+#include "llvm/Support/Allocator.h"
+
+namespace llvm::sys::windows
+{
+// LLVMSupport (llvm/Support/Windows/WindowsSupport.h, which can't follow <windows.h>): the command line as UTF-8
+std::error_code GetCommandLineArguments(SmallVectorImpl<const char *> &Args, BumpPtrAllocator &Alloc);
+}
+
 #include <crtdbg.h>
 #include <stdlib.h>
 #include <windows.h>
@@ -456,6 +464,17 @@ int main(int argc, char **argv)
 #endif
 
 #ifdef _MSC_VER
+    // `argv` is in the ANSI code page: a file name outside it (`①Ⅻㄨ.ts`) arrived as '?'s and could not be
+    // opened. Read the command line as UTF-8, which LLVM's file functions take (what llvm::InitLLVM does).
+    llvm::BumpPtrAllocator utf8ArgsAllocator;
+    llvm::SmallVector<const char *> utf8Args;
+    if (!llvm::sys::windows::GetCommandLineArguments(utf8Args, utf8ArgsAllocator))
+    {
+        argc = static_cast<int>(utf8Args.size());
+        utf8Args.push_back(nullptr);
+        argv = const_cast<char **>(utf8Args.data());
+    }
+
     // Neither the CRT nor Windows may stop and ask. A modal dialog in an unattended run is not
     // a failure but a hang - whatever raised it waits forever on a window nobody is there to
     // close - and the compiler is run unattended far more often than not. `_CrtSetReportMode`
