@@ -1274,6 +1274,12 @@ namespace mlirgen
         if (isa<mlir_ts::AnyType>(type))
         {
             mlirGenRetainCaptured(location, mlir::ValueRange{value});
+
+            // a function boxed in an `any` can be called through it (user ruling 11-18): its adapter
+            if (isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(valueType))
+            {
+                ensureAnyCallAdapter(location, valueType, genContext);
+            }
         }
 
         auto castResult = builder.create<mlir_ts::CastOp>(location, type, value);
@@ -2527,7 +2533,10 @@ namespace mlirgen
                 || isa<mlir_ts::ClassType>(type)
                 // a Shared<T> handle (own spec 23.1) is checked by its `typeof` name, "object"
                 || isa<mlir_ts::SharedType>(type)
-                || isa<mlir_ts::WeakRefType>(type))
+                || isa<mlir_ts::WeakRefType>(type)
+                // a function (user ruling 11-18): what is not one is a TypeError, not a call of garbage.
+                // The box says only "function", so a function of another type still passes
+                || ((isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType>(type)) && !genContext.allowPartialResolve))
             {
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
@@ -4182,6 +4191,255 @@ namespace mlirgen
             createExtentionFunction.getThisVal(), createExtentionFunction.getFunc());            
 
         return boundFuncVal;
+    }
+
+    std::string MLIRGenImpl::throwTypeErrorSource(StringRef message)
+    {
+        return getClassInfoByFullName("TypeError")
+                   ? ("throw new TypeError(\"" + message + "\");").str()
+                   : ("assert(false, \"" + message + "\");").str();
+    }
+
+    // The adapter of a function type F with n parameters, `required` of them not optional:
+    //
+    //   function __any_call_<n>_<required>[_v]<F, P0, ..., Pn-1>(box: any, args: any[]): any {
+    //       if (args.length < required) throw new TypeError(...);
+    //       const f = <F>box;
+    //       return f(<P0>args[0], ..., (args.length > k ? <Pk>args[k] : undefined));
+    //   }
+    //
+    // instantiated for F and its parameter types: each argument is cast from `any` as any value is (a
+    // class checked, a number converted), and the result boxed. One generic per shape; the instance, named
+    // by its type arguments, is made once per module as every generic instance is. Not for a generic
+    // function, a method (its `this` first), C varargs or -mm=own (user ruling 11-18: no calls of `any`
+    // there yet). Whatever fails here leaves the type without an adapter, and a call of it a TypeError:
+    // boxing a function must not stop a program that compiled from compiling.
+    void MLIRGenImpl::ensureAnyCallAdapter(mlir::Location location, mlir::Type funcType, const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel == MemoryModelOwn || genContext.allowPartialResolve || mth.isGenericType(funcType))
+        {
+            return;
+        }
+
+        mlir::ArrayRef<mlir::Type> inputs;
+        mlir::ArrayRef<mlir::Type> results;
+        auto isVarArg = false;
+        if (auto functionType = dyn_cast<mlir_ts::FunctionType>(funcType))
+        {
+            inputs = functionType.getInputs();
+            results = functionType.getResults();
+            isVarArg = functionType.isVarArg() || functionType.isCVarArg();
+        }
+        else if (auto hybridFunctionType = dyn_cast<mlir_ts::HybridFunctionType>(funcType))
+        {
+            inputs = hybridFunctionType.getInputs();
+            results = hybridFunctionType.getResults();
+            isVarArg = hybridFunctionType.isVarArg() || hybridFunctionType.isCVarArg();
+        }
+        else if (auto boundFunctionType = dyn_cast<mlir_ts::BoundFunctionType>(funcType))
+        {
+            // a closure (its captures bound) or a method read off its object: called without what is bound
+            if (boundFunctionType.getInputs().empty())
+            {
+                return;
+            }
+
+            inputs = boundFunctionType.getInputs().drop_front();
+            results = boundFunctionType.getResults();
+            isVarArg = boundFunctionType.isVarArg();
+        }
+        else
+        {
+            return;
+        }
+
+        if (isVarArg || (!isa<mlir_ts::BoundFunctionType>(funcType) && !inputs.empty()
+                         && isa<mlir_ts::OpaqueType, mlir_ts::ObjectType>(inputs.front())))
+        {
+            return;
+        }
+
+        auto hash = MLIRHelper::hashOfType(funcType);
+        if (anyCallAdaptersInProgress.contains(hash))
+        {
+            return;
+        }
+
+        anyCallAdaptersInProgress.insert(hash);
+        auto inProgress = llvm::make_scope_exit([&]() { anyCallAdaptersInProgress.erase(hash); });
+
+        auto count = inputs.size();
+        size_t required = 0;
+        for (auto [index, input] : enumerate(inputs))
+        {
+            if (!isa<mlir_ts::OptionalType>(input))
+            {
+                required = index + 1;
+            }
+        }
+
+        auto isVoid = results.empty() || isa<mlir_ts::VoidType>(results.front());
+        auto name = "__any_call_" + std::to_string(count) + "_" + std::to_string(required) + (isVoid ? "_v" : "");
+
+        // nothing said while it is made reaches the program: what fails only leaves the type without one
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &) {});
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+        GenContext adapterGenContext(genContext);
+        adapterGenContext.postponedMessages = &postponedMessages;
+
+        mlir::OpBuilder::InsertionGuard insertionGuard(builder);
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "_" + name;
+        auto funcRef = resolveIdentifier(location, funcName, adapterGenContext);
+        if (!funcRef)
+        {
+            std::string src = "function " + name + "<F";
+            for (size_t index = 0; index < count; index++)
+            {
+                src += ", P" + std::to_string(index);
+            }
+
+            src += ">(box: any, args: any[]): any {\n";
+            if (required > 0)
+            {
+                src += "if (args.length < " + std::to_string(required) + ") " +
+                       throwTypeErrorSource("the function takes " + std::to_string(required) + " argument(s)") + "\n";
+            }
+
+            src += "const f = <F>box;\n";
+            std::string call = "f(";
+            for (size_t index = 0; index < count; index++)
+            {
+                auto argument = "<P" + std::to_string(index) + ">args[" + std::to_string(index) + "]";
+                call += (index ? ", " : "") +
+                        (index < required ? argument
+                                          : "(args.length > " + std::to_string(index) + " ? " + argument + " : undefined)");
+            }
+
+            call += ")";
+            src += isVoid ? call + ";\nreturn undefined;\n}\n" : "return " + call + ";\n}\n";
+
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return;
+            }
+
+            funcRef = resolveIdentifier(location, funcName, adapterGenContext);
+            if (!funcRef)
+            {
+                return;
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        NodeArray<TypeNode> typeArguments;
+        adapterGenContext.typeAliasMap.insert({".ANY_CALL_F", funcType});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_CALL_F")).as<Node>()));
+        for (auto [index, input] : enumerate(inputs))
+        {
+            auto alias = ".ANY_CALL_P" + std::to_string(index);
+            adapterGenContext.typeAliasMap.insert({alias, input});
+            typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(stows(alias)).as<Node>()));
+        }
+
+        SmallVector<mlir::Value, 4> noOperands;
+        auto instance = mlirGenSpecialized(location, funcRef, typeArguments, noOperands, adapterGenContext);
+        if (instance.failed_or_no_value())
+        {
+            return;
+        }
+
+        auto symbolRefOp = V(instance).getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolRefOp || !postponedMessages.empty())
+        {
+            return;
+        }
+
+        // nothing calls it by name - the descriptor takes its address in TypeDescriptorOpLowering - so it is
+        // public: private, SymbolDCE erased it before then (the JIT's pipeline)
+        auto adapterName = symbolRefOp.getIdentifierAttr().getValue();
+        if (auto adapterOp = theModule.lookupSymbol(adapterName))
+        {
+            mlir::SymbolTable::setSymbolVisibility(adapterOp, mlir::SymbolTable::Visibility::Public);
+        }
+
+        // for the type's descriptor (TypeDescriptorOpLowering): TYPE_DESCR_CALL
+        mlir::NamedAttrList adapters;
+        if (auto existing = theModule->getAttrOfType<mlir::DictionaryAttr>(ANY_CALL_ADAPTERS_ATTR_NAME))
+        {
+            adapters.append(existing.getValue());
+        }
+
+        adapters.set(std::to_string(hash), builder.getStringAttr(symbolRefOp.getIdentifierAttr().getValue()));
+        theModule->setAttr(ANY_CALL_ADAPTERS_ATTR_NAME, adapters.getDictionary(builder.getContext()));
+    }
+
+    // `a(x, y)` of `a: any`: `__any_invoke(a, [<any>x, <any>y])`, which calls the adapter of the function `a`
+    // holds (TYPE_DESCR_CALL): the result is `any`, a value that is no function a TypeError
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAnyCall(mlir::Location location, mlir::Value callee, CallExpression callExpression,
+                                                     const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        NodeArray<Expression> elements;
+        for (auto argument : callExpression->arguments)
+        {
+            if (argument == SyntaxKind::SpreadElement)
+            {
+                emitError(loc(argument)) << "a spread argument in a call of a value of type 'any' is not supported";
+                return mlir::failure();
+            }
+
+            elements.push_back(nf.createAsExpression(argument, nf.createToken(SyntaxKind::AnyKeyword)));
+        }
+
+        auto argumentsArray = nf.createAsExpression(nf.createArrayLiteralExpression(elements, false),
+                                                    nf.createArrayTypeNode(nf.createToken(SyntaxKind::AnyKeyword)));
+        argumentsArray->pos = callExpression->pos;
+        argumentsArray->_end = callExpression->_end;
+        auto argumentsResult = mlirGen(argumentsArray.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(argumentsResult)
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___any_invoke";
+        auto funcRef = resolveIdentifier(location, funcName, genContext);
+        if (!funcRef)
+        {
+            // `b`: `box` before `typeof` narrowed it
+            std::string src = "function __any_invoke<T>(box: any, args: any[]): T {\n"
+                              "const b = box;\n"
+                              "if (typeof box != \"function\") " + throwTypeErrorSource("the value of type any called is not a function") + "\n"
+                              "const call = __any_call_adapter(b);\n"
+                              "if (call == null) " + throwTypeErrorSource("the function in the value of type any called has no adapter: its type can't be called through any") + "\n"
+                              "return <T>(<(box: any, args: any[]) => any>call)(b, args);\n"
+                              "}\n";
+
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return mlir::failure();
+            }
+
+            funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                return mlir::failure();
+            }
+        }
+
+        GenContext invokeGenContext(genContext);
+        invokeGenContext.typeAliasMap.insert({".ANY_INVOKE_T", getAnyType()});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(callee);
+        operands.push_back(V(argumentsResult));
+
+        return mlirGenCallExpression(location, funcRef,
+                                     {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_INVOKE_T")).as<Node>())},
+                                     operands, invokeGenContext);
     }
 
 } // namespace mlirgen

@@ -480,11 +480,27 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
         // empty but under rc, the one model that counts every block
         auto shareRoutineName = orl.getOrCreateShareRoutine(descriptorType);
 
+        // a function type's adapter for calls through `any` (TYPE_DESCR_CALL), when MLIRGen made one and it is
+        // still in the module
+        std::string callRoutineName;
+        if (auto parentModule = op->getParentOfType<mlir::ModuleOp>())
+        {
+            if (auto adapters = parentModule->getAttrOfType<mlir::DictionaryAttr>(ANY_CALL_ADAPTERS_ATTR_NAME))
+            {
+                if (auto adapterName = adapters.getAs<mlir::StringAttr>(std::to_string(MLIRHelper::hashOfType(descriptorType)));
+                    adapterName && parentModule.lookupSymbol(adapterName.getValue()))
+                {
+                    callRoutineName = adapterName.getValue().str();
+                }
+            }
+        }
+
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
                                                                releaseRoutineName, retainRoutineName,
                                                                shareRoutineName, variant,
-                                                               TypeOfOpHelper::layoutIdOf(descriptorType)));
+                                                               TypeOfOpHelper::layoutIdOf(descriptorType),
+                                                               callRoutineName));
 
         return success();
     }
@@ -8488,6 +8504,25 @@ struct IsTupleOfLayoutOpLowering : public TsLlvmPattern<mlir_ts::IsTupleOfLayout
     }
 };
 
+// TYPE_DESCR_CALL of the tag of a box that holds a function
+struct AnyCallAdapterOpLowering : public TsLlvmPattern<mlir_ts::AnyCallAdapterOp>
+{
+    using TsLlvmPattern<mlir_ts::AnyCallAdapterOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AnyCallAdapterOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op.getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+        TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
+        rewriter.replaceOp(op, tdl.getCallFromTag(al.getTypeOfAny(transformed.getValue())));
+        return success();
+    }
+};
+
 struct IsTypeTagOfOpLowering : public TsLlvmPattern<mlir_ts::IsTypeTagOfOp>
 {
     using TsLlvmPattern<mlir_ts::IsTypeTagOfOp>::TsLlvmPattern;
@@ -10336,7 +10371,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TryEntryOpLowering,VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
-        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, AnyCallAdapterOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,

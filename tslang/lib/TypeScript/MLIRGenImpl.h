@@ -12371,6 +12371,21 @@ class MLIRGenImpl
     // `Symbol("d")`, `Symbol.for("d")` of the language's own Symbol: a unique symbol known at compile time
     ValueOrLogicalResult mlirGenSymbolCall(mlir::Location location, CallExpression callExpression, bool isFor,
                                            const GenContext &genContext);
+
+    // A call of a value of type `any` (user ruling 11-18): through the adapter made for the function's
+    // type when it was boxed (TYPE_DESCR_CALL); a TypeError when it holds no function, or one with none
+    ValueOrLogicalResult mlirGenAnyCall(mlir::Location location, mlir::Value callee, CallExpression callExpression,
+                                        const GenContext &genContext);
+
+    // The adapter `(box: any, args: any[]) => any` for a function of `funcType` boxed in an `any`,
+    // recorded for its type descriptor (ANY_CALL_ADAPTERS_ATTR_NAME). A type it can't be made for has none.
+    void ensureAnyCallAdapter(mlir::Location location, mlir::Type funcType, const GenContext &genContext);
+
+    // the text of a statement that throws a TypeError with `message` (an assert without the default library)
+    std::string throwTypeErrorSource(StringRef message);
+
+    // function types an adapter is being made for: a function returning one of its own type is not made twice
+    llvm::DenseSet<uint64_t> anyCallAdaptersInProgress;
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);

@@ -340,6 +340,7 @@ tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -1050,6 +1051,7 @@ tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -3135,6 +3137,7 @@ set(TSLANG_CORPUS
     00never_type.ts
     00cast_any_literal_field.ts
     00symbol_unique_key.ts
+    00any_call.ts
     00call_signature_type.ts
     00f_bounded_generic.ts
     00types_indexedaccesstype.ts
@@ -3987,10 +3990,8 @@ set(crash_error_cases
     "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
     # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
     "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite"
-    # what tslang does not do, said as it is (user ruling 11-18): calling an `any`, JSX, dynamic import(),
-    # `new.target`, `#name in obj`; and a symbol is known at compile time, so its description is a constant
-    "call_any.ts|call_any\\.ts:3:5: error: a value of type 'any' can't be called: give it a function type"
-    "call_untyped_parameter.ts|call_untyped_parameter\\.ts:3:16: error: a value of type 'any' can't be called: give it a function type"
+    # what tslang does not do, said as it is (user ruling 11-18): JSX, dynamic import(), `new.target`,
+    # `#name in obj`; and a symbol is known at compile time, so its description is a constant
     "jsx_element.tsx|jsx_element\\.tsx:2:11: error: JSX is not supported"
     "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
@@ -4020,7 +4021,7 @@ set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
-                      module_try_catch_finally_locals call_signature_interface)
+                      module_try_catch_finally_locals call_signature_interface call_any call_untyped_parameter)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
@@ -4029,6 +4030,21 @@ foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_pa
     # (`error:`: a warning's path has "crash-errors" in it)
     set_tests_properties(test-compile-crash-errors-${crash_ok_slug}
                          PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
+# a call of a value of type `any` goes through the adapter its function was boxed with (user ruling 11-18),
+# but not under -mm=own yet
+foreach(any_call_own_case "call_any|3:5" "call_untyped_parameter|3:16")
+    string(REPLACE "|" ";" any_call_own_parts "${any_call_own_case}")
+    list(GET any_call_own_parts 0 any_call_own_name)
+    list(GET any_call_own_parts 1 any_call_own_position)
+    string(REPLACE "_" "-" any_call_own_slug "${any_call_own_name}")
+    add_test(NAME test-compile-crash-errors-${any_call_own_slug}-own
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${any_call_own_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_call_own_slug}-own.obj")
+    set_tests_properties(test-compile-crash-errors-${any_call_own_slug}-own
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${any_call_own_name}\\.ts:${any_call_own_position}: error: a value of type 'any' can't be called under -mm=own"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
 endforeach()
 # a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")
 set(crash_ok_unicode_file "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-①Ⅻㄨ.ts")
