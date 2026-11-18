@@ -98,6 +98,56 @@ namespace own_inference
         return result;
     }
 
+    bool OwnershipInferencePass::aliasReadAfter(mlir::Operation *read, mlir::Value fieldRef)
+    {
+        auto propertyRefOp = fieldRef.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto objectRead = propertyRefOp ? rootOf(propertyRefOp.getObjectRef()).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto holder = objectRead ? objectRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        // (through a chain of such locals: `let a = n; let b = a; o.v = b.v`)
+        for (auto depth = 0; holder && holder.getInitializer() && depth < 4; depth++)
+        {
+            auto initial = rootOf(holder.getInitializer());
+            auto sourceRead = initial.getDefiningOp<mlir_ts::LoadOp>();
+            auto source = sourceRead ? sourceRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (!source)
+            {
+                // a `const` that is the value itself (`const n = mk(); let n2 = n;`): read again where
+                // it is used besides the declaration, rc's counts and the end of its scope
+                // (round a loop, through where it is made again, it is another value)
+                llvm::SmallVector<mlir::Operation *, 1> made;
+                if (auto *definition = initial.getDefiningOp())
+                {
+                    made.push_back(definition);
+                }
+
+                return llvm::any_of(initial.getUsers(), [&](mlir::Operation *user) {
+                    return user != holder.getOperation() &&
+                           !mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::DebugVariableOp>(user) &&
+                           reachableAfter(read, user, made);
+                });
+            }
+
+            // (...or the local declared or given another value again)
+            llvm::SmallVector<mlir::Operation *> given{source.getOperation()};
+            for (auto *assignment : slotAssignments(source.getResult()))
+            {
+                given.push_back(assignment);
+            }
+
+            for (auto *user : source.getResult().getUsers())
+            {
+                if (mlir::isa<mlir_ts::LoadOp>(user) && user != sourceRead.getOperation() && reachableAfter(read, user, given))
+                {
+                    return true;
+                }
+            }
+
+            holder = source;
+        }
+
+        return false;
+    }
+
     bool OwnershipInferencePass::isCountedHandleRead(mlir::Value value)
     {
         auto uses = handleReadUses(value);
@@ -1019,7 +1069,10 @@ namespace own_inference
         // nothing is taken out of a field a back-reference is stored into (spec 70): what it holds may
         // borrow the object it is in. Such a read stays a borrow, bounded by the object
         auto readRef = mlir::isa<mlir_ts::LoadOp>(read) ? mlir::cast<mlir_ts::LoadOp>(read).getReference() : mlir::Value();
-        auto backReference = readRef && isBackReferenceField(readRef);
+        // ...nor out of a field of an object another local still names after the read (`let n2 = n;
+        // o.v = n2.v; ... n.v`, fuzz 956382): `n` is read through its new owner, and would read the
+        // emptied field
+        auto backReference = readRef && (isBackReferenceField(readRef) || aliasReadAfter(read, readRef));
         FieldTake take;
         if ((kept || letKept) && !countedHandle && !backReference && fieldTakeOf(read, kept ? kept : letKept, take))
         {
