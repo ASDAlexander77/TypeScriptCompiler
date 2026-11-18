@@ -1587,4 +1587,28 @@ Still open:
 
 Test: `00class_field_values_tuple_spread.ts` (all four models).
 
+134 (a value of a generic function type: `declare const p: <T>(fn: () => T) => T;`, `let b: <T>(x: T) => T`,
+`var b: { <T>(x: T): T }`; about 15 of the 55 "failed statement" tests, with nothing else said). Fixed (seventh
+batch):
+- A function type, a constructor type or a call signature with type parameters, written as the type of a
+  value, holds one function. Its type parameters are erased, each to its constraint or else `any`, as an
+  erased instantiation's are.
+- Where an enclosing generic is still unresolved, the type stays as before.
+- Most of the other "failed statement" tests now report the error that stopped them.
+- Assigning an arrow to a call-signature object type (`let c: { (x: number): number } = (x) => x`) still
+  fails, without generics too.
+
+Also fixed: an interface extending `Tag<Self, Type>` where a generic function is also named `Tag` read a null
+value's type (a crash; the name as a value is the function). Its base is now taken by the name as a type.
+Still open: in that program the extending interface's own members are missing ("Interface member 'key'
+can't be found"); with the function renamed, it works. Test: `00generic_function_type_values.ts`.
+
+Two crashes that already happened before, which more tests reach through erasure, are fixed too:
+- `merge<any, any>` of a conditional type (`keyof base & keyof props extends never ? ...`,
+  `longObjectInstantiationChain3.ts`) read a non-parameter inferred type as a type parameter in the false
+  branch. Now it is checked, as in the true branch.
+- A declared variable of an intersection tslang can't resolve to one type (`typeof ErrImpl & (() => number)`,
+  `aliasInstantiationExpressionGenericIntersectionNoCrash1.ts`) aborted the lowering. Now it is an error:
+  "the intersection has no single type".
+
 Test: `00satisfies_object_builtins.ts` (all four models).

@@ -1787,9 +1787,10 @@ namespace mlirgen
         }
 
         // false case
-        if (inferType)
+        // (as in the true case: the inferred type is a type parameter's only when it is one - `merge<any, any>`
+        // of `keyof base & keyof props extends never ? ...` read another as one, a crash)
+        if (auto namedGenType = mlir::dyn_cast_or_null<mlir_ts::NamedGenericType>(inferType))
         {
-            auto namedGenType = mlir::cast<mlir_ts::NamedGenericType>(inferType);
             auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
             zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
         }
@@ -3034,7 +3035,8 @@ namespace mlirgen
         return mlir_ts::ExtensionFunctionType::get(builder.getContext(), funcType);
     }
 
-    mlir::Type MLIRGenImpl::getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
+    mlir::Type MLIRGenImpl::getSignature(SignatureDeclarationBase signature, const GenContext &genContext,
+                                         bool eraseTypeParameters)
     {
         GenContext genericTypeGenContext(genContext);
 
@@ -3048,13 +3050,43 @@ namespace mlirgen
                 return mlir::Type();
             }
 
-            auto [result, hasAnyNamedGenericType] =
-                zipTypeParametersWithArguments(loc(signature), typeParameters, signature->typeArguments,
-                                               genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
-
-            if (mlir::failed(result))
+            // A value of a generic function type (`declare const p: <T>(fn: () => T) => T`, `let b: { <T>(x: T): T }`)
+            // holds one function: its type parameters are erased, each its constraint, else `any` (as an erased
+            // instantiation's are). Kept generic, the variable was refused with nothing said ("failed statement").
+            if (eraseTypeParameters && signature->typeArguments.size() == 0)
             {
-                return mlir::Type();
+                for (auto &typeParam : typeParameters)
+                {
+                    mlir::Type erasedType;
+                    if (typeParam->hasConstraint())
+                    {
+                        auto savedErrorMessagesCount = genericTypeGenContext.postponedMessages ? genericTypeGenContext.postponedMessages->size() : 0;
+                        erasedType = getType(typeParam->getConstraint(), genericTypeGenContext);
+                        if (genericTypeGenContext.postponedMessages)
+                        {
+                            rollbackPostponedErrorMessages(genericTypeGenContext.postponedMessages, savedErrorMessagesCount);
+                        }
+
+                        if (erasedType && mth.isGenericType(erasedType))
+                        {
+                            erasedType = mlir::Type();
+                        }
+                    }
+
+                    genericTypeGenContext.typeParamsWithArgs[typeParam->getName()] =
+                        std::make_pair(typeParam, erasedType ? erasedType : mlir::Type(getAnyType()));
+                }
+            }
+            else
+            {
+                auto [result, hasAnyNamedGenericType] =
+                    zipTypeParametersWithArguments(loc(signature), typeParameters, signature->typeArguments,
+                                                   genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+                if (mlir::failed(result))
+                {
+                    return mlir::Type();
+                }
             }
         }
 
@@ -3085,12 +3117,20 @@ namespace mlirgen
         }
 
         auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType, isVarArg);
+
+        // erased only where that leaves no generic: one of an enclosing generic (`<const Id>(id: Id): <Self>() =>
+        // TagClass<Self, Id>`) is still unresolved here, and instantiating with it crashed
+        if (eraseTypeParameters && signature->typeParameters.size() && mth.isGenericType(funcType))
+        {
+            return getSignature(signature, genContext, false);
+        }
+
         return funcType;
     }
 
     mlir::Type MLIRGenImpl::getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto signatureType = getSignature(signature, genContext);
+        auto signatureType = getSignature(signature, genContext, true);
         if (!signatureType)
         {
             return mlir::Type();
@@ -3102,7 +3142,7 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto signatureType = getSignature(signature, genContext);
+        auto signatureType = getSignature(signature, genContext, true);
         if (!signatureType)
         {
             return mlir::Type();
@@ -3117,7 +3157,7 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::getCallSignature(CallSignatureDeclaration signature, const GenContext &genContext)
     {
-        auto signatureType = getSignature(signature, genContext);
+        auto signatureType = getSignature(signature, genContext, true);
         if (!signatureType)
         {
             return mlir::Type();
