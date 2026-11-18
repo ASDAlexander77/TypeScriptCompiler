@@ -1632,3 +1632,29 @@ Still crashing (29):
 - the rest, each its own.
 
 Test: `00satisfies_object_builtins.ts` (all four models).
+
+136 (ninth batch; with #908 merged, 26 tsc-clean tests still crash, listed under 135). Fixed:
+- A mapped type over `keyof T` of a T not known yet (`declare function h<T>(): { [K in keyof T]: T[K] }`,
+  `combineReducers<S>(r: { [K in keyof S]: ... })`): K was not declared while its template was read ("can't
+  find type by name: K", about 25 tests). K stands for `keyof T` there, and is the key when there is no `as`.
+- A generic function given as an argument (`map(xs, identity)`, `apply(identity)`, `xs.filter(isDefined)`):
+  the callee's parameter was rebuilt with its uninferred type parameters missing ("can't find type by name:
+  U"), and the argument's own type parameters were read in the callee's scope. Now an uninferred one stays
+  itself, and the argument's are inferred from the parameter's type, as a call infers them.
+- `typeof this.x` in a method's signature left a class reference in the module's body ("failed to legalize
+  operation 'ts.ClassRef'"); a qualified name is evaluated in the temporary scope other `typeof`s use.
+- A method of a primitive stored in a variable (`let f = n.toFixed`, `let { toFixed } = 1`, a module `const`):
+  in a function the call through it was dropped with no error (`print(f(1))` printed an empty line); at the
+  module level it failed in the lowering. Now it is an error; a local `const` still names it.
+- A namespace stored in a variable with no declared type (`var v = M`): "a namespace is not a value", where
+  the lowering failed (TSLANG 107 stays: namespaces are not values).
+
+Still open (counts of tsc-clean single-file tests): calling a value of type `any` (51), `'export ...' is not
+supported` (49, by design since #908), overloads of a declared function (23), JSX tests that need react.d.ts
+(31), an arrow or method with type parameters of its own in an object literal or a `var` with a declared
+generic function type (`{ id<T>(v: T) {} }`, `var f: <T>(x: T) => T = <T>(x: T) => x`), a callback with fewer
+parameters than the function type it is given to (`xs.filter(isDefined)`), inference through reverse mapped
+and recursive conditional types, `await` in `try`/`finally` of an async function ("'ts.Try' marked illegal"),
+a class passed as a constructor type (`f(Banana)` for `new (...args) => T`).
+
+Tests: `00generic_function_arguments.ts` (all four models); `diagnostic-location/namespace_as_value.ts`.

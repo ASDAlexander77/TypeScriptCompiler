@@ -320,6 +320,33 @@ namespace mlirgen
             return variableDeclarationInfo.type;
         }
 
+        // A method of a number, string or other primitive (`n.toFixed`, `let { toFixed } = 1`) is a call on its
+        // value; only a local `const` names it (the name is the method with its value). Stored, the call through
+        // the variable was dropped (a local) or failed in the lowering ("failed to legalize operation
+        // 'ts.CreateExtensionFunction'", a module variable).
+        if (isa<mlir_ts::ExtensionFunctionType>(variableDeclarationInfo.type)
+            && (variableDeclarationInfo.isGlobal || !variableDeclarationInfo.isConst
+                || variableDeclarationInfo.needsIdentityStorage))
+        {
+            emitError(location) << "a method of a primitive value can't be stored in '"
+                                << variableDeclarationInfo.variableName
+                                << "'; call it, keep it in a local 'const', or wrap it in an arrow function";
+            return mlir::Type();
+        }
+
+        // A namespace is no run-time value (TSLANG 107): `var v = M` failed in the lowering ("failed to legalize
+        // operation 'ts.NamespaceRef'"). A local `const` is a name for it, as an import alias is.
+        if (isa<mlir_ts::NamespaceType>(variableDeclarationInfo.type)
+            && variableDeclarationInfo.typeProvided != TypeProvided::Yes
+            && (variableDeclarationInfo.isGlobal || !variableDeclarationInfo.isConst
+                || variableDeclarationInfo.needsIdentityStorage))
+        {
+            emitError(location) << "a namespace is not a value and can't be stored in '"
+                                << variableDeclarationInfo.variableName << "'; use 'import "
+                                << variableDeclarationInfo.variableName << " = <namespace>' for another name of it";
+            return mlir::Type();
+        }
+
         // remembered on the storage for warnIfIntegerLiteralVariableTruncates
         if (variableDeclarationInfo.inferredFromIntegerLiteral && !variableDeclarationInfo.deleted)
         {
