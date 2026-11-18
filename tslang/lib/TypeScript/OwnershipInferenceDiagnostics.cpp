@@ -936,6 +936,18 @@ namespace own_inference
         signalPassFailure();
     }
 
+    void OwnershipInferencePass::reportMovedBorrowingLet(mlir::Operation *taker, llvm::StringRef name)
+    {
+        if (!reporting())
+        {
+            return;
+        }
+
+        taker->emitError("'") << name
+                              << "' is moved here, but it is given a value it borrows elsewhere; -mm=own cannot tell whether it owns what it holds";
+        signalPassFailure();
+    }
+
     void OwnershipInferencePass::reportPlaceBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
     {
         noteLocalLetCandidate(op, name);

@@ -561,6 +561,7 @@ tslang_add_test(NAME test-compile-00-try-in-catch-with-finally COMMAND test-runn
 tslang_add_test(NAME test-compile-00-catch-ended-on-unwind COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_ended_on_unwind.ts")
 tslang_add_test(NAME test-compile-00-unwind-releases-frame COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_frame.ts")
 tslang_add_test(NAME test-compile-00-unwind-releases-handlers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_handlers.ts")
+tslang_add_test(NAME test-compile-00-unwind-releases-cleanups COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_cleanups.ts")
 tslang_add_test(NAME test-compile-00-loop-in-finally-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00loop_in_finally_captures.ts")
 tslang_add_test(NAME test-compile-00-global-element-through-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_element_through_local.ts")
 tslang_add_test(NAME test-compile-00-catch-clause-leaves COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_clause_leaves.ts")
@@ -1274,6 +1275,7 @@ tslang_add_test(NAME test-jit-00-try-in-catch-with-finally COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-catch-ended-on-unwind COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_ended_on_unwind.ts")
 tslang_add_test(NAME test-jit-00-unwind-releases-frame COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_frame.ts")
 tslang_add_test(NAME test-jit-00-unwind-releases-handlers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_handlers.ts")
+tslang_add_test(NAME test-jit-00-unwind-releases-cleanups COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_cleanups.ts")
 tslang_add_test(NAME test-jit-00-loop-in-finally-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00loop_in_finally_captures.ts")
 tslang_add_test(NAME test-jit-00-global-element-through-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_element_through_local.ts")
 tslang_add_test(NAME test-jit-00-catch-clause-leaves COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_clause_leaves.ts")
@@ -3111,6 +3113,7 @@ set(TSLANG_CORPUS
     00catch_ended_on_unwind.ts
     00unwind_releases_frame.ts
     00unwind_releases_handlers.ts
+    00unwind_releases_cleanups.ts
     00loop_in_finally_captures.ts
     00global_element_through_local.ts
     00catch_clause_leaves.ts
@@ -4972,7 +4975,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union own_param_borrowed_or_moved)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -5014,7 +5017,7 @@ foreach(keeps_mm rc gc none)
                        own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                        own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union own_param_borrowed_or_moved)
         tslang_add_test(NAME test-jit-${keeps_mm}-${keeps_test} COMMAND test-runner -jit -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
         tslang_add_test(NAME test-compile-${keeps_mm}-${keeps_test} COMMAND test-runner -mm=${keeps_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${keeps_test}.ts")
     endforeach()
@@ -6018,7 +6021,8 @@ set(own_error_cases
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
     "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
     "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten"
-    "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured")
+    "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured"
+    "own_err_moved_borrowing_let|:21:9: error: 'p4' is moved here, but it is given a value it borrows elsewhere")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
@@ -7135,7 +7139,7 @@ endforeach()
 # - -mm=own read --di's records of a const as uses (own_interface_getter_read, own_immortal_keepers,
 #   00nullable_interface_to_interface, stack-promotion/to_any)
 foreach(debug_test 00null_interface_to_interface 00class_values 00class_accessor_implements_field 00class_cast_undeclared_interface_dispatch 00class_redeclared_field 00assign_string_number
-                   00try_in_catch_with_finally 00using_dispose_throws 00catch_ended_on_unwind 00catch_clause_leaves 00unwind_releases_frame 00unwind_releases_handlers 00loop_in_finally_captures 00global_element_through_local)
+                   00try_in_catch_with_finally 00using_dispose_throws 00catch_ended_on_unwind 00catch_clause_leaves 00unwind_releases_frame 00unwind_releases_handlers 00unwind_releases_cleanups 00loop_in_finally_captures 00global_element_through_local)
     tslang_add_test(NAME test-jit-debug-${debug_test} COMMAND test-runner -jit -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
     tslang_add_test(NAME test-compile-debug-${debug_test} COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
 endforeach()

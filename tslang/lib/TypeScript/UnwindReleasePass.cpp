@@ -585,7 +585,12 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         if (auto *padBlock = handlers.padOf.lookup(block))
         {
             auto landingPadOp = landingPadOf(padBlock);
-            if (landingPadOp.getCleanup())
+
+            // A cleanup's code - a finally's unwind copy, a disposal - runs while an exception
+            // unwinds, and one thrown from it takes over: a plain call there gets a pad as anywhere
+            // else (on Windows, nested in the cleanup's funclet when it has an id to name). An
+            // invoke there goes to the cleanup's retry machinery, and is left alone.
+            if (landingPadOp.getCleanup() && mlir::isa<mlir_ts::InvokeOp>(call))
             {
                 return std::nullopt;
             }
@@ -711,6 +716,190 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         return aliases;
     }
 
+    // ---- the ways a handler lets the exception go on ----
+
+    // A handler that reads what the frame holds - a `finally` reading a local, its unwind copy -
+    // keeps it (usedFrom), and so does every way out of it that lets the exception go on out of the
+    // function: nothing gave the local back there. `const s = ...; try { f(); } finally { log(s); }`
+    // lost `s` on every exception through it, and on every one a call in the finally threw.
+    //
+    // So where a pad's handler leaves the function by unwinding - a cleanup's end with nowhere
+    // further to unwind to, a throw - the frame's own release of the value is copied in front of
+    // it, when:
+    // - every way into the pad is an invoke the value is held across: every normal path out of it
+    //   releases the value, with nothing touching it on the way (releaseAfter);
+    // - the handler's code is entered by that pad only, and ends only so: no catch that ends - the
+    //   exception taken, the frame going on - and no return;
+    // - nothing in it touches the value or a name of it (a slot it is stored in): no release,
+    //   retain or overwrite, and under own no call or store that may move it.
+    // A value the handler does not read is the chained pad's (processFunction), not this.
+    void releaseAtUnwindExits(mlir_ts::FuncOp funcOp, llvm::ArrayRef<mlir::Value> resources)
+    {
+        auto &region = funcOp.getBody();
+        mlir::DominanceInfo dominance(funcOp);
+
+        llvm::SmallVector<mlir::Block *> pads;
+        for (auto &block : region)
+        {
+            if (landingPadOf(&block))
+            {
+                pads.push_back(&block);
+            }
+        }
+
+        for (auto *pad : pads)
+        {
+            llvm::SmallVector<mlir::Operation *> invokes;
+            auto onlyInvokes = !pad->hasNoPredecessors();
+            for (auto *pred : pad->getPredecessors())
+            {
+                auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(pred->getTerminator());
+                if (!invokeOp || invokeOp.getUnwindDest() != pad || invokeOp.getNormalDest() == pad)
+                {
+                    onlyInvokes = false;
+                    break;
+                }
+
+                if (!llvm::is_contained(invokes, invokeOp.getOperation()))
+                {
+                    invokes.push_back(invokeOp);
+                }
+            }
+
+            if (!onlyInvokes)
+            {
+                continue;
+            }
+
+            // the handler's blocks, and its ways out of the function
+            llvm::SetVector<mlir::Block *> blocks;
+            llvm::SmallVector<mlir::Operation *> exits;
+            auto closed = true;
+            llvm::SmallVector<mlir::Block *> worklist{pad};
+            while (!worklist.empty() && closed)
+            {
+                auto *block = worklist.pop_back_val();
+                if (!blocks.insert(block))
+                {
+                    continue;
+                }
+
+                for (auto &op : *block)
+                {
+                    if (mlir::isa<mlir_ts::EndCatchOp>(op))
+                    {
+                        closed = false;
+                    }
+                }
+
+                auto *terminator = block->getTerminator();
+                if (terminator->getNumSuccessors() == 0)
+                {
+                    if (mlir::isa<mlir_ts::EndCleanupOp, mlir_ts::ThrowCallOp>(terminator))
+                    {
+                        exits.push_back(terminator);
+                    }
+                    else if (!mlir::isa<mlir_ts::UnreachableOp>(terminator))
+                    {
+                        closed = false;
+                    }
+                }
+
+                for (auto *successor : terminator->getSuccessors())
+                {
+                    worklist.push_back(successor);
+                }
+            }
+
+            // entered by the pad only
+            for (auto *block : blocks)
+            {
+                if (block == pad)
+                {
+                    continue;
+                }
+
+                for (auto *pred : block->getPredecessors())
+                {
+                    if (!blocks.contains(pred))
+                    {
+                        closed = false;
+                    }
+                }
+            }
+
+            if (!closed || exits.empty())
+            {
+                continue;
+            }
+
+            for (auto resource : resources)
+            {
+                auto aliases = aliasesOf(resource);
+
+                // read there, or the chained pad gives it back
+                auto read = false;
+                auto touched = false;
+                for (auto *block : blocks)
+                {
+                    for (auto &op : *block)
+                    {
+                        op.walk([&](mlir::Operation *nested) {
+                            for (auto alias : aliases)
+                            {
+                                read |= llvm::is_contained(nested->getOperands(), alias);
+                                touched |= touches(nested, alias);
+                            }
+                        });
+                    }
+                }
+
+                if (!read || touched)
+                {
+                    continue;
+                }
+
+                auto *definingOp = resource.getDefiningOp();
+                auto dominatesAll = [&](llvm::ArrayRef<mlir::Operation *> ops) {
+                    return llvm::all_of(ops, [&](mlir::Operation *op) {
+                        return definingOp ? dominance.properlyDominates(definingOp, op)
+                                          : dominance.dominates(resource.getParentBlock(), op->getBlock());
+                    });
+                };
+
+                if (!dominatesAll(invokes) || !dominatesAll(exits))
+                {
+                    continue;
+                }
+
+                mlir::Operation *release = nullptr;
+                for (auto *invoke : invokes)
+                {
+                    auto *found = releaseAfter(invoke, resource);
+                    if (!found)
+                    {
+                        release = nullptr;
+                        break;
+                    }
+
+                    release = release ? release : found;
+                }
+
+                if (!release)
+                {
+                    continue;
+                }
+
+                mlir::OpBuilder builder(funcOp.getContext());
+                for (auto *exit : exits)
+                {
+                    builder.setInsertionPoint(exit);
+                    builder.clone(*release);
+                }
+            }
+        }
+    }
+
     // ---- making the pads ----
 
     struct FunctionState
@@ -748,6 +937,8 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         {
             return;
         }
+
+        releaseAtUnwindExits(funcOp, resources);
 
         Handlers handlers;
         findHandlers(region, handlers);
