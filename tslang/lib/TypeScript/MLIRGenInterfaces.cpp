@@ -1596,6 +1596,12 @@ namespace mlirgen
             auto isConditional = !!propertySignature->questionToken;
 
             fieldId = TupleFieldName(propertySignature->name, genContext);
+            // `[k]: T` of a `k` that is not a constant (said by TupleFieldName): a field with no name was
+            // registered, and printing the interface for export read the missing name
+            if (!fieldId)
+            {
+                return mlir::failure();
+            }
 
             // a field a @value value could change would make its copies differ
             if (newInterfacePtr->isValue && !hasModifier(propertySignature, SyntaxKind::ReadonlyKeyword))

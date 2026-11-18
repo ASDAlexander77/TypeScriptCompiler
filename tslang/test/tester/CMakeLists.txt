@@ -3989,7 +3989,10 @@ set(crash_error_cases
     "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
     "private_name_in.ts|private_name_in\\.ts:4:16: error: '#name in obj' is not supported"
-    "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string")
+    "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
+    # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
+    # interface for export read
+    "exported_interface_computed_key.ts|exported_interface_computed_key\\.ts:2:28: error: a computed property name must be a constant")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
