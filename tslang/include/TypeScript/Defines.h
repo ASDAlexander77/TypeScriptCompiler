@@ -443,6 +443,13 @@
 // (`convertNumber`): nothing can be said of its result, and its callers keep retaining. Said on a
 // function with a body it is ignored - a body is read, not trusted. Only rc reads it: -mm=own goes by
 // its declared facts (`@lends`, `@record`). A unit attribute on the FuncOp.
+// An array literal with a spread of run-time length (`[...xs]`, and the rest argument `f(...xs)` packs)
+// is filled through a slot of its own, and what MLIRGen hands on is a read of that slot: this unit
+// attribute on the `ts.Load` says it is the new array, born uncounted as a `ts.CreateArray` is. Under rc
+// a call given it holds it across the call and gives it back after (OwnedReturnConsumptionPass), as for
+// `g([a, b])`; unmarked, `"".concat(...parts)` - Array.join - leaked the array and a count of every
+// element on each call.
+#define SPREAD_ARRAY_LITERAL_ATTR_NAME "__spread_array_literal"
 #define OWNED_DECORATOR "owned"
 #define DECLARED_OWNED_RESULT_ATTR_NAME "ts.declared_owned_result"
 // A method whose result type is `this`: it returns the object it is called on, on every path, not

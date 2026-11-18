@@ -638,13 +638,18 @@ class OwnedReturnConsumptionPass
         // parameter it assigns, copied into an owned local - freed the array the callee still read.
         // Under rc the caller holds it across the call too, and so gives it back after the call,
         // which nothing did before.
-        auto arrayMadeFor = [](mlir::Value value, mlir::Operation *call) {
+        // A literal with a spread (`f(...xs)`, `g([...xs])`) is a new array too, read out of the slot it was
+        // filled in (SPREAD_ARRAY_LITERAL_ATTR_NAME) - under rc only: own's handling below is for the
+        // shapes it was written for.
+        auto arrayMadeFor = [](mlir::Value value, mlir::Operation *call, bool spreadLiterals) {
             auto *definingOp = value.getDefiningOp();
             auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
             auto isNewArray =
                 mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(definingOp) ||
                 (castOp && mlir::isa<mlir_ts::ConstArrayType>(castOp.getIn().getType()) &&
-                 mlir::isa<mlir_ts::ArrayType>(value.getType()));
+                 mlir::isa<mlir_ts::ArrayType>(value.getType())) ||
+                (spreadLiterals && mlir::isa_and_nonnull<mlir_ts::LoadOp>(definingOp) &&
+                 definingOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
             if (!isNewArray)
             {
                 return false;
@@ -703,7 +708,7 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
-                if (compileOptions.isRefCounted() && arrayMadeFor(argument, op))
+                if (compileOptions.isRefCounted() && arrayMadeFor(argument, op, true))
                 {
                     held.push_back({op, argument});
                     continue;
@@ -718,7 +723,7 @@ class OwnedReturnConsumptionPass
                 // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over.
                 auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(argument.getType());
                 if (compileOptions.memoryModel == MemoryModelOwn && arrayType &&
-                    !mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) && arrayMadeFor(argument, op))
+                    !mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) && arrayMadeFor(argument, op, false))
                 {
                     if (auto *definingOp = argument.getDefiningOp())
                     {

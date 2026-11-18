@@ -5367,6 +5367,17 @@ add_test(NAME test-rc-owned-declarations
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
+# A spread of run-time length given to a rest parameter, `cat(...parts)`, packs a new array: under rc
+# the call holds it and gives it back after, as for `cat(a, b)` - the IR is read, as no run shows the
+# leak (Array.join's `"".concat(...parts)` lost one per call). It runs in every model.
+add_test(NAME test-rc-spread-rest-pack
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/spread-rest-pack.cmake")
+foreach(spread_mm gc rc none own)
+    tslang_add_test(NAME test-compile-spread-rest-pack-${spread_mm} COMMAND test-runner -mm=${spread_mm} "${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts")
+    tslang_add_test(NAME test-jit-spread-rest-pack-${spread_mm} COMMAND test-runner -jit -mm=${spread_mm} "${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts")
+endforeach()
 # A read through an interface field a getter may fill is owned under rc, and given back; no run can see
 # the leak, so the IR is read.
 add_test(NAME test-rc-interface-field-getter-owned
