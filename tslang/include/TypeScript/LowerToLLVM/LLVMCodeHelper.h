@@ -553,6 +553,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, unsigned size,
                                        ArrayAttr arrayAttr)
     {
+        // `["hello" as const]`: elements of a literal type are its base type's values
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(originalElementType))
+        {
+            originalElementType = literalType.getElementType();
+        }
+
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 

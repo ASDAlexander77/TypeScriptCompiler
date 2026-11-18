@@ -2347,11 +2347,11 @@ class MLIRGenImpl
 
             // A `never` holds no value: only one narrowed to nothing (`const _x: never = s` once every case of
             // `s` is handled) initializes it, and the name is that value, with no slot (createLocalVariable).
-            // A global has to have one, and one with no initializer would be read before it was set.
-            if (isa<mlir_ts::NeverType>(type) && (!init || isGlobal))
+            // A global is a placeholder byte (createGlobalVariableInitialization). One with no initializer would be
+            // read before it was set.
+            if (isa<mlir_ts::NeverType>(type) && !init)
             {
-                emitError(location) << "variable '" << variableName << "' can't be 'never' type"
-                                    << (isGlobal ? "" : " without an initializer");
+                emitError(location) << "variable '" << variableName << "' can't be 'never' type without an initializer";
                 return mlir::failure();
             }
 
@@ -2888,6 +2888,16 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }        
+
+        // `const x: never = fail()` at module level: the initializer runs (and does not come back), and the global
+        // is a byte holding the place of a value that does not exist - a read of it is a `never` of its own
+        // (globalVariableAccess)
+        if (isa<mlir_ts::NeverType>(variableDeclarationInfo.type))
+        {
+            globalOp.setTypeAttr(mlir::TypeAttr::get(builder.getI8Type()));
+            builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{builder.create<mlir_ts::UndefOp>(location, builder.getI8Type())});
+            return mlir::success();
+        }
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
         /*
@@ -5565,6 +5575,42 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    // `d === "up"` of a `d` that is a union holding the literal type "up": `d` is "up" where it is true, and the
+    // other members where it is false (nothing, when "up" was the last member left)
+    mlir::LogicalResult checkSafeCastLiteral(Expression exprVal, Expression literalVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    {
+        if (exprVal != SyntaxKind::Identifier)
+        {
+            return mlir::failure();
+        }
+
+        auto literalType = dyn_cast_if_present<mlir_ts::LiteralType>(evaluate(literalVal, genContext));
+        if (!literalType)
+        {
+            return mlir::failure();
+        }
+
+        auto exprType = evaluate(exprVal, genContext);
+        if (exprType == literalType)
+        {
+            // the test is true of every value of the type
+            if (elseSafeCase)
+            {
+                elseSafeCase->testIsTrueOfType = true;
+            }
+
+            return addSafeCastStatement(exprVal, literalType, inverse, elseSafeCase, genContext);
+        }
+
+        auto unionType = dyn_cast_if_present<mlir_ts::UnionType>(exprType);
+        if (!unionType || !llvm::is_contained(unionType.getTypes(), mlir::Type(literalType)))
+        {
+            return mlir::failure();
+        }
+
+        return addSafeCastStatement(exprVal, literalType, inverse, elseSafeCase, genContext);
+    }
+
     mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         // a guard to a type tslang computed as `never` (`this is State<C> & { value: V }`, an intersection it can't
@@ -5800,7 +5846,14 @@ class MLIRGenImpl
                                         // null case
                                         if (mlir::failed(checkSafeCastNull(left, right, inverse, elseSafeCase, genContext)))
                                         {
-                                            return checkSafeCastNull(right, left, inverse, elseSafeCase, genContext);
+                                            if (mlir::failed(checkSafeCastNull(right, left, inverse, elseSafeCase, genContext)))
+                                            {
+                                                // a literal: `d === "up"`
+                                                if (mlir::failed(checkSafeCastLiteral(left, right, inverse, elseSafeCase, genContext)))
+                                                {
+                                                    return checkSafeCastLiteral(right, left, inverse, elseSafeCase, genContext);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -13182,7 +13235,8 @@ class MLIRGenImpl
         bool isVariableSizeOfSpreadElement;
     };
 
-    mlir::LogicalResult accumulateArrayItemType(mlir::Location location, mlir::Type type, struct ArrayInfo &arrayInfo) 
+    mlir::LogicalResult accumulateArrayItemType(mlir::Location location, mlir::Type type, struct ArrayInfo &arrayInfo,
+                                                bool keepLiteralType = false)
     {
         auto elementType = arrayInfo.accumulatedArrayElementType;
 
@@ -13197,11 +13251,23 @@ class MLIRGenImpl
         }
 
         // if we have receiver type we do not need to "adopt it"
-        auto wideType = arrayInfo.recevierContext.receiverElementType ? type : mth.wideStorageType(type);
+        // (nor an element `as const`: `["hello" as const]` is a `"hello"[]`)
+        auto wideType = arrayInfo.recevierContext.receiverElementType || (keepLiteralType && isa<mlir_ts::LiteralType>(type))
+            ? type
+            : mth.wideStorageType(type);
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
 
         elementType = elementType ? elementType : wideType;
+
+        // a literal kept `as const` stays only while every element is that literal: with another element, both
+        // are widened, as without `as const`
+        if (elementType != wideType && (isa<mlir_ts::LiteralType>(elementType) || isa<mlir_ts::LiteralType>(wideType)))
+        {
+            elementType = mth.wideStorageType(elementType);
+            wideType = mth.wideStorageType(wideType);
+        }
+
         if (elementType != wideType)
         {
             if (arrayInfo.dataType == TypeData::NotSet)
@@ -13428,10 +13494,28 @@ class MLIRGenImpl
             }                
 
             values.push_back({itemValue, false, false});
-            accumulateArrayItemType(location, type, arrayInfo);
+            accumulateArrayItemType(location, type, arrayInfo, isConstAssertion(item));
         }
 
         return mlir::success();
+    }
+
+    // `"hello" as const` (or `<const>"hello"`): its literal type is kept where a literal's would be widened
+    bool isConstAssertion(Expression item)
+    {
+        auto expr = stripParentheses(item);
+        TypeNode typeNode;
+        if (expr == SyntaxKind::AsExpression)
+        {
+            typeNode = expr.as<AsExpression>()->type;
+        }
+        else if (expr == SyntaxKind::TypeAssertionExpression)
+        {
+            typeNode = expr.as<TypeAssertion>()->type;
+        }
+
+        return typeNode && typeNode == SyntaxKind::TypeReference
+            && MLIRHelper::getName(typeNode.as<TypeReferenceNode>()->typeName, stringAllocator) == "const";
     }
 
     mlir::LogicalResult processTupleTailingOptionalValues(mlir::Location location, int processedValues, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
@@ -14816,6 +14900,12 @@ class MLIRGenImpl
         if (!value || !value->getType())
         {
             return mlir::Value();
+        }
+
+        // a `never` global holds nothing to read (createGlobalVariableInitialization)
+        if (isa<mlir_ts::NeverType>(value->getType()) && !asAddess)
+        {
+            return builder.create<mlir_ts::UndefOp>(location, value->getType());
         }
 
         auto refType = mlir_ts::RefType::get(value->getType());

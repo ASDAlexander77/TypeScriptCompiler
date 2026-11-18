@@ -127,7 +127,41 @@ function nothing(): void {
     return fail("nothing");
 }
 
+// `d === "up"` narrows `d` to "up", and what is left where it is false
+function signEquals(d: Dir): number {
+    if (d === "up") return 1;
+    if (d === "down") return -1;
+    return assertNever(d);
+}
+
+function signNotEquals(d: Dir): number {
+    if (d !== "up") {
+        return -1;
+    } else {
+        return 1;
+    }
+}
+
+// an element `as const` keeps its literal type: what is read out of the array is "hello", which the case handles
+function asConstElement(i: number): number {
+    const values = ["hello" as const];
+    const v = values[i];
+    switch (v) {
+        case "hello":
+            return 1;
+        default:
+            const _exhaustive: never = v;
+            return 0;
+    }
+}
+
 function main() {
+    assert(signEquals("up") == 1 && signEquals("down") == -1, "=== literal narrows");
+    assert(signNotEquals("up") == 1 && signNotEquals("down") == -1, "!== literal narrows");
+    assert(asConstElement(0) == 1, "as const element");
+    const pair = ["x" as const, "y" as const];
+    assert(pair[0] == "x" && pair[1] == "y" && pair.length == 2, "as const elements of two literals");
+
     assert(guarded(5) == 1 && guarded(-3) == -3, "type guard of the same type: else keeps the value");
     assert(signArrow("up") == 1 && signArrow("down") == -1, "switch with no default");
     assert(shapeArrow({ kind: "circle", r: 1 }) == 1 && shapeArrow({ kind: "square", side: 1 }) == 2,

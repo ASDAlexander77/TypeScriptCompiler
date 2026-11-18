@@ -323,8 +323,12 @@ namespace mlirgen
             mdi.setLexicalBlock(location);
         }
 
-        mlir_ts::FuncOp funcOp = genContext.funcOp;
-        funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        // (none at module level: `try {} catch { let l } finally { let l }` there, as mlirGen(TryStatement) has it)
+        if (genContext.funcOp)
+        {
+            mlir_ts::FuncOp funcOp = genContext.funcOp;
+            funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        }
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
@@ -1707,8 +1711,11 @@ namespace mlirgen
         mlir_ts::TryOp tryOp;
         if (usingIsDisposable && (declaresUsing || hasTypedCatch))
         {
-            mlir_ts::FuncOp funcOp = genContext.funcOp;
-            funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+            if (genContext.funcOp)
+            {
+                mlir_ts::FuncOp funcOp = genContext.funcOp;
+                funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+            }
 
             tryOp = builder.create<mlir_ts::TryOp>(location);
 
