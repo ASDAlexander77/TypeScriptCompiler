@@ -251,7 +251,9 @@ namespace mlirgen
         auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
         auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
         auto localsNeedCleanup = isInsideUnwindCleanupScope(genContext) && blockDeclaresLocals(blockAST, skipStatements);
-        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup))
+        // and a function's body, under -mm=rc and own (GenContext::functionBodyUnwindCleanup)
+        auto functionNeedsCleanup = genContext.functionBodyUnwindCleanup;
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup || functionNeedsCleanup))
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }
@@ -274,6 +276,7 @@ namespace mlirgen
         // nor the switch's, when this block is a case's
         genContextUsing.isSwitchScope = false;
         genContextUsing.isUnwindCleanupScope = false;
+        genContextUsing.functionBodyUnwindCleanup = false;
         genContextUsing.isLoop = false;
 
         DITableScopeT debugBlockScope(debugScope);
@@ -359,6 +362,7 @@ namespace mlirgen
             tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isSwitchScope = false;
             tryBodyGenContext.isUnwindCleanupScope = true;
+            tryBodyGenContext.functionBodyUnwindCleanup = false;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
@@ -2087,6 +2091,7 @@ namespace mlirgen
             tryBodyGenContext.isSwitchScope = false;
             // where the unwind leg of a wrapped scope inside stops (mlirGenReleaseOwnedOnUnwind)
             tryBodyGenContext.isUnwindCleanupScope = true;
+            tryBodyGenContext.functionBodyUnwindCleanup = false;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();

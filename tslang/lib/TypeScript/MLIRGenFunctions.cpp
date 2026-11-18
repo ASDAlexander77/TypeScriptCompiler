@@ -2284,7 +2284,11 @@ namespace mlirgen
 
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
-            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
+            // (see GenContext::functionBodyUnwindCleanup)
+            funcGenContext.functionBodyUnwindCleanup = compileOptions.tracksOwnership() && !std::getenv("TSLANG_TMP_NO_FN_UNWIND");
+            auto bodyResult = mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext);
+            funcGenContext.functionBodyUnwindCleanup = false;
+            if (failed(bodyResult))
             {
                 return mlir::failure();
             }

@@ -274,6 +274,11 @@ struct GenContext
     // scope nested further in releases the scopes between, and stops here
     // (mlirGenReleaseOwnedOnUnwind).
     bool isUnwindCleanupScope = false;
+    // Set on a function's context, under -mm=rc and own, for the body block it is handed to, and
+    // cleared for every scope in it: the body is wrapped in a catch-less TryOp, as a block with a
+    // `using` is, so that an exception leaving the function gives back what its frame owns - its
+    // locals, its parameters' copies, a caught value - instead of leaking it.
+    bool functionBodyUnwindCleanup = false;
     // Points at itself on the context that stands, in the walk outwards, for the scope around a
     // `try` with a `finally` - the parent of its body's scope, and its catch clause's context. A
     // `return`, `break` or `continue` from inside the body or the catch that gets this far
