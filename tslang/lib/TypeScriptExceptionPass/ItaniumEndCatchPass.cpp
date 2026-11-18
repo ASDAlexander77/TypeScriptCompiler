@@ -110,6 +110,27 @@ struct ItaniumEndCatchPassCode
         return 0;
     }
 
+    // nothing runs after it on the normal path: what follows a throw is an `unreachable` that
+    // throws made at different depths may share
+    static bool noReturn(Instruction &I)
+    {
+        auto *CB = dyn_cast<CallBase>(&I);
+        if (CB == nullptr)
+        {
+            return false;
+        }
+
+        if (CB->doesNotReturn())
+        {
+            return true;
+        }
+
+        auto *callee = CB->getCalledFunction();
+        return callee != nullptr &&
+               (callee->getName() == "__cxa_throw" || callee->getName() == "__cxa_rethrow" ||
+                callee->getName() == "_Unwind_Resume");
+    }
+
     bool mayThrowOut(CallInst *CI)
     {
         if (CI->doesNotThrow() || CI->isInlineAsm() || isa<IntrinsicInst>(CI))
@@ -139,7 +160,8 @@ struct ItaniumEndCatchPassCode
             {
                 worklist.push_back(BB);
             }
-            else if (it->second != depth)
+            // the block every failed assert in a function shares, say: nothing leaves it
+            else if (it->second != depth && !isa<UnreachableInst>(BB->getTerminator()))
             {
                 if (consistent && report())
                 {
@@ -160,8 +182,16 @@ struct ItaniumEndCatchPassCode
         {
             auto *BB = worklist.pop_back_val();
             auto depth = depthIn[BB];
+            auto returns = true;
             for (auto &I : *BB)
             {
+                if (!returns)
+                {
+                    break;
+                }
+
+                returns = !noReturn(I);
+
                 if (calleeOf(I) == tryMarker && tryMarker)
                 {
                     auto id = markerId(I);
@@ -193,6 +223,11 @@ struct ItaniumEndCatchPassCode
             }
 
             auto *terminator = BB->getTerminator();
+            if (!returns)
+            {
+                continue;
+            }
+
             if (auto *II = dyn_cast<InvokeInst>(terminator))
             {
                 enter(II->getNormalDest(), depth);
@@ -331,6 +366,10 @@ struct ItaniumEndCatchPassCode
                 }
 
                 depth += delta(I);
+                if (noReturn(I))
+                {
+                    break;
+                }
             }
         }
 
