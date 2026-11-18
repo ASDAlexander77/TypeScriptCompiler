@@ -1810,8 +1810,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto windowsFinallyCatches =
             tsContext->compileOptions.isWindows && finallyHasOps && (!escapingOpsFinally.empty() || finallyHasTry || finallyMayThrow);
         // with a try around it in the function the Itanium finally pad is a catch-all already
+        // ...and so is one that may throw: run from a cleanup pad, the exception it unwinds is never
+        // caught, and one thrown in the finally took over from it with nothing ever freeing it - every
+        // throw through `try { f() } finally { g() }` with `g` throwing lost one (330 MB at 2M, in every
+        // memory model). Caught, ItaniumEndCatchPass ends it on the way out of the call that throws.
         auto linuxFinallyCatches = !tsContext->compileOptions.isWindows && finallyHasOps && !enclosingHandler &&
-                                   !escapingOpsFinally.empty();
+                                   (!escapingOpsFinally.empty() || finallyMayThrow);
         if (finallyHasOps)
         {
             // cloneRegionBefore makes brand-new Operation* instances, so any tsContext
@@ -2172,6 +2176,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto linuxCleanupOnlyChainsToParent =
             linuxHasCleanups && !catchHasOps && !finallyHasOps && enclosingHandler;
 
+        // ...and one at the top of its function whose disposal may throw: from a cleanup pad, the
+        // exception unwinding was never caught, and one a `[Symbol.dispose]()` threw took over from it
+        // with nothing ever freeing it. A catch-all, which rethrows when the disposals are done; a
+        // disposal that throws ends it on the way out (ItaniumEndCatchPass).
+        auto linuxCleanupOnlyRethrows =
+            linuxHasCleanups && !catchHasOps && !finallyHasOps && !enclosingHandler && cleanupMayThrow;
+
         // A typed catch whose exception may belong to someone else in this same function - the
         // try's own finally, or the try around it - has to be entered for every exception, not
         // only a matching one. An Itanium landingpad that lists just the typed clause is skipped
@@ -2185,7 +2196,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         mlir::Value catchAll;
         if (enclosingHandler && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
-            linuxCleanupOnlyChainsToParent || linuxTypedCatchChains || windowsFinallyCatches ||
+            linuxCleanupOnlyChainsToParent || linuxCleanupOnlyRethrows || linuxTypedCatchChains || windowsFinallyCatches ||
             windowsCleanupCatches || linuxCleanupCatches || linuxFinallyCatches)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
@@ -2638,6 +2649,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
                 auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
                 tsContext->unwind[throwOp] = enclosingHandler;
+            }
+            else if (linuxCleanupOnlyRethrows)
+            {
+                rewriter.setInsertionPointToStart(cleanupBlock);
+
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
             }
             else
             {
