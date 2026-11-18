@@ -15,9 +15,14 @@ function reads(a: string, b: string, i: number) {
     return n + e.length + m + p;
 }
 
-// an element handed out of a branch is not given back with its array: the branch leaves first
+// an element handed out of a branch: the branch takes a count of it for the result, then gives the
+// array back (read by temp-array-literal.cmake as well)
 function pick(c: boolean, i: number) {
     return c ? ["c" + i][0] : "d";
+}
+
+function pickOrNull(c: boolean, i: number): string | null {
+    return c ? ["n" + i, "m"][0] : null;
 }
 
 function main() {
@@ -25,6 +30,9 @@ function main() {
     for (let i = 0; i < 1000; i++) {
         total += reads("s" + i, "t" + i, i);
         assert(pick(true, i) == "c" + i, "picked");
+        assert(pick(false, i) == "d", "not picked");
+        assert(pickOrNull(true, i) == "n" + i, "picked or null");
+        assert(pickOrNull(false, i) == null, "null");
     }
 
     assert(total > 0, "total");
