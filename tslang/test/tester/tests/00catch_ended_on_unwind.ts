@@ -49,8 +49,11 @@ function mismatch(i: number) {
     return -1;
 }
 
-// (Not here: a call in a catch clause that throws out of the function, with no finally. The
-// Windows JIT crashes on it at -O3, before and after this change.)
+// a call in the catch clause throws out of the function
+function callInCatchOut(i: number) {
+    try { f(i); } catch (e) { f(i + 2); }
+    return -1;
+}
 
 // the mismatch rethrows out of the function
 function mismatchOut(i: number) {
@@ -109,8 +112,16 @@ function usingOut(i: number) {
     return -1;
 }
 
-// (Not here either: a `using` in a catch clause that throws. It is not disposed, on every
-// platform, before and after this change - the ownership verifier reports its slot.)
+// a using in a catch clause whose clause throws: disposed on the way out
+function usingInCatch(i: number) {
+    try {
+        try { f(i); } catch (e) {
+            using r = new Res();
+            f(i + 6);
+        }
+    } catch (e2) { return <number>e2; }
+    return -1;
+}
 
 function main() {
     const n = 20000;
@@ -120,6 +131,7 @@ function main() {
         t += callInCatch(i) - (i + 1);
         t += finallyRethrow(i) - i;
         t += mismatch(i) - i;
+        try { callInCatchOut(i); t += 1; } catch (e) { t += <number>e - (i + 2); }
         try { mismatchOut(i); t += 1; } catch (e) { t += <number>e - i; }
         t += callInCatchFinally(i) - (i + 3);
         try { callInCatchFinallyOut(i); t += 1; } catch (e) { t += <number>e - (i + 4); }
@@ -128,7 +140,8 @@ function main() {
         t += rethrowCaught(i) - ("s" + i).length;
         const before = disposed;
         t += usingOut(i) - i;
-        t += disposed - before - 1;
+        t += usingInCatch(i) - (i + 6);
+        t += disposed - before - 2;
         if (t != 0) {
             print("wrong at", i, t);
             assert(false);
@@ -139,6 +152,6 @@ function main() {
 
     assert(s == 0);
     assert(fin == 3 * n);
-    assert(disposed == n);
+    assert(disposed == 2 * n);
     print("done.");
 }

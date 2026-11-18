@@ -715,18 +715,11 @@ class MLIRGenImpl
     // Whether the insertion point sits inside the catches or finally region of an enclosing
     // TryOp.
     //
-    // Synthesizing a TryOp there crashes the compiler: `try { throw 1; } catch (e: int) {
-    // using r = new Res(); }` segfaults with the wrapping and compiles without it. Nesting a
-    // synthesized TryOp inside another one's *body* is fine and is exercised by
-    // 04disposable.ts - it is the catch and finally regions specifically that do not tolerate
-    // it, which is the half of the old blockIsFunctionRootBody condition that was doing real
-    // work and was dropped with it.
-    //
-    // Re-checked after the ToInvoke fix in Win32ExceptionPass, which retired the sibling
-    // blockHasNestedUsing guard: this one is still needed, and the crash it avoids still has a
-    // cause of its own. It no longer costs ownership: a heap local declared in a catch or finally
-    // clause is owned (localTakesOwnership), released where the clause ends normally; with no
-    // synthesized TryOp there, one that an exception leaves the clause with leaks.
+    // A block there used to synthesize no TryOp of its own (mlirGen(Block)): `try { throw 1; }
+    // catch (e: int) { using r = new Res(); }` once crashed the compiler with one. It no longer
+    // does, and without one a `using` in a clause that threw was never disposed and the clause's
+    // heap locals leaked - so blocks there are wrapped like any other. What is left here is
+    // trackPossibleCell (a captured variable's cell) and localTakesOwnership with a nested try.
     bool blockIsInsideCatchOrFinally()
     {
         auto *block = builder.getInsertionBlock();

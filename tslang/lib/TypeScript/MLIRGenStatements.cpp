@@ -251,7 +251,7 @@ namespace mlirgen
         auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
         auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
         auto localsNeedCleanup = isInsideUnwindCleanupScope(genContext) && blockDeclaresLocals(blockAST, skipStatements);
-        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup) && !blockIsInsideCatchOrFinally())
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup))
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }
@@ -1632,7 +1632,7 @@ namespace mlirgen
         }
 
         mlir_ts::TryOp tryOp;
-        if (usingIsDisposable && (declaresUsing || hasTypedCatch) && !blockIsInsideCatchOrFinally())
+        if (usingIsDisposable && (declaresUsing || hasTypedCatch))
         {
             mlir_ts::FuncOp funcOp = genContext.funcOp;
             funcOp.setPersonalityAttr(builder.getBoolAttr(true));
