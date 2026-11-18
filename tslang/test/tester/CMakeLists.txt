@@ -3980,9 +3980,10 @@ endforeach()
 set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL_REGULAR_EXPRESSION "closing tag")
 # `export {}` and `export as namespace` make no code: they compile. So do a generic that expands forever
 # (`I<T>` with a field `I<T[]>`: past the instantiation limit), a predicate naming no parameter, a `never`
-# field, `[[]]`, and a narrowing inside a `switch` case that used to outlive it.
+# field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace infinite_generic_expansion type_predicate_unknown_parameter
-                      class_never_field nested_empty_array switch_case_narrowing_scope)
+                      class_never_field nested_empty_array switch_case_narrowing_scope never_global
+                      module_try_catch_finally_locals)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
