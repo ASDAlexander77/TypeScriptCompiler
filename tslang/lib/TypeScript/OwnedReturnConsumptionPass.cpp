@@ -350,6 +350,8 @@ class OwnedReturnConsumptionPass
         // the global a read comes out of, or a place (a field, an element, a handle's value) is in,
         // through casts
         auto globalOf = [](mlir::Value value, bool isPlace) -> mlir::StringRef {
+            // gone through a field or an element on the way: then a local is looked through
+            auto inPlace = false;
             for (auto depth = 0; depth < 16 && value; depth++)
             {
                 mlir::Operation *place = nullptr;
@@ -374,9 +376,22 @@ class OwnedReturnConsumptionPass
                     return addressOfOp.getGlobalName();
                 }
 
-                value = mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(place)
-                            ? place->getOperand(0)
-                            : mlir::Value();
+                // A local given a value once and never again - `const a = GA` - names what it was
+                // given: a place in it is a place in that global's object (`f(a[0])`, the callee
+                // setting `GA[0]`, fuzz 946037). The local holds a count of its own, so a read of
+                // the local alone is not one.
+                if (auto varOp = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(place); varOp && inPlace)
+                {
+                    auto storedTo = llvm::any_of(varOp->getUsers(), [&](mlir::Operation *user) {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                        return storeOp && storeOp.getReference() == varOp.getResult();
+                    });
+                    value = storedTo ? mlir::Value() : varOp.getInitializer();
+                    continue;
+                }
+
+                inPlace = mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(place);
+                value = inPlace ? place->getOperand(0) : mlir::Value();
             }
 
             return {};
