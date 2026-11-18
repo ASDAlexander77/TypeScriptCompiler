@@ -4213,6 +4213,41 @@ class MLIRGenImpl
         return result;
     }
 
+    // Does `@owned` (OWNED_DECORATOR) cover this declaration - said on it, or on the class or any
+    // namespace it is declared in?
+    bool declaresOwnedResult(Node node, const GenContext &genContext)
+    {
+        for (auto current = node; current; current = current->parent)
+        {
+            if (current != SyntaxKind::FunctionDeclaration && current != SyntaxKind::MethodDeclaration &&
+                current != SyntaxKind::Constructor && current != SyntaxKind::GetAccessor &&
+                current != SyntaxKind::SetAccessor && current != SyntaxKind::ClassDeclaration &&
+                current != SyntaxKind::ModuleDeclaration && current != SyntaxKind::ModuleBlock)
+            {
+                // a function value, an object literal: what it is in says nothing of it
+                if (current != node)
+                {
+                    return false;
+                }
+            }
+
+            auto owned = false;
+            iterateDecorators(current, genContext, [&](StringRef name, SmallVector<StringRef>) {
+                if (name == OWNED_DECORATOR)
+                {
+                    owned = true;
+                }
+            });
+
+            if (owned)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     bool processFunctionAttributes(mlir::Location location, StringRef fullName,
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext,
         bool suppressExport = false)
@@ -4263,6 +4298,11 @@ class MLIRGenImpl
                 }
             }
 
+            if (name == OWNED_DECORATOR && functionLikeDeclarationBaseAST->body)
+            {
+                emitWarning(location, "'@" OWNED_DECORATOR "' is ignored on a function with a body");
+            }
+
             if (name == "used") {
                 builder.create<mlir_ts::AppendToUsedOp>(location, fullName);
             }
@@ -4272,6 +4312,11 @@ class MLIRGenImpl
                 addAttr(DLL_NAME, mlir::StringAttr::get(builder.getContext(), args.front()));
             }
         });
+
+        if (!functionLikeDeclarationBaseAST->body && declaresOwnedResult(functionLikeDeclarationBaseAST, genContext))
+        {
+            addAttr(DECLARED_OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(builder.getContext()));
+        }
 
         // add modifiers
         auto dllExport = !suppressExport

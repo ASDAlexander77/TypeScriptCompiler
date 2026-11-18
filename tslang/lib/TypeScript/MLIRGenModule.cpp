@@ -1666,6 +1666,25 @@ namespace mlirgen
         // stay where they are, and its code statements run from a global constructor of their own, as an
         // imported module's do (generateModuleInitCode).
         auto body = moduleDeclarationAST->body;
+
+        // `@owned declare namespace N { function f(): string; }` says it of every function in it
+        // (declaresOwnedResult), which finds the namespace through the parents - and the parser
+        // leaves a namespace's statements without one. Linked here only for such a namespace.
+        if (body && declaresOwnedResult(moduleDeclarationAST, genContext))
+        {
+            body->parent = moduleDeclarationAST;
+            if (body == SyntaxKind::ModuleBlock)
+            {
+                for (auto &statement : body.as<ModuleBlock>()->statements)
+                {
+                    if (!statement->parent)
+                    {
+                        statement->parent = body;
+                    }
+                }
+            }
+        }
+
         if (!genContext.funcOp && body == SyntaxKind::ModuleBlock)
         {
             auto statements = body.as<ModuleBlock>()->statements;

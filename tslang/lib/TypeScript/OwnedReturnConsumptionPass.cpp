@@ -111,7 +111,7 @@ class OwnedReturnConsumptionPass
                     if (mth.ownsHeapMemory(funcOp.getLoc(), resultType))
                     {
                         anyUnclassifiedOwningReturn = true;
-                    }
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! unclassified owning return: " << name << "\n";);                    }
                 }
             }
 
@@ -219,7 +219,10 @@ class OwnedReturnConsumptionPass
             // the conservative direction and the reason it is worth so little on its own and so
             // much here: `reduce` calls its argument, and `raytrace.ts` builds its colours through
             // `reduce`. An external function that returns a heap value counts as unclassified,
-            // so linking against anything whose returns cannot be seen switches it off too.
+            // so linking against anything whose returns cannot be seen switches it off too -
+            // unless it is an `export`ed import or says `@owned`, as the default library's
+            // declarations do (importedFunctionReturnsOwned): otherwise every program with the
+            // library had it off.
             auto closedWorld = !anyUnclassifiedOwningReturn;
 
             if (!calleeReturnsOwned && !closedWorld &&
@@ -2825,9 +2828,17 @@ class OwnedReturnConsumptionPass
     // and moving it into the object is what lets this say yes without asking which model the
     // other module was built under - a question a static link cannot answer, because the import
     // is resolved by re-parsing source before any artifact of it exists.
-    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp)
+    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
     {
-        if (!funcOp->hasAttr("export"))
+        // ...or, under rc, a declaration that says it is one: `@owned`
+        // (DECLARED_OWNED_RESULT_ATTR_NAME), which the default library's lib.d.ts says of what lib.ts
+        // defines. Without it every library declaration was unclassified, so closed world never held
+        // in a program that has the library - every call through a function value, and every direct
+        // library call, kept its result's +1 for good. -mm=own goes by its own declared facts instead
+        // (`@lends`: `JsonValue.get` lends what it returns, which counted as fresh here was released
+        // under the borrow), and gc and none have no count to give back.
+        auto declaredOwned = refCounted && funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME);
+        if (!funcOp->hasAttr("export") && !declaredOwned)
         {
             return false;
         }
@@ -2849,7 +2860,7 @@ class OwnedReturnConsumptionPass
     {
         if (funcOp.isExternal() || funcOp.getBody().empty())
         {
-            return importedFunctionReturnsOwned(mth, funcOp);
+            return importedFunctionReturnsOwned(mth, funcOp, refCounted);
         }
 
         // A generator's `next` - the function the yields are in - hands its caller a `{ value,

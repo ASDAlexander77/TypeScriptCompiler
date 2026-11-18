@@ -435,6 +435,16 @@
 // that returns such a record has to say it. A unit attribute on the FuncOp.
 #define RECORD_DECORATOR "record"
 #define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
+// `@owned` on a declaration - a `declare function`, or a `declare class` or `declare namespace`,
+// which says it of every function in it: the function is TypeScript compiled under the caller's
+// memory model elsewhere (the default library's lib.d.ts declares what lib.ts defines), so under rc
+// it returns a reference its caller owns (§9.24), as an imported `export`ed function does. An
+// unmarked declaration may be C, or TypeScript that hands back a pointer into a buffer
+// (`convertNumber`): nothing can be said of its result, and its callers keep retaining. Said on a
+// function with a body it is ignored - a body is read, not trusted. Only rc reads it: -mm=own goes by
+// its declared facts (`@lends`, `@record`). A unit attribute on the FuncOp.
+#define OWNED_DECORATOR "owned"
+#define DECLARED_OWNED_RESULT_ATTR_NAME "ts.declared_owned_result"
 // A method whose result type is `this`: it returns the object it is called on, on every path, not
 // another of its type nor a borrow of something in it. Called on a value the caller owns no more
 // after the call - a temporary - the result is that value, the caller's to own (own spec 78). A unit
