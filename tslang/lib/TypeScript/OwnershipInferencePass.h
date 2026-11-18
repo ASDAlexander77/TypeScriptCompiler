@@ -1512,6 +1512,7 @@ class OwnershipInferencePass
     void reportPlaceBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place);
 
     void reportPlaceBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place);
+    void reportMovedBorrowingLet(mlir::Operation *taker, llvm::StringRef name);
 
     void reportMovedWhileBorrowed(mlir::Operation *op, llvm::StringRef owner, llvm::StringRef borrower);
 

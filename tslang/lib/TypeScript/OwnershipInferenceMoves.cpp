@@ -1691,6 +1691,25 @@ namespace own_inference
             return false;
         }
 
+        // a `let` given borrows (TSLANG 56) - a parameter's local given a field's or an element's value
+        // on another path - holds no value of its own to move: the move made the function keep the
+        // argument, and the borrowed value it was given elsewhere was then released and the argument
+        // lost (fuzz 949146). Only an assignment the move comes before, and never after, leaves the
+        // value moved its own: a swap (`[data, this.data] = [this.data, data]`, spec 77) takes the
+        // field's value after the local's is moved into it.
+        if (varOp && borrowsOnly(varOp))
+        {
+            auto movedFirst = llvm::all_of(slotAssignments(slot), [&](mlir::Operation *assignment) {
+                llvm::ArrayRef<mlir::Operation *> none;
+                return reachableAfter(taker, assignment, none) && !reachableAfter(assignment, taker, none);
+            });
+            if (!movedFirst)
+            {
+                reportMovedBorrowingLet(taker, name);
+                return false;
+            }
+        }
+
         auto assignments = slotAssignments(slot);
         llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
         if (varOp)
