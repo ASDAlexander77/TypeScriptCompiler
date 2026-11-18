@@ -1546,6 +1546,12 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::RecordType(mlir::Type keys, mlir::Type valueType)
     {
+        // keys or values that could not be made (their error is reported where they were made)
+        if (!keys || !valueType)
+        {
+            return mlir::Type();
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! Record: " << valueType << ", keys: " << keys << "\n";);
         
         SmallVector<mlir_ts::FieldInfo> fields;
@@ -2173,6 +2179,11 @@ namespace mlirgen
 
         auto span = spans[spanIndex];
         auto type = getType(span->type, genContext);
+        // a span whose type could not be made (its error is reported where it was made): nothing to add
+        if (!type)
+        {
+            return;
+        }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {

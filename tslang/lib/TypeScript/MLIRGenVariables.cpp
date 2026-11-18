@@ -2196,6 +2196,13 @@ namespace mlirgen
                 ? mlir::cast<mlir_ts::ClassStorageType>(thisType).getName().getValue() 
                 : mlir::cast<mlir_ts::ClassType>(thisType).getName().getValue();
             auto classInfo = getClassInfoByFullName(fullName);
+            // `super` in a class that extends nothing (`superNoModifiersCrash.ts`): read the base of an empty list
+            if (!classInfo || classInfo->baseClasses.empty())
+            {
+                emitError(location) << "'super' can only be used in a class that extends another";
+                return mlir::Value();
+            }
+
             auto baseClassInfo = classInfo->baseClasses.front();
 
             // this is access to static base class

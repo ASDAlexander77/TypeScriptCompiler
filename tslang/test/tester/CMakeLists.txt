@@ -3784,6 +3784,15 @@ foreach(obj_only_test declared_generic_call declare_var_module_code)
                          PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
+# `super` in a class that extends nothing is an error at it: the base of an empty list was read (a crash).
+add_test(NAME test-compile-diagnostic-location-super-without-base
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/super_without_base.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-super-without-base.obj")
+set_tests_properties(test-compile-diagnostic-location-super-without-base
+                     PROPERTIES PASS_REGULAR_EXPRESSION "super_without_base\\.ts:3:16: error: 'super' can only be used in a class that extends another"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
 # MLIR verifier, which failed the module at 1:1.
 add_test(NAME test-compile-diagnostic-location-rest-parameter-type

@@ -4877,7 +4877,9 @@ class MLIRGenImpl
 
     bool isSafeTypeTheSameAndNoNeedToCast(mlir::Type type, mlir::Type safeType)
     {
-        if (type == safeType)
+        // a narrowed type that could not be made (`x instanceof C` of a C with no instance type): nothing to narrow
+        // to, rather than a check of a null type
+        if (type == safeType || !safeType || !type)
         {
             // nothing todo here
             return true;
