@@ -2740,6 +2740,18 @@ namespace mlirgen
                 index++;
                 continue;
             }
+            else if (typeItem == SyntaxKind::RestType && [&]() {
+                         auto spreadType = getType(typeItem.as<RestTypeNode>()->type, genContext);
+                         return isa_and_nonnull<mlir_ts::TupleType, mlir_ts::ConstTupleType>(spreadType);
+                     }())
+            {
+                // `[...A, ...A]` of a tuple `A`: its elements, in place (a spread of an array stays a rest element)
+                auto spreadType = mth.convertConstTupleTypeToTupleType(getType(typeItem.as<RestTypeNode>()->type, genContext));
+                for (auto &field : mlir::cast<mlir_ts::TupleType>(spreadType).getFields())
+                {
+                    types.push_back({mlir::Attribute(), field.type, false, mlir_ts::AccessLevel::Public});
+                }
+            }
             else
             {
                 auto type = getType(typeItem, genContext);
@@ -3667,7 +3679,20 @@ namespace mlirgen
             return mlir::Type();
         }
 
-        return getConstArrayType(mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType(), 0);
+        // `[...TArgs, TLast]` of a type parameter: generic until it is instantiated
+        if (mth.isGenericType(arrayType))
+        {
+            return arrayType;
+        }
+
+        auto restArrayType = dyn_cast<mlir_ts::ArrayType>(arrayType);
+        if (!restArrayType)
+        {
+            emitError(loc(restTypeNode)) << "a rest element must be of an array type, not '" << to_print(arrayType) << "'";
+            return mlir::Type();
+        }
+
+        return getConstArrayType(restArrayType.getElementType(), 0);
     }
 
     mlir_ts::AnyType MLIRGenImpl::getAnyType()

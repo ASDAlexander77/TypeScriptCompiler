@@ -2146,6 +2146,22 @@ namespace mlirgen
         // a field's type inferred from `fn = () => 0` is `() => number`, which a capturing closure
         // can be assigned to later: store it as a hybrid function, as an annotated field and a `let`
         // (adjustLocalVariableType) are, not as a plain one with no room for the closure's context
+        // `cls = B`: a field holding a class holds the class's value, `typeof B` (classRefAsClassValue); the
+        // evaluated type alone is that of an instance of B
+        if (!typeProvided && init && isa_and_nonnull<mlir_ts::ClassType>(type)
+            && propertyDeclaration->initializer != SyntaxKind::ThisKeyword)
+        {
+            evaluate(
+                propertyDeclaration->initializer,
+                [&](mlir::Value value) {
+                    if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>(); classRefOp && !getValueClassInfo(classRefOp.getType()))
+                    {
+                        type = mlir_ts::ClassValueType::get(classRefOp.getType());
+                    }
+                },
+                genContext);
+        }
+
         if (!typeProvided)
         {
             if (auto funcType = dyn_cast_or_null<mlir_ts::FunctionType>(type); funcType && !funcType.isCVarArg())
@@ -2981,6 +2997,15 @@ namespace mlirgen
                         typeInit = val.getType();
                         typeInit = mth.wideStorageType(typeInit);
                         isConst = isConstValue(val);
+
+                        // `static self = X;`: the class's value, `typeof X` (classRefAsClassValue)
+                        if (auto classRefOp = val.getDefiningOp<mlir_ts::ClassRefOp>();
+                            classRefOp && !getValueClassInfo(classRefOp.getType())
+                            && propertyDeclaration->initializer != SyntaxKind::ThisKeyword)
+                        {
+                            typeInit = mlir_ts::ClassValueType::get(classRefOp.getType());
+                            isConst = false;
+                        }
                     },
                     genContext);
 
