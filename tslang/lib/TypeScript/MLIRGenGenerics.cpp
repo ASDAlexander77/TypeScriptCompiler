@@ -1410,7 +1410,7 @@ namespace mlirgen
                 // create typeParamsWithArgs from typeArguments
                 auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                     location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, instantiateGenContext);
-                if (mlir::failed(result))
+                if (mlir::failed(result) || typeArgumentsTooLong(location, genericTypeGenContext.typeParamsWithArgs))
                 {
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
@@ -1745,7 +1745,8 @@ namespace mlirgen
                 return {mlir::success(), mlir::Type()};
             }
 
-            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics)
+                || typeArgumentsTooLong(location, genericTypeGenContext.typeParamsWithArgs))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -1825,7 +1826,8 @@ namespace mlirgen
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics)
+                || typeArgumentsTooLong(location, genericTypeGenContext.typeParamsWithArgs))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -2078,7 +2080,8 @@ namespace mlirgen
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics)
+                || typeArgumentsTooLong(location, genericTypeGenContext.typeParamsWithArgs))
             {
                 return {mlir::failure(), mlir::Type()};
             }

@@ -19583,8 +19583,65 @@ class MLIRGenImpl
             return false;
         }
 
-        emitError(location) << "Type instantiation is excessively deep and possibly infinite";
+        reportExcessiveInstantiation(location);
         return true;
+    }
+
+    // Where an instantiation went past the limits. A pass drops the errors of the one before it and a failed
+    // instantiation is not tried again, so the error was lost: the program failed with "failed statement" alone, or
+    // compiled with the member cut off. The module reports it once it is generated (mlirCodeGenModule).
+    std::optional<mlir::Location> excessiveInstantiationLocation;
+
+    void reportExcessiveInstantiation(mlir::Location location)
+    {
+        if (!excessiveInstantiationLocation)
+        {
+            excessiveInstantiationLocation = location;
+        }
+
+        emitError(location) << "Type instantiation is excessively deep and possibly infinite";
+    }
+
+    // the error of an instantiation past the limits, if there was one: it fails the module
+    int takeExcessiveInstantiationError()
+    {
+        if (!excessiveInstantiationLocation)
+        {
+            return 0;
+        }
+
+        auto location = *excessiveInstantiationLocation;
+        excessiveInstantiationLocation.reset();
+        emitError(location) << "Type instantiation is excessively deep and possibly infinite";
+        return 1;
+    }
+
+    // The name of an instantiation spells its type arguments, and an argument that is an instantiation itself is
+    // spelled with its name quoted, escaped once more at each level: `interface Foo<T> { x: Foo<Foo<T>> }` doubled
+    // the name at each level (268 MB at the 29th) and never got near the depth limit. Past this length it is TS2589.
+    static constexpr size_t MaxTypeArgumentNameLength = 1 << 16;
+
+    bool typeArgumentsTooLong(mlir::Location location,
+                              const llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &typeParamsWithArgs)
+    {
+        for (auto &typeParamWithArg : typeParamsWithArgs)
+        {
+            auto type = std::get<1>(typeParamWithArg.getValue());
+            if (!type)
+            {
+                continue;
+            }
+
+            std::string name;
+            appendTypeToSymbolName(name, type);
+            if (name.size() > MaxTypeArgumentNameLength)
+            {
+                reportExcessiveInstantiation(location);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
