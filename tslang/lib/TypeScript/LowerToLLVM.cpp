@@ -10042,6 +10042,28 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         return;
     }
 
+    // A function MLIRGen gave a personality for a cleanup it might need - every function body under
+    // -mm=rc and own is wrapped for what an exception leaving it would owe - and that came out of the
+    // affine lowering with no landing pad (it owned nothing, or nothing in it may throw) is not one
+    // with exception handling: on Windows such a function is kept out of line, and code in it takes
+    // the funclet-safe paths (isInsideFunctionWithFunclets). Left on, the ray tracer took twice as long.
+    m.walk([&](mlir_ts::FuncOp funcOp) {
+        if (!funcOp.getPersonality().value_or(false))
+        {
+            return;
+        }
+
+        auto hasLandingPad = funcOp->walk([](mlir::Operation *op) {
+                                       return mlir::isa<mlir_ts::LandingPadOp, mlir_ts::InvokeOp>(op)
+                                                  ? mlir::WalkResult::interrupt()
+                                                  : mlir::WalkResult::advance();
+                                   }).wasInterrupted();
+        if (!hasLandingPad)
+        {
+            funcOp.removePersonalityAttr();
+        }
+    });
+
     auto parsedDataLayout = llvm::DataLayout::parse(dataLayoutAttr.getValue());
     if (!parsedDataLayout)
     {

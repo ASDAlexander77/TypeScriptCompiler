@@ -326,6 +326,7 @@ namespace mlirgen
         funcOp.setPersonalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
+        tryOp->setAttr("__tmp_fn_body", builder.getUnitAttr());
 
         GenContext tryGenContext(genContext);
         tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
@@ -361,7 +362,7 @@ namespace mlirgen
             tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
             tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isSwitchScope = false;
-            tryBodyGenContext.isUnwindCleanupScope = true;
+            tryBodyGenContext.isUnwindCleanupScope = !(genContext.functionBodyUnwindCleanup && std::getenv("TSLANG_TMP_NO_NESTED"));
             tryBodyGenContext.functionBodyUnwindCleanup = false;
             tryBodyGenContext.isLoop = false;
 

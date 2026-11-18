@@ -56,6 +56,29 @@ struct LandingPadFixPassCode
             }
         }
 
+        // A function MLIRGen gave a personality for a cleanup it might need - every function body
+        // under -mm=rc and own, wrapped so that an exception leaving it gives back what it owns - and
+        // that ended with no landing pad and no invoke (nothing owned, or nothing that may throw)
+        // loses it: a personality alone stopped the inliner taking small methods into their callers.
+        if (F.hasPersonalityFn())
+        {
+            auto hasEH = false;
+            for (auto &I : instructions(F))
+            {
+                if (isa<InvokeInst>(&I) || I.isEHPad())
+                {
+                    hasEH = true;
+                    break;
+                }
+            }
+
+            if (!hasEH)
+            {
+                F.setPersonalityFn(nullptr);
+                MadeChange = true;
+            }
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! LANDFIX Change: " << MadeChange;);
         LLVM_DEBUG(llvm::dbgs() << "\n!! LANDFIX Dump After: ...\n" << F << "\n";);
 

@@ -2104,7 +2104,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         };
 
-        if (landingBlock)
+        if (landingBlock && !(tryOp->hasAttr("__tmp_fn_body") && std::getenv("TSLANG_TMP_NO_EDGES")))
         {
             // TODO: check for nested ops for example in if block
             auto visitorCallOpContinue = [&](Operation *op) {
