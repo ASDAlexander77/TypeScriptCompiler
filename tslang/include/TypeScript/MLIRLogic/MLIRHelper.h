@@ -357,7 +357,16 @@ class MLIRHelper
         }
 
         return type;
-    }    
+    }
+
+    // What String(symbol) gives for the symbol named `name`: `Symbol(d)` for `Symbol("d")`, named
+    // `Symbol(d)@<where>` (MLIRGenImpl::mlirGenSymbolCall), `Symbol(Symbol.iterator)` for a well-known
+    // one, named `iterator`
+    static std::string symbolText(StringRef name)
+    {
+        auto at = name.rfind('@');
+        return at == StringRef::npos ? ("Symbol(Symbol." + name + ")").str() : name.take_front(at).str();
+    }
 
     static mlir::Attribute TupleFieldName(mlir::StringRef name, mlir::MLIRContext *context)
     {

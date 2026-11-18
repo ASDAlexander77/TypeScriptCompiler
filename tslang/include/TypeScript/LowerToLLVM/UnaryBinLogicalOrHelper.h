@@ -307,6 +307,20 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
+    else if (isa<mlir_ts::SymbolType>(MLIRHelper::stripLiteralType(leftType))
+             && isa<mlir_ts::SymbolType>(MLIRHelper::stripLiteralType(rightType)))
+    {
+        // a symbol is the address of its own constant string: the same symbol is the same address
+        auto intPtrType = llvmtch.getIntPtrType(0);
+
+        mlir::Value leftAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftType), left);
+        mlir::Value rightAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightType), right);
+
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftAsLLVMType);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightAsLLVMType);
+
+        return builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
+    }
     else if (isa<mlir_ts::InterfaceType>(leftType))
     {
         // an interface is the object it is made over: compared by its `this`. A null interface's

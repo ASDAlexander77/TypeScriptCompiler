@@ -339,6 +339,8 @@ tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-
 tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
@@ -1045,6 +1047,8 @@ tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runn
 tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
@@ -3126,6 +3130,8 @@ set(TSLANG_CORPUS
     00typeof_union_narrowing.ts
     00never_type.ts
     00cast_any_literal_field.ts
+    00symbol_unique_key.ts
+    00call_signature_type.ts
     00f_bounded_generic.ts
     00types_indexedaccesstype.ts
     00types_keyof_enum.ts
@@ -3935,8 +3941,8 @@ endforeach()
 # Each file in crash-errors/ is one of them; the test passes when the compiler reports the error.
 set(crash_error_cases
     "jsx_mismatched_closing_tag.tsx|jsx_mismatched_closing_tag\\.tsx:1:16: error: Expected corresponding JSX closing tag for 'div'"
-    "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: unsupported expression"
-    "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: unsupported expression"
+    "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: JSX is not supported"
+    "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: JSX is not supported"
     "export_list.ts|export_list\\.ts:2:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
@@ -3976,7 +3982,16 @@ set(crash_error_cases
     "infinite_generic_expansion.ts|infinite_generic_expansion\\.ts:2:8: error: Type instantiation is excessively deep and possibly infinite"
     "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
     # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
-    "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite")
+    "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite"
+    # what tslang does not do, said as it is (user ruling 11-18): calling an `any`, JSX, dynamic import(),
+    # `new.target`, `#name in obj`; and a symbol is known at compile time, so its description is a constant
+    "call_any.ts|call_any\\.ts:3:5: error: a value of type 'any' can't be called: give it a function type"
+    "call_untyped_parameter.ts|call_untyped_parameter\\.ts:3:16: error: a value of type 'any' can't be called: give it a function type"
+    "jsx_element.tsx|jsx_element\\.tsx:2:11: error: JSX is not supported"
+    "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
+    "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
+    "private_name_in.ts|private_name_in\\.ts:4:16: error: '#name in obj' is not supported"
+    "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)

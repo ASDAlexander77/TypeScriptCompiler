@@ -5260,6 +5260,10 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BigIntKeyword);
                 }
+                else if (text == S("symbol"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::SymbolKeyword);
+                }
                 else if (text == S("function") || text == S("class") || text == S("interface") || text == S("object"))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
@@ -12346,6 +12350,10 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenWeakRefDeref(mlir::Location location, PropertyAccessExpression access, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenSharedCount(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
+
+    // `Symbol("d")`, `Symbol.for("d")` of the language's own Symbol: a unique symbol known at compile time
+    ValueOrLogicalResult mlirGenSymbolCall(mlir::Location location, CallExpression callExpression, bool isFor,
+                                           const GenContext &genContext);
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);

@@ -917,6 +917,19 @@ namespace mlirgen
             return V(builder.create<mlir_ts::UndefOp>(location, type));
         }
 
+        // `String(k)` of a symbol known here is its text, `Symbol(d)`: what is read of it (`.length`) is
+        // that text's, not the name the symbol is known by
+        if (isa<mlir_ts::StringType>(type) && isa<mlir_ts::SymbolType>(mth.stripLiteralType(valueType)))
+        {
+            if (auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                if (auto name = dyn_cast<mlir::StringAttr>(constantOp.getValue()))
+                {
+                    return mlirGenStringValue(location, MLIRHelper::symbolText(name.getValue()));
+                }
+            }
+        }
+
         // a class given where its value is expected (`make(B)` for `c: typeof A`), or the value of a class
         // where a base class's is: B's value is A's when B extends A
         if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))
@@ -3217,6 +3230,7 @@ namespace mlirgen
             .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
             .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
             .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = true; })
+            .Case<mlir_ts::SymbolType>([&](auto _) { typeOfs["symbol"] = true; })
             .Case<mlir_ts::FunctionType>([&](auto _) { typeOfs["function"] = true; })
             .Case<mlir_ts::BoundFunctionType>([&](auto _) { typeOfs["function"] = true; })
             .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
@@ -3668,6 +3682,7 @@ namespace mlirgen
                         .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = false; })
                         .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = false; })
                         .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = false; })
+                        .Case<mlir_ts::SymbolType>([&](auto _) { typeOfs["symbol"] = false; })
                         .Case<mlir_ts::FunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::BoundFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
