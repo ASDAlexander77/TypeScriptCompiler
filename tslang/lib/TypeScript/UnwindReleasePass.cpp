@@ -79,7 +79,7 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
 
     void runOnOperation() final
     {
-        if (!compileOptions.tracksOwnership() || compileOptions.isWasm || std::getenv("TSLANG_TMP_NO_UNWIND_RELEASE"))
+        if (!compileOptions.tracksOwnership() || compileOptions.isWasm)
         {
             return;
         }
