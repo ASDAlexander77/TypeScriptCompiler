@@ -5444,7 +5444,8 @@ struct Parser
             NodeArray<JsxChild> children = parseJsxChildren(opening);
             JsxClosingElement closingElement;
 
-            auto lastChild = children[children.size() - 1].as<JsxElement>();
+            // `children[children.length - 1]` is undefined in tsc when there are no children
+            auto lastChild = children.size() > 0 ? children[children.size() - 1].as<JsxElement>() : JsxElement();
             if (
                 lastChild == SyntaxKind::JsxElement
                 && !tagNamesAreEquivalent(lastChild->openingElement->tagName, lastChild->closingElement->tagName)
@@ -5666,7 +5667,8 @@ struct Parser
         if (isJsxNamespacedName(initialExpression)) {
             return initialExpression; // `a:b.c` is invalid syntax, don't even look for the `.` if we parse `a:b`, and let `parseAttribute` report "unexpected :" instead.
         }
-        Node expression;
+        // `a`, `this` or the `a` of `a.b.c`
+        Node expression = initialExpression;
         while (parseOptional(SyntaxKind::DotToken)) {
             expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false, /*allowUnicodeEscapeSequenceInIdentifierName*/ false)), pos);
         }
@@ -9127,7 +9129,9 @@ struct Parser
     /** @internal */
     auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean
     {
-        if (lhs != rhs)
+        // tsc compares the kinds (`lhs.kind !== rhs.kind`), not the nodes; a missing name (a parse
+        // error) matches nothing
+        if (!lhs || !rhs || (SyntaxKind)lhs != (SyntaxKind)rhs)
         {
             return false;
         }
@@ -9140,6 +9144,19 @@ struct Parser
         if (lhs == SyntaxKind::ThisKeyword)
         {
             return true;
+        }
+
+        if (lhs == SyntaxKind::JsxNamespacedName)
+        {
+            auto lhsNamespaced = lhs.as<JsxNamespacedName>();
+            auto rhsNamespaced = rhs.as<JsxNamespacedName>();
+            return lhsNamespaced->_namespace->escapedText == rhsNamespaced->_namespace->escapedText
+                && lhsNamespaced->name->escapedText == rhsNamespaced->name->escapedText;
+        }
+
+        if (lhs != SyntaxKind::PropertyAccessExpression)
+        {
+            return false;
         }
 
         // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element

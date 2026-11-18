@@ -118,6 +118,11 @@ namespace mlirgen
         }
 
         auto typeInterfaceInfo = getInterfaceInfoByFullName(typeInterface.getName().getValue());
+        if (!typeInterfaceInfo)
+        {
+            return false;
+        }
+
         if (auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue()))
         {
             for (auto &templateParam : tempInterfaceInfo->typeParamsWithArgs)

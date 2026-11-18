@@ -327,6 +327,25 @@ struct InterfaceInfo
     
     llvm::SmallVector<InterfaceInfoWithOffset> extends;
 
+    // this interface is `other` or extends it: `other` extending this one would be a cycle
+    bool isOrExtends(const InterfaceInfo *other) const
+    {
+        if (this == other)
+        {
+            return true;
+        }
+
+        for (auto &extend : extends)
+        {
+            if (extend.second && extend.second->isOrExtends(other))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     llvm::SmallVector<InterfaceFieldInfo> fields;
 
     llvm::SmallVector<InterfaceMethodInfo> methods;
@@ -881,6 +900,25 @@ struct ClassInfo
     // from it counts atomically. A class extending one is @atomic too (isAtomicClass). Its fields'
     // own consistency is still the program's to keep.
     bool isAtomic = false;
+
+    // this class is `other` or derives from it: `other` extending this one would be a cycle
+    bool isOrDerivesFrom(const ClassInfo *other) const
+    {
+        if (this == other)
+        {
+            return true;
+        }
+
+        for (auto &baseClass : baseClasses)
+        {
+            if (baseClass && baseClass->isOrDerivesFrom(other))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // this class or a base class is @atomic
     bool isAtomicClass() const

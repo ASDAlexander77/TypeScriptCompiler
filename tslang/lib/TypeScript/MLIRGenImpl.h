@@ -4865,6 +4865,12 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(Expression exprIn, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        // the type tested for did not resolve: nothing to narrow to
+        if (!safeType)
+        {
+            return mlir::success();
+        }
+
         auto expr = stripParenthesesAndUntangleEquals(exprIn);
 
         auto isNotLocalVariable = false;
@@ -14378,10 +14384,23 @@ class MLIRGenImpl
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(funcLikeDecl->name, genContext);
+                // a computed name that is not a constant (`get [k]() {}`) has no field name
+                if (!fieldId)
+                {
+                    emitError(loc(funcLikeDecl->name), "the name of an object literal member must be a constant");
+                    return mlir::failure();
+                }
 
                 if (item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
                 {
-                    auto stringVal = mlir::cast<mlir::StringAttr>(fieldId).getValue();
+                    auto stringAttr = dyn_cast<mlir::StringAttr>(fieldId);
+                    if (!stringAttr)
+                    {
+                        emitError(loc(funcLikeDecl->name), "the name of an accessor in an object literal must be a string");
+                        return mlir::failure();
+                    }
+
+                    auto stringVal = stringAttr.getValue();
                     std::string newField;
                     raw_string_ostream rso(newField);
                     rso << (item == SyntaxKind::GetAccessor ? "get_" : "set_") << stringVal;
@@ -14576,7 +14595,7 @@ class MLIRGenImpl
     mlir::Value globalVariableAccess(mlir::Location location, VariableDeclarationDOM::TypePtr value, bool asAddess,
                                      const GenContext &genContext)
     {
-        if (!value->getType())
+        if (!value || !value->getType())
         {
             return mlir::Value();
         }
@@ -14904,6 +14923,12 @@ class MLIRGenImpl
             auto result = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
             EXIT_IF_FAILED(result)
             auto value = V(result);
+            if (!value)
+            {
+                emitError(loc(importEqualsDeclarationAST->moduleReference), "the import-equals target is not resolved");
+                return mlir::failure();
+            }
+
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
                 getImportEqualsMap().insert({name, namespaceOp.getIdentifier()});
@@ -15227,6 +15252,11 @@ class MLIRGenImpl
     // the base's slot, cast: the slot is that read's
     mlir::Value slotOfFieldRead(mlir::Value fieldValue)
     {
+        if (!fieldValue)
+        {
+            return fieldValue;
+        }
+
         if (auto safeCastOp = fieldValue.getDefiningOp<mlir_ts::SafeCastOp>())
         {
             return safeCastOp.getValue();

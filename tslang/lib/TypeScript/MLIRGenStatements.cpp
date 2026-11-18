@@ -510,8 +510,42 @@ namespace mlirgen
         {
             return mlir::success();
         }
+        else if (kind == SyntaxKind::NamespaceExportDeclaration)
+        {
+            // `export as namespace X`: the name a UMD module has as a script global; no code
+            return mlir::success();
+        }
+        else if (kind == SyntaxKind::ExportDeclaration)
+        {
+            auto exportDeclarationAST = statementAST.as<ExportDeclaration>();
+            auto exportClause = exportDeclarationAST->exportClause;
+            // `export {}` only marks the file as a module; no code
+            if (!exportDeclarationAST->moduleSpecifier && exportClause && exportClause == SyntaxKind::NamedExports
+                && exportClause.as<NamedExports>()->elements.size() == 0)
+            {
+                return mlir::success();
+            }
 
-        llvm_unreachable("unknown statement type");
+            emitError(loc(statementAST), "'export { ... }' and 'export ... from' statements are not supported; put 'export' on the declaration");
+            return mlir::failure();
+        }
+        else if (kind == SyntaxKind::ExportAssignment)
+        {
+            emitError(loc(statementAST), statementAST.as<ExportAssignment>()->isExportEquals
+                ? "'export =' is not supported"
+                : "'export default <expression>' is not supported");
+            return mlir::failure();
+        }
+
+        if (kind == SyntaxKind::WithStatement)
+        {
+            // not allowed in strict mode or in a module either
+            emitError(loc(statementAST), "'with' statement is not supported");
+            return mlir::failure();
+        }
+
+        emitError(loc(statementAST), "this statement is not supported");
+        return mlir::failure();
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext)
@@ -1229,6 +1263,12 @@ namespace mlirgen
     // False when the type has no fields known at compile time.
     bool MLIRGenImpl::forInFieldKeys(mlir::Type type, SmallVector<std::string> &keys)
     {
+        // an expression that does not resolve has no type; the loop below reports it
+        if (!type)
+        {
+            return false;
+        }
+
         ArrayRef<mlir_ts::FieldInfo> fields;
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {

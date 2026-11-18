@@ -871,7 +871,11 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         Location loc = breakOp.getLoc();
 
         auto jump = tsContext->jumps.lookup(breakOp);
-        assert(jump);
+        if (!jump)
+        {
+            // no loop or switch around it (TS1105)
+            return breakOp.emitError("A 'break' statement can only be used within an enclosing iteration or switch statement");
+        }
 
         endCatches(rewriter, loc, tsContext->catchesLeft.lookup(breakOp));
 
@@ -894,7 +898,11 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         Location loc = continueOp.getLoc();
 
         auto jump = tsContext->jumps.lookup(continueOp);
-        assert(jump);
+        if (!jump)
+        {
+            // no loop around it (TS1104)
+            return continueOp.emitError("A 'continue' statement can only be used within an enclosing iteration statement");
+        }
 
         endCatches(rewriter, loc, tsContext->catchesLeft.lookup(continueOp));
 

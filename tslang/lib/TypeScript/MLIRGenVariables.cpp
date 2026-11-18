@@ -2196,6 +2196,12 @@ namespace mlirgen
                 ? mlir::cast<mlir_ts::ClassStorageType>(thisType).getName().getValue() 
                 : mlir::cast<mlir_ts::ClassType>(thisType).getName().getValue();
             auto classInfo = getClassInfoByFullName(fullName);
+            if (!classInfo || classInfo->baseClasses.empty())
+            {
+                emitError(location, "'super' can only be referenced in a derived class");
+                return mlir::Value();
+            }
+
             auto baseClassInfo = classInfo->baseClasses.front();
 
             // this is access to static base class

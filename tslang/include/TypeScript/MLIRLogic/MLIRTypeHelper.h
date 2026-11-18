@@ -2097,6 +2097,12 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
+        // a bound function or method type has its `this` among the inputs to drop
+        if ((!isLeftTypeFunc && leftInputs.empty()) || (!isRightTypeFunc && rightInputs.empty()))
+        {
+            return mlir::Type();
+        }
+
         auto hybridFuncIsNeeded = false;
         if (!isLeftTypeFunc)
         {
@@ -3508,7 +3514,12 @@ class MLIRTypeHelper
         if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(srcType))
         {
             auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-            assert(interfaceInfo);
+            // an interface still being declared (its own members refer to it) has no info yet
+            if (!interfaceInfo)
+            {
+                return ExtendsResult::False;
+            }
+
             auto falseResult = ExtendsResult::False;
             for (auto extend : interfaceInfo->extends)
             {
@@ -3530,7 +3541,12 @@ class MLIRTypeHelper
         if (auto classType = dyn_cast<mlir_ts::ClassType>(srcType))
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            assert(classInfo);
+            // a class still being declared has no info yet
+            if (!classInfo)
+            {
+                return ExtendsResult::False;
+            }
+
             auto falseResult = ExtendsResult::False;
             for (auto extend : classInfo->baseClasses)
             {

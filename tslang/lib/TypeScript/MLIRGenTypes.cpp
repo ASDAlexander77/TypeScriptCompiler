@@ -1546,6 +1546,12 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::RecordType(mlir::Type keys, mlir::Type valueType)
     {
+        // `Record<K, V>` with K or V not resolved
+        if (!keys || !valueType)
+        {
+            return mlir::Type();
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! Record: " << valueType << ", keys: " << keys << "\n";);
         
         SmallVector<mlir_ts::FieldInfo> fields;
@@ -2152,6 +2158,12 @@ namespace mlirgen
         SmallVector<mlir::Type> types;
         getTemplateLiteralSpan(types, text, templateLiteralTypeNode->templateSpans, 0, genContext);
 
+        // a span whose type does not resolve leaves a null type
+        if (types.empty() || llvm::any_of(types, [](mlir::Type type) { return !type; }))
+        {
+            return mlir::Type();
+        }
+
         if (types.size() == 1)
         {
             return types.front();
@@ -2172,6 +2184,11 @@ namespace mlirgen
 
         auto span = spans[spanIndex];
         auto type = getType(span->type, genContext);
+        if (!type)
+        {
+            types.push_back(mlir::Type());
+            return;
+        }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
@@ -3195,7 +3212,12 @@ namespace mlirgen
         if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(type))
         {
             auto srcInterfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-            assert(srcInterfaceInfo);
+            // an interface still being declared has no info yet
+            if (!srcInterfaceInfo)
+            {
+                return mlir::failure();
+            }
+
             newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
         }
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
