@@ -64,6 +64,10 @@ struct StackPromotionLimits
 /// model. Runs on the whole module at the affine level, after own's inference.
 std::unique_ptr<mlir::Pass> createStackPromotionPass(CompileOptions &, StackPromotionLimits);
 
+/// Under -mm=rc and own: a call that may throw, followed on every path by the release of something the
+/// frame already holds, becomes an invoke whose cleanup pad gives it back. Last before the LLVM lowering.
+std::unique_ptr<mlir::Pass> createUnwindReleasePass(CompileOptions &);
+
 /// Writes the module's borrow facts - which parameters of its functions their bodies only borrow -
 /// into the exported char array `symbolName` (`__tsborrow_<file>_<hash>`), for programs linked
 /// statically against it. See docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md.
