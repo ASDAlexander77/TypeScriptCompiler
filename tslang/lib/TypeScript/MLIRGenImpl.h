@@ -3079,6 +3079,16 @@ class MLIRGenImpl
                         return mlir::failure();
                     }
 
+                    // an intersection tslang could not resolve to one type (`typeof C & (() => number)`) has no
+                    // layout: the lowering aborted on it
+                    if (isa<mlir_ts::IntersectionType>(variableDeclarationInfo.type))
+                    {
+                        emitError(location) << "variable '" << variableDeclarationInfo.variableName << "' of type '"
+                                            << to_print(variableDeclarationInfo.type)
+                                            << "' is not supported: the intersection has no single type";
+                        return mlir::failure();
+                    }
+
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                 }
                 else
@@ -17287,7 +17297,8 @@ class MLIRGenImpl
 
     mlir::Type getCVarArgsType(mlir::Type type);
 
-    mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext);
+    mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext,
+                            bool eraseTypeParameters = false);
 
     mlir::Type getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext);
 

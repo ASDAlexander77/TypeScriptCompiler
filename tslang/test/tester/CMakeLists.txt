@@ -382,6 +382,7 @@ tslang_add_test(NAME test-compile-00-for-let-per-iteration COMMAND test-runner "
 tslang_add_test(NAME test-compile-00-module-var-redeclared COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
 tslang_add_test(NAME test-compile-00-satisfies-object-builtins COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00satisfies_object_builtins.ts")
 tslang_add_test(NAME test-compile-00-class-field-values-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
+tslang_add_test(NAME test-compile-00-generic-function-type-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_type_values.ts")
 tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -1083,6 +1084,7 @@ tslang_add_test(NAME test-jit-00-satisfies-object-builtins COMMAND test-runner -
 tslang_add_test(NAME test-jit-own-00-satisfies-object-builtins COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00satisfies_object_builtins.ts")
 tslang_add_test(NAME test-jit-00-class-field-values-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
 tslang_add_test(NAME test-jit-own-00-class-field-values-tuple-spread COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
+tslang_add_test(NAME test-jit-00-generic-function-type-values COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_type_values.ts")
 tslang_add_test(NAME test-jit-00-import-equals-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -2902,6 +2904,7 @@ set(TSLANG_CORPUS
     00module_var_redeclared.ts
     00satisfies_object_builtins.ts
     00class_field_values_tuple_spread.ts
+    00generic_function_type_values.ts
     00import_equals_value.ts
     00var_function_scope.ts
     00constant_folding.ts
