@@ -878,6 +878,13 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // a `never` is every type (`return assertNever(x)`, `const n: number = fail()`): the code that has
+        // one is never reached, so whatever it is converted to is only a placeholder for that type
+        if (isa<mlir_ts::NeverType>(valueType))
+        {
+            return V(builder.create<mlir_ts::UndefOp>(location, type));
+        }
+
         // a class given where its value is expected (`make(B)` for `c: typeof A`), or the value of a class
         // where a base class's is: B's value is A's when B extends A
         if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))

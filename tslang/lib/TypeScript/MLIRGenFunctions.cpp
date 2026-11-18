@@ -375,15 +375,10 @@ namespace mlirgen
                 return {mlir::failure(), isGenericTypes, params};
             }
 
-            // `function assertNever(x: never)`: only a value narrowed to nothing reaches it, and its body
-            // reports what that value was. Written as `never`, it takes whatever it is given, as `any`.
-            // A `never` tslang computed (an intersection it can't express) stays an error.
-            if (isa<mlir_ts::NeverType>(type) && typeParameter && typeParameter == SyntaxKind::NeverKeyword)
-            {
-                type = getAnyType();
-            }
-
-            if (isa<mlir_ts::NeverType>(type))
+            // `function assertNever(x: never)`: only a value narrowed to nothing can be given for it, so a
+            // call that compiles is never reached. A `never` tslang computed (an intersection it can't
+            // express) stays an error.
+            if (isa<mlir_ts::NeverType>(type) && !(typeParameter && typeParameter == SyntaxKind::NeverKeyword))
             {
                 emitError(location, "'Never' can't be used as parameter type");
                 return {mlir::failure(), isGenericTypes, params};
@@ -1543,7 +1538,8 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionEntry(mlir::Location location, mlir::Type retType, const GenContext &genContext)
     {
-        auto hasReturn = retType && !isa<mlir_ts::VoidType>(retType);
+        // a function that returns `never` has no value to return either: it does not come back
+        auto hasReturn = retType && !isa<mlir_ts::VoidType, mlir_ts::NeverType>(retType);
         if (hasReturn)
         {
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
@@ -1564,7 +1560,8 @@ namespace mlirgen
         mlir_ts::FuncOp contextFuncOp = genContext.funcOp;
         auto callableResult = contextFuncOp.getCallableResults();
         auto retType = callableResult.size() > 0 ? callableResult.front() : mlir::Type();
-        auto hasReturn = retType && !isa<mlir_ts::VoidType>(retType);
+        // a function that returns `never` has no value to return either: it does not come back
+        auto hasReturn = retType && !isa<mlir_ts::VoidType, mlir_ts::NeverType>(retType);
         if (hasReturn)
         {
             auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -1689,6 +1686,13 @@ namespace mlirgen
                     DECLARE(thisDecl, arguments[index]);
                     continue;
                 }
+            }
+
+            // `x: never` holds no value to keep: the name is the argument itself, as a `const`'s is its value
+            if (isa<mlir_ts::NeverType>(param->getType()) && !param->hasInitValue() && !param->getIsOptional())
+            {
+                DECLARE(param, arguments[index]);
+                continue;
             }
 
             // alloc all args

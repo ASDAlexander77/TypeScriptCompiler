@@ -699,6 +699,16 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // `return fail()` in a function that returns nothing: a `never` is a `void` as it is every type, and
+            // there is no value to return
+            if (isa<mlir_ts::NeverType>(expressionValue.getType()) && !genContext.passResult
+                && !symbolTable.lookup(RETURN_VARIABLE_NAME).second)
+            {
+                EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
+                builder.create<mlir_ts::ReturnOp>(location);
+                return mlir::success();
+            }
+
             // `return r => r` with no declared return type: the function returns one function, its
             // untyped parameters `any` (TSLANG 106)
             if (!exactReturnType && isGenericFunctionReference(expressionValue))
@@ -832,6 +842,13 @@ namespace mlirgen
         // `if (x === null) return;` narrows x for the rest of the block, as an else branch would
         auto thenExits = !hasElse && !literalValue.has_value() && genContext.funcOp
             && statementAlwaysExits(ifStatementAST->thenStatement);
+        // A test that is always true (`typeof v === "number"` of a number) and exits: what follows is never
+        // reached, and the value tested is narrowed to nothing there - `return assertNever(v)` after the last
+        // member was handled. Only that: a narrowing to anything else is a cast the value may not take. Not in
+        // an instance of a generic function: its test is decided by the type it was given (`typeof x` of a T
+        // that is a string), and the code after it, written for any T, has to compile all the same.
+        auto alwaysExits = !hasElse && literalValue.has_value() && literalValue.value() && genContext.funcOp
+            && genContext.typeParamsWithArgs.empty() && statementAlwaysExits(ifStatementAST->thenStatement);
         {
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
@@ -840,7 +857,7 @@ namespace mlirgen
             if (processIf)
             {
                 // check if we do safe-cast here
-                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits ? &elseSafeCases : nullptr, genContext);
+                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits || alwaysExits ? &elseSafeCases : nullptr, genContext);
 
                 auto result = mlirGenBranchStatement(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
@@ -868,6 +885,14 @@ namespace mlirgen
 
         if (thenExits)
         {
+            addElseSafeCastStatements(elseSafeCases, genContext);
+        }
+        else if (alwaysExits)
+        {
+            elseSafeCases.erase(llvm::remove_if(elseSafeCases, [](const ElseSafeCase &elseSafeCase) {
+                                    return !isa_and_nonnull<mlir_ts::NeverType>(elseSafeCase.safeType);
+                                }),
+                                elseSafeCases.end());
             addElseSafeCastStatements(elseSafeCases, genContext);
         }
 
@@ -1730,6 +1755,51 @@ namespace mlirgen
         mlir::Operation *previousConditionOrFirstBranchOp = nullptr;
         mlir::Block *defaultBlock = nullptr;
 
+        // The literals the cases compare with, when every case is one: a `default` they leave nothing for (every
+        // member of the switched-on union handled) narrows to `never` - `const _x: never = s` there is the check
+        // that a member added later gets a case.
+        SmallVector<mlir::Attribute> caseLiterals;
+        auto everyCaseIsLiteral = true;
+        for (auto &clause : clauses)
+        {
+            if ((SyntaxKind)clause != SyntaxKind::CaseClause)
+            {
+                continue;
+            }
+
+            auto caseType = evaluate(clause.as<CaseClause>()->expression, switchGenContext);
+            if (auto literalType = dyn_cast_if_present<mlir_ts::LiteralType>(caseType))
+            {
+                caseLiterals.push_back(literalType.getValue());
+            }
+            else
+            {
+                everyCaseIsLiteral = false;
+            }
+        }
+
+        auto isHandledByCase = [&](mlir::Type type) {
+            auto literalType = dyn_cast_if_present<mlir_ts::LiteralType>(type);
+            return literalType && llvm::is_contained(caseLiterals, literalType.getValue());
+        };
+
+        auto membersOf = [](mlir::Type type) {
+            SmallVector<mlir::Type> members;
+            if (auto unionType = dyn_cast_if_present<mlir_ts::UnionType>(type))
+            {
+                members.append(unionType.getTypes().begin(), unionType.getTypes().end());
+            }
+            else if (type)
+            {
+                members.push_back(type);
+            }
+
+            return members;
+        };
+
+        // (not in an instance of a generic function, whose default is written for any T - see mlirGen(IfStatement))
+        auto defaultHandlesNothing = everyCaseIsLiteral && !caseLiterals.empty() && genContext.typeParamsWithArgs.empty();
+
         // to support safe cast
         std::function<void(Expression, mlir::Value)> safeCastLogic;
         if (switchExpr == SyntaxKind::PropertyAccessExpression)
@@ -1739,6 +1809,29 @@ namespace mlirgen
             auto typeOfObject = evaluate(objAccessExpression, switchGenContext);
             auto name = propertyAccessExpressionOp->name;
 
+            // the discriminant of each member the switched-on object may be is one a case compares with
+            if (defaultHandlesNothing)
+            {
+                auto fieldNameAttr = TupleFieldName(name, switchGenContext);
+                auto members = membersOf(typeOfObject);
+                defaultHandlesNothing = !members.empty() && llvm::all_of(members, [&](mlir::Type member) {
+                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(member))
+                    {
+                        auto fieldIndex = tupleType.getIndex(fieldNameAttr);
+                        return fieldIndex >= 0 && isHandledByCase(tupleType.getType(fieldIndex));
+                    }
+
+                    if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(member))
+                    {
+                        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                        auto fieldInfo = interfaceInfo ? interfaceInfo->findField(fieldNameAttr) : nullptr;
+                        return fieldInfo && isHandledByCase(fieldInfo->type);
+                    }
+
+                    return false;
+                });
+            }
+
             safeCastLogic = [=, &switchGenContext](Expression caseExpr, mlir::Value constVal) {
                 // The narrowed binding is the case's own. This used to clear the flag on
                 // switchGenContext itself, so every later case declared its variables in its own
@@ -1747,11 +1840,48 @@ namespace mlirgen
                 GenContext safeCastGenContext(switchGenContext);
                 safeCastGenContext.insertIntoParentScope = false;
 
+                // the default (mlirGenSwitchCase)
+                if (!caseExpr)
+                {
+                    if (defaultHandlesNothing)
+                    {
+                        auto insertionPointBefore = builder.saveInsertionPoint();
+                        if (mlir::failed(addSafeCastStatement(objAccessExpression, getNeverType(), false, nullptr, safeCastGenContext)))
+                        {
+                            builder.restoreInsertionPoint(insertionPointBefore);
+                        }
+                    }
+
+                    return;
+                }
+
                 // Safe Cast
                 if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, false, nullptr, safeCastGenContext)))
                 {
                     checkSafeCastPropertyAccessLogic(caseExpr, objAccessExpression, typeOfObject, name, constVal,
                                                      false, nullptr, safeCastGenContext);
+                }
+            };
+        }
+        else if (switchExpr == SyntaxKind::Identifier)
+        {
+            // `switch (v)` of a union of literals: each member one a case compares with
+            auto members = membersOf(switchValue.getType());
+            defaultHandlesNothing = defaultHandlesNothing && !members.empty() && llvm::all_of(members, isHandledByCase);
+
+            safeCastLogic = [=, &switchGenContext](Expression caseExpr, mlir::Value constVal) {
+                if (caseExpr || !defaultHandlesNothing)
+                {
+                    return;
+                }
+
+                GenContext safeCastGenContext(switchGenContext);
+                safeCastGenContext.insertIntoParentScope = false;
+
+                auto insertionPointBefore = builder.saveInsertionPoint();
+                if (mlir::failed(addSafeCastStatement(switchExpr, getNeverType(), false, nullptr, safeCastGenContext)))
+                {
+                    builder.restoreInsertionPoint(insertionPointBefore);
                 }
             };
         }

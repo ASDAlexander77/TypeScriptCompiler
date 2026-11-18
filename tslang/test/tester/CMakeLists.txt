@@ -337,6 +337,7 @@ tslang_add_test(NAME test-compile-00-typeof-static-fold COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-typeof-function-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
+tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
@@ -1038,6 +1039,7 @@ tslang_add_test(NAME test-jit-00-typeof-static-fold COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-typeof-function-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
+tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-jit-00-const-array-nested-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
@@ -3112,6 +3114,7 @@ set(TSLANG_CORPUS
     00typeof_static_fold.ts
     00typeof_static_fold_conditions.ts
     00typeof_union_narrowing.ts
+    00never_type.ts
     00types_indexedaccesstype.ts
     00types_keyof_enum.ts
     00types_mappedtype.ts
@@ -3942,12 +3945,19 @@ set(crash_error_cases
     # a failed module-level statement left the builder before an op it erased; the retry inserted through it
     "interface_not_implemented_module_level.ts|interface_not_implemented_module_level\\.ts:7:1: error: can't find method 'prop' for interface 'A' in class 'C'"
     "recursive_conditional_type.ts|recursive_conditional_type\\.ts:1:25: error: type alias 'InfiniteArray' circularly references itself"
-    "call_never_parameter.ts|call_never_parameter\\.ts:2:1: error: a function with a parameter of type 'never' can't be called"
+    "call_never_parameter.ts|call_never_parameter\\.ts:2:1: error: a function with a rest parameter of type 'never' can't be called"
     "ambient_initializer.ts|ambient_initializer\\.ts:1:24: error: initializers are not allowed in ambient contexts"
     "oversized_value.ts|copies a value of [0-9]+ bytes, too large to copy whole"
     "intersection_parameter.ts|intersection_parameter\\.ts:4:1: error: parameter 0 of type .* has no machine type"
     # a `{N}` was read from a diagnostic's text up to its end, and stoi threw on what followed
-    "jsx_parse_error_text.tsx|jsx_parse_error_text\\.tsx:2:14: error: Identifier expected")
+    "jsx_parse_error_text.tsx|jsx_parse_error_text\\.tsx:2:14: error: Identifier expected"
+    # `never`: only a value narrowed to nothing is one, a `never` variable needs it, and nothing can be read
+    # out of one or called
+    "never_argument.ts|never_argument\\.ts:5:12: error: a value of type .* can't be converted to 'never'"
+    "never_unhandled_case.ts|never_unhandled_case\\.ts:7:40: error: a value of type .* can't be converted to 'never'"
+    "never_variable_no_initializer.ts|never_variable_no_initializer\\.ts:2:9: error: variable 'x' can't be 'never' type without an initializer"
+    "never_property_access.ts|never_property_access\\.ts:5:12: error: Can't resolve property 'n' of type never"
+    "never_call.ts|never_call\\.ts:5:5: error: not a function to call")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)

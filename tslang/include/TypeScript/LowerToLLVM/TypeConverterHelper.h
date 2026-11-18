@@ -46,15 +46,22 @@ class TypeConverterHelper
             return {};
         }
 
-        mlir::TypeConverter::SignatureConversion convArgs(args.size());
-        if (mlir::failed(typeConverter->convertSignatureArgs(args, convArgs, 0)))
+        SmallVector<mlir::Type> convArgs;
+        for (auto arg : args)
         {
-            return {};
+            // a `never` parameter: a byte holds its place, as in FuncOpLowering
+            auto convertedType = isa<mlir_ts::NeverType>(arg) ? mlir::IntegerType::get(context, 8) : typeConverter->convertType(arg);
+            if (!convertedType)
+            {
+                return {};
+            }
+
+            convArgs.push_back(convertedType);
         }
 
         auto ret = convResult.getConvertedTypes().size() > 0 ?  convResult.getConvertedTypes().front() : LLVM::LLVMVoidType::get(context);
 
-        return LLVM::LLVMFunctionType::get(context, ret, convArgs.getConvertedTypes(), isVariadic);
+        return LLVM::LLVMFunctionType::get(context, ret, convArgs, isVariadic);
     }
 
     int getIndexTypeBitwidth()

@@ -2642,6 +2642,12 @@ namespace mlirgen
         // auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), resultValue);
         // return V(typeOfValue);
 
+        // `typeof x` of a value narrowed to nothing: the code is never reached, and it is some string
+        if (isa<mlir_ts::NeverType>(resultValue.getType()))
+        {
+            return V(builder.create<mlir_ts::UndefOp>(location, getStringType()));
+        }
+
         // needed to use optimizers
         TypeOfOpHelper toh(builder);
         auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType(), compileOptions);
