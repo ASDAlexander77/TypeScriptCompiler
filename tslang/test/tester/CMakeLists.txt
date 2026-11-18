@@ -5337,6 +5337,15 @@ add_test(NAME test-rc-conditional-named-const-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
+# `@owned` on a declared function, class or namespace: its result is the caller's under rc, so a module
+# whose only body-less functions say it still consumes the results of calls through function values
+# (closed world). The default library's lib.d.ts says it; without it every program with the library
+# leaked each such result. No run can see the leak, so the IR is read.
+add_test(NAME test-rc-owned-declarations
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
 # A read through an interface field a getter may fill is owned under rc, and given back; no run can see
 # the leak, so the IR is read.
 add_test(NAME test-rc-interface-field-getter-owned

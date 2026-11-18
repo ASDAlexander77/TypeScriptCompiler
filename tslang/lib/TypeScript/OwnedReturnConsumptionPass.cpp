@@ -111,7 +111,7 @@ class OwnedReturnConsumptionPass
                     if (mth.ownsHeapMemory(funcOp.getLoc(), resultType))
                     {
                         anyUnclassifiedOwningReturn = true;
-                    }
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! unclassified owning return: " << name << "\n";);                    }
                 }
             }
 
@@ -205,7 +205,10 @@ class OwnedReturnConsumptionPass
             // the conservative direction and the reason it is worth so little on its own and so
             // much here: `reduce` calls its argument, and `raytrace.ts` builds its colours through
             // `reduce`. An external function that returns a heap value counts as unclassified,
-            // so linking against anything whose returns cannot be seen switches it off too.
+            // so linking against anything whose returns cannot be seen switches it off too -
+            // unless it is an `export`ed import or says `@owned`, as the default library's
+            // declarations do (importedFunctionReturnsOwned): otherwise every program with the
+            // library had it off.
             auto closedWorld = !anyUnclassifiedOwningReturn;
 
             if (!calleeReturnsOwned && !closedWorld &&
@@ -2813,7 +2816,12 @@ class OwnedReturnConsumptionPass
     // is resolved by re-parsing source before any artifact of it exists.
     static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp)
     {
-        if (!funcOp->hasAttr("export"))
+        // ...or a declaration that says it is one: `@owned` (DECLARED_OWNED_RESULT_ATTR_NAME), which
+        // the default library's lib.d.ts says of what lib.ts defines. Without it every library
+        // declaration was unclassified, so closed world never held in a program that has the
+        // library - every call through a function value, and every direct library call, kept its
+        // result's +1 for good.
+        if (!funcOp->hasAttr("export") && !funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME))
         {
             return false;
         }
