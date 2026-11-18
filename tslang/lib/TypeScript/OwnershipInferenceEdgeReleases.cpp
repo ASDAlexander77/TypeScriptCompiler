@@ -516,6 +516,13 @@ namespace own_inference
                 continue;
             }
 
+            // nor past the release: the value is gone there, and an edge into what follows (a `continue`
+            // that released it on its own, fuzz 961334) holds nothing to release
+            if (block == release->getBlock())
+            {
+                continue;
+            }
+
             work.append(block->getSuccessors().begin(), block->getSuccessors().end());
         }
 
