@@ -2280,6 +2280,18 @@ def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
   let results = (outs );
 }
 
+def TypeScript_TryEntryOp : TypeScript_Op<"TryEntry"> {
+  let summary = "TryEntry - for affine layer";
+  let description = [{
+    Where a try is entered, on the Itanium path: lowered to a call to ts.internal.eh_try(id),
+    which ItaniumEndCatchPass reads (the catches active there are the ones the try's landing
+    pads expect) and removes. Erased everywhere else.
+  }];
+
+  let arguments = (ins I32Attr:$id);
+  let results = (outs );
+}
+
 def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
   let summary = "BeginCleanup - for affine layer";
   let description = [{

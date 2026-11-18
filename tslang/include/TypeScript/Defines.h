@@ -198,6 +198,9 @@
 // TryOpLowering and ts.internal.eh_pad in Win32ExceptionPass
 #define EH_PAD_ID_ATTR_NAME "__eh_pad_id"
 #define EH_PAD_PARENT_ATTR_NAME "__eh_pad_parent"
+// Itanium (not wasm): the try a landing pad belongs to, read with ts.internal.eh_try (at the
+// try's entry) and ts.internal.eh_try_pad (after the pad) by ItaniumEndCatchPass
+#define ITANIUM_TRY_ID_ATTR_NAME "__itanium_try_id"
 #define UNDEFINED_NAME "undefined"
 #define NULL_NAME "null"
 #define INFINITY_NAME "Infinity"
