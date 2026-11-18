@@ -425,6 +425,47 @@ static void replaceWasmBulkMemory(llvm::Module &module)
 
 mlir::TimingScope &compileTiming();
 
+// A value copied whole (an object literal nesting others by value: `{ a: x12, b: x12, c: x12 }` is 3^13 fields)
+// that is megabytes large: instruction selection ran out of stack on its load or store. Reported instead.
+static bool reportOversizedValues(llvm::Module &module)
+{
+    constexpr uint64_t limit = 1 << 20;
+    const auto &dataLayout = module.getDataLayout();
+    auto isOversized = [&](llvm::Type *type) {
+        return (type->isStructTy() || type->isArrayTy()) && type->isSized()
+            && dataLayout.getTypeAllocSize(type).getKnownMinValue() > limit;
+    };
+
+    for (auto &function : module)
+    {
+        for (auto &block : function)
+        {
+            for (auto &instruction : block)
+            {
+                auto *oversized = isOversized(instruction.getType()) ? instruction.getType() : nullptr;
+                for (auto &operand : instruction.operands())
+                {
+                    if (!oversized && isOversized(operand->getType()))
+                    {
+                        oversized = operand->getType();
+                    }
+                }
+
+                if (oversized)
+                {
+                    llvm::WithColor::error(llvm::errs(), "tslang")
+                        << "'" << function.getName() << "' copies a value of "
+                        << dataLayout.getTypeAllocSize(oversized).getKnownMinValue()
+                        << " bytes, too large to copy whole (an object nesting others by value?)\n";
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
@@ -467,6 +508,18 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
                 function.addFnAttr("frame-pointer", "all");
             }
         }
+    }
+
+    // before the optimizer, which crashed on what the verifier reports (a GEP into an unsized struct)
+    if (!NoVerify && llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "the LLVM IR made for the module is not valid\n";
+        return -1;
+    }
+
+    if (reportOversizedValues(*llvmModule))
+    {
+        return -1;
     }
 
     auto optimizationTiming = compileTiming().nest("LLVM optimization");

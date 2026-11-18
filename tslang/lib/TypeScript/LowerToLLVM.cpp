@@ -2560,6 +2560,13 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         for (auto argType : enumerate(funcOp.getFunctionType().getInputs()))
         {
             auto convertedType = typeConverter->convertType(argType.value());
+            // a parameter type with no machine type (SignatureConversion asserted on it)
+            if (!convertedType)
+            {
+                return funcOp.emitError() << "parameter " << argType.index() << " of type " << argType.value()
+                                          << " has no machine type";
+            }
+
             signatureInputsConverter.addInputs(argType.index(), convertedType);
         }
 
@@ -9328,7 +9335,14 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             SmallVector<mlir::Type> convertedTypes;
             for (auto subType : type.getFields())
             {
-                convertedTypes.push_back(converter.convertType(subType.type));
+                // a field of type `never`: a byte holds its place, as for a tuple
+                auto convertedType = converter.convertType(subType.type);
+                if (isa_and_nonnull<LLVM::LLVMVoidType>(convertedType))
+                {
+                    convertedType = mlir::IntegerType::get(type.getContext(), 8);
+                }
+
+                convertedTypes.push_back(convertedType);
             }
 
             identStruct.setBody(convertedTypes, false);
@@ -9362,7 +9376,14 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             SmallVector<mlir::Type> convertedTypes;
             for (auto subType : type.getFields())
             {
-                convertedTypes.push_back(converter.convertType(subType.type));
+                // a field of type `never` (`b: never;`): a byte holds its place, as for a tuple
+                auto convertedType = converter.convertType(subType.type);
+                if (isa_and_nonnull<LLVM::LLVMVoidType>(convertedType))
+                {
+                    convertedType = mlir::IntegerType::get(type.getContext(), 8);
+                }
+
+                convertedTypes.push_back(convertedType);
             }
 
             identStruct.setBody(convertedTypes, false);
@@ -9455,10 +9476,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
 
+    // an intersection that MLIRGen did not make into an interface (`string & MyBrand`) has no machine type:
+    // a null type is a failed conversion, which the op converting it reports
     converter.addConversion([&](mlir_ts::IntersectionType type) {
-        llvm_unreachable("type usage (IntersectionType) is not implemented");
         return mlir::Type();
-    }); 
+    });
 
     /*
     converter.addSourceMaterialization(

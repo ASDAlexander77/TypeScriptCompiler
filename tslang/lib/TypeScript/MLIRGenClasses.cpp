@@ -857,7 +857,8 @@ namespace mlirgen
             // an ordinary class can't add to a C++ vtable
             for (auto &base : newClassPtr->baseClasses)
             {
-                if (base->isCppVTable)
+                // a base that did not resolve is null
+                if (base && base->isCppVTable)
                 {
                     emitError(location) << "class '" << newClassPtr->fullName << "' can't extend the @" CPP_VTABLE " class '"
                                         << base->fullName << "': it has to be @" CPP_VTABLE " too";
@@ -1685,8 +1686,16 @@ namespace mlirgen
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
                         auto classInfo = getClassInfoByFullName(baseName);
+                        // a base with no info (not declared yet) went into baseClasses as null, and every walk
+                        // of the bases read through it
+                        if (!classInfo)
+                        {
+                            emitError(loc(extendingType)) << "base class '" << baseName << "' is not declared yet";
+                            return;
+                        }
+
                         // `class A extends A`, or `A extends B` where B already derives from A (TS2506)
-                        if (classInfo && classInfo->isOrDerivesFrom(newClassPtr.get()))
+                        if (classInfo->isOrDerivesFrom(newClassPtr.get()))
                         {
                             emitError(loc(extendingType)) << "'" << newClassPtr->name
                                                           << "' is referenced directly or indirectly in its own base expression";
@@ -4198,6 +4207,12 @@ genContext);
         // the class's accessor of a name, or its nearest base class's
         std::function<AccessorInfo *(ClassInfo::TypePtr, mlir::StringRef)> findAccessor =
             [&](ClassInfo::TypePtr classInfo, mlir::StringRef name) -> AccessorInfo * {
+            // a base class that did not resolve is null
+            if (!classInfo)
+            {
+                return nullptr;
+            }
+
             auto index = classInfo->getAccessorIndex(name);
             if (index >= 0)
             {
@@ -4219,7 +4234,8 @@ genContext);
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
-                auto accessorName = dyn_cast<mlir::StringAttr>(id);
+                // (a computed name that is not a constant, `[s0]: boolean` with s0 a Symbol(), has no id)
+                auto accessorName = dyn_cast_if_present<mlir::StringAttr>(id);
                 // a @weak field read through an interface would skip its check and its count (own spec 93)
                 if (found && accessorName && compileOptions.memoryModel == MemoryModelOwn &&
                     newClassPtr->isWeakField(accessorName.getValue()))

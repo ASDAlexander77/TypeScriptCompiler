@@ -1819,6 +1819,15 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
     {
+        // a conditional type alias that recurses (`_Flatten<T> = T extends (infer U)[] ? _Flatten<U> : T` given
+        // `InfiniteArray<T> = InfiniteArray<T>[]`) overflowed the stack
+        if (instantiationTooDeep(loc(conditionalTypeNode)))
+        {
+            return mlir::Type();
+        }
+
+        MLIRValueGuard<int> instantiationDepthGuard(instantiationDepth, instantiationDepth + 1);
+
         GenContext condTypeGenContext(genContext);
         condTypeGenContext.inferTypes = &condTypeGenContext.typeParamsWithArgs;
 
@@ -2748,8 +2757,13 @@ namespace mlirgen
 
                 auto literalValue = V(result);
                 auto constantOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
+                // a literal type that is not a constant (`[-x]`)
+                if (!constantOp)
+                {
+                    emitError(loc(literalTypeNode)) << "a literal type must be a constant";
+                    return {arrayMode, mlir::failure()};
+                }
 
-                assert(constantOp);
                 attrVal = constantOp.getValueAttr();
 
                 if (arrayMode)

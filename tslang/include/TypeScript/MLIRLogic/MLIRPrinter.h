@@ -241,7 +241,8 @@ class MLIRPrinter
             // silently misaligns every subsequent read through the field.
             // A C variadic function field is a value, not a method: it prints as `CVarArgs<...>`,
             // which reads back as the same one-pointer type.
-            if (allowMethodSignature && field.id && isa<mlir_ts::FunctionType>(field.type)
+            // (a field whose type could not be made has none: printType prints it as <unresolved>)
+            if (allowMethodSignature && field.id && isa_and_nonnull<mlir_ts::FunctionType>(field.type)
                 && !mlir::cast<mlir_ts::FunctionType>(field.type).isCVarArg())
             {
                 printFieldName(out, field.id);
@@ -272,10 +273,24 @@ class MLIRPrinter
     template <typename T, typename TPL>
     void printObjectType(T &out, TPL t)
     {
+        // an object type reached again inside itself (a method of it taking or returning it) printed its
+        // fields again without end - the stack overflowed. Inside itself it is `object`.
+        auto key = t.getAsOpaquePointer();
+        if (llvm::is_contained(objectTypesInProgress, key))
+        {
+            out << "object";
+            return;
+        }
+
+        objectTypesInProgress.push_back(key);
         out << "{";
         printFields(out, t, true);
         out << "}";
+        objectTypesInProgress.pop_back();
     }
+
+    // the object types printObjectType is printing, outermost first
+    llvm::SmallVector<const void *, 4> objectTypesInProgress;
 
     // a tuple whose fields are all named (real `id`, as opposed to a
     // positional element with no id) is structurally an object, not a

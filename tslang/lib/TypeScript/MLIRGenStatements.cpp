@@ -139,8 +139,12 @@ namespace mlirgen
                     continue;
                 }
 
+                // as in the module's processStatements: a failed statement can leave the builder before an op
+                // it erased
+                auto insertionPointBefore = builder.saveInsertionPoint();
                 if (failed(mlirGen(statement, genContext)))
                 {
+                    builder.restoreInsertionPoint(insertionPointBefore);
                     if (noErrorLocation)
                     {
                         errorLocation = loc(statement);

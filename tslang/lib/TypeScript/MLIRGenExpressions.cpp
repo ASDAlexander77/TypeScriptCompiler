@@ -2771,7 +2771,8 @@ namespace mlirgen
         // the result's type is the chain's, known once it is made
         auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
         auto abandon = [&]() {
-            builder.setInsertionPoint(ifOp);
+            // after it, not before it: a position before an op that is then erased is a dangling iterator
+            builder.setInsertionPointAfter(ifOp);
             ifOp.erase();
             return mlir::failure();
         };

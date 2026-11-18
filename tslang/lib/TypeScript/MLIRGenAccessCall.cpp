@@ -2227,7 +2227,8 @@ namespace mlirgen
             innerFuncRef = cppMethodAccessAgain(location, actualFuncRefValue, innerFuncRef, genContext);
             if (!innerFuncRef)
             {
-                builder.setInsertionPoint(ifOp);
+                // after it, not before it: a position before an op that is then erased is a dangling iterator
+                builder.setInsertionPointAfter(ifOp);
                 ifOp.erase();
                 return mlir::failure();
             }
@@ -2238,7 +2239,7 @@ namespace mlirgen
             // half-built if stay in the IR for a caller that carries on (as in conditionalValue)
             if (mlir::failed(result))
             {
-                builder.setInsertionPoint(ifOp);
+                builder.setInsertionPointAfter(ifOp);
                 ifOp.erase();
                 return mlir::failure();
             }

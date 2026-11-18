@@ -4865,7 +4865,12 @@ class MLIRGenImpl
     {
         for (auto &elseSafeCase : elseSafeCases)
         {
-            addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+            // (as in checkSafeCast: a failed narrowing must not leave the builder before an op it erased)
+            auto insertionPointBefore = builder.saveInsertionPoint();
+            if (mlir::failed(addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext)))
+            {
+                builder.restoreInsertionPoint(insertionPointBefore);
+            }
         }
     }
 
@@ -5114,6 +5119,13 @@ class MLIRGenImpl
         // we need to create dummy op to be able to use both values with cast and without cast
         auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, castedValue.getType(), castedValue, exprValue);
 
+        // The narrowed name belongs to the scope it is made in: a `switch`'s cases declare into the scope around
+        // them (so a `let` of one case is seen by the next), and a narrowing inside a case went there too - out
+        // of its `if`, past the case and the switch, while its ops did not (`input` after the switch read an
+        // erased value).
+        GenContext narrowingGenContext(genContext);
+        narrowingGenContext.insertIntoParentScope = false;
+
         // A generator's local is a field of its state object, and so would the narrowed copy be: a
         // second reference to what the local holds, which -mm=own cannot have, and a value that
         // goes stale when the local is assigned. It is a view of the local instead, read and cast
@@ -5124,7 +5136,7 @@ class MLIRGenImpl
             auto loadOp = exprValue.getDefiningOp<mlir_ts::LoadOp>();
             if (genContext.passResult || !loadOp)
             {
-                GenContext discoveryContext(genContext);
+                GenContext discoveryContext(narrowingGenContext);
                 discoveryContext.allocateVarsInContextThis = false;
                 return !!registerVariable(
                     location, parameterName, false, VariableType::Const,
@@ -5137,17 +5149,17 @@ class MLIRGenImpl
             auto view = std::make_shared<VariableDeclarationDOM>(parameterName, safeType, location);
             view->setReadWriteAccess();
             view->setNarrowedType(safeType);
-            return declare(location, view, loadOp.getReference(), genContext);
+            return declare(location, view, loadOp.getReference(), narrowingGenContext);
         }
 
-        return 
+        return
             !!registerVariable(
                 location, parameterName, false, VariableType::Const,
                 [&](mlir::Location, const GenContext &) -> TypeValueInitType
                 {
                     return {safeType, wrappedValue, TypeProvided::Yes};
                 },
-                genContext, false, true) ? mlir::success() : mlir::failure();        
+                narrowingGenContext, false, true) ? mlir::success() : mlir::failure();        
     }    
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
@@ -5520,7 +5532,15 @@ class MLIRGenImpl
         }
 
         ElseSafeCase elseSafeCase{};
+        // a narrowing that fails is no narrowing (most callers carry on without it), but it can leave the builder
+        // before an op it made and erased: what the branch makes next went through that dangling position
+        auto insertionPointBefore = builder.saveInsertionPoint();
         auto result = checkSafeCastOne(exprIn, conditionValue, elseSafeCases ? &elseSafeCase : nullptr, genContext);
+        if (mlir::failed(result))
+        {
+            builder.restoreInsertionPoint(insertionPointBefore);
+        }
+
         if (elseSafeCases && elseSafeCase.safeType)
         {
             elseSafeCases->push_back(elseSafeCase);
@@ -5573,7 +5593,9 @@ class MLIRGenImpl
                                 genContext);                            
                         }
                     }
-                    else if (typePredicateType.getParameterIndex() >= 0 && callExpr->arguments.size() > 0)
+                    // `x is T` on the second parameter of a call given one argument names no argument
+                    else if (typePredicateType.getParameterIndex() >= 0
+                             && callExpr->arguments.size() > (size_t)typePredicateType.getParameterIndex())
                     {
                         // in case of parameters
                         return checkSafeCastTypePredicate(
@@ -5583,9 +5605,12 @@ class MLIRGenImpl
                             elseSafeCase, 
                             genContext);
                     }
-                    else
+                    else if (typePredicateType.getParameterIndex() < 0)
                     {
-                        llvm_unreachable("type predicate can't find parameter index. check funcProto context");
+                        // `value is T` on a function with no parameter `value` (TS1225)
+                        emitError(loc(expr)) << "cannot find parameter '" << typePredicateType.getParameterName().getValue()
+                                             << "' of the type predicate";
+                        return mlir::failure();
                     }
                 }
             }
@@ -11282,6 +11307,17 @@ class MLIRGenImpl
             hiddenOperandsCount++;
         }
 
+        // `(...args: never) => void`: no argument is a `never`, so it can't be called (tsc: TS2345), and a
+        // parameter of no value has no machine type either (LLVM was given a `void` parameter and crashed)
+        if (llvm::any_of(calledFuncType.getInputs(), [](mlir::Type input) {
+                return isa<mlir_ts::NeverType>(input)
+                    || (isa<mlir_ts::ArrayType>(input) && isa<mlir_ts::NeverType>(mlir::cast<mlir_ts::ArrayType>(input).getElementType()));
+            }))
+        {
+            emitError(location) << "a function with a parameter of type 'never' can't be called";
+            return mlir::failure();
+        }
+
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
                                              hiddenOperandsCount, isCVarArgFunctionType(calledFuncType), genContext)))
         {
@@ -12009,6 +12045,12 @@ class MLIRGenImpl
         auto vtableVal = V(result);
         MLIRCodeLogic mcl(builder, compileOptions);
         auto vtableRefVal = mcl.GetReferenceFromValue(location, vtableVal);
+        // an instance whose class is still being made has no vtable field to store into yet
+        if (!vtableRefVal)
+        {
+            emitError(location) << "class '" << classInfo->fullName << "' has no virtual table to set yet";
+            return mlir::failure();
+        }
 
         // vtable symbol reference
         auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
@@ -12909,7 +12951,8 @@ class MLIRGenImpl
             isConst{true},
             anySpreadElement{false},
             applyCast{false},
-            notAllItemsTheSameType{false}
+            notAllItemsTheSameType{false},
+            emptyArrayItems{false}
         {
         }
 
@@ -12977,10 +13020,14 @@ class MLIRGenImpl
 
             if (dataType == TypeData::Array)
             {
-                arrayElementType = 
-                    accumulatedArrayElementType 
-                        ? accumulatedArrayElementType 
-                        : defaultElementType;
+                // `[[]]`: its elements are arrays of the default type, not the default type itself (an `any`
+                // made of an array value crashed the lowering)
+                arrayElementType =
+                    accumulatedArrayElementType
+                        ? accumulatedArrayElementType
+                        : emptyArrayItems && defaultElementType
+                            ? mlir::Type(mlir_ts::ArrayType::get(defaultElementType))
+                            : defaultElementType;
 
                 if (recevierContext.receiverElementType && recevierContext.receiverElementType != arrayElementType)
                 {
@@ -13004,6 +13051,8 @@ class MLIRGenImpl
         bool anySpreadElement;
         bool applyCast;
         bool notAllItemsTheSameType;
+        // an element `[]` was skipped by accumulateArrayItemType
+        bool emptyArrayItems;
     };
 
     struct ArrayElement
@@ -13023,6 +13072,7 @@ class MLIRGenImpl
         {
             if (constArray.getSize() == 0)
             {
+                arrayInfo.emptyArrayItems = true;
                 return mlir::success();
             }
         }
@@ -13749,8 +13799,9 @@ class MLIRGenImpl
 
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(receiverType))
         {
+            // (an interface not declared yet has no fields to tell)
             auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-            auto index = interfaceInfo->getFieldIndex(fieldName);
+            auto index = interfaceInfo ? interfaceInfo->getFieldIndex(fieldName) : -1;
             if (index >= 0)
             {
                 return interfaceInfo->fields[index].type;
@@ -14255,11 +14306,29 @@ class MLIRGenImpl
                                 {
                                     for (auto fieldInfo : destFields)
                                     {
+                                        // a computed name that is not a constant (`[SYMBOL]: string`, a Symbol())
+                                        if (!fieldInfo.id)
+                                        {
+                                            emitError(location) << "can't spread '" << to_print(interfaceType)
+                                                                << "': a field's name is not a constant";
+                                            return mlir::failure();
+                                        }
+
                                         auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id);
 
                                         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
-                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext);
+                                        // a field getFields names that findField does not (a computed name) has no info
+                                        auto isConditional = interfaceFieldInfo ? interfaceFieldInfo->isConditional : fieldInfo.isConditional;
+                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, isConditional, cl, genContext);
+                                        // a field it can't read (`[SYMBOL]: string`, a symbol key)
+                                        if (!propertyAccess)
+                                        {
+                                            emitError(location) << "can't spread the field '" << fieldInfo.id << "' of '"
+                                                                << to_print(interfaceType) << "'";
+                                            return mlir::failure();
+                                        }
+
                                         if (mlir::failed(addObjectFieldInfo(location, oli, fieldInfo.id, propertyAccess, receiverElementType, genContext))) {
                                             return mlir::failure();
                                         }
@@ -19283,6 +19352,31 @@ class MLIRGenImpl
     // no local of any other function (resolveIdentifierAsVariable).
     bool isolateGeneratedBodies = false;
     SmallVector<mlir_ts::FuncOp> lexicalFuncOps;
+
+    // Generic instantiations nested in one another: `interface I<T> { n: I<T[]> }` makes I<Foo>, I<Foo[]>,
+    // I<Foo[][]>, ... without end, and overflowed the stack. Past this depth it is TS2589.
+    int instantiationDepth = 0;
+    static constexpr int MaxInstantiationDepth = 64;
+    // ...and how many one outermost instantiation makes: `interface B<T extends B<B<T>>>` makes two at each
+    // level, which the depth alone let run for hours (2^64)
+    int instantiationCount = 0;
+    static constexpr int MaxInstantiationCount = 20000;
+
+    bool instantiationTooDeep(mlir::Location location)
+    {
+        if (instantiationDepth == 0)
+        {
+            instantiationCount = 0;
+        }
+
+        if (instantiationDepth < MaxInstantiationDepth && ++instantiationCount <= MaxInstantiationCount)
+        {
+            return false;
+        }
+
+        emitError(location) << "Type instantiation is excessively deep and possibly infinite";
+        return true;
+    }
 
     // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
     // of the same name is the same variable)

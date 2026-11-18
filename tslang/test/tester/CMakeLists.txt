@@ -3921,7 +3921,16 @@ set(crash_error_cases
     "template_literal_unresolved.ts|template_literal_unresolved\\.ts:1:14: error: can't find type by name: Missing"
     "record_unresolved.ts|record_unresolved\\.ts:1:23: error: can't find type by name: Missing"
     "overload_more_params.ts|overload_more_params\\.ts:2:14: error: function 'bar' has more parameters than another declaration of the same name"
-    "method_redeclared_more_params.ts|method_redeclared_more_params\\.ts:5:14: error: function 'C\\.f' has more parameters than another declaration of the same name")
+    "method_redeclared_more_params.ts|method_redeclared_more_params\\.ts:5:14: error: function 'C\\.f' has more parameters than another declaration of the same name"
+    # a failed module-level statement left the builder before an op it erased; the retry inserted through it
+    "interface_not_implemented_module_level.ts|interface_not_implemented_module_level\\.ts:7:1: error: can't find method 'prop' for interface 'A' in class 'C'"
+    "recursive_conditional_type.ts|recursive_conditional_type\\.ts:1:25: error: type alias 'InfiniteArray' circularly references itself"
+    "call_never_parameter.ts|call_never_parameter\\.ts:2:1: error: a function with a parameter of type 'never' can't be called"
+    "ambient_initializer.ts|ambient_initializer\\.ts:1:24: error: initializers are not allowed in ambient contexts"
+    "oversized_value.ts|copies a value of [0-9]+ bytes, too large to copy whole"
+    "intersection_parameter.ts|intersection_parameter\\.ts:4:1: error: parameter 0 of type .* has no machine type"
+    # a `{N}` was read from a diagnostic's text up to its end, and stoi threw on what followed
+    "jsx_parse_error_text.tsx|jsx_parse_error_text\\.tsx:2:14: error: Identifier expected")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
@@ -3939,16 +3948,28 @@ foreach(crash_error_case ${crash_error_cases})
 endforeach()
 # a JSX element closed by its own tag is not a closing-tag mismatch (the parser dropped tag names)
 set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL_REGULAR_EXPRESSION "closing tag")
-# `export {}` and `export as namespace` make no code: they compile
-foreach(crash_ok_name export_empty export_as_namespace)
+# `export {}` and `export as namespace` make no code: they compile. So do a generic that expands forever
+# (`I<T>` with a field `I<T[]>`: past the instantiation limit), a predicate naming no parameter, a `never`
+# field, `[[]]`, and a narrowing inside a `switch` case that used to outlive it.
+foreach(crash_ok_name export_empty export_as_namespace infinite_generic_expansion type_predicate_unknown_parameter
+                      class_never_field nested_empty_array switch_case_narrowing_scope)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
                      "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${crash_ok_name}.ts"
                      -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${crash_ok_slug}.obj")
+    # (`error:`: a warning's path has "crash-errors" in it)
     set_tests_properties(test-compile-crash-errors-${crash_ok_slug}
-                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump|Assertion failed")
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
+# a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")
+set(crash_ok_unicode_file "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-①Ⅻㄨ.ts")
+file(WRITE "${crash_ok_unicode_file}" "let x = 1;\n")
+add_test(NAME test-compile-crash-errors-unicode-file-name
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${crash_ok_unicode_file}"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-unicode-file-name.obj")
+set_tests_properties(test-compile-crash-errors-unicode-file-name
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
 # A JIT'd object with more read-only data than its code reservation has room to spare (see
 # tests/00jit_rodata_layout.ts). Read-only sections came from the code pool and spilled out of the

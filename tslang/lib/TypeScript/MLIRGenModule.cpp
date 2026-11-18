@@ -1126,8 +1126,13 @@ namespace mlirgen
                     continue;
                 }
 
+                // A statement that fails can leave the builder before an op it made and then erased (`a = new C()`
+                // with C not an A: the next try inserted through that dangling position). Where it was before
+                // the statement is still good.
+                auto insertionPointBefore = builder.saveInsertionPoint();
                 if (failed(mlirGen(statement, genContext)))
                 {
+                    builder.restoreInsertionPoint(insertionPointBefore);
                     emitError(loc(statement), "failed statement");
 
                     notResolved++;

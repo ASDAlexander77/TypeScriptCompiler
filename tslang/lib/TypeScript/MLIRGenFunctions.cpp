@@ -518,8 +518,11 @@ namespace mlirgen
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
         }
-        else if (signatureDeclarationBaseAST->parent == SyntaxKind::ObjectLiteralExpression)
+        else if (signatureDeclarationBaseAST->parent == SyntaxKind::ObjectLiteralExpression
+                 && isa_and_nonnull<mlir_ts::ObjectType>(genContext.thisType)
+                 && isa<mlir_ts::ObjectStorageType>(mlir::cast<mlir_ts::ObjectType>(genContext.thisType).getStorageType()))
         {
+            // (an object literal whose type is not made yet has no `this` type: it is named by the function, below)
             objectOwnerName = mlir::cast<mlir_ts::ObjectStorageType>(
                 mlir::cast<mlir_ts::ObjectType>(genContext.thisType).getStorageType()).getName().getValue();
         }

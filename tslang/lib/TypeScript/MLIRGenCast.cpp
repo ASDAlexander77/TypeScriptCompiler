@@ -32,6 +32,12 @@ namespace mlirgen
                                                        InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
                                                        SmallVector<mlir_ts::FieldInfo> &fields)
     {
+        // an interface not declared (yet) has no fields to clone
+        if (!interfaceInfo)
+        {
+            return mlir::failure();
+        }
+
         SmallVector<mlir_ts::FieldInfo> interfaceFields;
         if (mlir::failed(interfaceInfo->getTupleTypeFields(interfaceFields, context)))
         {
@@ -1569,6 +1575,12 @@ namespace mlirgen
         {
             auto result = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
             auto vtableAccess = V(result);
+            // a class whose vtable field is not made (yet)
+            if (!vtableAccess)
+            {
+                emitError(location) << "class '" << classInfo->fullName << "' has no virtual table yet";
+                return mlir::failure();
+            }
 
             auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
 
