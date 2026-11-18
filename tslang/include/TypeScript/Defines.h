@@ -97,6 +97,9 @@
 // own exits release them. TryOpLowering keeps these in the unwind copy and erases them from the
 // rest.
 #define UNWIND_ONLY_ATTR_NAME "__unwind_only"
+// On the slot of a catch clause's caught value when the `try` has a `finally`: its `finally`'s unwind
+// copy releases the slot too, so every other release of it empties the slot after it (rc and own).
+#define CAUGHT_VALUE_ATTR_NAME "__caught_value"
 
 // The `return` counterpart: the `ts.If` MLIRGen put at the end of a hand-written `finally` around
 // what the scopes around the `try` owe - their `using`s to dispose and their locals to release -
