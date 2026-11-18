@@ -453,6 +453,7 @@ tslang_add_test(NAME test-compile-00-argument-place-aliased COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
+tslang_add_test(NAME test-compile-00-rc-argument-field-of-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_field_of_alias.ts")
 tslang_add_test(NAME test-compile-00-argument-slot-assigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_slot_assigned.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -1154,6 +1155,7 @@ tslang_add_test(NAME test-jit-00-argument-place-aliased COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
+tslang_add_test(NAME test-jit-00-rc-argument-field-of-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_field_of_alias.ts")
 tslang_add_test(NAME test-jit-00-argument-slot-assigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_slot_assigned.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -2716,6 +2718,7 @@ set(TSLANG_CORPUS
     00interface_type_tag_in_vtable.ts
     00nullable_interface_to_interface.ts
     00argument_place_aliased.ts
+    00rc_argument_field_of_alias.ts
     00temporary_read_in_finally.ts
     00unowned_local_store.ts
     00array_argument_held.ts

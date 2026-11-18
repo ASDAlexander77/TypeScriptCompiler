@@ -1025,6 +1025,16 @@ class OwnedReturnConsumptionPass
 
     // Is the argument read out of a field or an element of a value the call is given as another
     // argument (`f(n, n.items[0])`)?
+    // Might two values be one object, read from different places? Two objects of one class may be
+    // (`f2(HG.n, n11.v)` where the local `n11` was given `HG.n`): which object a value is cannot be
+    // known here, as for mayBeSamePlace. Fuzz seed 937072: `f2` set `p3.v`, which freed the block its
+    // other parameter, read out of that field, still pointed at.
+    static bool mayBeSameObject(mlir::Value a, mlir::Value b)
+    {
+        auto type = stripCasts(a).getType();
+        return mlir::isa<mlir_ts::ClassType>(type) && type == stripCasts(b).getType();
+    }
+
     static bool readFromOtherArgument(mlir::Value argument, mlir::Operation *call)
     {
         auto value = stripCasts(argument);
@@ -1040,7 +1050,7 @@ class OwnedReturnConsumptionPass
             value = place->getOperand(0);
             for (auto other : own_facts::callArgs(call))
             {
-                if (stripCasts(other) != stripCasts(argument) && sameValue(other, value))
+                if (stripCasts(other) != stripCasts(argument) && (sameValue(other, value) || mayBeSameObject(other, value)))
                 {
                     return true;
                 }
