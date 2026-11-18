@@ -1241,6 +1241,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Is every value the local is assigned read out of what it holds, through fields of class objects:
     // `n = n.next`, `n = n.left.right`? It walks down from what it was given and never owns any of it.
     static bool walksDownOnly(mlir_ts::VariableOp varOp);
+    static bool givenOnlyBorrows(mlir_ts::VariableOp varOp);
+    static bool readKept(mlir::Value slot, int depth);
 
     // An owning, uncaptured local whose every value - its initializer and each assignment - is one
     // the function made.
