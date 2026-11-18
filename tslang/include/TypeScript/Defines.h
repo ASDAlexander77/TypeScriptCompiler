@@ -434,7 +434,8 @@
 // it returns a reference its caller owns (§9.24), as an imported `export`ed function does. An
 // unmarked declaration may be C, or TypeScript that hands back a pointer into a buffer
 // (`convertNumber`): nothing can be said of its result, and its callers keep retaining. Said on a
-// function with a body it is ignored - a body is read, not trusted. A unit attribute on the FuncOp.
+// function with a body it is ignored - a body is read, not trusted. Only rc reads it: -mm=own goes by
+// its declared facts (`@lends`, `@record`). A unit attribute on the FuncOp.
 #define OWNED_DECORATOR "owned"
 #define DECLARED_OWNED_RESULT_ATTR_NAME "ts.declared_owned_result"
 // A method whose result type is `this`: it returns the object it is called on, on every path, not
