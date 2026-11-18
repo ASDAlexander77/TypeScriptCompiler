@@ -2,11 +2,13 @@ set(LLVM_LINK_COMPONENTS
   Analysis
   Core
   Support
+  TransformUtils
   )
 
 add_llvm_library(TypeScriptExceptionPass
   Win32ExceptionPass.cpp
   LandingPadFixPass.cpp
+  ItaniumEndCatchPass.cpp
   CxxThrowCallingConvPass.cpp
   WasmExceptionPass.cpp
 

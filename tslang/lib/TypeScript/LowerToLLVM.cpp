@@ -6738,6 +6738,34 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
     }
 };
 
+// see ItaniumEndCatchPass: the try's id, at its entry, on the Itanium path; nothing elsewhere
+struct TryEntryOpLowering : public TsLlvmPattern<mlir_ts::TryEntryOp>
+{
+    using TsLlvmPattern<mlir_ts::TryEntryOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TryEntryOp tryEntryOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto &compileOptions = tsLlvmContext->compileOptions;
+        if (compileOptions.isWindows || compileOptions.isWasm)
+        {
+            rewriter.eraseOp(tryEntryOp);
+            return success();
+        }
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(tryEntryOp, rewriter, getTypeConverter(), compileOptions);
+        CodeLogicHelper clh(tryEntryOp, rewriter);
+
+        auto tryMarkerFunc =
+            ch.getOrInsertFunction("ts.internal.eh_try", th.getFunctionType(th.getVoidType(), {th.getI32Type()}));
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(tryEntryOp, tryMarkerFunc,
+                                                  ValueRange{clh.createI32ConstantOf(tryEntryOp.getId())});
+
+        return success();
+    }
+};
+
 struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
 {
     using TsLlvmPattern<mlir_ts::ThrowUnwindOp>::TsLlvmPattern;
@@ -7001,7 +7029,22 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
         // clause comes second (linuxHasCleanups, linuxTypedCatchChains), and dropping it left
         // the pad unentered for any other exception type
         mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
-        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, transformed.getCatches());
+        auto tryId = landingPadOp->getAttrOfType<mlir::IntegerAttr>(ITANIUM_TRY_ID_ATTR_NAME);
+        auto newLandingPadOp =
+            rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, transformed.getCatches());
+
+        // which try this pad is one of, for ItaniumEndCatchPass, which reads and removes it
+        if (tryId)
+        {
+            LLVMCodeHelper ch(landingPadOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            CodeLogicHelper clh(landingPadOp, rewriter);
+            auto padMarkerFunc =
+                ch.getOrInsertFunction("ts.internal.eh_try_pad", th.getFunctionType(th.getVoidType(), {th.getI32Type()}));
+
+            mlir::OpBuilder::InsertionGuard guard(rewriter);
+            rewriter.setInsertionPointAfter(newLandingPadOp);
+            rewriter.create<LLVM::CallOp>(loc, padMarkerFunc, ValueRange{clh.createI32ConstantOf(tryId.getInt())});
+        }
 
         return success();
     }
@@ -10199,7 +10242,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering, MarkSharedOpLowering,
         WeakRefNewOpLowering, WeakRefDerefOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TryEntryOpLowering,VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,

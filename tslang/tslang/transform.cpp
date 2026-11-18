@@ -12,6 +12,7 @@
 #endif
 #ifdef ENABLE_EXCEPTIONS
 #include "TypeScript/Pass/LandingPadFixPass.h"
+#include "TypeScript/Pass/ItaniumEndCatchPass.h"
 #include "TypeScript/Pass/Win32ExceptionPass.h"
 #include "TypeScript/Pass/WasmExceptionPass.h"
 #include "TypeScript/Pass/CxxThrowCallingConvPass.h"
@@ -1304,6 +1305,10 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         else if (compileOptions.wasmExceptions)
         {
             mpm.addPass(ts::WasmExceptionPass());
+        }
+        else if (!compileOptions.isWasm)
+        {
+            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::ItaniumEndCatchPass()));
         }
 
         // After Win32ExceptionPass, which adds throw calls and turns calls into invokes, and

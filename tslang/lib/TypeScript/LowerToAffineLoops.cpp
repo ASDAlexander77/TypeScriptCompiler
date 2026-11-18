@@ -1623,6 +1623,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         });
 
+        // Itanium (not wasm): the try's id, marked at its entry and on each of its pads, for
+        // ItaniumEndCatchPass, which ends the catches an unwind edge leaves (a call in a catch
+        // clause that throws, a rethrow after a finally) and removes the marks
+        auto itaniumTryId =
+            !tsContext->compileOptions.isWindows && !tsContext->compileOptions.isWasm ? ++tsContext->nextCatchPadId : 0;
+
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
@@ -1647,6 +1653,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
+        // Itanium: ItaniumEndCatchPass ends the catches an exception unwinds out of, on the way
+        // to this try's pads, which expect the catches active here (see itaniumTryId below)
+        if (itaniumTryId)
+        {
+            rewriter.create<mlir_ts::TryEntryOp>(loc, rewriter.getI32IntegerAttr(itaniumTryId));
+        }
+
         rewriter.create<mlir::cf::BranchOp>(loc, bodyBlock, ValueRange{});
 
         // cleanup
@@ -1742,10 +1755,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     // catch between the using's first call and its throw, both unwinding to the
                     // same cleanup pad: one edge inside the funclet and one outside it, which
                     // the verifier rejects. The Itanium path has no funclets and keeps ending
-                    // the catch there, as it always did.
+                    // the catch there, as it always did - only on wasm now: ending it there before
+                    // the nested pad took the exception ended it a second time at the end of the
+                    // clause, and ItaniumEndCatchPass ends it where the exception does leave it.
                     auto inNestedTry = op->getParentOfType<mlir_ts::TryOp>() != nullptr;
-                    auto leaves = tsContext->compileOptions.isWindows ? !finallyHasOps && !inNestedTry
-                                                                     : !finallyHasOps || inNestedTry;
+                    auto leaves = tsContext->compileOptions.isWindows || itaniumTryId
+                                      ? !finallyHasOps && !inNestedTry
+                                      : !finallyHasOps || inNestedTry;
                     if (leaves)
                     {
                         tsContext->leavesCatch[op] = true;
@@ -2454,7 +2470,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
                     mlir::SmallVector<mlir::Block *> unwindDests;
 
-                    if (catchHasOps)
+                    // entered from the catch clause, with its catch still begun: ItaniumEndCatchPass
+                    // ends it on the way in, where it has the pass at all
+                    if (catchHasOps && !itaniumTryId)
                     {
                         rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
                         rewriter.create<mlir_ts::EndCatchOp>(loc);
@@ -2652,6 +2670,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
             auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
             tsContext->unwind[throwOp] = dest;
+        }
+
+        // every pad made above is this try's: a try nested in it is still a TryOp, lowered later
+        if (itaniumTryId)
+        {
+            for (auto *block = bodyBlock; block != continuation; block = block->getNextNode())
+            {
+                block->walk([&](mlir_ts::LandingPadOp landingPadOp) {
+                    if (!landingPadOp->hasAttr(ITANIUM_TRY_ID_ATTR_NAME))
+                    {
+                        landingPadOp->setAttr(ITANIUM_TRY_ID_ATTR_NAME, rewriter.getI32IntegerAttr(itaniumTryId));
+                    }
+                });
+            }
         }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
@@ -3218,7 +3250,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::ArrayViewOp, 
         mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
         mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
-        mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
+        mlir_ts::EndCatchOp, mlir_ts::TryEntryOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
         mlir_ts::ThrowCallOp, mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,
         mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::AppendToUsedOp,
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp, mlir_ts::IsTypeTagOfOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
