@@ -1394,6 +1394,35 @@ namespace own_inference
 
     mlir::Operation *OwnershipInferencePass::callGivenAgain(mlir::Operation *taker, mlir::Value moved, llvm::ArrayRef<mlir::Value> sources)
     {
+        // an array literal that owns its elements, or a push, takes every item it is given: the value
+        // as a second item (`[n, n]`, `a.push(n, n)`) is a second owner, and the array would free it
+        // twice (fuzz 953312)
+        auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(taker);
+        if (pushOp || (mlir::isa<mlir_ts::CreateArrayOp>(taker) && !taker->hasAttr(OWN_BORROWING_ARRAY_ATTR_NAME)))
+        {
+            auto items = pushOp ? mlir::ValueRange(pushOp.getItems()) : mlir::ValueRange(taker->getOperands());
+            auto movedRoot = rootOf(moved);
+            auto skipped = false;
+            for (auto item : items)
+            {
+                if (!skipped && rootOf(item) == movedRoot)
+                {
+                    skipped = true;
+                    continue;
+                }
+
+                for (auto source : sources)
+                {
+                    if (derivedFrom(source).contains(item))
+                    {
+                        return taker;
+                    }
+                }
+            }
+
+            return nullptr;
+        }
+
         if (!isCall(taker) || ownedParams(taker).empty())
         {
             return nullptr;
