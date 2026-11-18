@@ -6051,7 +6051,8 @@ set(own_error_cases
     "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured"
     "own_err_moved_borrowing_let|:21:9: error: 'p4' is moved here, but it is given a value it borrows elsewhere"
     "own_err_element_given_twice|:17:20: error: 'n' is used here after its value was moved"
-    "own_err_pushed_twice|:17:5: error: 'n' is used here after its value was moved")
+    "own_err_pushed_twice|:17:5: error: 'n' is used here after its value was moved"
+    "own_err_param_copy_then_global|:19:10: error: a value that borrows 'HG.n' cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
