@@ -2634,12 +2634,52 @@ namespace own_signature
             assigned = true;
         }
 
-        return assigned && !readKept(varOp.getResult(), 0);
+        return assigned && !readKept(varOp.getResult(), varOp.getResult(), 0);
+    }
+
+    // May `later` run after `first`? By the blocks of the region holding both: later in `first`'s
+    // block, or in a block a branch from it reaches (its own block again, round a loop). Ops in
+    // different regions, or nested deeper than one another: assumed so.
+    static bool mayRunAfter(mlir::Operation *first, mlir::Operation *later)
+    {
+        auto *region = first->getParentRegion();
+        auto *laterOp = region ? region->findAncestorOpInRegion(*later) : nullptr;
+        if (!laterOp)
+        {
+            return true;
+        }
+
+        auto *start = first->getBlock();
+        if (laterOp->getBlock() == start && first->isBeforeInBlock(laterOp))
+        {
+            return true;
+        }
+
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work(start->getSuccessors().begin(), start->getSuccessors().end());
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (block == laterOp->getBlock())
+            {
+                return true;
+            }
+
+            if (seen.insert(block).second)
+            {
+                work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+            }
+        }
+
+        return false;
     }
 
     // Is a value read out of the slot kept - by a store into a place, a push, a call that keeps it, a
-    // return, a local declared from it?
-    bool OwnershipSignaturePass::readKept(mlir::Value slot, int depth)
+    // return? A local declared from it takes it where the owner (the parameter's local) may be given
+    // another value after the read (`const n = p; p = G.n;`, fuzz 952414: inference moves the value
+    // into the local and frees it with it); elsewhere (`if (c) p = q.items[0]; else { const v = p; }`,
+    // fuzz 949146) the local holds what the owner does, and what its reads do decides.
+    bool OwnershipSignaturePass::readKept(mlir::Value slot, mlir::Value owner, int depth)
     {
         if (depth > 4)
         {
@@ -2661,11 +2701,14 @@ namespace own_signature
                     return;
                 }
 
-                // a local declared from it takes it - inference moves the value into it, and frees it
-                // with it (`const n = p; p = G.n;`, fuzz 952414: the caller's value freed)
-                if (mlir::isa<mlir_ts::VariableOp>(use))
+                if (auto local = mlir::dyn_cast<mlir_ts::VariableOp>(use))
                 {
-                    kept = true;
+                    auto ownerGivenAfter = llvm::any_of(owner.getUsers(), [&](mlir::Operation *ownerUser) {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(ownerUser);
+                        return storeOp && storeOp.getReference() == owner && mayRunAfter(loadOp, storeOp);
+                    });
+                    kept = local.getInitializer() != used || local.getCaptured().value_or(false) || ownerGivenAfter ||
+                           readKept(local.getResult(), owner, depth + 1);
                     return;
                 }
 
