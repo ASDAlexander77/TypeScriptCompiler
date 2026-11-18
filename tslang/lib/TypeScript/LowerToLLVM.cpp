@@ -2427,6 +2427,14 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
 
         TypeConverterHelper tch(getTypeConverter());
 
+        // a `never` (a value narrowed to nothing, the argument for a `never` parameter) is a byte holding
+        // the place of a value that does not exist, as a `never` parameter is (FuncOpLowering)
+        if (isa<mlir_ts::NeverType>(op.getType()))
+        {
+            rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, rewriter.getI8Type());
+            return success();
+        }
+
         // `undefined` materialised as a value of a type that cannot hold it is zero, not undef.
         // It is read: an iterator's final `{ value: undefined, done: true }` is built exactly
         // this way, and an undef `value` printed whatever the register held (a Set<si32>'s
@@ -2556,10 +2564,27 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         auto typeConverter = getTypeConverter();
         auto fnType = funcOp.getFunctionType();
 
+        // `function f(): never { }` does come back, where its callers end in `unreachable` (a call of a
+        // `never` function does not return): it traps at its end instead, which is defined
+        if (llvm::any_of(fnType.getResults(), [](mlir::Type type) { return isa<mlir_ts::NeverType>(type); }))
+        {
+            funcOp.walk([&](mlir_ts::ReturnInternalOp returnOp) {
+                OpBuilder::InsertionGuard guard(rewriter);
+                rewriter.setInsertionPoint(returnOp);
+                rewriter.create<LLVM::Trap>(returnOp.getLoc());
+            });
+        }
+
         TypeConverter::SignatureConversion signatureInputsConverter(fnType.getNumInputs());
         for (auto argType : enumerate(funcOp.getFunctionType().getInputs()))
         {
             auto convertedType = typeConverter->convertType(argType.value());
+            // `function assertNever(x: never)`: no value is ever given for it, a byte holds its place
+            if (isa<mlir_ts::NeverType>(argType.value()))
+            {
+                convertedType = rewriter.getI8Type();
+            }
+
             // a parameter type with no machine type (SignatureConversion asserted on it)
             if (!convertedType)
             {
@@ -2644,6 +2669,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         // mustprogress contract; a body-less `while(true){}` is the only case this
         // attribute changes the meaning of, same as in C/C++/Rust.
         funcAttrs.push_back(ATTR("mustprogress"));
+
+        // A function that returns `never` does not come back (it traps at its end, above): what follows a call
+        // of it is unreachable, which lets LLVM drop that code, and tells it no value is missing where a
+        // function falls off its end after the call
+        if (llvm::any_of(fnType.getResults(), [](mlir::Type type) { return isa<mlir_ts::NeverType>(type); }))
+        {
+            funcAttrs.push_back(ATTR("noreturn"));
+        }
 
         if (funcOp.getPersonality().has_value() && funcOp.getPersonality().value())
         {
@@ -2759,6 +2792,18 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     }
 };
 
+// a call's LLVM arguments: the argument for a `never` parameter is the byte that holds its place (FuncOpLowering)
+static void appendCallArgs(SmallVectorImpl<mlir::Value> &args, mlir::ValueRange tsArgs, mlir::ValueRange llvmArgs,
+                           ConversionPatternRewriter &rewriter, mlir::Location loc)
+{
+    for (auto [tsArg, llvmArg] : llvm::zip(tsArgs, llvmArgs))
+    {
+        args.push_back(isa<mlir_ts::NeverType>(tsArg.getType())
+            ? mlir::Value(rewriter.create<LLVM::ZeroOp>(loc, rewriter.getI8Type()))
+            : llvmArg);
+    }
+}
+
 struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallInternalOp>
 {
     using TsLlvmPattern<mlir_ts::SymbolCallInternalOp>::TsLlvmPattern;
@@ -2797,9 +2842,12 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
             return rewriter.notifyMatchFailure(op, "unable to resolve callee symbol to a function type");
         }
 
+        SmallVector<mlir::Value> callOperands;
+        appendCallArgs(callOperands, op.getCallOperands(), transformed.getCallOperands(), rewriter, loc);
+
         auto callRes = rewriter.create<LLVM::CallOp>(
-            loc, llvmFuncType, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.getCallee()), transformed.getCallOperands());
-        
+            loc, llvmFuncType, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.getCallee()), callOperands);
+
         auto returns = callRes.getResults();
         if (returns.size() > 0)
         {
@@ -2808,7 +2856,7 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
         else
         {
             rewriter.eraseOp(op);
-        }        
+        }
 
         return success();
     }
@@ -2927,6 +2975,12 @@ static LogicalResult lowerCppCallArgs(Operation *tsOp, mlir::ValueRange tsArgs, 
         SmallVector<mlir::NamedAttribute> attrs;
         auto type = tsArg.getType();
         auto llvmArg = llvmArgs[index];
+        // the argument for a `never` parameter: the byte that holds its place (FuncOpLowering)
+        if (isa<mlir_ts::NeverType>(type))
+        {
+            llvmArg = rewriter.create<LLVM::ZeroOp>(loc, rewriter.getI8Type());
+        }
+
         if (cppCall && isa<mlir_ts::TupleType>(type))
         {
             auto llvmType = llvmArg.getType();
@@ -3241,7 +3295,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     mlir::SmallVector<mlir::Value> ops;
                     ops.push_back(methodPtrAsLLVMType);
                     ops.push_back(thisValAsLLVMType);
-                    ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
+                    appendCallArgs(ops, op->getOperands().drop_front(), transformed.getOperands().drop_front(), rewriter, loc);
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
                     callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
                     callRes.setOpBundleSizes({});
@@ -3257,7 +3311,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
 
                     mlir::SmallVector<mlir::Value> ops;
                     ops.push_back(methodPtrAsLLVMType);
-                    ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
+                    appendCallArgs(ops, op->getOperands().drop_front(), transformed.getOperands().drop_front(), rewriter, loc);
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
                     callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
                     callRes.setOpBundleSizes({});
@@ -3325,7 +3379,10 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         // just replace
         if (op.getCalleeAttr())
         {
-            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.getCalleeAttr(), transformed.getCallOperands(),
+            SmallVector<mlir::Value> callOperands;
+            appendCallArgs(callOperands, op.getCallOperands(), transformed.getCallOperands(), rewriter, op->getLoc());
+
+            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.getCalleeAttr(), callOperands,
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
         }
@@ -3437,7 +3494,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                     mlir::SmallVector<mlir::Value> ops;
                     ops.push_back(methodPtrAsLLVMType);
                     ops.push_back(thisValAsLLVMType);
-                    ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
+                    appendCallArgs(ops, op->getOperands().drop_front(), transformed.getOperands().drop_front(), rewriter, loc);
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
@@ -3459,7 +3516,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 
                     mlir::SmallVector<mlir::Value> ops;
                     ops.push_back(methodPtrAsLLVMType);
-                    ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
+                    appendCallArgs(ops, op->getOperands().drop_front(), transformed.getOperands().drop_front(), rewriter, loc);
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 

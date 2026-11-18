@@ -128,7 +128,8 @@ namespace mlirgen
 
             if (this->compileOptions.generateDebugInfo 
                 && variableDeclarationInfo.initial 
-                && !variableDeclarationInfo.storage 
+                && !variableDeclarationInfo.storage
+                && !isa<mlir_ts::NeverType>(variableDeclarationInfo.initial.getType())
                 && !mth.isGenericType(variableDeclarationInfo.initial.getType())
                 && !mth.isAnyFunctionType(variableDeclarationInfo.initial.getType()))
             {

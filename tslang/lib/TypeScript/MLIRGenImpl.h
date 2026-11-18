@@ -2345,9 +2345,13 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            if (isa<mlir_ts::NeverType>(type))
+            // A `never` holds no value: only one narrowed to nothing (`const _x: never = s` once every case of
+            // `s` is handled) initializes it, and the name is that value, with no slot (createLocalVariable).
+            // A global has to have one, and one with no initializer would be read before it was set.
+            if (isa<mlir_ts::NeverType>(type) && (!init || isGlobal))
             {
-                emitError(location) << "variable '" << variableName << "' can't be 'never' type";
+                emitError(location) << "variable '" << variableName << "' can't be 'never' type"
+                                    << (isGlobal ? "" : " without an initializer");
                 return mlir::failure();
             }
 
@@ -2713,6 +2717,13 @@ class MLIRGenImpl
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
         {
             return mlir::failure();
+        }
+
+        // a `never` (getVariableTypeAndInit) has no value to keep: the name is its initializer, as a `const`'s is
+        if (isa<mlir_ts::NeverType>(variableDeclarationInfo.type))
+        {
+            variableDeclarationInfo.isConst = true;
+            return mlir::success();
         }
 
         if (mlir::failed(adjustLocalVariableType(location, variableDeclarationInfo, genContext)))
@@ -4850,6 +4861,10 @@ class MLIRGenImpl
     {
         Expression expr;
         mlir::Type safeType;
+        // the test is true of every value of the type it names (typeof), which a type guard is not
+        // (`n is number` of a number is whatever the guard returns): a value of that type is narrowed to
+        // nothing where it is false
+        bool testIsTrueOfType = false;
     };
 
     // what a false condition narrows: one test gives one case, `a || b` (false when both are) gives
@@ -4873,6 +4888,15 @@ class MLIRGenImpl
     {
         auto safeType = getType(typeToken, genContext);
         return addSafeCastStatement(expr, safeType, inverse, elseSafeCase, genContext);
+    }
+
+    // a type every value of which passes a test that names it: a primitive, a literal, an object literal's
+    // type (tested by a discriminant field)
+    bool narrowsToNothingWhenFalse(mlir::Type type)
+    {
+        return mth.isNumericType(type)
+            || isa<mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::BigIntType, mlir_ts::SymbolType,
+                   mlir_ts::LiteralType, mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
     }
 
     bool isSafeTypeTheSameAndNoNeedToCast(mlir::Type type, mlir::Type safeType)
@@ -4915,6 +4939,17 @@ class MLIRGenImpl
         if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! == Yes\n");
+
+            // the test is true of every value of the type (`typeof v === "string"` of a string): where it is
+            // false, the value is narrowed to nothing. Not a class or an interface: without strict null checks
+            // one may hold a null.
+            if (elseSafeCase && elseSafeCase->testIsTrueOfType && !inverse && exprValue.getType() == safeType
+                && narrowsToNothingWhenFalse(safeType))
+            {
+                elseSafeCase->expr = expr;
+                elseSafeCase->safeType = getNeverType();
+            }
+
             return mlir::success();
         }
 
@@ -4986,6 +5021,29 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(mlir::Location location, StringRef parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        // narrowed to nothing (the `default` of a switch every case of which is handled, the `else` after the
+        // last member was tested for): the code here is never reached, and the name is a `never`, with no value
+        // to read out of what it was
+        if (isa<mlir_ts::NeverType>(safeType))
+        {
+            if (inverse)
+            {
+                return mlir::failure();
+            }
+
+            auto nothing = builder.create<mlir_ts::UndefOp>(location, safeType);
+
+            GenContext narrowingGenContext(genContext);
+            narrowingGenContext.insertIntoParentScope = false;
+            narrowingGenContext.allocateVarsInContextThis = false;
+            return !!registerVariable(
+                location, parameterName, false, VariableType::Const,
+                [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                    return {safeType, nothing, TypeProvided::Yes};
+                },
+                narrowingGenContext, false, true) ? mlir::success() : mlir::failure();
+        }
+
         mlir::Value castedValue;
         if (isa<mlir_ts::AnyType>(exprValue.getType()))
         {
@@ -5224,6 +5282,12 @@ class MLIRGenImpl
                         }
                     }
 
+                    // `typeof v === "string"` is true of every string: false, a string `v` is narrowed to nothing
+                    if (elseSafeCase)
+                    {
+                        elseSafeCase->testIsTrueOfType = true;
+                    }
+
                     return addSafeCastStatement(expr, typeToken, inverse, elseSafeCase, genContext);
                 }
 
@@ -5452,8 +5516,23 @@ class MLIRGenImpl
                                 }
                             }
                         }
-                    }                    
+                    }
                 }
+            }
+        }
+
+        // `s.kind === "b"` of the one member a union of them was narrowed to: it is always true, and where it is
+        // false `s` is narrowed to nothing (the `else` after every kind was tested for)
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(typeOfObject); tupleType && elseSafeCase && !inverse)
+        {
+            auto constantOp = isConstValue(constVal) ? constVal.getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+            auto fieldIndex = constantOp ? tupleType.getIndex(TupleFieldName(name, genContext)) : -1;
+            auto literalType = fieldIndex >= 0 ? dyn_cast<mlir_ts::LiteralType>(tupleType.getType(fieldIndex)) : mlir_ts::LiteralType();
+            if (literalType && literalType.getValue() == constantOp.getValueAttr())
+            {
+                elseSafeCase->expr = objAccessExpression;
+                elseSafeCase->safeType = getNeverType();
+                return mlir::success();
             }
         }
 
@@ -5488,6 +5567,13 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
+        // a guard to a type tslang computed as `never` (`this is State<C> & { value: V }`, an intersection it can't
+        // express) is not a test that nothing passes: it narrows nothing, rather than the value to nothing
+        if (isa<mlir_ts::NeverType>(typePredicateType.getElementType()))
+        {
+            return mlir::success();
+        }
+
         return addSafeCastStatement(expr, typePredicateType.getElementType(), inverse, elseSafeCase, genContext);
     }
 
@@ -6000,6 +6086,30 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(BreakStatement breakStatementAST, const GenContext &genContext);
 
+    // whether the clause before clauses[index] may run on into it: unless it ends in a jump, it does
+    bool previousCaseFallsThrough(NodeArray<ts::CaseOrDefaultClause> &clauses, int index)
+    {
+        if (index == 0)
+        {
+            return false;
+        }
+
+        auto statements = clauses[index - 1]->statements;
+        if (statements.size() == 1 && (SyntaxKind)statements.front() == SyntaxKind::Block)
+        {
+            statements = statements.front().as<ts::Block>()->statements;
+        }
+
+        if (statements.empty())
+        {
+            return true;
+        }
+
+        auto lastKind = (SyntaxKind)statements.back();
+        return lastKind != SyntaxKind::BreakStatement && lastKind != SyntaxKind::ReturnStatement
+            && lastKind != SyntaxKind::ThrowStatement && lastKind != SyntaxKind::ContinueStatement;
+    }
+
     mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, Expression switchExpr, mlir::Value switchValue,
                                           NodeArray<ts::CaseOrDefaultClause> &clauses, int index,
                                           mlir::Block *mergeBlock, mlir::Block *&defaultBlock,
@@ -6178,6 +6288,12 @@ class MLIRGenImpl
             if (caseValue)
             {
                 extraCode(caseExpr, caseValue);
+            }
+            // the default is reached when no case matched, unless the case before it falls into it: it narrows
+            // what the cases leave (nothing, when they handle every member)
+            else if (isDefaultCase && !previousCaseFallsThrough(clauses, index))
+            {
+                extraCode(Expression(), mlir::Value());
             }
 
             // process body case
@@ -11302,14 +11418,14 @@ class MLIRGenImpl
             hiddenOperandsCount++;
         }
 
-        // `(...args: never) => void`: no argument is a `never`, so it can't be called (tsc: TS2345), and a
-        // parameter of no value has no machine type either (LLVM was given a `void` parameter and crashed)
-        if (llvm::any_of(calledFuncType.getInputs(), [](mlir::Type input) {
-                return isa<mlir_ts::NeverType>(input)
-                    || (isa<mlir_ts::ArrayType>(input) && isa<mlir_ts::NeverType>(mlir::cast<mlir_ts::ArrayType>(input).getElementType()));
-            }))
+        // `(...args: never) => void`: its arguments would be an array of nothing, which has no machine type (LLVM
+        // was given a `void` element and crashed). A plain `x: never` takes a `never` (the argument check below).
+        if (calledFuncType.isVarArg() && !calledFuncType.getInputs().empty()
+            && (isa<mlir_ts::NeverType>(calledFuncType.getInputs().back())
+                || (isa<mlir_ts::ArrayType>(calledFuncType.getInputs().back())
+                    && isa<mlir_ts::NeverType>(mlir::cast<mlir_ts::ArrayType>(calledFuncType.getInputs().back()).getElementType()))))
         {
-            emitError(location) << "a function with a parameter of type 'never' can't be called";
+            emitError(location) << "a function with a rest parameter of type 'never' can't be called";
             return mlir::failure();
         }
 
@@ -11323,6 +11439,14 @@ class MLIRGenImpl
             for (auto &oper : operands)
             {
                 VALIDATE(oper, location)
+
+                // a `never` argument (only one narrowed to nothing is accepted): the call is never reached, and
+                // what is passed is a placeholder - the value it was made from (a call that returns `never`) has
+                // no machine value at all
+                if (isa<mlir_ts::NeverType>(oper.getType()))
+                {
+                    oper = builder.create<mlir_ts::UndefOp>(location, oper.getType());
+                }
             }
 
             // if last is vararg
