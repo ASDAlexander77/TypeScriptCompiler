@@ -6363,3 +6363,24 @@ given back (its elements are what MLIRGen marks), and a rest parameter's array o
 moved").
 
 Tests: `own_array_argument_released` (every model).
+
+## 98. A caught value with a `finally`, or inside a `try` around, 2026-11-18
+
+Spec 96 left a catch clause's value unowned where an exception out of a call in the clause lands
+somewhere else in the same function - its own `finally`, a `try` around it, a block wrapped for its
+unwind cleanup - since a clause has no cleanup of its own: every throw caught there leaked its value.
+
+Those places now give it back. The finally's unwind copy releases the caught slot (unwind-only, as it
+releases the scopes around the `try`). For an enclosing unwind scope, the slot is hoisted in front of
+that scope's TryOp and added to its list, so the scope's cleanup releases it. The slot starts null (the
+hoisted slot's), and every release of it is followed by a store of `ts.Default` that empties it
+(`CAUGHT_VALUE_ATTR_NAME`, tagged unwind-only with its release on the finally's leg), so a release
+already made on the way out - the clause's end, a `return`, a `throw` in it - leaves nothing for the
+next. The ownership verifier does not count that store as an acquisition. A clause holding a `try` of
+its own still keeps its value unowned (`clausesWithNestedTry`).
+
+Under own, `return e` from a clause with a `finally` moves the value (with the old compiler it was
+copied, and an `any` holding an object cannot be copied: "-mm=own cannot copy an 'any' that holds an
+object", at run time).
+
+Tests: `own_caught_value_finally` (every model).

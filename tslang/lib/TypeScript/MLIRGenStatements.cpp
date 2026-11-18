@@ -1963,13 +1963,30 @@ namespace mlirgen
         // variable as one of its own locals, given that slot's value and its reference, so it is
         // released where the clause ends, on a `return` or a `break` out of it, or moved like any
         // local; a `catch {}` declares a hidden one. A clause that holds a `try` of its own keeps
-        // its locals unowned (clausesWithNestedTry), and so its caught value. So does a clause an
-        // exception out of a call can leave for somewhere in this function - a `try` around it, a
-        // block wrapped for its unwind cleanup, its own `finally`: a clause has no cleanup of its
-        // own, so the value would be lost on that edge (a clause's locals are, the same way).
+        // its locals unowned (clausesWithNestedTry), and so its caught value.
+        //
+        // A clause has no cleanup of its own, so an exception out of a call in it leaves the value
+        // behind when it lands somewhere else in this function: in the `try`'s own `finally`, or in
+        // the cleanup of a `try` around it or of a block wrapped for its unwind cleanup (a clause's
+        // locals are lost there, the same way). Those give it back: the finally's unwind copy
+        // releases the slot (below), and the enclosing unwind scope holds it in its list, the slot
+        // hoisted in front of that scope's TryOp. It is null until the clause fills it, and null
+        // again after each release of it (CAUGHT_VALUE_ATTR_NAME), so a release already made on the
+        // way out (`throw` in the clause, its end, a `return`) is not made twice.
+        const GenContext *unwindScope = nullptr;
+        for (auto *context = &genContext; context != nullptr; context = context->parentBlockContext)
+        {
+            if (context->isUnwindCleanupScope)
+            {
+                unwindScope = context;
+                break;
+            }
+        }
+
         auto ownsCaught = compileOptions.tracksOwnership() && catchClause && catchClause->block &&
-                          !blockHasTry(catchClause->block) && !tryStatementAST->finallyBlock &&
-                          !isInsideUnwindCleanupScope(genContext);
+                          !blockHasTry(catchClause->block) &&
+                          (!unwindScope || (unwindScope->ownedVars != nullptr && unwindScope->currentOperation != nullptr));
+        mlir::Value caughtSlot;
         auto caughtOwned = std::make_unique<SmallVector<mlir::Value>>();
         auto caughtUsing = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         std::string caughtName;
@@ -2145,16 +2162,37 @@ namespace mlirgen
                     readOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
                 }
 
+                // (in front of the enclosing unwind scope's TryOp, whose cleanup releases it too)
+                GenContext declarationGenContext(clauseGenContext);
+                if (unwindScope)
+                {
+                    declarationGenContext.currentOperation = unwindScope->currentOperation;
+                }
+
                 auto declaredType = registerVariable(
                     location, caughtName, false, VariableType::Let,
                     [&](mlir::Location, const GenContext &) -> TypeValueInitType {
                         return {caughtType, caughtValue, TypeProvided::Yes};
                     },
-                    clauseGenContext);
+                    declarationGenContext);
                 if (!declaredType)
                 {
                     clausesWithNestedTry -= nestedTry;
                     return mlir::failure();
+                }
+
+                if ((static_cast<bool>(tryStatementAST->finallyBlock) || unwindScope != nullptr) && !caughtOwned->empty())
+                {
+                    caughtSlot = caughtOwned->back();
+                    if (auto varOp = caughtSlot.getDefiningOp<mlir_ts::VariableOp>())
+                    {
+                        varOp->setAttr(CAUGHT_VALUE_ATTR_NAME, builder.getUnitAttr());
+                    }
+
+                    if (unwindScope)
+                    {
+                        unwindScope->ownedVars->push_back(caughtSlot);
+                    }
                 }
 
                 auto result = mlirGen(tryStatementAST->catchClause->block, clauseGenContext);
@@ -2190,6 +2228,15 @@ namespace mlirgen
             // TryOpLowering drops them from the copies normal completion, `return` and `break`
             // run, where those scopes are still live.
             mlirGenReleaseOwnedOnUnwind(location, &tryGenContext, /*unwindOnly=*/true);
+
+            // ...and the catch clause's caught value, which an exception out of the clause leaves
+            // the clause with: null when the exception came from the body, or after the clause gave
+            // it back itself
+            if (caughtSlot && isOwnedLocalSlot(caughtSlot))
+            {
+                // (emptied after, as every release of it is: a `try` around may release it again)
+                releaseScopeOwnedVars(location, SmallVector<mlir::Value>{caughtSlot}, UNWIND_ONLY_ATTR_NAME);
+            }
 
             // And the copy a `return` from the body or the catch clause runs: the rest of that
             // `return`'s scope exit, which it left for after the finally (finallyGuardScope).

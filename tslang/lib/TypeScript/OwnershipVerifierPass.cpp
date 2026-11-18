@@ -81,7 +81,10 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
                         for (auto *user : varOp.getResult().getUsers())
                         {
                             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-                            if (storeOp && storeOp.getReference() == varOp.getResult())
+                            // (not the store that empties a caught value's slot after its release,
+                            // CAUGHT_VALUE_ATTR_NAME: it acquires nothing)
+                            if (storeOp && storeOp.getReference() == varOp.getResult() &&
+                                !storeOp.getValue().getDefiningOp<mlir_ts::DefaultOp>())
                             {
                                 acquisitions.emplace_back(varOp.getResult(), storeOp.getOperation());
                             }
