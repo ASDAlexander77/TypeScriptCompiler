@@ -3,6 +3,8 @@
 
 #include "OwnershipSignaturePass.h"
 
+#include "llvm/ADT/ScopeExit.h"
+
 #define DEBUG_TYPE "own"
 
 namespace own_signature
@@ -1212,7 +1214,8 @@ namespace own_signature
         if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
         {
             return varOp.getInitializer() == used && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false) &&
-                   isAssigned(varOp) && !isCopyableString(used.getType()) && !walksDownOnly(varOp);
+                   isAssigned(varOp) && !isCopyableString(used.getType()) && !walksDownOnly(varOp) &&
+                   !givenOnlyBorrows(varOp);
         }
 
         return false;
@@ -2578,6 +2581,98 @@ namespace own_signature
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             return storeOp && storeOp.getReference() == varOp.getResult();
         });
+    }
+
+    // `let m = p; if (c) m = this.b;` (TSLANG 56), a parameter the body gives a field's value (`p = q.items[0]`):
+    // every value the local is given besides the parameter is a borrow - a read of a field or an element,
+    // or of a parameter - and nothing keeps what is read out of it. Inference makes such a local a borrower
+    // of each (borrowsOnly), so it does not take the parameter either: the function borrows it, and its
+    // callers give it back. Kept, nothing did - the argument leaked on every call - and a move out of the
+    // local on another path freed the field's value (fuzz 949146). A swap (`[data, this.data] = [this.data,
+    // data]`, spec 77) gives the field the local's value, which is a keep.
+    bool OwnershipSignaturePass::givenOnlyBorrows(mlir_ts::VariableOp varOp)
+    {
+        // a local whose reads go into one being asked about already: as if kept
+        static thread_local llvm::SmallPtrSet<mlir::Operation *, 8> borrowCheckVisiting;
+        if (!borrowCheckVisiting.insert(varOp).second)
+        {
+            return false;
+        }
+
+        auto visiting = llvm::make_scope_exit([&]() { borrowCheckVisiting.erase(varOp); });
+
+        auto assigned = false;
+        for (auto *user : varOp.getResult().getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (!storeOp || storeOp.getReference() != varOp.getResult())
+            {
+                // reads, rc's counts and the debugger's record of it; anything else (its address given
+                // away) may give it a value no store here shows
+                if (!mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            auto loadOp = rootOf(storeOp.getValue()).getDefiningOp<mlir_ts::LoadOp>();
+            if (!loadOp || isHandle(loadOp.getResult()))
+            {
+                return false;
+            }
+
+            auto ref = loadOp.getReference();
+            auto slot = ref.getDefiningOp<mlir_ts::VariableOp>();
+            auto index = -1;
+            if (!isPlace(ref) && !(slot && isParameterSlot(slot, index)))
+            {
+                return false;
+            }
+
+            assigned = true;
+        }
+
+        return assigned && !readKept(varOp.getResult(), 0);
+    }
+
+    // Is a value read out of the slot kept - by a store into a place, a push, a call that keeps it, a
+    // return, a local declared from it whose own reads are?
+    bool OwnershipSignaturePass::readKept(mlir::Value slot, int depth)
+    {
+        if (depth > 4)
+        {
+            return true;
+        }
+
+        auto kept = false;
+        for (auto *user : slot.getUsers())
+        {
+            auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!loadOp || kept)
+            {
+                continue;
+            }
+
+            forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
+                if (kept)
+                {
+                    return;
+                }
+
+                auto local = mlir::dyn_cast<mlir_ts::VariableOp>(use);
+                if (local && local.getInitializer() == used)
+                {
+                    kept = local.getCaptured().value_or(false) || readKept(local.getResult(), depth + 1);
+                    return;
+                }
+
+                kept = keeps(use, used) || (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(use) && !holdsNoBlock(used));
+            });
+        }
+
+        return kept;
     }
 
     bool OwnershipSignaturePass::walksDownOnly(mlir_ts::VariableOp varOp)
