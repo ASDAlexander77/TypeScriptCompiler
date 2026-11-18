@@ -213,6 +213,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.addPass(mlir::typescript::createStackPromotionPass(compileOptions, limits));
         }
 
+        // what a call that throws leaves its frame owing (UnwindReleasePass): after own's inference and stack
+        // promotion, so the releases it copies are the ones the code finally makes, and ahead of the
+        // inliner, which leaves a function with a landing pad alone (LLVM's inlines it, invokes and all)
+        pm.addPass(mlir::typescript::createUnwindReleasePass(compileOptions));
+
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
         {
