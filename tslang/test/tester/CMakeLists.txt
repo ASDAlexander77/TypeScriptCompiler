@@ -5374,6 +5374,16 @@ add_test(NAME test-rc-spread-rest-pack
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/spread-rest-pack.cmake")
+# A new array only read where it is made - `[a, b].length`, `[a, b][1]` - is held under rc and given back
+# at the end of its block; the IR is read, as no run shows the leak. It runs in every model.
+add_test(NAME test-rc-temp-array-literal
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/temp-array-literal.cmake")
+foreach(temp_array_mm gc rc none own)
+    tslang_add_test(NAME test-compile-temp-array-literal-${temp_array_mm} COMMAND test-runner -mm=${temp_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts")
+    tslang_add_test(NAME test-jit-temp-array-literal-${temp_array_mm} COMMAND test-runner -jit -mm=${temp_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts")
+endforeach()
 foreach(spread_mm gc rc none own)
     tslang_add_test(NAME test-compile-spread-rest-pack-${spread_mm} COMMAND test-runner -mm=${spread_mm} "${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts")
     tslang_add_test(NAME test-jit-spread-rest-pack-${spread_mm} COMMAND test-runner -jit -mm=${spread_mm} "${PROJECT_SOURCE_DIR}/test/tester/spread-rest-pack/spread_rest_pack.ts")
