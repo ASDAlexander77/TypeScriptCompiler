@@ -1140,6 +1140,23 @@ class MLIRGenImpl
 
     // Whether an exception out of a scope opened in this context lands on a TryOp's landing pad
     // in this function: some scope between here and the function is a TryOp's body.
+    // A loop's body, made without a TryOp of its own: its locals are not hoisted out in front of a
+    // TryOp further out (allocateScopeOwnedVarsOutsideOfOperation), which would put them outside
+    // the loop. A catch clause or a `finally` hoists its own locals that way, and a loop in one
+    // shared a single slot across every iteration: a captured local's cell was given back at the
+    // end of the first iteration and written by the next (fuzz 945467, heap corruption under rc and
+    // own). Each iteration's own storage gives the loop what it has everywhere else.
+    static void stopHoistingAtLoopBody(const GenContext &outer, GenContext &body)
+    {
+        // (a generator's state switch is a currentOperation too, for its own reasons: left alone)
+        if (outer.isLoop && outer.allocateScopeOwnedVarsOutsideOfOperation &&
+            mlir::isa_and_nonnull<mlir_ts::TryOp>(outer.currentOperation))
+        {
+            body.allocateScopeOwnedVarsOutsideOfOperation = false;
+            body.currentOperation = nullptr;
+        }
+    }
+
     static bool isInsideUnwindCleanupScope(const GenContext &genContext)
     {
         for (auto *context = &genContext; context != nullptr; context = context->parentBlockContext)

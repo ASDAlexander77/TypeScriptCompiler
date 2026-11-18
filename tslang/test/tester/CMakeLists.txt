@@ -559,6 +559,8 @@ tslang_add_test(NAME test-compile-00-try-in-catch-with-finally COMMAND test-runn
 tslang_add_test(NAME test-compile-00-catch-ended-on-unwind COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_ended_on_unwind.ts")
 tslang_add_test(NAME test-compile-00-unwind-releases-frame COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_frame.ts")
 tslang_add_test(NAME test-compile-00-unwind-releases-handlers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_handlers.ts")
+tslang_add_test(NAME test-compile-00-loop-in-finally-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00loop_in_finally_captures.ts")
+tslang_add_test(NAME test-compile-00-global-element-through-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_element_through_local.ts")
 tslang_add_test(NAME test-compile-00-catch-clause-leaves COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_clause_leaves.ts")
 tslang_add_test(NAME test-compile-00-throw-number-untyped-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
 tslang_add_test(NAME test-compile-00-throw-in-block-debug-info COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_block_debug_info.ts")
@@ -1268,6 +1270,8 @@ tslang_add_test(NAME test-jit-00-try-in-catch-with-finally COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-catch-ended-on-unwind COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_ended_on_unwind.ts")
 tslang_add_test(NAME test-jit-00-unwind-releases-frame COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_frame.ts")
 tslang_add_test(NAME test-jit-00-unwind-releases-handlers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unwind_releases_handlers.ts")
+tslang_add_test(NAME test-jit-00-loop-in-finally-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00loop_in_finally_captures.ts")
+tslang_add_test(NAME test-jit-00-global-element-through-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_element_through_local.ts")
 tslang_add_test(NAME test-jit-00-catch-clause-leaves COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_clause_leaves.ts")
 tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
 tslang_add_test(NAME test-jit-00-throw-in-block-debug-info COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_block_debug_info.ts")
@@ -3105,6 +3109,8 @@ set(TSLANG_CORPUS
     00catch_ended_on_unwind.ts
     00unwind_releases_frame.ts
     00unwind_releases_handlers.ts
+    00loop_in_finally_captures.ts
+    00global_element_through_local.ts
     00catch_clause_leaves.ts
     00try_finally.ts
     00try_finally_throws.ts
@@ -5995,7 +6001,8 @@ set(own_error_cases
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
     "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
-    "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten")
+    "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten"
+    "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
@@ -6009,6 +6016,8 @@ foreach(own_error_case ${own_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# it used to never finish: a minute is plenty
+set_tests_properties(test-own-err-own_err_self_assign_through_borrow PROPERTIES TIMEOUT 60)
 # TSLANG_ISSUES 51: a file --own-facts names that does not exist is said, not passed over in silence
 add_test(NAME test-own-facts-missing-file
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
@@ -7110,7 +7119,7 @@ endforeach()
 # - -mm=own read --di's records of a const as uses (own_interface_getter_read, own_immortal_keepers,
 #   00nullable_interface_to_interface, stack-promotion/to_any)
 foreach(debug_test 00null_interface_to_interface 00class_values 00class_accessor_implements_field 00class_cast_undeclared_interface_dispatch 00class_redeclared_field 00assign_string_number
-                   00try_in_catch_with_finally 00using_dispose_throws 00catch_ended_on_unwind 00catch_clause_leaves 00unwind_releases_frame 00unwind_releases_handlers)
+                   00try_in_catch_with_finally 00using_dispose_throws 00catch_ended_on_unwind 00catch_clause_leaves 00unwind_releases_frame 00unwind_releases_handlers 00loop_in_finally_captures 00global_element_through_local)
     tslang_add_test(NAME test-jit-debug-${debug_test} COMMAND test-runner -jit -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
     tslang_add_test(NAME test-compile-debug-${debug_test} COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/${debug_test}.ts")
 endforeach()
