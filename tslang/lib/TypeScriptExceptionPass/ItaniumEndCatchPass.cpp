@@ -141,6 +141,16 @@ struct ItaniumEndCatchPassCode
             }
             else if (it->second != depth)
             {
+                if (consistent && report())
+                {
+                    errs() << "ItaniumEndCatchPass: " << BB->getName() << " entered with " << it->second << " and " << depth
+                           << "\n";
+                    if (std::getenv("TSLANG_EH_END_CATCH_REPORT")[0] == '2')
+                    {
+                        errs() << F << "\n";
+                    }
+                }
+
                 consistent = false;
             }
         };
