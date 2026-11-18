@@ -2712,7 +2712,26 @@ namespace own_signature
                     return;
                 }
 
-                kept = keeps(use, used) || (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(use) && !holdsNoBlock(used));
+                if (keeps(use, used))
+                {
+                    kept = true;
+                    return;
+                }
+
+                // what only reads it is no keep: a call that does not keep it, its fields' or elements'
+                // addresses, its method looked up for a call, a store into it, or a number, a boolean
+                // made of it. Anything else - an array literal it is an element of (fuzz 958275: the
+                // array freed the caller's object), a tuple, a box - may own it, as the parameter did
+                // before.
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(use);
+                auto reads = isCall(use) ||
+                             mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp,
+                                       mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::GetThisOp,
+                                       mlir_ts::GetMethodOp, mlir_ts::DebugVariableOp>(use) ||
+                             (storeOp && storeOp.getValue() != used) ||
+                             (use->getNumResults() > 0 &&
+                              llvm::all_of(use->getResults(), [&](mlir::Value result) { return holdsNoBlock(result); }));
+                kept = !reads;
             });
         }
 

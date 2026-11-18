@@ -1214,6 +1214,10 @@ class OwnershipInferencePass
     // runs after the value is made again.
     bool reachableAfter(mlir::Operation *from, mlir::Operation *to, llvm::ArrayRef<mlir::Operation *> kills);
 
+    // Is the object whose field `fieldRef` addresses (a read of a local) a value that local was given
+    // from another local - `let n2 = n` - which is read again after `read`?
+    bool aliasReadAfter(mlir::Operation *read, mlir::Value fieldRef);
+
     // The use that takes `value` for this retain: the declaration a `ts.RetainSlot` belongs to,
     // or the one use of the value, or of a view of it, after a `ts.Retain` that is not a read.
     static mlir::Operation *takerOf(mlir::Operation *retain, mlir::Value value);
