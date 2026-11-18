@@ -12,6 +12,16 @@ function greet(s: string, punct?: string): string {
     return "hi " + s + (punct ?? ".");
 }
 
+interface Options {
+    bar?: any;
+    baz?: any;
+}
+
+// the rest of a destructuring: an optional `any` field is the `any` it holds, or undefined boxed
+function restOfOptions({ bar = {}, ...opts }: Options = {}) {
+    return typeof opts.baz;
+}
+
 function main() {
     const a: any = twice;
     assert(<number>a(21) == 42, "plain function");
@@ -75,6 +85,9 @@ function main() {
     const nothing: any = null;
     const maybe = <((n: number) => number) | null>nothing;
     assert(maybe === null, "null to a function or null");
+
+    assert(restOfOptions() == "undefined", "an optional any field left out");
+    assert(restOfOptions({ baz: "x" }) == "string", "an optional any field given");
 
     print("done.");
 }

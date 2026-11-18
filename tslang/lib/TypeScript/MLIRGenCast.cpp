@@ -879,6 +879,12 @@ namespace mlirgen
                 location, value, classFieldInfo->isConditional, cl, genContext); 
             if (propertyAccess)
             {
+                // an optional field read is `T | undefined`: as the tuple's field has it (`any` holds undefined)
+                if (isa<mlir_ts::AnyType>(fieldInfo.type) && propertyAccess.getType() != fieldInfo.type)
+                {
+                    CAST(propertyAccess, location, fieldInfo.type, propertyAccess, genContext);
+                }
+
                 values.push_back(propertyAccess);
             }
         }
@@ -915,6 +921,28 @@ namespace mlirgen
         if (isa<mlir_ts::NeverType>(valueType))
         {
             return V(builder.create<mlir_ts::UndefOp>(location, type));
+        }
+
+        // `any | undefined` (an optional `any` field, `{ baz?: any }`) is the `any` it holds, or undefined boxed:
+        // boxed whole it had no `typeof` name, and lowering made a box with no tag
+        if (isa<mlir_ts::AnyType>(type))
+        {
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(valueType); optType && isa<mlir_ts::AnyType>(optType.getElementType()))
+            {
+                auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+                auto ifOp = builder.create<mlir_ts::IfOp>(location, type, hasValue, true);
+
+                builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{builder.create<mlir_ts::ValueOp>(location, type, value)});
+
+                builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                auto undefinedValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+                CAST_A(boxedUndefined, location, type, undefinedValue, genContext);
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{boxedUndefined});
+
+                builder.setInsertionPointAfter(ifOp);
+                return V(ifOp.getResult(0));
+            }
         }
 
         // `String(k)` of a symbol known here is its text, `Symbol(d)`: what is read of it (`.length`) is

@@ -3960,7 +3960,9 @@ genContext);
             // the method in the slot the object's own vtable has for it
             auto thisValue = entryBlock.getArgument(0);
             auto vtableAccess = mlirGenPropertyAccessExpression(noLocation, thisValue, VTABLE_NAME, genContext);
-            if (!vtableAccess)
+            // (succeeded with no value too: a class whose members failed - a computed name not a constant -
+            // made the call of nothing)
+            if (vtableAccess.failed_or_no_value())
             {
                 emitError(location) << "class '" << newClassPtr->fullName << "' missing 'virtual table'";
                 funcOp.erase();

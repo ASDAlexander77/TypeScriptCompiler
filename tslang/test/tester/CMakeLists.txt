@@ -3999,7 +3999,9 @@ set(crash_error_cases
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
-    "exported_interface_computed_key.ts|exported_interface_computed_key\\.ts:2:28: error: a computed property name must be a constant")
+    "exported_interface_computed_key.ts|exported_interface_computed_key\\.ts:2:28: error: a computed property name must be a constant"
+    # ...and imported: a class of such fields given to an interface of them built a vtable thunk over no vtable
+    "computed_key_import.ts|computed_key_import_module\\.ts:3:5: error: a computed property name must be a constant")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
