@@ -382,6 +382,7 @@ tslang_add_test(NAME test-compile-00-for-let-per-iteration COMMAND test-runner "
 tslang_add_test(NAME test-compile-00-module-var-redeclared COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_var_redeclared.ts")
 tslang_add_test(NAME test-compile-00-satisfies-object-builtins COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00satisfies_object_builtins.ts")
 tslang_add_test(NAME test-compile-00-class-field-values-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
+tslang_add_test(NAME test-compile-00-generic-function-type-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_type_values.ts")
 tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -1084,6 +1085,7 @@ tslang_add_test(NAME test-jit-00-satisfies-object-builtins COMMAND test-runner -
 tslang_add_test(NAME test-jit-own-00-satisfies-object-builtins COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00satisfies_object_builtins.ts")
 tslang_add_test(NAME test-jit-00-class-field-values-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
 tslang_add_test(NAME test-jit-own-00-class-field-values-tuple-spread COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_field_values_tuple_spread.ts")
+tslang_add_test(NAME test-jit-00-generic-function-type-values COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_type_values.ts")
 tslang_add_test(NAME test-jit-00-import-equals-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
@@ -2905,6 +2907,7 @@ set(TSLANG_CORPUS
     00module_var_redeclared.ts
     00satisfies_object_builtins.ts
     00class_field_values_tuple_spread.ts
+    00generic_function_type_values.ts
     00import_equals_value.ts
     00var_function_scope.ts
     00constant_folding.ts
@@ -3781,6 +3784,15 @@ foreach(obj_only_test declared_generic_call declare_var_module_code)
                          PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
+# `super` in a class that extends nothing is an error at it: the base of an empty list was read (a crash).
+add_test(NAME test-compile-diagnostic-location-super-without-base
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/super_without_base.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-super-without-base.obj")
+set_tests_properties(test-compile-diagnostic-location-super-without-base
+                     PROPERTIES PASS_REGULAR_EXPRESSION "super_without_base\\.ts:3:16: error: 'super' can only be used in a class that extends another"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
 # MLIR verifier, which failed the module at 1:1.
 add_test(NAME test-compile-diagnostic-location-rest-parameter-type
@@ -3901,7 +3913,6 @@ set(crash_error_cases
     "class_extends_cycle.ts|class_extends_cycle\\.ts:1:17: error: 'B' is referenced directly or indirectly in its own base expression"
     "interface_extends_itself.ts|interface_extends_itself\\.ts:1:21: error: type 'I' recursively references itself as a base type"
     "interface_extends_cycle.ts|interface_extends_cycle\\.ts:1:22: error: type 'I8' recursively references itself as a base type"
-    "super_without_base.ts|super_without_base\\.ts:3:16: error: 'super' can only be referenced in a derived class"
     "for_in_unresolved.ts|for_in_unresolved\\.ts:2:19: error: can't resolve name: something"
     "index_signature_unresolved.ts|index_signature_unresolved\\.ts:2:21: error: can't find type by name: Missing"
     "template_literal_unresolved.ts|template_literal_unresolved\\.ts:1:14: error: can't find type by name: Missing"
@@ -5329,6 +5340,8 @@ foreach(let_borrows_mm gc none rc own)
     tslang_add_test(NAME test-compile-own_kept_param_record-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_record.ts")
     tslang_add_test(NAME test-jit-own_caught_value_owned-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_owned.ts")
     tslang_add_test(NAME test-compile-own_caught_value_owned-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_owned.ts")
+    tslang_add_test(NAME test-jit-own_caught_value_finally-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_finally.ts")
+    tslang_add_test(NAME test-compile-own_caught_value_finally-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_caught_value_finally.ts")
     tslang_add_test(NAME test-jit-own_array_argument_released-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_argument_released.ts")
     tslang_add_test(NAME test-compile-own_array_argument_released-${let_borrows_mm} COMMAND test-runner -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_argument_released.ts")
     tslang_add_test(NAME test-jit-own_conditional_null_record-${let_borrows_mm} COMMAND test-runner -jit -mm=${let_borrows_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_null_record.ts")

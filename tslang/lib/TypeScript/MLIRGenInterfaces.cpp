@@ -1242,6 +1242,22 @@ namespace mlirgen
             EXIT_IF_FAILED_OR_NO_VALUE(result);
             auto ifaceType = V(result);
 
+            // `interface TagClass extends Tag<Self, Type>` where a generic function is named `Tag` too: the name
+            // as a value is the function, which gives no value here; the base is the type of that name. A null
+            // value's type was read (a crash).
+            if (!ifaceType)
+            {
+                auto baseTypeByName = getType(extendsType.as<TypeNode>(), genContext);
+                if (!baseTypeByName)
+                {
+                    emitError(loc(extendsType)) << "interface '" << newInterfacePtr->name << "' can't extend '"
+                                                << MLIRHelper::getName(extendsType->expression.as<ts::Node>()) << "'";
+                    return mlir::failure();
+                }
+
+                ifaceType = builder.create<mlir_ts::TypeRefOp>(loc(extendsType), baseTypeByName);
+            }
+
             // a @value interface (its type is a ValueType) or an ordinary one
             auto baseInterfaceInfo = InterfaceInfo::TypePtr();
             if (auto valueType = dyn_cast<mlir_ts::ValueType>(ifaceType.getType()))

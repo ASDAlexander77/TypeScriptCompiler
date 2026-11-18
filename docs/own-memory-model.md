@@ -95,8 +95,7 @@ parameter given a default by `??=` or `||=` can be copied into a `let` (`let a =
 which borrows it.
 
 A catch clause owns what was thrown: the value is freed where the clause ends, unless the clause
-gives it on (`return e`, `throw e`, storing it). Inside another `try` of the same function, or with a
-`finally`, it is still not freed.
+gives it on (`return e`, `throw e`, storing it), also with a `finally` or inside another `try`.
 
 Inside a module the compiler also infers each function's facts from its body: a function that
 stores a parameter keeps it, so its callers have to move the argument in; a function that

@@ -1006,7 +1006,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->getHasVirtualTable())
+            if (base && base->getHasVirtualTable())
             {
                 return true;
             }
@@ -1024,7 +1024,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->getHasVirtualTable())
+            if (base && base->getHasVirtualTable())
             {
                 return false;
             }

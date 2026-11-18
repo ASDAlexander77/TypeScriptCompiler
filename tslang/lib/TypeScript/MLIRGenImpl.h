@@ -1051,6 +1051,24 @@ class MLIRGenImpl
             {
                 releaseOp->setAttr(onlyOnAttr, builder.getUnitAttr());
             }
+
+            // a catch clause's caught value, which its `finally`'s unwind copy releases as well
+            // (mlirGen(TryStatement)): the slot is emptied, so that release finds nothing
+            if (mlir::isa_and_nonnull<mlir_ts::ReleaseSlotOp>(releaseOp))
+            {
+                auto varOp = storage.getDefiningOp<mlir_ts::VariableOp>();
+                if (varOp && varOp->hasAttr(CAUGHT_VALUE_ATTR_NAME))
+                {
+                    auto refType = mlir::cast<mlir_ts::RefType>(storage.getType());
+                    auto empty = builder.create<mlir_ts::DefaultOp>(location, refType.getElementType());
+                    auto emptyOp = builder.create<mlir_ts::StoreOp>(location, empty, storage);
+                    // (only where its release is: on the unwind leg alone, for that leg's copy)
+                    if (!onlyOnAttr.empty())
+                    {
+                        emptyOp->setAttr(onlyOnAttr, builder.getUnitAttr());
+                    }
+                }
+            }
         }
     }
 
@@ -3079,6 +3097,16 @@ class MLIRGenImpl
                         return mlir::failure();
                     }
 
+                    // an intersection tslang could not resolve to one type (`typeof C & (() => number)`) has no
+                    // layout: the lowering aborted on it
+                    if (isa<mlir_ts::IntersectionType>(variableDeclarationInfo.type))
+                    {
+                        emitError(location) << "variable '" << variableDeclarationInfo.variableName << "' of type '"
+                                            << to_print(variableDeclarationInfo.type)
+                                            << "' is not supported: the intersection has no single type";
+                        return mlir::failure();
+                    }
+
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                 }
                 else
@@ -4849,7 +4877,9 @@ class MLIRGenImpl
 
     bool isSafeTypeTheSameAndNoNeedToCast(mlir::Type type, mlir::Type safeType)
     {
-        if (type == safeType)
+        // a narrowed type that could not be made (`x instanceof C` of a C with no instance type): nothing to narrow
+        // to, rather than a check of a null type
+        if (type == safeType || !safeType || !type)
         {
             // nothing todo here
             return true;
@@ -17317,7 +17347,8 @@ class MLIRGenImpl
 
     mlir::Type getCVarArgsType(mlir::Type type);
 
-    mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext);
+    mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext,
+                            bool eraseTypeParameters = false);
 
     mlir::Type getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext);
 

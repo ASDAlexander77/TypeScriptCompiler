@@ -869,7 +869,7 @@ class MLIRTypeHelper
     // TODO: how about multi-index?
     std::pair<mlir::Type, mlir::Type> getIndexSignatureArgumentAndResultTypes(mlir::Type indexSignatureType)
     {
-        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(indexSignatureType))
+        if (auto funcType = dyn_cast_or_null<mlir_ts::FunctionType>(indexSignatureType))
         {
             if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 
                 && (isNumericType(funcType.getInput(0)) || isa<mlir_ts::StringType>(funcType.getInput(0))))
@@ -3514,7 +3514,8 @@ class MLIRTypeHelper
         if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(srcType))
         {
             auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-            // an interface still being declared (its own members refer to it) has no info yet
+            // an interface not declared yet (a constraint reading one being declared, `circularDeclaredPropertyAccess`):
+            // nothing is known to extend through it
             if (!interfaceInfo)
             {
                 return ExtendsResult::False;
