@@ -216,6 +216,28 @@ namespace mlirgen
         {
             return mlir::success();
         }
+        else if (kind == SyntaxKind::JsxElement || kind == SyntaxKind::JsxSelfClosingElement || kind == SyntaxKind::JsxFragment)
+        {
+            emitError(loc(expressionAST)) << "JSX is not supported";
+            return ValueOrLogicalResult(mlir::failure());
+        }
+        else if (kind == SyntaxKind::ImportKeyword)
+        {
+            // the callee of `import("./m")`
+            emitError(loc(expressionAST)) << "dynamic 'import()' is not supported: use an import declaration";
+            return ValueOrLogicalResult(mlir::failure());
+        }
+        else if (kind == SyntaxKind::MetaProperty)
+        {
+            emitError(loc(expressionAST)) << "'new.target' and 'import.meta' are not supported";
+            return ValueOrLogicalResult(mlir::failure());
+        }
+        else if (kind == SyntaxKind::PrivateIdentifier)
+        {
+            // the left side of `#field in obj`
+            emitError(loc(expressionAST)) << "'#name in obj' is not supported";
+            return ValueOrLogicalResult(mlir::failure());
+        }
 
         // e.g. a constructor parameter property combined with a destructuring pattern
         // (`constructor(public {x, y}: T) {}`) - real TypeScript rejects that combination
@@ -1618,11 +1640,52 @@ namespace mlirgen
 
         auto callExpr = callExpression->expression.as<Expression>();
 
+        // the language's own `Symbol`, not one the program or a library declares (TSLANG_ISSUES 38)
+        auto isBuiltinSymbol = [&](Expression expression) {
+            if (expression != SyntaxKind::Identifier || MLIRHelper::getName(expression.as<Identifier>()) != "Symbol")
+            {
+                return false;
+            }
+
+            auto resolved = resolveIdentifier(location, "Symbol", genContext);
+            if (!resolved)
+            {
+                return true;
+            }
+
+            auto symbolRefOp = resolved.getDefiningOp<mlir_ts::SymbolRefOp>();
+            if (!symbolRefOp || !isa<mlir_ts::SymbolType>(resolved.getType()))
+            {
+                return false;
+            }
+
+            // the reference the lookup made: the call is made of a constant instead
+            if (symbolRefOp->use_empty())
+            {
+                symbolRefOp->erase();
+            }
+
+            return true;
+        };
+
+        // `Symbol("d")`
+        if (isBuiltinSymbol(callExpr))
+        {
+            return mlirGenSymbolCall(location, callExpression, false, genContext);
+        }
+
         // `Shared.count(s)` (own spec 23.1), unless the program declares its own `Shared`, which
         // wins as it does in type position and in `new`.
         if (callExpr == SyntaxKind::PropertyAccessExpression)
         {
             auto access = callExpr.as<PropertyAccessExpression>();
+
+            // `Symbol.for("d")`
+            if (MLIRHelper::getName(access->name) == "for" && isBuiltinSymbol(access->expression.as<Expression>()))
+            {
+                return mlirGenSymbolCall(location, callExpression, true, genContext);
+            }
+
             if (access->expression == SyntaxKind::Identifier
                 && MLIRHelper::getName(access->expression.as<Identifier>()) == "Shared"
                 && MLIRHelper::getName(access->name) == "count"
@@ -1747,6 +1810,19 @@ namespace mlirgen
             }
         }
 
+        // a value of an interface or object type with a call signature (`interface I { (n: number): string;
+        // x: number }`) is called through it: the signature is its member `.call`
+        if (isa<mlir_ts::InterfaceType, mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectType>(funcResult.getType()))
+        {
+            auto callName = MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext());
+            if (mth.getFieldTypeByFieldName(funcResult.getType(), callName))
+            {
+                auto callMember = mlirGenPropertyAccessExpression(location, funcResult, callName, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(callMember)
+                funcResult = V(callMember);
+            }
+        }
+
         auto funcType = funcResult.getType();
         if (!mth.isAnyFunctionType(funcType)
             && !mth.isBuiltinFunctionType(funcResult)
@@ -1757,6 +1833,13 @@ namespace mlirgen
             && !isa<mlir_ts::ClassStorageType>(funcType))
         {      
             LLVM_DEBUG(llvm::dbgs() << "\n!! function type: " << funcType << "\n";);
+            if (isa<mlir_ts::AnyType>(funcType))
+            {
+                // the function's own parameter and result types are not known, so there is no call to make
+                emitError(location, "a value of type 'any' can't be called: give it a function type");
+                return mlir::failure();
+            }
+
             emitError(location, "not a function to call");
             return mlir::failure();
         }
@@ -2041,6 +2124,68 @@ namespace mlirgen
         }
 
         rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+    }
+
+    // `Symbol("d")` is a unique symbol known at compile time (user ruling 11-18): its type is a literal of the
+    // symbol type, so `const k = Symbol()` is a constant key as `const k = "x"` is - `{ [k]: 1 }`, `o[k]`.
+    // The literal's value is its name as a key, `Symbol(d)@<where the call is>`: the same in every pass over
+    // the code, and so the same symbol each time the call runs, unlike JavaScript. `Symbol.for("d")` is
+    // `Symbol(d)@for`, the same for every call with that description. At run time a symbol is the address
+    // of a constant string that reads `Symbol(d)` (LowerToLLVM), so two symbols are equal only when they
+    // are the same one.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenSymbolCall(mlir::Location location, CallExpression callExpression,
+                                                        bool isFor, const GenContext &genContext)
+    {
+        if (callExpression->arguments.size() > 1 || (isFor && callExpression->arguments.size() != 1))
+        {
+            emitError(location) << (isFor ? "'Symbol.for' takes one argument" : "'Symbol' takes at most one argument");
+            return mlir::failure();
+        }
+
+        std::string description;
+        if (callExpression->arguments.size() == 1)
+        {
+            auto argument = mlirGen(callExpression->arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(argument)
+            auto argumentValue = V(argument);
+
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto attr = mcl.ExtractAttr(argumentValue);
+            if (!attr)
+            {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(argumentValue.getType()))
+                {
+                    attr = literalType.getValue();
+                }
+            }
+
+            auto stringAttr = dyn_cast_or_null<mlir::StringAttr>(attr);
+            if (!stringAttr)
+            {
+                emitError(loc(callExpression->arguments.front()))
+                    << "the description of a symbol must be a constant string: a symbol is known at compile time";
+                return mlir::failure();
+            }
+
+            description = stringAttr.getValue().str();
+        }
+
+        std::string where;
+        if (isFor)
+        {
+            where = "for";
+        }
+        else
+        {
+            std::string locationText;
+            llvm::raw_string_ostream os(locationText);
+            location.print(os);
+            os.flush();
+            where = llvm::utohexstr(llvm::xxh3_64bits(locationText));
+        }
+
+        auto name = builder.getStringAttr("Symbol(" + description + ")@" + where);
+        return V(builder.create<mlir_ts::ConstantOp>(location, mlir_ts::LiteralType::get(name, getSymbolType()), name));
     }
 
     // `Shared.count(s)` (own spec 23.1): the number of handles under rc and own, -1 under gc and none.

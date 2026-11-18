@@ -475,6 +475,13 @@ class MLIRPrinter
                 printType(out, t.getElementType());
             })
             .template Case<mlir_ts::LiteralType>([&](auto t) {
+                // a symbol's literal is its name, not text the program has (MLIRGenImpl::mlirGenSymbolCall)
+                if (isa<mlir_ts::SymbolType>(t.getElementType()))
+                {
+                    out << "symbol";
+                    return;
+                }
+
                 printAttribute(out, t.getValue());
                 // printType(out, t.getElementType());
             })
@@ -638,7 +645,7 @@ class MLIRPrinter
                 out << "const";
             })
             .template Case<mlir_ts::SymbolType>([&](auto) {
-                out << "Symbol";
+                out << "symbol";
             })             
             .template Case<mlir_ts::NullType>([&](auto) {
                 out << "null";

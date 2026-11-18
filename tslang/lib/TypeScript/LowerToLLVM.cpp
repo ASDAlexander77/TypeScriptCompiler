@@ -2301,17 +2301,28 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // `Symbol.iterator` is a compile-time name: nothing at run time can hold one yet
-        if (isa<mlir_ts::SymbolType>(constantOp.getType()))
-        {
-            return constantOp.emitError("a symbol has no value at run time yet: it can only be a property name or the operand of typeof");
-        }
-
         // load address of const string
         auto type = constantOp.getType();
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             type = literalType.getElementType();
+        }
+
+        // a symbol is the address of a constant string that reads what String(symbol) gives: `Symbol(d)` for
+        // `Symbol("d")` (named `Symbol(d)@<where>`, MLIRGenImpl::mlirGenSymbolCall), `Symbol(Symbol.iterator)`
+        // for a well-known one (named `iterator`). The name follows the text's end: it is what tells two symbols
+        // apart (LogicOp compares it), the same for `Symbol.for("d")` in every module and library
+        if (isa<mlir_ts::SymbolType>(type))
+        {
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+
+            auto name = cast<StringAttr>(constantOp.getValue()).getValue();
+            auto text = MLIRHelper::symbolText(name);
+            text.push_back('\0');
+            text.append(name.str());
+
+            rewriter.replaceOp(constantOp, ch.getOrCreateGlobalString(text));
+            return success();
         }
 
         if (isa<mlir_ts::StringType>(type))
@@ -9412,8 +9423,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(m.getContext());
     });
 
-    converter.addConversion([&](mlir_ts::SymbolType type) { 
-        return  LLVM::LLVMStructType::getOpaque("Symbol", type.getContext()); 
+    // the address of the constant string of the symbol (ConstantOp lowering)
+    converter.addConversion([&](mlir_ts::SymbolType type) {
+        return LLVM::LLVMPointerType::get(type.getContext());
      });
 
     converter.addConversion([&](mlir_ts::UndefinedType type) { 

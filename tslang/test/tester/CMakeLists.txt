@@ -339,6 +339,8 @@ tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-
 tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
@@ -1047,6 +1049,8 @@ tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runn
 tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
 tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
+tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
@@ -1843,6 +1847,8 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 tslang_add_test(NAME test-compile-shared-export-import-redeclared-field COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
 tslang_add_test(NAME test-jit-shared-export-import-redeclared-field COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
+tslang_add_test(NAME test-compile-shared-export-import-symbol COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_symbol.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_symbol.ts")
+tslang_add_test(NAME test-jit-shared-export-import-symbol COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_symbol.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_symbol.ts")
 # a @final class across the boundary: direct calls from the importer, compiled and under the JIT
 # own: the importer owns what the generator method's next() gives it (isIteratorNext)
 foreach(final_mm gc rc own)
@@ -2115,10 +2121,6 @@ set_tests_properties(test-compile-final-accessor-override-error PROPERTIES PASS_
 add_test(NAME test-compile-final-method-abstract-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_abstract_error.ts")
 set_tests_properties(test-compile-final-method-abstract-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' cannot be both abstract and @final"
-                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-symbol-value-error
-         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/symbol_value_error.ts")
-set_tests_properties(test-compile-symbol-value-error PROPERTIES PASS_REGULAR_EXPRESSION "a symbol has no value at run time yet"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-computed-name-failed-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
@@ -3132,6 +3134,8 @@ set(TSLANG_CORPUS
     00typeof_union_narrowing.ts
     00never_type.ts
     00cast_any_literal_field.ts
+    00symbol_unique_key.ts
+    00call_signature_type.ts
     00f_bounded_generic.ts
     00types_indexedaccesstype.ts
     00types_keyof_enum.ts
@@ -3941,8 +3945,8 @@ endforeach()
 # Each file in crash-errors/ is one of them; the test passes when the compiler reports the error.
 set(crash_error_cases
     "jsx_mismatched_closing_tag.tsx|jsx_mismatched_closing_tag\\.tsx:1:16: error: Expected corresponding JSX closing tag for 'div'"
-    "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: unsupported expression"
-    "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: unsupported expression"
+    "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: JSX is not supported"
+    "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: JSX is not supported"
     "export_list.ts|export_list\\.ts:2:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
@@ -3982,7 +3986,19 @@ set(crash_error_cases
     "infinite_generic_expansion.ts|infinite_generic_expansion\\.ts:2:8: error: Type instantiation is excessively deep and possibly infinite"
     "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
     # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
-    "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite")
+    "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite"
+    # what tslang does not do, said as it is (user ruling 11-18): calling an `any`, JSX, dynamic import(),
+    # `new.target`, `#name in obj`; and a symbol is known at compile time, so its description is a constant
+    "call_any.ts|call_any\\.ts:3:5: error: a value of type 'any' can't be called: give it a function type"
+    "call_untyped_parameter.ts|call_untyped_parameter\\.ts:3:16: error: a value of type 'any' can't be called: give it a function type"
+    "jsx_element.tsx|jsx_element\\.tsx:2:11: error: JSX is not supported"
+    "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
+    "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
+    "private_name_in.ts|private_name_in\\.ts:4:16: error: '#name in obj' is not supported"
+    "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
+    # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
+    # interface for export read
+    "exported_interface_computed_key.ts|exported_interface_computed_key\\.ts:2:28: error: a computed property name must be a constant")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
@@ -4004,7 +4020,7 @@ set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
-                      module_try_catch_finally_locals)
+                      module_try_catch_finally_locals call_signature_interface)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none

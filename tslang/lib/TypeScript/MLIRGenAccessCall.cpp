@@ -1488,6 +1488,15 @@ namespace mlirgen
     {
         auto arrayType = expression.getType();
 
+        // `o[k]` of `const k = Symbol("d")`: its type says which symbol, as a constant key (mlirGenSymbolCall),
+        // also where k is read from a global or a captured variable
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(argumentExpression.getType());
+            literalType && isa<mlir_ts::SymbolType>(literalType.getElementType())
+            && !argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            argumentExpression = builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue());
+        }
+
         // collapse union type
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(expression.getType())) 
         {

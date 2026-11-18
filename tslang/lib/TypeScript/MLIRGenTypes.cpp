@@ -2974,6 +2974,13 @@ namespace mlirgen
             return mlir::Type();
         }
 
+        // `{ (n: number): string }`, one call signature and nothing else, is the function type
+        // `(n: number) => string`, as in TypeScript: a value of it is called as that function
+        if (types.size() == 1 && types.front().id == MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()))
+        {
+            return types.front().type;
+        }
+
         // TODO: remove the following hack
         // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
