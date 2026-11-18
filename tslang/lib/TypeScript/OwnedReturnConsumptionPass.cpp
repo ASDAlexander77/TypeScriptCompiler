@@ -312,13 +312,22 @@ class OwnedReturnConsumptionPass
         releaseDiscardedTemporaries(mth, module);
     }
 
+    // A new array, born uncounted: a literal's CreateArray, `new Array(n)`, or the read of a spread literal's slot
+    static bool isNewArray(mlir::Operation *op)
+    {
+        return mlir::isa<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(op) ||
+               (mlir::isa<mlir_ts::LoadOp>(op) && op->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
+    }
+
     // A new array only read where it is made - `[a, b].length`, `[a, b][i]`, `[...xs, y].length` - is born
     // uncounted (bornUncounted), holding a count of each element, and no receiver ever takes one: a local,
     // a call (which holds it, see arrayMadeFor), a field or a return each do, and give it back. Nothing gave
     // this one back, so under rc every evaluation leaked the array and its elements. It takes the count a
     // receiver would and is marked an owned result, for releaseDiscardedTemporaries to give back at the end
     // of its block, as a discarded `new C()` is. Only reads that keep nothing - its length, an element
-    // reference - qualify; any other use leaves it to whatever already handles that use.
+    // reference - qualify; any other use leaves it to whatever already handles that use. An element a `?:`
+    // branch yields (`c ? [s][0] : d`) qualifies once the branch has taken a count of it for the result
+    // (consumeConditionalResults, borrowsBranchTemporary), which runs first.
     void holdReadOnlyNewArrays(mlir::ModuleOp module)
     {
         if (!compileOptions.isRefCounted())
@@ -328,9 +337,7 @@ class OwnedReturnConsumptionPass
 
         llvm::SmallVector<mlir::Operation *> arrays;
         module.walk([&](mlir::Operation *op) {
-            auto isNewArray = mlir::isa<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(op) ||
-                              (mlir::isa<mlir_ts::LoadOp>(op) && op->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
-            if (!isNewArray || op->getNumResults() != 1 || !mlir::isa<mlir_ts::ArrayType>(op->getResult(0).getType()) ||
+            if (!isNewArray(op) || op->getNumResults() != 1 || !mlir::isa<mlir_ts::ArrayType>(op->getResult(0).getType()) ||
                 op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->use_empty() || !op->getParentOfType<mlir_ts::FuncOp>())
             {
                 return;
@@ -338,20 +345,44 @@ class OwnedReturnConsumptionPass
 
             // An element read out and handed on by a terminator - a conditional expression's branch yielding
             // `[s][0]` - leaves the block before its receiver takes a count: given back with the array at the
-            // end of the block, it would be freed first.
-            auto elementLeavesBlock = [](mlir::Operation *elementRef) {
-                for (auto *read : elementRef->getUsers())
+            // end of the block, it would be freed first. Unless the branch took a count of it for the
+            // `ts.If` result (consumeConditionalResults, borrowsBranchTemporary), which then carries it.
+            // (seen through the casts that only widen it: `c ? [s][0] : null` yields it as `string | null`)
+            std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
+                for (auto *user : value.getUsers())
                 {
-                    for (auto *user : read->getUsers())
+                    if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
                     {
-                        if (user->hasTrait<mlir::OpTrait::IsTerminator>())
+                        if (leavesUncounted(user->getResult(0)))
                         {
                             return true;
                         }
+
+                        continue;
+                    }
+
+                    if (!user->hasTrait<mlir::OpTrait::IsTerminator>())
+                    {
+                        continue;
+                    }
+
+                    auto *conditional = user->getParentOp();
+                    auto yieldsCounted = mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                                         conditional->hasAttr(OWNED_RESULT_ATTR_NAME) && user->getPrevNode() &&
+                                         mlir::isa<mlir_ts::RetainOp>(user->getPrevNode()) &&
+                                         user->getPrevNode()->getOperand(0) == user->getOperand(0);
+                    if (!yieldsCounted)
+                    {
+                        return true;
                     }
                 }
 
                 return false;
+            };
+
+            auto elementLeavesBlock = [&](mlir::Operation *elementRef) {
+                return llvm::any_of(elementRef->getUsers(),
+                                    [&](mlir::Operation *read) { return read->getNumResults() == 1 && leavesUncounted(read->getResult(0)); });
             };
 
             auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
@@ -1752,8 +1783,22 @@ class OwnedReturnConsumptionPass
             // ...or some branch yields a field read out of a temporary it made (`given ?? pair(n).item`):
             // the temporary is given back before the branch ends, and with it what the field holds,
             // so the receiver's retain after the `ts.If` comes too late. The branch retains it first.
+            // An element read out of a new array the branch made (`c ? ["c" + i][0] : d`) is the same under rc:
+            // the array is given back at the end of the branch (holdReadOnlyNewArrays), and with it the element.
             auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
                 auto value = producerOf(resultOp->getOperand(0));
+                if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
+                {
+                    if (auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>())
+                    {
+                        auto *arrayOp = elementRefOp->getOperand(0).getDefiningOp();
+                        if (arrayOp && isNewArray(arrayOp) && arrayOp->getParentRegion() == resultOp->getParentRegion())
+                        {
+                            return true;
+                        }
+                    }
+                }
+
                 while (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
                 {
                     auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
