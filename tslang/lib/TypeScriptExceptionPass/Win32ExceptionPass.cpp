@@ -451,7 +451,14 @@ struct Win32ExceptionPassCode
 
             if (isa_and_nonnull<ResumeInst>(catchRegion.end))
             {
-                catchRegion.calls.append(catchRegion.skippedThrows);
+                // (not one findOtherCatchExits already took, as a throw inside the funclet)
+                for (auto *skippedThrow : catchRegion.skippedThrows)
+                {
+                    if (!llvm::is_contained(catchRegion.calls, skippedThrow))
+                    {
+                        catchRegion.calls.push_back(skippedThrow);
+                    }
+                }
             }
 
             // set funcset
@@ -1028,9 +1035,22 @@ struct Win32ExceptionPassCode
                         break;
                     }
 
-                    // a throw leaves the clause; see the scan for why it carries no bundle
+                    // A throw ends the walk. It runs inside the funclet, and needs the bundle, unless
+                    // it is the region's `end`, which the catchret goes in front of (see the scan):
+                    // this walk stops at each end-of-catch marker, so a throw it reaches comes
+                    // before any of them. Two the scan left without one crashed the program:
+                    // - an invoked one, which unwinds to a pad the catch is nested in (a throw in a
+                    //   try or a `using` nested in the clause), laid out after a `return`'s catchret;
+                    // - a throw the inliner brought into one branch of the clause, `catch (e) {
+                    //   f(); }` with `f` inlined, the other branch ending the catch: codegen dropped
+                    //   the bundle-less call, and the funclet ran on into the next function.
                     if (isCallTo(I, "_CxxThrowException"))
                     {
+                        if (I != region.end)
+                        {
+                            takeCall(cast<CallBase>(I), index);
+                        }
+
                         break;
                     }
 

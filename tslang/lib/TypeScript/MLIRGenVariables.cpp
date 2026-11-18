@@ -179,8 +179,7 @@ namespace mlirgen
     // A local declared in a catch or finally clause is owned like any other. It was not, while a
     // call inside an exception funclet was fragile (`catch (e: int) { new Res(); throw 2; }`
     // crashed, since fixed); a borrowing local there read freed memory under rc once its source
-    // was given a new value (a fuzzer find, seed 920443). The clause synthesizes no TryOp of its
-    // own (blockIsInsideCatchOrFinally), so one an exception leaves the clause with leaks.
+    // was given a new value (a fuzzer find, seed 920443).
     //
     // The test itself is localTakesOwnership, shared with the hoisting decision in
     // createLocalVariable so the two cannot disagree about which declarations these are.

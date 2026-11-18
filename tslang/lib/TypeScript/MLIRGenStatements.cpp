@@ -251,7 +251,7 @@ namespace mlirgen
         auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
         auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
         auto localsNeedCleanup = isInsideUnwindCleanupScope(genContext) && blockDeclaresLocals(blockAST, skipStatements);
-        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup) && !blockIsInsideCatchOrFinally())
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup))
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }
@@ -327,6 +327,15 @@ namespace mlirgen
         GenContext tryGenContext(genContext);
         tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
+        // The copy stands for the scope it was made from, which may be a `try`'s finally guard (a
+        // catch clause of a `try` with a `finally` is generated in it): a guard is told by its own
+        // address, and the copy's would still name the original, which a walk from in here never
+        // reaches - a `return` went past it and released the scopes around the `try` before its
+        // finally had run, then the finally's copy for the `return` released them again.
+        if (genContext.finallyGuardScope == &genContext)
+        {
+            tryGenContext.finallyGuardScope = &tryGenContext;
+        }
 
         SmallVector<mlir::Type, 0> types;
 
@@ -1667,7 +1676,7 @@ namespace mlirgen
         }
 
         mlir_ts::TryOp tryOp;
-        if (usingIsDisposable && (declaresUsing || hasTypedCatch) && !blockIsInsideCatchOrFinally())
+        if (usingIsDisposable && (declaresUsing || hasTypedCatch))
         {
             mlir_ts::FuncOp funcOp = genContext.funcOp;
             funcOp.setPersonalityAttr(builder.getBoolAttr(true));
