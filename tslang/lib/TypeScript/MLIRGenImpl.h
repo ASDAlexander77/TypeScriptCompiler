@@ -1148,7 +1148,9 @@ class MLIRGenImpl
     // own). Each iteration's own storage gives the loop what it has everywhere else.
     static void stopHoistingAtLoopBody(const GenContext &outer, GenContext &body)
     {
-        if (outer.isLoop)
+        // (a generator's state switch is a currentOperation too, for its own reasons: left alone)
+        if (outer.isLoop && outer.allocateScopeOwnedVarsOutsideOfOperation &&
+            mlir::isa_and_nonnull<mlir_ts::TryOp>(outer.currentOperation))
         {
             body.allocateScopeOwnedVarsOutsideOfOperation = false;
             body.currentOperation = nullptr;
