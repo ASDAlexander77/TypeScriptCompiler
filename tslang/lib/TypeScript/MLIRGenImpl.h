@@ -14027,6 +14027,9 @@ class MLIRGenImpl
         }
 
         auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
+        // the literal's array, new and uncounted as a CreateArray's is - read out of the slot it was
+        // filled in, which owns nothing (SPREAD_ARRAY_LITERAL_ATTR_NAME)
+        loadedVarArray2->setAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME, builder.getUnitAttr());
         return V(loadedVarArray2);
     }
 
