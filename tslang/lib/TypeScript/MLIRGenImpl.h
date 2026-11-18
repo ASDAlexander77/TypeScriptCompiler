@@ -12381,7 +12381,10 @@ class MLIRGenImpl
     // recorded for its type descriptor (ANY_CALL_ADAPTERS_ATTR_NAME). A type it can't be made for has none.
     void ensureAnyCallAdapter(mlir::Location location, mlir::Type funcType, const GenContext &genContext);
 
-    // the text of a statement that throws a TypeError with `message` (an assert without the default library)
+    // a TypeError unless the `any` value holds a function (a cast from `any` to a function type)
+    mlir::LogicalResult mlirGenAnyCheckFunction(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
+    // the text of a statement that throws a TypeError with `message` (a string without the default library)
     std::string throwTypeErrorSource(StringRef message);
 
     // function types an adapter is being made for: a function returning one of its own type is not made twice

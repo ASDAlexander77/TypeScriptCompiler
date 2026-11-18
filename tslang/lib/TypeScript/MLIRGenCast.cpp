@@ -2533,12 +2533,24 @@ namespace mlirgen
                 || isa<mlir_ts::ClassType>(type)
                 // a Shared<T> handle (own spec 23.1) is checked by its `typeof` name, "object"
                 || isa<mlir_ts::SharedType>(type)
-                || isa<mlir_ts::WeakRefType>(type)
-                // a function (user ruling 11-18): what is not one is a TypeError, not a call of garbage.
-                // The box says only "function", so a function of another type still passes
-                || ((isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType>(type)) && !genContext.allowPartialResolve))
+                || isa<mlir_ts::WeakRefType>(type))
             {
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
+            }
+
+            // a function (user ruling 11-18): what is not one is a TypeError, not a call of garbage. The box
+            // says only "function", so a function of another type still passes. Checked apart from the cast:
+            // `typeof` narrows to an Opaque, and a closure read out as one lost what it captured. Not under
+            // -mm=own, where the check's argument is a second reference to the box
+            if (isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type)
+                && !genContext.allowPartialResolve && compileOptions.memoryModel != MemoryModelOwn)
+            {
+                if (mlir::failed(mlirGenAnyCheckFunction(location, value, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                return V(builder.create<mlir_ts::CastOp>(location, type, value));
             }
 
             if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
@@ -4195,9 +4207,10 @@ namespace mlirgen
 
     std::string MLIRGenImpl::throwTypeErrorSource(StringRef message)
     {
+        // without the default library, a string, as a failed cast from `any` throws
         return getClassInfoByFullName("TypeError")
                    ? ("throw new TypeError(\"" + message + "\");").str()
-                   : ("assert(false, \"" + message + "\");").str();
+                   : ("throw \"TypeError: " + message + "\";").str();
     }
 
     // The adapter of a function type F with n parameters, `required` of them not optional:
@@ -4375,6 +4388,44 @@ namespace mlirgen
 
         adapters.set(std::to_string(hash), builder.getStringAttr(symbolRefOp.getIdentifierAttr().getValue()));
         theModule->setAttr(ANY_CALL_ADAPTERS_ATTR_NAME, adapters.getDictionary(builder.getContext()));
+    }
+
+    // `__any_check_function(a)`: a TypeError unless the box `a` holds a function
+    mlir::LogicalResult MLIRGenImpl::mlirGenAnyCheckFunction(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___any_check_function";
+        auto funcRef = resolveIdentifier(location, funcName, genContext);
+        if (!funcRef)
+        {
+            std::string src = "function __any_check_function<T>(a: any): void {\n"
+                              "if (typeof a != \"function\") " + throwTypeErrorSource("the value of type any is not a function") + "\n"
+                              "}\n";
+
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return mlir::failure();
+            }
+
+            funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                return mlir::failure();
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        GenContext checkGenContext(genContext);
+        checkGenContext.typeAliasMap.insert({".ANY_CHECK_T", getAnyType()});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(value);
+        auto result = mlirGenCallExpression(location, funcRef,
+                                            {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_CHECK_T")).as<Node>())},
+                                            operands, checkGenContext);
+        return mlir::failed(result) ? mlir::failure() : mlir::success();
     }
 
     // `a(x, y)` of `a: any`: `__any_invoke(a, [<any>x, <any>y])`, which calls the adapter of the function `a`
