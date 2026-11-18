@@ -6001,7 +6001,8 @@ set(own_error_cases
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
     "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
-    "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten")
+    "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten"
+    "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
@@ -6015,6 +6016,8 @@ foreach(own_error_case ${own_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# it used to never finish: a minute is plenty
+set_tests_properties(test-own-err-own_err_self_assign_through_borrow PROPERTIES TIMEOUT 60)
 # TSLANG_ISSUES 51: a file --own-facts names that does not exist is said, not passed over in silence
 add_test(NAME test-own-facts-missing-file
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own

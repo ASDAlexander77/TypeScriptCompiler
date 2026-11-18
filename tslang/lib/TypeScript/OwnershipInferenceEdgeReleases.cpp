@@ -421,7 +421,14 @@ namespace own_inference
                         return false;
                     }
 
-                    taint(into.getResult(), origin);
+                    // stored back into the slot itself (`n = g((n = mk(), n))`, `g` returning what it
+                    // borrows): the slot's uses are walked already, and walking them again from here
+                    // made a new origin at each read of it, for ever (fuzz 946038)
+                    if (into.getResult() != slot)
+                    {
+                        taint(into.getResult(), origin);
+                    }
+
                     continue;
                 }
 
