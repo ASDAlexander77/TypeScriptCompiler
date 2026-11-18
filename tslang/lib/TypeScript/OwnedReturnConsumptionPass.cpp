@@ -1917,9 +1917,13 @@ class OwnedReturnConsumptionPass
                         return mlir::WalkResult::skip();
                     }
 
+                    // A `throw` leaves as a `return` does - `const s = "x" + i; if (c) throw i;` lost
+                    // `s` on every throw - unless a `try` between it and this block takes it: the
+                    // block may then go on and give the value back at its own end.
                     auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
                                        (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
-                                        jumpLeavesBlock(nested, block));
+                                        jumpLeavesBlock(nested, block)) ||
+                                       (mlir::isa<mlir_ts::ThrowOp>(nested) && !throwLandsWithin(nested, block));
                     if (leavesBlock && !releaseAfterFinally(builder, op, nested, block, placedAfterFinally))
                     {
                         builder.setInsertionPoint(nested);
@@ -2061,6 +2065,32 @@ class OwnedReturnConsumptionPass
     // Answers false when the walk runs out of ancestors without meeting `block`, which cannot
     // happen for a jump this pass reached but is the safe answer either way: a missing release
     // leaks, a surplus one frees memory twice.
+    // Is there a `try` between a `throw` and `block` that takes the exception - one whose body the
+    // throw is in, or that has a finally to run? Then the block may go on after it. A throw out of
+    // a catch clause with no finally passes its `try` by.
+    static bool throwLandsWithin(mlir::Operation *throwOp, mlir::Block *block)
+    {
+        auto finallyIsEmpty = [](mlir_ts::TryOp tryOp) {
+            return llvm::all_of(tryOp.getFinally(), [](mlir::Block &finallyBlock) {
+                return finallyBlock.empty() || &finallyBlock.front() == finallyBlock.getTerminator();
+            });
+        };
+
+        for (auto *child = throwOp, *parent = throwOp->getParentOp(); parent && parent != block->getParentOp();
+             child = parent, parent = parent->getParentOp())
+        {
+            if (auto tryOp = mlir::dyn_cast<mlir_ts::TryOp>(parent))
+            {
+                if (child->getParentRegion() != &tryOp.getCatches() || !finallyIsEmpty(tryOp))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     static bool jumpLeavesBlock(mlir::Operation *jump, mlir::Block *block)
     {
         auto isBreak = mlir::isa<mlir_ts::BreakOp>(jump);

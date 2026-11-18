@@ -5,6 +5,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
@@ -23,6 +24,8 @@ using namespace ::typescript;
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 
+#include <optional>
+
 #define DEBUG_TYPE "pass"
 
 namespace mlir_ts = mlir::typescript;
@@ -34,13 +37,24 @@ namespace mlir_ts = mlir::typescript;
 // such a frame leaked what the frame held (`const s = "x" + i; f(i);` with `f` throwing, 2M times:
 // 178 MB under rc, 49 MB under gc).
 //
-// Here, last before the lowering to LLVM - after own's inference, stack promotion and the inliner, so
-// what is released is what the code finally releases - a call that may throw and is followed, on every
-// path out of it, by the release of something it already holds becomes an invoke whose landing pad
-// does those releases and resumes the unwind. The pad does what the normal path would have done next,
-// and nothing else: a release is copied only when no path from the call to it retains, releases or
+// Here - after own's inference and stack promotion, before the inliner (which leaves alone a function
+// with landing pads), so what is released is what the code finally releases - a call that may throw
+// and is followed, on every path out of it, by the release of something it already holds gets a
+// landing pad that does those releases. The pad does what the normal path would have done next, and
+// nothing else: a release is copied only when no path from the call to it retains, releases or
 // overwrites the same thing first (or, under own, may move it), so the pad cannot free what the
 // normal path would not.
+//
+// - A plain call - in the function's own code or in a catch clause - becomes an invoke into a
+//   cleanup pad that does the releases and lets the exception go on out of the function. In a catch
+//   clause the catch is ended on the way (ItaniumEndCatchPass; on Windows the pad is a cleanup
+//   funclet inside the clause's catch funclet, EH_PAD_PARENT_ATTR_NAME).
+// - An invoke - a call in a `try`, or in a catch clause with a cleanup around it - keeps its pad
+//   but goes through the releases first. Only what nothing reachable from that pad uses again is
+//   released: the handler there, the code after it and a loop back round must be done with it.
+//   On Windows the releases are a cleanup funclet beside that pad, unwinding to it (and an invoke
+//   that leaves its funclet is left alone: every way out of a funclet must go to one pad). On
+//   Linux they follow a copy of the pad's landing pad, then join the rest of the pad.
 //
 // Which calls may throw is found over the module: a function may throw when its body has a `throw`,
 // or calls one that may. Two kinds of call are taken not to, by ruling (2026-11-18): the methods of a
@@ -51,8 +65,8 @@ namespace mlir_ts = mlir::typescript;
 // signature matches, `this` aside. The analysis only decides where pads are added, never removes one:
 // a call wrongly taken not to throw keeps the leak it had.
 //
-// Not covered: calls already in a `try` (an invoke), calls inside a catch clause or a cleanup, and
-// releases that differ between the paths out of a call (each path's own release).
+// Not covered: calls inside a cleanup (a `finally`, a `using`'s disposal: an exception thrown while
+// another unwinds), and releases that differ between the paths out of a call (each path's own).
 namespace
 {
 
@@ -371,7 +385,14 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         llvm::SmallPtrSet<mlir::Block *, 16> visited;
         auto callBlockReentered = false;
         llvm::SmallVector<mlir::Operation *> worklist;
-        worklist.push_back(call->getNextNode());
+        if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(call))
+        {
+            worklist.push_back(&invokeOp.getNormalDest()->front());
+        }
+        else
+        {
+            worklist.push_back(call->getNextNode());
+        }
 
         auto enqueue = [&](mlir::Block *successor) {
             if (successor == callBlock)
@@ -447,13 +468,260 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         return found;
     }
 
+    // ---- where a call is ----
+
+    static mlir_ts::LandingPadOp landingPadOf(mlir::Block *block)
+    {
+        if (block->empty() || block->getNumArguments() > 0)
+        {
+            return mlir_ts::LandingPadOp();
+        }
+
+        return mlir::dyn_cast<mlir_ts::LandingPadOp>(block->front());
+    }
+
+    static int intAttrOf(mlir::Operation *op, llvm::StringRef name)
+    {
+        auto attr = op->getAttrOfType<mlir::IntegerAttr>(name);
+        return attr ? (int)attr.getInt() : 0;
+    }
+
+    // the blocks a normal path out of `block` goes on to: an invoke's unwind edge, a cleanup's
+    // or a throw's are not ones
+    static void normalSuccessors(mlir::Block *block, llvm::SmallVectorImpl<mlir::Block *> &successors)
+    {
+        auto *terminator = block->getTerminator();
+        if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(terminator))
+        {
+            successors.push_back(invokeOp.getNormalDest());
+            return;
+        }
+
+        if (mlir::isa<mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp>(terminator))
+        {
+            return;
+        }
+
+        for (auto *successor : terminator->getSuccessors())
+        {
+            successors.push_back(successor);
+        }
+    }
+
+    // What runs each block: the landing pad whose code it is - a catch clause, up to the end of
+    // the catch, or a cleanup - reached from the pad along normal paths; none for the
+    // function's own code. A block two pads reach is `ambiguous`.
+    struct Handlers
+    {
+        llvm::DenseMap<mlir::Block *, mlir::Block *> padOf;
+        llvm::DenseSet<mlir::Block *> ambiguous;
+    };
+
+    static void findHandlers(mlir::Region &region, Handlers &handlers)
+    {
+        for (auto &padBlock : region)
+        {
+            if (!landingPadOf(&padBlock))
+            {
+                continue;
+            }
+
+            llvm::SmallPtrSet<mlir::Block *, 16> visited;
+            llvm::SmallVector<mlir::Block *> worklist{&padBlock};
+            while (!worklist.empty())
+            {
+                auto *block = worklist.pop_back_val();
+                if (!visited.insert(block).second)
+                {
+                    continue;
+                }
+
+                auto [it, inserted] = handlers.padOf.try_emplace(block, &padBlock);
+                if (!inserted && it->second != &padBlock)
+                {
+                    handlers.ambiguous.insert(block);
+                }
+
+                auto ended = llvm::any_of(*block, [](mlir::Operation &op) { return mlir::isa<mlir_ts::EndCatchOp>(op); });
+                if (!ended)
+                {
+                    normalSuccessors(block, worklist);
+                }
+            }
+        }
+    }
+
+    // A call that may throw, with the pad its unwind goes to now: none for a plain call, whose
+    // exception leaves the function.
+    struct Site
+    {
+        mlir::Operation *call;
+        mlir::Block *dest;
+        // Windows: the funclet the new pad is made in (EH_PAD_PARENT_ATTR_NAME), 0 for none
+        int parentPadId;
+    };
+
+    // Where a pad can be put for `call`, given what runs its block. Not in a cleanup (an
+    // exception thrown while one unwinds), nor where the code's handler is not clear.
+    std::optional<Site> siteOf(mlir::Operation *call, Handlers &handlers)
+    {
+        auto *block = call->getBlock();
+        if (handlers.ambiguous.contains(block))
+        {
+            return std::nullopt;
+        }
+
+        // after the end of a catch, in the block that ends it: the code after the clause
+        for (auto *op = call->getPrevNode(); op; op = op->getPrevNode())
+        {
+            if (mlir::isa<mlir_ts::EndCatchOp>(op))
+            {
+                return std::nullopt;
+            }
+        }
+
+        // Windows: the funclet the call runs in - its catch clause's pad, or none
+        auto funcletPadId = 0;
+        if (auto *padBlock = handlers.padOf.lookup(block))
+        {
+            auto landingPadOp = landingPadOf(padBlock);
+            if (landingPadOp.getCleanup())
+            {
+                return std::nullopt;
+            }
+
+            if (compileOptions.isWindows)
+            {
+                funcletPadId = intAttrOf(landingPadOp, EH_PAD_ID_ATTR_NAME);
+                if (!funcletPadId)
+                {
+                    return std::nullopt;
+                }
+            }
+        }
+
+        auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(call);
+        if (!invokeOp)
+        {
+            return Site{call, nullptr, funcletPadId};
+        }
+
+        auto *dest = invokeOp.getUnwindDest();
+        auto destPadOp = landingPadOf(dest);
+        if (!destPadOp || !invokeOp.getUnwindDestOperands().empty())
+        {
+            return std::nullopt;
+        }
+
+        if (compileOptions.isWindows)
+        {
+            // the new pad is the destination's sibling, cleanupret unwinding to it; an invoke that
+            // leaves its funclet is left as it is - every way out of a funclet must go to the same pad
+            auto parentPadId = intAttrOf(destPadOp, EH_PAD_PARENT_ATTR_NAME);
+            if (parentPadId != funcletPadId)
+            {
+                return std::nullopt;
+            }
+
+            return Site{call, dest, parentPadId};
+        }
+
+        return Site{call, dest, 0};
+    }
+
+    // The values used on any path from `dest`, the pad an existing invoke unwinds to: what the
+    // handler there, the code after it, or a loop back round may still use.
+    llvm::DenseSet<mlir::Value> &usedFrom(mlir::Block *dest)
+    {
+        auto [it, inserted] = usedFromDest.try_emplace(dest);
+        if (!inserted)
+        {
+            return it->second;
+        }
+
+        auto &used = it->second;
+        llvm::SmallPtrSet<mlir::Block *, 16> visited;
+        llvm::SmallVector<mlir::Block *> worklist{dest};
+        while (!worklist.empty())
+        {
+            auto *block = worklist.pop_back_val();
+            if (!visited.insert(block).second)
+            {
+                continue;
+            }
+
+            for (auto &op : *block)
+            {
+                op.walk([&](mlir::Operation *nested) {
+                    for (auto operand : nested->getOperands())
+                    {
+                        used.insert(operand);
+                    }
+                });
+            }
+
+            for (auto *successor : block->getSuccessors())
+            {
+                worklist.push_back(successor);
+            }
+        }
+
+        return used;
+    }
+
+    // The names a resource goes by: a value, the slots it is stored into and what is loaded from
+    // them; a slot, what is stored into it and loaded from it. A hold kept both as a value and in a
+    // slot of its own (OwnedReturnConsumptionPass::holdGlobalArguments) is released through either.
+    static llvm::SmallVector<mlir::Value> aliasesOf(mlir::Value resource)
+    {
+        llvm::SmallVector<mlir::Value> aliases{resource};
+        llvm::SmallVector<mlir::Value> slots;
+        if (mlir::isa<mlir_ts::RefType>(resource.getType()))
+        {
+            slots.push_back(resource);
+        }
+
+        for (auto *user : resource.getUsers())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+            {
+                if (storeOp.getValue() == resource)
+                {
+                    slots.push_back(storeOp.getReference());
+                    aliases.push_back(storeOp.getReference());
+                }
+                else
+                {
+                    aliases.push_back(storeOp.getValue());
+                }
+            }
+        }
+
+        for (auto slot : slots)
+        {
+            for (auto *user : slot.getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    aliases.push_back(loadOp.getResult());
+                }
+            }
+        }
+
+        return aliases;
+    }
+
     // ---- making the pads ----
 
     struct FunctionState
     {
         mlir::Value undefArray;
         int tryId = 0;
+        // Linux: a pad an invoke unwinds to, split after its landing pad, and the rest of it
+        llvm::DenseMap<mlir::Block *, mlir::Block *> restOf;
     };
+
+    llvm::DenseMap<mlir::Block *, llvm::DenseSet<mlir::Value>> usedFromDest;
 
     void processFunction(mlir::ModuleOp module, mlir_ts::FuncOp funcOp)
     {
@@ -461,39 +729,6 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         if (region.empty())
         {
             return;
-        }
-
-        // what a catch clause or a cleanup runs: reached from a landing pad without the catch ended
-        llvm::DenseSet<mlir::Block *> handlerBlocks;
-        {
-            llvm::SmallVector<mlir::Block *> worklist;
-            for (auto &block : region)
-            {
-                if (!block.empty() && mlir::isa<mlir_ts::LandingPadOp>(block.front()))
-                {
-                    worklist.push_back(&block);
-                }
-            }
-
-            while (!worklist.empty())
-            {
-                auto *block = worklist.pop_back_val();
-                if (!handlerBlocks.insert(block).second)
-                {
-                    continue;
-                }
-
-                auto ended = llvm::any_of(*block, [](mlir::Operation &op) { return mlir::isa<mlir_ts::EndCatchOp>(op); });
-                if (ended)
-                {
-                    continue;
-                }
-
-                for (auto *successor : block->getSuccessors())
-                {
-                    worklist.push_back(successor);
-                }
-            }
         }
 
         // the releases in the function, by what they release
@@ -514,52 +749,64 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             return;
         }
 
-        llvm::SmallVector<mlir::Operation *> calls;
+        Handlers handlers;
+        findHandlers(region, handlers);
+
+        llvm::SmallVector<Site> sites;
         for (auto &block : region)
         {
-            if (handlerBlocks.contains(&block))
-            {
-                continue;
-            }
-
             for (auto &op : block)
             {
-                if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp>(op) && callMayThrow(&op))
+                if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp, mlir_ts::InvokeOp>(op) &&
+                    callMayThrow(&op))
                 {
-                    calls.push_back(&op);
+                    if (auto site = siteOf(&op, handlers))
+                    {
+                        sites.push_back(*site);
+                    }
                 }
             }
         }
 
-        if (calls.empty())
+        if (sites.empty())
         {
             return;
         }
 
+        usedFromDest.clear();
         mlir::DominanceInfo dominance(funcOp);
         FunctionState state;
 
         struct Plan
         {
-            mlir::Operation *call;
+            Site site;
             llvm::SmallVector<mlir::Operation *> releases;
         };
 
         llvm::SmallVector<Plan> plans;
-        for (auto *call : calls)
+        for (auto &site : sites)
         {
-            Plan plan{call, {}};
+            Plan plan{site, {}};
             for (auto resource : resources)
             {
                 auto *definingOp = resource.getDefiningOp();
-                auto available = definingOp ? dominance.properlyDominates(definingOp, call)
-                                            : dominance.dominates(resource.getParentBlock(), call->getBlock());
+                auto available = definingOp ? dominance.properlyDominates(definingOp, site.call)
+                                            : dominance.dominates(resource.getParentBlock(), site.call->getBlock());
                 if (!available)
                 {
                     continue;
                 }
 
-                if (auto *release = releaseAfter(call, resource))
+                // the handler an invoke unwinds to now must have nothing more to do with it: the
+                // pad gives it back for good
+                if (site.dest && llvm::any_of(aliasesOf(resource), [&](mlir::Value alias) {
+                        return usedFrom(site.dest).contains(alias);
+                    }))
+                {
+                    continue;
+                }
+
+                if (auto *release = releaseAfter(site.call, resource))
                 {
                     plan.releases.push_back(release);
                 }
@@ -573,51 +820,62 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
 
         for (auto &plan : plans)
         {
-            makePad(module, funcOp, state, plan.call, plan.releases);
+            if (plan.site.dest)
+            {
+                chainPad(module, funcOp, state, plan.site, plan.releases);
+            }
+            else
+            {
+                makePad(module, funcOp, state, plan.site, plan.releases);
+            }
         }
     }
 
-    void makePad(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, FunctionState &state, mlir::Operation *call,
-                 llvm::ArrayRef<mlir::Operation *> releases)
+    // the cleanup marker of a cleanup pad (see TryOpLowering): an array-typed operand, made once
+    // in the entry block; and on Linux the try the pads are ItaniumEndCatchPass's for, entered at
+    // the function's start
+    void prepareFunction(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, FunctionState &state, mlir::Location location)
     {
-        auto location = call->getLoc();
-        mlir::OpBuilder builder(call->getContext());
-        MLIRTypeHelper mth(call->getContext(), compileOptions);
-        MLIRRTTIHelperVC rttih(builder, module, compileOptions);
-
-        auto &entryBlock = funcOp.getBody().front();
-        if (!state.undefArray)
+        if (state.undefArray)
         {
-            builder.setInsertionPointToStart(&entryBlock);
-            if (auto entryOp = mlir::dyn_cast<mlir_ts::EntryOp>(entryBlock.front()))
-            {
-                builder.setInsertionPointAfter(entryOp);
-            }
-
-            // the cleanup marker of a cleanup pad (see TryOpLowering): an array-typed operand
-            auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
-            mlir::Value undefArray = builder.create<mlir_ts::UndefOp>(location, arrTy);
-            auto nullVal = builder.create<mlir_ts::NullOp>(location, mth.getNullType());
-            state.undefArray = builder.create<mlir_ts::InsertPropertyOp>(location, undefArray.getType(), nullVal, undefArray,
-                                                                         MLIRHelper::getStructIndex(builder, 0));
-
-            // the try the pads are ItaniumEndCatchPass's for, entered at the function's start
-            if (!compileOptions.isWindows)
-            {
-                state.tryId = nextTryId++;
-                builder.create<mlir_ts::TryEntryOp>(location, builder.getI32IntegerAttr(state.tryId));
-            }
-
-            funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+            return;
         }
 
-        // the call's block, cut after it
-        auto *callBlock = call->getBlock();
-        auto *continuation = callBlock->splitBlock(call->getNextNode());
+        mlir::OpBuilder builder(funcOp.getContext());
+        MLIRTypeHelper mth(funcOp.getContext(), compileOptions);
 
-        // the pad
+        auto &entryBlock = funcOp.getBody().front();
+        builder.setInsertionPointToStart(&entryBlock);
+        if (auto entryOp = mlir::dyn_cast<mlir_ts::EntryOp>(entryBlock.front()))
+        {
+            builder.setInsertionPointAfter(entryOp);
+        }
+
+        auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
+        mlir::Value undefArray = builder.create<mlir_ts::UndefOp>(location, arrTy);
+        auto nullVal = builder.create<mlir_ts::NullOp>(location, mth.getNullType());
+        state.undefArray = builder.create<mlir_ts::InsertPropertyOp>(location, undefArray.getType(), nullVal, undefArray,
+                                                                     MLIRHelper::getStructIndex(builder, 0));
+
+        if (!compileOptions.isWindows)
+        {
+            state.tryId = nextTryId++;
+            builder.create<mlir_ts::TryEntryOp>(location, builder.getI32IntegerAttr(state.tryId));
+        }
+
+        funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+    }
+
+    // a cleanup pad: the releases, then the unwind goes on - to `dest` (Windows) or out of the
+    // function
+    mlir::Block *cleanupPad(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, FunctionState &state, mlir::Location location,
+                            mlir::Block *after, mlir::Block *dest, int parentPadId, llvm::ArrayRef<mlir::Operation *> releases)
+    {
+        mlir::OpBuilder builder(funcOp.getContext());
+        MLIRRTTIHelperVC rttih(builder, module, compileOptions);
+
         auto *padBlock = new mlir::Block();
-        funcOp.getBody().getBlocks().insertAfter(continuation->getIterator(), padBlock);
+        funcOp.getBody().getBlocks().insertAfter(after->getIterator(), padBlock);
         builder.setInsertionPointToStart(padBlock);
         auto landingPadOp = builder.create<mlir_ts::LandingPadOp>(location, rttih.getLandingPadType(), builder.getBoolAttr(true),
                                                                   mlir::ValueRange{state.undefArray});
@@ -626,16 +884,44 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             landingPadOp->setAttr(ITANIUM_TRY_ID_ATTR_NAME, builder.getI32IntegerAttr(state.tryId));
         }
 
+        if (parentPadId)
+        {
+            landingPadOp->setAttr(EH_PAD_PARENT_ATTR_NAME, builder.getI32IntegerAttr(parentPadId));
+        }
+
         builder.create<mlir_ts::BeginCleanupOp>(location);
         for (auto *release : releases)
         {
             builder.clone(*release);
         }
 
-        builder.create<mlir_ts::EndCleanupOp>(location, landingPadOp, mlir::SmallVector<mlir::Block *>{});
+        llvm::SmallVector<mlir::Block *> dests;
+        if (dest)
+        {
+            dests.push_back(dest);
+        }
+
+        builder.create<mlir_ts::EndCleanupOp>(location, landingPadOp, dests);
+        return padBlock;
+    }
+
+    // a plain call: it becomes an invoke into a cleanup pad that gives the releases back and lets
+    // the exception go on out of the function
+    void makePad(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, FunctionState &state, Site &site,
+                 llvm::ArrayRef<mlir::Operation *> releases)
+    {
+        auto *call = site.call;
+        auto location = call->getLoc();
+        prepareFunction(module, funcOp, state, location);
+
+        // the call's block, cut after it
+        auto *callBlock = call->getBlock();
+        auto *continuation = callBlock->splitBlock(call->getNextNode());
+
+        auto *padBlock = cleanupPad(module, funcOp, state, location, continuation, nullptr, site.parentPadId, releases);
 
         // the call becomes an invoke into it
-        builder.setInsertionPoint(call);
+        mlir::OpBuilder builder(call);
         mlir_ts::InvokeOp invokeOp;
         if (auto symbolCall = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(call))
         {
@@ -659,6 +945,54 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
 
         call->replaceAllUsesWith(invokeOp->getResults());
         call->erase();
+    }
+
+    // An invoke: its unwind goes through the releases first, then on to the pad it went to.
+    // Windows: a cleanup pad beside that one, whose cleanupret unwinds to it. Linux, where a
+    // landing pad is reached only by an unwind edge: a copy of that pad's landing pad - the same
+    // clauses, the same try - then the releases, then a branch into the rest of the pad, which
+    // takes what the landing pad gave as an argument. Nothing is caught and thrown again, so it
+    // does not depend on ItaniumEndCatchPass ending a catch.
+    void chainPad(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, FunctionState &state, Site &site,
+                  llvm::ArrayRef<mlir::Operation *> releases)
+    {
+        auto invokeOp = mlir::cast<mlir_ts::InvokeOp>(site.call);
+        auto location = invokeOp.getLoc();
+        auto *dest = site.dest;
+
+        if (compileOptions.isWindows)
+        {
+            prepareFunction(module, funcOp, state, location);
+            auto *padBlock =
+                cleanupPad(module, funcOp, state, location, invokeOp->getBlock(), dest, site.parentPadId, releases);
+            invokeOp->setSuccessor(padBlock, 1);
+            return;
+        }
+
+        auto destPadOp = landingPadOf(dest);
+        mlir::OpBuilder builder(funcOp.getContext());
+
+        auto *&rest = state.restOf[dest];
+        if (!rest)
+        {
+            rest = dest->splitBlock(destPadOp->getNextNode());
+            auto padValue = rest->addArgument(destPadOp.getType(), destPadOp.getLoc());
+            builder.setInsertionPointToEnd(dest);
+            auto branchOp = builder.create<mlir::cf::BranchOp>(destPadOp.getLoc(), rest, mlir::ValueRange{destPadOp});
+            destPadOp.getResult().replaceAllUsesExcept(padValue, branchOp);
+        }
+
+        auto *padBlock = new mlir::Block();
+        funcOp.getBody().getBlocks().insertAfter(invokeOp->getBlock()->getIterator(), padBlock);
+        builder.setInsertionPointToStart(padBlock);
+        auto *padCopy = builder.clone(*destPadOp);
+        for (auto *release : releases)
+        {
+            builder.clone(*release);
+        }
+
+        builder.create<mlir::cf::BranchOp>(location, rest, padCopy->getResults());
+        invokeOp->setSuccessor(padBlock, 1);
     }
 };
 
