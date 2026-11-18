@@ -1742,6 +1742,8 @@ class MLIRGenImpl
     bool isGenericFunctionReference(mlir::Value functionRefValue);
 
     mlir_ts::FunctionType anyReceiverOfGenericFunction(mlir::Value functionRefValue);
+    void inferTypeParamsOfGenericFunctionValue(mlir::Location location, GenericFunctionInfo::TypePtr functionGenericTypeInfo,
+                                               mlir::Type receiverType, GenContext &funcGenContext);
 
     ValueOrLogicalResult classRefAsClassValue(mlir::Location location, mlir::Value value, const GenContext &genContext);
 

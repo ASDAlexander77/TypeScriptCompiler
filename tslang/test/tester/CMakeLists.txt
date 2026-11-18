@@ -386,6 +386,7 @@ tslang_add_test(NAME test-compile-00-generic-function-type-values COMMAND test-r
 tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
+tslang_add_test(NAME test-compile-00-generic-function-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -1090,6 +1091,8 @@ tslang_add_test(NAME test-jit-00-generic-function-type-values COMMAND test-runne
 tslang_add_test(NAME test-jit-00-import-equals-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00import_equals_value.ts")
 tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
+tslang_add_test(NAME test-jit-00-generic-function-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
+tslang_add_test(NAME test-jit-own-00-generic-function-arguments COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
 tslang_add_test(NAME test-jit-00-string-concat-chain COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -2913,6 +2916,7 @@ set(TSLANG_CORPUS
     00import_equals_value.ts
     00var_function_scope.ts
     00constant_folding.ts
+    00generic_function_arguments.ts
     00string_concat_chain.ts
     00globals_entry_point.ts
     00if_conditional_compile.ts
@@ -3794,6 +3798,16 @@ add_test(NAME test-compile-diagnostic-location-super-without-base
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-super-without-base.obj")
 set_tests_properties(test-compile-diagnostic-location-super-without-base
                      PROPERTIES PASS_REGULAR_EXPRESSION "super_without_base\\.ts:3:16: error: 'super' can only be used in a class that extends another"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# A namespace stored in a variable is an error at the variable: it failed in the lowering
+# ("failed to legalize operation 'ts.NamespaceRef'").
+add_test(NAME test-compile-diagnostic-location-namespace-as-value
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/namespace_as_value.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-namespace-as-value.obj")
+set_tests_properties(test-compile-diagnostic-location-namespace-as-value
+                     PROPERTIES PASS_REGULAR_EXPRESSION "namespace_as_value\.ts:3:5: error: a namespace is not a value"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the

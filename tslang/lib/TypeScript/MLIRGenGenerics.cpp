@@ -634,6 +634,98 @@ namespace mlirgen
         return instantiated.value ? instantiated.value : functionRefValue;
     }
 
+    // A generic function given as a value to a function type (`apply(identity)` for `apply(f: (x: number) =>
+    // number)`, `xs.filter(isDefined)`): its own type parameters are inferred from that type's parameters, as
+    // a call infers them from its arguments. They were left out, which failed with "can't find type by name: T".
+    void MLIRGenImpl::inferTypeParamsOfGenericFunctionValue(mlir::Location location,
+        GenericFunctionInfo::TypePtr functionGenericTypeInfo, mlir::Type receiverType, GenContext &funcGenContext)
+    {
+        auto &typeParams = functionGenericTypeInfo->typeParams;
+        auto funcDecl = functionGenericTypeInfo->functionDeclaration;
+        if (typeParams.empty() || !funcDecl || !receiverType || !mth.isAnyFunctionType(receiverType))
+        {
+            return;
+        }
+
+        auto hasMissing = llvm::any_of(typeParams, [&](auto &typeParam) {
+            return !funcGenContext.typeParamsWithArgs.count(typeParam->getName());
+        });
+        if (!hasMissing)
+        {
+            return;
+        }
+
+        // the declared parameters' types, each type parameter itself
+        GenContext genericGenContext(funcGenContext);
+        genericGenContext.dummyRun = true;
+        auto savedErrorMessagesCount = genericGenContext.postponedMessages ? genericGenContext.postponedMessages->size() : 0;
+        for (auto &typeParam : typeParams)
+        {
+            if (!genericGenContext.typeParamsWithArgs.count(typeParam->getName()))
+            {
+                genericGenContext.typeParamsWithArgs[typeParam->getName()] =
+                    std::make_pair(typeParam, getNamedGenericType(typeParam->getName()));
+            }
+        }
+
+        StringMap<mlir::Type> inferredTypes;
+        for (auto [index, param] : enumerate(funcDecl->parameters))
+        {
+            if (!param->type || param->dotDotDotToken)
+            {
+                continue;
+            }
+
+            auto receiverParamType = mth.getParamFromFuncRef(receiverType, index);
+            if (!receiverParamType || mth.isGenericType(receiverParamType))
+            {
+                continue;
+            }
+
+            auto paramType = getType(param->type, genericGenContext);
+            if (!paramType || !mth.isGenericType(paramType))
+            {
+                continue;
+            }
+
+            inferType(location, paramType, receiverParamType, inferredTypes, genericGenContext);
+        }
+
+        if (genericGenContext.postponedMessages)
+        {
+            rollbackPostponedErrorMessages(genericGenContext.postponedMessages, savedErrorMessagesCount);
+        }
+
+        for (auto &typeParam : typeParams)
+        {
+            if (funcGenContext.typeParamsWithArgs.count(typeParam->getName()))
+            {
+                continue;
+            }
+
+            mlir::Type type;
+            if (auto found = inferredTypes.find(typeParam->getName()); found != inferredTypes.end())
+            {
+                type = found->getValue();
+            }
+
+            if (type && (mth.isGenericType(type) || isa<mlir_ts::NeverType>(type)))
+            {
+                type = mlir::Type();
+            }
+
+            // an `any` given (a value nothing gives types to, instantiateGenericFunctionWithAny) and a type parameter
+            // nothing gives a type are left to the instantiation, as before
+            if (!type || isa<mlir_ts::AnyType>(type))
+            {
+                continue;
+            }
+
+            funcGenContext.typeParamsWithArgs[typeParam->getName()] =
+                std::make_pair(typeParam, mth.wideStorageType(type));
+        }
+    }
+
     mlir::Type MLIRGenImpl::instantiateSpecializedFunctionTypeHelper(mlir::Location location, mlir::Value functionRefValue,
                                                         mlir::Type recieverType, bool discoverReturnType,
                                                         const GenContext &genContext, bool *capturesFirst)
@@ -659,8 +751,17 @@ namespace mlirgen
             MLIRValueGuard<bool> isolateGuard(isolateGeneratedBodies);
             isolateGeneratedBodies = !functionGenericTypeInfo->declaredInFunction;
 
+            // its own type parameters are its own, not those of the same names of the function it is given to
+            GenContext valueGenContext(genContext);
+            for (auto &typeParam : functionGenericTypeInfo->typeParams)
+            {
+                valueGenContext.typeParamsWithArgs.erase(typeParam->getName());
+            }
+
+            inferTypeParamsOfGenericFunctionValue(location, functionGenericTypeInfo, recieverType, valueGenContext);
+
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
-                                                            recieverType, discoverReturnType, genContext, capturesFirst);
+                                                            recieverType, discoverReturnType, valueGenContext, capturesFirst);
         }
 
         // a plausible trigger (a generic function assigned to a variable, then called through
@@ -773,6 +874,8 @@ namespace mlirgen
         }
 
         rollbackPostponedErrorMessages(funcGenContext.postponedMessages, savedErrorMessagesCount);
+
+        inferTypeParamsOfGenericFunctionValue(location, functionGenericTypeInfo, recieverType, funcGenContext);
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -921,6 +1024,18 @@ namespace mlirgen
         {
             GenContext typeGenContext(genericTypeGenContext);
             typeGenContext.dummyRun = true;
+            // a type parameter not inferred yet (`U` of `map<T, U>(items: T[], f: (x: T) => U)` given `identity`)
+            // stays itself, so the parameter's type is `(x: number) => U` and the argument infers it; it was
+            // "can't find type by name: U"
+            for (auto &typeParam : functionGenericTypeInfo->typeParams)
+            {
+                if (!typeGenContext.typeParamsWithArgs.count(typeParam->getName()))
+                {
+                    typeGenContext.typeParamsWithArgs[typeParam->getName()] =
+                        std::make_pair(typeParam, getNamedGenericType(typeParam->getName()));
+                }
+            }
+
             auto recreatedFuncType = instantiateSpecializedFunctionTypeHelper(
                 location, functionGenericTypeInfo->functionDeclaration, mlir::Type(), false,
                 typeGenContext);

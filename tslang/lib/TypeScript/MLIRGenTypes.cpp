@@ -1698,7 +1698,14 @@ namespace mlirgen
         if (exprName == SyntaxKind::QualifiedName)
         {
             // TODO: it seems namespace access, can u optimize it somehow?
-            auto result = mlirGen(exprName.as<QualifiedName>(), genContext);
+            // evaluated where `evaluate` does: `typeof this.x` in a method's signature left its class
+            // reference in the module's body ("failed to legalize operation 'ts.ClassRef'")
+            TempModuleScope tempModuleScope(*this);
+            SymbolTableScopeT varScope(symbolTable);
+            GenContext evalGenContext(genContext);
+            evalGenContext.allowPartialResolve = true;
+            evalGenContext.funcOp = tempFuncOp;
+            auto result = mlirGen(exprName.as<QualifiedName>(), evalGenContext);
             if (result.failed_or_no_value())
             {
                 return mlir::Type();
@@ -2272,9 +2279,14 @@ namespace mlirgen
 
         if (auto keyOfType = dyn_cast<mlir_ts::KeyOfType>(constrainType))
         {
-            auto type = getType(mappedTypeNode->type, genContext);
-            auto nameType = getType(mappedTypeNode->nameType, genContext);
-            if (!type || hasNameType && !nameType)
+            // `{ [K in keyof T]: T[K] }` of a T not known yet: K stands for its constraint (`keyof T`) while the
+            // template and the `as` clause are read, and is the key when there is no `as` clause
+            GenContext keyOfGenContext(genContext);
+            keyOfGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, constrainType)});
+
+            auto type = getType(mappedTypeNode->type, keyOfGenContext);
+            auto nameType = hasNameType ? getType(mappedTypeNode->nameType, keyOfGenContext) : constrainType;
+            if (!type || !nameType)
             {
                 return mlir::Type();
             }
