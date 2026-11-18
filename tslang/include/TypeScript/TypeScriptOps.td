@@ -513,6 +513,18 @@ def TypeScript_IsTupleOfLayoutOp : TypeScript_Op<"IsTupleOfLayout", [Pure]> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
+def TypeScript_AnyCallAdapterOp : TypeScript_Op<"AnyCallAdapter", [Pure]> {
+  let summary = "the adapter that calls the function an any holds";
+  let description = [{
+    The TYPE_DESCR_CALL of the tag of the box $value, which holds a function (its `typeof` is
+    "function"): `(box: any, args: any[]) => any`, made for the function's type when it was boxed
+    (MLIRGenImpl::ensureAnyCallAdapter), or null when none was made for it.
+  }];
+
+  let arguments = (ins TypeScript_Any:$value);
+  let results = (outs TypeScript_Opaque:$res);
+}
+
 def TypeScript_IsTypeTagOfOp : TypeScript_Op<"IsTypeTagOf", [Pure]> {
   let summary = "whether a type tag names an interface";
   let description = [{

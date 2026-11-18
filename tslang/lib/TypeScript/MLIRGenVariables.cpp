@@ -398,8 +398,11 @@ namespace mlirgen
                                 compileOptions, builder, location, init, builder.getI32IntegerAttr(indexSpread));
                             auto value = cl.Tuple(constTupleType, true);
 
-                            //fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
-                            fieldInfos.push_back(srcFieldInfos[indexSpread]);
+                            // the field as it was read: `baz?: any` reads as `any | undefined`, which a field typed
+                            // `any` took uncast, and lowering could not box it (no `typeof` name)
+                            auto fieldInfo = srcFieldInfos[indexSpread];
+                            fieldInfo.type = value.getType();
+                            fieldInfos.push_back(fieldInfo);
                             arrayValues.push_back(value);
                         }
                 
@@ -426,8 +429,11 @@ namespace mlirgen
                                 compileOptions, builder, location, init, builder.getI32IntegerAttr(indexSpread));
                             auto value = cl.Tuple(tupleType, true);
 
-                            //fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
-                            fieldInfos.push_back(srcFieldInfos[indexSpread]);
+                            // the field as it was read: `baz?: any` reads as `any | undefined`, which a field typed
+                            // `any` took uncast, and lowering could not box it (no `typeof` name)
+                            auto fieldInfo = srcFieldInfos[indexSpread];
+                            fieldInfo.type = value.getType();
+                            fieldInfos.push_back(fieldInfo);
                             arrayValues.push_back(value);
                         }
                 

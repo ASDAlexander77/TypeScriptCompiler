@@ -357,7 +357,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     // capture box); it is not part of the name the record carries.
     mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
                                              StringRef releaseRoutineName, StringRef retainRoutineName,
-                                             StringRef shareRoutineName, StringRef variant = "", uint32_t layout = 0)
+                                             StringRef shareRoutineName, StringRef variant = "", uint32_t layout = 0,
+                                             StringRef callRoutineName = "")
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -413,6 +414,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
                     : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), shareRoutineName);
             setStructValue(loc, recordValue, shareValue, TYPE_DESCR_SHARE);
+            mlir::Value callValue =
+                callRoutineName.empty()
+                    ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
+                    : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), callRoutineName);
+            setStructValue(loc, recordValue, callValue, TYPE_DESCR_CALL);
             // a tag doubles as a string payload, so what precedes the name has to read as an
             // immortal block header - see TYPE_DESCR_BLOCK_HEADER
             setStructValue(loc, recordValue,

@@ -1674,6 +1674,16 @@ namespace mlirgen
             return mlirGenSymbolCall(location, callExpression, false, genContext);
         }
 
+        // `__any_call_adapter(box)` of `__any_invoke` (mlirGenAnyCall): the adapter of the function the box holds
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___any_call_adapter"
+            && callExpression->arguments.size() == 1)
+        {
+            auto box = mlirGen(callExpression->arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(box)
+            CAST_A(boxValue, location, getAnyType(), V(box), genContext);
+            return V(builder.create<mlir_ts::AnyCallAdapterOp>(location, getOpaqueType(), boxValue));
+        }
+
         // `Shared.count(s)` (own spec 23.1), unless the program declares its own `Shared`, which
         // wins as it does in type position and in `new`.
         if (callExpr == SyntaxKind::PropertyAccessExpression)
@@ -1835,9 +1845,14 @@ namespace mlirgen
             LLVM_DEBUG(llvm::dbgs() << "\n!! function type: " << funcType << "\n";);
             if (isa<mlir_ts::AnyType>(funcType))
             {
-                // the function's own parameter and result types are not known, so there is no call to make
-                emitError(location, "a value of type 'any' can't be called: give it a function type");
-                return mlir::failure();
+                // through the adapter its function was boxed with (user ruling 11-18); not under -mm=own yet
+                if (compileOptions.memoryModel == MemoryModelOwn)
+                {
+                    emitError(location, "a value of type 'any' can't be called under -mm=own: give it a function type");
+                    return mlir::failure();
+                }
+
+                return mlirGenAnyCall(location, funcResult, callExpression, genContext);
             }
 
             emitError(location, "not a function to call");

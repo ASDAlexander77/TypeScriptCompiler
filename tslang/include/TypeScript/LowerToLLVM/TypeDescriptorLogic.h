@@ -34,13 +34,13 @@ class TypeDescriptorLogic
     {
     }
 
-    // { i32 kind, i32 layout, ptr release, ptr retain, ptr share, blockHeader }: the block header
+    // { i32 kind, i32 layout, ptr release, ptr retain, ptr share, ptr call, blockHeader }: the block header
     // an integer of CompileOptions::heapBlockHeaderBytes, the index width but 8 bytes on wasm32
     static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type blockWordType)
     {
         auto i32Ty = builder.getI32Type();
         auto ptrTy = LLVM::LLVMPointerType::get(builder.getContext());
-        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, blockWordType}, false);
+        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, ptrTy, blockWordType}, false);
     }
 
     LLVM::LLVMStructType getRecordType()
@@ -88,6 +88,15 @@ class TypeDescriptorLogic
         auto layoutPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
                                                       ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_LAYOUT});
         return rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), layoutPtr);
+    }
+
+    // TYPE_DESCR_CALL of the type this tag names: the adapter that calls a boxed function, or null
+    mlir::Value getCallFromTag(mlir::Value tagValue)
+    {
+        auto recordPtr = getRecordPtrFromTag(tagValue);
+        auto callPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
+                                                    ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_CALL});
+        return rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), callPtr);
     }
 
     mlir::Value isKind(mlir::Value tagValue, int kind)
