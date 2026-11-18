@@ -173,6 +173,7 @@ class OwnedReturnConsumptionPass
         if (returnsOwned.empty() && !anyDeclaredRecord)
         {
             claimGlobalInitializers(mth, module);
+            holdReadOnlyNewArrays(module);
             releaseDiscardedTemporaries(mth, module);
             return;
         }
@@ -306,7 +307,70 @@ class OwnedReturnConsumptionPass
 
         claimGlobalInitializers(mth, module);
 
+        holdReadOnlyNewArrays(module);
+
         releaseDiscardedTemporaries(mth, module);
+    }
+
+    // A new array only read where it is made - `[a, b].length`, `[a, b][i]`, `[...xs, y].length` - is born
+    // uncounted (bornUncounted), holding a count of each element, and no receiver ever takes one: a local,
+    // a call (which holds it, see arrayMadeFor), a field or a return each do, and give it back. Nothing gave
+    // this one back, so under rc every evaluation leaked the array and its elements. It takes the count a
+    // receiver would and is marked an owned result, for releaseDiscardedTemporaries to give back at the end
+    // of its block, as a discarded `new C()` is. Only reads that keep nothing - its length, an element
+    // reference - qualify; any other use leaves it to whatever already handles that use.
+    void holdReadOnlyNewArrays(mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir::Operation *> arrays;
+        module.walk([&](mlir::Operation *op) {
+            auto isNewArray = mlir::isa<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(op) ||
+                              (mlir::isa<mlir_ts::LoadOp>(op) && op->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
+            if (!isNewArray || op->getNumResults() != 1 || !mlir::isa<mlir_ts::ArrayType>(op->getResult(0).getType()) ||
+                op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->use_empty() || !op->getParentOfType<mlir_ts::FuncOp>())
+            {
+                return;
+            }
+
+            // An element read out and handed on by a terminator - a conditional expression's branch yielding
+            // `[s][0]` - leaves the block before its receiver takes a count: given back with the array at the
+            // end of the block, it would be freed first.
+            auto elementLeavesBlock = [](mlir::Operation *elementRef) {
+                for (auto *read : elementRef->getUsers())
+                {
+                    for (auto *user : read->getUsers())
+                    {
+                        if (user->hasTrait<mlir::OpTrait::IsTerminator>())
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            };
+
+            auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
+                return mlir::isa<mlir_ts::LengthOfOp>(user) ||
+                       (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
+            });
+            if (onlyRead)
+            {
+                arrays.push_back(op);
+            }
+        });
+
+        for (auto *op : arrays)
+        {
+            mlir::OpBuilder builder(op->getContext());
+            builder.setInsertionPointAfter(op);
+            builder.create<mlir_ts::RetainOp>(op->getLoc(), op->getResult(0));
+            op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+        }
     }
 
     // A `yield` hands its `{ value, done }` record to the caller the way a `return` does, with a
