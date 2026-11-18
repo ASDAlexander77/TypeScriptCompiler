@@ -177,6 +177,17 @@ class OwnedReturnConsumptionPass
             return;
         }
 
+        // Every adapter for calls through `any` here returns owned (they are all made by the same code, as
+        // they are in another module): then so does the call of one in `__any_invoke`, whichever it reaches.
+        // One that is not turns it off - the leaking side, as for any other call.
+        auto everyAnyCallAdapterReturnsOwned = true;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp->hasAttr(ANY_CALL_ADAPTER_ATTR_NAME) && !returnsOwned.contains(funcOp.getName()))
+            {
+                everyAnyCallAdapterReturnsOwned = false;
+            }
+        });
+
         llvm::SmallVector<mlir::Operation *> toErase;
         module.walk([&](mlir_ts::CallIndirectOp callOp) {
             if (callOp.getNumResults() != 1)
@@ -192,7 +203,10 @@ class OwnedReturnConsumptionPass
 
             auto callee = calleeNameOf(callOp, fieldFunctions);
             auto calleeReturnsOwned = (!callee.empty() && returnsOwned.contains(callee)) ||
-                                      (anyDeclaredRecord && calleeDeclaresRecord(module, callOp));
+                                      (anyDeclaredRecord && calleeDeclaresRecord(module, callOp)) ||
+                                      // the call of an adapter in `__any_invoke`: one of this module's, or
+                                      // another's made by the same code
+                                      (callOp->hasAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME) && everyAnyCallAdapterReturnsOwned);
 
             // A call through a plain value - a callback handed to `reduce`, a function-typed
             // field - names nothing at all, and neither vtables nor member names help. What does

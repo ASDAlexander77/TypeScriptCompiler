@@ -40,6 +40,10 @@
 // returns a heap value without any retain, and treating one of those as owned would skip a
 // retain nobody performed and free live memory.
 #define OWNED_RESULT_ATTR_NAME "__owned_result"
+// an adapter for calls through `any` (MLIRGenImpl::ensureAnyCallAdapter), and the call of one in `__any_invoke`:
+// the call returns what the adapter returns, owned when every adapter here returns owned (OwnedReturnConsumptionPass)
+#define ANY_CALL_ADAPTER_ATTR_NAME "__any_call_adapter"
+#define ANY_CALL_ADAPTER_CALL_ATTR_NAME "__any_call_adapter_call"
 
 // On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
 // it, so its lowering does not warn that an optional value is read as it is.

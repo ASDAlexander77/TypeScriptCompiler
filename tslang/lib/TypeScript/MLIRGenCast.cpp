@@ -4405,6 +4405,8 @@ namespace mlirgen
         if (auto adapterOp = theModule.lookupSymbol(adapterName))
         {
             mlir::SymbolTable::setSymbolVisibility(adapterOp, mlir::SymbolTable::Visibility::Public);
+            // its call in `__any_invoke` returns what it returns (OwnedReturnConsumptionPass)
+            adapterOp->setAttr(ANY_CALL_ADAPTER_ATTR_NAME, builder.getUnitAttr());
         }
 
         // for the type's descriptor (TypeDescriptorOpLowering): TYPE_DESCR_CALL
@@ -4516,9 +4518,22 @@ namespace mlirgen
         operands.push_back(callee);
         operands.push_back(V(argumentsResult));
 
-        return mlirGenCallExpression(location, funcRef,
-                                     {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_INVOKE_T")).as<Node>())},
-                                     operands, invokeGenContext);
+        auto result = mlirGenCallExpression(location, funcRef,
+                                            {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_INVOKE_T")).as<Node>())},
+                                            operands, invokeGenContext);
+
+        // the one call through a value in `__any_invoke` is the adapter's: it returns what the adapter returns,
+        // a box its caller owns (OwnedReturnConsumptionPass) - counted as a call of nothing known, it leaked
+        theModule.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp.getName().starts_with("___any_invoke<"))
+            {
+                funcOp.walk([&](mlir_ts::CallIndirectOp callOp) {
+                    callOp->setAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME, builder.getUnitAttr());
+                });
+            }
+        });
+
+        return result;
     }
 
 } // namespace mlirgen
