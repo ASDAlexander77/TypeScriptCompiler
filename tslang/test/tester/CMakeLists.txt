@@ -338,6 +338,8 @@ tslang_add_test(NAME test-compile-00-typeof-function-narrowing COMMAND test-runn
 tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
+tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
@@ -1042,6 +1044,8 @@ tslang_add_test(NAME test-jit-00-typeof-function-narrowing COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00never_type.ts")
+tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
+tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-jit-00-const-array-nested-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
@@ -3121,6 +3125,8 @@ set(TSLANG_CORPUS
     00typeof_static_fold_conditions.ts
     00typeof_union_narrowing.ts
     00never_type.ts
+    00cast_any_literal_field.ts
+    00f_bounded_generic.ts
     00types_indexedaccesstype.ts
     00types_keyof_enum.ts
     00types_mappedtype.ts
@@ -3963,7 +3969,14 @@ set(crash_error_cases
     "never_unhandled_case.ts|never_unhandled_case\\.ts:7:40: error: a value of type .* can't be converted to 'never'"
     "never_variable_no_initializer.ts|never_variable_no_initializer\\.ts:2:9: error: variable 'x' can't be 'never' type without an initializer"
     "never_property_access.ts|never_property_access\\.ts:5:12: error: Can't resolve property 'n' of type never"
-    "never_call.ts|never_call\\.ts:5:5: error: not a function to call")
+    "never_call.ts|never_call\\.ts:5:5: error: not a function to call"
+    # a generic that expands forever is TS2589: `I<T>` with a field `I<T[]>` (past the depth limit), and
+    # `Foo<T>` with a field `Foo<Foo<T>>`, whose name doubled at each level and took the time instead. The error
+    # was dropped with the pass that made it, and the program compiled with the field cut off.
+    "infinite_generic_expansion.ts|infinite_generic_expansion\\.ts:2:8: error: Type instantiation is excessively deep and possibly infinite"
+    "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
+    # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
+    "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite")
 foreach(crash_error_case ${crash_error_cases})
     string(FIND "${crash_error_case}" "|" crash_error_sep)
     string(SUBSTRING "${crash_error_case}" 0 ${crash_error_sep} crash_error_file)
@@ -3981,10 +3994,9 @@ foreach(crash_error_case ${crash_error_cases})
 endforeach()
 # a JSX element closed by its own tag is not a closing-tag mismatch (the parser dropped tag names)
 set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL_REGULAR_EXPRESSION "closing tag")
-# `export {}` and `export as namespace` make no code: they compile. So do a generic that expands forever
-# (`I<T>` with a field `I<T[]>`: past the instantiation limit), a predicate naming no parameter, a `never`
-# field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
-foreach(crash_ok_name export_empty export_as_namespace infinite_generic_expansion type_predicate_unknown_parameter
+# `export {}` and `export as namespace` make no code: they compile. So do a predicate naming no parameter, a
+# `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
+foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
                       module_try_catch_finally_locals)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")

@@ -1436,6 +1436,11 @@ namespace mlirgen
         }
 
         auto notResolved = processStatements(module->statements, genContextPartial);
+        if (notResolved)
+        {
+            // (one that did not fail the discovery is reported by the generation that follows)
+            takeExcessiveInstantiationError();
+        }
 
         // clean up; the ops this pass created go away with the discovery module on scope exit
         clearTempModule();
@@ -1511,6 +1516,8 @@ namespace mlirgen
         {
             notResolved = 1;
         }
+
+        notResolved += takeExcessiveInstantiationError();
 
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {

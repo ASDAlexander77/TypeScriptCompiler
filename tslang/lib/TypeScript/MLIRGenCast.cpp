@@ -15,6 +15,38 @@ namespace typescript
 namespace mlirgen
 {
 
+    // A type's name in a message of the source made for a cast: inside a string literal, so its quotes and
+    // backslashes escaped (a literal type's quotes ended the string, and the source did not parse), and cut short
+    // (a type of 457K fields printed into the source twice took minutes).
+    static std::wstring nameInGeneratedString(StringRef name)
+    {
+        constexpr size_t MaxLength = 256;
+        std::string escaped;
+        for (auto c : name.take_front(MaxLength))
+        {
+            if (c == '"' || c == '\\')
+            {
+                escaped.push_back('\\');
+                escaped.push_back(c);
+            }
+            else if (c == '\n' || c == '\r')
+            {
+                escaped.push_back(' ');
+            }
+            else
+            {
+                escaped.push_back(c);
+            }
+        }
+
+        if (name.size() > MaxLength)
+        {
+            escaped.append("...");
+        }
+
+        return stows(escaped);
+    }
+
     // Field list for the clone made when a tuple/object value can't be cast to an
     // interface as-is (field types need coercion, e.g. si32 -> number, or a
     // func-typed field vs a method's funcType). The clone MUST keep the SOURCE
@@ -3437,8 +3469,8 @@ namespace mlirgen
         removeGenericFunctionMap(funcName);
 
         auto throwNotImplemented = [&](stringstream &ss, StringRef className) {
-            ss << S("throw \"Can't cast from any: class '") << stows(className.str())
-               << S("' does not implement interface '") << stows(interfaceInfo->fullName.str()) << S("'\";\n");
+            ss << S("throw \"Can't cast from any: class '") << nameInGeneratedString(className)
+               << S("' does not implement interface '") << nameInGeneratedString(interfaceInfo->fullName) << S("'\";\n");
         };
 
         // `a` narrowed by `typeof` is the first word of the box; `b` is the box
@@ -3457,7 +3489,7 @@ namespace mlirgen
         }
 
         ss << S("throw \"Can't cast from any: the class object has no vtable for interface '")
-           << stows(interfaceInfo->fullName.str()) << S("'\";\n}\n");
+           << nameInGeneratedString(interfaceInfo->fullName) << S("'\";\n}\n");
 
         ss << S("if (typeof a == 'interface') {\nconst i = <TYPE_ANY_INTERFACE_ALIAS>b;\n");
         for (auto [index, _] : enumerate(implementers))
@@ -3476,7 +3508,7 @@ namespace mlirgen
         // an object literal, boxed as it is: the box says only that it is one, not what fields it has, so
         // no vtable can be found for it here, and its block read as the interface's pair called garbage
         ss << S("if (typeof a == 'object' || typeof a == 'tuple') throw \"Can't cast from any: an object literal has no vtable for interface '")
-           << stows(interfaceInfo->fullName.str()) << S("'\";\n");
+           << nameInGeneratedString(interfaceInfo->fullName) << S("'\";\n");
         // null and undefined have a box of their own under the counting models, not the null pair
         ss << S("if (typeof a == 'null' || typeof a == 'undefined') {\nconst n: TYPE_ANY_INTERFACE_ALIAS | null = null;\nreturn <T>n;\n}\n");
         ss << S("return <T><TYPE_ANY_INTERFACE_ALIAS>a;\n}\n");
@@ -3547,9 +3579,9 @@ namespace mlirgen
         stringstream ss;
         ss << S("function __check_tuple<T>(a: any, sameLayout: boolean) {\n");
         ss << S("if (typeof a != 'tuple') throw \"Can't cast from any: the value is not an object of type '")
-           << stows(to_print(type)) << S("'\";\n");
+           << nameInGeneratedString(to_print(type)) << S("'\";\n");
         ss << S("if (!sameLayout) throw \"Can't cast from any: the object's fields are not those of type '")
-           << stows(to_print(type)) << S("'\";\n}\n");
+           << nameInGeneratedString(to_print(type)) << S("'\";\n}\n");
 
         auto src = ss.str();
 
