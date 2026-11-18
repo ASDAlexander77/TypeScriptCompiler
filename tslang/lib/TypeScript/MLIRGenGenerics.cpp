@@ -118,6 +118,13 @@ namespace mlirgen
         }
 
         auto typeInterfaceInfo = getInterfaceInfoByFullName(typeInterface.getName().getValue());
+        // the argument's interface not declared (yet): nothing to infer from it (its type parameters were read
+        // through a null pointer)
+        if (!typeInterfaceInfo)
+        {
+            return false;
+        }
+
         if (auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue()))
         {
             for (auto &templateParam : tempInterfaceInfo->typeParamsWithArgs)

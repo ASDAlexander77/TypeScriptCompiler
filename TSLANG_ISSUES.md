@@ -1611,4 +1611,24 @@ Two crashes that already happened before, which more tests reach through erasure
   `aliasInstantiationExpressionGenericIntersectionNoCrash1.ts`) aborted the lowering. Now it is an error:
   "the intersection has no single type".
 
+135 (crashes, eighth batch). Stacks of the 52 tsc-clean non-JSX crashes were taken with the debug build and
+grouped. Fixed, 23 tests: each read a type or info that could not be made, now each is checked:
+- a template literal type span (`getTemplateLiteralSpan`, 4);
+- `Record<K, V>` of keys or values not made (`RecordType`, 2);
+- `for...in` over a value with no type (`forInFieldKeys`, 2);
+- an index signature of no function type;
+- a constraint met by an interface not declared yet (`extendsType`, 3);
+- `super` in a class that extends nothing ("'super' can only be used in a class that extends another", 3);
+- a base class entry that is null (`getHasVirtualTable`);
+- inference from an interface not declared yet (`tryInferInterface`, 2);
+- narrowing to a type that could not be made (`isSafeTypeTheSameAndNoNeedToCast`, 3).
+
+Still crashing (29):
+- a builder inserting into a block that is gone (`globalVariableAccess`: `errorConstructorSubtypes.ts`,
+  `discriminantOrderIndependence.ts`);
+- recursion with no bound in the type printer and in type instantiation (`checkInfiniteExpansionTermination*.ts`,
+  `recursiveTypes1.ts`, `stableTypeMapperOrdering.ts`, `varianceProbling*.ts`, `subclassThisTypeAssignable02.ts`);
+- `parsingDeepParenthensizedExpression.ts` (the parser's recursion);
+- the rest, each its own.
+
 Test: `00satisfies_object_builtins.ts` (all four models).

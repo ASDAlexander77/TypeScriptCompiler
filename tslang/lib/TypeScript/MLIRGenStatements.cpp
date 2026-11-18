@@ -1229,6 +1229,11 @@ namespace mlirgen
     // False when the type has no fields known at compile time.
     bool MLIRGenImpl::forInFieldKeys(mlir::Type type, SmallVector<std::string> &keys)
     {
+        if (!type)
+        {
+            return false;
+        }
+
         ArrayRef<mlir_ts::FieldInfo> fields;
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {
