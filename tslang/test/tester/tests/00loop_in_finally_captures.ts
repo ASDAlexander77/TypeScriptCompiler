@@ -30,7 +30,7 @@ function inFinally(n: number) {
         }
     }
 
-    let sum = 0;
+    let sum: number = 0;
     for (const c of fns) sum += c();
     return sum;
 }
@@ -46,13 +46,13 @@ function inCatch(n: number) {
         }
     }
 
-    let sum = 0;
+    let sum: number = 0;
     for (const c of fns) sum += c();
     return sum;
 }
 
 function sharedInFinally(n: number) {
-    let sum = 0;
+    let sum: number = 0;
     try {
         f(1);
     } finally {
