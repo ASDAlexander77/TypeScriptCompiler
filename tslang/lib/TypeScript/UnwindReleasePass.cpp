@@ -669,6 +669,48 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         return used;
     }
 
+    // The names a resource goes by: a value, the slots it is stored into and what is loaded from
+    // them; a slot, what is stored into it and loaded from it. A hold kept both as a value and in a
+    // slot of its own (OwnedReturnConsumptionPass::holdGlobalArguments) is released through either.
+    static llvm::SmallVector<mlir::Value> aliasesOf(mlir::Value resource)
+    {
+        llvm::SmallVector<mlir::Value> aliases{resource};
+        llvm::SmallVector<mlir::Value> slots;
+        if (mlir::isa<mlir_ts::RefType>(resource.getType()))
+        {
+            slots.push_back(resource);
+        }
+
+        for (auto *user : resource.getUsers())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+            {
+                if (storeOp.getValue() == resource)
+                {
+                    slots.push_back(storeOp.getReference());
+                    aliases.push_back(storeOp.getReference());
+                }
+                else
+                {
+                    aliases.push_back(storeOp.getValue());
+                }
+            }
+        }
+
+        for (auto slot : slots)
+        {
+            for (auto *user : slot.getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    aliases.push_back(loadOp.getResult());
+                }
+            }
+        }
+
+        return aliases;
+    }
+
     // ---- making the pads ----
 
     struct FunctionState
@@ -757,7 +799,9 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
 
                 // the handler an invoke unwinds to now must have nothing more to do with it: the
                 // pad gives it back for good
-                if (site.dest && usedFrom(site.dest).contains(resource))
+                if (site.dest && llvm::any_of(aliasesOf(resource), [&](mlir::Value alias) {
+                        return usedFrom(site.dest).contains(alias);
+                    }))
                 {
                     continue;
                 }
