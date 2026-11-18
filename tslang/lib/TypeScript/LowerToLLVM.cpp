@@ -2310,8 +2310,8 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         // a symbol is the address of a constant string that reads what String(symbol) gives: `Symbol(d)` for
         // `Symbol("d")` (named `Symbol(d)@<where>`, MLIRGenImpl::mlirGenSymbolCall), `Symbol(Symbol.iterator)`
-        // for a well-known one (named `iterator`). The rest of the name follows the text's end, so that no
-        // two symbols share their string
+        // for a well-known one (named `iterator`). The name follows the text's end: it is what tells two symbols
+        // apart (LogicOp compares it), the same for `Symbol.for("d")` in every module and library
         if (isa<mlir_ts::SymbolType>(type))
         {
             LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);

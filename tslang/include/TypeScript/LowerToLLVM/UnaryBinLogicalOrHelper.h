@@ -310,16 +310,29 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     else if (isa<mlir_ts::SymbolType>(MLIRHelper::stripLiteralType(leftType))
              && isa<mlir_ts::SymbolType>(MLIRHelper::stripLiteralType(rightType)))
     {
-        // a symbol is the address of its own constant string: the same symbol is the same address
-        auto intPtrType = llvmtch.getIntPtrType(0);
+        // a symbol is the address of a constant string, `Symbol(d)`, followed past its end by the symbol's
+        // name (ConstantOpLowering): two symbols are the same when their names are. Not when their addresses
+        // are - each module, and each library, holds its own copy of the string of `Symbol.for("d")`
+        auto ctx = builder.getContext();
+        auto stringType = mlir_ts::StringType::get(ctx);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(ctx);
+        auto llvmIndexType = typeConverter.convertType(builder.getIndexType());
 
-        mlir::Value leftAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftType), left);
-        mlir::Value rightAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightType), right);
+        auto nameOf = [&](mlir::Value symbol, mlir::Type symbolType) -> mlir::Value {
+            mlir::Value text = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(symbolType), symbol);
+            mlir::Value textAsString = builder.create<mlir_ts::DialectCastOp>(loc, stringType, text);
+            mlir::Value length = builder.create<mlir_ts::StringLengthOp>(loc, builder.getIndexType(), textAsString);
+            mlir::Value llvmLength = builder.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, length);
+            mlir::Value one = builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIntegerAttr(llvmIndexType, 1));
+            mlir::Value offset = builder.create<LLVM::AddOp>(loc, llvmLength, one);
+            mlir::Value name = builder.create<LLVM::GEPOp>(loc, llvmPtrType, builder.getI8Type(), text, ValueRange{offset});
+            return builder.create<mlir_ts::DialectCastOp>(loc, stringType, name);
+        };
 
-        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftAsLLVMType);
-        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightAsLLVMType);
-
-        return builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
+        auto boolType = mlir_ts::BooleanType::get(ctx);
+        mlir::Value value = builder.create<mlir_ts::StringCompareOp>(loc, boolType, nameOf(left, leftType), nameOf(right, rightType),
+                                                                     builder.getI32IntegerAttr((int)op));
+        return builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(boolType), value);
     }
     else if (isa<mlir_ts::InterfaceType>(leftType))
     {

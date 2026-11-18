@@ -1843,6 +1843,8 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 tslang_add_test(NAME test-compile-shared-export-import-redeclared-field COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
 tslang_add_test(NAME test-jit-shared-export-import-redeclared-field COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_redeclared_field.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_redeclared_field.ts")
+tslang_add_test(NAME test-compile-shared-export-import-symbol COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_symbol.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_symbol.ts")
+tslang_add_test(NAME test-jit-shared-export-import-symbol COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_symbol.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_symbol.ts")
 # a @final class across the boundary: direct calls from the importer, compiled and under the JIT
 # own: the importer owns what the generator method's next() gives it (isIteratorNext)
 foreach(final_mm gc rc own)
@@ -2115,10 +2117,6 @@ set_tests_properties(test-compile-final-accessor-override-error PROPERTIES PASS_
 add_test(NAME test-compile-final-method-abstract-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/final_method_abstract_error.ts")
 set_tests_properties(test-compile-final-method-abstract-error PROPERTIES PASS_REGULAR_EXPRESSION "method 'factor' cannot be both abstract and @final"
-                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-symbol-value-error
-         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/symbol_value_error.ts")
-set_tests_properties(test-compile-symbol-value-error PROPERTIES PASS_REGULAR_EXPRESSION "a symbol has no value at run time yet"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-computed-name-failed-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
@@ -4013,7 +4011,7 @@ set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
-                      module_try_catch_finally_locals)
+                      module_try_catch_finally_locals call_signature_interface)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none

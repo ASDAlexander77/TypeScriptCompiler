@@ -56,9 +56,9 @@ function main() {
     const symbols: symbol[] = [k, Symbol.iterator];
     assert(symbols[0] === k && symbols[1] !== k, "array of symbols");
 
-    assert(String(k) == "Symbol(k)", "text of a symbol");
-    assert(String(Symbol.iterator) == "Symbol(Symbol.iterator)", "text of a well-known symbol");
-    assert(String(Symbol.iterator).length == 23, "length of the text of a symbol");
+    assert(<string>k == "Symbol(k)", "text of a symbol");
+    assert(<string>Symbol.iterator == "Symbol(Symbol.iterator)", "text of a well-known symbol");
+    assert((<string>Symbol.iterator).length == 23, "length of the text of a symbol");
 
     print("done.");
 }
