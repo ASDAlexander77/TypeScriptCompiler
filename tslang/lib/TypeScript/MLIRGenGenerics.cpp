@@ -1751,6 +1751,11 @@ namespace mlirgen
                 return {mlir::failure(), mlir::Type()};
             }
 
+            // (one of its arguments still generic: an instantiation past the limits under it does not fail the module)
+            MLIRValueGuard<int> nonFatalGuard(
+                nonFatalInstantiations,
+                nonFatalInstantiations + (hasAnyNamedGenericType == IsGeneric::True ? 1 : 0));
+
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
                        for (auto &typeParam
                             : genericTypeGenContext.typeParamsWithArgs) llvm::dbgs()
@@ -1831,6 +1836,11 @@ namespace mlirgen
             {
                 return {mlir::failure(), mlir::Type()};
             }
+
+            // (one of its arguments still generic: an instantiation past the limits under it does not fail the module)
+            MLIRValueGuard<int> nonFatalGuard(
+                nonFatalInstantiations,
+                nonFatalInstantiations + (hasAnyNamedGenericType == IsGeneric::True ? 1 : 0));
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
                        for (auto &typeParam
@@ -2085,6 +2095,11 @@ namespace mlirgen
             {
                 return {mlir::failure(), mlir::Type()};
             }
+
+            // (one of its arguments still generic: an instantiation past the limits under it does not fail the module)
+            MLIRValueGuard<int> nonFatalGuard(
+                nonFatalInstantiations,
+                nonFatalInstantiations + (hasAnyNamedGenericType == IsGeneric::True ? 1 : 0));
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized interface: " << fullNameGenericInterfaceTypeName
                                     << " ";

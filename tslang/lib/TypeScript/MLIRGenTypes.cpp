@@ -297,6 +297,10 @@ namespace mlirgen
     Reason MLIRGenImpl::testConstraint(mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext,
         bool reportFailure) {
+        // an F-bounded constraint (`interface Entity<T extends Entity<T>>`, `Customer extends Person<Customer>`)
+        // instantiates itself again to be tested: past the limits it is not met, which does not fail the module
+        MLIRValueGuard<int> nonFatalGuard(nonFatalInstantiations, nonFatalInstantiations + 1);
+
         // we need to add current type into context to be able to use it in resolving "extends" constraints
         GenContext constraintGenContext(genContext);
         for (auto &typeParamWithArg : pairs)

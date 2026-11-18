@@ -19591,10 +19591,14 @@ class MLIRGenImpl
     // instantiation is not tried again, so the error was lost: the program failed with "failed statement" alone, or
     // compiled with the member cut off. The module reports it once it is generated (mlirCodeGenModule).
     std::optional<mlir::Location> excessiveInstantiationLocation;
+    // Except under an instantiation whose arguments are still generic: checking an F-bounded constraint
+    // (`interface Entity<T extends Entity<T>>`) instantiates `Entity<T>` for a `T` whose constraint is that again,
+    // and nothing of it is kept.
+    int nonFatalInstantiations = 0;
 
     void reportExcessiveInstantiation(mlir::Location location)
     {
-        if (!excessiveInstantiationLocation)
+        if (!excessiveInstantiationLocation && nonFatalInstantiations == 0)
         {
             excessiveInstantiationLocation = location;
         }
