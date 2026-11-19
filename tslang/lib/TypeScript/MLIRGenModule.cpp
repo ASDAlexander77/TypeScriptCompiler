@@ -582,13 +582,6 @@ namespace mlirgen
             compileOptions.generateDebugInfo = storeDebugInfo;
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
-                // ...and of what the entry code boxed, made after them
-                {
-                    GenContext genContext{};
-                    genContext.rootContext = &genContext;
-                    makePendingAnyKeysAdapters(genContext);
-                }
-
                 devirtualizeClosedMethods();
                 markFinalClasses();
                 return theModule;
@@ -1560,6 +1553,10 @@ namespace mlirgen
                 return mlir::failure();
             }
         }
+
+        // ...and of what the entry code boxed: made here, inside the module's own generation (after it, they
+        // missed what it does next and left references unlowered)
+        makePendingAnyKeysAdapters(genContext);
 
         clearTempModule();
 
