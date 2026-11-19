@@ -12,3 +12,4 @@ json.ts none                    # (default library) builds a 100000-character st
 
 # refused by design under the model, as in ctest (which registers them under the other models only)
 00weak_field.ts rc              # '@weak' is not supported under -mm=rc (own spec 93): ctest runs it under gc, none and own
+00let_without_initializer_owns.ts own # copies an `any` holding an object, which -mm=own refuses at run time: ctest runs it under gc, rc and none

@@ -1496,6 +1496,12 @@ namespace mlirgen
             notResolved = 1;
         }
 
+        // the keys adapters of what the statements boxed into `any` (MLIRGenImpl::ensureAnyKeysAdapter)
+        if (notResolved == 0)
+        {
+            makePendingAnyKeysAdapters(genContext);
+        }
+
         notResolved += takeExcessiveInstantiationError();
 
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
@@ -1547,6 +1553,10 @@ namespace mlirgen
                 return mlir::failure();
             }
         }
+
+        // ...and of what the entry code boxed: made here, inside the module's own generation (after it, they
+        // missed what it does next and left references unlowered)
+        makePendingAnyKeysAdapters(genContext);
 
         clearTempModule();
 

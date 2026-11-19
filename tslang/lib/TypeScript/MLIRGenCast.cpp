@@ -1354,6 +1354,15 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // a constant array (`const a: any = [1, 2]`) is boxed as the array it makes: `<number[]>a`, and its keys read
+        // through `any`, read the box as an array, and a constant array's is not one (a crash)
+        if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType); constArrayType && isa<mlir_ts::AnyType>(type))
+        {
+            auto arrayType = mlir_ts::ArrayType::get(mth.wideStorageType(constArrayType.getElementType()));
+            CAST_A(arrayValue, location, arrayType, value, genContext);
+            return cast(location, type, arrayValue, genContext, disableStrictNullCheck);
+        }
+
         // Boxing into `any` makes the box an owner of what it now holds, and it has to take a
         // reference to say so: an `any` releases its payload through the type tag beside it when
         // the box dies (`buildBody`, AnyType). Nothing took one. The payload was copied in, and
@@ -1370,6 +1379,29 @@ namespace mlirgen
             if (isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(valueType))
             {
                 ensureAnyCallAdapter(location, valueType, genContext);
+            }
+
+            // ...and a key of a tuple, class, interface or array boxed in one read through it (user ruling 11-19):
+            // its keys adapter, for each of a union's members it may hold
+            auto ensureKeys = [&](mlir::Type boxedType) {
+                boxedType = TypeOfOpHelper::typeOfBaseType(boxedType);
+                if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ClassType, mlir_ts::InterfaceType,
+                        mlir_ts::ArrayType, mlir_ts::ConstArrayType>(boxedType))
+                {
+                    ensureAnyKeysAdapter(location, boxedType, genContext);
+                }
+            };
+
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(valueType))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    ensureKeys(member);
+                }
+            }
+            else
+            {
+                ensureKeys(valueType);
             }
         }
 
@@ -4604,6 +4636,461 @@ namespace mlirgen
                 });
             }
         });
+
+        return result;
+    }
+
+    // a number key, boxed as a number or as an integer (a literal given as `any`: "s32"), by its `typeof` in
+    // `kt` - not `typeof key` itself, which narrows `key` to a number whose box an s32 is not
+    static const std::string anyKeyIsNumberSource =
+        "kt == \"number\" || kt == \"s32\" || kt == \"s64\" || kt == \"u32\" || kt == \"u64\"";
+
+    bool MLIRGenImpl::anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
+                                    llvm::StringSet<> *optionals)
+    {
+        llvm::StringSet<> seen;
+        auto addKey = [&](SmallVector<std::string> &keys, StringRef name) {
+            // the compiler's own fields (`.vtbl`, `.rtti`, a base), a private name, and a constructor are no keys
+            if (name.empty() || name.starts_with(".") || name.starts_with("#") || name == "constructor")
+            {
+                return;
+            }
+
+            if (seen.insert(name).second)
+            {
+                keys.push_back(name.str());
+            }
+        };
+
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+        {
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                return false;
+            }
+
+            // its public members: the adapter reads them as any code outside the class would
+            std::function<void(ClassInfo::TypePtr)> walk = [&](ClassInfo::TypePtr info) {
+                auto storageType = mlir::cast<mlir_ts::ClassStorageType>(info->classType.getStorageType());
+                for (auto &field : storageType.getFields())
+                {
+                    if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                        name && field.accessLevel == mlir_ts::AccessLevel::Public)
+                    {
+                        addKey(values, name.getValue());
+                    }
+                }
+
+                for (auto &accessor : info->accessors)
+                {
+                    if (!accessor.isStatic && accessor.get && accessor.getAccessLevel == mlir_ts::AccessLevel::Public)
+                    {
+                        addKey(values, accessor.name);
+                    }
+                }
+
+                for (auto &method : info->methods)
+                {
+                    if (!method.isStatic && method.accessLevel == mlir_ts::AccessLevel::Public)
+                    {
+                        addKey(methods, method.name);
+                    }
+                }
+
+                for (auto &baseClass : info->baseClasses)
+                {
+                    walk(baseClass);
+                }
+            };
+
+            walk(classInfo);
+            return true;
+        }
+
+        if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
+        {
+            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            if (!interfaceInfo)
+            {
+                return false;
+            }
+
+            std::function<void(InterfaceInfo::TypePtr)> walk = [&](InterfaceInfo::TypePtr info) {
+                for (auto &field : info->fields)
+                {
+                    if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
+                    {
+                        addKey(values, name.getValue());
+                        if (field.isConditional && optionals)
+                        {
+                            optionals->insert(name.getValue());
+                        }
+                    }
+                }
+
+                for (auto &accessor : info->accessors)
+                {
+                    addKey(values, accessor.name);
+                }
+
+                for (auto &method : info->methods)
+                {
+                    addKey(methods, method.name);
+                }
+
+                for (auto &extend : info->extends)
+                {
+                    if (extend.second)
+                    {
+                        walk(extend.second);
+                    }
+                }
+            };
+
+            walk(interfaceInfo);
+            return true;
+        }
+
+        if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type))
+        {
+            SmallVector<std::string> keys;
+            if (!forInFieldKeys(type, keys))
+            {
+                return false;
+            }
+
+            for (auto &key : keys)
+            {
+                addKey(values, key);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // The adapter of a tuple, class or interface type T whose keys are a, b, ... and methods m, ...:
+    //
+    //   function __any_keys_<hash><T>(box: any, op: number, key: any, value: any): any {
+    //       const k = the key's text (a string, or a number's: a tuple's position), else
+    //           return op == HAS ? <any>false : undefined;
+    //       const o = <T>box;
+    //       if (k == "a") return op == HAS ? <any>true : <any>o["a"];
+    //       ...
+    //       if (k == "m") { if (op == HAS) return <any>true; throw new TypeError(...); }
+    //       return op == HAS ? <any>false : undefined;
+    //   }
+    //
+    // and of an array type A, one generic for every array:
+    //
+    //   function __any_keys_array<A>(box: any, op: number, key: any, value: any): any {
+    //       a number key in range its element, "length" its length, anything else undefined
+    //   }
+    //
+    // instantiated for T: what a key reads is boxed as any value is. The keys are those of the type the value
+    // had when it was boxed (a Derived boxed as a Base has a Base's), and a class's public ones only. A method is there for `in`, but reading one
+    // is a TypeError (a method read off its object is not a value here). Not for -mm=own, as calls of `any` are
+    // not. Whatever fails leaves the type without one, and a key read through it a TypeError.
+    void MLIRGenImpl::ensureAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel == MemoryModelOwn || genContext.allowPartialResolve || mth.isGenericType(type))
+        {
+            return;
+        }
+
+        // made once the module's statements are (makePendingAnyKeysAdapters), not here: here is the middle of
+        // whatever boxed it - an arrow function, a generic instantiated while its arguments are inferred, another
+        // adapter - and an adapter made inside one was made twice, or used a value of the function around it
+        anyKeysAdaptersPending.push_back({location, type});
+    }
+
+    void MLIRGenImpl::makePendingAnyKeysAdapters(const GenContext &genContext)
+    {
+        // an adapter boxes what it reads, which may add more
+        while (!anyKeysAdaptersPending.empty())
+        {
+            auto [location, type] = anyKeysAdaptersPending.pop_back_val();
+            makeAnyKeysAdapter(location, type, genContext);
+        }
+    }
+
+    void MLIRGenImpl::makeAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
+        type = TypeOfOpHelper::typeOfBaseType(type);
+
+        auto isArray = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(type);
+        SmallVector<std::string> values;
+        SmallVector<std::string> methods;
+        llvm::StringSet<> optionals;
+        if (!isArray && !anyKeysOfType(type, values, methods, &optionals))
+        {
+            return;
+        }
+
+        auto hash = MLIRHelper::hashOfType(type);
+        if (anyKeysAdaptersInProgress.contains(hash))
+        {
+            return;
+        }
+
+        if (auto existing = theModule->getAttrOfType<mlir::DictionaryAttr>(ANY_KEYS_ADAPTERS_ATTR_NAME);
+            existing && existing.get(std::to_string(hash)))
+        {
+            return;
+        }
+
+        anyKeysAdaptersInProgress.insert(hash);
+        auto inProgress = llvm::make_scope_exit([&]() { anyKeysAdaptersInProgress.erase(hash); });
+
+        auto has = std::to_string(ANY_KEYS_OP_HAS);
+        auto notThere = "return op == " + has + " ? <any>false : undefined;\n";
+
+        std::string name;
+        std::string src;
+        if (isArray)
+        {
+            name = "__any_keys_array";
+            src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
+                  "const kt = typeof key;\n"
+                  "const a = <T>box;\n"
+                  "if (" + anyKeyIsNumberSource + ") {\n"
+                  "const i = <number>key;\n"
+                  "const inside = i >= 0 && i < a.length && i % 1 == 0;\n"
+                  "if (op == " + has + ") return <any>inside;\n"
+                  "if (inside) return <any>a[i];\n"
+                  "return undefined;\n"
+                  "}\n"
+                  "if (kt == \"string\" && <string>key == \"length\") return op == " + has + " ? <any>true : <any>a.length;\n" +
+                  notThere +
+                  "}\n";
+        }
+        else
+        {
+            auto quote = [](StringRef text) {
+                std::string quoted = "\"";
+                for (auto c : text)
+                {
+                    if (c == '"' || c == '\\')
+                    {
+                        quoted += '\\';
+                    }
+
+                    quoted += c;
+                }
+
+                return quoted + "\"";
+            };
+
+            auto isIndex = [](StringRef text) {
+                return !text.empty() && llvm::all_of(text, [](char c) { return c >= '0' && c <= '9'; });
+            };
+
+            name = "__any_keys_" + std::to_string(hash);
+            // a number key is its text, as a tuple's position is
+            src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
+                  "const kt = typeof key;\n"
+                  "let k = \"\";\n"
+                  "if (kt == \"string\") k = <string>key;\n"
+                  "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
+                  "else " + notThere +
+                  "const o = <T>box;\n";
+            for (auto &key : values)
+            {
+                // a tuple's unnamed field is read by its position
+                auto read = isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
+                if (optionals.contains(key))
+                {
+                    // an optional field not set is not there: its `typeof` says so, not the value it reads as
+                    src += "if (k == " + quote(key) + ") { const v = " + read + "; const set = typeof v != \"undefined\"; "
+                           "if (op == " + has + ") return <any>set; return set ? <any>v : undefined; }\n";
+                    continue;
+                }
+
+                src += "if (k == " + quote(key) + ") return op == " + has + " ? <any>true : <any>" + read + ";\n";
+            }
+
+            for (auto &key : methods)
+            {
+                src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; " +
+                       throwTypeErrorSource("a method read through a value of type any is not supported: cast the value to its type") +
+                       " }\n";
+            }
+
+            src += notThere + "}\n";
+        }
+
+        // nothing said while it is made reaches the program: what fails only leaves the type without one
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &) {});
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+        GenContext adapterGenContext(genContext);
+        adapterGenContext.postponedMessages = &postponedMessages;
+        mlir::OpBuilder::InsertionGuard insertionGuard(builder);
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "_" + name;
+        auto funcRef = resolveIdentifier(location, funcName, adapterGenContext);
+        if (!funcRef)
+        {
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return;
+            }
+
+            funcRef = resolveIdentifier(location, funcName, adapterGenContext);
+            if (!funcRef)
+            {
+                return;
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        NodeArray<TypeNode> typeArguments;
+        adapterGenContext.typeAliasMap.insert({".ANY_KEYS_T", type});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_KEYS_T")).as<Node>()));
+
+        SmallVector<mlir::Value, 4> noOperands;
+        auto instance = mlirGenSpecialized(location, funcRef, typeArguments, noOperands, adapterGenContext);
+        if (instance.failed_or_no_value())
+        {
+            return;
+        }
+
+        auto symbolRefOp = V(instance).getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolRefOp || !postponedMessages.empty())
+        {
+            return;
+        }
+
+        // nothing calls it by name - the descriptor takes its address in TypeDescriptorOpLowering - so it is
+        // public: private, SymbolDCE erased it before then (the JIT's pipeline)
+        auto adapterName = symbolRefOp.getIdentifierAttr().getValue();
+        if (auto adapterOp = theModule.lookupSymbol(adapterName))
+        {
+            mlir::SymbolTable::setSymbolVisibility(adapterOp, mlir::SymbolTable::Visibility::Public);
+            // its call in `__any_key` returns what it returns (OwnedReturnConsumptionPass), as a call adapter's
+            adapterOp->setAttr(ANY_CALL_ADAPTER_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        // for the type's descriptor (TypeDescriptorOpLowering): TYPE_DESCR_KEYS
+        mlir::NamedAttrList adapters;
+        if (auto existing = theModule->getAttrOfType<mlir::DictionaryAttr>(ANY_KEYS_ADAPTERS_ATTR_NAME))
+        {
+            adapters.append(existing.getValue());
+        }
+
+        adapters.set(std::to_string(hash), builder.getStringAttr(adapterName));
+        theModule->setAttr(ANY_KEYS_ADAPTERS_ATTR_NAME, adapters.getDictionary(builder.getContext()));
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAnyKey(mlir::Location location, mlir::Value box, mlir::Value key, int op,
+                                                    const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            emitError(location) << (op == ANY_KEYS_OP_HAS ? "'k in x' of a value of type 'any'" : "element access of a value of type 'any' ('x[k]')")
+                                << " is not supported under -mm=own: cast it to its type first";
+            return mlir::failure();
+        }
+
+        // a key is a number or a string to the adapters: an integer or a literal is made one before it is boxed
+        auto keyType = mth.stripLiteralType(mth.getBaseType(key.getType()));
+        if (mth.isNumericType(keyType) && !isa<mlir_ts::NumberType>(keyType))
+        {
+            CAST(key, location, getNumberType(), key, genContext);
+        }
+        else if (isa<mlir_ts::StringType>(keyType) && key.getType() != keyType)
+        {
+            CAST(key, location, getStringType(), key, genContext);
+        }
+
+        CAST_A(keyValue, location, getAnyType(), key, genContext);
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___any_key";
+        auto funcRef = resolveIdentifier(location, funcName, genContext);
+        if (!funcRef)
+        {
+            auto has = std::to_string(ANY_KEYS_OP_HAS);
+            // `b`: `box` before `typeof` narrowed it
+            std::string src =
+                "function __any_key<T>(box: any, op: number, key: any): T {\n"
+                "const kt = typeof key;\n"
+                "const b = box;\n"
+                "const t = typeof b;\n"
+                "if (t == \"null\" || t == \"undefined\") " + throwTypeErrorSource("a key of null or undefined can't be read") + "\n"
+                "if (t == \"string\") {\n"
+                "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a string is not allowed") + "\n"
+                "const s = <string>b;\n"
+                "if (" + anyKeyIsNumberSource + ") {\n"
+                "const i = <number>key;\n"
+                "if (i >= 0 && i < s.length && i % 1 == 0) return <T><any>s[i];\n"
+                "return <T>undefined;\n"
+                "}\n"
+                "if (kt == \"string\" && <string>key == \"length\") return <T><any>s.length;\n"
+                "return <T>undefined;\n"
+                "}\n"
+                "const keys = __any_keys_adapter(b);\n"
+                "if (keys == null) {\n"
+                "if (t == \"class\" || t == \"tuple\" || t == \"interface\" || t == \"array\" || t == \"object\") " +
+                throwTypeErrorSource("the keys of the value in the value of type any are not known: it was boxed where they were not") + "\n"
+                "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a value that is not an object is not allowed") + "\n"
+                "return <T>undefined;\n"
+                "}\n"
+                "return <T>(<(box: any, op: number, key: any, value: any) => any>keys)(b, op, key, undefined);\n"
+                "}\n";
+
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return mlir::failure();
+            }
+
+            funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                return mlir::failure();
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        GenContext keyGenContext(genContext);
+        keyGenContext.typeAliasMap.insert({".ANY_KEY_T", getAnyType()});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(box);
+        operands.push_back(builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(op)));
+        operands.push_back(keyValue);
+
+        auto result = mlirGenCallExpression(location, funcRef,
+                                            {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_KEY_T")).as<Node>())},
+                                            operands, keyGenContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+
+        // the one call through a value in `__any_key` is the adapter's: it returns what the adapter returns, a box
+        // its caller owns (OwnedReturnConsumptionPass)
+        theModule.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp.getName().starts_with("___any_key<"))
+            {
+                funcOp.walk([&](mlir_ts::CallIndirectOp callOp) {
+                    callOp->setAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME, builder.getUnitAttr());
+                });
+            }
+        });
+
+        if (op == ANY_KEYS_OP_HAS)
+        {
+            return cast(location, getBooleanType(), V(result), genContext);
+        }
+
+        if (auto definingOp = V(result).getDefiningOp())
+        {
+            definingOp->setAttr(ANY_KEY_READ_ATTR_NAME, builder.getUnitAttr());
+        }
 
         return result;
     }

@@ -513,6 +513,18 @@ def TypeScript_IsTupleOfLayoutOp : TypeScript_Op<"IsTupleOfLayout", [Pure]> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
+def TypeScript_AnyKeysAdapterOp : TypeScript_Op<"AnyKeysAdapter", [Pure]> {
+  let summary = "the adapter that reads a key of the value an any holds";
+  let description = [{
+    The TYPE_DESCR_KEYS of the tag of the box $value: `(box: any, op: number, key: any, value: any) => any`,
+    made for the type of the value (a tuple, class, interface or array) when it was boxed
+    (MLIRGenImpl::ensureAnyKeysAdapter), or null when none was made for it.
+  }];
+
+  let arguments = (ins TypeScript_Any:$value);
+  let results = (outs TypeScript_Opaque:$res);
+}
+
 def TypeScript_AnyCallAdapterOp : TypeScript_Op<"AnyCallAdapter", [Pure]> {
   let summary = "the adapter that calls the function an any holds";
   let description = [{

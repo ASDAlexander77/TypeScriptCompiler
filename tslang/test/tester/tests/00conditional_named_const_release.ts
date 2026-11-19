@@ -68,8 +68,8 @@ function returnChosen(b: boolean) {
     return b ? h : h2;
 }
 
-// the local declared without a value owns nothing, so `h` is what keeps the value it is given
-// alive after the `if`: it is not released at the end of the `if`
+// the local declared without a value starts empty and owns what it is given (rc), so `h` is released
+// at the end of the `if` like any other: `n` holds a reference of its own to the value chosen
 function assignedOutside(b: boolean) {
     const h2 = new C(30);
     let n: C;

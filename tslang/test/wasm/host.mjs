@@ -1127,6 +1127,10 @@ export function createHost(options = {})
         // C's round: halves away from zero (Math.round takes them up)
         round: (x) => (x < 0 ? -Math.round(-x) : Math.round(x)),
         fmod: (x, y) => x % y,
+        // x * 2^e, which LLVM makes of `pow(2, e)` (the default library's float16 code): in two steps, so that
+        // a scale 2^e alone would overflow or underflow (e beyond -1022..1023) still gives the product
+        ldexp: (x, e) => { const h = e >> 1; return x * Math.pow(2, h) * Math.pow(2, e - h); },
+        ldexpf: (x, e) => { const h = e >> 1; return Math.fround(x * Math.pow(2, h) * Math.pow(2, e - h)); },
         fmin: Math.min, fmax: Math.max,
         abs: (x) => (x < 0 ? -x | 0 : x),
         labs: (x) => (typeof x === "bigint" ? (x < 0n ? -x : x) : (x < 0 ? -x | 0 : x)),

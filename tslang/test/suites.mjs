@@ -54,6 +54,8 @@ export const makeSuites = (defaultLibRepo) => ({
             if (first.startsWith("// gc only") && leg.mm !== "gc") return "marked '// gc only'";
             if (first.startsWith("// linux only") && !leg.linux) return "marked '// linux only'";
             if (first.startsWith("// not own") && leg.mm === "own") return "marked '// not own'";
+            // what -mm=rc does not have (WeakRef, so FinalizationRegistry), as the default library's tests.ps1 skips it
+            if (first.startsWith("// not rc") && leg.mm === "rc") return "marked '// not rc'";
             return null;
         },
         passed: (run) => run.code !== 0 ? `exit code ${run.code}`
