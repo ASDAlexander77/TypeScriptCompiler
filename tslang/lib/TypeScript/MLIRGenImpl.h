@@ -15,6 +15,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
+#include "TypeScript/LibraryDeclarations.h"
 #include "TypeScript/CppMangler.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
@@ -261,12 +262,6 @@ class MLIRGenImpl
   private:
     mlir::LogicalResult mlirGenCodeGenInit(SourceFile module);
 
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-    /// Create a dependency declaration file for `--emit=dll` option.
-    ///
-    mlir::LogicalResult createDependencyDeclarationFile(StringRef outputFilename,
-                                            StringRef dependencyDeclFileBody);
-#endif    
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext);
     mlir::LogicalResult createMemoryModelExportGlobalVar(const GenContext &genContext);
@@ -19205,8 +19200,19 @@ class MLIRGenImpl
         }
 
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
+
+        // The declarations tslang wrote beside a shared library (`foo.d.ts` beside `foo.dll`) are
+        // reached here when the library is not there: compiled as source, they would declare
+        // functions nothing defines and nothing loads.
+        if (isLibraryDeclarationsText(sourceBuf->getBuffer()))
+        {
+            emitError(location) << "'" << fullPath << "' holds the declarations of a shared library, which `import` "
+                                   "reads beside the library; the library itself is not there";
+            return {SourceFile(), {}};
+        }
+
         auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
-                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);        
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
         return loadSourceBuf(sourceFileLoc, sourceBuf);
     }
 

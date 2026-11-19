@@ -1,19 +1,26 @@
-# Importing a DLL when compiling for a target other than the host (Windows).
+# Importing a shared library when compiling for a target other than the host (Windows).
 #
-# tslang cannot load such a DLL into its own process, so it reads the declarations the DLL
-# exports (__decls_*) from the file instead (Dump::readExportedCString). The x86 twins
-# (TSLANG_TEST_X86) cover that path for i686, but they are off by default. This test covers it in
-# the default suite, with no x86 libraries: the DLL is an ordinary x64 one, and the importer is
-# compiled for x86_64 Linux. That target has the host's arch but another OS, so the DLL is read as
-# a file, as a PE32+ image. The importer is only compiled, never linked or run.
+# tslang cannot load such a library into its own process. It never needs to: what a library
+# declares is in the file tslang wrote beside it, `<library stem>.d.ts` (TypeScript/
+# LibraryDeclarations.h), read the same for every target. The x86 twins (TSLANG_TEST_X86) cover
+# i686, but they are off by default. This test covers foreign targets in the default suite, with no
+# x86 or Android libraries:
 #
-# An import is looked for under the target's name for a library, which is also what the program
-# loads at run time: `import './shared'` is ./libshared.so for x86_64 Linux. The x64 DLL is
-# therefore written as libshared.so; it is still a PE image inside.
+#   - an ordinary x64 DLL imported by a program compiled for x86_64 Linux (the host's arch, another
+#     OS). An import is looked for under the target's name for a library, which is also what the
+#     program loads at run time: `import './shared'` is ./libshared.so there, so the x64 DLL is
+#     written as libshared.so; it is still a PE image inside.
+#   - an Android library: an aarch64 ELF object of the library's module stands in for the `.so`
+#     (linking one needs the NDK), with the declarations --emit=obj wrote beside it. Before the
+#     declarations moved out of the binary, a library that is not a PE image could not be imported
+#     on Windows at all.
+#
+# The importers are only compiled, never linked or run.
 #
 # MODE=read    the declarations are read: the importer compiles, and uses what they declare.
-# MODE=errors  a file that is not a PE image, and a DLL for another machine, are refused with an
-#              error that says so.
+# MODE=errors  a library with no declarations beside it, declarations that are not tslang's, the
+#              declarations of a library that is not there, and a DLL for another machine are
+#              refused with an error that says so.
 #
 # -mm=none keeps the collector out of it: the DLL then links no gc.dll.
 
@@ -53,47 +60,74 @@ set(library "${TESTS_DIR}/shared.ts")
 set(program "${TESTS_DIR}/use_shared.ts")
 set(foreign -mtriple=x86_64-unknown-linux-gnu)
 
-if(MODE STREQUAL "read")
-    run("--emit=dll" "${WORK_DIR}" TRUE
-        "${TSLANG}" --emit=dll ${common} "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
-        "${library}" -o libshared.so)
-
-    # use_shared.ts calls test1/test2 and prints val_str, which only the DLL's declarations
-    # declare: without them it does not compile ("can't resolve name").
-    run("--emit=obj for x86_64 Linux, importing an x64 DLL" "${WORK_DIR}" TRUE
-        "${TSLANG}" --emit=obj ${common} ${foreign} "${program}" -o use_shared.o)
-    if(run_output MATCHES "missing information about shared library")
-        message(FATAL_ERROR "the DLL's declarations were not found:\n${run_output}")
-    endif()
-
-    # The program looks the imported symbols up by name at run time, so their names are in it.
-    run("--emit=llvm for x86_64 Linux, importing an x64 DLL" "${WORK_DIR}" TRUE
-        "${TSLANG}" --emit=llvm ${common} ${foreign} "${program}" -o use_shared.ll)
-    file(READ "${WORK_DIR}/use_shared.ll" ir)
+# check_imports(<what> <dir> <triple> <library file>) - use_shared.ts calls test1/test2 and prints
+# val_str, which only the library's declarations declare: without them it does not compile ("can't
+# resolve name"). The program looks them up by name at run time, so their names are in it, and it
+# loads the library under the target's name for it.
+function(check_imports what dir triple library_file)
+    run("--emit=llvm for ${what}" "${dir}" TRUE
+        "${TSLANG}" --emit=llvm ${common} -mtriple=${triple} "${program}" -o use_shared.ll)
+    file(READ "${dir}/use_shared.ll" ir)
     foreach(name test1 test2 val_str)
         if(NOT ir MATCHES "${name}\\\\00\"")
-            message(FATAL_ERROR "the program does not look up '${name}', which the DLL declares:\n${ir}")
+            message(FATAL_ERROR "${what}: the program does not look up '${name}', which the library declares:\n${ir}")
         endif()
     endforeach()
 
-    # ...from the library under the target's name for it
-    if(NOT ir MATCHES "libshared\\.so\\\\00\"")
-        message(FATAL_ERROR "the program does not load libshared.so:\n${ir}")
+    string(REPLACE "." "\\." library_pattern "${library_file}")
+    if(NOT ir MATCHES "${library_pattern}\\\\00\"")
+        message(FATAL_ERROR "${what}: the program does not load ${library_file}:\n${ir}")
     endif()
 
-    message(STATUS "declarations read from an x64 DLL's file for a foreign target")
+    run("--emit=obj for ${what}" "${dir}" TRUE
+        "${TSLANG}" --emit=obj ${common} -mtriple=${triple} "${program}" -o use_shared.o)
+    message(STATUS "${what}: declarations read")
+endfunction()
+
+if(MODE STREQUAL "read")
+    # 1. An x64 DLL, for x86_64 Linux.
+    set(dir "${WORK_DIR}/pe")
+    file(MAKE_DIRECTORY "${dir}")
+    run("--emit=dll" "${dir}" TRUE
+        "${TSLANG}" --emit=dll ${common} "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
+        "${library}" -o libshared.so)
+    if(NOT EXISTS "${dir}/libshared.d.ts")
+        message(FATAL_ERROR "--emit=dll wrote no declarations beside libshared.so")
+    endif()
+    check_imports("x86_64 Linux importing an x64 DLL" "${dir}" x86_64-unknown-linux-gnu libshared.so)
+
+    # 2. An Android library, an ELF image: its object stands in for it, its declarations beside it.
+    set(dir "${WORK_DIR}/android")
+    file(MAKE_DIRECTORY "${dir}")
+    run("--emit=obj for Android" "${dir}" TRUE
+        "${TSLANG}" --emit=obj ${common} -mtriple=aarch64-linux-android29 -relocation-model=pic
+        "${library}" -o shared.o)
+    if(NOT EXISTS "${dir}/shared.d.ts")
+        message(FATAL_ERROR "--emit=obj wrote no declarations beside shared.o")
+    endif()
+    file(RENAME "${dir}/shared.o" "${dir}/libshared.so")
+    file(RENAME "${dir}/shared.d.ts" "${dir}/libshared.d.ts")
+    check_imports("Android importing an Android library" "${dir}" aarch64-linux-android29 libshared.so)
 elseif(MODE STREQUAL "errors")
-    # 1. A file that is not a PE image.
-    file(MAKE_DIRECTORY "${WORK_DIR}/not-pe")
-    file(WRITE "${WORK_DIR}/not-pe/libfoo.so" "not a DLL\n")
-    file(WRITE "${WORK_DIR}/not-pe/main.ts" "import './foo'\n\nfunction main() {\n    print(\"done.\");\n}\n")
-    run("importing a non-PE file for a foreign target" "${WORK_DIR}/not-pe" FALSE
+    # 1. A library with no declarations beside it (one built before they moved out of the binary).
+    file(MAKE_DIRECTORY "${WORK_DIR}/no-decls")
+    file(WRITE "${WORK_DIR}/no-decls/libfoo.so" "not a library\n")
+    file(WRITE "${WORK_DIR}/no-decls/main.ts" "import './foo'\n\nfunction main() {\n    print(\"done.\");\n}\n")
+    run("importing a library with no declarations beside it" "${WORK_DIR}/no-decls" FALSE
         "${TSLANG}" --emit=obj ${common} ${foreign} main.ts -o main.o)
-    if(NOT run_output MATCHES "cannot read declarations from '[^']*libfoo\\.so': for a target other than the host, only PE DLLs can be imported")
-        message(FATAL_ERROR "importing a non-PE file failed for another reason:\n${run_output}")
+    if(NOT run_output MATCHES "shared library '[^']*libfoo\\.so' has no declarations beside it \\('[^']*libfoo\\.d\\.ts'\\)")
+        message(FATAL_ERROR "importing a library with no declarations failed for another reason:\n${run_output}")
     endif()
 
-    # 2. An x64 DLL imported into an x86 program.
+    # 2. A .d.ts beside it that tslang did not write.
+    file(WRITE "${WORK_DIR}/no-decls/libfoo.d.ts" "declare function foo(): void;\n")
+    run("importing a library beside a hand-written .d.ts" "${WORK_DIR}/no-decls" FALSE
+        "${TSLANG}" --emit=obj ${common} ${foreign} main.ts -o main.o)
+    if(NOT run_output MATCHES "'[^']*libfoo\\.d\\.ts' is not the declarations of shared library")
+        message(FATAL_ERROR "importing a library beside a hand-written .d.ts failed for another reason:\n${run_output}")
+    endif()
+
+    # 3. An x64 DLL imported into an x86 program.
     file(MAKE_DIRECTORY "${WORK_DIR}/machine")
     run("--emit=dll" "${WORK_DIR}/machine" TRUE
         "${TSLANG}" --emit=dll ${common} "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
@@ -104,7 +138,18 @@ elseif(MODE STREQUAL "errors")
         message(FATAL_ERROR "importing an x64 DLL into an x86 program failed for another reason:\n${run_output}")
     endif()
 
-    message(STATUS "a non-PE file and a DLL for another machine are refused for a foreign target")
+    # 4. A library's declarations read as a source file (`import './shared'` looks for shared.ts,
+    #    but a reference names the file itself): they would declare functions nothing defines and
+    #    nothing loads.
+    file(REMOVE "${WORK_DIR}/machine/shared.dll")
+    file(WRITE "${WORK_DIR}/machine/main.ts" "/// <reference path=\"shared.d.ts\" />\n\nfunction main() {\n    test1();\n    print(\"done.\");\n}\n")
+    run("importing the declarations of a missing DLL" "${WORK_DIR}/machine" FALSE
+        "${TSLANG}" --emit=obj ${common} -mtriple=x86_64-pc-windows-msvc main.ts -o main.obj)
+    if(NOT run_output MATCHES "holds the declarations of a shared library, which `import` reads beside the library; the library itself is not there")
+        message(FATAL_ERROR "importing the declarations of a missing DLL failed for another reason:\n${run_output}")
+    endif()
+
+    message(STATUS "libraries with no, foreign or orphaned declarations, and a DLL for another machine, are refused")
 else()
     message(FATAL_ERROR "MODE must be read or errors, not '${MODE}'")
 endif()

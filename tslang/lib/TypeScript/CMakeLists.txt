@@ -63,6 +63,7 @@ add_mlir_dialect_library(MLIRTypeScript
     InlinedLocationPass.cpp
     AsyncTargetWidthPass.cpp
     ObjDumper.cpp
+    LibraryDeclarations.cpp
     DeclarationPrinter.cpp
     
     ADDITIONAL_HEADER_DIRS

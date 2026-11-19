@@ -1,5 +1,6 @@
 # What's new
 
+- A shared library's declarations live in a file beside it, `<library stem>.d.ts` (`foo.dll` → `foo.d.ts`, `libfoo.so` → `libfoo.d.ts`), written by `--emit=dll` (and beside each object by `--emit=obj`). `import` reads them from there, so a library for any target can be imported on any host: an Android `.so` on Windows, say. They are no longer exported from the library itself (`__decls_*`), so a library built by an earlier tslang has to be built again before it can be imported
 - New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](memory-models.md) and the [`-mm=own` guide](own-memory-model.md)
 - **Android** targets (`arm64-v8a`, `armeabi-v7a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for all three ABIs. See [Compile for Android](android.md)
 - Implemented `try/catch` exception handling in the **JIT** on Windows (x64 SEH unwinding via a custom LLJIT runtime)

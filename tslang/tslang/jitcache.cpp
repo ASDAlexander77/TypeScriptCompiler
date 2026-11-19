@@ -46,6 +46,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 
+#include "TypeScript/LibraryDeclarations.h"
+
 #include "jitcache.h"
 
 #include <algorithm>
@@ -70,6 +72,7 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::StringRef, llvm::So
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions &);
 mlir::TimingScope &compileTiming();
 int registerMLIRDialects(mlir::ModuleOp);
+std::string takeLibraryDeclarations(llvm::Module &, llvm::StringRef);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 llvm::Error addEntryThunk(llvm::Module &, llvm::StringRef);
 void addJitImageStart(llvm::Module &);
@@ -577,6 +580,9 @@ class JitUnitBuilder
         for (auto &library : options.sharedLibraryImports)
         {
             addDep(library, fileHash(library));
+            // ...and the declarations read from beside it
+            auto declarations = typescript::libraryDeclarationsPath(library);
+            addDep(declarations, fileHash(declarations));
         }
 
         // the libraries whose borrow facts decided what went on the stack (borrowfacts.cpp)
@@ -602,6 +608,9 @@ class JitUnitBuilder
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
             return -1;
         }
+
+        // what an importer of a library would read: a module run here is in no library
+        takeLibraryDeclarations(*llvmModule, "");
 
         llvmModule->setDataLayout(tm->createDataLayout());
         llvmModule->setTargetTriple(tm->getTargetTriple());
