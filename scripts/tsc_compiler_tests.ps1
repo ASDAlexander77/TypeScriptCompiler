@@ -104,7 +104,9 @@ $results = $tests | ForEach-Object -ThrottleLimit $Jobs -Parallel {
     $units.Add([pscustomobject]@{ Name = $curName; Text = $curText })
 
     # --- write units ---
-    $dir = Join-Path $workDir $test.BaseName
+    # Windows drops a trailing dot from a folder name ("indexSignatureWithoutTypeAnnotation1..ts"), and
+    # removing the folder by the dotted name then fails: name it without the dots
+    $dir = Join-Path $workDir $test.BaseName.TrimEnd('.')
     New-Item -ItemType Directory -Force $dir | Out-Null
     $toCompile = @()
     foreach ($u in $units) {
@@ -186,7 +188,7 @@ $results = $tests | ForEach-Object -ThrottleLimit $Jobs -Parallel {
     $sw.Stop()
 
     if ($status -in 'fail', 'crash', 'timeout') {
-        [IO.File]::WriteAllText((Join-Path $logDir ($test.BaseName + '.log')), $log.ToString())
+        [IO.File]::WriteAllText((Join-Path $logDir ($test.BaseName.TrimEnd('.') + '.log')), $log.ToString())
     }
     elseif (-not $keepAll) {
         Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
