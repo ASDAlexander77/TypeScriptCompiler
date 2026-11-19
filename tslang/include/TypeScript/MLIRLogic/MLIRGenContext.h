@@ -89,8 +89,11 @@ struct WithScope
     int bodyEnd;
     // the function the `with` is in: a parameter of a function inside the body hides a property
     const void *funcProto;
-    // variables declared in the body: they hide a property of the same name
-    llvm::StringSet<> declared;
+    // the source file the body is in: a node of another (an import, a generic's declaration) is not in it
+    const void *sourceFile;
+    // the variables and parameters declared in the body (their VariableDeclarationDOMs): one the name
+    // resolves to hides the object's property of that name
+    llvm::DenseSet<const void *> declaredVars;
     std::shared_ptr<WithScope> outer;
 };
 

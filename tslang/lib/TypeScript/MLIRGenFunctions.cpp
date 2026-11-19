@@ -1663,12 +1663,6 @@ namespace mlirgen
 
         for (auto [paramIndex, param] : enumerate(funcProto->getParams()))
         {
-            // a parameter of a function in the body of a `with` hides the object's property of its name
-            if (genContext.withScope)
-            {
-                genContext.withScope->declared.insert(param->getName());
-            }
-
             auto index = firstIndex + (int)paramIndex;
             mlir::Value paramValue;
 

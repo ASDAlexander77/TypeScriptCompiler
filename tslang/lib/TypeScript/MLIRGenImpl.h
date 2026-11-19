@@ -17926,6 +17926,13 @@ class MLIRGenImpl
 
         const auto &name = var->getName();
 
+        // declared in the body of a `with` (of each around it): while it is in scope it hides the object's
+        // property of its name (mlirGenWithScopeName)
+        for (auto withScope = genContext.withScope; withScope; withScope = withScope->outer)
+        {
+            withScope->declaredVars.insert(var.get());
+        }
+
         //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
         if (showWarnings && symbolTable.count(name))

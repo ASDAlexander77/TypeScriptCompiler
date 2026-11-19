@@ -628,6 +628,7 @@ namespace mlirgen
         withScope->bodyPos = withStatementAST->statement->pos;
         withScope->bodyEnd = withStatementAST->statement->_end;
         withScope->funcProto = genContext.funcProto.get();
+        withScope->sourceFile = sourceFile.operator->();
         withScope->outer = genContext.withScope;
 
         GenContext withGenContext(genContext);
@@ -659,31 +660,23 @@ namespace mlirgen
     }
 
     // a name in the body of a `with` (WithScope): the property of the object of the innermost `with` that
-    // has one, unless a variable of the body, or a parameter of a function inside it, has the name
+    // has one, unless the name is of a variable declared in the body (a parameter of a function in it too)
+    // that is in scope here
     ValueOrLogicalResult MLIRGenImpl::mlirGenWithScopeName(Identifier identifier, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(identifier);
+        auto variable = symbolTable.lookup(name).second;
         for (auto withScope = genContext.withScope; withScope; withScope = withScope->outer)
         {
-            if (identifier->pos < withScope->bodyPos || identifier->_end > withScope->bodyEnd)
+            if (withScope->sourceFile != sourceFile.operator->() || identifier->pos < withScope->bodyPos
+                || identifier->_end > withScope->bodyEnd)
             {
                 continue;
             }
 
-            if (withScope->declared.contains(name))
+            if (variable && withScope->declaredVars.contains(variable.get()))
             {
                 return mlir::Value();
-            }
-
-            if (genContext.funcProto.get() != withScope->funcProto && genContext.funcProto)
-            {
-                for (auto &param : genContext.funcProto->getParams())
-                {
-                    if (param->getName() == name)
-                    {
-                        return mlir::Value();
-                    }
-                }
             }
 
             if (!withScopeHasProperty(withScope->objectType, name))

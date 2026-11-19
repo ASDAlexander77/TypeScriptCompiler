@@ -38,6 +38,18 @@ function main() {
 
     assert(o.a == 6 && o.b == "b");
 
+    // a parameter or an inner block's variable hides a property only where it is in scope: after them the
+    // names are p's again, not the global `y`
+    with (p) {
+        const g = (y: number) => y + 1;
+        assert(g(1) == 2);
+        {
+            const x = "inner";
+            assert(x == "inner");
+        }
+        assert(y == 4 && x == 20);
+    }
+
     const n: Named = { name: "n" };
     with (n) {
         with (p) {
