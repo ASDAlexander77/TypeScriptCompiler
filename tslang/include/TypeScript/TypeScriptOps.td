@@ -2503,8 +2503,10 @@ def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
 }
 
 def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
+  // the elements it removes, in a new array that holds them now (JavaScript's result): when nothing
+  // uses it, the lowering releases them in place and allocates nothing
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
-  let results = (outs Index:$new_size);
+  let results = (outs TypeScript_Array:$removed);
 }
 
 def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {

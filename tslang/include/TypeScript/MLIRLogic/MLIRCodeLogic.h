@@ -1031,10 +1031,14 @@ class MLIRCustomMethods
 
         retainInsertedElements(castedValues);
 
-        mlir::Value sizeOfValue =
-            builder.create<mlir_ts::ArraySpliceOp>(location, builder.getIndexType(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
+        // JavaScript's splice gives back what it removed, as an array of the same element type
+        mlir::Value removed = builder.create<mlir_ts::ArraySpliceOp>(
+            location, thisValue.getType(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
 
-        return sizeOfValue;
+        // the same transfer as pop's, for each removed element: the array splice made holds the
+        // reference the source block held, and that array is the receiver's
+        markResultOwned(removed);
+        return removed;
     }    
 
     ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands,

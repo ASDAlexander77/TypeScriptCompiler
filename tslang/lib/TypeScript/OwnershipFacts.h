@@ -759,8 +759,9 @@ inline bool isFresh(mlir::Value value)
         return isFresh(rootOf(value));
     }
 
+    // splice's result too: a new array that holds the elements it took out of the source
     if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
-                  mlir_ts::StringResizeOp, mlir_ts::StringCopyOp, mlir_ts::CharToStringOp>(def))
+                  mlir_ts::StringResizeOp, mlir_ts::StringCopyOp, mlir_ts::CharToStringOp, mlir_ts::ArraySpliceOp>(def))
     {
         return true;
     }
