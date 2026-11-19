@@ -266,9 +266,11 @@ class CastLogicHelper
         // a wider integer keeps the value: a signed or sign-neutral (iN) one sign-extends, only an unsigned one
         // zero-extends (castLLVMTypesLogic, which sees signless LLVM types only). `let c: i64 = -7` held
         // 4294967289, `let n = s.length; n = -1` held 4294967295, and `i16` -300 compared as 65236.
+        // A bigint is a signed i64 too: `const b: bigint = -5` held 4294967291, so `b < 0` was false.
         if (auto inIntType = dyn_cast<mlir::IntegerType>(inType))
         {
-            if (!inIntType.isUnsigned() && inIntType.getWidth() > 1 && (isa<mlir::IntegerType>(resType) || resType.isIndex())
+            if (!inIntType.isUnsigned() && inIntType.getWidth() > 1
+                && (isa<mlir::IntegerType>(resType) || resType.isIndex() || isa<mlir_ts::BigIntType>(resType))
                 && resLLVMType.getIntOrFloatBitWidth() > inLLVMType.getIntOrFloatBitWidth())
             {
                 return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);

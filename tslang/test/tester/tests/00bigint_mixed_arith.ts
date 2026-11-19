@@ -14,5 +14,14 @@ function main() {
     assert(1 + big == 9000000000000000001, "literal + bigint");
     assert(big - 1 == 8999999999999999999, "bigint - literal");
     assert(big > 1, "a comparison keeps the bigint");
+
+    // an int becomes a bigint sign-extended: zero-extended, -1000000 was 4293967296
+    const neg: bigint = -1000000;
+    assert(neg < 0, "a negative bigint is below 0");
+    assert(neg * 2 == -2000000, "a negative bigint * literal");
+    const m: int = -5;
+    const fromInt: bigint = m;
+    assert(fromInt == -5 && fromInt < 0, "a negative int as a bigint");
+    assert(s * -1 == -1710505800, "bigint * a negative literal");
     print("done.");
 }
