@@ -43,6 +43,8 @@ extern cl::opt<std::string> outputFilename;
 std::string getDefaultOutputFileName(enum Action);
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
+std::string takeLibraryDeclarations(llvm::Module &, llvm::StringRef);
+int writeLibraryDeclarations(llvm::StringRef, llvm::StringRef);
 namespace llvm { class TargetMachine; }
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
@@ -479,6 +481,17 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
         return -1;
+    }
+
+    // The declarations an importer reads go in a file beside the object (--emit=obj) or the
+    // library linked from it (--emit=dll, exe.cpp), not in the binary.
+    compileOptions.libraryDeclarations = takeLibraryDeclarations(*llvmModule, memoryModelName(compileOptions.memoryModel));
+    if (::emitAction == Action::DumpObj && emitAction == Action::DumpObj)
+    {
+        if (auto result = writeLibraryDeclarations(outputFile, compileOptions.libraryDeclarations))
+        {
+            return result;
+        }
     }
 
     // Initialize LLVM targets.

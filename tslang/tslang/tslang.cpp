@@ -87,8 +87,7 @@ int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
-int declarationInline(int, char **, mlir::MLIRContext &, llvm::SourceMgr &, llvm::StringRef, CompileOptions&, std::string&);
-int buildExe(int, char **, std::string, std::string, CompileOptions&);
+int buildExe(int, char **, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 int runJitCached(int, char **, CompileOptions&);
 
@@ -204,7 +203,7 @@ cl::list<std::string> exportFilters("export", cl::desc("Export Symbols, comma se
                                        cl::value_desc("all|none|name|!name"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                        cl::cat(TypeScriptCompilerCategory));
 
-cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embed declarations as member __decls_lib_XXXX. (Needed in 'import' statement)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Write the exported declarations beside the object or shared library (<name>.d.ts), where 'import' reads them"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gc.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -704,17 +703,7 @@ int main(int argc, char **argv)
             return result;
         }
 
-        std::string additionalObjFile{};
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE        
-        if (emitAction == Action::BuildDll)
-        {
-            // here we need to try to gather *.d.ts for every obj file involved in compilation and build obj file with __decls global variable in it
-            auto fileName = llvm::StringRef(inputFilename);
-            declarationInline(argc, argv, mlirContext, sourceMgr, fileName, compileOptions, additionalObjFile);
-        }
-#endif        
-
-        return buildExe(argc, argv, tempOutputFile, additionalObjFile, compileOptions);
+        return buildExe(argc, argv, tempOutputFile, compileOptions);
     }
 
     // Otherwise, we must be running the jit.

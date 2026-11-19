@@ -22,7 +22,8 @@ using namespace typescript;
 
 // Characterization/regression tests for MLIRDeclarationPrinter - the component that
 // re-serializes a compiled module's classes/interfaces/functions/types/enums/variables
-// into TypeScript source text embedded in the binary's __decls global, so an importing
+// into TypeScript source text written beside the shared library (`<library stem>.d.ts`,
+// TypeScript/LibraryDeclarations.h), so an importing
 // module's `import '...'` can re-parse them. Every declaration kind it emits is marked
 // `@dllimport` (see printBeforeDeclaration) - that marker, plus getting every
 // layout-relevant modifier (abstract, static, optional, access level, extends/implements,
@@ -299,7 +300,7 @@ TEST_F(DeclarationPrinterTest, function_declaration_has_dllimport_marker)
     EXPECT_THAT(text, testing::HasSubstr("@dllimport"));
 }
 
-// @dllname must survive the __decls round trip, or the importer looks up the
+// @dllname must survive the declarations' round trip, or the importer looks up the
 // mangled name the exporting library no longer exports.
 TEST_F(DeclarationPrinterTest, function_declaration_prints_dllname_decorator)
 {

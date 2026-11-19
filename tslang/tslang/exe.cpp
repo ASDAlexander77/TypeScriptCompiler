@@ -60,6 +60,8 @@ extern cl::opt<bool> verbose;
 extern cl::opt<bool> processHeap;
 
 std::string getDefaultOutputFileName(enum Action);
+int writeLibraryDeclarations(llvm::StringRef, llvm::StringRef);
+std::string readObjectDeclarations(llvm::StringRef);
 std::string mergeWithDefaultLibPath(std::string, std::string);
 std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 std::string getDefaultLibBinary(bool, const CompileOptions &, const llvm::Triple &);
@@ -688,7 +690,7 @@ static llvm::Error writeAsInvokerManifestObj(llvm::COFF::MachineTypes machine, l
     return llvm::Error::success();
 }
 
-int buildExe(int argc, char **argv, std::string objFileName, std::string additionalObjFileName, CompileOptions &compileOptions)
+int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &compileOptions)
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
@@ -705,14 +707,27 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         request.objects.push_back(obj);
     }
 
-    if (!additionalObjFileName.empty())
-    {
-        request.objects.push_back(additionalObjFileName);
-    }
-
     request.output = outputFilename;
     request.shared = emitAction == BuildDll;
-    return linkBinary(argv[0], request, compileOptions);
+    if (auto result = linkBinary(argv[0], request, compileOptions))
+    {
+        return result;
+    }
+
+    if (!request.shared)
+    {
+        return 0;
+    }
+
+    // What a module importing the library reads (TypeScript/LibraryDeclarations.h): this module's,
+    // then those of the objects linked with it, written beside each by --emit=obj.
+    auto declarations = compileOptions.libraryDeclarations;
+    for (auto &obj : objs)
+    {
+        declarations += readObjectDeclarations(obj);
+    }
+
+    return writeLibraryDeclarations(outputFilename, declarations);
 }
 
 int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &compileOptions)

@@ -77,7 +77,7 @@ add_llvm_executable(tslang
     TextDiagnosticPrinter.cpp 
     utils.cpp 
     opts.cpp 
-    declarationInline.cpp
+    librarydecls.cpp
     vscode.cpp
     cmake.cpp
     defaultlib.cpp

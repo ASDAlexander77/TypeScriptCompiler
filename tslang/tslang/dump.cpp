@@ -33,6 +33,7 @@ extern cl::opt<std::string> outputFilename;
 std::string getDefaultOutputFileName(enum Action);
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
+std::string takeLibraryDeclarations(llvm::Module &, llvm::StringRef);
 namespace llvm { class TargetMachine; }
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions &, llvm::TargetMachine *);
 
@@ -66,6 +67,9 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
         llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
         return -1;
     }
+
+    // as the object file would be: the declarations go in a file beside it (obj.cpp)
+    takeLibraryDeclarations(*llvmModule, "");
 
     if (lldbDebugInfo)
     {

@@ -74,6 +74,4 @@
 
 //#define DBG_INFO_ADD_VALUE_OP true
 
-//#define GENERATE_IMPORT_INFO_USING_D_TS_FILE true
-
 #endif // CONFIG_H_

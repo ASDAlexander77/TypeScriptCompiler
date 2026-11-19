@@ -340,25 +340,24 @@
 #define SYMBOL_TO_PRIMITIVE "toPrimitive"
 #define SYMBOL_DISPOSE "dispose"
 
-// we are using 3 underscore as this is feature of ts parser to add _ to __variables
-#define SHARED_LIB_DECLARATIONS_FILENAME "__decls.ts"
+// A module's exported declarations, "__decls_<file>_<hash>" (and "__decls_generic_<file>_<hash>"
+// for its generic classes): a global in the module while it is compiled, and the name its block
+// goes by in the file of declarations beside a shared library (TypeScript/LibraryDeclarations.h),
+// which is where an importer reads them. The global never reaches the binary.
 #define SHARED_LIB_DECLARATIONS_2UNDERSCORE "__decls"
-#define SHARED_LIB_DECLARATIONS "___decls"
-// A shared library records the memory model it was built under as an exported data symbol
-// named "__tsmm_<model>_<file>_<hash>" - the model is in the NAME, so an importer reads it by
-// enumerating symbols and never has to load the data. Deliberately not "__decls"-prefixed, so
-// it can never reach the declaration re-parser.
+// A module records the memory model it was built under as a global named
+// "__tsmm_<model>_<file>_<hash>", which the file of declarations carries as the module's `model=`.
+// Deliberately not "__decls"-prefixed, so it can never reach the declaration re-parser.
 //
 // Objects allocated by a module built under a different model must not be freed by this one:
-// see docs/reference-counting-evaluation.md section 4. A missing marker means a module built
-// before this existed, which is always garbage-collected.
+// see docs/reference-counting-evaluation.md section 4.
 #define SHARED_LIB_MEMORY_MODEL "__tsmm_"
-// A library built under -mm=own also exports "__tsown_<file>_<hash>": the names of its exported
-// functions that destroy nothing a caller can reach (`__own_no_drops`), one per line. The importer
-// reads it beside the marker and keeps the names on its module (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME),
-// for the ownership signature pass. Only this fact crosses: a missing one just makes an importer
-// under own report more, while the facts a callee's body relies on cannot be seen by an importer
-// that re-parses source, and would free twice there.
+// A module built under -mm=own also has "__tsown_<file>_<hash>": the names of its exported
+// functions that destroy nothing a caller can reach (`__own_no_drops`), one per line, carried by
+// the file of declarations as the module's own facts. The importer keeps the names on its module
+// (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME), for the ownership signature pass. Only this fact crosses: a
+// missing one just makes an importer under own report more, while the facts a callee's body relies
+// on cannot be seen by an importer that re-parses source, and would free twice there.
 #define SHARED_LIB_OWN_FACTS "__tsown_"
 // Which parameters of a module's functions their bodies only borrow, for stack promotion in a
 // program linked statically against it: `__tsborrow_<file>_<hash>`, a NUL-terminated char array

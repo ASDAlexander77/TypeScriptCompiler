@@ -608,6 +608,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::stringstream shared_objs;
     std::stringstream shared_libs;
     std::stringstream shared_dlls;
+    std::stringstream shared_decls;
     std::stringstream exec_objs;
     std::string shared_filenameNoExt;
     std::stringstream execBat;
@@ -622,6 +623,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         else
         {
             shared_objs << fileNameWithoutExt << ".obj ";
+            shared_decls << fileNameWithoutExt << ".d.ts ";
             if (shared_filenameNoExt.empty())
             {
                 shared_filenameNoExt = fileNameWithoutExt;
@@ -645,6 +647,10 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     shared_dlls << shared_filenameNoExt << ".dll ";
 
     batFile << "del " << shared_objs.str() << std::endl;
+    // the declarations `import` reads beside the library: those --emit=obj wrote beside its objects
+    batFile << "(for %%f in (" << shared_decls.str() << ") do @if exist %%f type %%f) > library_decls.tmp" << std::endl;
+    batFile << "for %%f in (" << shared_decls.str() << ") do @if exist %%f del %%f" << std::endl;
+    batFile << "for %%f in (library_decls.tmp) do @if %%~zf==0 (del %%f) else (move /y %%f " << shared_filenameNoExt << ".d.ts >nul)" << std::endl;
     batFile << "echo on" << std::endl;
 
     if (jitRun)
@@ -702,6 +708,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     auto first = true;
     std::stringstream shared_objs;
+    std::stringstream shared_decls;
     std::stringstream exec_objs;
     std::string shared_filenameNoExt;
     std::stringstream execBat;
@@ -717,6 +724,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         else
         {
             shared_objs << fileNameWithoutExt << ".o ";
+            shared_decls << fileNameWithoutExt << ".d.ts ";
             if (shared_filenameNoExt.empty())
             {
                 // the shared lib must keep its real (unprefixed) stem so that `import './<stem>'`
@@ -742,6 +750,10 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             << "-L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
+    // the declarations `import` reads beside the library: those --emit=obj wrote beside its objects
+    batFile << "for f in " << shared_decls.str() << "; do [ ! -f \"$f\" ] || cat \"$f\"; done > library_decls.tmp" << std::endl;
+    batFile << "rm -f " << shared_decls.str() << std::endl;
+    batFile << "if [ -s library_decls.tmp ]; then mv library_decls.tmp lib" << shared_filenameNoExt << ".d.ts; else rm -f library_decls.tmp; fi" << std::endl;
 
     if (jitRun)
     {

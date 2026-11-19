@@ -83,6 +83,9 @@ struct CompileOptions
     // shared libraries imported, whose declarations the module was generated against.
     std::vector<std::string> sourceImports;
     std::vector<std::string> sharedLibraryImports;
+    // The module's exported declarations, taken out of its LLVM IR to be written beside the
+    // library (TypeScript/LibraryDeclarations.h); empty when it exports nothing.
+    std::string libraryDeclarations;
     // The borrow facts (__tsborrow_ texts, concatenated) of the libraries this program is linked
     // statically against or, under the JIT, loads: see
     // docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md. Empty: none.

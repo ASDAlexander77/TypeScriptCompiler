@@ -9,6 +9,7 @@
 #include "llvm/Target/TargetMachine.h"
 
 #include "TypeScript/ObjDumper.h"
+#include "TypeScript/LibraryDeclarations.h"
 
 #include "MLIRGenImpl.h"
 
@@ -258,17 +259,27 @@ namespace mlirgen
                 includeBuf = sourceMgr.OpenIncludeFile(includeFileNameUtf8, actualFilePath);
             }
 
+            mlir::Location referenceLocation = location;
+            if (reference)
+            {
+                auto start = reference->pos.textPos > 0 ? reference->pos.textPos : reference->pos.pos;
+                referenceLocation = loc2(referencing, convertWideToUTF8(referencing->fileName), start,
+                                         static_cast<int>(reference->_end) - start);
+            }
+
             if (!includeBuf)
             {
-                mlir::Location referenceLocation = location;
-                if (reference)
-                {
-                    auto start = reference->pos.textPos > 0 ? reference->pos.textPos : reference->pos.pos;
-                    referenceLocation = loc2(referencing, convertWideToUTF8(referencing->fileName), start,
-                                             static_cast<int>(reference->_end) - start);
-                }
-
                 emitError(referenceLocation, "can't open file: ") << includeFileNameUtf8;
+                anyMissing = true;
+                return;
+            }
+
+            // the declarations tslang wrote beside a shared library: see loadIncludeFile
+            if (isLibraryDeclarationsText((*includeBuf)->getBuffer()))
+            {
+                emitError(referenceLocation) << "'" << includeFileNameUtf8
+                                             << "' holds the declarations of a shared library, which `import` reads "
+                                                "beside the library; the library itself is not there";
                 anyMissing = true;
                 return;
             }
@@ -891,24 +902,10 @@ namespace mlirgen
         }
     }
 
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-    mlir::LogicalResult MLIRGenImpl::createDependencyDeclarationFile(StringRef outputFilename,
-                                            StringRef dependencyDeclFileBody) {
-        std::string errorMessage;
-        std::unique_ptr<llvm::ToolOutputFile> outputFile =
-            openOutputFile(outputFilename, &errorMessage);
-        if (!outputFile) {
-            llvm::errs() << errorMessage << "\n";
-            return failure();
-        }
-
-        outputFile->os() << dependencyDeclFileBody << "\n";
-        outputFile->keep();
-
-        return success();
-    }
-
-#endif    
+    // The module's exported declarations, as a global the passes can read (the ownership signature
+    // pass looks for the names another module can see in it). It never reaches the binary: once the
+    // module is LLVM IR, it is taken out and written beside the object or library (tslang's
+    // librarydecls.cpp, TypeScript/LibraryDeclarations.h).
     mlir::LogicalResult MLIRGenImpl::createDeclarationExportGlobalVar(const GenContext &genContext)
     {
         if (!declExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
@@ -916,17 +913,8 @@ namespace mlirgen
             return mlir::success();
         }
 
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-        if (mainSourceFileName == SHARED_LIB_DECLARATIONS_FILENAME)
-        {
-            return mlir::success();
-        }
-#endif        
-
         auto declText = declExports.str();
 
-#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-        // default implementation to use variable to store declaration data
         LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 
         auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
@@ -946,17 +934,8 @@ namespace mlirgen
         
         auto varNameRef = StringRef(varName).copy(stringAllocator);
         
-        auto varType = registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
-#endif        
-
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-        llvm::SmallString<128> path(compileOptions.outputFolder);
-        llvm::sys::path::append(path, llvm::sys::path::filename(mainSourceFileName));
-        llvm::sys::path::replace_extension(path, ".d.ts");
-        return createDependencyDeclarationFile(path, declText);
-#else
+        registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
         return success();
-#endif
     }
 
     // Records which memory model this module was built under, so an importer can tell whether
@@ -1939,34 +1918,23 @@ namespace mlirgen
         MLIRValueGuard<bool> declarationModeGuard(declarationMode);
         declarationMode = false;
 
-        // A library built for another architecture or OS (an i686 DLL for this x64 compiler)
-        // cannot be loaded into this process. Its declarations are then read from the file; the
-        // program still loads it at run time, through the global constructor below.
+        // A library for this process's target is loaded into it, so a JIT'd program finds its
+        // symbols. One built for another architecture or OS (an i686 DLL for this x64 compiler, an
+        // Android .so on Windows) cannot be; the program loads it at run time, through the global
+        // constructor below. Either way its declarations come from the file beside it.
         auto loadIntoCompiler = compileOptions.targetInfo.supportsInProcessJit;
-
-        // TODO: ...
-        llvm::sys::DynamicLibrary dynLib;
         if (loadIntoCompiler)
         {
             std::string errMsg;
-            dynLib = llvm::sys::DynamicLibrary::getPermanentLibrary(filePath.str().c_str(), &errMsg);
+            auto dynLib = llvm::sys::DynamicLibrary::getPermanentLibrary(filePath.str().c_str(), &errMsg);
             if (!dynLib.isValid())
             {
                 emitError(location, errMsg);
                 return mlir::failure();
             }
         }
-        else
+        else if (auto machine = Dump::coffMachine(filePath))
         {
-            // Only a PE image's declarations can be read from the file (Dump::readExportedCString).
-            auto machine = Dump::coffMachine(filePath);
-            if (machine == 0)
-            {
-                emitError(location) << "cannot read declarations from '" << filePath
-                                    << "': for a target other than the host, only PE DLLs can be imported";
-                return mlir::failure();
-            }
-
             // A DLL for another machine would link, and then not load in the program.
             uint16_t expected = 0;
             llvm::Triple targetTriple(compileOptions.moduleTargetTriple);
@@ -1995,44 +1963,35 @@ namespace mlirgen
             }
         }
 
-        SmallVector<StringRef> symbols;
-        StringRef mlirGctors;
-        // every symbol the library exports
-        SmallVector<StringRef> symbolsAll;
-        // "__tsown_<file>_<hash>", one per module in the library built under own
-        SmallVector<StringRef> ownFactsSymbols;
-#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-        // loading Binary to get list of symbols
-        Dump::getSymbols(filePath, symbolsAll, stringAllocator);
-
-        StringRef memoryModelSymbol;
-        for (auto symbol : symbolsAll)
+        // What the library's modules export, in the file beside it (TypeScript/LibraryDeclarations.h):
+        // read without loading or parsing the library, so one built for any target can be imported.
+        auto declarationsPath = libraryDeclarationsPath(filePath);
+        auto declarationsBuffer = llvm::MemoryBuffer::getFile(declarationsPath);
+        if (!declarationsBuffer)
         {
-            if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
-            {
-                symbols.push_back(symbol);
-            }
-            else if (symbol.starts_with(SHARED_LIB_MEMORY_MODEL))
-            {
-                memoryModelSymbol = symbol;
-            }
-            else if (symbol.starts_with(SHARED_LIB_OWN_FACTS))
-            {
-                ownFactsSymbols.push_back(symbol);
-            }
-            else if (symbol == MLIR_GCTORS)
-            {
-                mlirGctors = symbol;
-            }
+            emitError(location) << "shared library '" << filePath << "' has no declarations beside it ('"
+                                << declarationsPath << "'): build it again with this tslang, which writes them";
+            return mlir::failure();
         }
 
-        // "__tsmm_<model>_<file>_<hash>" - the model is the segment after the prefix. A library
-        // with no marker predates it, and everything did collect back then.
-        auto libraryModel = std::string("gc");
-        if (!memoryModelSymbol.empty())
+        auto libraryModules = parseLibraryDeclarations((*declarationsBuffer)->getBuffer());
+        if (!libraryModules)
         {
-            auto rest = memoryModelSymbol.drop_front(StringRef(SHARED_LIB_MEMORY_MODEL).size());
-            libraryModel = rest.take_until([](char c) { return c == '_'; }).str();
+            emitError(location) << "'" << declarationsPath << "' is not the declarations of shared library '"
+                                << filePath << "' (tslang writes them when it builds the library)";
+            return mlir::failure();
+        }
+
+        auto libraryModel = std::string("gc");
+        auto hasGCtors = false;
+        for (auto &libraryModule : *libraryModules)
+        {
+            if (!libraryModule.memoryModel.empty())
+            {
+                libraryModel = libraryModule.memoryModel;
+            }
+
+            hasGCtors |= libraryModule.hasGCtors;
         }
 
         if (libraryModel != memoryModelName(compileOptions.memoryModel))
@@ -2060,19 +2019,11 @@ namespace mlirgen
                                    "with tslang --emit=dll, which links gc.dll.";
             return mlir::failure();
         }
-#else
-        // only 1 file to load        
-        symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
-        if (!loadIntoCompiler)
-        {
-            // read from the file below, which tells a missing symbol from an unreadable one
-            Dump::getSymbols(filePath, symbolsAll, stringAllocator);
-        }
-#endif        
 
-        if (symbols.empty())
+        if (libraryModules->empty())
         {
-            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");            
+            emitWarning(location) << "shared library '" << filePath << "' declares nothing ('" << declarationsPath
+                                  << "' lists no module)";
         }
 
         // load library
@@ -2092,9 +2043,9 @@ namespace mlirgen
                     builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mth.getI32Type(), strVal);
 
                     // call global inits
-                    if (!mlirGctors.empty())
+                    if (hasGCtors)
                     {
-                        auto mlirGctorsNameVal = mlirGenStringValue(location, mlirGctors);
+                        auto mlirGctorsNameVal = mlirGenStringValue(location, MLIR_GCTORS);
                         auto strVal = cast(location, getStringType(), mlirGctorsNameVal, genContext);                        
                         auto globalCtorPtr = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                             location, mlir_ts::OpaqueType::get(builder.getContext()), strVal);
@@ -2121,25 +2072,17 @@ namespace mlirgen
             addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 
-        // Generics first: a declaration elsewhere names their specializations (a field typed
-        // `Box<Tree>`), and the symbols come sorted, which put __decls_<module> before
-        // __decls_generic_<module> - "generic type Box can't be found". Registering a generic
-        // only records it, so one naming a class declared after it is fine.
-        std::stable_partition(symbols.begin(), symbols.end(), [](StringRef symbol) {
-            return symbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
-        });
-
         // A library can hold several modules (test-runner -shared links them all into one), each
-        // with its own __decls_<module>. A module already in this module - imported as source,
-        // or through another library - is not declared again; see mlirGenInclude. Nor is one
-        // whose source is being generated around this import (declSymbolsInProgress): the
-        // program, say, built into a library it imports. Its source declares it.
+        // with its own block in the file, named as its __decls_<module> was. A module already in
+        // this module - imported as source, or through another library - is not declared again;
+        // see mlirGenInclude. Nor is one whose source is being generated around this import
+        // (declSymbolsInProgress): the program, say, built into a library it imports. Its source
+        // declares it.
         //
         // The modules' declarations name each other's classes (one module's State holds the
-        // Profiler another declares), and nothing orders them: they come in the order the library's
-        // symbol table lists them - by name in a DLL's export table, as the linker laid them out in
-        // an ELF one. A module's declarations that name what is not declared yet fail, and are read
-        // again once others have been; only a pass that declares none of them is a failure.
+        // Profiler another declares), and nothing orders them: they come in the order the objects
+        // were linked. A module's declarations that name what is not declared yet fail, and are
+        // read again once others have been; only a pass that declares none of them is a failure.
         struct LibraryDeclarations
         {
             StringRef symbol;
@@ -2149,69 +2092,47 @@ namespace mlirgen
 
         SmallVector<StringRef> declaredSymbols;
         SmallVector<LibraryDeclarations> pendingDeclarations;
-        for (auto declSymbol : symbols)
+        auto addDeclarations = [&](std::string declSymbol, StringRef text, bool isGenericClassDecl) {
+            if (text.empty() || emittedFiles.contains(declSymbol) || declSymbolsInProgress.contains(declSymbol))
+            {
+                return;
+            }
+
+            auto symbol = StringRef(declSymbol).copy(stringAllocator);
+            declaredSymbols.push_back(symbol);
+
+            std::string declText = text.str();
+            if (dynamic)
+            {
+                // TODO: use option variable instead of "this hack"
+                declText = MLIRHelper::replaceAll(declText.c_str(), "@dllimport", "@dllimport('.')");
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << declText << "\n";);
+
+            // a generic class's declaration (see createGenericClassDeclarationExportGlobalVar) must
+            // NOT be parsed with the ".d.ts" filename convention used below for every other kind of
+            // declaration: that convention makes the parser mark everything ambient/external
+            // regardless of any per-declaration @dllimport marker (see the comment on
+            // parsePartialStatements's file_d_ts parameter), which would make the generic's
+            // instantiated specializations wrongly look like external stubs with no compilable
+            // body - they need to be treated as ordinary, fully-compilable local source instead.
+            pendingDeclarations.push_back({symbol, std::move(declText), isGenericClassDecl});
+        };
+
+        // Generics first: a declaration elsewhere names their specializations (a field typed
+        // `Box<Tree>`) - "generic type Box can't be found". Registering a generic only records
+        // it, so one naming a class declared after it is fine.
+        for (auto &libraryModule : *libraryModules)
         {
-            if (emittedFiles.contains(declSymbol) || declSymbolsInProgress.contains(declSymbol))
-            {
-                continue;
-            }
+            addDeclarations(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_generic_") + libraryModule.suffix,
+                            libraryModule.genericDeclarations, true);
+        }
 
-            declaredSymbols.push_back(declSymbol);
-
-            // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-            const char *declText = nullptr;
-            std::optional<std::string> declTextFromFile;
-            if (loadIntoCompiler)
-            {
-                if (auto addrOfDeclText = dynLib.getAddressOfSymbol(declSymbol.str().c_str()))
-                {
-                    declText = *(const char**)addrOfDeclText;
-                }
-            }
-            else if (llvm::is_contained(symbolsAll, declSymbol))
-            {
-                declTextFromFile = Dump::readExportedCString(filePath, declSymbol);
-                if (!declTextFromFile)
-                {
-                    emitError(location) << "shared library '" << filePath << "' exports " << declSymbol
-                                        << " but its declarations could not be read from the file";
-                    return mlir::failure();
-                }
-
-                declText = declTextFromFile->c_str();
-            }
-
-            if (declText)
-            {
-                std::string result;
-                // process shared lib declarations
-                auto dataPtr = declText;
-                if (dynamic)
-                {
-                    // TODO: use option variable instead of "this hack"
-                    result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
-                    dataPtr = result.c_str();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
-
-                // a generic class's declaration (see
-                // createGenericClassDeclarationExportGlobalVar) must NOT be parsed with
-                // the ".d.ts" filename convention used below for every other kind of
-                // declaration: that convention makes the parser mark everything ambient/
-                // external regardless of any per-declaration @dllimport marker (see the
-                // comment on parsePartialStatements's file_d_ts parameter), which would
-                // make the generic's instantiated specializations wrongly look like
-                // external stubs with no compilable body - they need to be treated as
-                // ordinary, fully-compilable local source instead.
-                auto isGenericClassDecl =
-                    declSymbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
-                pendingDeclarations.push_back({declSymbol, std::string(dataPtr), isGenericClassDecl});
-            }
-            else
-            {
-                emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
-            }
+        for (auto &libraryModule : *libraryModules)
+        {
+            addDeclarations(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_") + libraryModule.suffix,
+                            libraryModule.declarations, false);
         }
 
         while (!pendingDeclarations.empty())
@@ -2241,29 +2162,12 @@ namespace mlirgen
 
         // What a library built under own says about its functions (SHARED_LIB_OWN_FACTS). Kept in
         // every model, so MLIRGen emits the same under own as under rc; only own reads it.
-        for (auto factsSymbol : ownFactsSymbols)
+        for (auto &libraryModule : *libraryModules)
         {
-            std::optional<std::string> factsText;
-            if (loadIntoCompiler)
+            if (!libraryModule.ownFacts.empty())
             {
-                if (auto addrOfFacts = dynLib.getAddressOfSymbol(factsSymbol.str().c_str()))
-                {
-                    factsText = std::string(*(const char **)addrOfFacts);
-                }
+                addImportedOwnNoDrops(libraryModule.ownFacts);
             }
-            else
-            {
-                factsText = Dump::readExportedCString(filePath, factsSymbol);
-            }
-
-            if (!factsText)
-            {
-                emitError(location) << "shared library '" << filePath << "' exports " << factsSymbol
-                                    << " but it could not be read from the file";
-                return mlir::failure();
-            }
-
-            addImportedOwnNoDrops(*factsText);
         }
 
         // only now: an import that failed is tried again on the next pass, and must fail again
@@ -2311,22 +2215,30 @@ namespace mlirgen
     std::optional<MLIRGenImpl::ImportedLibrary> MLIRGenImpl::libraryHoldingModule(mlir::Location location, StringRef fullPath,
                                                                                 ArrayRef<std::string> declSymbols)
     {
-#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
-        // a library's declarations are not told apart by module there
-        return std::nullopt;
-#else
         auto libraryHolds = [&](StringRef libraryPath) {
             auto cached = libraryDeclSymbolsCache.find(libraryPath);
             if (cached == libraryDeclSymbolsCache.end())
             {
-                SmallVector<StringRef> symbolsAll;
-                Dump::getSymbols(libraryPath, symbolsAll, stringAllocator);
+                // the modules the file beside it declares, named as mlirGenImportSharedLib names them
                 llvm::StringSet<> declSymbolsOfLibrary;
-                for (auto symbol : symbolsAll)
+                if (auto buffer = llvm::MemoryBuffer::getFile(libraryDeclarationsPath(libraryPath)))
                 {
-                    if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
+                    if (auto libraryModules = parseLibraryDeclarations((*buffer)->getBuffer()))
                     {
-                        declSymbolsOfLibrary.insert(symbol);
+                        for (auto &libraryModule : *libraryModules)
+                        {
+                            if (!libraryModule.declarations.empty())
+                            {
+                                declSymbolsOfLibrary.insert(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_") +
+                                                            libraryModule.suffix);
+                            }
+
+                            if (!libraryModule.genericDeclarations.empty())
+                            {
+                                declSymbolsOfLibrary.insert(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_generic_") +
+                                                            libraryModule.suffix);
+                            }
+                        }
                     }
                 }
 
@@ -2400,7 +2312,6 @@ namespace mlirgen
         }
 
         return std::nullopt;
-#endif
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)

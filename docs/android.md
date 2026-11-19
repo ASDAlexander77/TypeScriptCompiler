@@ -35,6 +35,12 @@ load. Either way the output is one self-contained, position-independent binary: 
 library, collector and libc++ are linked in statically, so it needs only Bionic's libc, libm and
 libdl. Android has no libcurl, so `fetch()` throws.
 
+Beside the library tslang writes `libhello.d.ts`, the declarations of what it exports. Another
+program compiled for Android imports the library with `import './hello'` on any host: tslang reads
+the declarations from that file and never needs to load the `.so`. Ship the two files together. A
+library linked from objects you build yourself (`--emit=obj`) gets them from the `.d.ts` written
+beside each object: join those into one `<library stem>.d.ts`.
+
 Run it on a device or emulator. Run `chmod +x` because a file pushed from Windows is not executable:
 
 ```bat

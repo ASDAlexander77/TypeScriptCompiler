@@ -94,6 +94,7 @@ std::string makeAbsolutePath(std::string);
 std::string getExecutablePath(const char *);
 
 int registerMLIRDialects(mlir::ModuleOp);
+std::string takeLibraryDeclarations(llvm::Module &, llvm::StringRef);
 mlir::TimingScope &compileTiming();
 void reportCompileTiming();
 namespace llvm { class TargetMachine; }
@@ -1647,6 +1648,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
         return -1;
     }
+
+    // what an importer of a library would read: a program run here is no library
+    takeLibraryDeclarations(*llvmModule, "");
 
     auto tmBuilderOrError = getJitTargetMachineBuilder();
     if (!tmBuilderOrError)
