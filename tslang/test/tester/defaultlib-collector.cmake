@@ -75,6 +75,9 @@ message(STATUS "default library: ${default_lib}")
 set(ENV{GC_SHARED_LIB_PATH} "")
 set(ENV{GC_LIB_PATH} "")
 set(ENV{DEFAULT_LIB_PATH} "")
+# Every run below names the runtime with --tslang-lib-path; one left in the environment would let
+# the Linux "JIT with no runtime to find" check find it, and the program run instead of refusing.
+set(ENV{TSLANG_LIB_PATH} "")
 
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}/alone")
