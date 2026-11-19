@@ -2340,6 +2340,8 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        releaseCapturedSlotsAsCells(funcOp);
+
         if (!funcGenContext.dummyRun && failed(checkValueConstructorClosures(funcOp)))
         {
             return mlir::failure();

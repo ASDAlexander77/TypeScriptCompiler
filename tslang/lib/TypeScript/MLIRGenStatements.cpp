@@ -293,6 +293,7 @@ namespace mlirgen
 
         auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
         genContextUsing.ownedVars = ownedVars.get();
+        takeLoopBodyCells(genContext, genContextUsing);
 
         EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing, skipStatements));
 
@@ -375,6 +376,7 @@ namespace mlirgen
 
             auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
             tryBodyGenContext.ownedVars = ownedVars.get();
+            takeLoopBodyCells(tryGenContext, tryBodyGenContext);
 
             EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, tryBodyGenContext, skipStatements));
 
@@ -937,6 +939,7 @@ namespace mlirgen
 
         auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
         branchContext.ownedVars = ownedVars.get();
+        takeLoopBodyCells(genContext, branchContext);
 
         EXIT_IF_FAILED(mlirGen(statement, branchContext));
 
@@ -1246,6 +1249,13 @@ namespace mlirgen
             // start. Only a value-type variable (a number, a boolean...), and only when the body makes a closure
             // and nothing in it (its closures neither) assigns one, so the loop's needs no value back: every
             // closure saw the one `i`, which the loop had moved past (3 3 3, not 0 1 2).
+            //
+            // A closure captures the copy as a cell, which the iteration owns, and the copy is declared before the
+            // body's scope exists: the body's scope lists it as its own (GenContext::loopBodyCells), or nothing
+            // gives the cell back and every iteration leaks one.
+            SmallVector<mlir::Value> perIterationCells;
+            GenContext bodyGenContext(loopGenContext);
+            bodyGenContext.loopBodyCells = &perIterationCells;
             if (forStatementAST->initializer == SyntaxKind::VariableDeclarationList)
             {
                 auto declarationList = forStatementAST->initializer.as<VariableDeclarationList>();
@@ -1282,11 +1292,12 @@ namespace mlirgen
                             location, mlir_ts::RefType::get(elementType), current, builder.getBoolAttr(false),
                             builder.getIndexAttr(0));
                         declare(location, varDecl, inner, loopGenContext);
+                        perIterationCells.push_back(inner);
                     }
                 }
             }
 
-            auto bodyResult = mlirGenBranchStatement(forStatementAST->statement, loopGenContext);
+            auto bodyResult = mlirGenBranchStatement(forStatementAST->statement, bodyGenContext);
             EXIT_IF_FAILED(bodyResult)
         }
 
@@ -2313,6 +2324,7 @@ namespace mlirgen
 
             auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
             tryBodyGenContext.ownedVars = ownedVars.get();
+            takeLoopBodyCells(tryGenContext, tryBodyGenContext);
 
             auto result = mlirGenNoScopeVarsAndDisposable(tryStatementAST->tryBlock, tryBodyGenContext);
             EXIT_IF_FAILED(result)

@@ -263,6 +263,12 @@ struct GenContext
     // at the loop's own scope - and `isLoop` alone reads true for all of them, which is what
     // made a `break` written inside an `if` skip the lot.
     bool isLoopBodyScope = false;
+    // With isLoop, set by a `for (let i ...)` whose body has an `i` of its own each iteration (a closure in it
+    // captures it): the storage of those copies, which the scope that becomes the loop's body scope lists
+    // among its own (takeLoopBodyCells). A captured copy is a cell, and is given back with that scope - at
+    // the end of every iteration, and at a `break` or `continue` - as a captured local declared in it is.
+    // Declared before the body's scope existed, it was listed nowhere: every iteration leaked its cell.
+    llvm::SmallVector<mlir::Value> *loopBodyCells = nullptr;
     // Set on the scope of a `switch` - the one its cases share - and cleared, as isLoopBodyScope
     // is, for every scope nested in it. An unlabelled `break` walking outwards stops here; a
     // `continue` passes through it to the loop.
