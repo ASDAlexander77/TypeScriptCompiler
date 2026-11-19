@@ -6390,9 +6390,23 @@ Tests: `own_caught_value_finally` (every model).
 Spec 87 left the locals of a catch or finally clause holding a `try` of its own unowned
 (`clausesWithNestedTry`), and spec 96 its caught value: the nested try's unwind leg would have left one
 unreleased while a clause had no cleanup of its own. Since #912 a block in a clause is wrapped for its
-unwind cleanup like any other, and that leg releases them. Both exclusions are gone. Under rc such a
-clause leaked on every pass before (the leak fuzzer: `finally { try {} finally { const a = [mk(1)]; } }`,
-60 MB at 120K iterations; a caught value in `catch (e) { try { .. } catch (e2) { .. } }`, 41 MB).
+unwind cleanup like any other, and that leg releases them. Both exclusions are gone but one. Under rc
+such a clause leaked on every pass before (the leak fuzzer: `finally { try {} finally { const a =
+[mk(1)]; } }`, 60 MB at 120K iterations; a caught value in `catch (e) { try { .. } catch (e2) { .. } }`,
+41 MB).
+
+The one left (`clausesUnownedForNestedFinally`): the catch clause of a `try` with a `finally` that holds
+a `try` with a `finally` of its own. A `return` out of the clause through the nested finally runs that
+finally's copy after the catch has ended, still inside the block wrapped for the clause's cleanup, whose
+pad is nested in the catch - "A single unwind edge may only enter one EH pad". A `using` in that clause
+fails the same way, in every model; the cleanup pad would have to be duplicated for the edges from
+outside the catch. Its locals and caught value stay unowned, and leak under rc as before.
+
+A caught value of a clause nested in another clause was hoisted in front of the wrong TryOp: the
+contexts made for a `try` nested in an unwind scope keep its flag and its list, but have that `try` as
+their `currentOperation`, while the list is given back by the scope's own TryOp ("operand does not
+dominate this use"). The scope now names that TryOp (`GenContext::unwindCleanupOp`); a catch clause's
+context, which stands for the scope around its `try`, keeps the enclosing one.
 
 Owning them put a wrapped block, or a cleanup pad, in places the Windows lowering got wrong. The first
 and the last of these failed before too, in every memory model (the first with a `using` in the clause):

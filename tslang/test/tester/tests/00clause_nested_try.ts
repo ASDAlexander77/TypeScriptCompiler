@@ -1,6 +1,8 @@
 // A catch or finally clause that holds a `try` of its own: its locals and its caught value own what
 // they hold, as in any other clause - they used to own nothing there, and leaked under -mm=rc on
-// every pass (`finally { try {} finally { const a = [mk(1)]; } }`).
+// every pass (`finally { try {} finally { const a = [mk(1)]; } }`). Except the catch clause of a
+// `try` with a `finally` that holds a `try` with a `finally` (returnThroughFinallys,
+// throwThroughFinally below): there they still own nothing, see clausesUnownedForNestedFinally.
 //
 // Such a clause's block is wrapped for its unwind cleanup, and inside a `try` that also has a
 // `finally` that wrapping left the Windows catch funclet with an edge out of it to the finally and a
