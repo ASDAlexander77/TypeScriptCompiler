@@ -690,11 +690,13 @@
 // For a tuple, class, interface or array type, the address of the adapter that reads a key of a value of
 // the type held in an `any` - `(box: any, op: number, key: any, value: any) => any`, made when the value
 // is boxed (user ruling 11-19, MLIRGenImpl::ensureAnyKeysAdapter): op ANY_KEYS_OP_GET is `box[key]`,
-// undefined for a key the type does not have, and ANY_KEYS_OP_HAS is `key in box`, a boolean. `value` is
-// for an op that writes, none yet. Null for any other type, or when none was made.
+// undefined for a key the type does not have, ANY_KEYS_OP_HAS is `key in box`, a boolean, and
+// ANY_KEYS_OP_SET is `box[key] = value`, `value` (a TypeError for a key the type has not got, a method, or
+// an accessor with no setter: no key is added). Null for any other type, or when none was made.
 #define TYPE_DESCR_KEYS 6
 #define ANY_KEYS_OP_GET 0
 #define ANY_KEYS_OP_HAS 1
+#define ANY_KEYS_OP_SET 2
 // The block header, last so that it sits immediately in front of the name bytes. A tag is a
 // `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
 // string - so a tag has to look like a payload with an immortal block header, exactly as a

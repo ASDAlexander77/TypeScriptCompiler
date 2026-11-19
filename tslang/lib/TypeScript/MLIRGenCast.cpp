@@ -4645,8 +4645,54 @@ namespace mlirgen
     static const std::string anyKeyIsNumberSource =
         "kt == \"number\" || kt == \"s32\" || kt == \"s64\" || kt == \"u32\" || kt == \"u64\"";
 
+    // what a write through `any` checks of the value first: a number, a string or a boolean key (or element) takes
+    // a value of its kind - the conversion `any` makes (a string read as a number is 0) would write what was not
+    // given. Objects are checked as they are unboxed. Empty for any other type.
+    static std::string anyKeyValueKind(mlir::Type type)
+    {
+        if (auto optionalType = dyn_cast_or_null<mlir_ts::OptionalType>(type))
+        {
+            auto kind = anyKeyValueKind(optionalType.getElementType());
+            return kind.empty() ? kind : kind + " || vt == \"undefined\"";
+        }
+
+        if (type && (isa<mlir_ts::NumberType>(type) || isa<mlir::IntegerType>(type)))
+        {
+            return "vt == \"number\" || vt == \"s32\" || vt == \"s64\" || vt == \"u32\" || vt == \"u64\"";
+        }
+
+        if (type && isa<mlir_ts::StringType>(type))
+        {
+            return "vt == \"string\"";
+        }
+
+        if (type && isa<mlir_ts::BooleanType>(type))
+        {
+            return "vt == \"boolean\"";
+        }
+
+        return "";
+    }
+
+    static std::string anyKeyValueKindCheck(mlir::Type type, bool optional, const std::string &throwWrongKind)
+    {
+        auto kind = anyKeyValueKind(type);
+        if (kind.empty())
+        {
+            return kind;
+        }
+
+        if (optional)
+        {
+            kind += " || vt == \"undefined\"";
+        }
+
+        return "const vt = typeof value; if (!(" + kind + ")) " + throwWrongKind + " ";
+    }
+
     bool MLIRGenImpl::anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
-                                    llvm::StringSet<> *optionals)
+                                    llvm::StringSet<> *optionals, llvm::StringSet<> *readOnly,
+                                    llvm::StringMap<mlir::Type> *types)
     {
         llvm::StringSet<> seen;
         auto addKey = [&](SmallVector<std::string> &keys, StringRef name) {
@@ -4679,6 +4725,10 @@ namespace mlirgen
                         name && field.accessLevel == mlir_ts::AccessLevel::Public)
                     {
                         addKey(values, name.getValue());
+                        if (types)
+                        {
+                            types->try_emplace(name.getValue(), field.type);
+                        }
                     }
                 }
 
@@ -4687,6 +4737,11 @@ namespace mlirgen
                     if (!accessor.isStatic && accessor.get && accessor.getAccessLevel == mlir_ts::AccessLevel::Public)
                     {
                         addKey(values, accessor.name);
+                        // a getter with no public setter: a write through `any` is a TypeError
+                        if (readOnly && !(accessor.set && accessor.setAccessLevel == mlir_ts::AccessLevel::Public))
+                        {
+                            readOnly->insert(accessor.name);
+                        }
                     }
                 }
 
@@ -4722,6 +4777,11 @@ namespace mlirgen
                     if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
                     {
                         addKey(values, name.getValue());
+                        if (types)
+                        {
+                            types->try_emplace(name.getValue(), field.type);
+                        }
+
                         if (field.isConditional && optionals)
                         {
                             optionals->insert(name.getValue());
@@ -4732,6 +4792,10 @@ namespace mlirgen
                 for (auto &accessor : info->accessors)
                 {
                     addKey(values, accessor.name);
+                    if (readOnly && accessor.setMethod.empty())
+                    {
+                        readOnly->insert(accessor.name);
+                    }
                 }
 
                 for (auto &method : info->methods)
@@ -4824,7 +4888,9 @@ namespace mlirgen
         SmallVector<std::string> values;
         SmallVector<std::string> methods;
         llvm::StringSet<> optionals;
-        if (!isArray && !anyKeysOfType(type, values, methods, &optionals))
+        llvm::StringSet<> readOnly;
+        llvm::StringMap<mlir::Type> types;
+        if (!isArray && !anyKeysOfType(type, values, methods, &optionals, &readOnly, &types))
         {
             return;
         }
@@ -4845,24 +4911,49 @@ namespace mlirgen
         auto inProgress = llvm::make_scope_exit([&]() { anyKeysAdaptersInProgress.erase(hash); });
 
         auto has = std::to_string(ANY_KEYS_OP_HAS);
-        auto notThere = "return op == " + has + " ? <any>false : undefined;\n";
+        auto set = std::to_string(ANY_KEYS_OP_SET);
+        // a write of a key the type has not got: a value's keys are its type's, none is added
+        auto noNewKey = "if (op == " + set + ") " +
+                        throwTypeErrorSource("a key the type of the value in the value of type any has not got can't be written") + "\n";
+        auto notThere = noNewKey + "return op == " + has + " ? <any>false : undefined;\n";
+        auto throwWrongKind = throwTypeErrorSource("the value written through a value of type any is not of the key's type");
 
         std::string name;
         std::string src;
         if (isArray)
         {
-            name = "__any_keys_array";
+            // a write of an element in range, or one past the end (it grows by one). One function for each kind
+            // of element a write checks (anyKeyValueKind): `_n` numbers, `_s` strings, `_b` booleans.
+            auto elementType = isa<mlir_ts::ArrayType>(type) ? mlir::cast<mlir_ts::ArrayType>(type).getElementType()
+                                                            : mlir::cast<mlir_ts::ConstArrayType>(type).getElementType();
+            elementType = mth.stripLiteralType(elementType);
+            // (an element that may be undefined is not checked: one function per name)
+            auto kindCheck = isa<mlir_ts::OptionalType>(elementType) ? std::string()
+                                                                     : anyKeyValueKindCheck(elementType, false, throwWrongKind);
+            auto suffix = kindCheck.empty()                           ? ""
+                          : isa<mlir_ts::StringType>(elementType)    ? "_s"
+                          : isa<mlir_ts::BooleanType>(elementType)   ? "_b"
+                                                                     : "_n";
+            name = "__any_keys_array" + std::string(suffix);
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
                   "const kt = typeof key;\n"
                   "const a = <T>box;\n"
                   "if (" + anyKeyIsNumberSource + ") {\n"
                   "const i = <number>key;\n"
                   "const inside = i >= 0 && i < a.length && i % 1 == 0;\n"
+                  "if (op == " + set + ") {\n" + kindCheck + "\n"
+                  "if (inside) { a[i] = value; return undefined; }\n"
+                  "if (i == a.length) { a.push(value); return undefined; }\n" +
+                  throwTypeErrorSource("an element of an array can only be written in its range or just past its end") + "\n"
+                  "}\n"
                   "if (op == " + has + ") return <any>inside;\n"
                   "if (inside) return <any>a[i];\n"
                   "return undefined;\n"
                   "}\n"
-                  "if (kt == \"string\" && <string>key == \"length\") return op == " + has + " ? <any>true : <any>a.length;\n" +
+                  "if (kt == \"string\" && <string>key == \"length\") {\n"
+                  "if (op == " + set + ") " + throwTypeErrorSource("the length of an array can't be written through a value of type any") + "\n"
+                  "return op == " + has + " ? <any>true : <any>a.length;\n"
+                  "}\n" +
                   notThere +
                   "}\n";
         }
@@ -4894,27 +4985,48 @@ namespace mlirgen
                   "let k = \"\";\n"
                   "if (kt == \"string\") k = <string>key;\n"
                   "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
-                  "else " + notThere +
+                  "else {\n" + notThere + "}\n"
                   "const o = <T>box;\n";
+
+            // a tuple is a value: the `any` holds a copy of it, which a write would change and nothing else
+            auto tuple = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
+            auto writeOf = [&](StringRef key, const std::string &place) -> std::string {
+                if (tuple)
+                {
+                    return "if (op == " + set + ") " +
+                           throwTypeErrorSource("a key of a tuple can't be written through a value of type any: it holds a copy") + "\n";
+                }
+
+                if (readOnly.contains(key))
+                {
+                    return "if (op == " + set + ") " +
+                           throwTypeErrorSource("an accessor with no setter can't be written through a value of type any") + "\n";
+                }
+
+                return "if (op == " + set + ") { " + anyKeyValueKindCheck(types.lookup(key), optionals.contains(key), throwWrongKind) +
+                       place + " = value; return undefined; }\n";
+            };
+
             for (auto &key : values)
             {
                 // a tuple's unnamed field is read by its position
                 auto read = isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
+                src += "if (k == " + quote(key) + ") {\n" + writeOf(key, read);
                 if (optionals.contains(key))
                 {
                     // an optional field not set is not there: its `typeof` says so, not the value it reads as
-                    src += "if (k == " + quote(key) + ") { const v = " + read + "; const set = typeof v != \"undefined\"; "
-                           "if (op == " + has + ") return <any>set; return set ? <any>v : undefined; }\n";
+                    src += "const v = " + read + "; const isSet = typeof v != \"undefined\"; "
+                           "if (op == " + has + ") return <any>isSet; return isSet ? <any>v : undefined; }\n";
                     continue;
                 }
 
-                src += "if (k == " + quote(key) + ") return op == " + has + " ? <any>true : <any>" + read + ";\n";
+                src += "return op == " + has + " ? <any>true : <any>" + read + ";\n}\n";
             }
 
             for (auto &key : methods)
             {
                 src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; " +
-                       throwTypeErrorSource("a method read through a value of type any is not supported: cast the value to its type") +
+                       throwTypeErrorSource("a method read or written through a value of type any is not supported: cast the value to its type") +
                        " }\n";
             }
 
@@ -4987,7 +5099,7 @@ namespace mlirgen
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenAnyKey(mlir::Location location, mlir::Value box, mlir::Value key, int op,
-                                                    const GenContext &genContext)
+                                                    const GenContext &genContext, mlir::Value value)
     {
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
@@ -5015,19 +5127,21 @@ namespace mlirgen
         if (!funcRef)
         {
             auto has = std::to_string(ANY_KEYS_OP_HAS);
+            auto set = std::to_string(ANY_KEYS_OP_SET);
             // `b`: `box` before `typeof` narrowed it
             std::string src =
-                "function __any_key<T>(box: any, op: number, key: any): T {\n"
+                "function __any_key<T>(box: any, op: number, key: any, value: any): T {\n"
                 "const kt = typeof key;\n"
                 "const b = box;\n"
                 "const t = typeof b;\n"
-                "if (t == \"null\" || t == \"undefined\") " + throwTypeErrorSource("a key of null or undefined can't be read") + "\n"
+                "if (t == \"null\" || t == \"undefined\") " + throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n"
                 "if (t == \"string\") {\n"
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a string is not allowed") + "\n"
+                "if (op == " + set + ") " + throwTypeErrorSource("a string can't be changed") + "\n"
                 "const s = <string>b;\n"
                 "if (" + anyKeyIsNumberSource + ") {\n"
                 "const i = <number>key;\n"
-                "if (i >= 0 && i < s.length && i % 1 == 0) return <T><any>s[i];\n"
+                "if (i >= 0 && i < s.length && i % 1 == 0) return <T><any><string>s[i];\n"
                 "return <T>undefined;\n"
                 "}\n"
                 "if (kt == \"string\" && <string>key == \"length\") return <T><any>s.length;\n"
@@ -5038,9 +5152,10 @@ namespace mlirgen
                 "if (t == \"class\" || t == \"tuple\" || t == \"interface\" || t == \"array\" || t == \"object\") " +
                 throwTypeErrorSource("the keys of the value in the value of type any are not known: it was boxed where they were not") + "\n"
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a value that is not an object is not allowed") + "\n"
+                "if (op == " + set + ") " + throwTypeErrorSource("a key of a value that is not an object can't be written") + "\n"
                 "return <T>undefined;\n"
                 "}\n"
-                "return <T>(<(box: any, op: number, key: any, value: any) => any>keys)(b, op, key, undefined);\n"
+                "return <T>(<(box: any, op: number, key: any, value: any) => any>keys)(b, op, key, value);\n"
                 "}\n";
 
             MLIRLocationGuard vgLoc(overwriteLoc);
@@ -5061,10 +5176,22 @@ namespace mlirgen
         GenContext keyGenContext(genContext);
         keyGenContext.typeAliasMap.insert({".ANY_KEY_T", getAnyType()});
 
+        mlir::Value valueValue;
+        if (value)
+        {
+            CAST(valueValue, location, getAnyType(), value, genContext);
+        }
+        else
+        {
+            CAST(valueValue, location, getAnyType(),
+                 builder.create<mlir_ts::UndefOp>(location, getUndefinedType()), genContext);
+        }
+
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(box);
         operands.push_back(builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(op)));
         operands.push_back(keyValue);
+        operands.push_back(valueValue);
 
         auto result = mlirGenCallExpression(location, funcRef,
                                             {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_KEY_T")).as<Node>())},
@@ -5087,11 +5214,18 @@ namespace mlirgen
             return cast(location, getBooleanType(), V(result), genContext);
         }
 
+        if (op == ANY_KEYS_OP_SET)
+        {
+            // `x[k] = v` is `v`
+            return value;
+        }
+
         if (auto definingOp = V(result).getDefiningOp())
         {
             definingOp->setAttr(ANY_KEY_READ_ATTR_NAME, builder.getUnitAttr());
         }
 
+        anyKeyReads[V(result)] = {box, keyValue};
         return result;
     }
 

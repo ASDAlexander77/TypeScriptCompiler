@@ -583,6 +583,13 @@ namespace mlirgen
             }
         }
 
+        // `x.name` of `x: any` is `x["name"]`, looked up at run time (mlirGenAnyKey)
+        if (!value && isa<mlir_ts::AnyType>(objectValue.getType()))
+        {
+            auto key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+            return mlirGenAnyKey(location, objectValue, key, ANY_KEYS_OP_GET, genContext);
+        }
+
         // an integer (`1..toString()`: an integer literal is an s32) has the members a number has: the default
         // library declares them on `number`. A member `number` has not got either is reported for the integer.
         if (!value && isa<mlir::IntegerType>(objectValue.getType()))
@@ -1894,6 +1901,7 @@ namespace mlirgen
             return std::nullopt;
         }
 
+        mlir::Value removed;
         auto generate = [&]() -> ValueOrLogicalResult {
             MLIRCodeLogic mcl(builder, compileOptions);
             auto arrayRef = mcl.GetReferenceFromValue(location, thisValue);
@@ -2016,11 +2024,15 @@ namespace mlirgen
                         return mlir::failure();
                     }
 
-                    // the delete runs first; everything before .at stays where it is
-                    if (mlir::failed(mlirGen(_splice(_start, nf.createIdentifier(S(".count")), undefined), genContext)))
-                    {
-                        return mlir::failure();
-                    }
+                    // the delete runs first; everything before .at stays where it is. What it removes is
+                    // splice's result.
+                    NodeArray<Expression> deleteArguments;
+                    deleteArguments.push_back(_start);
+                    deleteArguments.push_back(nf.createIdentifier(S(".count")));
+                    auto deleted = mlirGen(nf.createCallExpression(
+                        nf.createPropertyAccessExpression(_dst_array, nf.createIdentifier(S("splice"))), undefined, deleteArguments), genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(deleted)
+                    removed = V(deleted);
                 }
                 else
                 {
@@ -2043,6 +2055,12 @@ namespace mlirgen
                 {
                     return mlir::failure();
                 }
+            }
+
+            // splice gives back what it removed; push and unshift the new length
+            if (removed)
+            {
+                return removed;
             }
 
             auto loadedArray = builder.create<mlir_ts::LoadOp>(location, arrayType, arrayRef);

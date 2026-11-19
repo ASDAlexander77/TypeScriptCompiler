@@ -42,6 +42,13 @@ EXPORTS
     tslang_load_library_permanently
     tslang_search_for_address_of_symbol
 
+    ; --- f16 conversions (TypeScriptAsyncRuntime/HalfTrunc*.c, HalfExtend*.c: compiler-rt's), which
+    ; --- LLVM calls for an f16 conversion it does not fold (unoptimized code) ---
+    __truncsfhf2
+    __truncdfhf2
+    __extendhfsf2
+    __extendhfdf2
+
     ; --- async runtime (AsyncRuntime.cpp, extern "C", names already match) ---
     mlirAsyncRuntimeAddRef
     mlirAsyncRuntimeDropRef

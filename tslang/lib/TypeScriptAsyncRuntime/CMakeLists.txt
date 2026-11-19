@@ -6,6 +6,11 @@ add_mlir_library(TypeScriptAsyncRuntime
   DynamicRuntime.cpp
   UncaughtException.cpp
   StdioDefinitions.cpp
+  # f16 conversions, which MSVC's runtime does not have (compiler-rt/README.md)
+  HalfTruncSingle.c
+  HalfTruncDouble.c
+  HalfExtendSingle.c
+  HalfExtendDouble.c
 
   EXCLUDE_FROM_LIBMLIR
 

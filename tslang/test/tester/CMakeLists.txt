@@ -342,6 +342,7 @@ tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-compile-00-let-without-initializer-owns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
@@ -1058,6 +1059,7 @@ tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-jit-00-let-without-initializer-owns COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
@@ -2668,6 +2670,8 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 set(TSLANG_CORPUS
     00generic_class_static.ts
     00static_instance_same_name.ts
+    00array_splice_result.ts
+    00f16_conversions.ts
     00negative_zero.ts
     00getter_statement.ts
     00bigint_mixed_arith.ts
@@ -3163,6 +3167,7 @@ set(TSLANG_CORPUS
     00symbol_unique_key.ts
     00any_call.ts
     00any_keys.ts
+    00any_keys_write.ts
     00let_without_initializer_owns.ts
     00call_signature_type.ts
     00f_bounded_generic.ts
@@ -4090,17 +4095,6 @@ foreach(any_key_own_case "any_key|2:12|element access of a value of type 'any' \
                      -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_key_own_slug}-own.obj")
     set_tests_properties(test-compile-crash-errors-${any_key_own_slug}-own
                          PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_own_name}\\.ts:${any_key_own_position}: error: ${any_key_own_message} is not supported under -mm=own"
-                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
-endforeach()
-# ...and a key is only read through `any`: writing one is an error that says so
-foreach(any_key_write_name any_key_assign any_key_compound any_key_increment)
-    string(REPLACE "_" "-" any_key_write_slug "${any_key_write_name}")
-    add_test(NAME test-compile-crash-errors-${any_key_write_slug}
-             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
-                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${any_key_write_name}.ts"
-                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_key_write_slug}.obj")
-    set_tests_properties(test-compile-crash-errors-${any_key_write_slug}
-                         PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_write_name}\\.ts:2:5: error: writing 'x\\[k\\]' of a value of type 'any' is not supported"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
 endforeach()
 # a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")
@@ -5549,6 +5543,13 @@ tslang_add_test(NAME test-compile-export-import-class-static-instance-same-name 
 tslang_add_test(NAME test-compile-shared-export-import-class-static-instance-same-name COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static_instance_same_name.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static_instance_same_name.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-static-instance-same-name COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static_instance_same_name.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static_instance_same_name.ts")
 tslang_add_test(NAME test-compile-rc-shared-export-import-class-static-instance-same-name COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static_instance_same_name.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static_instance_same_name.ts")
+tslang_add_test(NAME test-compile-00-array-splice-result COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-compile-own-00-array-splice-result COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-jit-00-array-splice-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-jit-own-00-array-splice-result COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-compile-00-f16-conversions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
+tslang_add_test(NAME test-compile-debug-00-f16-conversions COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
+tslang_add_test(NAME test-jit-00-f16-conversions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
 tslang_add_test(NAME test-compile-00-bigint-mixed-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-compile-own-00-bigint-mixed-arith COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-jit-00-bigint-mixed-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")

@@ -17,6 +17,12 @@ add_mlir_library(TypeScriptRuntime
   AsyncGCThreads.cpp
   DynamicRuntime.cpp
   mlir_init.cpp
+  # the f16 conversions an executable takes from TypeScriptAsyncRuntime (compiler-rt/README.md there):
+  # unoptimized JIT code calls them too, and nothing else in the process has them on Windows
+  ../TypeScriptAsyncRuntime/HalfTruncSingle.c
+  ../TypeScriptAsyncRuntime/HalfTruncDouble.c
+  ../TypeScriptAsyncRuntime/HalfExtendSingle.c
+  ../TypeScriptAsyncRuntime/HalfExtendDouble.c
 
   EXCLUDE_FROM_LIBMLIR
 

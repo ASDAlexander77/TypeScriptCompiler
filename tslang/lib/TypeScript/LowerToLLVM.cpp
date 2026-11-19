@@ -5012,9 +5012,41 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, decSizeAsLLVMType, availableAsLLVMType);
         decSizeAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, deleteFits, decSizeAsLLVMType, availableAsLLVMType);
 
+        auto sizeOfElementMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, elementType);
+        auto sizeOfElement = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfElementMLIR);
+
+        // What splice gives back: the removed elements, moved (not copied) into an array of their
+        // own, which holds the references the source block held - so nothing is released here. When
+        // nothing reads the result there is no array to make, and the removed elements are released
+        // in place instead.
+        // A result whose only use is to be released (`a.splice(i, 1);` under rc and own) is not read
+        // either: releasing that array would release each removed element, which is what releasing
+        // them in place does, without the array.
+        mlir::Value removedArray;
+        auto removedUsers = llvm::to_vector(spliceOp.getRemoved().getUsers());
+        if (llvm::all_of(removedUsers, [](mlir::Operation *user) { return isa<mlir_ts::ReleaseOp>(user); }))
         {
+            for (auto *user : removedUsers)
+            {
+                rewriter.eraseOp(user);
+            }
+
             OwnershipRoutineLogic orl(spliceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseArrayElements(elementType, currentPtr, startIndexAsLLVMType, decSizeAsLLVMType);
+            removedArray = rewriter.create<LLVM::UndefOp>(loc, tch.convertType(arrayType));
+        }
+        else
+        {
+            auto removedBytes = layout.bytesFor(arrayType, decSizeAsLLVMType);
+            auto removedData = ch.MemoryAlloc(removedBytes, MemoryAllocSet::None);
+            layout.checkAllocated(removedData, removedBytes);
+
+            auto removedFrom = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, currentPtr, ValueRange{startIndexAsLLVMType});
+            auto removedCopyBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, decSizeAsLLVMType});
+            rewriter.create<mlir_ts::MemoryCopyOp>(loc, removedData, removedFrom,
+                                                   rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, removedCopyBytes));
+
+            removedArray = layout.make(arrayType, removedData, decSizeAsLLVMType);
         }
 
         // Keep all arithmetic in the already-LLVM-converted domain (llvmIndexType), matching
@@ -5025,8 +5057,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         mlir::Value newCountAsLLVMType = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, decSizeAsLLVMType});
         newCountAsLLVMType = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{newCountAsLLVMType, incSizeAsLLVMType});
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, elementType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+        mlir::Value sizeOfTypeValue = sizeOfElement;
 
         // The block grows by doubling when the array gets longer, and is kept when it gets shorter
         // (spec section 6). Growth comes first - it may move the block - and is a no-op while the
@@ -5092,7 +5123,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
 
-        rewriter.replaceOp(spliceOp, ValueRange{newCountAsLLVMType});
+        rewriter.replaceOp(spliceOp, ValueRange{removedArray});
         return success();
     }
 };

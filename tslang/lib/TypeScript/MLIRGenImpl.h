@@ -8228,11 +8228,21 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // `x[k] = v` (and `+=`, `++`) of `x: any`: a key is only read through `any` (mlirGenAnyKey)
-        if (auto definingOp = leftExpressionValue.getDefiningOp(); definingOp && definingOp->hasAttr(ANY_KEY_READ_ATTR_NAME))
+        // `x[k] = v` (and `+=`, `++`) of `x: any`: written through the adapter of the type of the value it holds,
+        // as it was read (mlirGenAnyKey). The read a plain `=` made is not needed.
+        auto leftDefiningOp = leftExpressionValue.getDefiningOp();
+        if (auto anyKeyRead = anyKeyReads.find(leftExpressionValue);
+            anyKeyRead != anyKeyReads.end() && leftDefiningOp && leftDefiningOp->hasAttr(ANY_KEY_READ_ATTR_NAME))
         {
-            emitError(location, "writing 'x[k]' of a value of type 'any' is not supported: cast it to its type first");
-            return mlir::failure();
+            auto [box, key] = anyKeyRead->second;
+            anyKeyReads.erase(anyKeyRead);
+            auto written = mlirGenAnyKey(location, box, key, ANY_KEYS_OP_SET, genContext, rightExpressionValue);
+            if (leftDefiningOp->getNumResults() == 1 && leftDefiningOp->use_empty())
+            {
+                leftDefiningOp->erase();
+            }
+
+            return written;
         }
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
@@ -8366,6 +8376,13 @@ class MLIRGenImpl
                     auto writeOp = mlir::cast<mlir_ts::InterfaceSymbolRefOp>(builder.clone(*interfaceSymbolRefOp));
                     writeOp->setAttr(INTERFACE_OPTIONAL_WRITE_ATTR, builder.getBoolAttr(!storesUndefined));
                     storeReference = writeOp.getResult();
+
+                    // an object with no place for the field (`const i: I = { n: 1 }`, `I` with `o?: string`):
+                    // its slot gives no address, and the write throws rather than store through none
+                    if (mlir::failed(mlirGenThrowIfNoPlace(location, storeReference, genContext)))
+                    {
+                        return mlir::failure();
+                    }
                 }
             }
 
@@ -11059,6 +11076,36 @@ class MLIRGenImpl
     // holds null or undefined the read throws, as a member of a null interface does: through a stub
     // made as that one's methods are (mlirGenThrowingMethodStub). The check is a branch with no result,
     // so nothing is merged.
+    // throws when `reference` (an optional interface field's place) is null: the object has no place for it
+    mlir::LogicalResult mlirGenThrowIfNoPlace(mlir::Location location, mlir::Value reference, const GenContext &genContext)
+    {
+        auto address = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), reference);
+        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto missing = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsToken, address, nullValue, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(missing)
+
+        auto stubName = ".optional_field.no_place";
+        auto stubType = getFunctionType({getOpaqueType()}, {}, false);
+        if (mlir::failed(mlirGenThrowingMethodStub(location, ".no_place", stubName, stubType, genContext,
+                                                   "the object has no place for the optional field written: "
+                                                   "it was made without it")))
+        {
+            return mlir::failure();
+        }
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, V(missing), false);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+        auto stubRef = builder.create<mlir_ts::SymbolRefOp>(
+            location, stubType, mlir::FlatSymbolRefAttr::get(builder.getContext(), stubName));
+        auto nullThis = builder.create<mlir_ts::CastOp>(location, getOpaqueType(),
+                                                        builder.create<mlir_ts::NullOp>(location, getNullType()));
+        builder.create<mlir_ts::CallIndirectOp>(MLIRHelper::getCallSiteLocation(stubRef, location), stubRef,
+                                                mlir::ValueRange{nullThis});
+        return mlir::success();
+    }
+
     ValueOrLogicalResult mlirGenPresentValue(mlir::Location location, mlir::Value value, const GenContext &genContext)
     {
         auto valueType = MLIRTypeHelper::getMissingValueElement(value.getType());
@@ -12760,9 +12807,13 @@ class MLIRGenImpl
 
     // `box[key]` (ANY_KEYS_OP_GET, the value or undefined) or `key in box` (ANY_KEYS_OP_HAS, a boolean) of a
     // value of type `any` (user ruling 11-19): through the adapter made for the type of the value it holds when
-    // it was boxed (TYPE_DESCR_KEYS); a string's keys are its characters and `length`
+    // it was boxed (TYPE_DESCR_KEYS); a string's keys are its characters and `length`. ANY_KEYS_OP_SET writes
+    // `value` (`box[key] = value`) and gives `value`.
     ValueOrLogicalResult mlirGenAnyKey(mlir::Location location, mlir::Value box, mlir::Value key, int op,
-                                       const GenContext &genContext);
+                                       const GenContext &genContext, mlir::Value value = mlir::Value());
+    // `x[k]` / `x.name` of `x: any` read (mlirGenAnyKey): the box and the key (as `any`), so that an assignment
+    // to it writes the key (mlirGenSaveLogicOneItem)
+    llvm::DenseMap<mlir::Value, std::pair<mlir::Value, mlir::Value>> anyKeyReads;
 
     // The adapter `(box: any, op: number, key: any, value: any) => any` for a tuple, class, interface or array
     // type boxed in an `any`, recorded for its type descriptor (ANY_KEYS_ADAPTERS_ATTR_NAME)
@@ -12772,7 +12823,8 @@ class MLIRGenImpl
     // are there (methods, `methods`), and of the values those that may not be set (`optionals`, an optional field);
     // false for a type whose keys it does not know
     bool anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
-                       llvm::StringSet<> *optionals = nullptr);
+                       llvm::StringSet<> *optionals = nullptr, llvm::StringSet<> *readOnly = nullptr,
+                       llvm::StringMap<mlir::Type> *types = nullptr);
 
     // the adapter itself, made once the module's statements are (makePendingAnyKeysAdapters)
     void makeAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext);
@@ -17545,6 +17597,13 @@ class MLIRGenImpl
 
     mlir::Value evaluatePropertyValue(mlir::Location location, mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
+        // a value of type `any` has every name to an access (looked up at run time, mlirGenAnyKey), but none to
+        // the question asked here, whether a type has a member: `i in a` asks it of `length`
+        if (isa<mlir_ts::AnyType>(exprValue.getType()))
+        {
+            return mlir::Value();
+        }
+
         // we need to ignore errors;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
         });
