@@ -6430,3 +6430,21 @@ Under own, `throw e2` from a catch in a `try` with a `finally` is still refused 
 an 'any' that holds an object"), nested or not: the rethrow copies the caught value.
 
 Tests: `00clause_nested_try` (gc, rc, none, own; AOT and JIT).
+
+## 100. A jump out of a catch clause through a nested `finally`, 2026-11-19
+
+Spec 99 left one clause unowned (`clausesUnownedForNestedFinally`): the catch clause of a `try` with a
+`finally` that holds a `try` with a `finally` of its own. A `return`, `break` or `continue` out of the
+clause ended the catch where it stood (`catchesLeft`, counted on the jump), so the nested finally's copy
+for the jump - and the release of the clause's block wrapped for its unwind cleanup - ran after the
+catch had ended, while its calls still unwound to pads nested in the catch. On Windows: "A single unwind
+edge may only enter one EH pad". With a `using` in that clause it failed so in every memory model.
+
+The catches around a nested `try` now end where its finally's copy for the jump ends: a `return` copy's
+closing `return` carries them (`catchesLeft` moves to it), and a jump's copy ends them before its branch
+to the target. Only the try's own catch is ended at the jump, ahead of its finally (`leavesOwnCatch`). The
+exclusion is gone: those clauses own their locals and caught value like any other.
+
+Tests: `00catch_nested_finally_exit` (gc, rc, none, own; AOT and JIT) - return through one and two
+nested finallys, a `using` in the clause, a catch in a catch, `break`/`continue`, and a throw out of
+the nested finally on the way back.
