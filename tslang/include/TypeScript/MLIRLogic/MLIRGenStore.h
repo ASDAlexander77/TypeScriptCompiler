@@ -1114,6 +1114,15 @@ struct ClassInfo
             return method1.orderWeight < method2.orderWeight;
         });
 
+        // A static method's slot is found by a key of its own: a class may have an instance method of
+        // the same name (`compare(other)` and `static compare(a, b)`), and each overrides only its kind.
+        auto slotKey = [](MethodInfo &method) {
+            return method.isStatic ? std::string(".static ") + method.name : method.name;
+        };
+        auto hasInstanceTwin = [&](MethodInfo &method) {
+            return method.isStatic && llvm::any_of(methods, [&](MethodInfo &other) { return !other.isStatic && other.name == method.name; });
+        };
+
         for (auto &method : methods)
         {
 #ifndef ADD_STATIC_MEMBERS_TO_VTABLE
@@ -1128,14 +1137,15 @@ struct ClassInfo
             }
 #endif
 
-            auto it = methodSlots.find(method.name);
-            if (it != methodSlots.end() && !isCppVTable && method.funcType && methodSlotsOfArity.contains(method.name))
+            auto key = slotKey(method);
+            auto it = methodSlots.find(key);
+            if (it != methodSlots.end() && !isCppVTable && method.funcType && methodSlotsOfArity.contains(key))
             {
                 // an override: every slot of the name calls it, each through its own type. One of the
                 // same arity takes it as it is; one of another (`get()` overridden by `get(scale?)`,
                 // `foo(x, y, ...z)` by `foo()`) a thunk; and with none of its arity it has a slot of
                 // its own, which calls made through its class use.
-                auto &slots = methodSlotsOfArity[method.name];
+                auto &slots = methodSlotsOfArity[key];
                 auto ownSlot = -1;
                 for (auto index : slots)
                 {
@@ -1247,20 +1257,26 @@ struct ClassInfo
                 }
 
                 method.virtualIndex = index;
-                methodSlots[method.name] = index;
+                methodSlots[key] = index;
                 vtable[index] = {method, false};
             }
             else if (method.isVirtual)
             {
                 method.virtualIndex = vtable.size();
-                methodSlots[method.name] = vtable.size();
+                methodSlots[key] = vtable.size();
                 if (!isCppVTable && method.funcType)
                 {
-                    methodSlotsOfArity[method.name].push_back(vtable.size());
+                    methodSlotsOfArity[key].push_back(vtable.size());
                 }
 
                 VirtualMethodOrInterfaceVTableInfo record{method, false};
                 record.slotType = method.funcType;
+                // a field of its own name in the vtable's tuple, beside the instance method's
+                if (hasInstanceTwin(method))
+                {
+                    record.methodInfo.name = key;
+                }
+
                 vtable.push_back(record);
             }
         }
@@ -1329,13 +1345,38 @@ struct ClassInfo
         return (signed)dist >= (signed)staticFields.size() ? -1 : dist;
     }
 
-    int getMethodIndex(mlir::StringRef name)
+    // A class may have a static and an instance method of one name (`compare(other)` and
+    // `static compare(a, b)`), as TypeScript allows: the one asked for, the other when it is the only one.
+    // An instance one unless `preferStatic` (a member reached through the class itself).
+    int getMethodIndex(mlir::StringRef name, bool preferStatic = false)
     {
-        auto dist = std::distance(
-            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](auto methodInfo) {
-                return name == methodInfo.name;
-            }));
-        return (signed)dist >= (signed)methods.size() ? -1 : dist;
+        auto other = -1;
+        for (auto index = 0; index < (int)methods.size(); index++)
+        {
+            if (methods[index].name != name)
+            {
+                continue;
+            }
+
+            if (methods[index].isStatic == preferStatic)
+            {
+                return index;
+            }
+
+            if (other < 0)
+            {
+                other = index;
+            }
+        }
+
+        return other;
+    }
+
+    // the method of this name that is static, or not, and no other
+    int getMethodIndexExact(mlir::StringRef name, bool isStatic)
+    {
+        auto index = getMethodIndex(name, isStatic);
+        return index >= 0 && methods[index].isStatic == isStatic ? index : -1;
     }
 
     int getGenericMethodIndex(mlir::StringRef name)
@@ -1434,12 +1475,35 @@ struct ClassInfo
         return nullptr;
     }
 
-    int getAccessorIndex(mlir::StringRef name)
+    // as getMethodIndex: a static and an instance accessor may share a name
+    int getAccessorIndex(mlir::StringRef name, bool preferStatic = false)
     {
-        auto dist = std::distance(accessors.begin(),
-                                  std::find_if(accessors.begin(), accessors.end(),
-                                               [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
-        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+        auto other = -1;
+        for (auto index = 0; index < (int)accessors.size(); index++)
+        {
+            if (accessors[index].name != name)
+            {
+                continue;
+            }
+
+            if (accessors[index].isStatic == preferStatic)
+            {
+                return index;
+            }
+
+            if (other < 0)
+            {
+                other = index;
+            }
+        }
+
+        return other;
+    }
+
+    int getAccessorIndexExact(mlir::StringRef name, bool isStatic)
+    {
+        auto index = getAccessorIndex(name, isStatic);
+        return index >= 0 && accessors[index].isStatic == isStatic ? index : -1;
     }
 
     int getImplementIndex(mlir::StringRef name)

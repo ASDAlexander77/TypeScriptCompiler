@@ -487,7 +487,7 @@ namespace mlirgen
 
                     // a static method has a vtable slot, which a subclass's static of that name takes
                     // over: through the value it is the static of the class the value holds
-                    auto methodIndex = classInfo->getMethodIndex(name);
+                    auto methodIndex = classInfo->getMethodIndex(name, /*preferStatic=*/true);
                     if (methodIndex >= 0 && classInfo->methods[methodIndex].isStatic)
                     {
                         return ClassMethodAccess(classInfo, location, objectValue, methodIndex, false,
@@ -1228,8 +1228,10 @@ namespace mlirgen
             return ClassStaticFieldAccess(classInfo, location, thisValue, staticFieldIndex, accessingFromLevel, genContext);
         }
 
-        // check method access
-        auto methodIndex = classInfo->getMethodIndex(name);
+        // check method access: through the class itself (`A.compare`) its static method, through an
+        // object its instance one, when it has both
+        auto throughClass = thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
+        auto methodIndex = classInfo->getMethodIndex(name, throughClass);
         if (methodIndex >= 0)
         {
             return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext,
@@ -1243,8 +1245,8 @@ namespace mlirgen
             return ClassGenericMethodAccess(classInfo, location, thisValue, genericMethodIndex, isSuperClass, accessingFromLevel, genContext);
         }        
 
-        // check accessor
-        auto accessorIndex = classInfo->getAccessorIndex(name);
+        // check accessor (the static one through the class, as for a method)
+        auto accessorIndex = classInfo->getAccessorIndex(name, throughClass);
         if (accessorIndex >= 0)
         {
             return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, isSuperClass, accessingFromLevel, genContext,

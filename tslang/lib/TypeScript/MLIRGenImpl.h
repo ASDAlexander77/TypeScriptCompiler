@@ -16653,7 +16653,8 @@ class MLIRGenImpl
                 }
             }
 
-            auto methodIndex = newClassPtr->getMethodIndex(methodName);
+            // a static and an instance method of one name are two methods
+            auto methodIndex = newClassPtr->getMethodIndexExact(methodName, isStatic);
             auto dllNameAttr = funcOp ? funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME) : mlir::StringAttr();
             auto dllName = dllNameAttr ? dllNameAttr.getValue().str() : std::string();
             if (methodIndex < 0)
@@ -16815,11 +16816,12 @@ class MLIRGenImpl
         {
             auto &accessorInfos = newClassPtr->accessors;
 
-            auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+            // a static and an instance accessor of one name are two accessors
+            auto accessorIndex = newClassPtr->getAccessorIndexExact(propertyName, isStatic);
             if (accessorIndex < 0)
             {
                 accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual, isAbstract});
-                accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+                accessorIndex = (int)accessorInfos.size() - 1;
             }
 
             assert(accessorIndex >= 0);
