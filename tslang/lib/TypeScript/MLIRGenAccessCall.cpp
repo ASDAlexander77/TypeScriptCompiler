@@ -487,7 +487,7 @@ namespace mlirgen
 
                     // a static method has a vtable slot, which a subclass's static of that name takes
                     // over: through the value it is the static of the class the value holds
-                    auto methodIndex = classInfo->getMethodIndex(name);
+                    auto methodIndex = classInfo->getMethodIndex(name, /*preferStatic=*/true);
                     if (methodIndex >= 0 && classInfo->methods[methodIndex].isStatic)
                     {
                         return ClassMethodAccess(classInfo, location, objectValue, methodIndex, false,
@@ -729,6 +729,62 @@ namespace mlirgen
             auto genericClassInfo = getGenericClassInfoByFullName(classFullName);
             if (genericClassInfo)
             {
+                // A static member of a generic class through the class itself (`Box.of(1)`): TypeScript
+                // gives a static member no type parameter to use, so the class instantiated with any
+                // arguments has it - each parameter's default, or its constraint, or `any`.
+                if (thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+                {
+                    // inside the class itself, `Box` is the instantiation being compiled: making another
+                    // from within it is a class that is not finished yet
+                    if (auto thisClassType = dyn_cast_or_null<mlir_ts::ClassType>(genContext.thisClassType))
+                    {
+                        // (its origin is recorded once it is finished; until then its name is the one
+                        // these type arguments give the generic)
+                        auto thisClassInfo = getClassInfoByFullName(thisClassType.getName().getValue());
+                        if (thisClassInfo
+                            && (thisClassInfo->originClassType == genericClassInfo->classType
+                                || (!genContext.typeParamsWithArgs.empty()
+                                    && thisClassType.getName().getValue() == getSpecializedClassName(genericClassInfo, genContext))))
+                        {
+                            auto thisClassRef = builder.create<mlir_ts::ClassRefOp>(
+                                location, thisClassType,
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), thisClassType.getName().getValue()));
+                            return ClassMembersAccess(location, thisClassRef, thisClassInfo, name, baseClass, argument,
+                                                      accessingFromLevel, genContext);
+                        }
+                    }
+                }
+
+                if (thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>() && !genContext.allowPartialResolve)
+                {
+                    SmallVector<mlir::Type> typeArguments;
+                    for (auto &typeParam : genericClassInfo->typeParams)
+                    {
+                        mlir::Type typeArgument;
+                        if (typeParam->hasDefault())
+                        {
+                            typeArgument = getType(typeParam->getDefault(), genContext);
+                        }
+                        else if (typeParam->hasConstraint())
+                        {
+                            typeArgument = getType(typeParam->getConstraint(), genContext);
+                        }
+
+                        typeArguments.push_back(typeArgument ? typeArgument : mlir::Type(getAnyType()));
+                    }
+
+                    auto [result, specType] =
+                        instantiateSpecializedClassType(location, genericClassInfo->classType, typeArguments, genContext);
+                    if (auto specClassType = mlir::succeeded(result) ? dyn_cast_or_null<mlir_ts::ClassType>(specType) : mlir_ts::ClassType())
+                    {
+                        auto specClassRef = builder.create<mlir_ts::ClassRefOp>(
+                            location, specClassType,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
+                        return ClassMembersAccess(location, specClassRef, specClassType.getName().getValue(), name, baseClass,
+                                                  argument, accessingFromLevel, genContext);
+                    }
+                }
+
                 // we can't discover anything in generic class
                 return mlir::Value();
             }
@@ -1235,8 +1291,10 @@ namespace mlirgen
             return ClassStaticFieldAccess(classInfo, location, thisValue, staticFieldIndex, accessingFromLevel, genContext);
         }
 
-        // check method access
-        auto methodIndex = classInfo->getMethodIndex(name);
+        // check method access: through the class itself (`A.compare`) its static method, through an
+        // object its instance one, when it has both
+        auto throughClass = thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
+        auto methodIndex = classInfo->getMethodIndex(name, throughClass);
         if (methodIndex >= 0)
         {
             return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext,
@@ -1250,8 +1308,8 @@ namespace mlirgen
             return ClassGenericMethodAccess(classInfo, location, thisValue, genericMethodIndex, isSuperClass, accessingFromLevel, genContext);
         }        
 
-        // check accessor
-        auto accessorIndex = classInfo->getAccessorIndex(name);
+        // check accessor (the static one through the class, as for a method)
+        auto accessorIndex = classInfo->getAccessorIndex(name, throughClass);
         if (accessorIndex >= 0)
         {
             return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, isSuperClass, accessingFromLevel, genContext,

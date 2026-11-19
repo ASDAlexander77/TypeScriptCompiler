@@ -527,12 +527,43 @@ namespace mlirgen
             objectOwnerName = funcOp.getSymName().str();
         }
 
+        // A static method or accessor whose class has an instance one of the same name (TypeScript allows
+        // `compare(other)` beside `static compare(a, b)`): the two are two functions, and the static one's
+        // symbol says so. A static member with no such twin keeps its plain name, which a library built
+        // before has.
+        auto staticTwin = [&]() {
+            if (!hasModifier(signatureDeclarationBaseAST, SyntaxKind::StaticKeyword)
+                || (signatureDeclarationBaseAST->parent != SyntaxKind::ClassDeclaration
+                    && signatureDeclarationBaseAST->parent != SyntaxKind::ClassExpression))
+            {
+                return false;
+            }
+
+            SyntaxKind kind = signatureDeclarationBaseAST;
+            auto memberName = MLIRHelper::getName(signatureDeclarationBaseAST->name);
+            for (auto member : signatureDeclarationBaseAST->parent.as<ClassLikeDeclaration>()->members)
+            {
+                if (member != kind || hasModifier(member, SyntaxKind::StaticKeyword) || !member->name)
+                {
+                    continue;
+                }
+
+                if (MLIRHelper::getName(member->name) == memberName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+        auto staticPrefix = staticTwin() ? std::string(STATIC_NAME) + "_" : std::string();
+
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
             if (!objectOwnerName.empty())
             {
                 // class method name
-                name = objectOwnerName + "." + name;
+                name = objectOwnerName + "." + staticPrefix + name;
             }
             else
             {
@@ -549,12 +580,12 @@ namespace mlirgen
         else if (signatureDeclarationBaseAST == SyntaxKind::GetAccessor)
         {
             // class method name
-            name = objectOwnerName + ".get_" + name;
+            name = objectOwnerName + "." + staticPrefix + "get_" + name;
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::SetAccessor)
         {
             // class method name
-            name = objectOwnerName + ".set_" + name;
+            name = objectOwnerName + "." + staticPrefix + "set_" + name;
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::Constructor)
         {

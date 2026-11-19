@@ -666,8 +666,15 @@ namespace typescript
 
         // `this` of an instance method of a @value class is the value (the slot `new` made, in the
         // constructor), not the class: it is the first parameter, which the importer adds again
+        // A static member has no `this`: a first parameter of the class's type (`static contains(range:
+        // Range, x)`) is a parameter, which printParams dropped as the `this` it takes it for.
         auto thisTypeOf = [&](bool isStatic, ArrayRef<mlir::Type> params) -> mlir::Type {
-            if (classType->isValue && !isStatic && !params.empty())
+            if (isStatic)
+            {
+                return mlir::Type();
+            }
+
+            if (classType->isValue && !params.empty())
             {
                 return params.front();
             }
