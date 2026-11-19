@@ -9425,6 +9425,50 @@ class MLIRGenImpl
         }
     }
 
+    // `a + b` of two `any`s, as JavaScript adds: when either holds a string, the two as strings joined; when
+    // both hold bigints, their sum as a bigint; otherwise their sum as numbers. The result is an `any`.
+    ValueOrLogicalResult mlirGenAnyPlusAny(mlir::Location location, mlir::Value left, mlir::Value right,
+                                           const GenContext &genContext)
+    {
+        auto typeIs = [&](mlir::Value value, StringRef typeName) -> mlir::Value {
+            auto typeOfValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), value);
+            auto typeNameConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(typeName));
+            return builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, typeNameConst,
+                                                            builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+        };
+
+        auto addAs = [&](mlir::Type type) -> ValueOrLogicalResult {
+            CAST_A(leftValue, location, type, left, genContext);
+            CAST_A(rightValue, location, type, right, genContext);
+            auto sum = binaryOpLogic(location, SyntaxKind::PlusToken, leftValue, rightValue, genContext);
+            if (!sum)
+            {
+                return mlir::failure();
+            }
+
+            return cast(location, getAnyType(), sum, genContext);
+        };
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        auto asStrings = [&]() { return addAs(getStringType()); };
+        return mclh.conditionalValue(
+            typeIs(left, "string"), asStrings,
+            [&](mlir::Type) {
+                return mclh.conditionalValue(
+                    typeIs(right, "string"), asStrings,
+                    [&](mlir::Type) {
+                        auto asNumbers = [&](mlir::Type) { return addAs(getNumberType()); };
+                        return mclh.conditionalValue(
+                            typeIs(left, "bigint"),
+                            [&]() {
+                                return mclh.conditionalValue(
+                                    typeIs(right, "bigint"), [&]() { return addAs(getBigIntType()); }, asNumbers);
+                            },
+                            asNumbers);
+                    });
+            });
+    }
+
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {

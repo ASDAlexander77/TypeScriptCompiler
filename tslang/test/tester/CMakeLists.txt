@@ -2081,10 +2081,6 @@ add_test(NAME test-compile-enum-variable-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_variable_error.ts")
 set_tests_properties(test-compile-enum-variable-error PROPERTIES PASS_REGULAR_EXPRESSION "variable 'daysValue' can't hold the enum 'Days' itself"
                                                                  FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-any-plus-any-error
-         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/any_plus_any_error.ts")
-set_tests_properties(test-compile-any-plus-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'\\+' of two values of type 'any' is not supported"
-                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG_ISSUES 92-124, the second batch: a tagged template with no substitutions, `instanceof Object`, a numeric
 # name in an object pattern, untyped statics and parameter properties, `arguments`, `super` in an arrow, computed
 # field names

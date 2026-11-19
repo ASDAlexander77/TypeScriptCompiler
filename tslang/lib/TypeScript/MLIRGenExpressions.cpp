@@ -1421,6 +1421,20 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // `a + b` of two `any`s: a string or a number - or a bigint - known at run time (mlirGenAnyPlusAny)
+        if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::AnyType>(leftExpressionValue.getType())
+            && isa<mlir_ts::AnyType>(rightExpressionValue.getType()))
+        {
+            auto resultAny = mlirGenAnyPlusAny(location, leftExpressionValue, rightExpressionValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(resultAny)
+            if (saveResult)
+            {
+                return mlirGenSaveLogicOneItem(location, leftExpressionValueBeforeCast, V(resultAny), genContext);
+            }
+
+            return resultAny;
+        }
+
         if (mlir::failed(adjustTypesForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext)))
         {
             return mlir::failure();
