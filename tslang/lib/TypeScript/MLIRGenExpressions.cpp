@@ -3641,6 +3641,21 @@ namespace mlirgen
     {
         auto location = loc(identifier);
 
+        // a name in the body of a `with`: a property of its object
+        if (genContext.withScope)
+        {
+            auto withValue = mlirGenWithScopeName(identifier, genContext);
+            if (withValue.failed())
+            {
+                return mlir::failure();
+            }
+
+            if (withValue.value)
+            {
+                return withValue;
+            }
+        }
+
         // resolve name
         auto name = MLIRHelper::getName(identifier);
 

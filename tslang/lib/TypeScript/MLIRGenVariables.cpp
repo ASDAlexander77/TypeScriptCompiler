@@ -112,7 +112,14 @@ namespace mlirgen
         {
             return mlir::success();
         }
-        else if (!variableDeclarationInfo.isGlobal)
+
+        // a variable of the body of a `with` hides the object's property of its name
+        if (genContext.withScope)
+        {
+            genContext.withScope->declared.insert(variableDeclaration->getName());
+        }
+
+        if (!variableDeclarationInfo.isGlobal)
         {
             if (mlir::failed(declare(
                 location, 

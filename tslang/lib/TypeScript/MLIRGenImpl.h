@@ -1702,6 +1702,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(Statement statementAST, const GenContext &genContext);
 
+    mlir::LogicalResult mlirGenWithStatement(WithStatement withStatementAST, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenWithScopeName(Identifier identifier, const GenContext &genContext);
+    bool withScopeHasProperty(mlir::Type objectType, StringRef name);
     mlir::LogicalResult mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(Expression expressionAST, const GenContext &genContext);

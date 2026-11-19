@@ -560,13 +560,149 @@ namespace mlirgen
 
         if (kind == SyntaxKind::WithStatement)
         {
-            // not allowed in strict mode or in a module either
-            emitError(loc(statementAST), "'with' statement is not supported");
-            return mlir::failure();
+            return mlirGenWithStatement(statementAST.as<WithStatement>(), genContext);
         }
 
         emitError(loc(statementAST), "this statement is not supported");
         return mlir::failure();
+    }
+
+    // `with (obj) body`: the body is generated with names that are properties of obj's static type read
+    // as those properties of a local holding obj (WithScope, mlirGenWithScopeName). Which properties
+    // there are is known from the type only: an `any`, or a type with no fields known here, can't be
+    // used.
+    mlir::LogicalResult MLIRGenImpl::mlirGenWithStatement(WithStatement withStatementAST, const GenContext &genContext)
+    {
+        auto location = loc(withStatementAST);
+
+        auto objectType = evaluate(withStatementAST->expression, genContext);
+        if (!objectType)
+        {
+            return mlir::failure();
+        }
+
+        if (auto refType = dyn_cast<mlir_ts::RefType>(objectType))
+        {
+            objectType = refType.getElementType();
+        }
+
+        objectType = mth.wideStorageType(mth.stripLiteralType(objectType));
+        if (!isa<mlir_ts::ClassType>(objectType) && !isa<mlir_ts::InterfaceType>(objectType)
+            && !isa<mlir_ts::TupleType>(objectType) && !isa<mlir_ts::ConstTupleType>(objectType)
+            && !isa<mlir_ts::ObjectType>(objectType))
+        {
+            emitError(loc(withStatementAST->expression))
+                << "'with' over a value of type '" << to_print(objectType)
+                << "' is not supported: which names in it are its properties is known from its type only; give it a "
+                   "class, an interface or an object type";
+            return mlir::failure();
+        }
+
+        // `with (o)`: the names are o's properties. Of another expression, `const .withN = <obj>;` first - in
+        // a block of their own, so the local goes when the body ends. (A local of an object literal's type
+        // would be a copy of it, so a name is used as it is.)
+        NodeFactory nf(NodeFactoryFlags::None);
+        std::string objectName;
+        NodeArray<Statement> statements;
+        if (withStatementAST->expression == SyntaxKind::Identifier)
+        {
+            objectName = MLIRHelper::getName(withStatementAST->expression.as<Identifier>());
+        }
+        else
+        {
+            objectName = std::string(".with") + std::to_string(withStatementAST->pos);
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(stows(objectName)), undefined, undefined,
+                                                                withStatementAST->expression));
+            statements.push_back(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Const)));
+        }
+
+        statements.push_back(withStatementAST->statement);
+        auto block = nf.createBlock(statements, true);
+        block->pos = withStatementAST->pos;
+        block->_end = withStatementAST->_end;
+
+        auto withScope = std::make_shared<WithScope>();
+        withScope->objectName = objectName;
+        withScope->objectType = objectType;
+        withScope->bodyPos = withStatementAST->statement->pos;
+        withScope->bodyEnd = withStatementAST->statement->_end;
+        withScope->funcProto = genContext.funcProto.get();
+        withScope->outer = genContext.withScope;
+
+        GenContext withGenContext(genContext);
+        withGenContext.withScope = withScope;
+        return mlirGen(block, withGenContext);
+    }
+
+    bool MLIRGenImpl::withScopeHasProperty(mlir::Type objectType, StringRef name)
+    {
+        auto nameAttr = MLIRHelper::TupleFieldName(name, builder.getContext());
+        if (mth.getFieldTypeByFieldName(objectType, nameAttr))
+        {
+            return true;
+        }
+
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(objectType))
+        {
+            for (auto classInfo = getClassInfoByFullName(classType.getName().getValue()); classInfo;
+                 classInfo = classInfo->baseClasses.empty() ? ClassInfo::TypePtr() : classInfo->baseClasses.front())
+            {
+                if (classInfo->getAccessorIndex(name) >= 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // a name in the body of a `with` (WithScope): the property of the object of the innermost `with` that
+    // has one, unless a variable of the body, or a parameter of a function inside it, has the name
+    ValueOrLogicalResult MLIRGenImpl::mlirGenWithScopeName(Identifier identifier, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(identifier);
+        for (auto withScope = genContext.withScope; withScope; withScope = withScope->outer)
+        {
+            if (identifier->pos < withScope->bodyPos || identifier->_end > withScope->bodyEnd)
+            {
+                continue;
+            }
+
+            if (withScope->declared.contains(name))
+            {
+                return mlir::Value();
+            }
+
+            if (genContext.funcProto.get() != withScope->funcProto && genContext.funcProto)
+            {
+                for (auto &param : genContext.funcProto->getParams())
+                {
+                    if (param->getName() == name)
+                    {
+                        return mlir::Value();
+                    }
+                }
+            }
+
+            if (!withScopeHasProperty(withScope->objectType, name))
+            {
+                continue;
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            auto objectIdentifier = nf.createIdentifier(stows(withScope->objectName));
+            auto propertyName = nf.createIdentifier(stows(name));
+            propertyName->pos = identifier->pos;
+            propertyName->_end = identifier->_end;
+            auto propertyAccess = nf.createPropertyAccessExpression(objectIdentifier, propertyName);
+            propertyAccess->pos = identifier->pos;
+            propertyAccess->_end = identifier->_end;
+            return mlirGen(propertyAccess, genContext);
+        }
+
+        return mlir::Value();
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext)

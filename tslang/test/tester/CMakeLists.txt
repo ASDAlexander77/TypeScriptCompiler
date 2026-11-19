@@ -3967,7 +3967,8 @@ set(crash_error_cases
     "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
     "export_default_expression.ts|export_default_expression\\.ts:1:1: error: 'export default <expression>' is not supported"
-    "with_statement.ts|with_statement\\.ts:2:1: error: 'with' statement is not supported"
+    # `with` resolves names by the object's type: an `any` has no properties known here
+    "with_statement.ts|with_statement\\.ts:2:11: error: 'with' over a value of type 'any' is not supported"
     "break_outside_loop.ts|break_outside_loop\\.ts:2:5: error: A 'break' statement can only be used within an enclosing iteration or switch statement"
     "continue_outside_loop.ts|continue_outside_loop\\.ts:2:5: error: A 'continue' statement can only be used within an enclosing iteration statement"
     "class_extends_itself.ts|class_extends_itself\\.ts:1:17: error: 'A' is referenced directly or indirectly in its own base expression"
