@@ -2627,9 +2627,20 @@ class MLIRGenImpl
 
         // if it is Optional type, we need to set to undefined                
         if (isa<mlir_ts::OptionalType>(type) && !variableDeclarationInfo.initial)
-        {                    
+        {
             CAST_A(castedValue, location, type, getUndefined(location), genContext);
             variableDeclarationInfo.setInitial(castedValue);
+        }
+
+        // -mm=rc: `let failure: any;` of a heap type starts empty, so that it owns what it is given like any other
+        // local (takeOwnershipOfLocal). With no initializer it borrowed: `failure = e` in a catch clause took no
+        // reference, the clause gave the caught value back, and `throw failure` after it threw freed memory.
+        // Not a catch clause's variable, which the landing pad writes.
+        if (!variableDeclarationInfo.initial && compileOptions.memoryModel == MemoryModelRC && !variableDeclarationInfo.isConst &&
+            !variableDeclarationInfo.isGlobal && !genContext.declaringCatchVariable && genContext.ownedVars != nullptr &&
+            !isa<mlir_ts::OptionalType>(type) && mth.ownsHeapMemory(location, mth.wideStorageType(type)))
+        {
+            variableDeclarationInfo.setInitial(builder.create<mlir_ts::DefaultOp>(location, mth.wideStorageType(type)));
         }
 
         if (variableDeclarationInfo.isConst)

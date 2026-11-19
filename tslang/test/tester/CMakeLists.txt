@@ -342,6 +342,7 @@ tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-compile-00-let-without-initializer-owns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -1057,6 +1058,7 @@ tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-jit-00-let-without-initializer-owns COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -3156,6 +3158,7 @@ set(TSLANG_CORPUS
     00symbol_unique_key.ts
     00any_call.ts
     00any_keys.ts
+    00let_without_initializer_owns.ts
     00call_signature_type.ts
     00f_bounded_generic.ts
     00types_indexedaccesstype.ts
