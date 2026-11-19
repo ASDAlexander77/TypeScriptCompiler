@@ -4737,11 +4737,6 @@ namespace mlirgen
                     if (!accessor.isStatic && accessor.get && accessor.getAccessLevel == mlir_ts::AccessLevel::Public)
                     {
                         addKey(values, accessor.name);
-                        if (types && accessor.get.funcType.getNumResults() == 1)
-                        {
-                            types->try_emplace(accessor.name, accessor.get.funcType.getResult(0));
-                        }
-
                         // a getter with no public setter: a write through `any` is a TypeError
                         if (readOnly && !(accessor.set && accessor.setAccessLevel == mlir_ts::AccessLevel::Public))
                         {
@@ -4797,11 +4792,6 @@ namespace mlirgen
                 for (auto &accessor : info->accessors)
                 {
                     addKey(values, accessor.name);
-                    if (types && accessor.type)
-                    {
-                        types->try_emplace(accessor.name, accessor.type);
-                    }
-
                     if (readOnly && accessor.setMethod.empty())
                     {
                         readOnly->insert(accessor.name);
@@ -4839,33 +4829,6 @@ namespace mlirgen
                 addKey(values, key);
             }
 
-            // the types of its value fields, by name or position (an accessor's is not known here)
-            if (types)
-            {
-                auto fields = isa<mlir_ts::TupleType>(type) ? mlir::cast<mlir_ts::TupleType>(type).getFields()
-                                                             : mlir::cast<mlir_ts::ConstTupleType>(type).getFields();
-                for (auto [index, field] : llvm::enumerate(fields))
-                {
-                    if (isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(field.type))
-                    {
-                        continue;
-                    }
-
-                    if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
-                    {
-                        types->try_emplace(name.getValue(), field.type);
-                    }
-                    else if (auto position = dyn_cast_or_null<mlir::IntegerAttr>(field.id))
-                    {
-                        types->try_emplace(std::to_string(position.getValue().getSExtValue()), field.type);
-                    }
-                    else if (!field.id)
-                    {
-                        types->try_emplace(std::to_string(index), field.type);
-                    }
-                }
-            }
-
             return true;
         }
 
@@ -4892,12 +4855,11 @@ namespace mlirgen
     //
     // instantiated for T: what a key reads is boxed as any value is. The keys are those of the type the value
     // had when it was boxed (a Derived boxed as a Base has a Base's), and a class's public ones only. A method is there for `in`, but reading one
-    // is a TypeError (a method read off its object is not a value here). Under -mm=own only a key whose value
-    // copies is read or written (ownCopies in makeAnyKeysAdapter). Whatever fails leaves the type without one,
-    // and a key read through it a TypeError.
+    // is a TypeError (a method read off its object is not a value here). Not for -mm=own, as calls of `any` are
+    // not. Whatever fails leaves the type without one, and a key read through it a TypeError.
     void MLIRGenImpl::ensureAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
     {
-        if (genContext.allowPartialResolve || mth.isGenericType(type))
+        if (compileOptions.memoryModel == MemoryModelOwn || genContext.allowPartialResolve || mth.isGenericType(type))
         {
             return;
         }
@@ -4956,28 +4918,6 @@ namespace mlirgen
         auto notThere = noNewKey + "return op == " + has + " ? <any>false : undefined;\n";
         auto throwWrongKind = throwTypeErrorSource("the value written through a value of type any is not of the key's type");
 
-        // -mm=own: what a key reads is a copy in a box of its own, and what it is given a copy of the value, so only
-        // a key whose value copies - one owning no heap memory, a string, an `any` (one holding an object stops,
-        // as any copy of it does) - is read or written through `any`. Another is a TypeError: it would be a second
-        // owner of what the object owns. `in` asks of every key.
-        auto own = compileOptions.memoryModel == MemoryModelOwn;
-        auto ownCopies = [&](mlir::Type keyType) {
-            if (!keyType)
-            {
-                return false;
-            }
-
-            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(keyType))
-            {
-                keyType = optionalType.getElementType();
-            }
-
-            keyType = mth.stripLiteralType(keyType);
-            return isa<mlir_ts::StringType, mlir_ts::AnyType>(keyType) || !mth.ownsHeapMemory(location, keyType);
-        };
-        auto throwOwnObject = throwTypeErrorSource(
-            "under -mm=own a key holding an object can't be read or written through a value of type any: cast the value to its type");
-
         std::string name;
         std::string src;
         if (isArray)
@@ -4994,39 +4934,25 @@ namespace mlirgen
                           : isa<mlir_ts::StringType>(elementType)    ? "_s"
                           : isa<mlir_ts::BooleanType>(elementType)   ? "_b"
                                                                      : "_n";
-            // under -mm=own the array is unboxed where it is used: a local borrowing the box, written through,
-            // is one own can't prove stays alive
-            std::string a = own ? "(<T>box)" : "a";
-            // under -mm=own an element that does not copy (ownCopies) is not read or written: `_o`
-            // (under -mm=own in its range only: `push` takes the array in a variable, which own can't prove)
-            auto elements = "if (inside) { " + a + "[i] = value; return undefined; }\n" +
-                            (own ? std::string() : "if (i == a.length) { a.push(value); return undefined; }\n") +
-                            throwTypeErrorSource(own ? "under -mm=own an element of an array can only be written in its range through a value of type any"
-                                                     : "an element of an array can only be written in its range or just past its end") + "\n";
-            auto elementRead = "if (inside) return <any>" + a + "[i];\n";
-            if (own && !ownCopies(elementType))
-            {
-                suffix = "_o";
-                kindCheck = "";
-                elements = throwOwnObject + "\n";
-                elementRead = "if (inside) " + throwOwnObject + "\n";
-            }
-
             name = "__any_keys_array" + std::string(suffix);
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
-                  "const kt = typeof key;\n" +
-                  (own ? "" : "const a = <T>box;\n") +
+                  "const kt = typeof key;\n"
+                  "const a = <T>box;\n"
                   "if (" + anyKeyIsNumberSource + ") {\n"
                   "const i = <number>key;\n"
-                  "const inside = i >= 0 && i < " + a + ".length && i % 1 == 0;\n"
-                  "if (op == " + set + ") {\n" + kindCheck + "\n" + elements +
+                  "const inside = i >= 0 && i < a.length && i % 1 == 0;\n"
+                  "if (op == " + set + ") {\n" + kindCheck + "\n"
+                  "if (inside) { a[i] = value; return undefined; }\n"
+                  "if (i == a.length) { a.push(value); return undefined; }\n" +
+                  throwTypeErrorSource("an element of an array can only be written in its range or just past its end") + "\n"
                   "}\n"
-                  "if (op == " + has + ") return <any>inside;\n" + elementRead +
+                  "if (op == " + has + ") return <any>inside;\n"
+                  "if (inside) return <any>a[i];\n"
                   "return undefined;\n"
                   "}\n"
                   "if (kt == \"string\" && <string>key == \"length\") {\n"
                   "if (op == " + set + ") " + throwTypeErrorSource("the length of an array can't be written through a value of type any") + "\n"
-                  "return op == " + has + " ? <any>true : <any>" + a + ".length;\n"
+                  "return op == " + has + " ? <any>true : <any>a.length;\n"
                   "}\n" +
                   notThere +
                   "}\n";
@@ -5059,10 +4985,8 @@ namespace mlirgen
                   "let k = \"\";\n"
                   "if (kt == \"string\") k = <string>key;\n"
                   "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
-                  "else {\n" + notThere + "}\n" +
-                  (own ? "" : "const o = <T>box;\n");
-            // under -mm=own the value is unboxed where it is used (see the array's)
-            std::string o = own ? "(<T>box)" : "o";
+                  "else {\n" + notThere + "}\n"
+                  "const o = <T>box;\n";
 
             // a tuple is a value: the `any` holds a copy of it, which a write would change and nothing else
             auto tuple = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
@@ -5079,14 +5003,6 @@ namespace mlirgen
                            throwTypeErrorSource("an accessor with no setter can't be written through a value of type any") + "\n";
                 }
 
-                // under -mm=own a store through an interface unboxed from `any` is one own can't prove leaves the
-                // object alive: read only
-                if (own && isa<mlir_ts::InterfaceType>(type))
-                {
-                    return "if (op == " + set + ") " +
-                           throwTypeErrorSource("under -mm=own a key of an interface can't be written through a value of type any: cast the value to its type") + "\n";
-                }
-
                 return "if (op == " + set + ") { " + anyKeyValueKindCheck(types.lookup(key), optionals.contains(key), throwWrongKind) +
                        place + " = value; return undefined; }\n";
             };
@@ -5094,13 +5010,7 @@ namespace mlirgen
             for (auto &key : values)
             {
                 // a tuple's unnamed field is read by its position
-                auto read = isIndex(key) ? o + "[" + key + "]" : o + "[" + quote(key) + "]";
-                if (own && !ownCopies(types.lookup(key)))
-                {
-                    src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; " + throwOwnObject + " }\n";
-                    continue;
-                }
-
+                auto read = isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
                 src += "if (k == " + quote(key) + ") {\n" + writeOf(key, read);
                 if (optionals.contains(key))
                 {
@@ -5191,6 +5101,13 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenAnyKey(mlir::Location location, mlir::Value box, mlir::Value key, int op,
                                                     const GenContext &genContext, mlir::Value value)
     {
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            emitError(location) << (op == ANY_KEYS_OP_HAS ? "'k in x' of a value of type 'any'" : "element access of a value of type 'any' ('x[k]')")
+                                << " is not supported under -mm=own: cast it to its type first";
+            return mlir::failure();
+        }
+
         // a key is a number or a string to the adapters: an integer or a literal is made one before it is boxed
         auto keyType = mth.stripLiteralType(mth.getBaseType(key.getType()));
         if (mth.isNumericType(keyType) && !isa<mlir_ts::NumberType>(keyType))

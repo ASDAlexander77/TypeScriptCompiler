@@ -7299,7 +7299,7 @@ class MLIRGenImpl
             SmallVector<std::string> values;
             SmallVector<std::string> methods;
             auto rightType = TypeOfOpHelper::typeOfBaseType(rightExpressionValue.getType());
-            if (anyKeysOfType(rightType, values, methods))
+            if (compileOptions.memoryModel != MemoryModelOwn && anyKeysOfType(rightType, values, methods))
             {
                 CAST_A(boxed, location, getAnyType(), rightExpressionValue, genContext);
                 return mlirGenAnyKey(location, boxed, leftExpressionValue, ANY_KEYS_OP_HAS, genContext);
