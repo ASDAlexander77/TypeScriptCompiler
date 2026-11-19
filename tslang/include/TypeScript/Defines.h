@@ -48,6 +48,8 @@
 // the call returns what the adapter returns, owned when every adapter here returns owned (OwnedReturnConsumptionPass)
 #define ANY_CALL_ADAPTER_ATTR_NAME "__any_call_adapter"
 #define ANY_CALL_ADAPTER_CALL_ATTR_NAME "__any_call_adapter_call"
+// the call reading `x[k]` of `x: any` (MLIRGenImpl::mlirGenAnyKey): a value, not a place to write
+#define ANY_KEY_READ_ATTR_NAME "__any_key_read"
 
 // On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
 // it, so its lowering does not warn that an optional value is read as it is.

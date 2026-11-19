@@ -7288,7 +7288,7 @@ class MLIRGenImpl
             SmallVector<std::string> values;
             SmallVector<std::string> methods;
             auto rightType = TypeOfOpHelper::typeOfBaseType(rightExpressionValue.getType());
-            if (anyKeysOfType(rightType, values, methods))
+            if (compileOptions.memoryModel != MemoryModelOwn && anyKeysOfType(rightType, values, methods))
             {
                 CAST_A(boxed, location, getAnyType(), rightExpressionValue, genContext);
                 return mlirGenAnyKey(location, boxed, leftExpressionValue, ANY_KEYS_OP_HAS, genContext);
@@ -8200,6 +8200,13 @@ class MLIRGenImpl
     {
         if (!leftExpressionValue)
         {
+            return mlir::failure();
+        }
+
+        // `x[k] = v` (and `+=`, `++`) of `x: any`: a key is only read through `any` (mlirGenAnyKey)
+        if (auto definingOp = leftExpressionValue.getDefiningOp(); definingOp && definingOp->hasAttr(ANY_KEY_READ_ATTR_NAME))
+        {
+            emitError(location, "writing 'x[k]' of a value of type 'any' is not supported: cast it to its type first");
             return mlir::failure();
         }
 
@@ -12740,13 +12747,16 @@ class MLIRGenImpl
     bool anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
                        llvm::StringSet<> *optionals = nullptr);
 
-    // the adapter itself, made once nothing else is being made
+    // the adapter itself, made once the module's statements are (makePendingAnyKeysAdapters)
     void makeAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext);
+
+    // the adapters of the types boxed while the module's statements were made
+    void makePendingAnyKeysAdapters(const GenContext &genContext);
 
     // types a keys adapter is being made for: a class with a field of its own type is not made twice
     llvm::DenseSet<uint64_t> anyKeysAdaptersInProgress;
 
-    // types boxed while an adapter was being made, whose own are made after it
+    // types boxed whose keys adapters are still to be made
     SmallVector<std::pair<mlir::Location, mlir::Type>> anyKeysAdaptersPending;
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);

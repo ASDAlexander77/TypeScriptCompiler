@@ -582,6 +582,13 @@ namespace mlirgen
             compileOptions.generateDebugInfo = storeDebugInfo;
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
+                // ...and of what the entry code boxed, made after them
+                {
+                    GenContext genContext{};
+                    genContext.rootContext = &genContext;
+                    makePendingAnyKeysAdapters(genContext);
+                }
+
                 devirtualizeClosedMethods();
                 markFinalClasses();
                 return theModule;
@@ -1494,6 +1501,12 @@ namespace mlirgen
             mlir::failed(generateModuleInitCode(loc(module), module->statements, genContext)))
         {
             notResolved = 1;
+        }
+
+        // the keys adapters of what the statements boxed into `any` (MLIRGenImpl::ensureAnyKeysAdapter)
+        if (notResolved == 0)
+        {
+            makePendingAnyKeysAdapters(genContext);
         }
 
         notResolved += takeExcessiveInstantiationError();

@@ -4800,19 +4800,19 @@ namespace mlirgen
             return;
         }
 
-        // a value boxed by an adapter being made (a class's `string[]` field): its own is made after that one is
-        // done - made inside it, it was never recorded
-        if (!anyKeysAdaptersInProgress.empty())
-        {
-            anyKeysAdaptersPending.push_back({location, type});
-            return;
-        }
+        // made once the module's statements are (makePendingAnyKeysAdapters), not here: here is the middle of
+        // whatever boxed it - an arrow function, a generic instantiated while its arguments are inferred, another
+        // adapter - and an adapter made inside one was made twice, or used a value of the function around it
+        anyKeysAdaptersPending.push_back({location, type});
+    }
 
-        makeAnyKeysAdapter(location, type, genContext);
+    void MLIRGenImpl::makePendingAnyKeysAdapters(const GenContext &genContext)
+    {
+        // an adapter boxes what it reads, which may add more
         while (!anyKeysAdaptersPending.empty())
         {
-            auto [pendingLocation, pendingType] = anyKeysAdaptersPending.pop_back_val();
-            makeAnyKeysAdapter(pendingLocation, pendingType, genContext);
+            auto [location, type] = anyKeysAdaptersPending.pop_back_val();
+            makeAnyKeysAdapter(location, type, genContext);
         }
     }
 
@@ -5085,6 +5085,11 @@ namespace mlirgen
         if (op == ANY_KEYS_OP_HAS)
         {
             return cast(location, getBooleanType(), V(result), genContext);
+        }
+
+        if (auto definingOp = V(result).getDefiningOp())
+        {
+            definingOp->setAttr(ANY_KEY_READ_ATTR_NAME, builder.getUnitAttr());
         }
 
         return result;

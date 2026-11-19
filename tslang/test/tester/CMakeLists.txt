@@ -4084,6 +4084,17 @@ foreach(any_key_own_case "any_key|2:12|element access of a value of type 'any' \
                          PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_own_name}\\.ts:${any_key_own_position}: error: ${any_key_own_message} is not supported under -mm=own"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
 endforeach()
+# ...and a key is only read through `any`: writing one is an error that says so
+foreach(any_key_write_name any_key_assign any_key_compound any_key_increment)
+    string(REPLACE "_" "-" any_key_write_slug "${any_key_write_name}")
+    add_test(NAME test-compile-crash-errors-${any_key_write_slug}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${any_key_write_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_key_write_slug}.obj")
+    set_tests_properties(test-compile-crash-errors-${any_key_write_slug}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_write_name}\\.ts:2:5: error: writing 'x\\[k\\]' of a value of type 'any' is not supported"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
+endforeach()
 # a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")
 set(crash_ok_unicode_file "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-①Ⅻㄨ.ts")
 file(WRITE "${crash_ok_unicode_file}" "let x = 1;\n")
