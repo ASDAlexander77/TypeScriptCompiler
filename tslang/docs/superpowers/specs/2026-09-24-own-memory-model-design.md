@@ -6384,3 +6384,35 @@ copied, and an `any` holding an object cannot be copied: "-mm=own cannot copy an
 object", at run time).
 
 Tests: `own_caught_value_finally` (every model).
+
+## 99. A clause that holds a `try` of its own, 2026-11-19
+
+Spec 87 left the locals of a catch or finally clause holding a `try` of its own unowned
+(`clausesWithNestedTry`), and spec 96 its caught value: the nested try's unwind leg would have left one
+unreleased while a clause had no cleanup of its own. Since #912 a block in a clause is wrapped for its
+unwind cleanup like any other, and that leg releases them. Both exclusions are gone. Under rc such a
+clause leaked on every pass before (the leak fuzzer: `finally { try {} finally { const a = [mk(1)]; } }`,
+60 MB at 120K iterations; a caught value in `catch (e) { try { .. } catch (e2) { .. } }`, 41 MB).
+
+Owning them put a wrapped block, or a cleanup pad, in places the Windows lowering got wrong. The first
+and the last of these failed before too, in every memory model (the first with a `using` in the clause):
+
+- A catch whose calls all unwind into a pad nested in it (a `try` with a `finally` in the clause, or the
+  clause's wrapped block) took "unwind to caller" for its catchswitch, while that nested pad's
+  cleanupret went on to the `finally` around the catch: "Unwind edges out of a catch must have the same
+  unwind dest as the parent catchswitch". A region now takes a nested region's way out when none of its
+  own invokes leaves it (`chooseUnwindDests`; the destination is kept as a block, not an invoke, since
+  the invokes are rebuilt as the funclets are made).
+- A `try` in the normal-path copy of a `finally` was tagged as a pad at the top, also inside a catch
+  clause, whose funclet then had an edge to a pad outside it ("Unwind edges out of a funclet pad must
+  have the same unwind dest"). That copy runs where the `try` itself runs, so the pad-parent walk goes
+  on past it, as for a `try` body.
+- A `return` from a catch nested in a catch (`catch (e) { try { f(); } catch (e2) { return 1; } }`)
+  crashed the compiler: both catches end at the one branch after their end-of-catch markers, each put a
+  catchret there, and the branch was erased twice. The nested catch now leaves into a block of its own
+  that holds the outer one's catchret (`exitBranchOf`).
+
+Under own, `throw e2` from a catch in a `try` with a `finally` is still refused at run time ("cannot copy
+an 'any' that holds an object"), nested or not: the rethrow copies the caught value.
+
+Tests: `00clause_nested_try` (gc, rc, none, own; AOT and JIT).

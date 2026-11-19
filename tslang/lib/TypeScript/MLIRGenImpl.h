@@ -686,32 +686,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
 
-    // While a catch or finally clause whose block holds a `try` of its own is generated: its locals
-    // own nothing (localTakesOwnership). A clause synthesizes no cleanup TryOp, so the nested try's
-    // unwind leg (an exception out of its finally on the way back from a `return`) would leave one
-    // unreleased. A counter on the generator, not the context: the hoisting decision asks it from
-    // the function's context.
-    int clausesWithNestedTry = 0;
-
-    // Does a block hold a `try` statement, at any depth but not in a nested function?
-    bool blockHasTry(ts::Block blockAST)
-    {
-        auto found = false;
-        ts::FilterVisitorSkipFuncsAST<TryStatement> visitor(SyntaxKind::TryStatement, [&](TryStatement) { found = true; });
-        for (auto statement : blockAST->statements)
-        {
-            // the visitor looks below the node it starts from
-            if (found || statement == SyntaxKind::TryStatement)
-            {
-                return true;
-            }
-
-            visitor.visit(statement);
-        }
-
-        return found;
-    }
-
     // Whether the insertion point sits inside the catches or finally region of an enclosing
     // TryOp.
     //
@@ -719,7 +693,7 @@ class MLIRGenImpl
     // catch (e: int) { using r = new Res(); }` once crashed the compiler with one. It no longer
     // does, and without one a `using` in a clause that threw was never disposed and the clause's
     // heap locals leaked - so blocks there are wrapped like any other. What is left here is
-    // trackPossibleCell (a captured variable's cell) and localTakesOwnership with a nested try.
+    // trackPossibleCell (a captured variable's cell).
     bool blockIsInsideCatchOrFinally()
     {
         auto *block = builder.getInsertionBlock();
@@ -2584,8 +2558,7 @@ class MLIRGenImpl
         return genContext.ownedVars != nullptr && !variableDeclarationInfo.isGlobal &&
                !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
                variableDeclarationInfo.initial && variableDeclarationInfo.type &&
-               mth.ownsHeapMemory(location, variableDeclarationInfo.type) &&
-               !(clausesWithNestedTry > 0 && blockIsInsideCatchOrFinally());
+               mth.ownsHeapMemory(location, variableDeclarationInfo.type);
     }
 
     // `let s = 0`: no type given, and an integer literal to infer one from - integer literals are

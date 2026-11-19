@@ -29,7 +29,9 @@ struct CatchRegion
     llvm::SmallVector<CallBase *, 0> skippedThrows;
     CatchPadInst *catchPad;
     CleanupPadInst *cleanupPad;
-    InvokeInst *unwindInfoOp;
+    // where exceptions leaving the region go, or null for the caller (see chooseUnwindDests);
+    // a block, not an invoke: the region's invokes are rebuilt with funclet bundles as it is made
+    BasicBlock *unwindDest;
     Value *stack;
     bool hasAlloca;
     llvm::Instruction *cxaBeginCatch;
@@ -39,8 +41,8 @@ struct CatchRegion
     // the end-of-catch markers of a catch's other ways out besides `end`, each of which needs its
     // own catchret: a return, break or continue out of the clause (see findOtherCatchExits)
     llvm::SmallVector<llvm::Instruction *, 0> otherEndMarkers;
-    // every invoke in the region, in order - unwindInfoOp is chosen from these once all the
-    // regions are known (see chooseUnwindInfoOps)
+    // every invoke in the region, in order - unwindDest is chosen from these once all the
+    // regions are known (see chooseUnwindDests)
     llvm::SmallVector<InvokeInst *> invokes;
     // index of the region this one is nested in, or -1; and the ids ts.internal.eh_pad gave
     int parent = -1;
@@ -120,7 +122,6 @@ struct Win32ExceptionPassCode
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Function: " << F.getName(););
         LLVM_DEBUG(llvm::dbgs() << "\n!! Dump Before: ...\n" << F << "\n";);
-
         CatchRegion *catchRegion = nullptr;
         auto endOfCatch = false;
         auto endOfCatchIfResume = false;
@@ -380,7 +381,7 @@ struct Win32ExceptionPassCode
             }
         }
 
-        chooseUnwindInfoOps(catchRegionsWorkSet);
+        chooseUnwindDests(catchRegionsWorkSet);
 
         // create begin of catch block (a parent comes before the regions nested in it)
         for (auto &catchRegion : catchRegionsWorkSet)
@@ -403,10 +404,7 @@ struct Win32ExceptionPassCode
 
                 CurrentBB->getTerminator()->eraseFromParent();
 
-                auto *II = catchRegion.unwindInfoOp;
-                auto *CSI = CatchSwitchInst::Create(parentPad,
-                                                    II ? II->getUnwindDest() : nullptr
-                                                    /*unwind to caller if null*/,
+                auto *CSI = CatchSwitchInst::Create(parentPad, catchRegion.unwindDest /*unwind to caller if null*/,
                                                     1, "catch.switch", CurrentBB);
                 CSI->addHandler(ContinuationBB);
 
@@ -466,17 +464,16 @@ struct Win32ExceptionPassCode
             for (auto callBase : catchRegion.calls)
             {
                 auto replaceEndData = catchRegion.end == callBase;
-                auto replaceUnwindInfoOp = catchRegion.unwindInfoOp == callBase;
 
                 CallBase *newCallBase = nullptr;
                 /*
-                if (catchRegion.unwindInfoOp)
+                if (catchRegion.unwindDest)
                 {
                     if (isa<CallInst>(callBase))
                     {
                         if (auto *CI = cast<CallInst>(callBase))
                         {
-                            newCallBase = ToInvoke(CI, catchRegion.unwindInfoOp->getUnwindDest(), opBundle);
+                            newCallBase = ToInvoke(CI, catchRegion.unwindDest, opBundle);
                         }
                     }
                 }
@@ -507,11 +504,6 @@ struct Win32ExceptionPassCode
                 {
                     catchRegion.end = newCallBase;
                 }
-
-                if (replaceUnwindInfoOp)
-                {
-                    catchRegion.unwindInfoOp = cast<InvokeInst>(newCallBase);
-                }
             }
 
             catchRegion.calls.clear();
@@ -521,6 +513,9 @@ struct Win32ExceptionPassCode
 
             MadeChange = true;
         }
+
+        // the branches a catchret has replaced (see exitBranchOf)
+        SmallPtrSet<llvm::Instruction *, 16> exitBranches;
 
         // create end of catch block
         for (auto &catchRegion : catchRegionsWorkSet)
@@ -550,6 +545,11 @@ struct Win32ExceptionPassCode
             auto *BI = dyn_cast<BranchInst>(I);
             if (BI)
             {
+                if (catchRegion.isCatch())
+                {
+                    BI = exitBranchOf(BI, exitBranches);
+                }
+
                 retBlock = BI->getSuccessor(0);
             }
             else if (endInvoke)
@@ -604,8 +604,7 @@ struct Win32ExceptionPassCode
                     // With a handler to go on to, the end-of-catch marker is an invoke that ends
                     // a block of its own, and is removed with the rest: the rethrow takes its place.
                     auto *rethrowAt = isa_and_nonnull<InvokeInst>(catchRegion.cxaEndCatch) ? catchRegion.cxaEndCatch : I;
-                    auto *II = catchRegion.unwindInfoOp;
-                    if (auto *handlerPad = II ? II->getUnwindDest() : nullptr)
+                    if (auto *handlerPad = catchRegion.unwindDest)
                     {
                         auto *unreachableBB = BasicBlock::Create(Ctx, "rethrow.cont", &F);
                         new UnreachableInst(Ctx, unreachableBB);
@@ -632,7 +631,7 @@ struct Win32ExceptionPassCode
 
                 for (auto *marker : catchRegion.otherEndMarkers)
                 {
-                    catchReturnAt(catchRegion, marker, toRemoveWorkSet);
+                    catchReturnAt(catchRegion, marker, toRemoveWorkSet, exitBranches);
                 }
 
                 // convert call to Invoke with the same unwind
@@ -685,16 +684,14 @@ struct Win32ExceptionPassCode
                 // the stack dynamically (a two-argument `print`): the handler did not catch the
                 // rethrow, and the program terminated (#457). The funclet is still built, for a
                 // cleanup with no handler here, and is left unreachable otherwise.
-                auto *II = catchRegion.unwindInfoOp;
-                auto *handlerPad = II ? II->getUnwindDest() : nullptr;
+                auto *handlerPad = catchRegion.unwindDest;
                 CleanupReturnInst::Create(catchRegion.cleanupPad, handlerPad ? handlerPad : CSIBlock, CurrentBB);
 
                 // add rethrow code
 
                 // beside the cleanup pad, in the same parent: cleanupret unwinds to it
                 auto *CSI = CatchSwitchInst::Create(parentPadOf(catchRegionsWorkSet, catchRegion),
-                                                    II ? II->getUnwindDest() : nullptr
-                                                    /*unwind to caller if null*/,
+                                                    handlerPad /*unwind to caller if null*/,
                                                     1, "catchswitch", CSIBlock);
 
                 CSI->addHandler(ContinuationBB);
@@ -875,7 +872,16 @@ struct Win32ExceptionPassCode
     // A catchswitch unwinds where exceptions leaving its region go: the first invoke of the
     // region that unwinds out of it. An invoke into a pad nested in the region is not one -
     // a catchswitch cannot unwind into its own descendants.
-    static void chooseUnwindInfoOps(llvm::SmallVector<CatchRegion> &regions)
+    //
+    // With no such invoke, a region nested in it may still leave it: every call of a catch clause
+    // that holds a `try` with a `finally`, or whose block is wrapped for its unwind cleanup (an
+    // owning local, a `using`), unwinds into that nested pad, and the pad's cleanupret then goes
+    // on to the `finally` around the catch. LLVM wants every edge out of a funclet to go where
+    // its catchswitch unwinds, so the region takes the nested one's way out; with "unwind to
+    // caller" there the module did not verify ("Unwind edges out of a catch must have the same
+    // unwind dest as the parent catchswitch"). A nested region comes after its parent, so walking
+    // them backwards settles each one before its parent asks.
+    static void chooseUnwindDests(llvm::SmallVector<CatchRegion> &regions)
     {
         for (auto &region : regions)
         {
@@ -883,8 +889,26 @@ struct Win32ExceptionPassCode
             {
                 if (!isDescendantPad(regions, region, II->getUnwindDest()))
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! set (unwindInfoOp) : " << *II << "\n";);
-                    region.unwindInfoOp = II;
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! set (unwindDest) : " << *II << "\n";);
+                    region.unwindDest = II->getUnwindDest();
+                    break;
+                }
+            }
+        }
+
+        for (auto index = static_cast<int>(regions.size()) - 1; index >= 0; index--)
+        {
+            auto &region = regions[index];
+            if (region.unwindDest)
+            {
+                continue;
+            }
+
+            for (auto &nested : regions)
+            {
+                if (nested.parent == index && nested.unwindDest && !isDescendantPad(regions, region, nested.unwindDest))
+                {
+                    region.unwindDest = nested.unwindDest;
                     break;
                 }
             }
@@ -1023,7 +1047,7 @@ struct Win32ExceptionPassCode
                             toRemoveWorkSet.push_back(I);
                         }
 
-                        // an invoked one says where exceptions leaving the region go (chooseUnwindInfoOps),
+                        // an invoked one says where exceptions leaving the region go (chooseUnwindDests),
                         // which a rethrow at this end needs
                         auto *II = dyn_cast<InvokeInst>(I);
                         if (II && !llvm::is_contained(region.invokes, II))
@@ -1146,7 +1170,8 @@ struct Win32ExceptionPassCode
     // can be a call the funclet-bundle loop has since replaced. An invoked marker ends its block
     // and is the end itself, as in the scan.
     static void catchReturnAt(CatchRegion &catchRegion, llvm::Instruction *marker,
-                              llvm::SmallVector<llvm::Instruction *> &toRemoveWorkSet)
+                              llvm::SmallVector<llvm::Instruction *> &toRemoveWorkSet,
+                              SmallPtrSet<llvm::Instruction *, 16> &exitBranches)
     {
         auto *I = isa<InvokeInst>(marker) ? marker : marker->getNextNode();
         if (isCatchEndingInvoke(I))
@@ -1161,9 +1186,29 @@ struct Win32ExceptionPassCode
             BI = cast<BranchInst>(retBlock->getPrevNode()->getTerminator());
         }
 
+        BI = exitBranchOf(BI, exitBranches);
         auto *CR = CatchReturnInst::Create(catchRegion.catchPad, BI->getSuccessor(0), BI->getParent());
         BI->replaceAllUsesWith(CR);
         toRemoveWorkSet.push_back(BI);
+    }
+
+    // The branch a catch's catchret takes the place of. A `return` or `break` out of a catch nested
+    // in another catch leaves both at once: their end-of-catch markers come one after the other,
+    // and both ends are the one branch after them. The outer catch, made first, has put its
+    // catchret there already; a second one in the same block was a second terminator, and the
+    // branch went on the removal list twice (the compiler crashed erasing it again). The nested
+    // catch leaves into a block of its own instead, which holds the outer one's catchret.
+    static BranchInst *exitBranchOf(BranchInst *BI, SmallPtrSet<llvm::Instruction *, 16> &exitBranches)
+    {
+        if (exitBranches.insert(BI).second)
+        {
+            return BI;
+        }
+
+        auto *outerExit = BI->getParent()->splitBasicBlock(BI, "end.of.nested.catch");
+        auto *nestedBI = cast<BranchInst>(outerExit->getPrevNode()->getTerminator());
+        exitBranches.insert(nestedBI);
+        return nestedBI;
     }
 
     // the pad a region's own pads are created within: its parent region's, or none

@@ -2206,8 +2206,7 @@ namespace mlirgen
         // of its own (`.caught`, unowned, as a catch variable was). The clause then declares the
         // variable as one of its own locals, given that slot's value and its reference, so it is
         // released where the clause ends, on a `return` or a `break` out of it, or moved like any
-        // local; a `catch {}` declares a hidden one. A clause that holds a `try` of its own keeps
-        // its locals unowned (clausesWithNestedTry), and so its caught value.
+        // local; a `catch {}` declares a hidden one.
         //
         // A clause has no cleanup of its own, so an exception out of a call in it leaves the value
         // behind when it lands somewhere else in this function: in the `try`'s own `finally`, or in
@@ -2228,7 +2227,6 @@ namespace mlirgen
         }
 
         auto ownsCaught = compileOptions.tracksOwnership() && catchClause && catchClause->block &&
-                          !blockHasTry(catchClause->block) &&
                           (!unwindScope || (unwindScope->ownedVars != nullptr && unwindScope->currentOperation != nullptr));
         mlir::Value caughtSlot;
         auto caughtOwned = std::make_unique<SmallVector<mlir::Value>>();
@@ -2378,8 +2376,6 @@ namespace mlirgen
                 catchGenContext.finallyGuardScope = &catchGenContext;
             }
 
-            auto nestedTry = blockHasTry(tryStatementAST->catchClause->block) ? 1 : 0;
-            clausesWithNestedTry += nestedTry;
             if (ownsCaught)
             {
                 // the clause's own scope, holding the caught value, around the clause's block
@@ -2398,7 +2394,6 @@ namespace mlirgen
                 auto caughtValue = resolveIdentifier(location, varName, tryGenContext);
                 if (!caughtValue)
                 {
-                    clausesWithNestedTry -= nestedTry;
                     return mlir::failure();
                 }
 
@@ -2422,7 +2417,6 @@ namespace mlirgen
                     declarationGenContext);
                 if (!declaredType)
                 {
-                    clausesWithNestedTry -= nestedTry;
                     return mlir::failure();
                 }
 
@@ -2441,14 +2435,12 @@ namespace mlirgen
                 }
 
                 auto result = mlirGen(tryStatementAST->catchClause->block, clauseGenContext);
-                clausesWithNestedTry -= nestedTry;
                 EXIT_IF_FAILED(result)
                 EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &clauseGenContext));
             }
             else
             {
                 auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
-                clausesWithNestedTry -= nestedTry;
                 EXIT_IF_FAILED(result)
             }
         }
@@ -2460,10 +2452,7 @@ namespace mlirgen
         builder.setInsertionPointToStart(&tryOp.getFinally().front());
         if (tryStatementAST->finallyBlock)
         {
-            auto nestedTry = blockHasTry(tryStatementAST->finallyBlock) ? 1 : 0;
-            clausesWithNestedTry += nestedTry;
             auto result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
-            clausesWithNestedTry -= nestedTry;
             EXIT_IF_FAILED(result)
 
             // The copy of the finally that runs on the unwind leg resumes the exception past the
