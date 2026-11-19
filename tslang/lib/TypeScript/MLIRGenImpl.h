@@ -7274,7 +7274,7 @@ class MLIRGenImpl
 
         if (!isConstValue(leftExpressionValue))
         {
-            emitError(loc(binaryExpressionAST->left), "not supported");
+            emitError(loc(binaryExpressionAST->left), "'k in obj' with a key known only at run time is not supported here: the key must be a constant");
             return mlir::failure();
         }
 
@@ -7299,9 +7299,46 @@ class MLIRGenImpl
             // value holds is asked of its tag only when some have it and some do not
             auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>();
             SmallVector<mlir::Type> withKey;
+
+            // a union of classes (`x: A | B`, `"a" in x`): the members that have the key are known here,
+            // and which one the value is, asked by instanceof when some have it and some do not
+            auto keyName = constantOp ? dyn_cast<mlir::StringAttr>(constantOp.getValue()) : mlir::StringAttr();
+            if (keyName && llvm::all_of(unionType.getTypes(), [](mlir::Type t) { return isa<mlir_ts::ClassType>(t); }))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    if (withScopeHasProperty(member, keyName.getValue()))
+                    {
+                        withKey.push_back(member);
+                    }
+                }
+
+                if (withKey.empty() || withKey.size() == unionType.getTypes().size())
+                {
+                    return mlirGenBooleanValue(location, !withKey.empty());
+                }
+
+                mlir::Value holds;
+                for (auto member : withKey)
+                {
+                    auto classType = mlir::cast<mlir_ts::ClassType>(member);
+                    auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
+                        location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
+                    auto isInstance = mlirGenInstanceOfMaybeClass(location, rightExpressionValue, classRefVal, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(isInstance)
+                    holds = holds ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                            builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken),
+                                                                            holds, V(isInstance)).getResult()
+                                  : V(isInstance);
+                }
+
+                return holds;
+            }
+
             if (!constantOp || !interfacesWithKey(location, unionType, constantOp.getValue(), withKey))
             {
-                emitError(loc(binaryExpressionAST->right), "not supported");
+                emitError(loc(binaryExpressionAST->right))
+                    << "'k in obj' of a union '" << to_print(unionType) << "' is not supported: only a union of interfaces is";
                 return mlir::failure();
             }
 
@@ -7328,7 +7365,8 @@ class MLIRGenImpl
             return mlirGenBooleanValue(loc(binaryExpressionAST->right), hasField);
         }
 
-        emitError(location, "not supported");
+        emitError(location) << "'k in obj' of a value of type '" << to_print(rightExpressionValue.getType())
+                            << "' is not supported";
         return mlir::failure();
     }
 
