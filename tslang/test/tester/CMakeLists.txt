@@ -1953,6 +1953,12 @@ foreach(tuple_array_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-tuple-array-methods-${tuple_array_mm} COMMAND test-runner -jit -mm=${tuple_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-tuple-array-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_array_methods.ts")
+# `x.name`, `x[k]`, `x[k] = v` and `k in x` of a value of type `any` under every memory model (user ruling 11-19):
+# under -mm=own a key whose value copies is read and written, another is a TypeError
+foreach(any_keys_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00-any-keys-models-${any_keys_mm} COMMAND test-runner -jit -mm=${any_keys_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_models.ts")
+endforeach()
+tslang_add_test(NAME test-compile-00-any-keys-models-own COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_models.ts")
 # map and filter of a `(number | string)[]`: own copies a string element of the union, as of a string[]
 foreach(string_union_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-string-union-elements-${string_union_mm} COMMAND test-runner -jit -mm=${string_union_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_union_elements.ts")
@@ -4072,22 +4078,6 @@ foreach(any_call_own_case "call_any|3:5" "call_untyped_parameter|3:16")
                      -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_call_own_slug}-own.obj")
     set_tests_properties(test-compile-crash-errors-${any_call_own_slug}-own
                          PROPERTIES PASS_REGULAR_EXPRESSION "${any_call_own_name}\\.ts:${any_call_own_position}: error: a value of type 'any' can't be called under -mm=own"
-                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
-endforeach()
-# `x[k]` and `k in x` of a value of type `any` are looked up at run time (user ruling 11-19), but not under
-# -mm=own yet, as calls of `any` are not
-foreach(any_key_own_case "any_key|2:12|element access of a value of type 'any' \\('x\\[k\\]'\\)" "in_any|2:12|'k in x' of a value of type 'any'")
-    string(REPLACE "|" ";" any_key_own_parts "${any_key_own_case}")
-    list(GET any_key_own_parts 0 any_key_own_name)
-    list(GET any_key_own_parts 1 any_key_own_position)
-    list(GET any_key_own_parts 2 any_key_own_message)
-    string(REPLACE "_" "-" any_key_own_slug "${any_key_own_name}")
-    add_test(NAME test-compile-crash-errors-${any_key_own_slug}-own
-             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
-                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${any_key_own_name}.ts"
-                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_key_own_slug}-own.obj")
-    set_tests_properties(test-compile-crash-errors-${any_key_own_slug}-own
-                         PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_own_name}\\.ts:${any_key_own_position}: error: ${any_key_own_message} is not supported under -mm=own"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
 endforeach()
 # a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")
