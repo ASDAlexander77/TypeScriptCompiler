@@ -747,6 +747,16 @@ namespace mlirgen
                 {
                     defOp->setAttr(GETTER_STATEMENT_ATTR, builder.getUnitAttr());
                 }
+
+                // an interface's field, which the class may give by a getter: read through a cell of
+                // accessors when the load is lowered
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(defOp))
+                {
+                    if (loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+                    {
+                        loadOp->setAttr(GETTER_STATEMENT_ATTR, builder.getUnitAttr());
+                    }
+                }
             }
         }
 

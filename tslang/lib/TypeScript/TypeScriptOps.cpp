@@ -320,8 +320,9 @@ template <typename T> struct RemoveUnused : public OpRewritePattern<T>
 
     LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
     {
-        // report failure when nothing was erased: the greedy driver re-scans after every success
-        if (!op->getResult(0).use_empty())
+        // report failure when nothing was erased: the greedy driver re-scans after every success. A read
+        // that is a statement of its own may call a getter (an interface's field): kept
+        if (!op->getResult(0).use_empty() || op->hasAttr(GETTER_STATEMENT_ATTR))
         {
             return failure();
         }
@@ -518,6 +519,19 @@ void mlir_ts::NamespaceRefOp::getCanonicalizationPatterns(RewritePatternSet &res
 void mlir_ts::LoadOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::LoadOp>>(context);
+}
+
+// A load reads its reference. A field of an interface may be a cell of accessors, and then the load calls
+// the getter: one that is a statement of its own (`iface.field;`, __getter_statement) says it writes as
+// well, or a load nothing uses was dead and the getter never ran.
+void mlir_ts::LoadOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>> &effects)
+{
+    effects.emplace_back(MemoryEffects::Read::get(), &getOperation()->getOpOperand(0), 0, false,
+                         SideEffects::DefaultResource::get());
+    if (getOperation()->hasAttr(GETTER_STATEMENT_ATTR))
+    {
+        effects.emplace_back(MemoryEffects::Write::get(), SideEffects::DefaultResource::get());
+    }
 }
 
 //===----------------------------------------------------------------------===//
