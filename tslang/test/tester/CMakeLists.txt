@@ -2081,10 +2081,6 @@ add_test(NAME test-compile-enum-variable-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_variable_error.ts")
 set_tests_properties(test-compile-enum-variable-error PROPERTIES PASS_REGULAR_EXPRESSION "variable 'daysValue' can't hold the enum 'Days' itself"
                                                                  FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-any-plus-any-error
-         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/any_plus_any_error.ts")
-set_tests_properties(test-compile-any-plus-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'\\+' of two values of type 'any' is not supported"
-                                                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG_ISSUES 92-124, the second batch: a tagged template with no substitutions, `instanceof Object`, a numeric
 # name in an object pattern, untyped statics and parameter properties, `arguments`, `super` in an arrow, computed
 # field names
@@ -2666,6 +2662,12 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00private_name_in.ts
+    00type_literal_accessors.ts
+    00array_conversions.ts
+    00with_statement.ts
+    00any_plus_any.ts
+    00in_union_of_classes.ts
     00atomic_builtins.ts
     00generic_literal_inference.ts
     00new_alias_and_ctor_overloads.ts
@@ -3967,7 +3969,8 @@ set(crash_error_cases
     "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
     "export_default_expression.ts|export_default_expression\\.ts:1:1: error: 'export default <expression>' is not supported"
-    "with_statement.ts|with_statement\\.ts:2:1: error: 'with' statement is not supported"
+    # `with` resolves names by the object's type: an `any` has no properties known here
+    "with_statement.ts|with_statement\\.ts:2:11: error: 'with' over a value of type 'any' is not supported"
     "break_outside_loop.ts|break_outside_loop\\.ts:2:5: error: A 'break' statement can only be used within an enclosing iteration or switch statement"
     "continue_outside_loop.ts|continue_outside_loop\\.ts:2:5: error: A 'continue' statement can only be used within an enclosing iteration statement"
     "class_extends_itself.ts|class_extends_itself\\.ts:1:17: error: 'A' is referenced directly or indirectly in its own base expression"
@@ -4003,12 +4006,13 @@ set(crash_error_cases
     "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
     # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
     "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite"
-    # what tslang does not do, said as it is (user ruling 11-18): JSX, dynamic import(), `new.target`,
-    # `#name in obj`; and a symbol is known at compile time, so its description is a constant
+    # what tslang does not do, said as it is (user ruling 11-18): JSX, dynamic import(), `new.target`;
+    # and a symbol is known at compile time, so its description is a constant
     "jsx_element.tsx|jsx_element\\.tsx:2:11: error: JSX is not supported"
     "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
-    "private_name_in.ts|private_name_in\\.ts:4:16: error: '#name in obj' is not supported"
+    # an `object` holds no type information, so which class it is can't be asked (it said false for every object)
+    "instanceof_object.ts|instanceof_object\\.ts:2:32: error: 'instanceof' of a value of type 'object' is not supported"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
@@ -5456,6 +5460,34 @@ tslang_add_test(NAME test-compile-00-generic-self-recursion COMMAND test-runner 
 tslang_add_test(NAME test-compile-own-00-generic-self-recursion COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
 tslang_add_test(NAME test-jit-00-generic-self-recursion COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
 tslang_add_test(NAME test-jit-own-00-generic-self-recursion COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_self_recursion.ts")
+
+# what was "not supported" (11-19): `#name in obj`, get/set accessors in a type literal, arrays where another
+# kind of array is expected, `with`, `any + any`, and `"k" in` a union of classes. rc and none run them
+# from TSLANG_CORPUS.
+tslang_add_test(NAME test-compile-00-private-name-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00private_name_in.ts")
+tslang_add_test(NAME test-compile-own-00-private-name-in COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00private_name_in.ts")
+tslang_add_test(NAME test-jit-00-private-name-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00private_name_in.ts")
+tslang_add_test(NAME test-jit-own-00-private-name-in COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00private_name_in.ts")
+tslang_add_test(NAME test-compile-00-type-literal-accessors COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_literal_accessors.ts")
+tslang_add_test(NAME test-compile-own-00-type-literal-accessors COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_literal_accessors.ts")
+tslang_add_test(NAME test-jit-00-type-literal-accessors COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_literal_accessors.ts")
+tslang_add_test(NAME test-jit-own-00-type-literal-accessors COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_literal_accessors.ts")
+tslang_add_test(NAME test-compile-00-array-conversions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_conversions.ts")
+tslang_add_test(NAME test-compile-own-00-array-conversions COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_conversions.ts")
+tslang_add_test(NAME test-jit-00-array-conversions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_conversions.ts")
+tslang_add_test(NAME test-jit-own-00-array-conversions COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_conversions.ts")
+tslang_add_test(NAME test-compile-00-with-statement COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00with_statement.ts")
+tslang_add_test(NAME test-compile-own-00-with-statement COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00with_statement.ts")
+tslang_add_test(NAME test-jit-00-with-statement COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00with_statement.ts")
+tslang_add_test(NAME test-jit-own-00-with-statement COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00with_statement.ts")
+tslang_add_test(NAME test-compile-00-any-plus-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_plus_any.ts")
+tslang_add_test(NAME test-compile-own-00-any-plus-any COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_plus_any.ts")
+tslang_add_test(NAME test-jit-00-any-plus-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_plus_any.ts")
+tslang_add_test(NAME test-jit-own-00-any-plus-any COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_plus_any.ts")
+tslang_add_test(NAME test-compile-00-in-union-of-classes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
+tslang_add_test(NAME test-compile-own-00-in-union-of-classes COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
+tslang_add_test(NAME test-jit-00-in-union-of-classes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
+tslang_add_test(NAME test-jit-own-00-in-union-of-classes COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.

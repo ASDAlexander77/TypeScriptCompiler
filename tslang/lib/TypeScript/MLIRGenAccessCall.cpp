@@ -1683,7 +1683,7 @@ namespace mlirgen
         }
         else if (auto anyType = dyn_cast<mlir_ts::AnyType>(arrayType))
         {
-            emitError(location, "not supported");
+            emitError(location, "element access of a value of type 'any' ('x[k]') is not supported: cast it to its type first");
             return mlir::failure();
         }          
         else
@@ -3013,7 +3013,7 @@ namespace mlirgen
                 }
                 else
                 {
-                    emitError(location, "not supported");
+                    emitError(location, "calling an extension function given as a value is not supported: call it on its object");
                     value = mlir::Value();
                 }
             })

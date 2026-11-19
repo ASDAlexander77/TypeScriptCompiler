@@ -180,9 +180,20 @@ namespace mlirgen
             return getNeverType();
         }
 
-        // e.g. ImportType (`import("module").Foo`) - not every TypeNode kind TS's grammar
-        // allows is handled above; fail cleanly instead of crashing for whichever isn't.
-        emitError(loc(typeReferenceAST), "unsupported type");
+        // not every TypeNode kind TS's grammar allows is handled above: say which is not
+        if (kind == SyntaxKind::ImportType)
+        {
+            emitError(loc(typeReferenceAST), "'import(\"...\")' types are not supported: import the type with an import declaration");
+        }
+        else if (kind >= SyntaxKind::FirstJSDocNode && kind <= SyntaxKind::LastJSDocNode)
+        {
+            emitError(loc(typeReferenceAST), "JSDoc type syntax ('?T', 'T!', '*', ...) is not supported: write the TypeScript type");
+        }
+        else
+        {
+            emitError(loc(typeReferenceAST), "this kind of type is not supported");
+        }
+
         return mlir::Type();
     }
 
@@ -2380,7 +2391,9 @@ namespace mlirgen
                 {
                     // nameType/type shape mismatch (one is a union, the other isn't) for a
                     // remapped (`as`) mapped type key - not supported, skip rather than crash.
-                    emitError(loc(mappedTypeNode)) << "unsupported mapped type key remapping";
+                    emitError(loc(mappedTypeNode))
+                        << "a mapped type's 'as' clause is not supported here: its keys and their remapped names are not "
+                           "both a union, or both a single name";
                 }
             }
         };
@@ -2913,17 +2926,56 @@ namespace mlirgen
             }
             else if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
             {
-                // unlike InterfaceDeclaration (which has its own accessors/vtable machinery,
-                // see MLIRGenInterfaces.cpp), a TypeLiteral resolves to a plain value TupleType -
-                // there's no getter/setter dispatch representation to plug an accessor into here.
-                // A real fix needs the same kind of accessor support TupleType field access
-                // doesn't have at all yet; out of scope for a crash-to-diagnostic fix.
-                emitError(loc(typeItem), "get/set accessors in a type literal are not supported");
-                return mlir::failure();
+                // A type literal is a tuple of fields: `get foo(): T` / `set foo(v: T)` declare the field
+                // `foo`, of the get accessor's type (what reading it gives), or of the set accessor's
+                // parameter type when there is no get accessor. A write is checked as a write to the field.
+                auto accessor = typeItem.as<SignatureDeclarationBase>();
+                auto nameAttr = TupleFieldName(accessor->name, genContext);
+                mlir::Type type;
+                if (kind == SyntaxKind::GetAccessor)
+                {
+                    if (!accessor->type)
+                    {
+                        emitError(loc(typeItem)) << "a get accessor in a type literal needs a return type";
+                        return mlir::failure();
+                    }
+
+                    type = getType(accessor->type, genContext);
+                }
+                else
+                {
+                    auto parameters = accessor->parameters;
+                    if (parameters.size() != 1 || !parameters.front()->type)
+                    {
+                        emitError(loc(typeItem)) << "a set accessor in a type literal needs one parameter with a type";
+                        return mlir::failure();
+                    }
+
+                    type = getType(parameters.front()->type, genContext);
+                }
+
+                if (!type)
+                {
+                    return mlir::failure();
+                }
+
+                auto existing = llvm::find_if(types, [&](auto &field) { return field.id == nameAttr; });
+                if (existing != types.end())
+                {
+                    // the pair of a get and a set accessor: the get accessor's type stays
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        existing->type = type;
+                    }
+
+                    continue;
+                }
+
+                types.push_back({nameAttr, type, false, mlir_ts::AccessLevel::Public});
             }
             else
             {
-                emitError(loc(typeItem), "unsupported type literal member");
+                emitError(loc(typeItem), "this kind of member is not supported in a type literal");
                 return mlir::failure();
             }
         }

@@ -67,11 +67,9 @@ set(not_compilable_alone
     final_interface_export_error.ts
     final_interface_extends_error.ts
     final_interface_object_error.ts
-    # errors by design (test-compile-for-in-any-error, test-compile-enum-variable-error,
-    # test-compile-any-plus-any-error)
+    # errors by design (test-compile-for-in-any-error, test-compile-enum-variable-error)
     for_in_any_error.ts
     enum_variable_error.ts
-    any_plus_any_error.ts
     # errors by design (test-compile-new-function-error, test-compile-arguments-arrow-error,
     # test-compile-type-as-value-error)
     new_function_error.ts

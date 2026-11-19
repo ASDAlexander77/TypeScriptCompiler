@@ -78,6 +78,25 @@ struct PassResult
 // A write is visible only to contexts copied from the mutated one after the write. Replacing
 // these with explicit channels (a shared pending-statements object, a function-scope alias
 // registry, returning the `this` type and the switch state) is still open.
+// `with (obj) body`: a name in the body that is a property of obj's static type is that property of the
+// local holding obj. One per `with`, the enclosing one's in `outer`.
+struct WithScope
+{
+    std::string objectName;
+    mlir::Type objectType;
+    // the body's text, in positions of the source: only names written in it resolve to the object
+    int bodyPos;
+    int bodyEnd;
+    // the function the `with` is in: a parameter of a function inside the body hides a property
+    const void *funcProto;
+    // the source file the body is in: a node of another (an import, a generic's declaration) is not in it
+    const void *sourceFile;
+    // the variables and parameters declared in the body (their VariableDeclarationDOMs): one the name
+    // resolves to hides the object's property of that name
+    llvm::DenseSet<const void *> declaredVars;
+    std::shared_ptr<WithScope> outer;
+};
+
 struct GenContext
 {
     GenContext() = default;
@@ -226,6 +245,8 @@ struct GenContext
     mlir::Type overriddenReturnType;
     const void *overriddenReturnFor = nullptr;
     mlir::Type receiverType;
+    // the innermost `with` around the code generated (WithScope)
+    std::shared_ptr<WithScope> withScope;
     mlir::StringRef receiverName;
     bool isGlobalVarReceiver = false;
     // set while generating the initializer of an exported var/let - lets a

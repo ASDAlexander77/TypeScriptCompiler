@@ -1,4 +1,5 @@
-let o = { a: 1 };
-with (o) {
-    a;
+function f(x: any) {
+    with (x) {
+        print(y);
+    }
 }

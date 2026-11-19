@@ -1282,7 +1282,8 @@ class CastLogicHelper
             // feature - fail cleanly instead of crashing for now.
             LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " as type: " << type << " to type: " << arrayType
                                     << "\n";);
-            emitError(loc) << "cast from array type " << type << " to array type " << arrayType << " is not supported";
+            emitError(loc) << "cast from " << (isa<mlir_ts::ArrayType>(type) ? "array type " : "type ") << type
+                           << " to array type " << arrayType << " is not supported";
             return mlir::Value();
         }
 

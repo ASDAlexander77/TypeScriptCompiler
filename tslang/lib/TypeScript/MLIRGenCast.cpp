@@ -958,6 +958,69 @@ namespace mlirgen
             }
         }
 
+        // the default library's `Array<T>` (`new Array<string>("a")`, a parameter `ReadonlyArray<T>` given one)
+        // where an array is expected: the array it holds, its `data`. It was cast as a pointer, which the
+        // lowering refused with no place in the source to say where.
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            // `{}` given as an array (`f({}, 1)` for a `TemplateStringsArray`): an object of no fields is an
+            // empty array, not a pointer to nothing
+            auto emptyTuple = [](mlir::Type t) {
+                if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(t))
+                {
+                    return constTupleType.size() == 0;
+                }
+
+                if (auto tupleType = dyn_cast<mlir_ts::TupleType>(t))
+                {
+                    return tupleType.size() == 0;
+                }
+
+                return false;
+            };
+
+            if (emptyTuple(valueType))
+            {
+                return V(builder.create<mlir_ts::CreateArrayOp>(location, arrayType, mlir::ValueRange{}));
+            }
+
+            if (auto arrayClassType = dyn_cast<mlir_ts::ClassType>(valueType);
+                arrayClassType && arrayClassType.getName().getValue().starts_with("Array<"))
+            {
+                auto storageType = mlir::cast<mlir_ts::ClassStorageType>(arrayClassType.getStorageType());
+                auto dataIndex = storageType.getIndex(MLIRHelper::TupleFieldName("data", builder.getContext()));
+                if (dataIndex >= 0 && isa<mlir_ts::ArrayType>(storageType.getFieldInfo(dataIndex).type))
+                {
+                    // read as the class reads it: `data` is protected
+                    GenContext classGenContext(genContext);
+                    classGenContext.thisClassType = arrayClassType;
+                    auto data = mlirGenPropertyAccessExpression(location, value, "data", false, classGenContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(data)
+                    return cast(location, type, V(data), genContext, disableStrictNullCheck);
+                }
+            }
+        }
+
+        // ...and an array where the default library's `Array<T>` is expected (`const a: Array<string> = ["x"]`):
+        // an `Array<T>` holding it. The array was cast as a pointer to the class, which crashed at run time.
+        if (auto arrayClassType = dyn_cast<mlir_ts::ClassType>(type);
+            arrayClassType && arrayClassType.getName().getValue().starts_with("Array<")
+            && (isa<mlir_ts::ArrayType>(valueType) || isa<mlir_ts::ConstArrayType>(valueType)))
+        {
+            auto storageType = mlir::cast<mlir_ts::ClassStorageType>(arrayClassType.getStorageType());
+            auto dataIndex = storageType.getIndex(MLIRHelper::TupleFieldName("data", builder.getContext()));
+            if (dataIndex >= 0 && isa<mlir_ts::ArrayType>(storageType.getFieldInfo(dataIndex).type))
+            {
+                auto dataField = storageType.getFieldInfo(dataIndex);
+                CAST_A(data, location, dataField.type, value, genContext);
+                GenContext classGenContext(genContext);
+                classGenContext.thisClassType = arrayClassType;
+                SmallVector<mlir_ts::FieldInfo> fields{dataField};
+                SmallVector<mlir::Value> values{data};
+                return NewClassInstanceWithSettingFields(location, arrayClassType, fields, values, classGenContext);
+            }
+        }
+
         // a class given where its value is expected (`make(B)` for `c: typeof A`), or the value of a class
         // where a base class's is: B's value is A's when B extends A
         if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))
@@ -1955,7 +2018,16 @@ namespace mlirgen
 
         auto srcElementType = srcArrayType.getElementType();
         auto elementType = arrayType.getElementType();
-        if (srcElementType == elementType || !isNumericSource(srcElementType) || !isNumericTarget(elementType))
+
+        // ...and an array of any other elements given as `any[]` (`("a" | "b")[]` for a parameter
+        // `ReadonlyArray<T>` inferred `any`): each element is boxed on its own
+        auto boxesElements = [&]() {
+            return isa<mlir_ts::AnyType>(elementType) && !isa<mlir_ts::AnyType>(srcElementType)
+                && !isa<mlir_ts::ArrayType>(srcElementType);
+        };
+
+        if (srcElementType == elementType
+            || !((isNumericSource(srcElementType) && isNumericTarget(elementType)) || boxesElements()))
         {
             return std::nullopt;
         }

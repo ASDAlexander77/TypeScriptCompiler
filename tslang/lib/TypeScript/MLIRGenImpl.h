@@ -1702,6 +1702,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(Statement statementAST, const GenContext &genContext);
 
+    mlir::LogicalResult mlirGenWithStatement(WithStatement withStatementAST, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenWithScopeName(Identifier identifier, const GenContext &genContext);
+    bool withScopeHasProperty(mlir::Type objectType, StringRef name);
     mlir::LogicalResult mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(Expression expressionAST, const GenContext &genContext);
@@ -7173,12 +7176,75 @@ class MLIRGenImpl
         return holds;
     }
 
+    ValueOrLogicalResult mlirGenPrivateNameIn(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    {
+        auto location = loc(binaryExpressionAST);
+        auto privateName = MLIRHelper::getName(binaryExpressionAST->left.as<Node>());
+
+        // the class whose body this is must declare the name: a field, a method or an accessor of its own
+        auto classInfo = genContext.thisClassType
+            ? getClassInfoByFullName(genContext.thisClassType.getName().getValue())
+            : ClassInfo::TypePtr();
+        auto declared = false;
+        if (classInfo)
+        {
+            auto storageClass = mlir::cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+            auto nameAttr = MLIRHelper::TupleFieldName(privateName, builder.getContext());
+            declared = storageClass.getIndex(nameAttr) >= 0 || classInfo->getStaticFieldIndex(nameAttr) >= 0
+                || classInfo->getMethodIndex(privateName) >= 0 || classInfo->getAccessorIndex(privateName) >= 0;
+        }
+
+        if (!declared)
+        {
+            emitError(loc(binaryExpressionAST->left))
+                << "Private identifier '" << privateName << "' is not declared in the enclosing class";
+            return mlir::failure();
+        }
+
+        // `obj instanceof C`, with C named as the class's own body names it
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto className = nf.createIdentifier(stows(classInfo->name.str()));
+        auto classRefType = evaluate(className, genContext);
+        if (!classRefType || mth.wideStorageType(classRefType) != classInfo->classType)
+        {
+            emitError(location) << "'" << privateName << " in obj' is not supported here: the class '"
+                                << classInfo->name << "' can't be named from this place";
+            return mlir::failure();
+        }
+
+        auto rightType = evaluate(binaryExpressionAST->right, genContext);
+        if (!rightType)
+        {
+            return mlir::failure();
+        }
+
+        auto rightBaseType = mth.getBaseType(mth.stripLiteralType(rightType));
+        if (mth.isNumericType(rightBaseType) || isa<mlir_ts::StringType>(rightBaseType)
+            || isa<mlir_ts::BooleanType>(rightBaseType) || isa<mlir_ts::BigIntType>(rightBaseType))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'in' expression must not be a primitive: '")
+                << to_print(rightType) << "'";
+            return mlir::failure();
+        }
+
+        auto brandCheck = nf.createBinaryExpression(binaryExpressionAST->right, nf.createToken(SyntaxKind::InstanceOfKeyword),
+                                                    className);
+        return mlirGen(brandCheck, genContext);
+    }
+
     ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         // Supports only array now
         auto location = loc(binaryExpressionAST);
 
         NodeFactory nf(NodeFactoryFlags::None);
+
+        // `#name in obj`: a private name belongs to the class that declares it, and every object of that
+        // class or a subclass of it has it - a brand check, `obj instanceof C`
+        if (binaryExpressionAST->left == SyntaxKind::PrivateIdentifier)
+        {
+            return mlirGenPrivateNameIn(binaryExpressionAST, genContext);
+        }
 
         // the length-based numeric-index rewrite below only makes sense when the left
         // side is actually a number (e.g. `i in arr`); a string-literal left side (e.g.
@@ -7208,7 +7274,7 @@ class MLIRGenImpl
 
         if (!isConstValue(leftExpressionValue))
         {
-            emitError(loc(binaryExpressionAST->left), "not supported");
+            emitError(loc(binaryExpressionAST->left), "'k in obj' with a key known only at run time is not supported here: the key must be a constant");
             return mlir::failure();
         }
 
@@ -7233,9 +7299,46 @@ class MLIRGenImpl
             // value holds is asked of its tag only when some have it and some do not
             auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>();
             SmallVector<mlir::Type> withKey;
+
+            // a union of classes (`x: A | B`, `"a" in x`): the members that have the key are known here,
+            // and which one the value is, asked by instanceof when some have it and some do not
+            auto keyName = constantOp ? dyn_cast<mlir::StringAttr>(constantOp.getValue()) : mlir::StringAttr();
+            if (keyName && llvm::all_of(unionType.getTypes(), [](mlir::Type t) { return isa<mlir_ts::ClassType>(t); }))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    if (withScopeHasProperty(member, keyName.getValue()))
+                    {
+                        withKey.push_back(member);
+                    }
+                }
+
+                if (withKey.empty() || withKey.size() == unionType.getTypes().size())
+                {
+                    return mlirGenBooleanValue(location, !withKey.empty());
+                }
+
+                mlir::Value holds;
+                for (auto member : withKey)
+                {
+                    auto classType = mlir::cast<mlir_ts::ClassType>(member);
+                    auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
+                        location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
+                    auto isInstance = mlirGenInstanceOfMaybeClass(location, rightExpressionValue, classRefVal, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(isInstance)
+                    holds = holds ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                            builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken),
+                                                                            holds, V(isInstance)).getResult()
+                                  : V(isInstance);
+                }
+
+                return holds;
+            }
+
             if (!constantOp || !interfacesWithKey(location, unionType, constantOp.getValue(), withKey))
             {
-                emitError(loc(binaryExpressionAST->right), "not supported");
+                emitError(loc(binaryExpressionAST->right))
+                    << "'k in obj' of a union '" << to_print(unionType) << "' is not supported: only a union of interfaces is";
                 return mlir::failure();
             }
 
@@ -7262,7 +7365,8 @@ class MLIRGenImpl
             return mlirGenBooleanValue(loc(binaryExpressionAST->right), hasField);
         }
 
-        emitError(location, "not supported");
+        emitError(location) << "'k in obj' of a value of type '" << to_print(rightExpressionValue.getType())
+                            << "' is not supported";
         return mlir::failure();
     }
 
@@ -7772,6 +7876,17 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultLeftfType == rightType) << " '" << resultLeftfType
                                 << "' is '" << rightType << "'\n";);
+
+        // an `object` is a pointer with nothing to say what it points to (a class's object, a literal, an
+        // array): which class it is can't be asked at run time, and the comparison of types below said
+        // false for every object of the class
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(resultLeftfType);
+            objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()) && isa<mlir_ts::ClassType>(rightType))
+        {
+            emitError(location) << "'instanceof' of a value of type 'object' is not supported: an 'object' carries no type "
+                                   "information; give the value the type 'any', the class, or a union of classes";
+            return mlir::failure();
+        }
 
         // default logic
         return V(
@@ -9346,6 +9461,147 @@ class MLIRGenImpl
         default:
             return false;
         }
+    }
+
+    // `a + b` of two `any`s, as JavaScript adds: when either holds a string, the two as strings joined; when
+    // both hold bigints, their sum as a bigint; otherwise their sum as numbers, a null being 0 and an
+    // undefined NaN. A bigint with anything else is a TypeError, as in JavaScript, and so is an object of
+    // any kind (a tuple, an array, a class's, a function): what text it has is not known at run time.
+    // The result is an `any`.
+    ValueOrLogicalResult mlirGenAnyPlusAny(mlir::Location location, mlir::Value left, mlir::Value right,
+                                           const GenContext &genContext)
+    {
+        auto typeIs = [&](mlir::Value value, StringRef typeName) -> mlir::Value {
+            auto typeOfValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), value);
+            auto typeNameConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(typeName));
+            return builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, typeNameConst,
+                                                            builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+        };
+
+        auto anyOf = [&](ArrayRef<mlir::Value> conditions) -> mlir::Value {
+            mlir::Value result;
+            for (auto condition : conditions)
+            {
+                result = result ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                          builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken),
+                                                                          result, condition).getResult()
+                                : condition;
+            }
+
+            return result;
+        };
+
+        auto isObject = [&](mlir::Value value) {
+            return anyOf({typeIs(value, "tuple"), typeIs(value, "array"), typeIs(value, "class"),
+                          typeIs(value, "function"), typeIs(value, "interface"), typeIs(value, "object")});
+        };
+
+        // the TypeError: thrown by a function made for it (the expression's value is then never read)
+        auto typeError = [&](StringRef helperName, StringRef message) -> ValueOrLogicalResult {
+            // the scanner puts a "_" in front of a name starting "__"
+            auto funcName = ("_" + helperName).str();
+            auto funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                std::string src = "function " + helperName.str() + "<T>(): void {\n" + throwTypeErrorSource(message) + "\n}\n";
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(stows(src))))
+                {
+                    return mlir::failure();
+                }
+
+                funcRef = resolveIdentifier(location, funcName, genContext);
+                if (!funcRef)
+                {
+                    return mlir::failure();
+                }
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            GenContext errorGenContext(genContext);
+            errorGenContext.typeAliasMap.insert({".ANY_ADD_T", getAnyType()});
+            SmallVector<mlir::Value, 4> operands;
+            auto result = mlirGenCallExpression(location, funcRef,
+                                                {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_ADD_T")).as<Node>())},
+                                                operands, errorGenContext);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::UndefOp>(location, getAnyType()));
+        };
+
+        auto addAs = [&](mlir::Type type, mlir::Value leftValue, mlir::Value rightValue) -> ValueOrLogicalResult {
+            CAST_A(leftCast, location, type, leftValue, genContext);
+            CAST_A(rightCast, location, type, rightValue, genContext);
+            auto sum = binaryOpLogic(location, SyntaxKind::PlusToken, leftCast, rightCast, genContext);
+            if (!sum)
+            {
+                return mlir::failure();
+            }
+
+            return cast(location, getAnyType(), sum, genContext);
+        };
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+
+        // a null is 0 and an undefined NaN; anything else is the number it converts to
+        auto toNumber = [&](mlir::Value value) -> ValueOrLogicalResult {
+            return mclh.conditionalValue(
+                typeIs(value, "null"),
+                [&]() {
+                    return ValueOrLogicalResult(
+                        builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(0.0)));
+                },
+                [&](mlir::Type) {
+                    return mclh.conditionalValue(
+                        typeIs(value, "undefined"),
+                        [&]() {
+                            return ValueOrLogicalResult(builder.create<mlir_ts::ConstantOp>(
+                                location, getNumberType(), builder.getF64FloatAttr(std::numeric_limits<double>::quiet_NaN())));
+                        },
+                        [&](mlir::Type) { return cast(location, getNumberType(), value, genContext); });
+                });
+        };
+
+        auto bigintMixed = [&]() {
+            return typeError("__any_add_bigint_error", "Cannot mix BigInt and other types, use explicit conversions");
+        };
+
+        return mclh.conditionalValue(
+            anyOf({isObject(left), isObject(right)}),
+            [&]() {
+                return typeError("__any_add_object_error",
+                                 "'+' of an object held in a value of type any is not supported: its text is not known at run time");
+            },
+            [&](mlir::Type) {
+                return mclh.conditionalValue(
+                    anyOf({typeIs(left, "string"), typeIs(right, "string")}),
+                    [&]() { return addAs(getStringType(), left, right); },
+                    [&](mlir::Type) {
+                        return mclh.conditionalValue(
+                            anyOf({typeIs(left, "bigint"), typeIs(right, "bigint")}),
+                            [&]() {
+                                return mclh.conditionalValue(
+                                    typeIs(left, "bigint"),
+                                    [&]() {
+                                        return mclh.conditionalValue(
+                                            typeIs(right, "bigint"), [&]() { return addAs(getBigIntType(), left, right); },
+                                            [&](mlir::Type) { return bigintMixed(); });
+                                    },
+                                    [&](mlir::Type) { return bigintMixed(); });
+                            },
+                            [&](mlir::Type) -> ValueOrLogicalResult {
+                                auto leftNumber = toNumber(left);
+                                EXIT_IF_FAILED_OR_NO_VALUE(leftNumber)
+                                auto rightNumber = toNumber(right);
+                                EXIT_IF_FAILED_OR_NO_VALUE(rightNumber)
+                                return addAs(getNumberType(), V(leftNumber), V(rightNumber));
+                            });
+                    });
+            });
     }
 
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
@@ -17804,6 +18060,13 @@ class MLIRGenImpl
         }
 
         const auto &name = var->getName();
+
+        // declared in the body of a `with` (of each around it): while it is in scope it hides the object's
+        // property of its name (mlirGenWithScopeName)
+        for (auto withScope = genContext.withScope; withScope; withScope = withScope->outer)
+        {
+            withScope->declaredVars.insert(var.get());
+        }
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
