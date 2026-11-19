@@ -21,6 +21,11 @@ interface Named {
     title?: string;
 }
 
+class Tagged {
+    constructor(public tags: string[]) {
+    }
+}
+
 class Node1 {
     next: Node1 | null = null;
     constructor(public value: number) {
@@ -79,6 +84,11 @@ function main() {
     const an: any = n;
     const next: Node1 | null = <Node1 | null>an["next"];
     assert(next != null && next.value == 2);
+
+    // a field boxed by the class's adapter: an array whose keys are read in turn
+    const tagged: any = new Tagged(["p", "q"]);
+    const tags: any = tagged["tags"];
+    assert(<string>tags[1] == "q");
 
     // an interface: an optional field not set is not there, and reads undefined
     const named: Named = { name: "n" };

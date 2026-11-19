@@ -4800,6 +4800,24 @@ namespace mlirgen
             return;
         }
 
+        // a value boxed by an adapter being made (a class's `string[]` field): its own is made after that one is
+        // done - made inside it, it was never recorded
+        if (!anyKeysAdaptersInProgress.empty())
+        {
+            anyKeysAdaptersPending.push_back({location, type});
+            return;
+        }
+
+        makeAnyKeysAdapter(location, type, genContext);
+        while (!anyKeysAdaptersPending.empty())
+        {
+            auto [pendingLocation, pendingType] = anyKeysAdaptersPending.pop_back_val();
+            makeAnyKeysAdapter(pendingLocation, pendingType, genContext);
+        }
+    }
+
+    void MLIRGenImpl::makeAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
         type = TypeOfOpHelper::typeOfBaseType(type);
 
         auto isArray = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(type);

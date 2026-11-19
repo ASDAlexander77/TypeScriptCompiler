@@ -12740,8 +12740,14 @@ class MLIRGenImpl
     bool anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
                        llvm::StringSet<> *optionals = nullptr);
 
+    // the adapter itself, made once nothing else is being made
+    void makeAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext);
+
     // types a keys adapter is being made for: a class with a field of its own type is not made twice
     llvm::DenseSet<uint64_t> anyKeysAdaptersInProgress;
+
+    // types boxed while an adapter was being made, whose own are made after it
+    SmallVector<std::pair<mlir::Location, mlir::Type>> anyKeysAdaptersPending;
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
