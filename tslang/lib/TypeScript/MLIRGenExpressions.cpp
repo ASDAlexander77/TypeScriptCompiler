@@ -1640,6 +1640,49 @@ namespace mlirgen
 
         auto callExpr = callExpression->expression.as<Expression>();
 
+        // `a.concat(x, [y, z])`: an argument that is not an array is one element, as `[x]` - the array's
+        // concat (lib.generics) takes arrays only
+        if (callExpr == SyntaxKind::PropertyAccessExpression
+            && MLIRHelper::getName(callExpr.as<PropertyAccessExpression>()->name) == "concat"
+            && llvm::any_of(callExpression->arguments, [](auto arg) { return arg != SyntaxKind::SpreadElement; }))
+        {
+            auto objectType = evaluate(callExpr.as<PropertyAccessExpression>()->expression, genContext);
+            if (objectType && isa<mlir_ts::ArrayType>(mth.wideStorageType(objectType)))
+            {
+                auto isArrayLike = [&](mlir::Type type) {
+                    type = mth.wideStorageType(mth.stripLiteralType(type));
+                    return isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ConstArrayType>(type)
+                        || isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type);
+                };
+
+                NodeFactory nf(NodeFactoryFlags::None);
+                NodeArray<Expression> arguments;
+                auto changed = false;
+                for (auto arg : callExpression->arguments)
+                {
+                    auto argType = arg == SyntaxKind::SpreadElement ? mlir::Type() : evaluate(arg, genContext);
+                    if (argType && !isArrayLike(argType))
+                    {
+                        NodeArray<Expression> elements;
+                        elements.push_back(arg);
+                        arguments.push_back(nf.createArrayLiteralExpression(elements, false));
+                        changed = true;
+                        continue;
+                    }
+
+                    arguments.push_back(arg);
+                }
+
+                if (changed)
+                {
+                    auto newCall = nf.createCallExpression(callExpr, callExpression->typeArguments, arguments);
+                    newCall->pos = callExpression->pos;
+                    newCall->_end = callExpression->_end;
+                    return mlirGen(newCall, genContext);
+                }
+            }
+        }
+
         // the language's own `Symbol`, not one the program or a library declares (TSLANG_ISSUES 38)
         auto isBuiltinSymbol = [&](Expression expression) {
             if (expression != SyntaxKind::Identifier || MLIRHelper::getName(expression.as<Identifier>()) != "Symbol")
