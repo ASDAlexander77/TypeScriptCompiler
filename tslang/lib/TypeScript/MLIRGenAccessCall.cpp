@@ -583,6 +583,13 @@ namespace mlirgen
             }
         }
 
+        // `x.name` of `x: any` is `x["name"]`, looked up at run time (mlirGenAnyKey)
+        if (!value && isa<mlir_ts::AnyType>(objectValue.getType()))
+        {
+            auto key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+            return mlirGenAnyKey(location, objectValue, key, ANY_KEYS_OP_GET, genContext);
+        }
+
         // an integer (`1..toString()`: an integer literal is an s32) has the members a number has: the default
         // library declares them on `number`. A member `number` has not got either is reported for the integer.
         if (!value && isa<mlir::IntegerType>(objectValue.getType()))
