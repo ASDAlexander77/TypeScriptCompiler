@@ -2913,13 +2913,52 @@ namespace mlirgen
             }
             else if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
             {
-                // unlike InterfaceDeclaration (which has its own accessors/vtable machinery,
-                // see MLIRGenInterfaces.cpp), a TypeLiteral resolves to a plain value TupleType -
-                // there's no getter/setter dispatch representation to plug an accessor into here.
-                // A real fix needs the same kind of accessor support TupleType field access
-                // doesn't have at all yet; out of scope for a crash-to-diagnostic fix.
-                emitError(loc(typeItem), "get/set accessors in a type literal are not supported");
-                return mlir::failure();
+                // A type literal is a tuple of fields: `get foo(): T` / `set foo(v: T)` declare the field
+                // `foo`, of the get accessor's type (what reading it gives), or of the set accessor's
+                // parameter type when there is no get accessor. A write is checked as a write to the field.
+                auto accessor = typeItem.as<SignatureDeclarationBase>();
+                auto nameAttr = TupleFieldName(accessor->name, genContext);
+                mlir::Type type;
+                if (kind == SyntaxKind::GetAccessor)
+                {
+                    if (!accessor->type)
+                    {
+                        emitError(loc(typeItem)) << "a get accessor in a type literal needs a return type";
+                        return mlir::failure();
+                    }
+
+                    type = getType(accessor->type, genContext);
+                }
+                else
+                {
+                    auto parameters = accessor->parameters;
+                    if (parameters.size() != 1 || !parameters.front()->type)
+                    {
+                        emitError(loc(typeItem)) << "a set accessor in a type literal needs one parameter with a type";
+                        return mlir::failure();
+                    }
+
+                    type = getType(parameters.front()->type, genContext);
+                }
+
+                if (!type)
+                {
+                    return mlir::failure();
+                }
+
+                auto existing = llvm::find_if(types, [&](auto &field) { return field.id == nameAttr; });
+                if (existing != types.end())
+                {
+                    // the pair of a get and a set accessor: the get accessor's type stays
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        existing->type = type;
+                    }
+
+                    continue;
+                }
+
+                types.push_back({nameAttr, type, false, mlir_ts::AccessLevel::Public});
             }
             else
             {
