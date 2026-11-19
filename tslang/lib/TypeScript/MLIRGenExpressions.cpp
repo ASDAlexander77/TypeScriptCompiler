@@ -1655,13 +1655,23 @@ namespace mlirgen
         auto callExpr = callExpression->expression.as<Expression>();
 
         // `a.concat(x, [y, z])`: an argument that is not an array is one element, as `[x]` - the array's
-        // concat (lib.generics) takes arrays only
+        // concat (lib.generics), and the default library's `Array<T>` class's, take arrays only
         if (callExpr == SyntaxKind::PropertyAccessExpression
             && MLIRHelper::getName(callExpr.as<PropertyAccessExpression>()->name) == "concat"
             && llvm::any_of(callExpression->arguments, [](auto arg) { return arg != SyntaxKind::SpreadElement; }))
         {
+            auto isArrayObject = [](mlir::Type type) {
+                if (isa<mlir_ts::ArrayType>(type))
+                {
+                    return true;
+                }
+
+                auto classType = dyn_cast<mlir_ts::ClassType>(type);
+                return classType && classType.getName().getValue().starts_with("Array<");
+            };
+
             auto objectType = evaluate(callExpr.as<PropertyAccessExpression>()->expression, genContext);
-            if (objectType && isa<mlir_ts::ArrayType>(mth.wideStorageType(objectType)))
+            if (objectType && isArrayObject(mth.wideStorageType(objectType)))
             {
                 auto isArrayLike = [&](mlir::Type type) {
                     type = mth.wideStorageType(mth.stripLiteralType(type));

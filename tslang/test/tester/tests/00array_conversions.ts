@@ -1,5 +1,6 @@
 // Arrays given where another kind of array is expected:
-// - concat's arguments that are not arrays are one element each (`a.concat("x", ["y"])`)
+// - concat's arguments that are not arrays are one element each (`a.concat("x", ["y"])`), for an array
+//   and for an `Array<T>` class
 // - `{}` given as an array is an empty array
 // - an array given as `any[]` is a copy with each element boxed
 // - an `Array<T>` class holding its elements in `data` (the default library's) and a `T[]` go into
@@ -9,6 +10,18 @@ class Array<T> {
     }
 
     get length() { return this.data.length; }
+
+    at(i: number) { return this.data[i]; }
+
+    concat(...other: T[][]) {
+        let newArray: T[] = [];
+        for (const v of this.data) newArray.push(v);
+        for (const item of other) {
+            for (const v of item) newArray.push(v);
+        }
+
+        return new Array<T>(newArray);
+    }
 }
 
 // as the default library declares it (lib.generics.ts): arrays only
@@ -46,6 +59,11 @@ function main() {
     const c: Array<string> = ["p", "q", "r"];
     assert(c.length == 3);
     assert(size(c) == 3);
+
+    const d = new Array<string>(["s"]);
+    const e = d.concat("t", ["u"]);
+    assert(e.length == 3);
+    assert(e.at(1) == "t");
 
     print("done.");
 }
