@@ -89,6 +89,7 @@ struct GenContext
         usingVars = nullptr;
         ownedVars = nullptr;
         isUnwindCleanupScope = false;
+        unwindCleanupOp = nullptr;
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
@@ -280,6 +281,11 @@ struct GenContext
     // scope nested further in releases the scopes between, and stops here
     // (mlirGenReleaseOwnedOnUnwind).
     bool isUnwindCleanupScope = false;
+    // The TryOp whose cleanup gives back that scope's ownedVars, kept by every context made from
+    // it (the nearest such TryOp around). Copies of the context made for a `try` nested in the
+    // scope keep isUnwindCleanupScope and the list, but get that try as their currentOperation:
+    // storage hoisted for the list goes in front of this op, not that one.
+    mlir::Operation *unwindCleanupOp = nullptr;
     // Points at itself on the context that stands, in the walk outwards, for the scope around a
     // `try` with a `finally` - the parent of its body's scope, and its catch clause's context. A
     // `return`, `break` or `continue` from inside the body or the catch that gets this far

@@ -1464,8 +1464,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // The same goes for a try in the copy of a finally that runs on the exceptional path: it
         // runs inside that finally's pad, and its own pads have to be nested in it. Left at the
         // top, they ended the finally's region in the pass before its end was reached, and the
-        // pass crashed on the region with no end. A try in a copy of a finally on a normal path
-        // is left at the top, as before.
+        // pass crashed on the region with no end. A try in the copy of a finally on the normal
+        // path runs where the parent try itself runs, as one in its body does, so the walk goes
+        // on past it: left at the top, a try there (or a block of the finally wrapped for its
+        // unwind cleanup) inside a catch clause gave the clause's funclet an edge to a pad
+        // outside it, and the module did not verify ("Unwind edges out of a funclet pad must
+        // have the same unwind dest").
         auto funcletParentId = 0;
         if (tsContext->compileOptions.isWindows)
         {
@@ -1481,11 +1485,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 if (tsContext->inParentTryFinallyPad.lookup(child))
                 {
                     funcletParentId = tsContext->finallyPadIdOf.lookup(parent);
-                    break;
-                }
-
-                if (!tsContext->inParentTryBody.lookup(child))
-                {
                     break;
                 }
             }

@@ -686,22 +686,36 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
 
-    // While a catch or finally clause whose block holds a `try` of its own is generated: its locals
-    // own nothing (localTakesOwnership). A clause synthesizes no cleanup TryOp, so the nested try's
-    // unwind leg (an exception out of its finally on the way back from a `return`) would leave one
-    // unreleased. A counter on the generator, not the context: the hoisting decision asks it from
-    // the function's context.
-    int clausesWithNestedTry = 0;
+    // While the catch clause of a `try` with a `finally` is generated, and the clause holds a `try`
+    // with a `finally` of its own: its locals own nothing (localTakesOwnership), and so its caught
+    // value. A `return` out of the clause through the nested finally runs that finally's copy after
+    // the catch has ended, inside the block wrapped for the clause's unwind cleanup, whose pad is
+    // nested in the catch: the module did not verify ("A single unwind edge may only enter one EH
+    // pad"), as with a `using` in that clause. Every other clause holding a `try` owns its locals.
+    // A counter on the generator, not the context: the hoisting decision asks it from the
+    // function's context.
+    int clausesUnownedForNestedFinally = 0;
 
-    // Does a block hold a `try` statement, at any depth but not in a nested function?
-    bool blockHasTry(ts::Block blockAST)
+    // Does a block hold a `try` with a `finally`, at any depth but not in a nested function?
+    bool blockHasTryWithFinally(ts::Block blockAST)
     {
         auto found = false;
-        ts::FilterVisitorSkipFuncsAST<TryStatement> visitor(SyntaxKind::TryStatement, [&](TryStatement) { found = true; });
+        auto check = [&](TryStatement tryStatement) {
+            if (tryStatement->finallyBlock)
+            {
+                found = true;
+            }
+        };
+        ts::FilterVisitorSkipFuncsAST<TryStatement> visitor(SyntaxKind::TryStatement, check);
         for (auto statement : blockAST->statements)
         {
             // the visitor looks below the node it starts from
-            if (found || statement == SyntaxKind::TryStatement)
+            if (statement == SyntaxKind::TryStatement)
+            {
+                check(statement.as<TryStatement>());
+            }
+
+            if (found)
             {
                 return true;
             }
@@ -719,7 +733,7 @@ class MLIRGenImpl
     // catch (e: int) { using r = new Res(); }` once crashed the compiler with one. It no longer
     // does, and without one a `using` in a clause that threw was never disposed and the clause's
     // heap locals leaked - so blocks there are wrapped like any other. What is left here is
-    // trackPossibleCell (a captured variable's cell) and localTakesOwnership with a nested try.
+    // trackPossibleCell (a captured variable's cell).
     bool blockIsInsideCatchOrFinally()
     {
         auto *block = builder.getInsertionBlock();
@@ -2585,7 +2599,7 @@ class MLIRGenImpl
                !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
                variableDeclarationInfo.initial && variableDeclarationInfo.type &&
                mth.ownsHeapMemory(location, variableDeclarationInfo.type) &&
-               !(clausesWithNestedTry > 0 && blockIsInsideCatchOrFinally());
+               !(clausesUnownedForNestedFinally > 0 && blockIsInsideCatchOrFinally());
     }
 
     // `let s = 0`: no type given, and an integer literal to infer one from - integer literals are
