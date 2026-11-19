@@ -142,6 +142,15 @@ export function isMemory64(bytes)
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+// One half-precision slot and its bits, for the f16 conversions (__truncdfhf2 and the rest)
+const halfSlot = typeof Float16Array === "function" ? new Float16Array(1) : null;
+const halfSlotBits = halfSlot ? new Uint16Array(halfSlot.buffer) : null;
+const needHalf = () => {
+    if (!halfSlot) throw new Error("this JavaScript engine has no Float16Array, which the f16 conversions need (Node 24 or later)");
+};
+const halfBits = (x) => { needHalf(); halfSlot[0] = x; return halfSlotBits[0]; };
+const halfValue = (h) => { needHalf(); halfSlotBits[0] = h & 0xffff; return halfSlot[0]; };
+
 export function createHost(options = {})
 {
     const args = options.args ?? ["program.wasm"];
@@ -1131,6 +1140,13 @@ export function createHost(options = {})
         // a scale 2^e alone would overflow or underflow (e beyond -1022..1023) still gives the product
         ldexp: (x, e) => { const h = e >> 1; return x * Math.pow(2, h) * Math.pow(2, e - h); },
         ldexpf: (x, e) => { const h = e >> 1; return Math.fround(x * Math.pow(2, h) * Math.pow(2, e - h)); },
+        // f16 conversions, compiler-rt's builtins on the other targets (TypeScriptAsyncRuntime's HalfTrunc*.c
+        // and HalfExtend*.c): a half is its 16 bits in an i32. A Float16Array rounds to nearest, ties to even,
+        // from the double itself, so a float or double is narrowed once, not through a float first.
+        __truncdfhf2: (x) => halfBits(x),
+        __truncsfhf2: (x) => halfBits(x),
+        __extendhfsf2: (h) => halfValue(h),
+        __extendhfdf2: (h) => halfValue(h),
         fmin: Math.min, fmax: Math.max,
         abs: (x) => (x < 0 ? -x | 0 : x),
         labs: (x) => (typeof x === "bigint" ? (x < 0n ? -x : x) : (x < 0 ? -x | 0 : x)),

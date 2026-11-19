@@ -2666,6 +2666,8 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00array_splice_result.ts
+    00f16_conversions.ts
     00negative_zero.ts
     00getter_statement.ts
     00bigint_mixed_arith.ts
@@ -5535,6 +5537,13 @@ tslang_add_test(NAME test-compile-00-getter-statement COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-own-00-getter-statement COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
 tslang_add_test(NAME test-jit-00-getter-statement COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
 tslang_add_test(NAME test-jit-own-00-getter-statement COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
+tslang_add_test(NAME test-compile-00-array-splice-result COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-compile-own-00-array-splice-result COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-jit-00-array-splice-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-jit-own-00-array-splice-result COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice_result.ts")
+tslang_add_test(NAME test-compile-00-f16-conversions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
+tslang_add_test(NAME test-compile-debug-00-f16-conversions COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
+tslang_add_test(NAME test-jit-00-f16-conversions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
 tslang_add_test(NAME test-compile-00-bigint-mixed-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-compile-own-00-bigint-mixed-arith COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-jit-00-bigint-mixed-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
