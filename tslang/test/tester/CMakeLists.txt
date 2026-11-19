@@ -341,6 +341,7 @@ tslang_add_test(NAME test-compile-00-never-type COMMAND test-runner "${PROJECT_S
 tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
+tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -1055,6 +1056,7 @@ tslang_add_test(NAME test-jit-00-never-type COMMAND test-runner -jit "${PROJECT_
 tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_any_literal_field.ts")
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
+tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
@@ -3153,6 +3155,7 @@ set(TSLANG_CORPUS
     00cast_any_literal_field.ts
     00symbol_unique_key.ts
     00any_call.ts
+    00any_keys.ts
     00call_signature_type.ts
     00f_bounded_generic.ts
     00types_indexedaccesstype.ts
@@ -4063,6 +4066,22 @@ foreach(any_call_own_case "call_any|3:5" "call_untyped_parameter|3:16")
                      -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_call_own_slug}-own.obj")
     set_tests_properties(test-compile-crash-errors-${any_call_own_slug}-own
                          PROPERTIES PASS_REGULAR_EXPRESSION "${any_call_own_name}\\.ts:${any_call_own_position}: error: a value of type 'any' can't be called under -mm=own"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
+endforeach()
+# `x[k]` and `k in x` of a value of type `any` are looked up at run time (user ruling 11-19), but not under
+# -mm=own yet, as calls of `any` are not
+foreach(any_key_own_case "any_key|2:12|element access of a value of type 'any' \\('x\\[k\\]'\\)" "in_any|2:12|'k in x' of a value of type 'any'")
+    string(REPLACE "|" ";" any_key_own_parts "${any_key_own_case}")
+    list(GET any_key_own_parts 0 any_key_own_name)
+    list(GET any_key_own_parts 1 any_key_own_position)
+    list(GET any_key_own_parts 2 any_key_own_message)
+    string(REPLACE "_" "-" any_key_own_slug "${any_key_own_name}")
+    add_test(NAME test-compile-crash-errors-${any_key_own_slug}-own
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/crash-errors/${any_key_own_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/crash-errors-${any_key_own_slug}-own.obj")
+    set_tests_properties(test-compile-crash-errors-${any_key_own_slug}-own
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${any_key_own_name}\\.ts:${any_key_own_position}: error: ${any_key_own_message} is not supported under -mm=own"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|PLEASE submit a bug report")
 endforeach()
 # a file name outside the ANSI code page: argv turned it into '?'s ("Could not open input file")

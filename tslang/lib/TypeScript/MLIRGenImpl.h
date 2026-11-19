@@ -7272,15 +7272,31 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(resultLeft)
         auto leftExpressionValue = V(resultLeft);
 
-        if (!isConstValue(leftExpressionValue))
-        {
-            emitError(loc(binaryExpressionAST->left), "'k in obj' with a key known only at run time is not supported here: the key must be a constant");
-            return mlir::failure();
-        }
-
         auto resultRight = mlirGen(binaryExpressionAST->right, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
         auto rightExpressionValue = V(resultRight);
+
+        // `k in x` of `x: any`: asked of the keys of the value it holds, at run time (user ruling 11-19)
+        if (isa<mlir_ts::AnyType>(rightExpressionValue.getType()))
+        {
+            return mlirGenAnyKey(location, rightExpressionValue, leftExpressionValue, ANY_KEYS_OP_HAS, genContext);
+        }
+
+        if (!isConstValue(leftExpressionValue))
+        {
+            // ...and a key known only at run time, of a value whose keys its type knows: asked of them the same way
+            SmallVector<std::string> values;
+            SmallVector<std::string> methods;
+            auto rightType = TypeOfOpHelper::typeOfBaseType(rightExpressionValue.getType());
+            if (anyKeysOfType(rightType, values, methods))
+            {
+                CAST_A(boxed, location, getAnyType(), rightExpressionValue, genContext);
+                return mlirGenAnyKey(location, boxed, leftExpressionValue, ANY_KEYS_OP_HAS, genContext);
+            }
+
+            emitError(loc(binaryExpressionAST->left), "'k in obj' with a key known only at run time is not supported here: the key must be a constant");
+            return mlir::failure();
+        }
 
         // a number, a boolean or a bigint has no fields to look up (a string's `length` is an
         // extension: tests/00in_method_names.ts)
@@ -12707,6 +12723,25 @@ class MLIRGenImpl
 
     // function types an adapter is being made for: a function returning one of its own type is not made twice
     llvm::DenseSet<uint64_t> anyCallAdaptersInProgress;
+
+    // `box[key]` (ANY_KEYS_OP_GET, the value or undefined) or `key in box` (ANY_KEYS_OP_HAS, a boolean) of a
+    // value of type `any` (user ruling 11-19): through the adapter made for the type of the value it holds when
+    // it was boxed (TYPE_DESCR_KEYS); a string's keys are its characters and `length`
+    ValueOrLogicalResult mlirGenAnyKey(mlir::Location location, mlir::Value box, mlir::Value key, int op,
+                                       const GenContext &genContext);
+
+    // The adapter `(box: any, op: number, key: any, value: any) => any` for a tuple, class, interface or array
+    // type boxed in an `any`, recorded for its type descriptor (ANY_KEYS_ADAPTERS_ATTR_NAME)
+    void ensureAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext);
+
+    // The keys of a value of `type` an adapter reads (fields and accessors, `values`) and those it only says
+    // are there (methods, `methods`), and of the values those that may not be set (`optionals`, an optional field);
+    // false for a type whose keys it does not know
+    bool anyKeysOfType(mlir::Type type, SmallVector<std::string> &values, SmallVector<std::string> &methods,
+                       llvm::StringSet<> *optionals = nullptr);
+
+    // types a keys adapter is being made for: a class with a field of its own type is not made twice
+    llvm::DenseSet<uint64_t> anyKeysAdaptersInProgress;
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);

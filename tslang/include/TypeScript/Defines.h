@@ -313,6 +313,9 @@
 // module attribute: the adapter made for each function type boxed in the module, by the type's
 // MLIRHelper::hashOfType (TYPE_DESCR_CALL)
 #define ANY_CALL_ADAPTERS_ATTR_NAME "ts.any_call_adapters"
+// module attribute: the adapter made for each tuple, class, interface or array type boxed in the module,
+// by the type's MLIRHelper::hashOfType (TYPE_DESCR_KEYS)
+#define ANY_KEYS_ADAPTERS_ATTR_NAME "ts.any_keys_adapters"
 #define NEW_METHOD_NAME ".new"
 #define NEW_CTOR_METHOD_NAME ".new_ctor"
 // the fields of a class value's storage tuple (ClassValueType), beside NEW_METHOD_NAME
@@ -678,12 +681,20 @@
 // `any` - `(box: any, args: any[]) => any`, made when the function is boxed (user ruling 11-18,
 // MLIRGenImpl::ensureAnyCallAdapter) - and null for any other type, or when none was made.
 #define TYPE_DESCR_CALL 5
+// For a tuple, class, interface or array type, the address of the adapter that reads a key of a value of
+// the type held in an `any` - `(box: any, op: number, key: any, value: any) => any`, made when the value
+// is boxed (user ruling 11-19, MLIRGenImpl::ensureAnyKeysAdapter): op ANY_KEYS_OP_GET is `box[key]`,
+// undefined for a key the type does not have, and ANY_KEYS_OP_HAS is `key in box`, a boolean. `value` is
+// for an op that writes, none yet. Null for any other type, or when none was made.
+#define TYPE_DESCR_KEYS 6
+#define ANY_KEYS_OP_GET 0
+#define ANY_KEYS_OP_HAS 1
 // The block header, last so that it sits immediately in front of the name bytes. A tag is a
 // `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
 // string - so a tag has to look like a payload with an immortal block header, exactly as a
 // string literal does, on top of being a name preceded by a descriptor. Both reads work off
 // the same pointer: `tag - sizeof(header)` is the marker, `tag - sizeof(record)` the record.
-#define TYPE_DESCR_BLOCK_HEADER 6
+#define TYPE_DESCR_BLOCK_HEADER 7
 
 // Coarse category of the described type. These correspond one-to-one with the names
 // TypeOfOpHelper::typeOfAsString reports, and are derived from that name so the two cannot

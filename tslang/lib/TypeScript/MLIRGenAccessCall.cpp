@@ -1683,9 +1683,9 @@ namespace mlirgen
         }
         else if (auto anyType = dyn_cast<mlir_ts::AnyType>(arrayType))
         {
-            emitError(location, "element access of a value of type 'any' ('x[k]') is not supported: cast it to its type first");
-            return mlir::failure();
-        }          
+            // looked up at run time (user ruling 11-19)
+            return mlirGenAnyKey(location, expression, argumentExpression, ANY_KEYS_OP_GET, genContext);
+        }
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
