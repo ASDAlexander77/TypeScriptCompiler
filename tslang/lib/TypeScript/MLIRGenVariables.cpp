@@ -624,7 +624,8 @@ namespace mlirgen
             }            
             else
             {
-                emitError(location) << "Array Binding Pattern: unsupported source of array data";
+                emitError(location) << "an array pattern ('[a, b] = ...') of a value of type '" << to_print(init.getType())
+                                    << "' is not supported: give it an array, a tuple or an iterable";
                 return mlir::failure();
             }
         }        

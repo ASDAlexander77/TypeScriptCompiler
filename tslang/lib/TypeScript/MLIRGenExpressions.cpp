@@ -246,7 +246,7 @@ namespace mlirgen
         // (not an Expression kind at all) ends up passed to this dispatcher. Fail cleanly instead
         // of crashing rather than trying to guess every non-Expression node kind that could land
         // here.
-        emitError(loc(expressionAST)) << "unsupported expression";
+        emitError(loc(expressionAST)) << "this kind of expression is not supported here";
         return ValueOrLogicalResult(mlir::failure());
     }
 

@@ -180,9 +180,20 @@ namespace mlirgen
             return getNeverType();
         }
 
-        // e.g. ImportType (`import("module").Foo`) - not every TypeNode kind TS's grammar
-        // allows is handled above; fail cleanly instead of crashing for whichever isn't.
-        emitError(loc(typeReferenceAST), "unsupported type");
+        // not every TypeNode kind TS's grammar allows is handled above: say which is not
+        if (kind == SyntaxKind::ImportType)
+        {
+            emitError(loc(typeReferenceAST), "'import(\"...\")' types are not supported: import the type with an import declaration");
+        }
+        else if (kind >= SyntaxKind::FirstJSDocNode && kind <= SyntaxKind::LastJSDocNode)
+        {
+            emitError(loc(typeReferenceAST), "JSDoc type syntax ('?T', 'T!', '*', ...) is not supported: write the TypeScript type");
+        }
+        else
+        {
+            emitError(loc(typeReferenceAST), "this kind of type is not supported");
+        }
+
         return mlir::Type();
     }
 
@@ -2380,7 +2391,9 @@ namespace mlirgen
                 {
                     // nameType/type shape mismatch (one is a union, the other isn't) for a
                     // remapped (`as`) mapped type key - not supported, skip rather than crash.
-                    emitError(loc(mappedTypeNode)) << "unsupported mapped type key remapping";
+                    emitError(loc(mappedTypeNode))
+                        << "a mapped type's 'as' clause is not supported here: its keys and their remapped names are not "
+                           "both a union, or both a single name";
                 }
             }
         };
@@ -2962,7 +2975,7 @@ namespace mlirgen
             }
             else
             {
-                emitError(loc(typeItem), "unsupported type literal member");
+                emitError(loc(typeItem), "this kind of member is not supported in a type literal");
                 return mlir::failure();
             }
         }

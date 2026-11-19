@@ -563,7 +563,7 @@ namespace mlirgen
             return mlirGenWithStatement(statementAST.as<WithStatement>(), genContext);
         }
 
-        emitError(loc(statementAST), "this statement is not supported");
+        emitError(loc(statementAST), "this kind of statement is not supported");
         return mlir::failure();
     }
 
