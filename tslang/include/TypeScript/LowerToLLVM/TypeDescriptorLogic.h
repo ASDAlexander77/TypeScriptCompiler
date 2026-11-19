@@ -34,13 +34,14 @@ class TypeDescriptorLogic
     {
     }
 
-    // { i32 kind, i32 layout, ptr release, ptr retain, ptr share, ptr call, blockHeader }: the block header
-    // an integer of CompileOptions::heapBlockHeaderBytes, the index width but 8 bytes on wasm32
+    // { i32 kind, i32 layout, ptr release, ptr retain, ptr share, ptr call, ptr keys, blockHeader }: the block
+    // header an integer of CompileOptions::heapBlockHeaderBytes, the index width but 8 bytes on wasm32
     static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type blockWordType)
     {
         auto i32Ty = builder.getI32Type();
         auto ptrTy = LLVM::LLVMPointerType::get(builder.getContext());
-        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, ptrTy, blockWordType}, false);
+        return LLVM::LLVMStructType::getLiteral(builder.getContext(),
+                                                {i32Ty, i32Ty, ptrTy, ptrTy, ptrTy, ptrTy, ptrTy, blockWordType}, false);
     }
 
     LLVM::LLVMStructType getRecordType()
@@ -97,6 +98,15 @@ class TypeDescriptorLogic
         auto callPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
                                                     ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_CALL});
         return rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), callPtr);
+    }
+
+    // TYPE_DESCR_KEYS of the type this tag names: the adapter that reads a key of a boxed value, or null
+    mlir::Value getKeysFromTag(mlir::Value tagValue)
+    {
+        auto recordPtr = getRecordPtrFromTag(tagValue);
+        auto keysPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
+                                                    ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_KEYS});
+        return rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), keysPtr);
     }
 
     mlir::Value isKind(mlir::Value tagValue, int kind)

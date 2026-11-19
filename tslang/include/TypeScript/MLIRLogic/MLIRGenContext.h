@@ -193,6 +193,9 @@ struct GenContext
     // storage declared in the body does not dominate it; hoisting is what lets the unwind leg
     // dispose and release what the body's scope owes.
     bool allocateScopeOwnedVarsOutsideOfOperation = false;
+    // a catch clause's variable is being declared: the landing pad writes it, not an initializer, so it
+    // starts with nothing in it (MLIRGenImpl::adjustLocalVariableType)
+    bool declaringCatchVariable = false;
     bool forceDiscover = false;
     bool discoverParamsOnly = false;
     bool insertIntoParentScope = false;

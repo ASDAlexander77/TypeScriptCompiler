@@ -812,7 +812,7 @@ namespace own_inference
                     }
 
                     uses.push_back(user);
-                    if (mlir::isa<mlir_ts::TypeOfOp, mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp, mlir_ts::AnyCallAdapterOp>(user))
+                    if (mlir::isa<mlir_ts::TypeOfOp, mlir_ts::TypeOfAnyOp, mlir_ts::IsTupleOfLayoutOp, mlir_ts::AnyCallAdapterOp, mlir_ts::AnyKeysAdapterOp>(user))
                     {
                         continue;
                     }

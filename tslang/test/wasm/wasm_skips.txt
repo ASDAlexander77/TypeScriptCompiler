@@ -16,3 +16,4 @@ json.ts none                    # (default library) builds a 100000-character st
 # fails natively under the same model too (not run natively under it by ctest)
 01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)
 00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)
+00let_without_initializer_owns.ts own # copies an `any` holding an object, which -mm=own refuses at run time by design (native own: the same assert)

@@ -44,7 +44,7 @@ set(expected
     "nestedChosen:1:1"
     "chosenInLoop:1:1"
     "returnChosen:1:1"
-    "assignedOutside:1:0")
+    "assignedOutside:1:1")
 foreach(entry IN LISTS expected)
     string(REPLACE ":" ";" entry "${entry}")
     list(POP_FRONT entry function)

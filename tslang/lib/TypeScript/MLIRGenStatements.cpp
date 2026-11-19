@@ -2395,12 +2395,14 @@ namespace mlirgen
             caughtName = varDecl ? MLIRHelper::getName(varDecl->name) : std::string(".caught.value");
             caughtType = varDecl && varDecl->type ? getType(varDecl->type, genContext) : getAnyType();
             varName = ".caught";
+            GenContext catchVariableGenContext(genContext);
+            catchVariableGenContext.declaringCatchVariable = true;
             auto declaredType = registerVariable(
                 location, varName, false, VariableType::Let,
                 [&](mlir::Location, const GenContext &) -> TypeValueInitType {
                     return {caughtType, mlir::Value(), TypeProvided::Yes};
                 },
-                genContext);
+                catchVariableGenContext);
             if (!declaredType)
             {
                 return mlir::failure();
@@ -2412,7 +2414,9 @@ namespace mlirgen
             if (varDecl)
             {
                 varName = MLIRHelper::getName(varDecl->name);
-                if (mlir::failed(mlirGen(varDecl, VariableType::Let, genContext)))
+                GenContext catchVariableGenContext(genContext);
+                catchVariableGenContext.declaringCatchVariable = true;
+                if (mlir::failed(mlirGen(varDecl, VariableType::Let, catchVariableGenContext)))
                 {
                     return mlir::failure();
                 }

@@ -1751,6 +1751,16 @@ namespace mlirgen
             return V(builder.create<mlir_ts::AnyCallAdapterOp>(location, getOpaqueType(), boxValue));
         }
 
+        // `__any_keys_adapter(box)` of `__any_key` (mlirGenAnyKey): the keys adapter of the type of the value the box holds
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___any_keys_adapter"
+            && callExpression->arguments.size() == 1)
+        {
+            auto box = mlirGen(callExpression->arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(box)
+            CAST_A(boxValue, location, getAnyType(), V(box), genContext);
+            return V(builder.create<mlir_ts::AnyKeysAdapterOp>(location, getOpaqueType(), boxValue));
+        }
+
         // `Shared.count(s)` (own spec 23.1), unless the program declares its own `Shared`, which
         // wins as it does in type position and in `new`.
         if (callExpr == SyntaxKind::PropertyAccessExpression)
