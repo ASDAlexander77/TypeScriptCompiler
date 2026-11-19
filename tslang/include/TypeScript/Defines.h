@@ -20,6 +20,10 @@
 // declarations set it, which is what keeps parameters and fields - references the frame
 // borrows rather than owns - out of the assignment path. See MLIRGen's takeOwnershipOfLocal.
 #define OWNED_LOCAL_ATTR_NAME "__owned"
+// On a `ts.ReleaseSlot` a scope exit made for an owned local, while MLIRGen generates the function: a
+// closure written later may capture the local, and its storage then is a cell, which a scope exit gives
+// back with `ts.ReleaseCell` (releaseCapturedSlotsAsCells). Removed when the function is done.
+#define SCOPE_EXIT_RELEASE_ATTR_NAME "__scope_exit_release"
 
 // Marks a variable's storage (its ts.Variable, or its ts.Global) whose type was inferred from an
 // integer literal - `let s = 0` is an s32 - so that storing a fraction into it can be warned about.

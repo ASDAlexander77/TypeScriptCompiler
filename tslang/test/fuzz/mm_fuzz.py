@@ -38,8 +38,16 @@
 #       Group the minimized failures of earlier runs by model, kind and minimized shape (generated
 #       names and numbers normalized) into DIR/report.md.
 #
-#   mm_fuzz.py show [--seed S]
-#       Print one generated program.
+#   mm_fuzz.py [--jobs J] [--out DIR] leaks [--count N] [--seed S] [--low L] [--high H] [--objects-only]
+#       Look for what rc keeps and gc does not: each program's main runs L times and then H times
+#       (main(argc) calls it once per argument), and the growth of the peak memory between the two
+#       runs is compared with gc's (see "Leaks under rc" below). The programs have strings, string
+#       arrays and function values returning strings beside the objects (--objects-only leaves them
+#       out). Each leak is measured twice, minimized and written to DIR/leaks/<seed>-rc-leak/ with
+#       repeated.ts, the program as measured; DIR/leaks.md lists them.
+#
+#   mm_fuzz.py show [--seed S] [--extended]
+#       Print one generated program (--extended: as the leaks command makes it).
 #
 # The compiler defaults to the build tree beside this checkout (windows-msbuild-2026-release on
 # Windows, ninja/release on Linux); --tslang, --tslang-lib-path and --gc-lib-path override it.
@@ -241,13 +249,22 @@ HEADER = [
     "function churn() { const hold: N[] = []; for (let i = 0; i < 64; i++) { hold.push(new N(new V(777))); } }",
 ]
 
+# --extended (the leaks command): strings, string arrays and function values that return strings - what
+# rc leaked through calls of function values, array literals and spreads - beside the objects above
+EXTENDED_HEADER = [
+    "class T { s: string; constructor(s: string) { this.s = s; } }",
+    "@noinline function ms(i: number): string { return \"m\" + i; }",
+    "@noinline function mt(i: number): T { return new T(\"t\" + i); }",
+]
+
 AVOIDABLE = {
     "arg-assign": "an assignment inside an argument list, f(n, (n = mk(1), m))",
     "globals": "the module-level G, HG, GS and GA",
 }
 
 TYPE_NAME = {"N": "N", "V": "V", "NA": "N[]", "IX": "IX", "IY": "IY", "IG": "IG",
-             "FN": "() => number", "SV": "Shared<V>", "H": "H"}
+             "FN": "() => number", "SV": "Shared<V>", "H": "H",
+             "S": "string", "SA": "string[]", "T": "T", "FS": "(n: number) => string"}
 
 # number-valued reads of a value of each type
 READS = {
@@ -260,10 +277,14 @@ READS = {
     "FN": ["{0}()"],
     "SV": ["{0}.value.x", "{0}.value.w.x"],
     "H": ["{0}.n.v.x", "{0}.n.items[0].x"],
+    "S": ["{0}.length"],
+    "SA": ["{0}.length", "{0}[0].length"],
+    "T": ["{0}.s.length"],
+    "FS": ["{0}(3).length"],
 }
 
 PREFIX = {"N": "n", "V": "v", "NA": "a", "IX": "ix", "IY": "iy", "IG": "ig", "FN": "c",
-          "SV": "sh", "H": "h"}
+          "SV": "sh", "H": "h", "S": "st", "SA": "sa", "T": "t", "FS": "fs"}
 
 
 class Var:
@@ -305,9 +326,10 @@ class Ctx:
 
 
 class Gen:
-    def __init__(self, seed, size=None, avoid=()):
+    def __init__(self, seed, size=None, avoid=(), extended=False):
         self.r = random.Random(seed)
         self.seed = seed
+        self.extended = extended  # EXTENDED_HEADER's types too
         self.avoid = set(avoid)   # shapes not to generate, once their bugs are known (AVOIDABLE)
         self.counter = 0
         self.globals = []
@@ -443,6 +465,51 @@ class Gen:
             return "new H()"
         if ty == "B":
             return self.cond(ctx)
+        if ty == "S":
+            if depth > 2:
+                return "\"k\" + %s" % self.num_k(ctx)
+            opts = [lambda: "\"s\" + %s" % self.num_k(ctx),
+                    lambda: "`t${%s}`" % self.num_read(ctx),
+                    lambda: "ms(%s)" % self.num_k(ctx),
+                    lambda: "%s + %s" % (self.expr(ctx, "S", 0.5, depth + 1), self.expr(ctx, "S", 0.5, depth + 1)),
+                    lambda: "(%s ? %s : %s)" % (self.cond(ctx), self.expr(ctx, "S", 0.5, depth + 1),
+                                                 self.expr(ctx, "S", 0.5, depth + 1)),
+                    lambda: "[%s, %s][%d]" % (self.expr(ctx, "S", 0.6, depth + 1), self.expr(ctx, "S", 0.6, depth + 1),
+                                              self.r.randint(0, 1))]
+            if alias:
+                opts.append(lambda: self.pick(vs).name)
+            ts = ctx.vars(lambda v: v.ty == "T")
+            if ts:
+                opts.append(lambda: self.pick(ts).name + ".s")
+            sas = ctx.vars(lambda v: v.ty == "SA")
+            if sas:
+                opts.append(lambda: self.pick(sas).name + "[0]")
+            fss = ctx.vars(lambda v: v.ty == "FS")
+            if fss:
+                opts.append(lambda: "%s(%s)" % (self.pick(fss).name, self.num_k(ctx)))
+            return self.pick(opts)()
+        if ty == "SA":
+            if alias and self.chance(0.4):
+                return self.pick(vs).name
+            if vs and self.chance(0.3):
+                return "[...%s, %s]" % (self.pick(vs).name, self.expr(ctx, "S", 0.6, depth + 1))
+            return "[" + ", ".join(self.expr(ctx, "S", 0.6, depth + 1) for _ in range(self.r.randint(1, 3))) + "]"
+        if ty == "T":
+            if alias and self.chance(0.5):
+                return self.pick(vs).name
+            if self.chance(0.4):
+                return "mt(%s)" % self.num_k(ctx)
+            return "new T(%s)" % self.expr(ctx, "S", 0.6, depth + 1)
+        if ty == "FS":
+            if alias and self.chance(0.3):
+                return self.pick(vs).name
+            c = self.r.random()
+            if c < 0.35:
+                return "ms"
+            if c < 0.7:
+                # a closure capturing a string
+                return "(k: number): string => \"c\" + k + %s" % self.expr(ctx, "S", 0.2, 3)
+            return "(k: number): string => %s" % self.pick(["\"f\" + k", "`g${k}`", "ms(k + 1)", "[\"e\" + k][0]"])
         raise ValueError(ty)
 
     def arg(self, ctx, ty, previous):
@@ -507,12 +574,14 @@ class Gen:
         acc = ctx.acc
 
         if kind == "decl":
-            ty = self.r.choices(["N", "V", "NA", "IX", "IY", "IG", "FN", "SV"],
-                                [6, 4, 3, 2, 1, 1, 3, 1])[0]
+            types, weights = ["N", "V", "NA", "IX", "IY", "IG", "FN", "SV"], [6, 4, 3, 2, 1, 1, 3, 1]
+            if self.extended:
+                types, weights = types + ["S", "SA", "T", "FS"], weights + [8, 4, 3, 3]
+            ty = self.r.choices(types, weights)[0]
             mutable = self.chance(0.6)
             e = self.expr(ctx, ty)
-            v = ctx.declare(ty, mutable, 1 if ty == "NA" else 0)
-            annotate = mutable or ty in ("IX", "IY", "IG", "NA", "SV") or self.chance(0.3)
+            v = ctx.declare(ty, mutable, 1 if ty in ("NA", "SA") else 0)
+            annotate = mutable or ty in ("IX", "IY", "IG", "NA", "SV", "SA", "FS") or self.chance(0.3)
             if ty == "FN" and not mutable and self.chance(0.6):
                 annotate = False
             return ["%s%s %s%s = %s;" % (sp, "let" if mutable else "const", v.name,
@@ -524,7 +593,7 @@ class Gen:
                 return self.stmt(ctx, ind)
             v = self.pick(vs)
             e = self.expr(ctx, v.ty, 0.5)
-            if v.ty == "NA":
+            if v.ty in ("NA", "SA"):
                 v.minlen = 1
             return ["%s%s = %s;" % (sp, v.name, e)]
 
@@ -546,6 +615,13 @@ class Gen:
                 opts.append("%s.push(%s);" % (v.name, self.expr(ctx, "N", 0.4)))
                 if v.minlen >= 2 and v.depth == len(ctx.scopes):
                     opts.append("%s.pop();" % v.name)
+            for v in ctx.vars(lambda v: v.ty == "T"):
+                opts.append("%s.s = %s;" % (v.name, self.expr(ctx, "S", 0.6)))
+            for v in ctx.vars(lambda v: v.ty == "SA"):
+                opts.append("%s[0] = %s;" % (v.name, self.expr(ctx, "S", 0.5)))
+                opts.append("%s.push(%s);" % (v.name, self.expr(ctx, "S", 0.4)))
+            for v in ctx.vars(lambda v: v.ty == "S" and v.mutable):
+                opts.append("%s += %s;" % (v.name, self.expr(ctx, "S", 0.6)))
             if not opts:
                 return self.stmt(ctx, ind)
             s = self.pick(opts)
@@ -687,7 +763,7 @@ class Gen:
         return lines
 
     def program(self):
-        lines = list(HEADER)
+        lines = list(HEADER) + (EXTENDED_HEADER if self.extended else [])
         lines += self.gen_globals()
         if self.chance(0.5):
             lines += self.gen_reducer()
@@ -989,7 +1065,7 @@ def kinds_match(k, kind):
     return k is not None and k == kind
 
 
-GENERATED_NAME_RE = re.compile(r"\b(n|v|a|ix|iy|ig|c|sh|h|p|f|g|r|j)\d+\b")
+GENERATED_NAME_RE = re.compile(r"\b(n|v|a|ix|iy|ig|c|sh|h|p|f|g|r|j|st|sa|t|fs)\d+\b")
 
 
 def shape_key(text):
@@ -1055,6 +1131,240 @@ class Stats:
     def add(self, key):
         with self.lock:
             self.counts[key] = self.counts.get(key, 0) + 1
+
+
+# ---------------------------------------------------------------------------------------------
+# Leaks under rc
+#
+# A program's `main` becomes `leakBody`, and a new `main(argc)` calls it once per command-line
+# argument: the same binary runs the body `--low` times and `--high` times, and the difference of the
+# two peak memories is what the extra runs kept. rc keeping clearly more than gc keeps is a leak - gc
+# is the reference here too, so a program that holds on to what it makes (a global array it pushes
+# to) is not one. Peak memory is the process's peak working set on Windows and its maximum resident
+# set on Linux.
+
+# Two measurements of a program that keeps nothing differ by about 0.1 MB.
+LEAK_MIN_BYTES = 1 << 20
+
+
+def peak_run(exe, args):
+    """Runs exe with args, its output thrown away. Returns (code, peak bytes); code is an int or
+    'timeout'."""
+    timeout = RUN_TIMEOUT * 4
+    if IS_WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+
+        p = subprocess.Popen([exe] + args, cwd=os.path.dirname(exe), stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        try:
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            return "timeout", 0
+        counters = Counters()
+        counters.cb = ctypes.sizeof(Counters)
+        psapi = ctypes.WinDLL("psapi")
+        psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        ok = psapi.GetProcessMemoryInfo(wintypes.HANDLE(int(p._handle)), ctypes.byref(counters), counters.cb)
+        return p.returncode, counters.PeakWorkingSetSize if ok else 0
+    env = dict(os.environ)
+    p = subprocess.Popen([exe] + args, cwd=os.path.dirname(exe), stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, env=env)
+    deadline = time.time() + timeout
+    while True:
+        pid, status, usage = os.wait4(p.pid, os.WNOHANG)
+        if pid:
+            p.returncode = os.waitstatus_to_exitcode(status)
+            return p.returncode, usage.ru_maxrss * 1024
+        if time.time() > deadline:
+            p.kill()
+            os.wait4(p.pid, 0)
+            return "timeout", 0
+        time.sleep(0.02)
+
+
+def repeated_main(text):
+    """The program with its main run once per command-line argument, or None when it has no
+    `function main() {`."""
+    if "function main() {" not in text:
+        return None
+    return (text.replace("function main() {", "function leakBody() {", 1).rstrip("\n") +
+            # (a `main` that takes argc returns its exit code: void, it was whatever the register held)
+            "\nfunction main(argc: i32): i32 { for (let leakRep = 1; leakRep < argc; leakRep++) { leakBody(); } return 0; }\n")
+
+
+class LeakResult:
+    def __init__(self, mm, status, text="", codes=(), growth=0):
+        self.mm = mm
+        self.status = status          # ok, rejected, crash, timeout (compile), run-fail
+        self.text = text
+        self.codes = codes
+        self.growth = growth          # bytes the extra runs kept
+
+    def summary(self):
+        if self.status != "ok":
+            return self.status + ("" if not self.codes else ":" + ",".join(code_name(c) for c in self.codes))
+        return "+%.1f MB" % (self.growth / (1 << 20))
+
+
+def leak_measure(tc, text, work, mm, low, high):
+    os.makedirs(work, exist_ok=True)
+    src = os.path.join(work, "leak_" + mm + ".ts")
+    with open(src, "w", newline="\n") as f:
+        f.write(text)
+    exe = os.path.join(work, "leak_" + mm + ext())
+    if os.path.exists(exe):
+        os.remove(exe)
+    status, code, out = tc.compile(src, exe, mm)
+    if status != "ok":
+        return LeakResult(mm, "compile-" + status, out)
+    code_low, peak_low = peak_run(exe, ["x"] * low)
+    code_high, peak_high = peak_run(exe, ["x"] * high)
+    if code_low != 0 or code_high != 0:
+        return LeakResult(mm, "run-fail", codes=(code_low, code_high))
+    return LeakResult(mm, "ok", codes=(0, 0), growth=peak_high - peak_low)
+
+
+def is_leak(gc, rc):
+    return (gc.status == "ok" and rc.status == "ok" and rc.growth >= LEAK_MIN_BYTES and
+            rc.growth > 4 * max(gc.growth, 0) + LEAK_MIN_BYTES // 2)
+
+
+def leak_check(tc, text, work, low, high):
+    """Returns (gc, rc, leaks) for the program (not yet repeated), or None when it has no main."""
+    rep = repeated_main(text)
+    if rep is None:
+        return None
+    gc = leak_measure(tc, rep, work, "gc", low, high)
+    if gc.status != "ok":
+        return gc, None, False
+    rc = leak_measure(tc, rep, work, "rc", low, high)
+    return gc, rc, is_leak(gc, rc)
+
+
+class LeakMinimizer(Minimizer):
+    def __init__(self, tc, work, low, high):
+        super().__init__(tc, "rc", "leak", work)
+        self.low = low
+        self.high = high
+
+    def interesting(self, lines):
+        if not well_formed(lines):
+            return False
+        text = "\n".join(lines) + "\n"
+        key = hashlib.sha1(text.encode()).hexdigest()
+        if key in self.cache:
+            return self.cache[key]
+        self.tries += 1
+        res = leak_check(self.tc, text, os.path.join(self.work, "m"), self.low, self.high)
+        ok = bool(res and res[2])
+        self.cache[key] = ok
+        return ok
+
+    def loops(self, lines):
+        # fewer iterations keep less: a leak is only easier to see with more of them
+        return lines
+
+
+def cmd_leaks(args, tc, recheck):
+    out = os.path.abspath(args.out)
+    work_root = os.path.join(out, "work")
+    fail_dir = os.path.join(out, "leaks")
+    os.makedirs(work_root, exist_ok=True)
+    stats = Stats()
+    found = []
+    lock = threading.Lock()
+    minimized = [0]
+
+    def one(seed):
+        text = Gen(seed, avoid=args.avoid, extended=not args.objects_only).program()
+        work = os.path.join(work_root, str(seed))
+        res = leak_check(tc, text, work, args.low, args.high)
+        if res is None:
+            stats.add("no-main")
+            return
+        gc, rc, leaks = res
+        if gc.status != "ok":
+            stats.add("gc-" + gc.status)
+        elif rc.status != "ok":
+            stats.add("rc-" + rc.status)
+        elif not leaks:
+            stats.add("no-leak")
+        else:
+            # confirmed when a second rc measurement of the same binary leaks as well
+            again = leak_measure(tc, repeated_main(text), os.path.join(work, "again"), "rc", args.low, args.high)
+            if not is_leak(gc, again):
+                stats.add("leak-unconfirmed")
+            else:
+                stats.add("LEAK")
+                info = {"seed": seed, "gc": gc.summary(), "rc": rc.summary(), "rc_again": again.summary(),
+                        "low": args.low, "high": args.high, "tslang": tc.describe()}
+                repro = text
+                with lock:
+                    do_min = minimized[0] < args.minimize
+                    minimized[0] += 1 if do_min else 0
+                if do_min:
+                    m = LeakMinimizer(tc, os.path.join(work, "min"), args.low, args.high)
+                    t0 = time.time()
+                    small = m.run(text)
+                    info["minimize_tries"] = m.tries
+                    info["minimize_seconds"] = round(time.time() - t0, 1)
+                    if small:
+                        repro = small
+                        final = leak_check(tc, repro, os.path.join(work, "final"), args.low, args.high)
+                        info["final"] = {"gc": final[0].summary(), "rc": final[1].summary() if final[1] else None}
+                info["shape"] = shape_key(repro)
+                info["lines"] = len(repro.splitlines())
+                d = os.path.join(fail_dir, "%d-rc-leak" % seed)
+                os.makedirs(d, exist_ok=True)
+                for name, body in (("original.ts", text), ("repro.ts", repro),
+                                   ("repeated.ts", repeated_main(repro))):
+                    with open(os.path.join(d, name), "w", newline="\n") as f:
+                        f.write(body)
+                with open(os.path.join(d, "info.json"), "w", newline="\n") as f:
+                    json.dump(info, f, indent=2)
+                with lock:
+                    found.append((d, info))
+        if not args.keep_work:
+            shutil.rmtree(work, ignore_errors=True)
+
+    seeds = range(args.seed, args.seed + args.count)
+    t0 = time.time()
+    done = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
+        futs = [ex.submit(one, s) for s in seeds]
+        for f in concurrent.futures.as_completed(futs):
+            f.result()
+            done += 1
+            if done % 20 == 0 or done == args.count:
+                print("[%d/%d %.0fs] %s" % (done, args.count, time.time() - t0,
+                                            " ".join("%s=%d" % kv for kv in sorted(stats.counts.items()))),
+                      flush=True)
+    groups = {}
+    for d, info in found:
+        groups.setdefault(info["shape"], []).append((d, info))
+    lines = ["# rc leaks", "", "| shape | count | lines | rc | gc | example |", "|---|---|---|---|---|---|"]
+    for shape, items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        d, info = min(items, key=lambda it: it[1]["lines"])
+        fin = info.get("final", info)
+        lines.append("| %s | %d | %d | %s | %s | %s |" % (shape, len(items), info["lines"], fin["rc"], fin["gc"], d))
+    with open(os.path.join(out, "leaks.md"), "w", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    with open(os.path.join(out, "summary.json"), "w", newline="\n") as f:
+        json.dump({"tslang": tc.describe(), "seeds": [args.seed, args.seed + args.count - 1],
+                   "seconds": round(time.time() - t0), "counts": stats.counts,
+                   "leaks": sorted(d for d, _ in found)}, f, indent=2)
+    print("\n".join(lines))
+    return 1 if found else 0
 
 
 def cmd_run(args, tc, recheck):
@@ -1243,12 +1553,22 @@ def main():
     m.add_argument("--model", choices=("rc", "own"), required=True)
     s = sub.add_parser("show")
     s.add_argument("--seed", type=int, default=1)
+    s.add_argument("--extended", action="store_true", help="the program the leaks command makes of the seed")
+    lk = sub.add_parser("leaks")
+    lk.add_argument("--count", type=int, default=100)
+    lk.add_argument("--seed", type=int, default=1)
+    lk.add_argument("--low", type=int, default=10, help="runs of main for the first measurement")
+    lk.add_argument("--high", type=int, default=400, help="runs of main for the second measurement")
+    lk.add_argument("--minimize", type=int, default=8, help="minimize at most this many leaks")
+    lk.add_argument("--keep-work", action="store_true")
+    lk.add_argument("--objects-only", action="store_true",
+                    help="the run command's programs, without strings, string arrays and function values that return strings")
     rp = sub.add_parser("report")
     rp.add_argument("dirs", nargs="+", help="output folders of earlier runs")
     args = ap.parse_args()
 
     if args.cmd == "show":
-        sys.stdout.write(Gen(args.seed, avoid=args.avoid).program())
+        sys.stdout.write(Gen(args.seed, avoid=args.avoid, extended=args.extended).program())
         return 0
     tc = Toolchain(args.tslang, args.tslang_lib_path, args.gc_lib_path)
     recheck = []
@@ -1258,7 +1578,7 @@ def main():
         libp = libp or os.path.join(os.path.dirname(os.path.dirname(exe)), "lib")
         recheck.append((label, Toolchain(exe, libp, args.gc_lib_path)))
     return {"run": cmd_run, "replay": cmd_replay, "minimize": cmd_minimize,
-            "report": cmd_report}[args.cmd](args, tc, recheck)
+            "report": cmd_report, "leaks": cmd_leaks}[args.cmd](args, tc, recheck)
 
 
 if __name__ == "__main__":

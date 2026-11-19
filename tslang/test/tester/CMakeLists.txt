@@ -5380,6 +5380,17 @@ add_test(NAME test-rc-temp-array-literal
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/temp-array-literal.cmake")
+# A captured variable's cell is given back on every path out of its scope under rc: a `for (let i ...)`
+# body's per-iteration `i`, and a parameter captured after an early `return`. The IR is read, as no run
+# shows the leak; it runs under the models that accept it (own does not assign a parameter yet).
+add_test(NAME test-rc-captured-cells
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/captured-cells/captured_cells.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/captured-cells.cmake")
+foreach(captured_cells_mm gc rc none)
+    tslang_add_test(NAME test-compile-captured-cells-${captured_cells_mm} COMMAND test-runner -mm=${captured_cells_mm} "${PROJECT_SOURCE_DIR}/test/tester/captured-cells/captured_cells.ts")
+    tslang_add_test(NAME test-jit-captured-cells-${captured_cells_mm} COMMAND test-runner -jit -mm=${captured_cells_mm} "${PROJECT_SOURCE_DIR}/test/tester/captured-cells/captured_cells.ts")
+endforeach()
 foreach(temp_array_mm gc rc none own)
     tslang_add_test(NAME test-compile-temp-array-literal-${temp_array_mm} COMMAND test-runner -mm=${temp_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts")
     tslang_add_test(NAME test-jit-temp-array-literal-${temp_array_mm} COMMAND test-runner -jit -mm=${temp_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts")

@@ -1017,6 +1017,53 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // A scope exit generated before a closure that captures the variable - a `return` ahead of the
+    // closure (`p = mk(8); if (c) return mk(5); const f = () => { p = ...; };`) - released the slot's value
+    // (ReleaseSlot) where the variable's storage turned out to be a cell, which takes ReleaseCell: the cell
+    // went unreleased on that path. Once the function is generated, every capture is known, and those
+    // releases (SCOPE_EXIT_RELEASE_ATTR_NAME) are given the cell's.
+    void releaseCapturedSlotsAsCells(mlir::Operation *funcOp)
+    {
+        llvm::SmallVector<mlir_ts::ReleaseSlotOp> releases;
+        funcOp->walk([&](mlir_ts::ReleaseSlotOp releaseOp) {
+            if (releaseOp->hasAttr(SCOPE_EXIT_RELEASE_ATTR_NAME))
+            {
+                releases.push_back(releaseOp);
+            }
+        });
+
+        for (auto releaseOp : releases)
+        {
+            releaseOp->removeAttr(SCOPE_EXIT_RELEASE_ATTR_NAME);
+            if (!isCapturedVariableCell(releaseOp.getSlot()))
+            {
+                continue;
+            }
+
+            mlir::OpBuilder cellBuilder(releaseOp);
+            auto cellRelease = cellBuilder.create<mlir_ts::ReleaseCellOp>(releaseOp->getLoc(), releaseOp.getSlot());
+            for (auto attr : releaseOp->getDiscardableAttrs())
+            {
+                cellRelease->setAttr(attr.getName(), attr.getValue());
+            }
+
+            releaseOp->erase();
+        }
+    }
+
+    // The scope that becomes a loop's body scope (`bodyContext`, made from the loop's context) lists the
+    // storage of the loop variables' per-iteration copies as its own (GenContext::loopBodyCells), and no
+    // scope nested in it lists them again. Called once its ownedVars list is in place.
+    void takeLoopBodyCells(const GenContext &loopContext, GenContext &bodyContext)
+    {
+        if (loopContext.isLoop && loopContext.loopBodyCells && bodyContext.ownedVars)
+        {
+            bodyContext.ownedVars->append(loopContext.loopBodyCells->begin(), loopContext.loopBodyCells->end());
+        }
+
+        bodyContext.loopBodyCells = nullptr;
+    }
+
     // `onlyOnAttr` names the copies of a hand-written finally the releases are kept in -
     // UNWIND_ONLY_ATTR_NAME or RETURN_ONLY_ATTR_NAME - or is empty for an ordinary release
     void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars,
@@ -1038,6 +1085,8 @@ class MLIRGenImpl
             else if (isOwnedLocalSlot(storage))
             {
                 releaseOp = builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+                // a closure written further on may still capture it (releaseCapturedSlotsAsCells)
+                releaseOp->setAttr(SCOPE_EXIT_RELEASE_ATTR_NAME, builder.getUnitAttr());
             }
 
             if (releaseOp && !onlyOnAttr.empty())
