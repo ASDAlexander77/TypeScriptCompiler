@@ -178,10 +178,19 @@ namespace own_inference
                           llvm::ArrayRef<mlir::Operation *> releases)
     {
         auto &body = getFunction().getFunctionBody();
+        // a `let` given only borrows (TSLANG 56) holds nothing of its own after an assignment - as
+        // after the move: given an element or a global's field in a loop after its value moved
+        // (fuzz 972189, 973334), the join at the loop's head released the borrow each turn
+        auto borrowing = borrowsOnly(varOp);
         auto step = [&](mlir::Operation *op, unsigned state) -> unsigned {
-            if (op == varOp.getOperation() || llvm::is_contained(assignments, op))
+            if (op == varOp.getOperation())
             {
                 return SlotLive;
+            }
+
+            if (llvm::is_contained(assignments, op))
+            {
+                return borrowing ? SlotMoved : SlotLive;
             }
 
             if (op == acquire)
@@ -291,7 +300,9 @@ namespace own_inference
             }
         }
 
-        return !placed.empty();
+        // (a `let` given only borrows after the move may hold nothing of its own at any join: the
+        // releases the move reaches go, and none is placed)
+        return !placed.empty() || borrowsOnly(varOp);
     }
 
     bool OwnershipInferencePass::noUseWhereJoined(mlir_ts::VariableOp varOp, mlir::Operation *retain, mlir::Operation *taker,
