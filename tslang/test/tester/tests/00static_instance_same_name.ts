@@ -94,8 +94,7 @@ function main() {
     const k: typeof A = A;
     assert(k.compare(q, p) == 1, "through a class value");
 
-    // (a static method of a generic class is not reached through the class yet, twin or not)
-    assert(new Box<number>(5).of(9).value == 9, "a generic class");
+    assert(Box.of(1).value == 2 && new Box<number>(5).of(9).value == 9, "a generic class");
 
     print("done.");
 }

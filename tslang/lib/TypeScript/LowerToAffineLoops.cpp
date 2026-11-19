@@ -990,6 +990,21 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
+        // A static accessor of a class imported from a library loaded at run time (`@dllimport`) is not a
+        // function of this module but a global holding its address, found when the library loads (as a
+        // static method of that class is): called through what it holds. Named directly, the call had
+        // no function to lower.
+        auto call = [&](mlir::StringRef accessor, mlir::TypeRange results, mlir::ValueRange operands) -> mlir::Operation * {
+            if (auto globalOp = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::GlobalOp>(accessorOp, rewriter.getStringAttr(accessor)))
+            {
+                auto address = rewriter.create<mlir_ts::AddressOfOp>(loc, globalOp);
+                auto funcValue = rewriter.create<mlir_ts::LoadOp>(loc, globalOp.getType(), address);
+                return createCall<mlir_ts::CallIndirectOp>(rewriter, accessorOp, loc, results, funcValue, operands);
+            }
+
+            return createCall<mlir_ts::CallOp>(rewriter, accessorOp, loc, accessor, results, operands);
+        };
+
         if (accessorOp.getSetValue())
         {
             if (!accessorOp.getSetAccessor().has_value())
@@ -998,8 +1013,7 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
                 return mlir::failure();
             }
 
-            auto callRes = createCall<mlir_ts::CallOp>(rewriter, accessorOp, loc, accessorOp.getSetAccessor().value(),
-                                mlir::TypeRange{}, mlir::ValueRange{accessorOp.getSetValue()});        
+            call(accessorOp.getSetAccessor().value(), mlir::TypeRange{}, mlir::ValueRange{accessorOp.getSetValue()});
         }
 
         if (accessorOp.getNumResults() > 0)
@@ -1010,10 +1024,9 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
                 return failure();
             }
 
-            auto callRes = createCall<mlir_ts::CallOp>(rewriter, accessorOp, loc, accessorOp.getGetAccessor().value(),
-                                                            TypeRange{accessorOp.getType(0)}, ValueRange{});
+            auto callRes = call(accessorOp.getGetAccessor().value(), TypeRange{accessorOp.getType(0)}, ValueRange{});
 
-            rewriter.replaceOp(accessorOp, callRes.getResult(0));
+            rewriter.replaceOp(accessorOp, callRes->getResult(0));
         }
         else
         {

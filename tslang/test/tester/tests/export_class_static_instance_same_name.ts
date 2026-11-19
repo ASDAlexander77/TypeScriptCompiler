@@ -13,9 +13,24 @@ namespace M {
             return x > range.low && x < range.high;
         }
 
-        // (an imported static getter is not called yet, twin or not)
         public get kind(): string {
             return "closed";
+        }
+
+        public static get kind(): string {
+            return "Range";
+        }
+
+        // a static getter and setter alone: the importer calls them through the addresses the
+        // library gives when it loads
+        private static count = 0;
+
+        public static get made(): number {
+            return Range.count;
+        }
+
+        public static set made(value: number) {
+            Range.count = value;
         }
     }
 }
