@@ -1561,6 +1561,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         tryOp.getFinally().walk(visitorTryOps);
 
         mlir::SmallVector<Operation *> returns;
+        // the returns, breaks and continues out of this try's own catch clause: each owes that
+        // catch an end-of-catch (catchesLeft) where it is, ahead of this try's finally
+        llvm::SmallPtrSet<Operation *, 8> leavesOwnCatch;
         auto visitorReturnOps = [&](Operation *op) {
             if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
             {
@@ -1742,6 +1745,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 if (isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp>(op))
                 {
                     tsContext->catchesLeft[op] = tsContext->catchesLeft.lookup(op) + 1;
+                    leavesOwnCatch.insert(op);
                 }
                 else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
                 {
@@ -1792,6 +1796,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             for (auto op : escapingJumpsCatches)
             {
                 tsContext->catchesLeft[op] = tsContext->catchesLeft.lookup(op) + 1;
+                leavesOwnCatch.insert(op);
             }
         }
         else
@@ -2010,6 +2015,25 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     tsContext->cleanup[returnOfFinally] = outerCleanup;
                 }
 
+                // The catch clauses around this try that a `return` leaves are ended where this
+                // copy ends, not at the `return`: until then it runs inside them. Ended at the
+                // `return`, this finally's copy - and the release of a block wrapped for its
+                // unwind cleanup, in the clause - ran outside the catch while it unwound to pads
+                // nested in it ("A single unwind edge may only enter one EH pad"). Only this
+                // try's own catch is ended before its finally (leavesOwnCatch).
+                for (auto retOp : returns)
+                {
+                    auto own = leavesOwnCatch.contains(retOp) ? 1 : 0;
+                    auto around = tsContext->catchesLeft.lookup(retOp) - own;
+                    if (around > 0)
+                    {
+                        assert(!tsContext->catchesLeft.lookup(returnOfFinally) ||
+                               tsContext->catchesLeft.lookup(returnOfFinally) == around);
+                        tsContext->catchesLeft[returnOfFinally] = around;
+                        tsContext->catchesLeft[retOp] = own;
+                    }
+                }
+
                 // if has returns we need to create return cleanup block
                 for (auto retOp : returns)
                 {
@@ -2047,10 +2071,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         keepJumpOnlyOps(key, jumpFinallyMapping);
                         auto jumpFinallyBlockLast = continuation->getPrevNode();
                         rewriter.setInsertionPoint(jumpFinallyBlockLast->getTerminator());
+                        // the catch clauses around this try that the jump leaves end here, after
+                        // this copy, as for a `return` above
+                        auto own = leavesOwnCatch.contains(op) ? 1 : 0;
+                        auto around = tsContext->catchesLeft.lookup(op) - own;
+                        endCatches(rewriter, loc, around);
                         auto resultOpOfJumpFinallyBlock = cast<mlir_ts::ResultOp>(jumpFinallyBlockLast->getTerminator());
                         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpOfJumpFinallyBlock, target);
                         finallyCopy = jumpFinallyMapping.lookup(&tryOp.getFinally().front());
                     }
+
+                    tsContext->catchesLeft[op] = leavesOwnCatch.contains(op) ? 1 : 0;
 
                     tsContext->jumps[op] = finallyCopy;
                 };

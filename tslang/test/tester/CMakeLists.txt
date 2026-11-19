@@ -819,6 +819,7 @@ tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-catch-finally-locals-own COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_locals_own.ts")
 tslang_add_test(NAME test-compile-00-catch-finally-owned-locals-eh COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-compile-00-clause-nested-try COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00clause_nested_try.ts")
+tslang_add_test(NAME test-compile-00-catch-nested-finally-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_nested_finally_exit.ts")
 tslang_add_test(NAME test-compile-00-try-finally-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
@@ -1534,11 +1535,14 @@ tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-catch-finally-locals-own COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_locals_own.ts")
 tslang_add_test(NAME test-jit-00-catch-finally-owned-locals-eh COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-jit-00-clause-nested-try COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00clause_nested_try.ts")
+tslang_add_test(NAME test-jit-00-catch-nested-finally-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_nested_finally_exit.ts")
 # the same under own: locals in catch and finally clauses own what they hold (fuzzer seed 920443)
 tslang_add_test(NAME test-jit-own-00-catch-finally-owned-locals-eh COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-compile-own-00-catch-finally-owned-locals-eh COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_finally_owned_locals_eh.ts")
 tslang_add_test(NAME test-jit-own-00-clause-nested-try COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00clause_nested_try.ts")
 tslang_add_test(NAME test-compile-own-00-clause-nested-try COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00clause_nested_try.ts")
+tslang_add_test(NAME test-jit-own-00-catch-nested-finally-exit COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_nested_finally_exit.ts")
+tslang_add_test(NAME test-compile-own-00-catch-nested-finally-exit COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_nested_finally_exit.ts")
 tslang_add_test(NAME test-jit-00-try-finally-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-jit-00-try-catch-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_accessor.ts")
@@ -3116,6 +3120,7 @@ set(TSLANG_CORPUS
     00catch_finally_locals_own.ts
     00catch_finally_owned_locals_eh.ts
     00clause_nested_try.ts
+    00catch_nested_finally_exit.ts
     00try_in_catch_with_finally.ts
     00catch_ended_on_unwind.ts
     00unwind_releases_frame.ts
