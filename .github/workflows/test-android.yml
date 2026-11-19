@@ -67,6 +67,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          DEFAULTLIB_SHA: ${{ inputs.defaultlib_sha }}
         run: |
           # every release is a pre-release, and GitHub's "latest" leaves those out: take the newest
           $tag = gh release list --repo ${{ github.repository }} --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'
@@ -80,6 +81,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git checkout $tag -- tslang/test/tester/tests tslang/test/tester/CMakeLists.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # ...and the default library's tests as they were for it: create-release.yml builds the
+          # package's default library from that repository's main when the tag is pushed, so take
+          # main as it was at the tag's date (a test added since needs a library the package lacks)
+          if (-not $env:DEFAULTLIB_SHA) {
+            $tagDate = git for-each-ref "refs/tags/$tag" --format='%(taggerdate:iso-strict)'
+            if (-not $tagDate) { $tagDate = git log -1 --format=%cI $tag }
+            $sha = git -C TypeScriptCompilerDefaultLib rev-list -n 1 --before="$tagDate" origin/main
+            if ($LASTEXITCODE -ne 0 -or -not $sha) { Write-Error "no Default Library commit before $tagDate"; exit 1 }
+            Write-Host "Default Library at $($tag)'s date ($tagDate): $sha"
+            git -C TypeScriptCompilerDefaultLib checkout --detach $sha
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Unpack the package
         shell: pwsh
