@@ -2666,6 +2666,9 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00negative_zero.ts
+    00getter_statement.ts
+    00bigint_mixed_arith.ts
     00private_name_in.ts
     00type_literal_accessors.ts
     00array_conversions.ts
@@ -5521,6 +5524,21 @@ tslang_add_test(NAME test-compile-00-in-union-of-classes COMMAND test-runner "${
 tslang_add_test(NAME test-compile-own-00-in-union-of-classes COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
 tslang_add_test(NAME test-jit-00-in-union-of-classes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
 tslang_add_test(NAME test-jit-own-00-in-union-of-classes COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_union_of_classes.ts")
+
+# -0 kept by unary minus and the literal -0; a getter read as a statement runs; a bigint with a number literal or an
+# int is done in 64 bits. rc and none run them from TSLANG_CORPUS.
+tslang_add_test(NAME test-compile-00-negative-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00negative_zero.ts")
+tslang_add_test(NAME test-compile-own-00-negative-zero COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00negative_zero.ts")
+tslang_add_test(NAME test-jit-00-negative-zero COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00negative_zero.ts")
+tslang_add_test(NAME test-jit-own-00-negative-zero COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00negative_zero.ts")
+tslang_add_test(NAME test-compile-00-getter-statement COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
+tslang_add_test(NAME test-compile-own-00-getter-statement COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
+tslang_add_test(NAME test-jit-00-getter-statement COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
+tslang_add_test(NAME test-jit-own-00-getter-statement COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00getter_statement.ts")
+tslang_add_test(NAME test-compile-00-bigint-mixed-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
+tslang_add_test(NAME test-compile-own-00-bigint-mixed-arith COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
+tslang_add_test(NAME test-jit-00-bigint-mixed-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
+tslang_add_test(NAME test-jit-own-00-bigint-mixed-arith COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.

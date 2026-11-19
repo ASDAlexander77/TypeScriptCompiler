@@ -1461,13 +1461,14 @@ def TypeScript_SwapOp : TypeScript_Op<"Swap", [AllTypesMatch<["first", "second"]
   );
 }
 
-def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
+def TypeScript_LoadOp : TypeScript_Op<"Load", [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "loads the value from the reference type";
   let description = [{
-    The `load` operation loads the value from the reference value.
+    The `load` operation loads the value from the reference value. It reads the reference; one that is
+    a statement of its own (`iface.field;`, marked __getter_statement) may call a getter and is kept.
   }];
 
-  let arguments = (ins Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to load from", [MemRead]>:$reference);
+  let arguments = (ins TypeScript_RefOrBoundRefOrValueRef:$reference);
   let results = (outs AnyType:$result);
   
 

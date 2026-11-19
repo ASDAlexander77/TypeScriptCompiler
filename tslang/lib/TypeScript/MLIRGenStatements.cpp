@@ -734,6 +734,32 @@ namespace mlirgen
         }
 
         EXIT_IF_FAILED(result)
+
+        // `obj.prop;` calls the getter, as in JavaScript, though nothing uses what it gives: the
+        // canonicalizer erased an unused getter, and with it whatever the getter does
+        if (result.value)
+        {
+            if (auto *defOp = result.value.getDefiningOp())
+            {
+                if (mlir::isa<mlir_ts::AccessorOp, mlir_ts::ThisAccessorOp, mlir_ts::ThisIndirectAccessorOp,
+                              mlir_ts::ThisIndexAccessorOp, mlir_ts::ThisIndirectIndexAccessorOp,
+                              mlir_ts::BoundIndirectAccessorOp, mlir_ts::BoundIndirectIndexAccessorOp>(defOp))
+                {
+                    defOp->setAttr(GETTER_STATEMENT_ATTR, builder.getUnitAttr());
+                }
+
+                // an interface's field, which the class may give by a getter: read through a cell of
+                // accessors when the load is lowered
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(defOp))
+                {
+                    if (loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+                    {
+                        loadOp->setAttr(GETTER_STATEMENT_ATTR, builder.getUnitAttr());
+                    }
+                }
+            }
+        }
+
         return mlir::success();
     }
 
