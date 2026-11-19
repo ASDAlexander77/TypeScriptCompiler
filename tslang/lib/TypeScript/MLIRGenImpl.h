@@ -7173,12 +7173,75 @@ class MLIRGenImpl
         return holds;
     }
 
+    ValueOrLogicalResult mlirGenPrivateNameIn(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    {
+        auto location = loc(binaryExpressionAST);
+        auto privateName = MLIRHelper::getName(binaryExpressionAST->left.as<Node>());
+
+        // the class whose body this is must declare the name: a field, a method or an accessor of its own
+        auto classInfo = genContext.thisClassType
+            ? getClassInfoByFullName(genContext.thisClassType.getName().getValue())
+            : ClassInfo::TypePtr();
+        auto declared = false;
+        if (classInfo)
+        {
+            auto storageClass = mlir::cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+            auto nameAttr = MLIRHelper::TupleFieldName(privateName, builder.getContext());
+            declared = storageClass.getIndex(nameAttr) >= 0 || classInfo->getStaticFieldIndex(nameAttr) >= 0
+                || classInfo->getMethodIndex(privateName) >= 0 || classInfo->getAccessorIndex(privateName) >= 0;
+        }
+
+        if (!declared)
+        {
+            emitError(loc(binaryExpressionAST->left))
+                << "Private identifier '" << privateName << "' is not declared in the enclosing class";
+            return mlir::failure();
+        }
+
+        // `obj instanceof C`, with C named as the class's own body names it
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto className = nf.createIdentifier(stows(classInfo->name.str()));
+        auto classRefType = evaluate(className, genContext);
+        if (!classRefType || mth.wideStorageType(classRefType) != classInfo->classType)
+        {
+            emitError(location) << "'" << privateName << " in obj' is not supported here: the class '"
+                                << classInfo->name << "' can't be named from this place";
+            return mlir::failure();
+        }
+
+        auto rightType = evaluate(binaryExpressionAST->right, genContext);
+        if (!rightType)
+        {
+            return mlir::failure();
+        }
+
+        auto rightBaseType = mth.getBaseType(mth.stripLiteralType(rightType));
+        if (mth.isNumericType(rightBaseType) || isa<mlir_ts::StringType>(rightBaseType)
+            || isa<mlir_ts::BooleanType>(rightBaseType) || isa<mlir_ts::BigIntType>(rightBaseType))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'in' expression must not be a primitive: '")
+                << to_print(rightType) << "'";
+            return mlir::failure();
+        }
+
+        auto brandCheck = nf.createBinaryExpression(binaryExpressionAST->right, nf.createToken(SyntaxKind::InstanceOfKeyword),
+                                                    className);
+        return mlirGen(brandCheck, genContext);
+    }
+
     ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         // Supports only array now
         auto location = loc(binaryExpressionAST);
 
         NodeFactory nf(NodeFactoryFlags::None);
+
+        // `#name in obj`: a private name belongs to the class that declares it, and every object of that
+        // class or a subclass of it has it - a brand check, `obj instanceof C`
+        if (binaryExpressionAST->left == SyntaxKind::PrivateIdentifier)
+        {
+            return mlirGenPrivateNameIn(binaryExpressionAST, genContext);
+        }
 
         // the length-based numeric-index rewrite below only makes sense when the left
         // side is actually a number (e.g. `i in arr`); a string-literal left side (e.g.
@@ -7772,6 +7835,17 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultLeftfType == rightType) << " '" << resultLeftfType
                                 << "' is '" << rightType << "'\n";);
+
+        // an `object` is a pointer with nothing to say what it points to (a class's object, a literal, an
+        // array): which class it is can't be asked at run time, and the comparison of types below said
+        // false for every object of the class
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(resultLeftfType);
+            objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()) && isa<mlir_ts::ClassType>(rightType))
+        {
+            emitError(location) << "'instanceof' of a value of type 'object' is not supported: an 'object' carries no type "
+                                   "information; give the value the type 'any', the class, or a union of classes";
+            return mlir::failure();
+        }
 
         // default logic
         return V(

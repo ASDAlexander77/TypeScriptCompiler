@@ -4003,12 +4003,13 @@ set(crash_error_cases
     "nested_self_instantiation.ts|nested_self_instantiation\\.ts:3:8: error: Type instantiation is excessively deep and possibly infinite"
     # an `any` cast to an object type of 676 x 676 fields: its name went into the check made for the cast
     "huge_object_type_from_any.ts|huge_object_type_from_any\\.ts:4:12: error: Type instantiation is excessively deep and possibly infinite"
-    # what tslang does not do, said as it is (user ruling 11-18): JSX, dynamic import(), `new.target`,
-    # `#name in obj`; and a symbol is known at compile time, so its description is a constant
+    # what tslang does not do, said as it is (user ruling 11-18): JSX, dynamic import(), `new.target`;
+    # and a symbol is known at compile time, so its description is a constant
     "jsx_element.tsx|jsx_element\\.tsx:2:11: error: JSX is not supported"
     "dynamic_import.ts|dynamic_import\\.ts:2:12: error: dynamic 'import\\(\\)' is not supported"
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
-    "private_name_in.ts|private_name_in\\.ts:4:16: error: '#name in obj' is not supported"
+    # an `object` holds no type information, so which class it is can't be asked (it said false for every object)
+    "instanceof_object.ts|instanceof_object\\.ts:2:32: error: 'instanceof' of a value of type 'object' is not supported"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
