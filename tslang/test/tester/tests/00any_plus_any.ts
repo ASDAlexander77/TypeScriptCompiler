@@ -1,7 +1,19 @@
 // `a + b` of two `any`s adds as JavaScript does, known at run time: a string on either side joins the
-// two as strings, two bigints add as a bigint, anything else adds as numbers
+// two as strings, two bigints add as a bigint, anything else adds as numbers (a null as 0, an undefined
+// as NaN). A bigint with anything else is a TypeError, as in JavaScript, and so is an object of any kind,
+// whose text is not known at run time.
 function add(a: any, b: any): any {
     return a + b;
+}
+
+function throwsTypeError(a: any, b: any) {
+    try {
+        add(a, b);
+    } catch (e) {
+        return true;
+    }
+
+    return false;
 }
 
 function main() {
@@ -14,6 +26,15 @@ function main() {
     assert(typeof add(1, 2) == "number");
     assert(typeof add("x", 2) == "string");
     assert(typeof add(2n, 3n) == "bigint" && <bigint>add(2n, 3n) == 5n);
+    assert(<number>add(null, 1) == 1);
+    const notANumber = <number>add(undefined, 1);
+    assert(notANumber != notANumber);
+    assert(<string>add("s", null) == "snull");
+
+    assert(throwsTypeError(5n, 1));
+    assert(throwsTypeError(1, 5n));
+    assert(throwsTypeError({ x: 1 }, 1));
+    assert(throwsTypeError([1], "a"));
 
     let s: any = "n=";
     const one: any = 1;

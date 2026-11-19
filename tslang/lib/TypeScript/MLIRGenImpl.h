@@ -9464,7 +9464,10 @@ class MLIRGenImpl
     }
 
     // `a + b` of two `any`s, as JavaScript adds: when either holds a string, the two as strings joined; when
-    // both hold bigints, their sum as a bigint; otherwise their sum as numbers. The result is an `any`.
+    // both hold bigints, their sum as a bigint; otherwise their sum as numbers, a null being 0 and an
+    // undefined NaN. A bigint with anything else is a TypeError, as in JavaScript, and so is an object of
+    // any kind (a tuple, an array, a class's, a function): what text it has is not known at run time.
+    // The result is an `any`.
     ValueOrLogicalResult mlirGenAnyPlusAny(mlir::Location location, mlir::Value left, mlir::Value right,
                                            const GenContext &genContext)
     {
@@ -9475,10 +9478,65 @@ class MLIRGenImpl
                                                             builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
         };
 
-        auto addAs = [&](mlir::Type type) -> ValueOrLogicalResult {
-            CAST_A(leftValue, location, type, left, genContext);
-            CAST_A(rightValue, location, type, right, genContext);
-            auto sum = binaryOpLogic(location, SyntaxKind::PlusToken, leftValue, rightValue, genContext);
+        auto anyOf = [&](ArrayRef<mlir::Value> conditions) -> mlir::Value {
+            mlir::Value result;
+            for (auto condition : conditions)
+            {
+                result = result ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                          builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken),
+                                                                          result, condition).getResult()
+                                : condition;
+            }
+
+            return result;
+        };
+
+        auto isObject = [&](mlir::Value value) {
+            return anyOf({typeIs(value, "tuple"), typeIs(value, "array"), typeIs(value, "class"),
+                          typeIs(value, "function"), typeIs(value, "interface"), typeIs(value, "object")});
+        };
+
+        // the TypeError: thrown by a function made for it (the expression's value is then never read)
+        auto typeError = [&](StringRef helperName, StringRef message) -> ValueOrLogicalResult {
+            // the scanner puts a "_" in front of a name starting "__"
+            auto funcName = ("_" + helperName).str();
+            auto funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                std::string src = "function " + helperName.str() + "<T>(): void {\n" + throwTypeErrorSource(message) + "\n}\n";
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(stows(src))))
+                {
+                    return mlir::failure();
+                }
+
+                funcRef = resolveIdentifier(location, funcName, genContext);
+                if (!funcRef)
+                {
+                    return mlir::failure();
+                }
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            GenContext errorGenContext(genContext);
+            errorGenContext.typeAliasMap.insert({".ANY_ADD_T", getAnyType()});
+            SmallVector<mlir::Value, 4> operands;
+            auto result = mlirGenCallExpression(location, funcRef,
+                                                {nf.createTypeReferenceNode(nf.createIdentifier(S(".ANY_ADD_T")).as<Node>())},
+                                                operands, errorGenContext);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::UndefOp>(location, getAnyType()));
+        };
+
+        auto addAs = [&](mlir::Type type, mlir::Value leftValue, mlir::Value rightValue) -> ValueOrLogicalResult {
+            CAST_A(leftCast, location, type, leftValue, genContext);
+            CAST_A(rightCast, location, type, rightValue, genContext);
+            auto sum = binaryOpLogic(location, SyntaxKind::PlusToken, leftCast, rightCast, genContext);
             if (!sum)
             {
                 return mlir::failure();
@@ -9488,21 +9546,60 @@ class MLIRGenImpl
         };
 
         MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-        auto asStrings = [&]() { return addAs(getStringType()); };
+
+        // a null is 0 and an undefined NaN; anything else is the number it converts to
+        auto toNumber = [&](mlir::Value value) -> ValueOrLogicalResult {
+            return mclh.conditionalValue(
+                typeIs(value, "null"),
+                [&]() {
+                    return ValueOrLogicalResult(
+                        builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(0.0)));
+                },
+                [&](mlir::Type) {
+                    return mclh.conditionalValue(
+                        typeIs(value, "undefined"),
+                        [&]() {
+                            return ValueOrLogicalResult(builder.create<mlir_ts::ConstantOp>(
+                                location, getNumberType(), builder.getF64FloatAttr(std::numeric_limits<double>::quiet_NaN())));
+                        },
+                        [&](mlir::Type) { return cast(location, getNumberType(), value, genContext); });
+                });
+        };
+
+        auto bigintMixed = [&]() {
+            return typeError("__any_add_bigint_error", "Cannot mix BigInt and other types, use explicit conversions");
+        };
+
         return mclh.conditionalValue(
-            typeIs(left, "string"), asStrings,
+            anyOf({isObject(left), isObject(right)}),
+            [&]() {
+                return typeError("__any_add_object_error",
+                                 "'+' of an object held in a value of type any is not supported: its text is not known at run time");
+            },
             [&](mlir::Type) {
                 return mclh.conditionalValue(
-                    typeIs(right, "string"), asStrings,
+                    anyOf({typeIs(left, "string"), typeIs(right, "string")}),
+                    [&]() { return addAs(getStringType(), left, right); },
                     [&](mlir::Type) {
-                        auto asNumbers = [&](mlir::Type) { return addAs(getNumberType()); };
                         return mclh.conditionalValue(
-                            typeIs(left, "bigint"),
+                            anyOf({typeIs(left, "bigint"), typeIs(right, "bigint")}),
                             [&]() {
                                 return mclh.conditionalValue(
-                                    typeIs(right, "bigint"), [&]() { return addAs(getBigIntType()); }, asNumbers);
+                                    typeIs(left, "bigint"),
+                                    [&]() {
+                                        return mclh.conditionalValue(
+                                            typeIs(right, "bigint"), [&]() { return addAs(getBigIntType(), left, right); },
+                                            [&](mlir::Type) { return bigintMixed(); });
+                                    },
+                                    [&](mlir::Type) { return bigintMixed(); });
                             },
-                            asNumbers);
+                            [&](mlir::Type) -> ValueOrLogicalResult {
+                                auto leftNumber = toNumber(left);
+                                EXIT_IF_FAILED_OR_NO_VALUE(leftNumber)
+                                auto rightNumber = toNumber(right);
+                                EXIT_IF_FAILED_OR_NO_VALUE(rightNumber)
+                                return addAs(getNumberType(), V(leftNumber), V(rightNumber));
+                            });
                     });
             });
     }

@@ -5533,9 +5533,21 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
             }
 
             break;
+        // of two booleans, both already computed (the union-of-members tests: mlirGenUnionHoldsOneOf,
+        // `k in` a union of classes, `any + any`)
+        case SyntaxKind::BarBarToken:
+        case SyntaxKind::AmpersandAmpersandToken:
+            if (!isa<mlir_ts::BooleanType>(opType1) || !isa<mlir_ts::BooleanType>(opType2))
+            {
+                logicalBinaryOp->emitError("'||' and '&&' of a logical op take two booleans");
+                return failure();
+            }
+
+            value = op == SyntaxKind::BarBarToken
+                ? rewriter.create<LLVM::OrOp>(logicalBinaryOp->getLoc(), op1, op2).getResult()
+                : rewriter.create<LLVM::AndOp>(logicalBinaryOp->getLoc(), op1, op2).getResult();
+            break;
         default:
-            // every LogicalBinaryOp construction site (traced across the whole codebase)
-            // only ever uses one of the 8 relational operators handled above.
             logicalBinaryOp->emitError("unsupported relational operator");
             return failure();
         }
