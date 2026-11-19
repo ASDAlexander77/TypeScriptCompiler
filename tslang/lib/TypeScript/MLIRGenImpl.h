@@ -6536,6 +6536,20 @@ class MLIRGenImpl
                             auto intType = mlir::cast<mlir::IntegerType>(intAttr.getType());
                             auto constType = constantOp.getType();
                             auto valAttr = intAttr;
+                            // `-0` is the number -0, as in JavaScript: as an integer it was 0, and
+                            // 1 / -0 was Infinity
+                            if (intAttr.getValue().isZero() && isa<mlir_ts::LiteralType>(constType))
+                            {
+#ifdef NUMBER_F64
+                                auto floatType = mlir::Float64Type::get(builder.getContext());
+#else
+                                auto floatType = mlir::Float32Type::get(builder.getContext());
+#endif
+                                auto negZero = builder.getFloatAttr(floatType, APFloat::getZero(floatType.getFloatSemantics(), true));
+                                return (mlir::Value) builder.create<mlir_ts::ConstantOp>(
+                                    location, mlir_ts::LiteralType::get(negZero, getNumberType()), negZero);
+                            }
+
                             if (intType.isSignless())
                             {
                                 intType = builder.getIntegerType(intType.getWidth(), true);
@@ -9238,7 +9252,9 @@ class MLIRGenImpl
             // sits at this rung because that is where it promotes, not because it is 64 bits wide.
             // An unsigned type follows the signed and signless ones of its width. Missing from the
             // ladder, `u64 * 2` found only the literal's s32 and multiplied in 32 bits.
-            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), UInt(64), builder.getIndexType(),
+            // A bigint is a 64-bit integer, and the rung above the others of its width: missing from the
+            // ladder, `n * 1000000000` found only the literal's s32 and multiplied in 32 bits.
+            getNumberType(), builder.getF64Type(), getBigIntType(), builder.getI64Type(), SInt(64), UInt(64), builder.getIndexType(),
             builder.getF32Type(), SInt(32), builder.getI32Type(), UInt(32),
             builder.getF16Type(), SInt(16), builder.getI16Type(), UInt(16),
             SInt(8), builder.getI8Type(), UInt(8)
@@ -9257,7 +9273,7 @@ class MLIRGenImpl
             return false;
         }
 
-        return isa<mlir_ts::NumberType>(type) || type.isIntOrIndexOrFloat();
+        return isa<mlir_ts::NumberType, mlir_ts::BigIntType>(type) || type.isIntOrIndexOrFloat();
     }
 
     bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)

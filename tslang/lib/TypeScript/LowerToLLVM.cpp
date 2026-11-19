@@ -5196,8 +5196,8 @@ LogicalResult NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value o
     }
     else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
     {
-        builder.replaceOpWithNewOp<arith::SubFOp>(unaryOp, type, clh.createFConstantOf(type.getIntOrFloatBitWidth(), 0.0),
-                                           oper);
+        // negf, not 0.0 - x: that is +0 for x = 0, where -x is -0 (1 / -x was Infinity)
+        builder.replaceOpWithNewOp<arith::NegFOp>(unaryOp, type, oper);
         return mlir::success();
     }
     else

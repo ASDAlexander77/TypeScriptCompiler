@@ -376,8 +376,9 @@ template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
 
     LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
     {
-        // a setter call has side effects; otherwise erase only an unused getter
-        if (op.getSetValue() || !op.getValue().use_empty())
+        // a setter call has side effects; otherwise erase only an unused getter, and not one that is a
+        // statement of its own (`obj.prop;`), whose call is the point
+        if (op.getSetValue() || !op.getValue().use_empty() || op->hasAttr(GETTER_STATEMENT_ATTR))
         {
             return failure();
         }

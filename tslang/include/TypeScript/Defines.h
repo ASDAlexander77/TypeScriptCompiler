@@ -300,6 +300,9 @@
 // the field's function as a hybrid): the address of the class field a tagged slot's cell names, or
 // null where the slot can't be written (a method's cell, or an object literal's field)
 #define INTERFACE_FUNCTION_FIELD_WRITE_ATTR "__function_field_write"
+// on an accessor op whose getter is read as a statement of its own (`obj.prop;`): the canonicalizer keeps
+// it though nothing uses its result, as the call is the point
+#define GETTER_STATEMENT_ATTR "__getter_statement"
 #define INSTANCEOF_NONE_NAME ".instanceOf.none"
 #define MAIN_ENTRY_NAME "main"
 #define TS_NEST_ATTRIBUTE "ts.nest"
