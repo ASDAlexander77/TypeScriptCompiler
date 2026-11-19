@@ -2983,25 +2983,63 @@ namespace mlirgen
         // `static 0 = 1`: a numeric name is the string of its digits, as a property key is (`C[0]` is `C["0"]`)
         fieldId = numericFieldNameAsString(fieldId, builder);
 
-        // process static field - register global
+        // process static field - register global. A static field of a generic class is one field, whatever
+        // the type arguments (TypeScript gives a static member no type parameter to use): every
+        // instantiation's is the generic class's global (`Box.count`, not `Box<number>.count` beside
+        // `Box<string>.count`). The first instantiation makes and initializes it, the others take it.
+        // (a class's name has type arguments only as an instantiation of the generic class of its first part)
+        auto staticOwnerName = newClassPtr->fullName;
+        auto genericName = newClassPtr->fullName.take_until([](char c) { return c == '<'; });
+        if (genericName.size() < newClassPtr->fullName.size())
+        {
+            if (auto genericClassInfo = getGenericClassInfoByFullName(genericName))
+            {
+                staticOwnerName = genericClassInfo->fullName;
+            }
+        }
+
         auto fullClassStaticFieldName =
-            concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
+            concat(staticOwnerName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
         varClass.isPublic = isPublic;
 
+        // A generic class's shared static field is exported: a variable that is not would be a constant when
+        // its initializer is one (`static made = 0`), held in no memory - and every instantiation has to read
+        // and write the one place the field is.
+        auto sharedGenericStatic = staticOwnerName != newClassPtr->fullName;
+        if (sharedGenericStatic && !newClassPtr->isDeclaration)
+        {
+            varClass.isExport = true;
+        }
+
         // the class is processed again when a member could not be resolved the first time (`x = C.foo`, an
-        // instance field reading the class's own static): the static's global made then is the one it has
+        // instance field reading the class's own static): the static's global made then is the one it has.
+        // So has another instantiation of a generic class, whose global the field is: registered already,
+        // even when this module (a pass's own, which only finds types) does not hold it.
+        mlir::Type existingType;
         if (auto existingGlobal = lookupModuleSymbol<mlir_ts::GlobalOp>(fullClassStaticFieldName);
             existingGlobal && fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
+            existingType = existingGlobal.getType();
+        }
+        else if (sharedGenericStatic && fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            if (auto declaration = fullNameGlobalsMap.lookup(fullClassStaticFieldName))
+            {
+                existingType = declaration->getType();
+            }
+        }
+
+        if (existingType)
+        {
             auto &staticFieldInfos = newClassPtr->staticFields;
-            pushStaticField(staticFieldInfos, fieldId, existingGlobal.getType(), fullClassStaticFieldName, -1, accessLevel);
+            pushStaticField(staticFieldInfos, fieldId, existingType, fullClassStaticFieldName, -1, accessLevel);
             if (isAccessor)
             {
                 auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name,
-                                                         existingGlobal.getType(), genContext);
+                                                         existingType, genContext);
                 EXIT_IF_FAILED(res)
             }
 

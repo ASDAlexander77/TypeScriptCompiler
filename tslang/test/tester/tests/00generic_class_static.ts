@@ -31,6 +31,27 @@ class Pair<K = string, V = number> {
     }
 }
 
+// A static field of a generic class is one field for every instantiation, as in TypeScript: each had
+// its own (`Counter<number>.made` beside `Counter<string>.made`), so a count kept by the constructor
+// was split between them
+class Counter<T> {
+    public static made = 0;
+    public static log: string[] = [];
+
+    constructor(public value: T) {
+        Counter.made++;
+        Counter.log.push("made");
+    }
+
+    public seen(): number {
+        return Counter.made;
+    }
+
+    public entries(): number {
+        return Counter.log.length;
+    }
+}
+
 interface Named {
     name: string;
 }
@@ -55,7 +76,19 @@ class Registry<T extends Named> {
     }
 }
 
+// a static field the first use of its generic class, in a const's initializer
+class Tally<T> {
+    public static total = 0;
+    public static names: string[] = [];
+}
+
 function main() {
+    const total = Tally.total;
+    const named = Tally.names.length == 0 && total == 0;
+    assert(named, "a static field read before the class is used otherwise");
+    Tally.total = 4;
+    assert(Tally.total == 4, "and written");
+
     assert(Box.of(1).value == 2, "a static method");
     assert(Box.of(41).get() == 42, "its result's instance method");
     assert(Box.label == "box" && Box.describe() == "a box", "a static field and a static method using it");
@@ -68,6 +101,14 @@ function main() {
     const r = new Registry<Item>();
     r.add(new Item("n"));
     assert(r.count == 1, "the instantiated class still works");
+
+    const n = new Counter<number>(1);
+    const s = new Counter<string>("a");
+    new Counter<number>(2);
+    assert(Counter.made == 3 && n.seen() == 3 && s.seen() == 3, "one static field for every instantiation");
+    assert(Counter.log.length == 3 && n.entries() == 3 && s.entries() == 3, "an initialized array, made once");
+    Counter.made = 10;
+    assert(n.seen() == 10 && s.seen() == 10, "written through the class, read through each");
 
     print("done.");
 }

@@ -755,7 +755,9 @@ namespace mlirgen
                     }
                 }
 
-                if (thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>() && !genContext.allowPartialResolve)
+                // (in a pass that only finds types too, as `new Box<number>()` instantiates there: without
+                // the member, `const ok = Box.items.length == 0 && ...` found no type)
+                if (thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
                     SmallVector<mlir::Type> typeArguments;
                     for (auto &typeParam : genericClassInfo->typeParams)
