@@ -846,6 +846,25 @@ namespace mlirgen
         }
     }
 
+    // A branch of `c ? f : g` that is a function of untyped parameters (`function (n) { ... }`), with nothing that
+    // receives the result to give them types: instantiated with `any`, as a `let` given one is. Left generic, the
+    // merge was a generic value ("variable 'f' is referencing generic type"). Made inside the branch it is in.
+    mlir::Value MLIRGenImpl::instantiateBranchFunction(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        if (!value || genContext.receiverType || !isGenericFunctionReference(value))
+        {
+            return value;
+        }
+
+        auto instantiated = instantiateGenericFunctionWithAny(location, value, genContext);
+        if (instantiated.failed_or_no_value())
+        {
+            return value;
+        }
+
+        return V(instantiated);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
     {
         auto location = loc(conditionalExpressionAST);
@@ -894,6 +913,7 @@ namespace mlirgen
                 auto classValue = classRefAsValue(location, resultTrue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(classValue)
                 resultTrue = V(classValue);
+                resultTrue = instantiateBranchFunction(location, resultTrue, genContext);
             }
         }
         else
@@ -925,6 +945,7 @@ namespace mlirgen
                 auto classValue = classRefAsValue(location, resultFalse, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(classValue)
                 resultFalse = V(classValue);
+                resultFalse = instantiateBranchFunction(location, resultFalse, genContext);
             }
         }
         else

@@ -3788,6 +3788,13 @@ class MLIRGenImpl
         {
             fieldType = mlirGenParameterObjectOrArrayBinding(objectBindingElement->name, genContext);
         }
+        else if (!objectBindingElement->dotDotDotToken)
+        {
+            // an element of a parameter's pattern that nothing gives a type (`function f({ a, b }) {}`,
+            // `({ a }) => a` with no type to take it from) is `any`, as TypeScript's implicit any:
+            // "can't resolve type for binding pattern 'a', provide default initializer"
+            fieldType = getAnyType();
+        }
         else
         {
             emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '"
@@ -6691,6 +6698,8 @@ class MLIRGenImpl
     // TODO: rewrite code, you can set IfOp result type later, see function anyOrUndefined
     ValueOrLogicalResult mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext);
 
+    mlir::Value instantiateBranchFunction(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
                                            bool andOp, bool saveResult, mlir::Value leftValue = {})
     {
@@ -8475,6 +8484,50 @@ class MLIRGenImpl
             placeType = safeCastOp.getValue().getType();
         }
 
+        // a set accessor takes the value as its last parameter, whose type need not be the one its get
+        // accessor returns (the accessor's type)
+        auto setAccessorValueType = [&](mlir::Type setAccessorType, mlir::Type accessorType) -> mlir::Type {
+            if (!mth.isAnyFunctionType(setAccessorType))
+            {
+                return accessorType;
+            }
+
+            auto params = mth.getParamsFromFuncRef(setAccessorType);
+            return params.empty() ? accessorType : params.back();
+        };
+
+        auto setAccessorSymbolValueType = [&](mlir::FlatSymbolRefAttr setAccessor, mlir::Type accessorType) -> mlir::Type {
+            if (setAccessor)
+            {
+                if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(setAccessor.getValue()))
+                {
+                    return setAccessorValueType(funcOp.getFunctionType(), accessorType);
+                }
+            }
+
+            return accessorType;
+        };
+
+        // ...and that type is what the value is checked against: `t.foo = "32"` with `get foo(): number` and
+        // `set foo(x: string | number)` (divergent accessor types) was "type '"32"' is not assignable to type
+        // 'number'"
+        if (auto accessorOp = leftExpressionValue.getDefiningOp<mlir_ts::AccessorOp>())
+        {
+            placeType = setAccessorSymbolValueType(accessorOp.getSetAccessorAttr(), placeType);
+        }
+        else if (auto thisAccessorOp = leftExpressionValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
+        {
+            placeType = setAccessorSymbolValueType(thisAccessorOp.getSetAccessorAttr(), placeType);
+        }
+        else if (auto thisAccessorIndirectOp = leftExpressionValue.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
+        {
+            placeType = setAccessorValueType(thisAccessorIndirectOp.getSetAccessor().getType(), placeType);
+        }
+        else if (auto boundAccessorIndirectOp = leftExpressionValue.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+        {
+            placeType = setAccessorValueType(boundAccessorIndirectOp.getSetAccessor().getType(), placeType);
+        }
+
         if (rightExpressionValue && mlir::failed(checkStringNumberAssignment(location, rightExpressionValue.getType(), placeType, genContext)))
         {
             return mlir::failure();
@@ -8499,30 +8552,6 @@ class MLIRGenImpl
             {
                 savingValue = cast(location, destType, savingValue, genContext);
             }
-        };
-
-        // a set accessor takes the value as its last parameter, whose type need not be the one its get
-        // accessor returns (the accessor's type)
-        auto setAccessorValueType = [&](mlir::Type setAccessorType, mlir::Type accessorType) -> mlir::Type {
-            if (!mth.isAnyFunctionType(setAccessorType))
-            {
-                return accessorType;
-            }
-
-            auto params = mth.getParamsFromFuncRef(setAccessorType);
-            return params.empty() ? accessorType : params.back();
-        };
-
-        auto setAccessorSymbolValueType = [&](mlir::FlatSymbolRefAttr setAccessor, mlir::Type accessorType) -> mlir::Type {
-            if (setAccessor)
-            {
-                if (auto funcOp = lookupModuleSymbol<mlir_ts::FuncOp>(setAccessor.getValue()))
-                {
-                    return setAccessorValueType(funcOp.getFunctionType(), accessorType);
-                }
-            }
-
-            return accessorType;
         };
 
         // a @weak field (own spec 93): the WeakRef of the value goes into the slot, and the read of the
@@ -13270,7 +13299,8 @@ class MLIRGenImpl
         evalGenContext.funcOp = tempFuncOp;
         narrow(evalGenContext);
         auto result = mlirGen(expr, evalGenContext);
-        auto value = V(result);
+        // a function of untyped parameters is the type the branch that runs gives it (instantiateBranchFunction)
+        auto value = instantiateBranchFunction(loc(expr), V(result), evalGenContext);
         return value ? value.getType() : mlir::Type();
     }
 

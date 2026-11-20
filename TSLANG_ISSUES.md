@@ -1895,3 +1895,28 @@ class's C++ overloads, and declared classes nothing uses, which compile).
 
 Tests: `00block_scoped_class.ts` (+ module-level blocks), `00interface_extends_builtin.ts`,
 `00keyof_literal_key.ts` (compile, JIT, rc, own); diagnostic-location `await_in_finally.ts`.
+
+141 (thirteenth batch of the compiler-tests sweep, 2026-11-20). Fixed:
+- A branded primitive (`string & { __brand: "UserId" }`, `number & { readonly _unit: "m" }`, `{ _foo: number } &
+  number`): a primitive and object types that only tag it. Its values are the primitive's, as in TypeScript; it was
+  `never` ("'Never' can't be used as parameter type", "a value of type 'string' can't be converted to 'never'").
+- A set accessor whose parameter type is not the get accessor's (divergent accessor types, `get foo(): number` with
+  `set foo(x: string | number)`): an assignment is checked against the setter's type, as it was cast to it already
+  ("type '"32"' is not assignable to type 'number'").
+- A parameter's destructuring pattern that nothing gives types to (`function f({ a, b })`, `function g([x, y])`,
+  `({ a }) => a` with no type to take it from) has `any` elements, as TypeScript's implicit any: "can't resolve
+  type for binding pattern 'a', provide default initializer". A skipped element (`[, z]`) holds its place. The
+  array pattern's tuple has unnamed elements, as `[any, any]`'s: with generated names an array literal given to it
+  leaked under -mm=own (1M calls: 77 MB, now 5.7).
+- A branch of `c ? f : g` that is a function of untyped parameters (`var f = c ? function (n) {...} : ...`), with
+  nothing receiving it to type them, is instantiated with `any` as a `let` given one is - in the branch that runs, and
+  for the type of one a constant condition skips: "variable 'f' is referencing generic type".
+- 140's `export default` scan read a declaration's name through another node type: a crash under gcc (every
+  Linux CI leg), not under MSVC.
+
+Not yet: a name written with two leading underscores (`__property2`) is kept escaped with a third, as the parser
+escapes it, so a string key of it ("__property2", `keyof`) does not match. Unescaping it where names are read
+broke the compiler's own escaped names; every place a member name becomes a field or a key would have to.
+
+Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding_params.ts` (compile, JIT, rc, own);
+`00conditional_untyped_functions.ts` (compile, JIT, rc).

@@ -3550,6 +3550,27 @@ namespace mlirgen
             return types.front();
         }
 
+        // A branded primitive (`string & { __brand: "UserId" }`, `number & { readonly _unit: "m" }`): a primitive and
+        // object types that only tag it, at compile time. Its values are the primitive's, as TypeScript's are; it
+        // was `never` ("'Never' can't be used as parameter type", "can't be converted to 'never'").
+        auto isPrimitive = [](mlir::Type type) {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+            {
+                type = literalType.getElementType();
+            }
+
+            return isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::BigIntType,
+                       mlir::IntegerType, mlir::FloatType>(type);
+        };
+        auto isBrand = [](mlir::Type type) {
+            return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::InterfaceType, mlir_ts::ObjectType>(type);
+        };
+        if (llvm::count_if(types, isPrimitive) == 1
+            && llvm::all_of(types, [&](mlir::Type type) { return isPrimitive(type) || isBrand(type); }))
+        {
+            return *llvm::find_if(types, isPrimitive);
+        }
+
         // find base type
         if (baseInterfaceType)
         {
