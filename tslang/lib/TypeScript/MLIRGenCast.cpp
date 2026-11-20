@@ -4770,6 +4770,12 @@ namespace mlirgen
                         {
                             types->try_emplace(name.getValue(), field.type);
                         }
+
+                        // `o?: T`: not there while it is not set
+                        if (optionals && (field.isConditional || isa<mlir_ts::OptionalType>(field.type)))
+                        {
+                            optionals->insert(name.getValue());
+                        }
                     }
                 }
 
@@ -5035,6 +5041,18 @@ namespace mlirgen
                   "else {\n" + notThere + "}\n"
                   "const o = <T>box;\n";
 
+            // an object of a subclass has keys of its own: its class's adapter reads them (its member table,
+            // CLASS_VTABLE_MEMBERS_SLOT), as JavaScript reads the object, not the type it was boxed as
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                if (classInfo && classInfo->getHasVirtualTable() && !classInfo->isCppVTable)
+                {
+                    src += "const actual = __actual_class_keys(o);\n"
+                           "if (actual != null) return (<(box: any, op: number, key: any, value: any) => any>actual)(box, op, key, value);\n";
+                }
+            }
+
             // a tuple is a value: the `any` holds a copy of it, which a write would change and nothing else
             auto tuple = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
             auto writeOf = [&](StringRef key, const std::string &place) -> std::string {
@@ -5057,7 +5075,7 @@ namespace mlirgen
             for (auto &key : values)
             {
                 // a tuple's unnamed field is read by its position
-                auto read = isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
+                auto read = tuple && isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
                 src += "if (k == " + quote(key) + ") {\n" + writeOf(key, read);
                 if (optionals.contains(key))
                 {
@@ -5072,9 +5090,10 @@ namespace mlirgen
 
             for (auto &key : methods)
             {
-                src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; " +
-                       throwTypeErrorSource("a method read or written through a value of type any is not supported: cast the value to its type") +
-                       " }\n";
+                // read, a method is bound to the object, as `o.m` is
+                src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; if (op == " + set + ") " +
+                       throwTypeErrorSource("a method can't be written through a value of type any") +
+                       " return <any>o[" + quote(key) + "]; }\n";
             }
 
             src += notThere + "}\n";

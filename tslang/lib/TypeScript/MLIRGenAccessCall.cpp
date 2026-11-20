@@ -1518,6 +1518,17 @@ namespace mlirgen
         return false;
     }
 
+    // Whether the class, or a base class, declares any indexer (`[index: int]: T` included)
+    static bool classHasAnyIndexer(ClassInfo::TypePtr classInfo)
+    {
+        if (llvm::any_of(classInfo->indexes, [](auto &indexInfo) { return static_cast<bool>(indexInfo.indexSignature); }))
+        {
+            return true;
+        }
+
+        return llvm::any_of(classInfo->baseClasses, [](auto &baseClass) { return classHasAnyIndexer(baseClass); });
+    }
+
     // Whether the class, or a base class, declares an indexer a string key goes to: `[key: string]: T`,
     // or `[key: number | string]: T`.
     static bool classHasStringIndexer(ClassInfo::TypePtr classInfo)
@@ -1686,6 +1697,26 @@ namespace mlirgen
                     {
                         return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
                     }
+                }
+            }
+
+            // a key known only at run time, of a class with no indexer: the member of the object's actual class
+            // (its keys adapter, which asks the member table), as `any`
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (classInfo && !classHasAnyIndexer(classInfo) && !argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto keyType = mth.stripLiteralType(mth.getBaseType(argumentExpression.getType()));
+                if (isa<mlir_ts::StringType, mlir_ts::AnyType>(keyType) || mth.isNumericType(keyType))
+                {
+                    if (compileOptions.memoryModel == MemoryModelOwn)
+                    {
+                        emitError(location) << "reading a class by a string key gives any, which -mm=own does not allow: use a keyof key";
+                        return mlir::failure();
+                    }
+
+                    requestMemberTable(classType);
+                    CAST_A(box, location, getAnyType(), expression, genContext);
+                    return mlirGenAnyKey(location, box, argumentExpression, ANY_KEYS_OP_GET, genContext);
                 }
             }
 

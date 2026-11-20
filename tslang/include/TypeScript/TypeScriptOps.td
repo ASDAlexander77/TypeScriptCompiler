@@ -525,6 +525,19 @@ def TypeScript_AnyKeysAdapterOp : TypeScript_Op<"AnyKeysAdapter", [Pure]> {
   let results = (outs TypeScript_Opaque:$res);
 }
 
+def TypeScript_ActualClassKeysOp : TypeScript_Op<"ActualClassKeys", [Pure]> {
+  let summary = "the keys adapter of the actual class of an object";
+  let description = [{
+    The keys adapter of the class $object is an instance of (its vtable's CLASS_VTABLE_MEMBERS_SLOT, the
+    table's `keys`), or null when that is the function this op is in (the class's own adapter asking) or
+    the actual class has none. A class's keys adapter (MLIRGenImpl::makeAnyKeysAdapter) asks it first, so a
+    subclass's object is read by its own keys.
+  }];
+
+  let arguments = (ins AnyType:$object);
+  let results = (outs TypeScript_Opaque:$res);
+}
+
 def TypeScript_AnyCallAdapterOp : TypeScript_Op<"AnyCallAdapter", [Pure]> {
   let summary = "the adapter that calls the function an any holds";
   let description = [{
