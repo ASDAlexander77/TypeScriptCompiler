@@ -111,6 +111,73 @@ namespace mlirgen
         return suffix;
     }
 
+    std::string MLIRGenImpl::defaultExportName(StringRef filePath)
+    {
+        std::string name("default_");
+        for (auto c : moduleSymbolSuffix(filePath))
+        {
+            name.push_back(llvm::isAlnum(c) ? c : '_');
+        }
+
+        return name;
+    }
+
+    // `export default <expression>` (user ruling 11-20: supported): there is no per-module scope, so it is an
+    // exported constant of a name the module's path gives, `export const default_<stem>_<hash> = <expression>`.
+    // Made here, after parsing, every pass sees an exported constant: the module's own object defines it, an
+    // importer compiling the module as declarations declares it, and its initializer runs as any module
+    // constant's does. `export default function f` and `export default class C` keep their declarations; an
+    // unnamed one is given the constant's name.
+    void MLIRGenImpl::lowerDefaultExports(SourceFile sourceFile, StringRef filePath)
+    {
+        if (!sourceFile)
+        {
+            return;
+        }
+
+        auto canonicalPath = canonicalFilePath(filePath);
+        auto name = defaultExportName(filePath);
+        NodeFactory nf(NodeFactoryFlags::None);
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals)
+            {
+                auto exportAssignment = statement.as<ExportAssignment>();
+                NodeArray<VariableDeclaration> declarations;
+                auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(name)), undefined,
+                                                                undefined, exportAssignment->expression);
+                declaration->pos = exportAssignment->pos;
+                declaration->_end = exportAssignment->_end;
+                declarations.push_back(declaration);
+
+                ModifiersArray modifiers;
+                modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+                auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+                declarationList->pos = exportAssignment->pos;
+                declarationList->_end = exportAssignment->_end;
+                auto variableStatement = nf.createVariableStatement(modifiers, declarationList);
+                variableStatement->pos = exportAssignment->pos;
+                variableStatement->_end = exportAssignment->_end;
+                variableStatement->parent = sourceFile;
+                statement = variableStatement;
+                defaultExportByFile[canonicalPath] = name;
+                continue;
+            }
+
+            if ((statement == SyntaxKind::FunctionDeclaration || statement == SyntaxKind::ClassDeclaration)
+                && hasModifier(statement, SyntaxKind::ExportKeyword) && hasModifier(statement, SyntaxKind::DefaultKeyword))
+            {
+                auto declaration = statement.as<NamedDeclaration>();
+                if (!declaration->name)
+                {
+                    declaration->name = nf.createIdentifier(convertUTF8toWide(name));
+                }
+
+                defaultExportByFile[canonicalPath] = MLIRHelper::getName(declaration->name);
+            }
+        }
+    }
+
     static std::string fileKey(SourceFile sourceFile)
     {
         return convertWideToUTF8(sourceFile->resolvedPath);
@@ -194,6 +261,7 @@ namespace mlirgen
             ScriptTarget::Latest);
         auto sourceFilePath = canonicalFilePath(fullPath);
         sourceFile->resolvedPath = convertUTF8toWide(sourceFilePath);
+        lowerDefaultExports(sourceFile, sourceFilePath);
 
         // add default lib
         if (isMain)
@@ -316,6 +384,7 @@ namespace mlirgen
                     decodeSourceText(sourceBuf->getBuffer()),
                     ScriptTarget::Latest);
             includeFile->resolvedPath = convertUTF8toWide(includeFilePath);
+            lowerDefaultExports(includeFile, includeFilePath);
 
             // the directory of the file opened, which is where its own references are
             auto includeFileDir = sys::path::parent_path(actualFilePath).str();
@@ -2353,6 +2422,21 @@ namespace mlirgen
         else if (mlir::failed(mlirGenInclude(location, stringVal, genContext)))
         {
             return mlir::failure();
+        }
+
+        // `import x from "./m"`: x is another name for m's default export, read when m was loaded
+        // (lowerDefaultExports). Without one, x is left to name what m declares by that name.
+        if (auto importClause = importDeclarationAST->importClause; importClause && importClause->name)
+        {
+            auto defaultExport = defaultExportByFile.find(canonicalFilePath(includeFilePath(stringVal)));
+            if (defaultExport != defaultExportByFile.end())
+            {
+                auto alias = MLIRHelper::getName(importClause->name, stringAllocator);
+                if (alias != defaultExport->second)
+                {
+                    getImportAliasMap()[alias] = StringRef(defaultExport->second).copy(stringAllocator);
+                }
+            }
         }
 
         return mlirGenImportBindings(importDeclarationAST->importClause);

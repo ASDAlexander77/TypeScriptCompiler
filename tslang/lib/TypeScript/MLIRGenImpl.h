@@ -256,6 +256,15 @@ class MLIRGenImpl
     // module a library's declarations came from.
     static std::string moduleSymbolSuffix(StringRef filePath);
 
+    // `export default <expression>` of a file: the name of the exported constant it is made
+    // (`default_<moduleSymbolSuffix>`, identifier characters only)
+    static std::string defaultExportName(StringRef filePath);
+
+    // A file's `export default <expression>` made `export const <defaultExportName> = <expression>`, and
+    // its default export's name (that constant, or `export default function f` / `class C`'s name) kept
+    // for `import x from "./file"` (mlirGenImportBindings)
+    void lowerDefaultExports(SourceFile sourceFile, StringRef filePath);
+
     mlir::LogicalResult showMessages(SourceFile module, std::vector<SourceFile> includeFiles);
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles);
@@ -8501,7 +8510,7 @@ class MLIRGenImpl
             auto propRef = mcl.GetReferenceFromValue(location, leftExpressionValueBeforeCast);
             if (!propRef)
             {
-                emitError(location, "saving to constant object");
+                emitCantAssignTo(location, leftExpressionValueBeforeCast);
                 return mlir::failure();
             }
 
@@ -8662,11 +8671,61 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            emitError(location, "saving to constant object");
+            emitCantAssignTo(location, leftExpressionValueBeforeCast);
             return mlir::failure();
         }
 
         return assignedValue ? assignedValue : savingValue;
+    }
+
+    // What the left side of an assignment is when it is none of a variable, a field, an element or an
+    // accessor: said by what it names (all this said was "saving to constant object").
+    void emitCantAssignTo(mlir::Location location, mlir::Value target)
+    {
+        auto error = emitError(location);
+        error << "can't assign to ";
+        auto type = target.getType();
+        if (auto classRef = target.getDefiningOp<mlir_ts::ClassRefOp>())
+        {
+            error << "the class '" << classRef.getIdentifier() << "': a class is not a variable";
+        }
+        else if (auto namespaceRef = target.getDefiningOp<mlir_ts::NamespaceRefOp>())
+        {
+            error << "the namespace '" << namespaceRef.getIdentifier() << "': a namespace is not a variable";
+        }
+        else if (auto interfaceRef = target.getDefiningOp<mlir_ts::InterfaceRefOp>())
+        {
+            error << "the interface '" << interfaceRef.getIdentifier() << "': an interface is a type, not a variable";
+        }
+        else if (target.getDefiningOp<mlir_ts::TypeRefOp>())
+        {
+            error << "the type '" << to_print(type) << "': a type is not a variable";
+        }
+        else if (auto symbolRef = target.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            error << "'" << symbolRef.getIdentifier() << "'"
+                  << (mth.isAnyFunctionType(type) ? ": a function declaration is not a variable" : ": it is not a variable");
+        }
+        else if (isa<mlir_ts::EnumType>(type) || isa<mlir_ts::EnumType>(mth.stripLiteralType(type)))
+        {
+            error << "an enum or its member: an enum's members are constants";
+        }
+        else if (target.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            // an enum's member is its value by now (`E.a = 1` assigns to `0`)
+            error << "the constant " << to_print(type) << " (a literal, or an enum's member): it is a value, not a variable";
+        }
+        else if (target.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            error << "a field of a value of type '" << to_print(type)
+                  << "' that is not held anywhere (a copy, or what an expression gave): only a variable's, a field's or an "
+                     "element's fields can be assigned to";
+        }
+        else
+        {
+            error << "a value of type '" << to_print(type)
+                  << "': only a variable, a property or an element can be assigned to";
+        }
     }
 
     ValueOrLogicalResult mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -20073,6 +20132,9 @@ class MLIRGenImpl
     // DiscoveryModuleScope swaps in an empty one. TempModuleScope does not: it evaluates an
     // expression, and an import or a reference is only ever at a file's top.
     llvm::StringSet<> emittedFiles;
+
+    // a file's default export, by its canonical path (lowerDefaultExports): the name `import x from` binds x to
+    llvm::StringMap<std::string> defaultExportByFile;
 
     // Files on the current generation stack: the program and every `import` being generated
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b

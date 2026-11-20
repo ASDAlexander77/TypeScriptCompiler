@@ -1,0 +1,2 @@
+namespace N { }
+N = undefined;
