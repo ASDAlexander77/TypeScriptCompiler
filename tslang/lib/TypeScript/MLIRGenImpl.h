@@ -64,6 +64,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
@@ -19595,7 +19596,8 @@ class MLIRGenImpl
 
         sys::path::append(fullPath, fileNameStr);
 
-        if (sys::path::extension(fileName) == "")
+        auto extension = sys::path::extension(fileName);
+        if (extension == "")
         {
             SmallString<256> targetPath(fullPath);
             targetPath += ".";
@@ -19606,10 +19608,190 @@ class MLIRGenImpl
                 return targetPath.str().str();
             }
 
-            fullPath += ".ts";
+            SmallString<256> tsPath(fullPath);
+            tsPath += ".ts";
+            if (sys::fs::exists(tsPath))
+            {
+                return tsPath.str().str();
+            }
+
+            if (auto resolved = resolveModuleFile(fullPath, fileName))
+            {
+                return *resolved;
+            }
+
+            // not found: the name the error gives
+            return tsPath.str().str();
+        }
+
+        // `import "./b.js"` is b.ts written as it will be named once compiled to JavaScript
+        if (!sys::fs::exists(fullPath) && (extension == ".js" || extension == ".jsx" || extension == ".mjs" || extension == ".cjs"))
+        {
+            SmallString<256> withoutExtension(fullPath);
+            sys::path::replace_extension(withoutExtension, "");
+            for (auto candidate : {".ts", ".tsx", ".d.ts"})
+            {
+                SmallString<256> path(withoutExtension);
+                path += candidate;
+                if (sys::fs::exists(path))
+                {
+                    return path.str().str();
+                }
+            }
         }
 
         return fullPath.str().str();
+    }
+
+    // A module a name without extension names, where `<name>.ts` is not (includeFilePath), found as
+    // TypeScript finds it: `<name>.tsx` or `<name>.d.ts`, a folder - its package.json's `types`
+    // (`typings`, `main`), or its `index.ts` (`.tsx`, `.d.ts`) - and for a name that is not a path
+    // (`import "foo"`) the same in `node_modules/foo` and `node_modules/@types/foo` in the folder of
+    // the file importing it and each folder above. `path` is the name joined to that folder.
+    std::optional<std::string> resolveModuleFile(StringRef path, StringRef specifier)
+    {
+        auto asFile = [](StringRef base) -> std::optional<std::string> {
+            for (auto candidate : {".tsx", ".d.ts"})
+            {
+                SmallString<256> file(base);
+                file += candidate;
+                if (sys::fs::is_regular_file(file))
+                {
+                    return file.str().str();
+                }
+            }
+
+            return std::nullopt;
+        };
+
+        std::function<std::optional<std::string>(StringRef, bool)> asFileOrFolder;
+        // a package's `main` may name the package itself (`"main": ""`), or two packages each other
+        llvm::StringSet<> foldersSeen;
+        auto asFolder = [&](StringRef folder) -> std::optional<std::string> {
+            SmallString<256> folderKey(folder);
+            sys::path::remove_dots(folderKey, true);
+            if (!sys::fs::is_directory(folder) || !foldersSeen.insert(folderKey).second)
+            {
+                return std::nullopt;
+            }
+
+            SmallString<256> packageJson(folder);
+            sys::path::append(packageJson, "package.json");
+            if (auto buffer = MemoryBuffer::getFile(packageJson); buffer)
+            {
+                if (auto parsed = json::parse((*buffer)->getBuffer()))
+                {
+                    if (auto *object = parsed->getAsObject())
+                    {
+                        for (auto key : {"types", "typings", "main"})
+                        {
+                            auto entry = object->getString(key);
+                            if (!entry)
+                            {
+                                continue;
+                            }
+
+                            SmallString<256> entryPath(folder);
+                            sys::path::append(entryPath, *entry);
+                            sys::path::remove_dots(entryPath, true);
+                            if (sys::fs::is_regular_file(entryPath) && (StringRef(entryPath).ends_with(".ts")
+                                                                        || StringRef(entryPath).ends_with(".tsx")))
+                            {
+                                return entryPath.str().str();
+                            }
+
+                            // `"main": "lib/index.js"` - its declarations beside it - or a name without one
+                            SmallString<256> entryBase(entryPath);
+                            auto entryExtension = sys::path::extension(entryBase);
+                            if (entryExtension == ".js" || entryExtension == ".mjs" || entryExtension == ".cjs")
+                            {
+                                sys::path::replace_extension(entryBase, "");
+                            }
+
+                            if (auto found = asFileOrFolder(entryBase, true))
+                            {
+                                return found;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    llvm::consumeError(parsed.takeError());
+                }
+            }
+
+            SmallString<256> index(folder);
+            sys::path::append(index, "index");
+            return asFileOrFolder(index, false);
+        };
+
+        asFileOrFolder = [&](StringRef base, bool folderToo) -> std::optional<std::string> {
+            SmallString<256> tsFile(base);
+            tsFile += ".ts";
+            if (sys::fs::is_regular_file(tsFile))
+            {
+                return tsFile.str().str();
+            }
+
+            if (auto found = asFile(base))
+            {
+                return found;
+            }
+
+            return folderToo ? asFolder(base) : std::nullopt;
+        };
+
+        // as a path (and, for a bare name, as one beside the file: what tslang has always read)
+        if (auto found = asFile(path))
+        {
+            return found;
+        }
+
+        if (auto found = asFolder(path))
+        {
+            return found;
+        }
+
+        auto isBare = !specifier.starts_with(".") && !sys::path::has_root_path(specifier);
+        if (!isBare)
+        {
+            return std::nullopt;
+        }
+
+        // `@scope/name` is `@types/scope__name`
+        std::string typesName = specifier.str();
+        if (specifier.starts_with("@") && specifier.contains('/'))
+        {
+            auto [scope, name] = specifier.drop_front().split('/');
+            typesName = (scope + "__" + name).str();
+        }
+
+        SmallString<256> folder(sys::path::parent_path(mainSourceFileName));
+        sys::fs::make_absolute(folder);
+        while (!folder.empty())
+        {
+            for (auto [subFolder, name] : {std::pair<StringRef, StringRef>{"node_modules", specifier},
+                                           std::pair<StringRef, StringRef>{"node_modules/@types", typesName}})
+            {
+                SmallString<256> base(folder);
+                sys::path::append(base, subFolder, name);
+                if (auto found = asFileOrFolder(base, true))
+                {
+                    return found;
+                }
+            }
+
+            auto parent = sys::path::parent_path(folder);
+            if (parent == folder)
+            {
+                break;
+            }
+
+            folder = parent;
+        }
+
+        return std::nullopt;
     }
 
     // __OS__: win32, linux, android, darwin, or the target triple's OS name

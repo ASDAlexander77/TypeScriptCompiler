@@ -4056,13 +4056,19 @@ class MLIRTypeHelper
             getClassInfoByFullName, getGenericClassInfoByFullName, 
             getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
         );
-        return iter.every(type, [&](mlir::Type type) { 
+        return iter.every(type, [&](mlir::Type type) {
+            // a member that did not resolve (a null type) ends the walk: dyn_cast of it crashed first
+            if (!type)
+            {
+                return false;
+            }
+
             if (auto inferType = dyn_cast<mlir_ts::InferType>(type))
             {
                 inferTypes.push_back(inferType);
             }
 
-            return !!type; 
+            return true;
         });
     }        
     

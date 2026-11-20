@@ -3651,6 +3651,13 @@ add_test(NAME test-default-lib-dir
                  "-DTSLANG=$<TARGET_FILE:tslang>"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/default-lib-dir.cmake")
 
+# how `import` finds a module: .d.ts, folders, package.json, node_modules, @types - see module-resolution.cmake
+add_test(NAME test-module-resolution
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/module-resolution"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/module-resolution.cmake")
+
 # tsconfig.json as the project file - see tsconfig-project.cmake
 add_test(NAME test-tsconfig-project
          COMMAND ${CMAKE_COMMAND}
@@ -4052,6 +4059,9 @@ set(crash_error_cases
     # only when the module was verified ("module verification error", strictBestCommonSupertype.ts)
     "class_to_union_no_member.ts|class_to_union_no_member\\.ts:3:19: error: type 'C' can't be given for 'number \\| string': it is none of the union's types"
     "class_value_to_union_no_member.ts|class_value_to_union_no_member\\.ts:5:1: error: type 'Store' can't be given for 'A \\| B': it is none of the union's types"
+    # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
+    # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
+    "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export default <expression>' is not supported"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
@@ -4075,6 +4085,8 @@ foreach(crash_error_case ${crash_error_cases})
 endforeach()
 # a JSX element closed by its own tag is not a closing-tag mismatch (the parser dropped tag names)
 set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL_REGULAR_EXPRESSION "closing tag")
+# ...and not the error of the forward reference the retried pass resolved
+set_property(TEST test-compile-crash-errors-stale-errors-of-retried-file APPEND PROPERTY FAIL_REGULAR_EXPRESSION "can't find type by name: Later")
 # `export {}` and `export as namespace` make no code: they compile. So do a predicate naming no parameter, a
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter

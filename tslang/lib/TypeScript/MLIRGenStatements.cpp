@@ -125,12 +125,39 @@ namespace mlirgen
             }
         });
 
+        // The errors of a pass that is retried are not those of the statements: a statement naming what
+        // is declared further down (lib.generics' `allSettled` and `PromiseFulfilledResult`) fails the
+        // first pass and is fine in the next. They stayed in the postponed messages, which an error in
+        // a file read after this one printed in full - before its own error - so a program failing on
+        // its own `export default 2 + 2` was reported as "generic type PromiseFulfilledResult can't be
+        // found" in the default library. Kept: warnings, which a statement done in an earlier pass
+        // does not give again, and what was there before this list.
+        auto postponedMark = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+        auto dropStaleErrors = [&]() {
+            if (!genContext.postponedMessages || genContext.postponedMessages->size() <= postponedMark)
+            {
+                return;
+            }
+
+            auto &messages = *genContext.postponedMessages;
+            messages.erase(std::remove_if(messages.begin() + postponedMark, messages.end(),
+                                          [](const std::unique_ptr<mlir::Diagnostic> &diag) {
+                                              return diag->getSeverity() == mlir::DiagnosticSeverity::Error;
+                                          }),
+                           messages.end());
+        };
+
         auto notResolved = 0;
         do
         {
             auto noErrorLocation = true;
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
+            if (lastTimeNotResolved > 0)
+            {
+                dropStaleErrors();
+            }
+
             notResolved = 0;
             for (auto &statement : statements)
             {
@@ -187,6 +214,9 @@ namespace mlirgen
                 return mlir::failure();
             }
         } while (notResolved > 0);
+
+        // all resolved: the errors of the passes before the last one were all of statements now done
+        dropStaleErrors();
 
         // clear states to be able to run second time
         clearState(statements);
