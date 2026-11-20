@@ -3323,6 +3323,20 @@ namespace mlirgen
             return mlir::Type();
         }
 
+        // `new (...) => A` with `A` a class is a class that makes an `A`: the class value `typeof A` is - a class
+        // given to it, `A` or a subclass, is the class read at run time, and `new c()` makes one of that class (its
+        // constructor as `A`'s takes the arguments). A constructor type of anything else (an interface) stays
+        // one, which no value is given to yet.
+        auto constructSignature = mlir::cast<mlir_ts::FunctionType>(signatureType);
+        if (constructSignature.getNumResults() == 1)
+        {
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(constructSignature.getResult(0));
+                classType && !mth.isGenericType(classType))
+            {
+                return mlir_ts::ClassValueType::get(classType);
+            }
+        }
+
         auto funcType = mlir_ts::ConstructFunctionType::get(
             builder.getContext(), 
             mlir::cast<mlir_ts::FunctionType>(signatureType), 
@@ -3384,10 +3398,30 @@ namespace mlirgen
         }
 
         // `(() => void) | (() => number)`: functions a value may be, as one type it can be called as (each would be
-        // tagged "function" in a union, which no call can tell apart): see getMergedFunctionType
-        if (auto mergedFunctionType = getMergedFunctionType(itemTypes, false))
+        // tagged "function" in a union, which no call can tell apart): see getMergedFunctionType. With `| null` or
+        // `| undefined` the functions are merged, and the union is the merged one or those (`if (f) f()`).
+        SmallVector<mlir::Type> functionTypes;
+        SmallVector<mlir::Type> nullishTypes;
+        for (auto itemType : itemTypes)
         {
-            return mergedFunctionType;
+            (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(itemType) ? nullishTypes : functionTypes).push_back(itemType);
+        }
+
+        if (auto mergedFunctionType = getMergedFunctionType(functionTypes))
+        {
+            if (nullishTypes.empty())
+            {
+                return mergedFunctionType;
+            }
+
+            MLIRTypeHelper::UnionTypeProcessContext mergedContext = {};
+            mth.processUnionTypeItem(mergedFunctionType, mergedContext);
+            for (auto nullishType : nullishTypes)
+            {
+                mth.processUnionTypeItem(nullishType, mergedContext);
+            }
+
+            return mth.getUnionTypeMergeTypes(loc(unionTypeNode), mergedContext, false, false);
         }
 
         return mth.getUnionTypeMergeTypes(loc(unionTypeNode), unionContext, false, false);

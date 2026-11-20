@@ -573,7 +573,9 @@ enum class InternalFlags : number
     UntypedVariableInitializer = 1 << 15,
     // the body of a `for...in` over an object literal's fields made for one field: its first statement gives
     // the key, which names what it makes from a location (MLIRHelper::anonymousNameCopy)
-    ForInFieldCopy = 1 << 16
+    ForInFieldCopy = 1 << 16,
+    // a nested block of a function that declares a class, being generated in its own namespace (mlirGen(Block))
+    BlockNamespace = 1 << 17
 };
 
 ENUM_OPS(InternalFlags)
