@@ -3330,7 +3330,7 @@ namespace mlirgen
         auto constructSignature = mlir::cast<mlir_ts::FunctionType>(signatureType);
         if (constructSignature.getNumResults() == 1)
         {
-            if (auto classType = dyn_cast<mlir_ts::ClassType>(constructSignature.getResult(0));
+            if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(constructSignature.getResult(0));
                 classType && !mth.isGenericType(classType))
             {
                 return mlir_ts::ClassValueType::get(classType);

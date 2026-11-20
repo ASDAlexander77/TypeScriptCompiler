@@ -1823,3 +1823,49 @@ Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calli
 JIT, JIT -mm=rc); `00function_union_call.ts` (compile, JIT, JIT -mm=rc, JIT -mm=own);
 `diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`,
 `captured_literal_method_copy.ts`.
+
+139 (the open items of 138, 2026-11-20). Fixed:
+- A function value read at run time - a parameter, a variable, a bound method - given as a function type it does
+  not match exactly: only a named function or an arrow had a thunk (fewerParametersThunk), so `let u: H = cb`
+  with `cb: () => number` and `H = (() => void) | (() => number)` became an error with 138's merged unions (before
+  138 it was stored in the union, which could not be called). Such a value now goes into a box with an adapter bound
+  to it (functionValueAdapter), as 138's bound method adapter did. Both adapters follow one rule
+  (adaptableSignature): fewer parameters ignore the rest of the arguments; more are given `undefined` when each
+  extra one is optional (`(v, i?) => void` given as `(v) => void`); a result is dropped where the type returns
+  `void`, and widened where it returns a union holding it (`() => string` given as `() => string | number`, which
+  was "return type 'string' is not 'number | string'"). The parameters both have must be the same. A thunk's name
+  is now its type's hash: two targets with one parameter count but different results shared the first one made.
+  Under rc the widened result is retained for the return and the call's own reference given back, as in
+  `return s()` of a `string | number` function; taken over as is, the thunk's return was not one
+  OwnedReturnConsumptionPass reads as owned, and one such function left every call through a function value in
+  the module unreleased (2M calls: 45 MB, now 5.5 MB). Under -mm=own a value read at run time is not given so
+  yet (a box would hold a second reference to it); the error says so.
+- Declared unions of function types merge further: members returning different values are one type returning
+  their union (`(() => string) | (() => number)` is `() => string | number`), `| null` / `| undefined` stay
+  beside the merged functions (`if (f) f()`, `g?.()`), and a union whose widest member's extra parameters are
+  optional merges too (138 kept it a union: it is given as the narrower member's type through the adapter).
+- A class declared in a nested block of a function is that block's, as a `let` is: the block gets a namespace of
+  its own inside the function's. It was the function's: after `{ class C {} }` a `new C()` made the block's (the
+  module's `C` hidden), and two blocks declaring one name were "redefinition of symbol named 'C..instanceOf'".
+- `new (...) => A` with `A` a class is the class value `typeof A`: `make(B)` for `make(c: new () => A)` and
+  `register(c: new (...args: any[]) => A)` take the class (or a subclass), read at run time, and `new c()` makes
+  one of it. A constructor type of an interface stays one and is still refused at the value given to it.
+  In type checks a class value is matched as its class: a generic constraint (`T extends Constructor<Point>`
+  given `Point`) and a conditional's `infer` (`T extends Constructor<V, infer P> ? P : never`) work as before.
+- A key of an `any` read as a function of the same name found in a namespace: `foo.get = class {}` with
+  `foo: any` took the default library's new generic `Reflect.get<T, K>(target: T, ...)`, whose `T` takes
+  anything, as an extension function of `foo` ("can't assign to a value of type '(p0: T, p1: K) => any'"). A
+  key of an `any` stays a run-time read unless the function takes an `any`.
+- The built-in `Symbol` read as a value (`x.constructor === Symbol`): an error at its place, "the built-in 'Symbol'
+  is not a value", instead of "'llvm.mlir.addressof' op must reference a global" with no location.
+
+Still open: a function value read at run time given as another function type under -mm=own; constructor types
+of interfaces; `Symbol` as a value; call signatures through conditional types; generic arrows returning generic
+arrows. Found along the way (not fixed): under rc with the installed default library a call through a function
+value does not release its result when a library function returns heap memory unclassified (stale library in
+the build environment; not seen with `--no-default-lib`).
+
+Tests: `00function_union_call.ts` (+ `| null`, different results, optional extras; compile, JIT, rc, own);
+`00function_value_adapter.ts` (compile, JIT, JIT -mm=rc); `00block_scoped_class.ts`,
+`00constructor_type_value.ts` (compile, JIT, rc, own); `diagnostic-location/builtin_symbol_value.ts`,
+`own_function_value_adapter.ts`; `constructor_type_value.ts` now an interface's constructor type.

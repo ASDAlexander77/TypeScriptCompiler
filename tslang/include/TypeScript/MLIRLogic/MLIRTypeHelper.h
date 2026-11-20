@@ -3488,6 +3488,23 @@ class MLIRTypeHelper
             return extendsTypeFuncTypes(location, srcType, extendType, typeParamsWithArgs, skipFirst ? 1 : 0);
         }
 
+        // a class value (`typeof C`, and `new (...) => C` with `C` a class, MLIRGenImpl::getConstructorType) makes
+        // the class it is of: against a constructor type it is matched as the class is (`T extends Constructor<V,
+        // infer P>`), and against another class value by the classes (`T extends Constructor<Point>` given `Point`)
+        if (auto srcClassValueType = dyn_cast<mlir_ts::ClassValueType>(srcType);
+            srcClassValueType && isa<mlir_ts::ConstructFunctionType, mlir_ts::ClassValueType>(extendType))
+        {
+            return extendsType(location, srcClassValueType.getClassType(), extendType, typeParamsWithArgs,
+                               useTupleWhenMergeTypes);
+        }
+
+        if (auto extendClassValueType = dyn_cast<mlir_ts::ClassValueType>(extendType);
+            extendClassValueType && isa<mlir_ts::ClassType>(srcType))
+        {
+            return extendsType(location, srcType, extendClassValueType.getClassType(), typeParamsWithArgs,
+                               useTupleWhenMergeTypes);
+        }
+
         if (auto constructType = dyn_cast<mlir_ts::ConstructFunctionType>(extendType))
         {
             if (auto srcClassType = dyn_cast<mlir_ts::ClassType>(srcType))
