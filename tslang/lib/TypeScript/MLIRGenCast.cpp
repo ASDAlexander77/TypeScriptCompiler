@@ -1988,6 +1988,14 @@ namespace mlirgen
                 element = builder.create<mlir_ts::ConstantOp>(
                     location, mth.convertTupleTypeToConstTupleType(sourceElementType), nestedAttrs);
             }
+            else if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr);
+                     nestedAttrs && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(sourceElementType))
+            {
+                // an object literal (`[{ a: 1 }]` given as `any[]`): its fields are an array attribute
+                // too, but it is one element, cast (boxed) as a whole
+                element = builder.create<mlir_ts::ConstantOp>(
+                    location, mth.convertTupleTypeToConstTupleType(sourceElementType), nestedAttrs);
+            }
             else if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr))
             {
                 if (!nestedElementType)

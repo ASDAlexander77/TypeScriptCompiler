@@ -343,6 +343,9 @@ tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-compile-00-any-cast-back-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
+tslang_add_test(NAME test-compile-00-field-type-class-declared-later COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
+tslang_add_test(NAME test-compile-00-generic-infer-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_infer_any.ts")
 tslang_add_test(NAME test-compile-00-let-without-initializer-owns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-compile-00-call-signature-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-compile-00-f-bounded-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
@@ -1060,6 +1063,9 @@ tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
+tslang_add_test(NAME test-jit-00-field-type-class-declared-later COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
+tslang_add_test(NAME test-jit-00-generic-infer-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_infer_any.ts")
 tslang_add_test(NAME test-jit-00-let-without-initializer-owns COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_without_initializer_owns.ts")
 tslang_add_test(NAME test-jit-00-call-signature-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_signature_type.ts")
 tslang_add_test(NAME test-jit-00-f-bounded-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f_bounded_generic.ts")
@@ -3168,6 +3174,9 @@ set(TSLANG_CORPUS
     00any_call.ts
     00any_keys.ts
     00any_keys_write.ts
+    00any_cast_back_function.ts
+    00field_type_class_declared_later.ts
+    00generic_infer_any.ts
     00let_without_initializer_owns.ts
     00call_signature_type.ts
     00f_bounded_generic.ts

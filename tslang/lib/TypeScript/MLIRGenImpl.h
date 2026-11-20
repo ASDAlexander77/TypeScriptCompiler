@@ -3397,7 +3397,10 @@ class MLIRGenImpl
         {
             hasInit = true;
             auto initType = evaluate(initializer, genContext);
-            if (initType && !type)
+            // only when no type is written: one written but not resolved yet (`ps: P[] = []` with
+            // class P declared further down) is left unresolved, so it is retried once P is known,
+            // not typed by its initializer (`any[]` for `[]`) for good
+            if (initType && !type && !typeProvided)
             {
                 type = initType;
             }
