@@ -1871,3 +1871,27 @@ Tests: `00function_union_call.ts` (+ `| null`, different results, optional extra
 `00function_value_adapter.ts` (compile, JIT, JIT -mm=rc); `00block_scoped_class.ts`,
 `00constructor_type_value.ts` (compile, JIT, rc, own); `diagnostic-location/builtin_symbol_value.ts`,
 `own_function_value_adapter.ts`; `constructor_type_value.ts` now an interface's constructor type.
+
+140 (twelfth batch of the compiler-tests sweep, 2026-11-20; picked from the failing tests tsc compiles cleanly). Fixed:
+- A class declared in a block at the module's or a namespace's top level (`{ class C {} }` with a module `C`) is the
+  block's, as 139 made one in a function's block: "redefinition of symbol named 'C..instanceOf'".
+- `interface X extends Object` / `extends Function`: the built-in types, which the program does not declare, give
+  the interface nothing and are left out ("'Object' is a type here, not a value").
+- `export default Foo` of an interface or a type alias of the file exports nothing at run time: it was a constant
+  given the type ("failed to legalize operation 'ts.InterfaceRef'").
+- An `await` in a `finally` block: an error at the `await` ("failed to legalize operation 'ts.Try' that was
+  explicitly marked illegal"). One in the `try` or a `catch` works.
+- A type parameter constrained by `keyof` keeps the literal it is given (`P extends keyof T` given `"minimizer"`), as
+  in TypeScript: widened to `string`, `T[P]` was "indexing a type by 'string' is not supported". A key whose type is
+  a string literal (`obj[key]`, `key: K`) reads the field it names ("indexer is not declared").
+- A crash from 138 (#958): a function type with a type that failed to resolve (the `T[P]` above, after its error)
+  matched against an adapter read the null type (`contextualTypeCaching.ts`).
+
+Not yet: generic methods and arrows in an object literal (`{ id<T>(v: T) {} }`, "can't find type by name: T"); a
+non-exported class in each of two declarations of one namespace; an `await` in a `finally`; a callable interface
+(`interface Cb extends Function`) given a function; overloads in a `declare class` that is used ("redefinition of
+symbol named 'C.constructor'"; refusing them as a declared function's overloads are refused also refused a `@cpp`
+class's C++ overloads, and declared classes nothing uses, which compile).
+
+Tests: `00block_scoped_class.ts` (+ module-level blocks), `00interface_extends_builtin.ts`,
+`00keyof_literal_key.ts` (compile, JIT, rc, own); diagnostic-location `await_in_finally.ts`.

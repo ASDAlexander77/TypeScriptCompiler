@@ -4015,15 +4015,6 @@ set_tests_properties(test-compile-diagnostic-location-captured-literal-method-co
                      PROPERTIES PASS_REGULAR_EXPRESSION "captured_literal_method_copy\.ts:3:30: error: an object literal whose methods use variables of the function around it"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
-# A declared class's member overloads are an error at the second, as a declared function's are ("redefinition of symbol").
-add_test(NAME test-compile-diagnostic-location-declared-class-overloads
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
-                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/declared_class_overloads.ts"
-                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-declared-class-overloads.obj")
-set_tests_properties(test-compile-diagnostic-location-declared-class-overloads
-                     PROPERTIES PASS_REGULAR_EXPRESSION "declared_class_overloads\\.ts:5:5: error: 'C\\.constructor' is declared again with another signature"
-                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|redefinition of symbol")
-
 # An `await` in a `finally` block is an error at the `await` (the lowering failed on the try).
 add_test(NAME test-compile-diagnostic-location-await-in-finally
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
