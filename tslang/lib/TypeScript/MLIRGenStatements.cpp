@@ -256,6 +256,26 @@ namespace mlirgen
             return result;
         }
 
+        // A class declared in a nested block of a function is that block's, as a `let` is: `{ class C {} }` with a
+        // `C` outside it. In the function's namespace it was the function's - after the block `new C()` made the
+        // block's, and two blocks declaring one name were "redefinition of symbol named 'C..instanceOf'". The
+        // block gets a namespace of its own, inside the function's and named for its place in the source; what is
+        // declared in it is found from the block, the function's and the module's after it as before.
+        if (genContext.parentBlockContext && currentNamespace->isFunctionNamespace
+            && (blockAST->internalFlags & InternalFlags::BlockNamespace) != InternalFlags::BlockNamespace
+            && llvm::any_of(blockAST->statements, [](Statement statement) {
+                   return statement == SyntaxKind::ClassDeclaration;
+               }))
+        {
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(StringRef("b" + std::to_string(blockAST->pos)).copy(stringAllocator), true);
+
+            blockAST->internalFlags |= InternalFlags::BlockNamespace;
+            auto result = mlirGen(blockAST, genContext, skipStatements);
+            blockAST->internalFlags &= ~InternalFlags::BlockNamespace;
+            return result;
+        }
+
         // A `using` here needs disposal on the unwind path too, and only a TryOp has a
         // landing pad to run that from - see mlirGenBlockWithUnwindCleanup and
         // blockDeclaresUsing. Most blocks qualify: a function's own body, an if/loop body, a

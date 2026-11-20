@@ -1653,6 +1653,28 @@ namespace mlirgen
 
         eraseUnusedWeakFieldReads();
 
+        // the built-in `Symbol` read as a value (`x.constructor === Symbol`): a name `Symbol(...)`, `Symbol.for(...)`
+        // and the well-known keys are resolved through, with nothing in the program behind it (the lowering failed
+        // on its address, "'llvm.mlir.addressof' op must reference a global")
+        auto builtinValueUsed = false;
+        theModule.walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
+            if (isa<mlir_ts::SymbolType>(symbolRefOp.getType()) && !symbolRefOp->use_empty()
+                && !mlir::SymbolTable::lookupNearestSymbolFrom(symbolRefOp, symbolRefOp.getIdentifierAttr()))
+            {
+                emitError(symbolRefOp.getLoc(), "the built-in '")
+                    << symbolRefOp.getIdentifier()
+                    << "' is not a value: only 'Symbol(...)', 'Symbol.for(...)' and its well-known keys "
+                       "('Symbol.iterator') are supported";
+                builtinValueUsed = true;
+            }
+        });
+
+        if (builtinValueUsed)
+        {
+            outputDiagnostics(postponedMessages, 1);
+            return mlir::failure();
+        }
+
         // Verify the module after we have finished constructing it, this will check
         // the structural properties of the IR and invoke any specific verifiers we
         // have on the TypeScript operations.

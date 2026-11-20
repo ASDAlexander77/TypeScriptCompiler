@@ -661,6 +661,14 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
 
+        // a key of an `any` is read at run time: a function of the same name found in some namespace is no member
+        // of it unless it takes an `any` (`foo.get = class {}` with `foo: any` found the library's generic
+        // `Reflect.get<T, K>(target: T, ...)`, whose `T` takes anything, and assigned to it)
+        if (isa<mlir_ts::AnyType>(thisValue.getType()) && !isa_and_nonnull<mlir_ts::AnyType>(thisTypeFromFunc))
+        {
+            return mlir::Value();
+        }
+
         if (auto symbolOp = funcRef.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
             // if (!isa<mlir_ts::GenericType>(symbolOp.getType()))

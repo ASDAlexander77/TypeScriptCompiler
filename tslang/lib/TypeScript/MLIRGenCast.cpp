@@ -2805,7 +2805,8 @@ namespace mlirgen
     // type is the common one: an integer literal is `s32` here, so a function with an inferred return
     // (`function one() { return 1; }` is `() => s32`) does not match `() => number` - hence the hint to
     // declare the return type.
-    void MLIRGenImpl::emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match)
+    void MLIRGenImpl::emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match,
+                                               bool ownAdapterRefused)
     {
         auto inFuncType = mth.GetFunctionType(valueType);
         auto resFuncType = mth.GetFunctionType(type);
@@ -2823,11 +2824,6 @@ namespace mlirgen
 
             diag << ": it takes " << visibleCount(valueType, inFuncType) << " argument(s), " << visibleCount(type, resFuncType)
                  << " expected";
-            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
-            {
-                diag << " (under -mm=own a method is not given as a function with more parameters yet)";
-            }
-
             break;
         }
         case MatchResultType::NotMatchArg:
@@ -2835,10 +2831,6 @@ namespace mlirgen
             break;
         case MatchResultType::NotMatchResultCount:
             diag << ": one returns a value and the other does not";
-            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
-            {
-                diag << " (under -mm=own a method is not given as a function returning nothing yet)";
-            }
             break;
         case MatchResultType::NotMatchResult:
             if (match.index < inFuncType.getNumResults() && match.index < resFuncType.getNumResults())
@@ -2858,16 +2850,182 @@ namespace mlirgen
         default:
             break;
         }
+
+        if (ownAdapterRefused)
+        {
+            diag << " (under -mm=own a function value read at run time - a parameter, a variable, a method - is not "
+                    "given as another function type yet)";
+        }
     }
 
-    // A function taking fewer parameters than the function type it is given as (`apply(one)` where `apply` takes
-    // `(a: number, b: number) => number` and `one` takes `a` only): TypeScript lets it ignore the rest. A named
-    // function or an arrow that captures nothing is given as a function of its own that takes them all and calls
-    // it with the first ones - called with every argument the type says, it would read them where it does not
-    // expect them. An arrow that captures is the same, bound over its captures: the function of its own takes the
-    // captures first, as the arrow does, and the closure is bound to it instead. Null where it is not that (a bound
-    // method, parameters or results that differ).
-    mlir::Value MLIRGenImpl::fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type)
+    // no result and a `void` one are the same (a declared `=> void` keeps its result)
+    static bool isVoidResults(mlir::TypeRange results)
+    {
+        return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+    }
+
+    // a parameter a caller may leave out: `undefined` is given for it
+    static bool takesUndefined(mlir::Type type)
+    {
+        if (isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::AnyType, mlir_ts::UnknownType>(type))
+        {
+            return true;
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type t) { return isa<mlir_ts::UndefinedType>(t); });
+    }
+
+    // a result a function type takes as it is, widened: `string` for `string | number`, `T | undefined`, `any`
+    static bool resultWidensTo(mlir::Type from, mlir::Type to)
+    {
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(to))
+        {
+            return true;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(to))
+        {
+            return optionalType.getElementType() == from;
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(to);
+        return unionType && llvm::is_contained(unionType.getTypes(), from);
+    }
+
+    // Whether a function with the parameters `srcInputs` (those a caller gives) and the results `srcResults` can be
+    // given as one with `destInputs` and `destResults` through an adapter that calls it - and needs one: fewer
+    // parameters ignore the rest of the arguments, as JavaScript does; more are left out when each extra one is
+    // optional (`undefined` given for it); a result is dropped where the type returns `void`, and widened where
+    // the type returns a union holding it (`() => string` given as `() => string | number`). The parameters both
+    // have must be the same.
+    static bool adaptableSignature(mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
+                                   mlir::ArrayRef<mlir::Type> destInputs, mlir::TypeRange destResults, bool &dropResult)
+    {
+        dropResult = !isVoidResults(srcResults) && isVoidResults(destResults);
+        auto sameResults = srcResults == destResults || (isVoidResults(srcResults) && isVoidResults(destResults));
+        if (!sameResults && !dropResult
+            && (isVoidResults(srcResults) || srcResults.size() != 1 || destResults.size() != 1
+                || !resultWidensTo(srcResults.front(), destResults.front())))
+        {
+            return false;
+        }
+
+        auto common = std::min(srcInputs.size(), destInputs.size());
+        if (!llvm::equal(srcInputs.take_front(common), destInputs.take_front(common)))
+        {
+            return false;
+        }
+
+        for (auto extra : srcInputs.drop_front(common))
+        {
+            if (!takesUndefined(extra))
+            {
+                return false;
+            }
+        }
+
+        return !(sameResults && srcInputs.size() == destInputs.size());
+    }
+
+    // The body of an adapter adaptableSignature allowed: calls `callee` with `leading` (a closure's captures, a
+    // method's `this`) and then `args` - as many as the callee takes, `undefined` for its optional ones past them -
+    // and returns its result as `destResults` says: as it is, widened, or dropped (released). Fails where an
+    // argument or the result can't be cast.
+    mlir::LogicalResult MLIRGenImpl::emitSignatureAdapterBody(mlir::Location location, mlir::Value callee,
+                                                              mlir::ValueRange leading,
+                                                              mlir::ArrayRef<mlir::Type> srcInputs,
+                                                              mlir::TypeRange srcResults, mlir::ValueRange args,
+                                                              mlir::TypeRange destResults, mlir::Value resultRef,
+                                                              const GenContext &genContext)
+    {
+        SmallVector<mlir::Value, 4> operands(leading.begin(), leading.end());
+        for (auto [index, paramType] : llvm::enumerate(srcInputs))
+        {
+            mlir::Value argument;
+            if (index < args.size())
+            {
+                argument = args[index];
+            }
+            else if (isa<mlir_ts::OptionalType>(paramType))
+            {
+                argument = builder.create<mlir_ts::OptionalUndefOp>(location, paramType);
+            }
+            else
+            {
+                argument = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            }
+
+            if (argument.getType() != paramType)
+            {
+                auto castResult = cast(location, paramType, argument, genContext);
+                if (castResult.failed_or_no_value())
+                {
+                    return mlir::failure();
+                }
+
+                argument = V(castResult);
+            }
+
+            operands.push_back(argument);
+        }
+
+        auto callOp = builder.create<mlir_ts::CallIndirectOp>(location, callee, operands);
+        auto dropResult = !isVoidResults(srcResults) && isVoidResults(destResults);
+        auto ownsResult = !isVoidResults(srcResults) && mth.ownsHeapMemory(location, srcResults.front());
+        if (resultRef)
+        {
+            // handed on as `return f(x)` hands it: owned, and taken over by the return (a string `map` builds came
+            // back as a second reference). Widened, as `function h(): string | number { return s(); }` is: the
+            // union retained for the return, the call's own reference a temporary given back - a return of a
+            // cast of a taken-over result is not one OwnedReturnConsumptionPass reads as returning owned, and
+            // one such function in a module leaves every call through a function value there unreleased
+            mlir::Value result = callOp.getResult(0);
+            auto widened = result.getType() != destResults.front();
+            if (ownsResult)
+            {
+                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                if (!widened)
+                {
+                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                }
+            }
+
+            if (widened)
+            {
+                auto castResult = cast(location, destResults.front(), result, genContext);
+                if (castResult.failed_or_no_value())
+                {
+                    return mlir::failure();
+                }
+
+                result = V(castResult);
+                if (mth.ownsHeapMemory(location, result.getType()))
+                {
+                    builder.create<mlir_ts::RetainOp>(location, result);
+                }
+            }
+
+            builder.create<mlir_ts::ReturnValOp>(location, result, resultRef);
+        }
+        else if (dropResult && ownsResult)
+        {
+            // dropped as a call statement drops it: an owned temporary nothing takes, released
+            callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return mlir::success();
+    }
+
+    // A named function, or an arrow, given as a function type it does not match exactly but can be adapted to
+    // (adaptableSignature: fewer parameters - `apply(one)` where `apply` takes `(a: number, b: number) => number` and
+    // `one` takes `a` only -, more optional ones, a result dropped or widened). It is given as a function of its own
+    // that takes what the type says and calls it as it expects - called with every argument the type says, it
+    // would read them where it does not expect them. An arrow that captures is the same, bound over its captures:
+    // the function of its own takes the captures first, as the arrow does, and the closure is bound to it instead.
+    // Null where it is not that (a bound method, a function value read at run time: functionValueAdapter).
+    mlir::Value MLIRGenImpl::fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type,
+                                                  const GenContext &genContext)
     {
         auto boundOp = value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
         auto symbolRefOp = boundOp ? boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>()
@@ -2882,34 +3040,36 @@ namespace mlirgen
             return mlir::Value();
         }
 
-        // no result and a `void` one are the same (a declared `=> void` keeps its result)
-        auto isVoid = [](mlir::TypeRange results) {
-            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
-        };
+        // a bound function type's own `this` is no parameter a caller gives
+        mlir::ArrayRef<mlir::Type> destInputs = resFuncType.getInputs();
+        if (isa<mlir_ts::BoundFunctionType>(type) && !destInputs.empty())
+        {
+            destInputs = destInputs.drop_front();
+        }
 
         auto inInputs = inFuncType.getInputs();
+        auto srcInputs = boundOp ? inInputs.drop_front() : inInputs;
+        bool dropResult;
+        if (!adaptableSignature(srcInputs, inFuncType.getResults(), destInputs, resFuncType.getResults(), dropResult))
+        {
+            return mlir::Value();
+        }
+
         SmallVector<mlir::Type> resInputs;
         if (boundOp)
         {
             resInputs.push_back(inInputs.front());
         }
 
-        resInputs.append(resFuncType.getInputs().begin(), resFuncType.getInputs().end());
-        auto sameResults = inFuncType.getResults() == resFuncType.getResults()
-            || (isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults()));
-        // a function returning a value given as one returning `void` (`let f: () => void = n`, as TypeScript
-        // allows): the thunk calls it and drops the result
-        auto dropResult = !isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults());
-        if (inInputs.size() > resInputs.size() || (inInputs.size() == resInputs.size() && !dropResult)
-            || !(sameResults || dropResult)
-            || !llvm::equal(inInputs, llvm::ArrayRef<mlir::Type>(resInputs).take_front(inInputs.size())))
-        {
-            return mlir::Value();
-        }
+        resInputs.append(destInputs.begin(), destInputs.end());
 
         auto calleeName = symbolRefOp.getIdentifier();
-        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size()) + (dropResult ? ".void" : "")).str();
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
+        // one for each type it is given as: the name is the type's, printed (deterministic, unlike its pointer)
+        std::string typeText;
+        llvm::raw_string_ostream typeStream(typeText);
+        typeStream << thunkType;
+        auto thunkName = (calleeName + ".adapt." + llvm::utohexstr(llvm::xxh3_64bits(typeText))).str();
         if (!lookupModuleSymbol(thunkName))
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -2940,11 +3100,10 @@ namespace mlirgen
             auto &entryBlock = *funcOp.addEntryBlock();
             builder.setInsertionPointToStart(&entryBlock);
 
-            auto results = inFuncType.getResults();
-            // the thunk returns what the callee does, unless it drops it
-            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto destResults = resFuncType.getResults();
+            auto hasResult = !isVoidResults(destResults);
             auto entryOp = builder.create<mlir_ts::EntryOp>(
-                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(destResults.front())) : mlir::Type());
 
             auto callee = builder.create<mlir_ts::SymbolRefOp>(noLocation, inFuncType,
                                                                mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName));
@@ -2952,30 +3111,22 @@ namespace mlirgen
             // parameter given to a callee that keeps it as one this function keeps (its callers then
             // give it, or a copy of a string they lend), where a bare argument is given without being owned
             SmallVector<mlir::Value> passed;
-            for (auto [index, argument] : llvm::enumerate(entryBlock.getArguments().take_front(inInputs.size())))
+            auto passedCount = std::min(entryBlock.getNumArguments(), (unsigned)inInputs.size());
+            for (auto [index, argument] : llvm::enumerate(entryBlock.getArguments().take_front(passedCount)))
             {
                 auto paramOp = builder.create<mlir_ts::ParamOp>(noLocation, mlir_ts::RefType::get(argument.getType()), argument,
                                                                 builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
                 passed.push_back(builder.create<mlir_ts::LoadOp>(noLocation, argument.getType(), paramOp));
             }
 
-            auto callOp = builder.create<mlir_ts::CallIndirectOp>(noLocation, callee, passed);
-            if (hasResult)
+            mlir::ValueRange leading = boundOp ? mlir::ValueRange(passed).take_front(1) : mlir::ValueRange();
+            mlir::ValueRange args = boundOp ? mlir::ValueRange(passed).drop_front(1) : mlir::ValueRange(passed);
+            if (mlir::failed(emitSignatureAdapterBody(noLocation, callee, leading, srcInputs, inFuncType.getResults(),
+                                                      args, destResults,
+                                                      hasResult ? entryOp.getReference() : mlir::Value(), genContext)))
             {
-                // the callee's result is the thunk's, handed on as `return f(x)` hands it: owned, and
-                // taken over by the return (a string `map` builds came back as a second reference)
-                if (mth.ownsHeapMemory(noLocation, results.front()))
-                {
-                    callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
-                    callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
-                }
-
-                builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
-            }
-            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
-            {
-                // dropped as a call statement drops it: an owned temporary nothing takes, released
-                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                funcOp.erase();
+                return mlir::Value();
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -2999,6 +3150,143 @@ namespace mlirgen
                                                     mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
     }
 
+    // A function value known at run time only - a parameter, a variable, a bound method read off an object
+    // (`val.something`) - given as a function type it can be adapted to (adaptableSignature): there is no function
+    // of its own to name, so it goes into a box, as a closure's captures do, and an adapter bound to the box calls
+    // it (the box and the adapter are again two words, as a bound function's `this` and its function are). Under
+    // -mm=own not yet (a function value in a box takes a second reference to it). Null where it is not that.
+    mlir::Value MLIRGenImpl::functionValueAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
+                                                  const GenContext &genContext)
+    {
+        auto valueType = value.getType();
+        if (compileOptions.memoryModel == MemoryModelOwn || valueType == type
+            || !isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(valueType)
+            || !isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type))
+        {
+            return mlir::Value();
+        }
+
+        auto srcType = mth.GetFunctionType(valueType);
+        auto destType = mth.GetFunctionType(type);
+        if (!srcType || !destType || srcType.isVarArg() || srcType.isCVarArg() || destType.isVarArg() || destType.isCVarArg())
+        {
+            return mlir::Value();
+        }
+
+        // a bound method's `this`, and a bound function type's, is no parameter a caller gives: the box takes the
+        // type's place, as its `this`
+        auto isBound = isa<mlir_ts::BoundFunctionType>(valueType);
+        mlir::ArrayRef<mlir::Type> srcInputs = srcType.getInputs();
+        if (isBound)
+        {
+            if (srcInputs.empty())
+            {
+                return mlir::Value();
+            }
+
+            srcInputs = srcInputs.drop_front();
+        }
+
+        mlir::ArrayRef<mlir::Type> destInputs = destType.getInputs();
+        if (isa<mlir_ts::BoundFunctionType>(type) && !destInputs.empty())
+        {
+            destInputs = destInputs.drop_front();
+        }
+
+        bool dropResult;
+        if (!adaptableSignature(srcInputs, srcType.getResults(), destInputs, destType.getResults(), dropResult))
+        {
+            return mlir::Value();
+        }
+
+        // the function value itself: a bound method keeps its receiver as every memory model expects one to
+        // (under rc a reference to it, with the receiver's own type tag)
+        SmallVector<mlir_ts::FieldInfo> fields{
+            {MLIRHelper::TupleFieldName("func", builder.getContext()), valueType, false, mlir_ts::AccessLevel::Public}};
+        auto boxStorageType = mlir_ts::TupleType::get(builder.getContext(), fields);
+        auto boxType = mlir_ts::RefType::get(boxStorageType);
+
+        SmallVector<mlir::Type> thunkInputs{boxType};
+        thunkInputs.append(destInputs.begin(), destInputs.end());
+        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), false);
+
+        // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
+        std::string typesText;
+        llvm::raw_string_ostream typesStream(typesText);
+        typesStream << valueType << "|" << thunkType;
+        auto thunkName = ".value_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
+        if (!lookupModuleSymbol(thunkName))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+
+            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            // with --di a subprogram of its own at the file's place, as virtualSlotAdapterThunk's
+            DITableScopeT debugFuncScope(debugScope);
+            auto fileLoc = location->findInstanceOf<mlir::FileLineColLoc>();
+            if (!fileLoc)
+            {
+                fileLoc = mlir::FileLineColLoc::get(builder.getStringAttr(mainSourceFileName), 1, 1);
+            }
+
+            if (compileOptions.generateDebugInfo && fileLoc)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                mlir::Location plainLocation = fileLoc;
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, thunkName, thunkName, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            auto destResults = destType.getResults();
+            auto hasResult = !isVoidResults(destResults);
+            auto entryOp = builder.create<mlir_ts::EntryOp>(
+                noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(destResults.front())) : mlir::Type());
+
+            auto box = entryBlock.getArgument(0);
+            auto funcRef = builder.create<mlir_ts::PropertyRefOp>(noLocation, mlir_ts::RefType::get(valueType), box,
+                                                                  builder.getI32IntegerAttr(0));
+            mlir::Value func = builder.create<mlir_ts::LoadOp>(noLocation, valueType, funcRef);
+            SmallVector<mlir::Value, 1> leading;
+            mlir::Value callee = func;
+            if (isBound)
+            {
+                leading.push_back(builder.create<mlir_ts::GetThisOp>(noLocation, srcType.getInput(0), func));
+                callee = builder.create<mlir_ts::GetMethodOp>(noLocation, srcType, func);
+            }
+
+            if (mlir::failed(emitSignatureAdapterBody(noLocation, callee, leading, srcInputs, srcType.getResults(),
+                                                      entryBlock.getArguments().drop_front(), destResults,
+                                                      hasResult ? entryOp.getReference() : mlir::Value(), genContext)))
+            {
+                funcOp.erase();
+                return mlir::Value();
+            }
+
+            builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
+
+            pushFunction(funcOp);
+        }
+
+        // the box is the adapter's own, as a closure's capture box is (resolveFunctionWithCapture): it holds a
+        // reference to the function value of its own, released with the box
+        mlirGenRetainCaptured(location, mlir::ValueRange{value});
+        auto boxValue = builder.create<mlir_ts::CaptureOp>(location, boxType, mlir::ValueRange{value});
+        auto thunkRef = builder.create<mlir_ts::SymbolRefOp>(location, thunkType,
+                                                             mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+        auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(thunkType),
+                                                                           boxValue, thunkRef);
+        boundFuncVal->setAttr(OWNS_CAPTURE_ATTR_NAME, builder.getUnitAttr());
+        builder.create<mlir_ts::RetainOp>(location, boundFuncVal);
+        boundFuncVal->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        return boundFuncVal;
+    }
+
     // A bound method given as a function type that takes more parameters than the method does, the extra ones
     // first: `call_func(user.sayHi, user)` where `call_func` takes `(o: object) => void` (an object parameter
     // first is taken as a `this` when the types are matched). The function value is called with its `this` and
@@ -3007,11 +3295,10 @@ namespace mlirgen
     // itself, are known only at run time (read from a field, `user.sayHi`), so the adapter cannot name it: the
     // bound method goes into a box, as a closure's captures do - the box and the adapter bound to it are again two
     // words, as a bound method's `this` and its function are - and the adapter calls the method with its `this`
-    // and the last arguments, as many as the method takes. With `ownParamsFirst`, the first ones instead: a bound
-    // method given as a function type with more parameters after its own (`o.f ?? val.method` where `o.f` takes
-    // `(b?: string)` and the method none) ignores the rest, as JavaScript does. Null where it is not that.
+    // and the last arguments, as many as the method takes (the first ones: functionValueAdapter). Null where it is
+    // not that.
     mlir::Value MLIRGenImpl::boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
-                                                         const GenContext &genContext, bool ownParamsFirst)
+                                                         const GenContext &genContext)
     {
         // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
         // says so where it is given; an adapter would only add an error of its own, without a place in the source
@@ -3044,17 +3331,14 @@ namespace mlirgen
             return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
         };
 
-        // a method returning a value given as one returning `void` (with `ownParamsFirst`): the adapter drops it
-        auto dropResult = ownParamsFirst && !isVoid(methodType.getResults()) && isVoid(destType.getResults());
-
         // the method's own parameters, after its `this`, are the type's last ones
         auto ownParams = methodType.getNumInputs() - 1;
-        if (destInputs.size() < ownParams || (destInputs.size() == ownParams && !dropResult))
+        if (destInputs.size() <= ownParams)
         {
             return mlir::Value();
         }
 
-        if (!(dropResult || methodType.getResults() == destType.getResults()
+        if (!(methodType.getResults() == destType.getResults()
               || (isVoid(methodType.getResults()) && isVoid(destType.getResults()))))
         {
             return mlir::Value();
@@ -3075,7 +3359,7 @@ namespace mlirgen
         // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
         std::string typesText;
         llvm::raw_string_ostream typesStream(typesText);
-        typesStream << methodType << "|" << thunkType << (ownParamsFirst ? "|first" : "");
+        typesStream << methodType << "|" << thunkType;
         auto thunkName = ".bound_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
         if (!lookupModuleSymbol(thunkName))
         {
@@ -3106,7 +3390,7 @@ namespace mlirgen
             builder.setInsertionPointToStart(&entryBlock);
 
             auto results = methodType.getResults();
-            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
             auto entryOp = builder.create<mlir_ts::EntryOp>(
                 noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
 
@@ -3115,8 +3399,8 @@ namespace mlirgen
                                                                    builder.getI32IntegerAttr(0));
             auto bound = builder.create<mlir_ts::LoadOp>(noLocation, boundType, boundRef);
             SmallVector<mlir::Value, 4> operands{builder.create<mlir_ts::GetThisOp>(noLocation, thisType, bound)};
-            // after the box: the first arguments, or the last
-            auto firstOwn = ownParamsFirst ? 1u : entryBlock.getNumArguments() - ownParams;
+            // after the box: the last arguments
+            auto firstOwn = entryBlock.getNumArguments() - ownParams;
             for (auto index = 0u; index < ownParams; index++)
             {
                 mlir::Value argument = entryBlock.getArgument(firstOwn + index);
@@ -3148,11 +3432,6 @@ namespace mlirgen
                 }
 
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
-            }
-            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
-            {
-                // dropped as a call statement drops it: an owned temporary nothing takes, released
-                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -3217,20 +3496,21 @@ namespace mlirgen
             {
                 // test fun types
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
-                // fewer parameters, or a result given as `void` (`let f: () => void = n`)
+                // fewer parameters, more optional ones, a result given as `void` (`let f: () => void = n`) or
+                // widened (`() => string` as `() => string | number`): adaptableSignature
                 if (test.result == MatchResultType::NotMatchArgCount
-                    || test.result == MatchResultType::NotMatchResultCount)
+                    || test.result == MatchResultType::NotMatchResultCount
+                    || test.result == MatchResultType::NotMatchResult)
                 {
-                    if (auto thunk = fewerParametersThunk(location, value, type))
+                    if (auto thunk = fewerParametersThunk(location, value, type, genContext))
                     {
                         value = thunk;
                         valueType = thunk.getType();
                         test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
                     }
-                    // a bound method (`val.something`, read off an object or an interface) has no function of
-                    // its own to thunk: it goes into a box, and the adapter bound to it calls the method with the
-                    // first arguments, as many as it takes
-                    else if (auto adapter = boundMethodWiderTypeAdapter(location, value, type, genContext, true))
+                    // a function value known at run time only (a parameter, `val.something` read off an object)
+                    // has no function of its own to thunk: it goes into a box, and the adapter bound to it calls it
+                    else if (auto adapter = functionValueAdapter(location, value, type, genContext))
                     {
                         value = adapter;
                         valueType = adapter.getType();
@@ -3240,7 +3520,24 @@ namespace mlirgen
 
                 if (test.result != MatchResultType::Match)
                 {
-                    emitFunctionTypeMismatch(location, valueType, type, test);
+                    // an adapter would do, but -mm=own does not make one for a value read at run time yet
+                    auto ownAdapterRefused = false;
+                    auto srcType = mth.GetFunctionType(valueType);
+                    auto destType = mth.GetFunctionType(type);
+                    if (compileOptions.memoryModel == MemoryModelOwn && srcType && destType)
+                    {
+                        auto visibleInputs = [](mlir::Type type, mlir_ts::FunctionType funcType) {
+                            mlir::ArrayRef<mlir::Type> inputs = funcType.getInputs();
+                            return isa<mlir_ts::BoundFunctionType>(type) && !inputs.empty() ? inputs.drop_front() : inputs;
+                        };
+
+                        bool dropResult;
+                        ownAdapterRefused = adaptableSignature(visibleInputs(valueType, srcType), srcType.getResults(),
+                                                               visibleInputs(type, destType), destType.getResults(),
+                                                               dropResult);
+                    }
+
+                    emitFunctionTypeMismatch(location, valueType, type, test, ownAdapterRefused);
                     return mlir::failure();
                 }
 

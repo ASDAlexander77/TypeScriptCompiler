@@ -435,6 +435,9 @@ tslang_add_test(NAME test-compile-00-untyped-arrows-and-tags COMMAND test-runner
 tslang_add_test(NAME test-compile-00-call-logical-of-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00call_logical_of_functions.ts")
 tslang_add_test(NAME test-compile-00-bound-method-fewer-parameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_fewer_parameters.ts")
 tslang_add_test(NAME test-compile-00-function-union-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_union_call.ts")
+tslang_add_test(NAME test-compile-00-function-value-adapter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_adapter.ts")
+tslang_add_test(NAME test-compile-00-block-scoped-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -1177,6 +1180,14 @@ tslang_add_test(NAME test-jit-rc-00-bound-method-fewer-parameters COMMAND test-r
 tslang_add_test(NAME test-jit-00-function-union-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_union_call.ts")
 tslang_add_test(NAME test-jit-rc-00-function-union-call COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_union_call.ts")
 tslang_add_test(NAME test-jit-own-00-function-union-call COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_union_call.ts")
+tslang_add_test(NAME test-jit-00-function-value-adapter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_adapter.ts")
+tslang_add_test(NAME test-jit-rc-00-function-value-adapter COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_adapter.ts")
+tslang_add_test(NAME test-jit-00-block-scoped-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-jit-rc-00-block-scoped-class COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-jit-own-00-block-scoped-class COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
+tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
+tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-00-string-concat-chain COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -3996,6 +4007,24 @@ set_tests_properties(test-compile-diagnostic-location-captured-literal-method-co
                      PROPERTIES PASS_REGULAR_EXPRESSION "captured_literal_method_copy\.ts:3:30: error: an object literal whose methods use variables of the function around it"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# The built-in `Symbol` read as a value is an error at its place (the lowering failed on its address).
+add_test(NAME test-compile-diagnostic-location-builtin-symbol-value
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/builtin_symbol_value.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-builtin-symbol-value.obj")
+set_tests_properties(test-compile-diagnostic-location-builtin-symbol-value
+                     PROPERTIES PASS_REGULAR_EXPRESSION "builtin_symbol_value\\.ts:5:27: error: the built-in 'Symbol' is not a value"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|addressof")
+
+# Under -mm=own a function value read at run time is not adapted to another function type yet, and the error says so.
+add_test(NAME test-compile-diagnostic-location-own-function-value-adapter
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/own_function_value_adapter.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-own-function-value-adapter.obj")
+set_tests_properties(test-compile-diagnostic-location-own-function-value-adapter
+                     PROPERTIES PASS_REGULAR_EXPRESSION "own_function_value_adapter\\.ts:5:16: error: can't assign .*under -mm=own a function value read at run time"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # `new` on a value that is no class (`any`, a namespace, `undefined`) is an error at the `new`: it failed
 # 'ts.New' verification ("result #0 must be ...").
 add_test(NAME test-compile-diagnostic-location-new-on-any
@@ -4013,7 +4042,7 @@ add_test(NAME test-compile-diagnostic-location-constructor-type-value
                  "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/constructor_type_value.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-constructor-type-value.obj")
 set_tests_properties(test-compile-diagnostic-location-constructor-type-value
-                     PROPERTIES PASS_REGULAR_EXPRESSION "constructor_type_value\.ts:4:1: error: a value of the constructor type"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "constructor_type_value\.ts:6:1: error: a value of the constructor type"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
 
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
