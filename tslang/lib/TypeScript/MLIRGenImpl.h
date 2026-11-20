@@ -8286,6 +8286,21 @@ class MLIRGenImpl
             return written;
         }
 
+        // `c[k] = v` with `k` a union of the class's member names: the switch of stores (mlirGenClassKeyWrite)
+        if (auto classKeyRead = classKeyReads.find(leftExpressionValue);
+            classKeyRead != classKeyReads.end() && leftDefiningOp && leftDefiningOp->hasAttr(CLASS_KEY_READ_ATTR_NAME))
+        {
+            auto read = classKeyRead->second;
+            classKeyReads.erase(classKeyRead);
+            auto written = mlirGenClassKeyWrite(location, read.object, read.keyString, read.names, rightExpressionValue, genContext);
+            if (leftDefiningOp->getNumResults() == 1 && leftDefiningOp->use_empty())
+            {
+                leftDefiningOp->erase();
+            }
+
+            return written;
+        }
+
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
         // the type the place takes: a variable a test narrowed takes any its declaration allows, a field
@@ -12914,6 +12929,21 @@ class MLIRGenImpl
     void makeMemberTables(const GenContext &genContext);
     // {count, flags, keys, entries} (MEMBERS_NAME)
     mlir_ts::TupleType getMemberTableHeaderType();
+
+    // `c[k]` with `k` a union of the class's member names (MLIRGenMemberTable.cpp)
+    bool classKeyNames(mlir::Value object, mlir::Type keyType, SmallVector<std::string> &names, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenClassKeyRead(mlir::Location location, mlir::Value object, mlir::Value key,
+                                             ArrayRef<std::string> names, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenClassKeyWrite(mlir::Location location, mlir::Value object, mlir::Value keyString,
+                                              ArrayRef<std::string> names, mlir::Value value, const GenContext &genContext);
+    struct ClassKeyRead
+    {
+        mlir::Value object;
+        mlir::Value keyString;
+        SmallVector<std::string> names;
+    };
+    // the reads mlirGenClassKeyRead made, which a write to turns into stores
+    llvm::DenseMap<mlir::Value, ClassKeyRead> classKeyReads;
     void makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext);
 
     // the classes whose vtables name their tables (mlirGenClassVirtualTableDefinition)

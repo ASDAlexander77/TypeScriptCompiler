@@ -50,6 +50,9 @@
 #define ANY_CALL_ADAPTER_CALL_ATTR_NAME "__any_call_adapter_call"
 // the call reading `x[k]` of `x: any` (MLIRGenImpl::mlirGenAnyKey): a value, not a place to write
 #define ANY_KEY_READ_ATTR_NAME "__any_key_read"
+// on the read of `c[k]` with `k` a union of the class's member names (MLIRGenImpl::mlirGenClassKeyRead): a write
+// to it is the same switch, of stores
+#define CLASS_KEY_READ_ATTR_NAME "__class_key_read"
 
 // On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
 // it, so its lowering does not warn that an optional value is read as it is.

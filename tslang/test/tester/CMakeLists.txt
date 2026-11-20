@@ -344,6 +344,14 @@ tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOU
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-compile-00-class-members-table COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
 tslang_add_test(NAME test-compile-00-class-string-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_string_keys.ts")
+tslang_add_test(NAME test-compile-00-class-keyof-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_keys.ts")
+tslang_add_test(NAME test-compile-own-00-class-keyof-keys COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_fields.ts")
+# a write through a union of field names needs a value every named field can hold
+add_test(NAME test-compile-class-keyof-write-intersection-error COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_write_intersection_error.ts")
+set_tests_properties(test-compile-class-keyof-write-intersection-error PROPERTIES PASS_REGULAR_EXPRESSION "not assignable" FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# -mm=own: a method read through a key moves its object
+add_test(NAME test-compile-own-class-keyof-method-error COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_class_keyof_method_error.ts")
+set_tests_properties(test-compile-own-class-keyof-method-error PROPERTIES PASS_REGULAR_EXPRESSION "reading a method through a key moves the object under -mm=own; the key set includes 'm'" FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # -mm=own: a class read by a string key gives any, which own does not allow
 add_test(NAME test-compile-own-class-string-key-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_class_string_key_error.ts")
@@ -1081,6 +1089,7 @@ tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SO
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-jit-00-class-members-table COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
 tslang_add_test(NAME test-jit-00-class-string-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_string_keys.ts")
+tslang_add_test(NAME test-jit-00-class-keyof-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_keys.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-jit-00-instanceof-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
@@ -3195,6 +3204,7 @@ set(TSLANG_CORPUS
     00any_keys.ts
     00class_members_table.ts
     00class_string_keys.ts
+    00class_keyof_keys.ts
     00any_keys_write.ts
     00instanceof_generic.ts
     00any_cast_back_function.ts

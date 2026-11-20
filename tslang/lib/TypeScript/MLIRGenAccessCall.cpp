@@ -1700,6 +1700,17 @@ namespace mlirgen
                 }
             }
 
+            // a key that is one of the class's member names, known only at run time (`keyof C`): a switch over them,
+            // each read as `c.name` is
+            if (!argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                SmallVector<std::string> names;
+                if (classKeyNames(expression, argumentExpression.getType(), names, genContext))
+                {
+                    return mlirGenClassKeyRead(location, expression, argumentExpression, names, genContext);
+                }
+            }
+
             // a key known only at run time, of a class with no indexer: the member of the object's actual class
             // (its keys adapter, which asks the member table), as `any`
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());

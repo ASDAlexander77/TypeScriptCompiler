@@ -305,5 +305,178 @@ namespace mlirgen
             tableGenContext);
     }
 
+    // `c[k]` with `k` a union of string literals (`keyof C`, `"a" | "b"`) known only at run time: the names
+    // it may be, each a member of the class
+    bool MLIRGenImpl::classKeyNames(mlir::Value object, mlir::Type keyType, SmallVector<std::string> &names,
+                                    const GenContext &genContext)
+    {
+        SmallVector<mlir::Type> literals;
+        if (!stringLiteralsOf(keyType, literals))
+        {
+            return false;
+        }
+
+        for (auto literal : literals)
+        {
+            auto name = mlir::cast<mlir::StringAttr>(mlir::cast<mlir_ts::LiteralType>(literal).getValue()).getValue();
+            if (!evaluateProperty(object.getLoc(), object, name.str(), genContext))
+            {
+                return false;
+            }
+
+            names.push_back(name.str());
+        }
+
+        return !names.empty();
+    }
+
+    // A switch over the names the key may be: `k == "a" ? c.a : k == "b" ? c.b : ...`, each read as `c.name`
+    // reads it (a method bound to the object, its override through the vtable), the result the union of their
+    // types. The read is remembered (classKeyReads): a write to it is the same switch of stores.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenClassKeyRead(mlir::Location location, mlir::Value object, mlir::Value key,
+                                                          ArrayRef<std::string> names, const GenContext &genContext)
+    {
+        // under own a method read off its object takes the object with it (a bound method moves it)
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            SmallVector<std::string> values;
+            SmallVector<std::string> methods;
+            anyKeysOfType(object.getType(), values, methods);
+            for (auto &name : names)
+            {
+                if (llvm::is_contained(methods, name))
+                {
+                    emitError(location) << "reading a method through a key moves the object under -mm=own; the key set includes '"
+                                        << name << "'";
+                    return mlir::failure();
+                }
+            }
+        }
+
+        SmallVector<mlir::Type> types;
+        for (auto &name : names)
+        {
+            types.push_back(evaluateProperty(location, object, name, genContext));
+        }
+
+        auto resultType = types.size() == 1 ? types.front() : mth.getUnionTypeWithMerge(location, types);
+
+        CAST_A(keyString, location, getStringType(), key, genContext);
+
+        auto readOf = [&](StringRef name) -> ValueOrLogicalResult {
+            auto value = mlirGenPropertyAccessExpression(location, object, getStringAttr(name), false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(value)
+            if (V(value).getType() == resultType)
+            {
+                return value;
+            }
+
+            return cast(location, resultType, V(value), genContext);
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> readFrom = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == names.size())
+            {
+                return readOf(names[index]);
+            }
+
+            auto nameValue = V(mlirGenStringValue(location, names[index], true));
+            auto isName = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), keyString, nameValue);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, isName, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = readOf(names[index]);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = readFrom(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        auto result = readFrom(0);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        if (auto definingOp = V(result).getDefiningOp())
+        {
+            definingOp->setAttr(CLASS_KEY_READ_ATTR_NAME, builder.getUnitAttr());
+            classKeyReads[V(result)] = {object, keyString, SmallVector<std::string>(names.begin(), names.end())};
+        }
+
+        return result;
+    }
+
+    // `c[k] = v` of a read mlirGenClassKeyRead made: the same switch, of stores. The value must be one every
+    // named field can hold (tsc: the intersection of their types), and no name a method.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenClassKeyWrite(mlir::Location location, mlir::Value object, mlir::Value keyString,
+                                                           ArrayRef<std::string> names, mlir::Value value,
+                                                           const GenContext &genContext)
+    {
+        SmallVector<std::string> values;
+        SmallVector<std::string> methods;
+        anyKeysOfType(object.getType(), values, methods);
+        for (auto &name : names)
+        {
+            if (llvm::is_contained(methods, name))
+            {
+                emitError(location) << "a method can't be written through a key: the key set includes '" << name << "'";
+                return mlir::failure();
+            }
+
+            auto fieldType = evaluateProperty(location, object, name, genContext);
+            if (mlir::failed(checkStringNumberAssignment(location, value.getType(), fieldType, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        auto storeTo = [&](StringRef name) -> mlir::LogicalResult {
+            auto place = mlirGenPropertyAccessExpression(location, object, getStringAttr(name), false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(place)
+            auto stored = mlirGenSaveLogicOneItem(location, V(place), value, genContext);
+            EXIT_IF_FAILED(stored)
+            return mlir::success();
+        };
+
+        std::function<mlir::LogicalResult(size_t)> storeFrom = [&](size_t index) -> mlir::LogicalResult {
+            if (index + 1 == names.size())
+            {
+                return storeTo(names[index]);
+            }
+
+            auto nameValue = V(mlirGenStringValue(location, names[index], true));
+            auto isName = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), keyString, nameValue);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{}, isName, true);
+
+            // the branches have their terminators already: the stores go before them
+            builder.setInsertionPoint(ifOp.getThenRegion().front().getTerminator());
+            if (mlir::failed(storeTo(names[index])))
+            {
+                return mlir::failure();
+            }
+
+            builder.setInsertionPoint(ifOp.getElseRegion().front().getTerminator());
+            if (mlir::failed(storeFrom(index + 1)))
+            {
+                return mlir::failure();
+            }
+
+            builder.setInsertionPointAfter(ifOp);
+            return mlir::success();
+        };
+
+        if (mlir::failed(storeFrom(0)))
+        {
+            return mlir::failure();
+        }
+
+        return value;
+    }
+
 } // namespace mlirgen
 } // namespace typescript
