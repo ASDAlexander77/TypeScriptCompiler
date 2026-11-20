@@ -1908,6 +1908,9 @@ Tests: `00block_scoped_class.ts` (+ module-level blocks), `00interface_extends_b
   type for binding pattern 'a', provide default initializer". A skipped element (`[, z]`) holds its place. The
   array pattern's tuple has unnamed elements, as `[any, any]`'s: with generated names an array literal given to it
   leaked under -mm=own (1M calls: 77 MB, now 5.7).
+- A branch of `c ? f : g` that is a function of untyped parameters (`var f = c ? function (n) {...} : ...`), with
+  nothing receiving it to type them, is instantiated with `any` as a `let` given one is - in the branch that runs, and
+  for the type of one a constant condition skips: "variable 'f' is referencing generic type".
 - 140's `export default` scan read a declaration's name through another node type: a crash under gcc (every
   Linux CI leg), not under MSVC.
 
@@ -1915,4 +1918,5 @@ Not yet: a name written with two leading underscores (`__property2`) is kept esc
 escapes it, so a string key of it ("__property2", `keyof`) does not match. Unescaping it where names are read
 broke the compiler's own escaped names; every place a member name becomes a field or a key would have to.
 
-Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding_params.ts` (compile, JIT, rc, own).
+Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding_params.ts` (compile, JIT, rc, own);
+`00conditional_untyped_functions.ts` (compile, JIT, rc).

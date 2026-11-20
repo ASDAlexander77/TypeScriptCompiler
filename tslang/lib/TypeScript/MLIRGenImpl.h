@@ -6698,6 +6698,8 @@ class MLIRGenImpl
     // TODO: rewrite code, you can set IfOp result type later, see function anyOrUndefined
     ValueOrLogicalResult mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext);
 
+    mlir::Value instantiateBranchFunction(mlir::Location location, mlir::Value value, const GenContext &genContext);
+
     ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
                                            bool andOp, bool saveResult, mlir::Value leftValue = {})
     {
@@ -13297,7 +13299,8 @@ class MLIRGenImpl
         evalGenContext.funcOp = tempFuncOp;
         narrow(evalGenContext);
         auto result = mlirGen(expr, evalGenContext);
-        auto value = V(result);
+        // a function of untyped parameters is the type the branch that runs gives it (instantiateBranchFunction)
+        auto value = instantiateBranchFunction(loc(expr), V(result), evalGenContext);
         return value ? value.getType() : mlir::Type();
     }
 
