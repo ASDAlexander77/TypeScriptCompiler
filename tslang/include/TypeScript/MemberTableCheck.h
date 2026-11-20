@@ -108,8 +108,16 @@ inline void check(const void *expectedTable, const void *actualTable, const char
         }
     }
 
-    // the instance size: a class of the program extending one of the library's is laid out after it
-    if (actualSizeAddress)
+    // the instance size: a class of the program extending one of the library's is laid out after it. Only of a
+    // class with fields in the program's view: one with none (`class A {}`, declared for an export naming it) has
+    // no vtable there either, and is never laid out by the program (an ELF library lets its `.size` be found)
+    auto hasFields = false;
+    for (int32_t i = 0; expected && i < expected->count; i++)
+    {
+        hasFields |= expected->entries[i].kind == KindField;
+    }
+
+    if (actualSizeAddress && hasFields)
     {
         auto actualSize = *static_cast<const intptr_t *>(actualSizeAddress);
         if (actualSize != expectedSize)

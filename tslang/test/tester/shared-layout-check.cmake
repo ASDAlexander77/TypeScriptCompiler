@@ -180,10 +180,12 @@ endforeach()
 
 # A library built by an older tslang has no member tables (no `// @members` in its declarations) and no slot for
 # one in its class vtables: importing it is an error, as every virtual call into it would land one slot off.
-file(READ "${WORK_DIR}/lib.d.ts" declarations)
+# the declarations beside the library: `lib.dll` -> `lib.d.ts`, `liblib.so` -> `liblib.d.ts`
+string(REGEX REPLACE "\\.[^.]*$" ".d.ts" library_declarations "${library}")
+file(READ "${WORK_DIR}/${library_declarations}" declarations)
 string(REGEX REPLACE "// @members\r?\n" "" declarations "${declarations}")
-file(WRITE "${WORK_DIR}/lib.d.ts" "${declarations}")
-run("old" "${TSLANG}" --emit=exe -mm=none --no-default-lib ${libs} program.ts -o old_program.exe)
+file(WRITE "${WORK_DIR}/${library_declarations}" "${declarations}")
+run("old" "${TSLANG}" --emit=exe -mm=none --no-default-lib ${libs} program.ts -o old_program)
 if(run_status EQUAL 0 OR NOT run_out MATCHES "was built by an older tslang \\(its classes have no member tables\\): build it again with this tslang")
     message(FATAL_ERROR "a library without member tables: expected an error, exit ${run_status}
 ${run_out}")
