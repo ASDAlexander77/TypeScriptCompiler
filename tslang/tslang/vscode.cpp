@@ -103,6 +103,17 @@ int createVSCodeFolder(int argc, char **argv)
     projectFileName.append(".ts\"]");
     vals["INCLUDE"] = projectFileName; // default include
 
+    // tslang's own section (see project.cpp): the file to run and where the libraries are, so that
+    // `tslang` (or `tslang -p .`) in the project's folder runs it, and `--emit=exe` builds it
+    std::string tslangSection;
+    tslangSection += "    \"tslang\": {\n";
+    tslangSection += "      \"entry\": \"" + projectName.str() + ".ts\",\n";
+    tslangSection += "      \"gc-lib-path\": \"" + gcLibPath + "\",\n";
+    tslangSection += "      \"tslang-lib-path\": \"" + tslangLibPath + "\",\n";
+    tslangSection += "      \"default-lib-path\": \"" + defaultLibPath + "\"\n";
+    tslangSection += "    },\n";
+    vals["TSLANG_SECTION"] = tslangSection;
+
     substitute(tsconfig, vals, result);
 
     if (auto error_code = create_file_base("tsconfig.json", result.str()))
