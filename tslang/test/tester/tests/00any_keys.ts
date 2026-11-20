@@ -1,6 +1,6 @@
 // `x[k]` and `k in x` of a value of type `any` (user ruling 11-19): looked up at run time through the
 // adapter made for the type of the value when it was boxed (TYPE_DESCR_KEYS). A key the value does not
-// have reads undefined; a method is in it, but reading one is a TypeError.
+// have reads undefined; a method reads bound to its object.
 class Point {
     constructor(public x: number, protected y: number) {
     }
@@ -59,7 +59,7 @@ function main() {
     assert(has(t, 0));
     assert(!has(t, 2));
 
-    // a class: its public fields and accessors, a base's too, and methods only for `in`; a protected field is
+    // a class: its public fields and accessors, a base's too, and its methods; a protected field is
     // not read from outside the class, through `any` either
     const p: any = new Point3(3, 4, 5);
     assert(<number>p["x"] == 3);
@@ -70,13 +70,8 @@ function main() {
     assert(has(p, "norm"));
     assert(!has(p, "w"));
     assert(typeof get(p, "w") == "undefined");
-    let threw = false;
-    try {
-        get(p, "norm");
-    } catch (e) {
-        threw = true;
-    }
-    assert(threw);
+    // a method reads bound to its object
+    assert(typeof get(p, "norm") == "function");
 
     // a class with a field of its own type
     const n = new Node1(1);

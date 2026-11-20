@@ -913,7 +913,9 @@ namespace mlirgen
             return mlir::success();
         }
 
-        auto declText = declExports.str();
+        // the library's classes have member tables (`<class>.members`): an importer checks their layout against
+        // them when the library loads (mlirGenImportSharedLib)
+        auto declText = std::string(MEMBERS_MARKER "\n") + declExports.str();
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 
@@ -1558,6 +1560,9 @@ namespace mlirgen
         // missed what it does next and left references unlowered)
         makePendingAnyKeysAdapters(genContext);
 
+        // the member tables the class vtables name (MLIRGenMemberTable.cpp)
+        makeMemberTables(genContext);
+
         clearTempModule();
 
         eraseUnusedWeakFieldReads();
@@ -2102,6 +2107,9 @@ namespace mlirgen
 
         SmallVector<StringRef> declaredSymbols;
         SmallVector<LibraryDeclarations> pendingDeclarations;
+        // the classes the declarations below declare are the library's (their layout is checked as it loads)
+        MLIRValueGuard<std::string> currentDynamicLibraryGuard(currentDynamicLibrary);
+        currentDynamicLibrary = canonicalPath;
         auto addDeclarations = [&](std::string declSymbol, StringRef text, bool isGenericClassDecl) {
             if (text.empty() || emittedFiles.contains(declSymbol) || declSymbolsInProgress.contains(declSymbol))
             {
@@ -2170,6 +2178,11 @@ namespace mlirgen
             pendingDeclarations = std::move(notDeclaredYet);
         }
 
+        if (dynamic && mlir::failed(mlirGenCheckLibraryMembers(location, filePath, canonicalPath, *libraryModules, genContext)))
+        {
+            return mlir::failure();
+        }
+
         // What a library built under own says about its functions (SHARED_LIB_OWN_FACTS). Kept in
         // every model, so MLIRGen emits the same under own as under rc; only own reads it.
         for (auto &libraryModule : *libraryModules)
@@ -2193,6 +2206,85 @@ namespace mlirgen
             emittedFiles.insert(declSymbol);
         }
 
+        return mlir::success();
+    }
+
+    // The program reads a library class's fields at the offsets it was compiled with: when the library loads, a
+    // constructor after the one loading it checks each class's member table there against the program's view of it
+    // (ts.CheckMembers, MemberTableCheck.h). A library built before tables were has no `// @members` line: not
+    // checked, and said so.
+    mlir::LogicalResult MLIRGenImpl::mlirGenCheckLibraryMembers(mlir::Location location, StringRef filePath,
+                                                                StringRef canonicalPath,
+                                                                ArrayRef<LibraryModuleDeclarations> libraryModules,
+                                                                const GenContext &genContext)
+    {
+        SmallVector<ClassInfo::TypePtr> libraryClasses;
+        for (auto &classInfo : dynamicImportClasses)
+        {
+            if (dynamicImportClassLibrary.lookup(classInfo->fullName) == canonicalPath)
+            {
+                libraryClasses.push_back(classInfo);
+            }
+        }
+        if (libraryClasses.empty())
+        {
+            return mlir::success();
+        }
+
+        auto marked = llvm::all_of(libraryModules, [](auto &libraryModule) {
+            return libraryModule.declarations.empty() || StringRef(libraryModule.declarations).contains(MEMBERS_MARKER);
+        });
+        // built before member tables, its class vtables have no slot for one: every virtual call into them would
+        // land one slot off
+        if (!marked)
+        {
+            emitError(location) << "shared library '" << filePath
+                                << "' was built by an older tslang (its classes have no member tables): build it again with this tslang";
+            return mlir::failure();
+        }
+
+        // the program's view of each class (MEMBERS_EXPECTED_NAME)
+        for (auto &classInfo : libraryClasses)
+        {
+            makeMemberTable(location, classInfo, genContext, true);
+        }
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        auto name = MLIRHelper::getAnonymousName(location, ".lc", "");
+        auto fullName = getFullNamespaceName(name);
+        auto funcType = getFunctionType({}, {}, false);
+        if (mlir::failed(mlirGenFunctionBody(location, name, fullName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) {
+                auto stringOf = [&](StringRef text) -> mlir::Value {
+                    auto literal = mlirGenStringValue(location, text.str());
+                    return V(cast(location, getStringType(), V(literal), genContext));
+                };
+                auto symbolOf = [&](StringRef symbol) -> mlir::Value {
+                    return builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), stringOf(symbol));
+                };
+
+                for (auto &classInfo : libraryClasses)
+                {
+                    auto expectedRef = builder.create<mlir_ts::AddressOfOp>(
+                        location, mlir_ts::RefType::get(getMemberTableHeaderType()),
+                        concat(classInfo->fullName, MEMBERS_EXPECTED_NAME), ::mlir::IntegerAttr());
+                    auto expected = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), expectedRef);
+                    auto actual = symbolOf(concat(classInfo->fullName, MEMBERS_NAME));
+                    auto actualSize = symbolOf(concat(classInfo->fullName, SIZE_NAME));
+                    auto expectedSize = builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(),
+                                                                          classInfo->classType.getStorageType());
+                    builder.create<mlir_ts::CheckMembersOp>(location, expected, actual, stringOf(filePath),
+                                                            stringOf(classInfo->fullName), expectedSize, actualSize);
+                }
+
+                return mlir::success();
+            }, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // after the constructor loading the library (the same band, made after it)
+        addGlobalConstructor(location, fullName);
         return mlir::success();
     }
 

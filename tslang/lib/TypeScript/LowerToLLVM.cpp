@@ -404,6 +404,32 @@ class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchF
     }
 };
 
+// the runtime's tslang_check_members (MemberTableCheck.h): a library class's layout against an importer's
+class CheckMembersOpLowering : public TsLlvmPattern<mlir_ts::CheckMembersOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::CheckMembersOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CheckMembersOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+
+        auto i8PtrTy = th.getPtrType();
+        auto indexType = transformed.getExpectedSize().getType();
+        auto checkFuncOp = ch.getOrInsertFunction(
+            "tslang_check_members",
+            th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy, i8PtrTy, indexType, i8PtrTy}));
+        rewriter.create<LLVM::CallOp>(op->getLoc(), checkFuncOp,
+                                      ValueRange{transformed.getExpected(), transformed.getActual(), transformed.getLibrary(),
+                                                 transformed.getClassName(), transformed.getExpectedSize(),
+                                                 transformed.getActualSize()});
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
 {
   public:
@@ -8642,6 +8668,44 @@ struct AnyKeysAdapterOpLowering : public TsLlvmPattern<mlir_ts::AnyKeysAdapterOp
     }
 };
 
+// the keys adapter of an object's actual class: its vtable (the object's first word), the vtable's
+// CLASS_VTABLE_MEMBERS_SLOT, the table's `keys` (MEMBERS_NAME); null when that is the function asking
+struct ActualClassKeysOpLowering : public TsLlvmPattern<mlir_ts::ActualClassKeysOp>
+{
+    using TsLlvmPattern<mlir_ts::ActualClassKeysOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ActualClassKeysOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op.getLoc();
+
+        TypeHelper th(rewriter);
+        auto ptrType = th.getPtrType();
+        auto i32Type = th.getI32Type();
+
+        auto parentFunc = op->getParentOfType<mlir::FunctionOpInterface>();
+        if (!parentFunc)
+        {
+            return failure();
+        }
+
+        mlir::Value object = transformed.getObject();
+        auto vtable = rewriter.create<LLVM::LoadOp>(loc, ptrType, object);
+        auto slot = rewriter.create<LLVM::GEPOp>(loc, ptrType, ptrType, vtable,
+                                                 ArrayRef<LLVM::GEPArg>{CLASS_VTABLE_MEMBERS_SLOT});
+        auto table = rewriter.create<LLVM::LoadOp>(loc, ptrType, slot);
+        auto headerType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {i32Type, i32Type, ptrType, ptrType});
+        auto keysPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, headerType, table, ArrayRef<LLVM::GEPArg>{0, 2});
+        mlir::Value keys = rewriter.create<LLVM::LoadOp>(loc, ptrType, keysPtr);
+
+        auto self = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, mlir::SymbolTable::getSymbolName(parentFunc));
+        auto isSelf = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, keys, self);
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
+        rewriter.replaceOpWithNewOp<LLVM::SelectOp>(op, isSelf, nullPtr, keys);
+        return success();
+    }
+};
+
 struct IsTypeTagOfOpLowering : public TsLlvmPattern<mlir_ts::IsTypeTagOfOp>
 {
     using TsLlvmPattern<mlir_ts::IsTypeTagOfOp>::TsLlvmPattern;
@@ -10490,7 +10554,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TryEntryOpLowering,VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
-        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, AnyCallAdapterOpLowering, AnyKeysAdapterOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, AnyCallAdapterOpLowering, AnyKeysAdapterOpLowering, ActualClassKeysOpLowering, CheckMembersOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,

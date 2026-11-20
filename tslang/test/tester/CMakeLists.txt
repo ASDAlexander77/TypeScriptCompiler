@@ -342,6 +342,36 @@ tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-compile-00-class-members-table COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
+tslang_add_test(NAME test-compile-00-class-string-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_string_keys.ts")
+tslang_add_test(NAME test-compile-00-class-keyof-accessors COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_accessors.ts")
+tslang_add_test(NAME test-compile-own-00-class-keyof-accessors COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_accessors.ts")
+tslang_add_test(NAME test-compile-00-class-keys-heap-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keys_heap_values.ts")
+tslang_add_test(NAME test-compile-own-00-class-keyof-own-values COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_own_values.ts")
+tslang_add_test(NAME test-jit-own-00-class-keyof-own-values COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_own_values.ts")
+tslang_add_test(NAME test-compile-00-any-keys-union-members COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_union_members.ts")
+tslang_add_test(NAME test-compile-00-class-keyof-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_keys.ts")
+tslang_add_test(NAME test-compile-own-00-class-keyof-keys COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_fields.ts")
+# a write through a union of field names needs a value every named field can hold
+add_test(NAME test-compile-class-keyof-write-intersection-error COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_write_intersection_error.ts")
+set_tests_properties(test-compile-class-keyof-write-intersection-error PROPERTIES PASS_REGULAR_EXPRESSION "not assignable" FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# -mm=own: a method read through a key moves its object
+add_test(NAME test-compile-own-class-keyof-method-error COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_class_keyof_method_error.ts")
+set_tests_properties(test-compile-own-class-keyof-method-error PROPERTIES PASS_REGULAR_EXPRESSION "reading a method through a key moves the object under -mm=own; the key set includes 'm'" FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# -mm=own: a class read by a string key gives any, which own does not allow
+add_test(NAME test-compile-own-class-string-key-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_class_string_key_error.ts")
+set_tests_properties(test-compile-own-class-string-key-error PROPERTIES PASS_REGULAR_EXPRESSION "reading a class by a string key gives any, which -mm=own does not allow: use a keyof key"
+                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# the class vtable's slot after `.instanceOf` is the class's member table (MLIRGenMemberTable.cpp)
+add_test(NAME test-members-table-vtable-slot COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-vtable-slot PROPERTIES PASS_REGULAR_EXPRESSION "@P\\.\\.vtbl = [^\n]*\\{ ptr @P\\.\\.instanceOf, ptr @P\\.\\.members," FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# a class read by name has its public and protected members in the table, never a private one
+add_test(NAME test-members-table-entries COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-entries PROPERTIES PASS_REGULAR_EXPRESSION "@P\\.\\.members = [^\n]*\\{ i32 4," FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# a class never read by name has an empty one
+add_test(NAME test-members-table-empty COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-empty PROPERTIES PASS_REGULAR_EXPRESSION "@Q\\.\\.members = [^\n]*zeroinitializer" FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-compile-00-instanceof-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-compile-00-any-cast-back-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
@@ -1063,6 +1093,12 @@ tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-jit-00-class-members-table COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
+tslang_add_test(NAME test-jit-00-class-string-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_string_keys.ts")
+tslang_add_test(NAME test-jit-00-class-keyof-accessors COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_accessors.ts")
+tslang_add_test(NAME test-jit-00-class-keys-heap-values COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keys_heap_values.ts")
+tslang_add_test(NAME test-jit-00-any-keys-union-members COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_union_members.ts")
+tslang_add_test(NAME test-jit-00-class-keyof-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_keys.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-jit-00-instanceof-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
@@ -3175,6 +3211,13 @@ set(TSLANG_CORPUS
     00symbol_unique_key.ts
     00any_call.ts
     00any_keys.ts
+    00class_members_table.ts
+    00class_string_keys.ts
+    00class_keyof_accessors.ts
+    00class_keys_heap_values.ts
+    00class_keyof_own_values.ts
+    00any_keys_union_members.ts
+    00class_keyof_keys.ts
     00any_keys_write.ts
     00instanceof_generic.ts
     00any_cast_back_function.ts
@@ -3678,6 +3721,15 @@ foreach(android_mode codegen link)
     set_tests_properties(test-compile-android-${android_mode} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# A program checks the class layout of a shared library it imports as the library loads - see shared-layout-check.cmake.
+add_test(NAME test-compile-shared-layout-check
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/shared-layout-check"
+                 "-DGC_LIB=${TEST_GC_LIBDIR}"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-layout-check.cmake")
 # A gc shared library called from a non-tslang host's own threads - see foreign-thread-gc.cmake.
 # Windows needs gc.dll (a shared library takes its collector from it); ELF links libgc.a in.
 if (NOT WIN32 OR TSLANG_HAVE_SHARED_GC)

@@ -1761,6 +1761,16 @@ namespace mlirgen
             return V(builder.create<mlir_ts::AnyKeysAdapterOp>(location, getOpaqueType(), boxValue));
         }
 
+        // `__actual_class_keys(o)` of a class's keys adapter (makeAnyKeysAdapter): the keys adapter of the
+        // class `o` actually is, or null when that is the adapter asking
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___actual_class_keys"
+            && callExpression->arguments.size() == 1)
+        {
+            auto object = mlirGen(callExpression->arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(object)
+            return V(builder.create<mlir_ts::ActualClassKeysOp>(location, getOpaqueType(), V(object)));
+        }
+
         // `Shared.count(s)` (own spec 23.1), unless the program declares its own `Shared`, which
         // wins as it does in type position and in `new`.
         if (callExpr == SyntaxKind::PropertyAccessExpression)
