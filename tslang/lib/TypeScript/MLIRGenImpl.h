@@ -6904,8 +6904,10 @@ class MLIRGenImpl
     // with different results of which one is `void`, the widest parameters returning nothing - a function
     // returning a value is given as one returning `void` through a thunk that drops it, as TypeScript allows. Null
     // when they are not that: a union of them could not be called ("not a function to call"), its tag being
-    // "function" for each.
-    mlir::Type getMergedFunctionType(mlir::ArrayRef<mlir::Type> types)
+    // "function" for each. `keepOptionalExtras` false (a declared union) leaves them as they were when the widest one's
+    // extra parameters are optional: such a union is given as its narrower member's type (`let cb: (v) => void = u`
+    // where `u: ((v) => void) | ((v, i?) => void)`), which the widest one could not be given as.
+    mlir::Type getMergedFunctionType(mlir::ArrayRef<mlir::Type> types, bool keepOptionalExtras = true)
     {
         if (types.size() < 2)
         {
@@ -6949,6 +6951,7 @@ class MLIRGenImpl
         auto sameResults = true;
         auto sameCounts = true;
         auto widestResults = mth.GetFunctionType(widest).getResults();
+        auto fewestInputs = widestInputs.size();
         for (auto type : types)
         {
             auto funcType = mth.GetFunctionType(type);
@@ -6958,10 +6961,27 @@ class MLIRGenImpl
                 return mlir::Type();
             }
 
+            fewestInputs = std::min(fewestInputs, inputs.size());
+
             sameCounts &= inputs.size() == widestInputs.size();
             anyVoid |= isVoid(funcType.getResults());
             sameResults &= funcType.getResults() == widestResults
                            || (isVoid(funcType.getResults()) && isVoid(widestResults));
+        }
+
+        if (!keepOptionalExtras)
+        {
+            for (auto extra : widestInputs.drop_front(fewestInputs))
+            {
+                auto unionType = dyn_cast<mlir_ts::UnionType>(extra);
+                if (isa<mlir_ts::OptionalType>(extra)
+                    || (unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type t) {
+                            return isa<mlir_ts::UndefinedType>(t);
+                        })))
+                {
+                    return mlir::Type();
+                }
+            }
         }
 
         if (sameResults)

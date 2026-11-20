@@ -1806,9 +1806,11 @@ Still open, found along the way (each on main before #884):
   (`let f: () => void = n`, refused before: "one returns a value and the other does not"): a named function or a
   closure through its thunk, a bound method through its boxed adapter, each dropping (releasing) the result.
   Under -mm=own a method given so stays refused, and the message says so. Churn of 3M dropped strings: no leak
-  (rc 5.4 MB peak, own 5.4 MB).
-- Not yet: a function union with `| null`/`| undefined`, or one whose members return different values
-  (`type H = (() => void) | (() => number)`), call signatures through conditional types, generic arrows
+  (rc 5.4 MB peak, own 5.4 MB). A declared union whose widest member's extra parameters are optional
+  (`((v) => void) | ((v, i?) => void)`) stays a union: it is given as its narrower member's type, which the
+  merged type (taking `i`) could not be.
+- Not yet: a function union with `| null`/`| undefined`, or one whose members return different non-void values
+  (`(() => string) | (() => number)`), calling a declared union whose extra parameters are optional, call signatures through conditional types, generic arrows
   returning generic arrows.
 
 Still open: values of constructor types (`new (...) => T` as a parameter type; `typeof C` works); a class

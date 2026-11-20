@@ -3385,7 +3385,7 @@ namespace mlirgen
 
         // `(() => void) | (() => number)`: functions a value may be, as one type it can be called as (each would be
         // tagged "function" in a union, which no call can tell apart): see getMergedFunctionType
-        if (auto mergedFunctionType = getMergedFunctionType(itemTypes))
+        if (auto mergedFunctionType = getMergedFunctionType(itemTypes, false))
         {
             return mergedFunctionType;
         }
