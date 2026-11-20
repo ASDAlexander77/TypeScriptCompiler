@@ -722,6 +722,11 @@
 #define ANY_KEYS_OP_GET 0
 #define ANY_KEYS_OP_HAS 1
 #define ANY_KEYS_OP_SET 2
+// the value's keys, a string[] as `for...in` and Object.keys give them: an array's or a string's indices, an
+// object's or a tuple's field names, a class object's public fields (its actual class's, base class first; an
+// optional one only while set) - an accessor or a method is no key of an instance, as in JavaScript. A value
+// that is no object (a number, null) has none.
+#define ANY_KEYS_OP_KEYS 3
 // The block header, last so that it sits immediately in front of the name bytes. A tag is a
 // `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
 // string - so a tag has to look like a payload with an immortal block header, exactly as a
