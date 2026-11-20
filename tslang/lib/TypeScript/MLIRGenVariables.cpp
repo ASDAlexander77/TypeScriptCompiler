@@ -1666,17 +1666,33 @@ namespace mlirgen
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
             // we need to construct object type
+            // an element nothing gives a type (`function f([x, , z]) {}`) is `any`, as TypeScript's implicit any:
+            // "can't resolve type for binding pattern 'x', provide default initializer". A skipped one holds its
+            // place, so the ones after it are read at theirs.
+            // (an element of no name, as `[any, any]`'s are: an array literal given is taken as such a tuple)
+            auto anyElement = [&]() {
+                fieldInfos.push_back({mlir::Attribute(), getAnyType(), false, mlir_ts::AccessLevel::Public});
+            };
+
             auto arrayBindingPattern = name.as<ArrayBindingPattern>();
             for (auto arrayBindingElement : arrayBindingPattern->elements)
             {
                 if (arrayBindingElement == SyntaxKind::OmittedExpression)
                 {
+                    anyElement();
                     continue;
                 }
 
                 if (arrayBindingElement == SyntaxKind::BindingElement)
                 {
                     auto objectBindingElement = arrayBindingElement.as<BindingElement>();
+                    if (!objectBindingElement->initializer && !objectBindingElement->dotDotDotToken
+                        && objectBindingElement->name == SyntaxKind::Identifier)
+                    {
+                        anyElement();
+                        continue;
+                    }
+
                     mlirGenParameterBindingElement(objectBindingElement, fieldInfos, genContext);
                 }
             }

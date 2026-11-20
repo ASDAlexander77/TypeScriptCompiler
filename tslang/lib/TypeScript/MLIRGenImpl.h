@@ -3788,6 +3788,13 @@ class MLIRGenImpl
         {
             fieldType = mlirGenParameterObjectOrArrayBinding(objectBindingElement->name, genContext);
         }
+        else if (!objectBindingElement->dotDotDotToken)
+        {
+            // an element of a parameter's pattern that nothing gives a type (`function f({ a, b }) {}`,
+            // `({ a }) => a` with no type to take it from) is `any`, as TypeScript's implicit any:
+            // "can't resolve type for binding pattern 'a', provide default initializer"
+            fieldType = getAnyType();
+        }
         else
         {
             emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '"
