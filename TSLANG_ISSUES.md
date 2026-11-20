@@ -1849,7 +1849,9 @@ JIT, JIT -mm=rc); `00function_union_call.ts` (compile, JIT, JIT -mm=rc, JIT -mm=
   module's `C` hidden), and two blocks declaring one name were "redefinition of symbol named 'C..instanceOf'".
 - `new (...) => A` with `A` a class is the class value `typeof A`: `make(B)` for `make(c: new () => A)` and
   `register(c: new (...args: any[]) => A)` take the class (or a subclass), read at run time, and `new c()` makes
-  one of it. A constructor type of an interface stays one and is still refused at the value given to it.
+  one of it. Its constructor is called as `A`'s is, as through `typeof A`: a subclass whose constructor takes
+  other parameters is called with `A`'s (wasm traps on the signature). A constructor type of an interface stays
+  one and is still refused at the value given to it.
   In type checks a class value is matched as its class: a generic constraint (`T extends Constructor<Point>`
   given `Point`) and a conditional's `infer` (`T extends Constructor<V, infer P> ? P : never`) work as before.
 - A key of an `any` read as a function of the same name found in a namespace: `foo.get = class {}` with
