@@ -1752,7 +1752,11 @@ class OwnedReturnConsumptionPass
                     if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp);
                         castOp && (mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()) ||
                                    (mlir::isa<mlir_ts::ValueType>(castOp.getType()) &&
-                                    mlir::isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(castOp.getIn().getType()))))
+                                    mlir::isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(castOp.getIn().getType())) ||
+                                   // a bound function retyped as another (an adapter bound over its box, given
+                                   // as the method type it stands for): the same value, the same reference
+                                   (mlir::isa<mlir_ts::BoundFunctionType>(castOp.getType()) &&
+                                    mlir::isa<mlir_ts::BoundFunctionType>(castOp.getIn().getType()))))
                     {
                         value = castOp.getIn();
                     }

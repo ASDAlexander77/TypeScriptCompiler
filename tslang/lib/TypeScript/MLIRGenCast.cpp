@@ -2790,9 +2790,22 @@ namespace mlirgen
         switch (match.result)
         {
         case MatchResultType::NotMatchArgCount:
-            diag << ": it takes " << inFuncType.getNumInputs() << " argument(s), " << resFuncType.getNumInputs()
+        {
+            // the arguments a caller gives: a bound function's `this` is not one of them
+            auto visibleCount = [](mlir::Type type, mlir_ts::FunctionType funcType) {
+                auto count = funcType.getNumInputs();
+                return isa<mlir_ts::BoundFunctionType>(type) && count > 0 ? count - 1 : count;
+            };
+
+            diag << ": it takes " << visibleCount(valueType, inFuncType) << " argument(s), " << visibleCount(type, resFuncType)
                  << " expected";
+            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
+            {
+                diag << " (under -mm=own a method is not given as a function with more parameters yet)";
+            }
+
             break;
+        }
         case MatchResultType::NotMatchArg:
             diag << ": argument #" << (match.index + 1) << " does not match";
             break;
@@ -2956,9 +2969,11 @@ namespace mlirgen
     // itself, are known only at run time (read from a field, `user.sayHi`), so the adapter cannot name it: the
     // bound method goes into a box, as a closure's captures do - the box and the adapter bound to it are again two
     // words, as a bound method's `this` and its function are - and the adapter calls the method with its `this`
-    // and the last arguments, as many as the method takes. Null where it is not that.
+    // and the last arguments, as many as the method takes. With `ownParamsFirst`, the first ones instead: a bound
+    // method given as a function type with more parameters after its own (`o.f ?? val.method` where `o.f` takes
+    // `(b?: string)` and the method none) ignores the rest, as JavaScript does. Null where it is not that.
     mlir::Value MLIRGenImpl::boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
-                                                         const GenContext &genContext)
+                                                         const GenContext &genContext, bool ownParamsFirst)
     {
         // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
         // says so where it is given; an adapter would only add an error of its own, without a place in the source
@@ -2979,9 +2994,17 @@ namespace mlirgen
             return mlir::Value();
         }
 
+        // a bound method type to give it as (`o.f` of `{ f?(b?: string): void }`) has a `this` of its own first:
+        // the box takes its place, as the bound method's `this` (a call passes the box there, then the arguments)
+        mlir::ArrayRef<mlir::Type> destInputs = destType.getInputs();
+        if (isa<mlir_ts::BoundFunctionType>(type) && !destInputs.empty())
+        {
+            destInputs = destInputs.drop_front();
+        }
+
         // the method's own parameters, after its `this`, are the type's last ones
         auto ownParams = methodType.getNumInputs() - 1;
-        if (destType.getNumInputs() <= ownParams)
+        if (destInputs.size() <= ownParams)
         {
             return mlir::Value();
         }
@@ -3005,13 +3028,13 @@ namespace mlirgen
         auto boxType = mlir_ts::RefType::get(boxStorageType);
 
         SmallVector<mlir::Type> thunkInputs{boxType};
-        thunkInputs.append(destType.getInputs().begin(), destType.getInputs().end());
+        thunkInputs.append(destInputs.begin(), destInputs.end());
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), false);
 
         // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
         std::string typesText;
         llvm::raw_string_ostream typesStream(typesText);
-        typesStream << methodType << "|" << thunkType;
+        typesStream << methodType << "|" << thunkType << (ownParamsFirst ? "|first" : "");
         auto thunkName = ".bound_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
         if (!lookupModuleSymbol(thunkName))
         {
@@ -3051,7 +3074,8 @@ namespace mlirgen
                                                                    builder.getI32IntegerAttr(0));
             auto bound = builder.create<mlir_ts::LoadOp>(noLocation, boundType, boundRef);
             SmallVector<mlir::Value, 4> operands{builder.create<mlir_ts::GetThisOp>(noLocation, thisType, bound)};
-            auto firstOwn = entryBlock.getNumArguments() - ownParams;
+            // after the box: the first arguments, or the last
+            auto firstOwn = ownParamsFirst ? 1u : entryBlock.getNumArguments() - ownParams;
             for (auto index = 0u; index < ownParams; index++)
             {
                 mlir::Value argument = entryBlock.getArgument(firstOwn + index);
@@ -3154,6 +3178,15 @@ namespace mlirgen
                         value = thunk;
                         valueType = thunk.getType();
                         test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                    }
+                    // a bound method (`val.something`, read off an object or an interface) has no function of
+                    // its own to thunk: it goes into a box, and the adapter bound to it calls the method with the
+                    // first arguments, as many as it takes
+                    else if (auto adapter = boundMethodWiderTypeAdapter(location, value, type, genContext, true))
+                    {
+                        value = adapter;
+                        valueType = adapter.getType();
+                        return mlir::success();
                     }
                 }
 

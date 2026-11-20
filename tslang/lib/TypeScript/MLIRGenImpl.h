@@ -6887,8 +6887,8 @@ class MLIRGenImpl
         return ifOp.getResults().front();
     }
 
-    // Two function types a value may have (`a ?? b`, `c ? f : g`): the one taking the most parameters, or none
-    // when either is no function or they are the same
+    // Two function types a value may have (`a ?? b`, `c ? f : g`): the one taking the most parameters, when the
+    // other's are the first of them and the results are the same, else none (they are then a union, as before)
     mlir::Type getCommonFunctionType(mlir::Type type1, mlir::Type type2)
     {
         if (!type1 || !type2 || type1 == type2 || !mth.isAnyFunctionType(type1) || !mth.isAnyFunctionType(type2)
@@ -6897,7 +6897,35 @@ class MLIRGenImpl
             return mlir::Type();
         }
 
-        return mth.getParamsFromFuncRef(type2).size() > mth.getParamsFromFuncRef(type1).size() ? type2 : type1;
+        auto funcType1 = mth.GetFunctionType(type1);
+        auto funcType2 = mth.GetFunctionType(type2);
+        if (!funcType1 || !funcType2 || funcType1.isVarArg() || funcType2.isVarArg())
+        {
+            return mlir::Type();
+        }
+
+        // the parameters a caller gives: a bound function's own `this` is not one of them
+        auto visibleInputs = [](mlir::Type type, mlir_ts::FunctionType funcType) {
+            mlir::ArrayRef<mlir::Type> inputs = funcType.getInputs();
+            return isa<mlir_ts::BoundFunctionType>(type) && !inputs.empty() ? inputs.drop_front() : inputs;
+        };
+
+        auto inputs1 = visibleInputs(type1, funcType1);
+        auto inputs2 = visibleInputs(type2, funcType2);
+        auto isVoid = [](mlir::TypeRange results) {
+            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+        };
+
+        auto sameResults = funcType1.getResults() == funcType2.getResults()
+                           || (isVoid(funcType1.getResults()) && isVoid(funcType2.getResults()));
+        auto shorter = inputs1.size() <= inputs2.size() ? inputs1 : inputs2;
+        auto longer = inputs1.size() <= inputs2.size() ? inputs2 : inputs1;
+        if (!sameResults || shorter.size() == longer.size() || !llvm::equal(shorter, longer.take_front(shorter.size())))
+        {
+            return mlir::Type();
+        }
+
+        return inputs2.size() > inputs1.size() ? type2 : type1;
     }
 
     // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
@@ -18029,7 +18057,7 @@ class MLIRGenImpl
 
     mlir::Value fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type);
     mlir::Value boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
-                                            const GenContext &genContext);
+                                            const GenContext &genContext, bool ownParamsFirst = false);
 
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here

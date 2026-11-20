@@ -1780,9 +1780,20 @@ Still open, found along the way (each on main before #884):
 - "not a function to call" (the error now names the type): `b && f || g` was `boolean | F` - `&&` of a boolean
   is `false | F` now, as in TypeScript, and `||` drops the `false` its left side may hold, so it is `F | G`;
   `c ? f : g` and `o.f ?? g` of two different function types made a union that can't be called - they are the
-  one taking the most parameters, the other cast to it (a named function or an arrow given fewer parameters
-  goes through its thunk). Not yet: a bound method or an interface method with fewer parameters
-  (`o.something ?? val.something`: no thunk for those), a declared union of function types
+  one taking the most parameters, when the other's are the first of them and the results match, the other
+  cast to it (a named function or an arrow given fewer parameters goes through its thunk).
+- A bound method - a class's, or an interface's (`val.something`) - given as a function type with more
+  parameters after its own (`o.something ?? val.something`, `apply(c.something)` for `(a, b) => void`):
+  refused ("it takes 1 argument(s), 2 expected", the `this` counted). It goes into a box with an adapter bound
+  to it that calls the method with the first arguments (boundMethodWiderTypeAdapter, which did this only for
+  extra parameters first). Two bugs on the way: given as a bound method type, the adapter kept that type's
+  `this` as a parameter after the box (gc ran by luck, rc read a missing argument); and made in a branch it was
+  released at the branch's end under rc (OwnedReturnConsumptionPass did not follow the cast to the method
+  type), so the call read freed memory. Under -mm=own a method given as a function value stays refused; the
+  message now counts the parameters a caller gives and says so.
+- Found, not fixed: an object-literal method that captures a local of the enclosing function, given for an
+  optional method (`run({ something() { n = 5; } })`), crashes at run time (main too).
+- Not yet: a declared union of function types
   (`type H = (() => void) | (() => number)`), call signatures through conditional types, generic arrows
   returning generic arrows.
 
@@ -1792,5 +1803,6 @@ block-scoped declarations share the function's namespace); `x.constructor === Sy
 as a value, "'llvm.mlir.addressof' op must reference a global").
 
 Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
-`00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own);
+`00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own); `00bound_method_fewer_parameters.ts` (compile,
+JIT, JIT -mm=rc);
 `diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`.
