@@ -1920,3 +1920,11 @@ broke the compiler's own escaped names; every place a member name becomes a fiel
 
 Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding_params.ts` (compile, JIT, rc, own);
 `00conditional_untyped_functions.ts` (compile, JIT, rc).
+
+142 (fourteenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `Array.isArray(x)`: "Class member 'isArray' can't be found" (the default library's Array<T> has no such
+  static). It is `typeof x === "array"`, answered from x's type at compile time or by a union's or an `any`'s tag,
+  and it narrows x in both branches and after an `if` that returns, as TypeScript's type guard. (The narrowing of a
+  condition's `false` was read from the expression as written, not the one tested: it now reads the same one.)
+
+Tests: `00array_is_array.ts` (compile, JIT, rc, own).

@@ -5745,9 +5745,62 @@ class MLIRGenImpl
 
     // Narrows the then branch of a condition here, and gathers into elseSafeCases what narrows its
     // else branch (the caller adds those there).
+    // `Array.isArray(x)` is `typeof x === "array"`, which the compiler answers from x's type - at compile time, or by
+    // a union's or an `any`'s tag - and which narrows x as TypeScript's type guard does ("Class member 'isArray'
+    // can't be found": the default library's Array<T> has no such static). Null when it is not that call (a
+    // variable named `Array` hides the built-in one).
+    Expression arrayIsArrayAsTypeOf(Expression expr)
+    {
+        if (expr != SyntaxKind::CallExpression)
+        {
+            return undefined;
+        }
+
+        auto callExpression = expr.as<CallExpression>();
+        auto callee = callExpression->expression;
+        if (callee != SyntaxKind::PropertyAccessExpression || callExpression->arguments.size() != 1
+            || callExpression->arguments.front() == SyntaxKind::SpreadElement)
+        {
+            return undefined;
+        }
+
+        auto access = callee.as<PropertyAccessExpression>();
+        if (access->expression != SyntaxKind::Identifier
+            || MLIRHelper::getName(access->expression.as<Identifier>()) != "Array"
+            || MLIRHelper::getName(access->name) != "isArray" || symbolTable.lookup("Array").first)
+        {
+            return undefined;
+        }
+
+        // one comparison for the call, which the test and its narrowing (checkSafeCast) both read: the narrowing
+        // of the `else` matches the comparison it is given
+        auto key = static_cast<const void *>(callExpression.operator->());
+        if (auto known = arrayIsArrayRewrites.find(key); known != arrayIsArrayRewrites.end())
+        {
+            return known->second;
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto typeOf = nf.createTypeOfExpression(callExpression->arguments.front());
+        typeOf->pos = callExpression->pos;
+        typeOf->_end = callExpression->_end;
+        auto arrayName = nf.createStringLiteral(S("array"));
+        arrayName->pos = callExpression->pos;
+        arrayName->_end = callExpression->_end;
+        auto compare = nf.createBinaryExpression(typeOf, nf.createToken(SyntaxKind::EqualsEqualsEqualsToken), arrayName);
+        compare->pos = callExpression->pos;
+        compare->_end = callExpression->_end;
+        arrayIsArrayRewrites[key] = compare;
+        return compare;
+    }
+
     mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCases *elseSafeCases, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
+        if (auto asTypeOf = arrayIsArrayAsTypeOf(expr))
+        {
+            expr = asTypeOf;
+        }
 
         if (expr == SyntaxKind::BinaryExpression)
         {
@@ -5782,7 +5835,7 @@ class MLIRGenImpl
         // a narrowing that fails is no narrowing (most callers carry on without it), but it can leave the builder
         // before an op it made and erased: what the branch makes next went through that dangling position
         auto insertionPointBefore = builder.saveInsertionPoint();
-        auto result = checkSafeCastOne(exprIn, conditionValue, elseSafeCases ? &elseSafeCase : nullptr, genContext);
+        auto result = checkSafeCastOne(expr, conditionValue, elseSafeCases ? &elseSafeCase : nullptr, genContext);
         if (mlir::failed(result))
         {
             builder.restoreInsertionPoint(insertionPointBefore);
@@ -20506,6 +20559,9 @@ class MLIRGenImpl
     // the object of a `?.` its optional chain has read and tested, while the rest of the chain is made
     // on it (mlirGenOptionalChain)
     llvm::DenseMap<const void *, mlir::Value> optionalChainObjects;
+
+    // `Array.isArray(x)` calls and the `typeof x === "array"` each is (arrayIsArrayAsTypeOf)
+    llvm::DenseMap<const void *, Expression> arrayIsArrayRewrites;
 
     // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
     // were refused does not go on to the defaults (`any`), which would only be refused again
