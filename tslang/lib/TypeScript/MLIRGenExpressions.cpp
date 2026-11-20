@@ -965,6 +965,12 @@ namespace mlirgen
             auto defaultUnionType = getUnionType(location, trueType, falseType);
             auto merged = false;
             auto resultType = mth.findBaseType(trueType, falseType, merged, defaultUnionType);
+            // two functions (`c ? f : g`): the one taking the most parameters, which the other is cast to; a union
+            // of them could not be called ("not a function to call")
+            if (auto commonFunctionType = getCommonFunctionType(trueType, falseType))
+            {
+                resultType = commonFunctionType;
+            }
 
             // a union holding an object literal (`c ? null : { h, n }`, `null | {h, n}`) cannot be cast
             // to anything after the merge: no `typeof` tells a tuple apart. Given what receives it
@@ -1954,7 +1960,7 @@ namespace mlirgen
                 return mlirGenAnyCall(location, funcResult, callExpression, genContext);
             }
 
-            emitError(location, "not a function to call");
+            emitError(location) << "not a function to call: a value of type '" << to_print(funcType) << "'";
             return mlir::failure();
         }
 

@@ -1777,10 +1777,20 @@ Still open, found along the way (each on main before #884):
   the constructor type '...' is not supported: use the class's type, 'typeof C'", where a bare class
   reference failed in the lowering ("failed to legalize operation 'ts.ClassRef'").
 
+- "not a function to call" (the error now names the type): `b && f || g` was `boolean | F` - `&&` of a boolean
+  is `false | F` now, as in TypeScript, and `||` drops the `false` its left side may hold, so it is `F | G`;
+  `c ? f : g` and `o.f ?? g` of two different function types made a union that can't be called - they are the
+  one taking the most parameters, the other cast to it (a named function or an arrow given fewer parameters
+  goes through its thunk). Not yet: a bound method or an interface method with fewer parameters
+  (`o.something ?? val.something`: no thunk for those), a declared union of function types
+  (`type H = (() => void) | (() => number)`), call signatures through conditional types, generic arrows
+  returning generic arrows.
+
 Still open: values of constructor types (`new (...) => T` as a parameter type; `typeof C` works); a class
 declared in a nested block with the name of an outer one ("redefinition of symbol named 'C..instanceOf'":
 block-scoped declarations share the function's namespace); `x.constructor === Symbol` (the built-in `Symbol`
 as a value, "'llvm.mlir.addressof' op must reference a global").
 
 Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
+`00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own);
 `diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`.

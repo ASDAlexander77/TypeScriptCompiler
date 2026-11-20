@@ -6765,6 +6765,33 @@ class MLIRGenImpl
                 {
                     resultTrue = builder.create<mlir_ts::CastOp>(location, optType.getElementType(), resultTrue);
                 }
+
+                // `l || r` takes `l` only when it is true: a `false` it may hold is not in the result (`false | F`
+                // of `b && f`, `|| g`, is `F | G`)
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(resultTrue.getType()))
+                {
+                    auto isFalseLiteral = [](mlir::Type type) {
+                        auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
+                        auto boolAttr = literalType ? dyn_cast<mlir::BoolAttr>(literalType.getValue()) : mlir::BoolAttr();
+                        return boolAttr && !boolAttr.getValue();
+                    };
+
+                    mlir::SmallVector<mlir::Type> truthyTypes;
+                    for (auto subType : unionType.getTypes())
+                    {
+                        if (!isFalseLiteral(subType))
+                        {
+                            truthyTypes.push_back(subType);
+                        }
+                    }
+
+                    if (!truthyTypes.empty() && truthyTypes.size() != unionType.getTypes().size())
+                    {
+                        auto truthyType = getUnionType(truthyTypes);
+                        resultTrue = castToNarrowedType(location, resultTrue, truthyType, genContext);
+                        VALIDATE(resultTrue, location)
+                    }
+                }
             }
 
             if (andOp)
@@ -6779,7 +6806,15 @@ class MLIRGenImpl
             if (andOp)
             {
                 resultFalse = leftExpressionValue;
-                if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
+                // a boolean is only `false` where `&&` gives it: `b && f` is `false | F`, as in TypeScript, so
+                // `b && f || g` is `F | G` and can be called (it was `boolean | F`: "not a function to call")
+                if (!saveResult && isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                {
+                    resultFalse = builder.create<mlir_ts::ConstantOp>(
+                        location, mlir_ts::LiteralType::get(builder.getBoolAttr(false), getBooleanType()),
+                        builder.getBoolAttr(false));
+                }
+                else if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
                 {
                     // a function is never falsy: an optional one is false only when it is not there, so
                     // `compare && compare(a, b)` is `undefined | number`, as in TypeScript
@@ -6850,6 +6885,19 @@ class MLIRGenImpl
 
         // (`a ||= b`, `a &&= b` stored `b` where it ran)
         return ifOp.getResults().front();
+    }
+
+    // Two function types a value may have (`a ?? b`, `c ? f : g`): the one taking the most parameters, or none
+    // when either is no function or they are the same
+    mlir::Type getCommonFunctionType(mlir::Type type1, mlir::Type type2)
+    {
+        if (!type1 || !type2 || type1 == type2 || !mth.isAnyFunctionType(type1) || !mth.isAnyFunctionType(type2)
+            || mth.isGenericType(type1) || mth.isGenericType(type2))
+        {
+            return mlir::Type();
+        }
+
+        return mth.getParamsFromFuncRef(type2).size() > mth.getParamsFromFuncRef(type1).size() ? type2 : type1;
     }
 
     // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
@@ -7091,6 +7139,15 @@ class MLIRGenImpl
         auto resultType = leftAlwaysNullish
             ? resultWhenFalseType
             : mth.findBaseType(resultWhenFalseType, leftNonNullishType, merged, defaultUnionType);
+        // two functions (`o.f ?? val.f`): the one taking the most parameters, which the other is cast to here,
+        // where it is known; a union of them could not be called ("not a function to call")
+        if (!leftAlwaysNullish)
+        {
+            if (auto commonFunctionType = getCommonFunctionType(leftNonNullishType, resultWhenFalseType))
+            {
+                resultType = commonFunctionType;
+            }
+        }
 
         auto ifCond = mlirGenIsNullish(location, leftExpressionValue, genContext);
         if (!ifCond)
