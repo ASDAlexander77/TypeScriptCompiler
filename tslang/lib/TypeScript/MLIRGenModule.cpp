@@ -138,10 +138,20 @@ namespace mlirgen
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
         NodeFactory nf(NodeFactoryFlags::None);
+        // a module has one default export: only the first is named for it. Another (an error in TypeScript)
+        // is left as it was - two unnamed functions given the one name were a redefinition. Kept per load, as
+        // a file may be loaded again and must name the same one.
+        auto defaultFound = false;
         for (auto &statement : sourceFile->statements)
         {
+            if (defaultFound)
+            {
+                break;
+            }
+
             if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals)
             {
+                defaultFound = true;
                 auto exportAssignment = statement.as<ExportAssignment>();
                 NodeArray<VariableDeclaration> declarations;
                 auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(name)), undefined,
@@ -167,6 +177,7 @@ namespace mlirgen
             if ((statement == SyntaxKind::FunctionDeclaration || statement == SyntaxKind::ClassDeclaration)
                 && hasModifier(statement, SyntaxKind::ExportKeyword) && hasModifier(statement, SyntaxKind::DefaultKeyword))
             {
+                defaultFound = true;
                 auto declaration = statement.as<NamedDeclaration>();
                 if (!declaration->name)
                 {
