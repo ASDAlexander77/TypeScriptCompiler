@@ -4306,6 +4306,15 @@ class MLIRTypeHelper
             return existType;
         }
 
+        // any takes in everything, as in a union (getUnionTypeWithMerge): `[].concat([1])` infers T from
+        // `any[]` and `s32[][]`, and `any | s32` - a union TypeScript has no such thing as - was boxed and
+        // read back as if it were one of its members, crashing the compiler
+        if (isa<mlir_ts::AnyType>(existType) || isa<mlir_ts::AnyType>(currentType))
+        {
+            merged = true;
+            return mlir_ts::AnyType::get(context);
+        }
+
         // index (a length, a count) passes for signless in canCastFromTo but holds an unsigned value,
         // so picking it for `index | si32` wraps a negative value: `return s.length` + `return -1` gave 4294967295
         auto mergedIndex = false;

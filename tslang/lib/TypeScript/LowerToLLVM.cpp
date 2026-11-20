@@ -3916,6 +3916,49 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
         auto resType = op.getRes().getType();
 
         AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+
+        // `f as any as (...) => R`: a hybrid function is { function, this, closure tag }, but a box
+        // made from a plain function holds the function's pointer alone. Loading the whole struct
+        // read past the box and took whatever followed for `this` - a call through it then passed a
+        // garbage `this` (only a zeroing allocator, the collector's, made it null). The box's size
+        // says which it holds: a pointer (8 bytes, 4 on wasm32) or the struct (24, or 12).
+        if (auto hybridType = dyn_cast<mlir_ts::HybridFunctionType>(resType))
+        {
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(op, rewriter);
+            auto llvmResType = tch.convertType(resType);
+            auto llvmStructType = dyn_cast<LLVM::LLVMStructType>(llvmResType);
+            if (llvmStructType)
+            {
+                auto size = al.getDataSizeOfAny(in);
+                auto pointerWide = rewriter.create<LLVM::ConstantOp>(loc, size.getType(), rewriter.getIntegerAttr(size.getType(), 8));
+                auto holdsPointer = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, size, pointerWide);
+                auto result = clh.conditionalExpressionLowering(
+                    loc, llvmResType, holdsPointer,
+                    [&](OpBuilder &builder, Location loc) -> mlir::Value {
+                        auto func = al.UnboxAny(in, th.getPtrType());
+                        mlir::Value value = rewriter.create<LLVM::UndefOp>(loc, llvmResType);
+                        auto fields = llvmStructType.getBody();
+                        for (auto index = 0u; index < fields.size(); index++)
+                        {
+                            mlir::Value field = index == DATA_VALUE_INDEX
+                                                    ? mlir::Value(func)
+                                                    : mlir::Value(rewriter.create<LLVM::ZeroOp>(loc, fields[index]));
+                            value = rewriter.create<LLVM::InsertValueOp>(loc, value, field,
+                                                                         MLIRHelper::getStructIndex(rewriter, index));
+                        }
+
+                        return value;
+                    },
+                    [&](OpBuilder &builder, Location loc) -> mlir::Value {
+                        return al.UnboxAny(in, llvmResType);
+                    });
+
+                rewriter.replaceOp(op, result);
+                return success();
+            }
+        }
+
         auto result = al.UnboxAny(in, tch.convertType(resType), isa<mlir_ts::OpaqueType>(resType));
 
         rewriter.replaceOp(op, result);
