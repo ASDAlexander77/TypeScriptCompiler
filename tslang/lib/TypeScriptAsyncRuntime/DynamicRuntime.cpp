@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TypeScript/MemberTableCheck.h"
+
 #include <mutex>
 #include <string>
 #include <vector>
@@ -133,4 +135,11 @@ extern "C" void *tslang_search_for_address_of_symbol(const char *symbolName)
     }
 
     return nullptr;
+}
+
+// A library class's layout against the one the program was compiled with (ts.CheckMembers)
+extern "C" void tslang_check_members(const void *expected, const void *actual, const char *library, const char *className,
+                                     intptr_t expectedSize, const void *actualSize)
+{
+    typescript_member_table::check(expected, actual, library, className, expectedSize, actualSize);
 }

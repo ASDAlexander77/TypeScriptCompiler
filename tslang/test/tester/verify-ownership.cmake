@@ -35,6 +35,8 @@ set(not_compilable_alone
     import_vars.ts
     # written for `-nostrictnull`
     raytrace-0.ts
+    # a write through a union of field names that is an error by design (00class_keyof_keys.ts)
+    00class_keyof_write_intersection_error.ts
     # WeakRef<T> is an error under rc (own spec 84): rc has no weak count
     00weakref.ts
     00weakref_basic.ts

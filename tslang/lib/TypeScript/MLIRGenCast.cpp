@@ -4445,6 +4445,13 @@ namespace mlirgen
             return;
         }
 
+        // a value of type any is not cast to a union: a function taking one (`pattern: string | RegExp`) is not called
+        // through any (its adapter did not compile, and the module with it)
+        if (llvm::any_of(inputs, [&](mlir::Type input) { return isa<mlir_ts::UnionType>(mth.stripOptionalType(input)); }))
+        {
+            return;
+        }
+
         auto hash = MLIRHelper::hashOfType(funcType);
         if (anyCallAdaptersInProgress.contains(hash))
         {
@@ -4762,13 +4769,21 @@ namespace mlirgen
                 auto storageType = mlir::cast<mlir_ts::ClassStorageType>(info->classType.getStorageType());
                 for (auto &field : storageType.getFields())
                 {
+                    // a base's storage, which a subclass's begins with, is no member (its id is the base's name)
                     if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
-                        name && field.accessLevel == mlir_ts::AccessLevel::Public)
+                        name && field.accessLevel == mlir_ts::AccessLevel::Public &&
+                        llvm::none_of(info->baseClasses, [&](auto &base) { return base->fullName == name.getValue(); }))
                     {
                         addKey(values, name.getValue());
                         if (types)
                         {
                             types->try_emplace(name.getValue(), field.type);
+                        }
+
+                        // `o?: T`: not there while it is not set
+                        if (optionals && (field.isConditional || isa<mlir_ts::OptionalType>(field.type)))
+                        {
+                            optionals->insert(name.getValue());
                         }
                     }
                 }
@@ -4783,12 +4798,23 @@ namespace mlirgen
                         {
                             readOnly->insert(accessor.name);
                         }
+
+                        // what a write gives the setter: its value parameter's type
+                        if (types && accessor.set && accessor.set.funcType.getNumInputs() > 0)
+                        {
+                            types->try_emplace(accessor.name, accessor.set.funcType.getInputs().back());
+                        }
                     }
                 }
 
                 for (auto &method : info->methods)
                 {
-                    if (!method.isStatic && method.accessLevel == mlir_ts::AccessLevel::Public)
+                    // an accessor's or an indexer's functions (`get_g`) are not methods of their own
+                    auto isFunctionOf = [&](const FunctionEntry &entry) { return entry && entry.name == method.funcName; };
+                    auto isAccessorOrIndexer =
+                        llvm::any_of(info->accessors, [&](auto &accessor) { return isFunctionOf(accessor.get) || isFunctionOf(accessor.set); }) ||
+                        llvm::any_of(info->indexes, [&](auto &index) { return isFunctionOf(index.get) || isFunctionOf(index.set); });
+                    if (!method.isStatic && method.accessLevel == mlir_ts::AccessLevel::Public && !isAccessorOrIndexer)
                     {
                         addKey(methods, method.name);
                     }
@@ -4900,6 +4926,12 @@ namespace mlirgen
     // not. Whatever fails leaves the type without one, and a key read through it a TypeError.
     void MLIRGenImpl::ensureAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
     {
+        // a class boxed is read by name: its member table has its members (MLIRGenMemberTable.cpp)
+        if (!genContext.allowPartialResolve)
+        {
+            requestMemberTable(type);
+        }
+
         if (compileOptions.memoryModel == MemoryModelOwn || genContext.allowPartialResolve || mth.isGenericType(type))
         {
             return;
@@ -5029,6 +5061,20 @@ namespace mlirgen
                   "else {\n" + notThere + "}\n"
                   "const o = <T>box;\n";
 
+            // an object of a subclass has keys of its own: its class's adapter reads them (its member table,
+            // CLASS_VTABLE_MEMBERS_SLOT), as JavaScript reads the object, not the type it was boxed as
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                if (classInfo && classInfo->getHasVirtualTable() && !classInfo->isCppVTable)
+                {
+                    // a null object of the class: its vtable is not there to ask
+                    src += "if (o == null) " + throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n"
+                           "const actual = __actual_class_keys(o);\n"
+                           "if (actual != null) return (<(box: any, op: number, key: any, value: any) => any>actual)(box, op, key, value);\n";
+                }
+            }
+
             // a tuple is a value: the `any` holds a copy of it, which a write would change and nothing else
             auto tuple = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
             auto writeOf = [&](StringRef key, const std::string &place) -> std::string {
@@ -5044,6 +5090,14 @@ namespace mlirgen
                            throwTypeErrorSource("an accessor with no setter can't be written through a value of type any") + "\n";
                 }
 
+                // a value of type any is not cast to a union (`v: number | string`): such a field is read through
+                // any, not written (the adapter did not compile, and the module with it)
+                if (auto fieldType = types.lookup(key); fieldType && isa<mlir_ts::UnionType>(mth.stripOptionalType(fieldType)))
+                {
+                    return "if (op == " + set + ") " +
+                           throwTypeErrorSource("a field of a union type can't be written through a value of type any: cast the value to its type") + "\n";
+                }
+
                 return "if (op == " + set + ") { " + anyKeyValueKindCheck(types.lookup(key), optionals.contains(key), throwWrongKind) +
                        place + " = value; return undefined; }\n";
             };
@@ -5051,7 +5105,7 @@ namespace mlirgen
             for (auto &key : values)
             {
                 // a tuple's unnamed field is read by its position
-                auto read = isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
+                auto read = tuple && isIndex(key) ? "o[" + key + "]" : "o[" + quote(key) + "]";
                 src += "if (k == " + quote(key) + ") {\n" + writeOf(key, read);
                 if (optionals.contains(key))
                 {
@@ -5066,9 +5120,10 @@ namespace mlirgen
 
             for (auto &key : methods)
             {
-                src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; " +
-                       throwTypeErrorSource("a method read or written through a value of type any is not supported: cast the value to its type") +
-                       " }\n";
+                // read, a method is bound to the object, as `o.m` is
+                src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; if (op == " + set + ") " +
+                       throwTypeErrorSource("a method can't be written through a value of type any") +
+                       " return <any>o[" + quote(key) + "]; }\n";
             }
 
             src += notThere + "}\n";

@@ -50,6 +50,9 @@
 #define ANY_CALL_ADAPTER_CALL_ATTR_NAME "__any_call_adapter_call"
 // the call reading `x[k]` of `x: any` (MLIRGenImpl::mlirGenAnyKey): a value, not a place to write
 #define ANY_KEY_READ_ATTR_NAME "__any_key_read"
+// on the read of `c[k]` with `k` a union of the class's member names (MLIRGenImpl::mlirGenClassKeyRead): a write
+// to it is the same switch, of stores
+#define CLASS_KEY_READ_ATTR_NAME "__class_key_read"
 
 // On a `ts.ValueOrDefault`: an explicit cast in the source (`<T>data` of a `T | undefined`) made
 // it, so its lowering does not warn that an optional value is read as it is.
@@ -240,6 +243,28 @@
 // vtable slot is that plus INTERFACE_VTABLE_HEADER_SLOTS.
 // a class's own vtable starts with its `.instanceOf`
 #define CLASS_VTABLE_INSTANCEOF_SLOT 0
+// ...and then the address of its member table (MLIRGenMemberTable.cpp, MEMBERS_NAME): a subclass's
+// vtable holds its own, so an object's table is its actual class's. Not in a @cpp class's vtable.
+#define CLASS_VTABLE_MEMBERS_SLOT 1
+// A class's member table, `<class>.members`: {count: i32, flags: i32, keys: the class's keys adapter
+// (TYPE_DESCR_KEYS, null when none was made), entries: ptr}, each entry {name: string, kind: i32,
+// access: i32, readonly: i32, offset: index (a field's, with INTERFACE_OPTIONAL_STORAGE_TAG for an
+// optional one; -1 for any other member), size: index (a field's stored size), type hash: i64
+// (MLIRHelper::hashOfType of the declared type)}, sorted by name. Public and protected members only. A
+// class nothing reads by name has an empty one (count 0).
+#define MEMBERS_NAME ".members"
+#define MEMBERS_ENTRIES_NAME ".members_entries"
+// an importer's view of a library class's table, checked against the library's when it loads
+#define MEMBERS_EXPECTED_NAME ".members_expected"
+#define MEMBERS_EXPECTED_ENTRIES_NAME ".members_expected_entries"
+// the first line of a library's exported declarations (__decls_<module>) when its classes have member tables:
+// an importer of a library without it does not check the library's class layout when it loads
+#define MEMBERS_MARKER "// @members"
+#define MEMBER_KIND_FIELD 0
+#define MEMBER_KIND_ACCESSOR 1
+#define MEMBER_KIND_METHOD 2
+#define MEMBER_ACCESS_PUBLIC 0
+#define MEMBER_ACCESS_PROTECTED 1
 #define INTERFACE_VTABLE_TYPE_SLOT 0
 #define INTERFACE_VTABLE_INSTANCEOF_SLOT 1
 #define INTERFACE_VTABLE_HEADER_SLOTS 2

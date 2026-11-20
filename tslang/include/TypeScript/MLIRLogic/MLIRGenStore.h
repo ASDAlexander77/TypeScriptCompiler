@@ -216,6 +216,9 @@ struct VirtualMethodOrInterfaceVTableInfo
     StaticFieldInfo staticFieldInfo;
     bool isStaticField;
     bool isInterfaceVTable;
+    // the slot of the class's member table (CLASS_VTABLE_MEMBERS_SLOT): an opaque pointer, as an
+    // interface's vtable is (isInterfaceVTable is set too), named MEMBERS_NAME
+    bool isMembersTable = false;
     // A method's slot: the type of the method that made it, which every call through it is made with
     // (a call through the class that declared it). An override of another arity has a slot of its own,
     // and this one then holds a thunk of this type calling it (adaptTo): called with the arguments the
@@ -1087,6 +1090,14 @@ struct ClassInfo
             {
                 methodSlots[instanceOf->name] = vtable.size();
                 vtable.push_back({*instanceOf, false});
+
+                // ...and the member table (CLASS_VTABLE_MEMBERS_SLOT), which each subclass fills with its own
+                MethodInfo membersSlot{};
+                membersSlot.name = MEMBERS_NAME;
+                membersSlot.virtualIndex = vtable.size();
+                VirtualMethodOrInterfaceVTableInfo membersRecord{membersSlot, true};
+                membersRecord.isMembersTable = true;
+                vtable.push_back(membersRecord);
             }
         }
 

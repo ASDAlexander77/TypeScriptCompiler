@@ -525,6 +525,33 @@ def TypeScript_AnyKeysAdapterOp : TypeScript_Op<"AnyKeysAdapter", [Pure]> {
   let results = (outs TypeScript_Opaque:$res);
 }
 
+def TypeScript_CheckMembersOp : TypeScript_Op<"CheckMembers"> {
+  let summary = "checks a library class's layout against an importer's when the library loads";
+  let description = [{
+    Calls the runtime's `tslang_check_members`: every field of the $expected member table (the importer's
+    view of the class, MEMBERS_EXPECTED_NAME) must be in $actual (the library's, found by symbol) at the same
+    offset with the same type, and the instance size the library has ($actualSize, its `<class>.size`) must
+    be $expectedSize. A mismatch prints what changed, naming $library and $className, and stops the
+    program. A class with no table there (not exported, @value, @cpp) has only its size checked.
+  }];
+
+  let arguments = (ins TypeScript_Opaque:$expected, TypeScript_Opaque:$actual, TypeScript_String:$library,
+                       TypeScript_String:$className, Index:$expectedSize, TypeScript_Opaque:$actualSize);
+}
+
+def TypeScript_ActualClassKeysOp : TypeScript_Op<"ActualClassKeys", [Pure]> {
+  let summary = "the keys adapter of the actual class of an object";
+  let description = [{
+    The keys adapter of the class $object is an instance of (its vtable's CLASS_VTABLE_MEMBERS_SLOT, the
+    table's `keys`), or null when that is the function this op is in (the class's own adapter asking) or
+    the actual class has none. A class's keys adapter (MLIRGenImpl::makeAnyKeysAdapter) asks it first, so a
+    subclass's object is read by its own keys.
+  }];
+
+  let arguments = (ins AnyType:$object);
+  let results = (outs TypeScript_Opaque:$res);
+}
+
 def TypeScript_AnyCallAdapterOp : TypeScript_Op<"AnyCallAdapter", [Pure]> {
   let summary = "the adapter that calls the function an any holds";
   let description = [{

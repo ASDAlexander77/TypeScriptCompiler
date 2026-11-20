@@ -1957,8 +1957,75 @@ namespace mlirgen
             type = objType.getStorageType();
         }
 
+        // `keyof typeof C`: the class as a value has its public statics (fields, accessors, methods), a base's too
+        if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(type))
+        {
+            auto classType = mlir::cast<mlir_ts::ClassType>(classValueType.getClassType());
+            if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()))
+            {
+                llvm::StringSet<> seen;
+                SmallVector<mlir::Type> literalTypes;
+                auto add = [&](StringRef name, mlir_ts::AccessLevel access) {
+                    if (access == mlir_ts::AccessLevel::Public && !name.empty() && !name.starts_with(".") &&
+                        !name.starts_with("#") && seen.insert(name).second)
+                    {
+                        literalTypes.push_back(mlir_ts::LiteralType::get(getStringAttr(name), getStringType()));
+                    }
+                };
+
+                std::function<void(ClassInfo::TypePtr)> walk = [&](ClassInfo::TypePtr info) {
+                    for (auto &field : info->staticFields)
+                    {
+                        if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id))
+                        {
+                            add(name.getValue(), field.accessLevel);
+                        }
+                    }
+
+                    for (auto &accessor : info->accessors)
+                    {
+                        if (accessor.isStatic && accessor.get)
+                        {
+                            add(accessor.name, accessor.getAccessLevel);
+                        }
+                    }
+
+                    for (auto &method : info->methods)
+                    {
+                        if (method.isStatic)
+                        {
+                            add(method.name, method.accessLevel);
+                        }
+                    }
+
+                    for (auto &base : info->baseClasses)
+                    {
+                        walk(base);
+                    }
+                };
+
+                walk(classInfo);
+                return literalTypes.empty() ? getNeverType() : getUnionType(literalTypes);
+            }
+        }
+
+        // a class's keys are its public members, as tsc has them: fields, accessors and methods, a base's too
+        // (not the compiler's own fields, `.vtbl` and a base's storage)
         if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
         {
+            SmallVector<std::string> values;
+            SmallVector<std::string> methods;
+            if (anyKeysOfType(classType, values, methods))
+            {
+                SmallVector<mlir::Type> literalTypes;
+                for (auto &name : llvm::concat<std::string>(values, methods))
+                {
+                    literalTypes.push_back(mlir_ts::LiteralType::get(getStringAttr(name), getStringType()));
+                }
+
+                return literalTypes.empty() ? getNeverType() : getUnionType(literalTypes);
+            }
+
             return mth.getFieldNames(type);
         }
 
