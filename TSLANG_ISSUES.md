@@ -1757,3 +1757,30 @@ Still open, found along the way (each on main before #884):
   `ts.StringCopy` copies its payload when its tag says string, and `@sharesElements` passes it as it
   passes a string. Fixed in #890. Regression test `tslang/test/tester/tests/00string_union_elements.ts`
   (every model).
+
+138 (tenth batch of the compiler-tests sweep, 2026-11-20; internal errors that reached the user). Fixed:
+- `new` on a value that is no class - an `any` (`var A; A = class {}; new A()`, `new (<any>a).b`), a namespace
+  (`new Promise(...)` where Promise is only a namespace) or `undefined` - built a `ts.New` of that type, which
+  failed verification ("'ts.New' op result #0 must be ..."). Now an error at the `new`: "'new' on a value of
+  type 'any' is not supported: its class is known at run time only; give it a class type ('typeof C')".
+- A tagged template whose tag is a generic function (`id\`hello\`` with `function id<T>(x: T)`) called the
+  generic itself ("'ts.Call' op 'id' does not reference a valid function"). It is now the call
+  `id(["hello"], ...values)`, which infers the type arguments. The tag is evaluated before the values, as in
+  JavaScript.
+- An arrow with untyped parameters that nothing gives types to, as an array element (`[x => x]`) or given as
+  `any` (`g(r => r)` with `g(a: any)`), stayed generic and the address of a function never made was stored
+  ("'llvm.mlir.addressof' op must reference a global"). It is instantiated with `any`, as a field's or a
+  `let`'s is (TSLANG 106); boxed in an `any` it gets its call adapter, so `a(5)` through the `any` works.
+- A namespace in a field of an object literal (`{ m: M }`): "a namespace is not a value", where the lowering
+  failed ("failed to legalize operation 'ts.NamespaceRef'").
+- A class given to a constructor type (`register(B)` for `register(c: new (...args: any[]) => A)`): "a value of
+  the constructor type '...' is not supported: use the class's type, 'typeof C'", where a bare class
+  reference failed in the lowering ("failed to legalize operation 'ts.ClassRef'").
+
+Still open: values of constructor types (`new (...) => T` as a parameter type; `typeof C` works); a class
+declared in a nested block with the name of an outer one ("redefinition of symbol named 'C..instanceOf'":
+block-scoped declarations share the function's namespace); `x.constructor === Symbol` (the built-in `Symbol`
+as a value, "'llvm.mlir.addressof' op must reference a global").
+
+Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
+`diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`.

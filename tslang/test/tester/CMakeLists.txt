@@ -431,6 +431,7 @@ tslang_add_test(NAME test-compile-00-import-equals-value COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-var-function-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_function_scope.ts")
 tslang_add_test(NAME test-compile-00-constant-folding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
 tslang_add_test(NAME test-compile-00-generic-function-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
+tslang_add_test(NAME test-compile-00-untyped-arrows-and-tags COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00untyped_arrows_and_tags.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -1165,6 +1166,7 @@ tslang_add_test(NAME test-jit-00-var-function-scope COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-constant-folding COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constant_folding.ts")
 tslang_add_test(NAME test-jit-00-generic-function-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
 tslang_add_test(NAME test-jit-own-00-generic-function-arguments COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_function_arguments.ts")
+tslang_add_test(NAME test-jit-00-untyped-arrows-and-tags COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00untyped_arrows_and_tags.ts")
 tslang_add_test(NAME test-jit-00-string-concat-chain COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
@@ -3963,6 +3965,35 @@ add_test(NAME test-compile-diagnostic-location-namespace-as-value
 set_tests_properties(test-compile-diagnostic-location-namespace-as-value
                      PROPERTIES PASS_REGULAR_EXPRESSION "namespace_as_value\.ts:3:5: error: a namespace is not a value"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# ...and in a field of an object literal.
+add_test(NAME test-compile-diagnostic-location-namespace-in-object-field
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/namespace_in_object_field.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-namespace-in-object-field.obj")
+set_tests_properties(test-compile-diagnostic-location-namespace-in-object-field
+                     PROPERTIES PASS_REGULAR_EXPRESSION "namespace_in_object_field\.ts:3:9: error: a namespace is not a value"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
+
+# `new` on a value that is no class (`any`, a namespace, `undefined`) is an error at the `new`: it failed
+# 'ts.New' verification ("result #0 must be ...").
+add_test(NAME test-compile-diagnostic-location-new-on-any
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/new_on_any.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-new-on-any.obj")
+set_tests_properties(test-compile-diagnostic-location-new-on-any
+                     PROPERTIES PASS_REGULAR_EXPRESSION "new_on_any\.ts:3:9: error: 'new' on a value of type 'any' is not supported"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|ts\.New")
+
+# A class given to a constructor type (`new () => A`) is an error: it was a bare class reference with
+# nothing to lower to ("failed to legalize operation 'ts.ClassRef'").
+add_test(NAME test-compile-diagnostic-location-constructor-type-value
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/constructor_type_value.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-constructor-type-value.obj")
+set_tests_properties(test-compile-diagnostic-location-constructor-type-value
+                     PROPERTIES PASS_REGULAR_EXPRESSION "constructor_type_value\.ts:4:1: error: a value of the constructor type"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
 
 # A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
 # MLIR verifier, which failed the module at 1:1.
