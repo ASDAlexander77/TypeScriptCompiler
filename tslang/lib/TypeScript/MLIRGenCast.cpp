@@ -4900,6 +4900,12 @@ namespace mlirgen
     // not. Whatever fails leaves the type without one, and a key read through it a TypeError.
     void MLIRGenImpl::ensureAnyKeysAdapter(mlir::Location location, mlir::Type type, const GenContext &genContext)
     {
+        // a class boxed is read by name: its member table has its members (MLIRGenMemberTable.cpp)
+        if (!genContext.allowPartialResolve)
+        {
+            requestMemberTable(type);
+        }
+
         if (compileOptions.memoryModel == MemoryModelOwn || genContext.allowPartialResolve || mth.isGenericType(type))
         {
             return;

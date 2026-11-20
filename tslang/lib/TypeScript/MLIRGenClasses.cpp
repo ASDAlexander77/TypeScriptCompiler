@@ -5142,7 +5142,26 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
                 {
-                    if (vtRecord.isInterfaceVTable && newClassPtr->isAbstract)
+                    if (vtRecord.isMembersTable)
+                    {
+                        // the class's own member table (CLASS_VTABLE_MEMBERS_SLOT), made at the module's end
+                        // (makeMemberTables): what reads it by name is not all known yet
+                        // an imported class's table is its module's (only this module's are made here)
+                        if (!newClassPtr->isImport && !newClassPtr->isDynamicImport &&
+                            llvm::none_of(membersTableClasses, [&](auto &pair) { return pair.second == newClassPtr; }))
+                        {
+                            membersTableClasses.push_back({location, newClassPtr});
+                        }
+
+                        auto membersRef = builder.create<mlir_ts::AddressOfOp>(
+                            location, mlir_ts::RefType::get(getMemberTableHeaderType()),
+                            concat(newClassPtr->fullName, MEMBERS_NAME), ::mlir::IntegerAttr());
+                        auto membersAddress = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), membersRef);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, membersAddress, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex++));
+                    }
+                    else if (vtRecord.isInterfaceVTable && newClassPtr->isAbstract)
                     {
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, nullSlot(location, getOpaqueType()), vtableValue,

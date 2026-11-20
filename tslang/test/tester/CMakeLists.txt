@@ -342,6 +342,16 @@ tslang_add_test(NAME test-compile-00-cast-any-literal-field COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-compile-00-class-members-table COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
+# the class vtable's slot after `.instanceOf` is the class's member table (MLIRGenMemberTable.cpp)
+add_test(NAME test-members-table-vtable-slot COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-vtable-slot PROPERTIES PASS_REGULAR_EXPRESSION "@P\\.\\.vtbl = [^\n]*\\{ ptr @P\\.\\.instanceOf, ptr @P\\.\\.members," FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# a class read by name has its public and protected members in the table, never a private one
+add_test(NAME test-members-table-entries COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-entries PROPERTIES PASS_REGULAR_EXPRESSION "@P\\.\\.members = [^\n]*\\{ i32 4," FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# a class never read by name has an empty one
+add_test(NAME test-members-table-empty COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
+set_tests_properties(test-members-table-empty PROPERTIES PASS_REGULAR_EXPRESSION "@Q\\.\\.members = [^\n]*zeroinitializer" FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-compile-00-instanceof-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-compile-00-any-cast-back-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
@@ -1063,6 +1073,7 @@ tslang_add_test(NAME test-jit-00-cast-any-literal-field COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00symbol_unique_key.ts")
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
+tslang_add_test(NAME test-jit-00-class-members-table COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
 tslang_add_test(NAME test-jit-00-instanceof-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
@@ -3175,6 +3186,7 @@ set(TSLANG_CORPUS
     00symbol_unique_key.ts
     00any_call.ts
     00any_keys.ts
+    00class_members_table.ts
     00any_keys_write.ts
     00instanceof_generic.ts
     00any_cast_back_function.ts

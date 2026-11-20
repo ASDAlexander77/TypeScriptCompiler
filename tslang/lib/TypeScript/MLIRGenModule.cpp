@@ -1558,6 +1558,9 @@ namespace mlirgen
         // missed what it does next and left references unlowered)
         makePendingAnyKeysAdapters(genContext);
 
+        // the member tables the class vtables name (MLIRGenMemberTable.cpp)
+        makeMemberTables(genContext);
+
         clearTempModule();
 
         eraseUnusedWeakFieldReads();

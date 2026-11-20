@@ -12893,6 +12893,34 @@ class MLIRGenImpl
 
     // types boxed whose keys adapters are still to be made
     SmallVector<std::pair<mlir::Location, mlir::Type>> anyKeysAdaptersPending;
+
+    // Member tables (MLIRGenMemberTable.cpp, MEMBERS_NAME). An entry as it is collected.
+    struct MemberTableEntry
+    {
+        std::string name;
+        int kind;
+        int access;
+        bool readOnly;
+        // a field's type, a method's function type; null for an accessor
+        mlir::Type type;
+    };
+
+    // the class of `type` is read by name: its table has its members, and its subclasses' theirs
+    void requestMemberTable(mlir::Type type);
+    bool isMemberTableRequested(ClassInfo::TypePtr classInfo);
+    bool isReadByName(ClassInfo::TypePtr classInfo);
+    void collectMemberTableEntries(ClassInfo::TypePtr classInfo, SmallVector<MemberTableEntry> &entries);
+    // the tables of the classes whose vtables the module made, at its end
+    void makeMemberTables(const GenContext &genContext);
+    // {count, flags, keys, entries} (MEMBERS_NAME)
+    mlir_ts::TupleType getMemberTableHeaderType();
+    void makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext);
+
+    // the classes whose vtables name their tables (mlirGenClassVirtualTableDefinition)
+    SmallVector<std::pair<mlir::Location, ClassInfo::TypePtr>> membersTableClasses;
+    // the full names of the classes read by name (requestMemberTable)
+    llvm::StringSet<> memberTableRequests;
+
     ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);

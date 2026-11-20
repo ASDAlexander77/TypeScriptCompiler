@@ -240,6 +240,22 @@
 // vtable slot is that plus INTERFACE_VTABLE_HEADER_SLOTS.
 // a class's own vtable starts with its `.instanceOf`
 #define CLASS_VTABLE_INSTANCEOF_SLOT 0
+// ...and then the address of its member table (MLIRGenMemberTable.cpp, MEMBERS_NAME): a subclass's
+// vtable holds its own, so an object's table is its actual class's. Not in a @cpp class's vtable.
+#define CLASS_VTABLE_MEMBERS_SLOT 1
+// A class's member table, `<class>.members`: {count: i32, flags: i32, keys: the class's keys adapter
+// (TYPE_DESCR_KEYS, null when none was made), entries: ptr}, each entry {name: string, kind: i32,
+// access: i32, readonly: i32, offset: index (a field's, with INTERFACE_OPTIONAL_STORAGE_TAG for an
+// optional one; -1 for any other member), size: index (a field's stored size), type hash: i64
+// (MLIRHelper::hashOfType of the declared type)}, sorted by name. Public and protected members only. A
+// class nothing reads by name has an empty one (count 0).
+#define MEMBERS_NAME ".members"
+#define MEMBERS_ENTRIES_NAME ".members_entries"
+#define MEMBER_KIND_FIELD 0
+#define MEMBER_KIND_ACCESSOR 1
+#define MEMBER_KIND_METHOD 2
+#define MEMBER_ACCESS_PUBLIC 0
+#define MEMBER_ACCESS_PROTECTED 1
 #define INTERFACE_VTABLE_TYPE_SLOT 0
 #define INTERFACE_VTABLE_INSTANCEOF_SLOT 1
 #define INTERFACE_VTABLE_HEADER_SLOTS 2
