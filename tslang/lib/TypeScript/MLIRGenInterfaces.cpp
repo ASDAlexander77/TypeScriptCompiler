@@ -27,6 +27,18 @@ namespace mlirgen
             for (auto key : dict)
             {
                 enumValues[key.getName()] = key.getValue();
+
+                // a member of another declaration of the enum is a name here too (`enum E { a } enum E { c = a }`),
+                // as one of this declaration is once declared: "can't resolve name: a"
+                if (auto typedAttr = dyn_cast<mlir::TypedAttr>(key.getValue()))
+                {
+                    auto location = loc(enumDeclarationAST);
+                    auto literalType = mlir_ts::LiteralType::get(typedAttr, typedAttr.getType());
+                    auto memberValue = builder.create<mlir_ts::ConstantOp>(location, literalType, typedAttr);
+                    auto varDecl = std::make_shared<VariableDeclarationDOM>(
+                        StringRef(key.getName().getValue()).copy(stringAllocator), literalType, location);
+                    DECLARE(varDecl, memberValue);
+                }
             }
 
             appending = true;

@@ -1927,4 +1927,12 @@ Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding
   and it narrows x in both branches and after an `if` that returns, as TypeScript's type guard. (The narrowing of a
   condition's `false` was read from the expression as written, not the one tested: it now reads the same one.)
 
-Tests: `00array_is_array.ts` (compile, JIT, rc, own).
+- A member of another declaration of an enum named in a later one's initializer (`enum E { a } enum E { c = a }`):
+  "can't resolve name: a". The earlier declarations' members are names there, as the same declaration's are.
+
+Still open, looked at: a module-level arrow calling a `const` arrow declared after it, with top-level code in
+the module (the code runs in a function of its own, where a later `const` is no name yet - as in any function:
+`const a = () => b(); const b = ...` in a function is "can't resolve name: b"); an `async function*` given a
+type naming `AsyncGenerator` (not in the default library) crashes after the error, on Windows only.
+
+Tests: `00array_is_array.ts` (compile, JIT, rc, own), `00merged_enum_members.ts` (compile, JIT).
