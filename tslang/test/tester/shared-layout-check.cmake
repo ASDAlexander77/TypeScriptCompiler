@@ -97,7 +97,7 @@ ${run_out}")
     endif()
 
     run(${what} "${TSLANG}" --emit=jit -mm=none --no-default-lib ${libs} program.ts)
-    if(NOT run_status EQUAL 0 OR NOT run_out MATCHES "b = 2" OR NOT run_out MATCHES "m = 4" OR NOT run_out MATCHES "done\.")
+    if(NOT run_status EQUAL 0 OR NOT run_out MATCHES "b = 2" OR NOT run_out MATCHES "m = 4" OR NOT run_out MATCHES "done\\.")
         message(FATAL_ERROR "${what} (jit): expected to run against it, exit ${run_status}
 ${run_out}")
     endif()
@@ -116,5 +116,77 @@ expect_stops("v2" "library '[^']*': Box\\.a moved from offset [0-9]+ to [0-9]+; 
 
 build_library(v3)
 expect_stops("v3" "library '[^']*': Box changed size from [0-9]+ to [0-9]+ bytes; rebuild this program against the new library")
+
+# Fields of every kind round-trip: the program, built against the library's declarations, has each field's type
+# as the library has it (its type hash), so a library unchanged loads - under -mm=none and -mm=rc.
+file(WRITE "${WORK_DIR}/mixed.ts" [=[
+export enum Color {
+    Red,
+    Green,
+}
+
+export class Other {
+    n: number = 1;
+}
+
+export class Mixed {
+    c: Color = Color.Green;
+    o: Other = new Other();
+    arr: number[] = [1, 2];
+    opt?: string;
+    f: (x: number) => number = (x: number) => x + 1;
+    s: string = "s";
+    i: int = 3;
+    flag: boolean = true;
+}
+
+export function makeMixed(): Mixed {
+    return new Mixed();
+}
+]=])
+file(WRITE "${WORK_DIR}/mixed_program.ts" [=[
+import "./mixed";
+
+function main() {
+    const m = makeMixed();
+    print("mixed", m.c == Color.Green, m.o.n, m.arr.length, m.f(1), m.s, m.i, m.flag);
+    print("done.");
+}
+]=])
+foreach(mm none rc)
+    if(WIN32)
+        set(mixed_library "mixed.dll")
+        set(mixed_program "mixed_program.exe")
+    else()
+        set(mixed_library "libmixed.so")
+        set(mixed_program "mixed_program")
+    endif()
+    run("mixed" "${TSLANG}" --emit=dll -mm=${mm} --no-default-lib ${pic} ${libs} mixed.ts -o "${mixed_library}")
+    if(NOT run_status EQUAL 0)
+        message(FATAL_ERROR "--emit=dll mixed -mm=${mm}: exit ${run_status}
+${run_out}")
+    endif()
+    run("mixed" "${TSLANG}" --emit=exe -mm=${mm} --no-default-lib ${libs} mixed_program.ts -o "${mixed_program}")
+    if(NOT run_status EQUAL 0)
+        message(FATAL_ERROR "--emit=exe mixed_program -mm=${mm}: exit ${run_status}
+${run_out}")
+    endif()
+    run("mixed" "${WORK_DIR}/${mixed_program}")
+    if(NOT run_status EQUAL 0 OR NOT run_out MATCHES "mixed true 1 2 2 s 3 true" OR NOT run_out MATCHES "done\\.")
+        message(FATAL_ERROR "mixed -mm=${mm}: expected an unchanged library to load, exit ${run_status}
+${run_out}")
+    endif()
+endforeach()
+
+# A library built by an older tslang has no member tables (no `// @members` in its declarations) and no slot for
+# one in its class vtables: importing it is an error, as every virtual call into it would land one slot off.
+file(READ "${WORK_DIR}/lib.d.ts" declarations)
+string(REGEX REPLACE "// @members\r?\n" "" declarations "${declarations}")
+file(WRITE "${WORK_DIR}/lib.d.ts" "${declarations}")
+run("old" "${TSLANG}" --emit=exe -mm=none --no-default-lib ${libs} program.ts -o old_program.exe)
+if(run_status EQUAL 0 OR NOT run_out MATCHES "was built by an older tslang \\(its classes have no member tables\\): build it again with this tslang")
+    message(FATAL_ERROR "a library without member tables: expected an error, exit ${run_status}
+${run_out}")
+endif()
 
 message(STATUS "a library's class layout is checked as it loads")

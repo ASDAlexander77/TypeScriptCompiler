@@ -396,6 +396,13 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 #endif
 };
 
+// a library class's layout against the one the program was compiled with (ts.CheckMembers)
+static void jitCheckMembers(const void *expected, const void *actual, const char *library, const char *className,
+                            intptr_t expectedSize, const void *actualSize)
+{
+    typescript_member_table::check(expected, actual, library, className, expectedSize, actualSize);
+}
+
 // Stands in for the async runtime's GC_enable_threads when a JIT run has no TypeScriptRuntime.dll
 // to provide it - see the site in runJit that decides whether to install it. Its job is to let the
 // program RUN: the GC pass puts that call in every `gc` entry point, so without a definition the
@@ -408,13 +415,6 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 // was before any of this. Pass `--shared-libs=TypeScriptRuntime.dll` to get the real one.
 //
 // Resolved dynamically rather than called directly because tslang.exe does not link the collector.
-// a library class's layout against the one the program was compiled with (ts.CheckMembers)
-static void jitCheckMembers(const void *expected, const void *actual, const char *library, const char *className,
-                            intptr_t expectedSize, const void *actualSize)
-{
-    typescript_member_table::check(expected, actual, library, className, expectedSize, actualSize);
-}
-
 static void jitEnableGCThreads()
 {
     if (auto *allowRegisterThreads = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_allow_register_threads"))

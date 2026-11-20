@@ -19,6 +19,35 @@ namespace typescript
 namespace mlirgen
 {
 
+    // The type a field's entry hashes: what it is stored as, so the library's (from its source) and an importer's
+    // (from the declarations it reads) agree - an enum is its values' type (the importer's enum is the one the
+    // declarations print), a literal its base type.
+    static mlir::Type memberHashType(mlir::Type type)
+    {
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(type))
+        {
+            return memberHashType(enumType.getElementType());
+        }
+
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            return memberHashType(literalType.getElementType());
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return mlir_ts::OptionalType::get(memberHashType(optionalType.getElementType()));
+        }
+
+        // an integer by its width: an enum's values are i32 in its module, si32 as declarations print it
+        if (auto integerType = dyn_cast<mlir::IntegerType>(type))
+        {
+            return mlir::IntegerType::get(type.getContext(), integerType.getWidth());
+        }
+
+        return type;
+    }
+
     void MLIRGenImpl::requestMemberTable(mlir::Type type)
     {
         if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type))
@@ -27,6 +56,9 @@ namespace mlirgen
         }
     }
 
+    // an exported class: an importer checks its layout against the table, and reads an object of it held as a base
+    // by its keys (a module of a program is imported as an object of its own, as a library's is). Not under
+    // --export=none, where no class is exported.
     bool MLIRGenImpl::isMemberTableRequested(ClassInfo::TypePtr classInfo)
     {
         return classInfo->isExport || isReadByName(classInfo);
@@ -127,17 +159,23 @@ namespace mlirgen
             return;
         }
 
-        // the keys adapters of the classes read by name: a table names its class's (TYPE_DESCR_KEYS)
-        for (auto &[location, classInfo] : membersTableClasses)
+        // the keys adapters of the classes read by name: a table names its class's (TYPE_DESCR_KEYS). Making one
+        // can box another class (a field's), which asks for its table: again until none is new
+        llvm::SmallPtrSet<ClassInfo *, 8> ensured;
+        for (auto changed = true; changed;)
         {
-            // an exported class too: an importer holding one of its objects as a base reads it by its keys
-            if (isMemberTableRequested(classInfo))
+            changed = false;
+            for (auto &[location, classInfo] : membersTableClasses)
             {
-                ensureAnyKeysAdapter(location, classInfo->classType, genContext);
+                if (isMemberTableRequested(classInfo) && ensured.insert(classInfo.get()).second)
+                {
+                    ensureAnyKeysAdapter(location, classInfo->classType, genContext);
+                    changed = true;
+                }
             }
-        }
 
-        makePendingAnyKeysAdapters(genContext);
+            makePendingAnyKeysAdapters(genContext);
+        }
 
         for (auto &[location, classInfo] : membersTableClasses)
         {
@@ -209,8 +247,10 @@ namespace mlirgen
             }
 
             entriesType = getTupleType(entryFields);
+            // only the header is looked up from another module
+            VariableClass entriesVarClass = VariableType::Var;
             registerVariable(
-                location, entriesTableName, true, varClass,
+                location, entriesTableName, true, entriesVarClass,
                 [&](mlir::Location location, const GenContext &) {
                     MLIRCodeLogic mcl(builder, compileOptions);
                     mlir::Value entriesValue = builder.create<mlir_ts::UndefOp>(location, entriesType);
@@ -239,7 +279,7 @@ namespace mlirgen
                             size = builder.create<mlir_ts::CastOp>(location, indexType, sizeOf);
                         }
 
-                        auto hash = entry.type ? MLIRHelper::hashOfType(entry.type) : 0;
+                        auto hash = entry.type ? MLIRHelper::hashOfType(memberHashType(entry.type)) : 0;
                         mlir::Value entryValue = builder.create<mlir_ts::UndefOp>(location, entryType);
                         SmallVector<mlir::Value> values{
                             V(mlirGenStringValue(location, entry.name, true)), i32(entry.kind), i32(entry.access),

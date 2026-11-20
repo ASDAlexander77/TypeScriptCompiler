@@ -532,7 +532,7 @@ def TypeScript_CheckMembersOp : TypeScript_Op<"CheckMembers"> {
     view of the class, MEMBERS_EXPECTED_NAME) must be in $actual (the library's, found by symbol) at the same
     offset with the same type, and the instance size the library has ($actualSize, its `<class>.size`) must
     be $expectedSize. A mismatch prints what changed, naming $library and $className, and stops the
-    program. A class with no table there (not exported, @value, @cpp) is not checked.
+    program. A class with no table there (not exported, @value, @cpp) has only its size checked.
   }];
 
   let arguments = (ins TypeScript_Opaque:$expected, TypeScript_Opaque:$actual, TypeScript_String:$library,

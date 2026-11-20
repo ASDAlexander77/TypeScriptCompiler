@@ -77,15 +77,12 @@ inline void check(const void *expectedTable, const void *actualTable, const char
 {
     auto expected = static_cast<const Header *>(expectedTable);
     auto actual = static_cast<const Header *>(actualTable);
-    // a class the library does not export (one its exports name), a @value or a @cpp class: no table to find.
-    // A library from before tables is told by its declarations (MEMBERS_MARKER) and not checked at all.
-    if (!actual)
-    {
-        return;
-    }
-
     char what[128];
-    for (int32_t i = 0; expected && i < expected->count; i++)
+
+    // the fields, when the library has the class's table: a class the library does not export (one its exports
+    // name), a @value or a @cpp class has none, and only its size is checked. A library from before tables is
+    // refused when the program is compiled (MEMBERS_MARKER).
+    for (int32_t i = 0; actual && expected && i < expected->count; i++)
     {
         auto &field = expected->entries[i];
         if (field.kind != KindField)
@@ -111,14 +108,10 @@ inline void check(const void *expectedTable, const void *actualTable, const char
         }
     }
 
+    // the instance size: a class of the program extending one of the library's is laid out after it
     if (actualSizeAddress)
     {
-        auto actualSize = *static_cast<const int64_t *>(actualSizeAddress);
-        if (sizeof(void *) == 4)
-        {
-            actualSize = *static_cast<const int32_t *>(actualSizeAddress);
-        }
-
+        auto actualSize = *static_cast<const intptr_t *>(actualSizeAddress);
         if (actualSize != expectedSize)
         {
             std::snprintf(what, sizeof(what), "changed size from %lld to %lld bytes", (long long)expectedSize, (long long)actualSize);

@@ -2234,10 +2234,13 @@ namespace mlirgen
         auto marked = llvm::all_of(libraryModules, [](auto &libraryModule) {
             return libraryModule.declarations.empty() || StringRef(libraryModule.declarations).contains(MEMBERS_MARKER);
         });
+        // built before member tables, its class vtables have no slot for one: every virtual call into them would
+        // land one slot off
         if (!marked)
         {
-            emitWarning(location) << "library '" << filePath << "' predates layout checks; field layout is not verified";
-            return mlir::success();
+            emitError(location) << "shared library '" << filePath
+                                << "' was built by an older tslang (its classes have no member tables): build it again with this tslang";
+            return mlir::failure();
         }
 
         // the program's view of each class (MEMBERS_EXPECTED_NAME)

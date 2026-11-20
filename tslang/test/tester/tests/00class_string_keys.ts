@@ -20,6 +20,16 @@ class N {
     "0" = 7;
 }
 
+class N1 {
+    "1" = 9;
+}
+
+class WithAccessor {
+    get v(): number {
+        return 1;
+    }
+}
+
 function key(s: string) {
     return s;
 }
@@ -50,9 +60,22 @@ function main() {
     const x: any = c;
     assert(<string>x[key("d")] == "dee");
 
+    // the base's storage a subclass begins with, and an accessor's functions, are no keys
+    assert(!(key("C") in x));
+    assert(typeof x[key("C")] == "undefined");
+    const h: any = new WithAccessor();
+    assert(key("v") in h);
+    assert(!(key("get_v") in h));
+
     // a number key is its text
     const n: any = new N();
     assert(<number>n[0] == 7);
+
+    // ...a run-time number too, on the class's own type
+    let i = 0;
+    i++;
+    const n1 = new N1();
+    assert(<number>n1[i] == 9);
 
     print("done.");
 }

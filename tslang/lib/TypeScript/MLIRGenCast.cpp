@@ -4445,6 +4445,13 @@ namespace mlirgen
             return;
         }
 
+        // a value of type any is not cast to a union: a function taking one (`pattern: string | RegExp`) is not called
+        // through any (its adapter did not compile, and the module with it)
+        if (llvm::any_of(inputs, [&](mlir::Type input) { return isa<mlir_ts::UnionType>(mth.stripOptionalType(input)); }))
+        {
+            return;
+        }
+
         auto hash = MLIRHelper::hashOfType(funcType);
         if (anyCallAdaptersInProgress.contains(hash))
         {
@@ -4762,8 +4769,10 @@ namespace mlirgen
                 auto storageType = mlir::cast<mlir_ts::ClassStorageType>(info->classType.getStorageType());
                 for (auto &field : storageType.getFields())
                 {
+                    // a base's storage, which a subclass's begins with, is no member (its id is the base's name)
                     if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
-                        name && field.accessLevel == mlir_ts::AccessLevel::Public)
+                        name && field.accessLevel == mlir_ts::AccessLevel::Public &&
+                        llvm::none_of(info->baseClasses, [&](auto &base) { return base->fullName == name.getValue(); }))
                     {
                         addKey(values, name.getValue());
                         if (types)
@@ -4789,12 +4798,23 @@ namespace mlirgen
                         {
                             readOnly->insert(accessor.name);
                         }
+
+                        // what a write gives the setter: its value parameter's type
+                        if (types && accessor.set && accessor.set.funcType.getNumInputs() > 0)
+                        {
+                            types->try_emplace(accessor.name, accessor.set.funcType.getInputs().back());
+                        }
                     }
                 }
 
                 for (auto &method : info->methods)
                 {
-                    if (!method.isStatic && method.accessLevel == mlir_ts::AccessLevel::Public)
+                    // an accessor's or an indexer's functions (`get_g`) are not methods of their own
+                    auto isFunctionOf = [&](const FunctionEntry &entry) { return entry && entry.name == method.funcName; };
+                    auto isAccessorOrIndexer =
+                        llvm::any_of(info->accessors, [&](auto &accessor) { return isFunctionOf(accessor.get) || isFunctionOf(accessor.set); }) ||
+                        llvm::any_of(info->indexes, [&](auto &index) { return isFunctionOf(index.get) || isFunctionOf(index.set); });
+                    if (!method.isStatic && method.accessLevel == mlir_ts::AccessLevel::Public && !isAccessorOrIndexer)
                     {
                         addKey(methods, method.name);
                     }
@@ -5048,7 +5068,9 @@ namespace mlirgen
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 if (classInfo && classInfo->getHasVirtualTable() && !classInfo->isCppVTable)
                 {
-                    src += "const actual = __actual_class_keys(o);\n"
+                    // a null object of the class: its vtable is not there to ask
+                    src += "if (o == null) " + throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n"
+                           "const actual = __actual_class_keys(o);\n"
                            "if (actual != null) return (<(box: any, op: number, key: any, value: any) => any>actual)(box, op, key, value);\n";
                 }
             }
