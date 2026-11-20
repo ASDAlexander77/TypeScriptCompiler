@@ -1798,7 +1798,16 @@ Still open, found along the way (each on main before #884):
   have, and were called with the copy as `this`. Now a compile error that says to declare the type as an
   interface, which takes the object itself (and works). A function-typed field (`something?: () => void`) and
   a literal whose methods use no outer variables were not affected.
-- Not yet: a declared union of function types
+- A declared union of function types (`type H = (() => void) | (() => number)`, `x()`): "not a function to call",
+  and no call could tell its members apart (each is tagged "function"). It is now one type
+  (getMergedFunctionType): the widest parameters, when each member's are the first of them, returning `void`
+  when one member does (with the same results, the widest member). `c ? f : g` / `a ?? g` merge the same way.
+  For that, a function returning a value is given as one returning `void`, as TypeScript allows
+  (`let f: () => void = n`, refused before: "one returns a value and the other does not"): a named function or a
+  closure through its thunk, a bound method through its boxed adapter, each dropping (releasing) the result.
+  Under -mm=own a method given so stays refused, and the message says so. Churn of 3M dropped strings: no leak
+  (rc 5.4 MB peak, own 5.4 MB).
+- Not yet: a function union with `| null`/`| undefined`, or one whose members return different values
   (`type H = (() => void) | (() => number)`), call signatures through conditional types, generic arrows
   returning generic arrows.
 
@@ -1809,6 +1818,6 @@ as a value, "'llvm.mlir.addressof' op must reference a global").
 
 Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
 `00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own); `00bound_method_fewer_parameters.ts` (compile,
-JIT, JIT -mm=rc);
+JIT, JIT -mm=rc); `00function_union_call.ts` (compile, JIT, JIT -mm=rc, JIT -mm=own);
 `diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`,
 `captured_literal_method_copy.ts`.

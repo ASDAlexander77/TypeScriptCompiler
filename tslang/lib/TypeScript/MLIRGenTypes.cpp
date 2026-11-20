@@ -3361,6 +3361,7 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
         MLIRTypeHelper::UnionTypeProcessContext unionContext = {};
+        SmallVector<mlir::Type> itemTypes;
         for (auto typeItem : unionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
@@ -3372,6 +3373,7 @@ namespace mlirgen
                 return mlir::Type();
             }
 
+            itemTypes.push_back(type);
             mth.processUnionTypeItem(type, unionContext);
         }
 
@@ -3379,6 +3381,13 @@ namespace mlirgen
         if (unionContext.isAny)
         {
             return getAnyType();
+        }
+
+        // `(() => void) | (() => number)`: functions a value may be, as one type it can be called as (each would be
+        // tagged "function" in a union, which no call can tell apart): see getMergedFunctionType
+        if (auto mergedFunctionType = getMergedFunctionType(itemTypes))
+        {
+            return mergedFunctionType;
         }
 
         return mth.getUnionTypeMergeTypes(loc(unionTypeNode), unionContext, false, false);

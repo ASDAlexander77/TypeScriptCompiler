@@ -2835,6 +2835,10 @@ namespace mlirgen
             break;
         case MatchResultType::NotMatchResultCount:
             diag << ": one returns a value and the other does not";
+            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
+            {
+                diag << " (under -mm=own a method is not given as a function returning nothing yet)";
+            }
             break;
         case MatchResultType::NotMatchResult:
             if (match.index < inFuncType.getNumResults() && match.index < resFuncType.getNumResults())
@@ -2893,14 +2897,18 @@ namespace mlirgen
         resInputs.append(resFuncType.getInputs().begin(), resFuncType.getInputs().end());
         auto sameResults = inFuncType.getResults() == resFuncType.getResults()
             || (isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults()));
-        if (inInputs.size() >= resInputs.size() || !sameResults
+        // a function returning a value given as one returning `void` (`let f: () => void = n`, as TypeScript
+        // allows): the thunk calls it and drops the result
+        auto dropResult = !isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults());
+        if (inInputs.size() > resInputs.size() || (inInputs.size() == resInputs.size() && !dropResult)
+            || !(sameResults || dropResult)
             || !llvm::equal(inInputs, llvm::ArrayRef<mlir::Type>(resInputs).take_front(inInputs.size())))
         {
             return mlir::Value();
         }
 
         auto calleeName = symbolRefOp.getIdentifier();
-        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size())).str();
+        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size()) + (dropResult ? ".void" : "")).str();
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
         if (!lookupModuleSymbol(thunkName))
         {
@@ -2933,7 +2941,8 @@ namespace mlirgen
             builder.setInsertionPointToStart(&entryBlock);
 
             auto results = inFuncType.getResults();
-            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            // the thunk returns what the callee does, unless it drops it
+            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
             auto entryOp = builder.create<mlir_ts::EntryOp>(
                 noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
 
@@ -2962,6 +2971,11 @@ namespace mlirgen
                 }
 
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
+            {
+                // dropped as a call statement drops it: an owned temporary nothing takes, released
+                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -3026,18 +3040,21 @@ namespace mlirgen
             destInputs = destInputs.drop_front();
         }
 
-        // the method's own parameters, after its `this`, are the type's last ones
-        auto ownParams = methodType.getNumInputs() - 1;
-        if (destInputs.size() <= ownParams)
-        {
-            return mlir::Value();
-        }
-
         auto isVoid = [](mlir::TypeRange results) {
             return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
         };
 
-        if (!(methodType.getResults() == destType.getResults()
+        // a method returning a value given as one returning `void` (with `ownParamsFirst`): the adapter drops it
+        auto dropResult = ownParamsFirst && !isVoid(methodType.getResults()) && isVoid(destType.getResults());
+
+        // the method's own parameters, after its `this`, are the type's last ones
+        auto ownParams = methodType.getNumInputs() - 1;
+        if (destInputs.size() < ownParams || (destInputs.size() == ownParams && !dropResult))
+        {
+            return mlir::Value();
+        }
+
+        if (!(dropResult || methodType.getResults() == destType.getResults()
               || (isVoid(methodType.getResults()) && isVoid(destType.getResults()))))
         {
             return mlir::Value();
@@ -3089,7 +3106,7 @@ namespace mlirgen
             builder.setInsertionPointToStart(&entryBlock);
 
             auto results = methodType.getResults();
-            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
             auto entryOp = builder.create<mlir_ts::EntryOp>(
                 noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
 
@@ -3131,6 +3148,11 @@ namespace mlirgen
                 }
 
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
+            {
+                // dropped as a call statement drops it: an owned temporary nothing takes, released
+                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -3195,7 +3217,9 @@ namespace mlirgen
             {
                 // test fun types
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
-                if (test.result == MatchResultType::NotMatchArgCount)
+                // fewer parameters, or a result given as `void` (`let f: () => void = n`)
+                if (test.result == MatchResultType::NotMatchArgCount
+                    || test.result == MatchResultType::NotMatchResultCount)
                 {
                     if (auto thunk = fewerParametersThunk(location, value, type))
                     {

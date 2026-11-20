@@ -14,6 +14,14 @@ class C {
     }
 }
 
+class G {
+    k = 0;
+    name(): string {
+        this.k++;
+        return "g" + this.k;
+    }
+}
+
 let calls = 0;
 let seen = "";
 
@@ -56,6 +64,13 @@ function main() {
 
     apply(c.something);
     assert(c.n == 101);
+
+    // a method returning a value given as one returning `void`: the adapter drops the result
+    const g = new G();
+    let m: () => void = g.name;
+    m();
+    m();
+    assert(g.k == 2);
 
     print("done.");
 }

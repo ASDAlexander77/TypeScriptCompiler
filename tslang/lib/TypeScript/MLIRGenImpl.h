@@ -6887,22 +6887,34 @@ class MLIRGenImpl
         return ifOp.getResults().front();
     }
 
-    // Two function types a value may have (`a ?? b`, `c ? f : g`): the one taking the most parameters, when the
-    // other's are the first of them and the results are the same, else none (they are then a union, as before)
+    // Two function types a value may have (`a ?? b`, `c ? f : g`): see getMergedFunctionType
     mlir::Type getCommonFunctionType(mlir::Type type1, mlir::Type type2)
     {
-        if (!type1 || !type2 || type1 == type2 || !mth.isAnyFunctionType(type1) || !mth.isAnyFunctionType(type2)
-            || mth.isGenericType(type1) || mth.isGenericType(type2))
+        if (!type1 || !type2 || type1 == type2)
         {
             return mlir::Type();
         }
 
-        auto funcType1 = mth.GetFunctionType(type1);
-        auto funcType2 = mth.GetFunctionType(type2);
-        if (!funcType1 || !funcType2 || funcType1.isVarArg() || funcType2.isVarArg())
+        return getMergedFunctionType({type1, type2});
+    }
+
+    // Function types a value may have, as one type it can be called as (`c ? f : g`, `type H = (() => void) |
+    // (() => number)`). Each one's parameters must be the first of the widest one's. With the same results, the
+    // one taking the most parameters (when the counts differ; with the same counts the types stay as they were);
+    // with different results of which one is `void`, the widest parameters returning nothing - a function
+    // returning a value is given as one returning `void` through a thunk that drops it, as TypeScript allows. Null
+    // when they are not that: a union of them could not be called ("not a function to call"), its tag being
+    // "function" for each.
+    mlir::Type getMergedFunctionType(mlir::ArrayRef<mlir::Type> types)
+    {
+        if (types.size() < 2)
         {
             return mlir::Type();
         }
+
+        auto isVoid = [](mlir::TypeRange results) {
+            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+        };
 
         // the parameters a caller gives: a bound function's own `this` is not one of them
         auto visibleInputs = [](mlir::Type type, mlir_ts::FunctionType funcType) {
@@ -6910,22 +6922,61 @@ class MLIRGenImpl
             return isa<mlir_ts::BoundFunctionType>(type) && !inputs.empty() ? inputs.drop_front() : inputs;
         };
 
-        auto inputs1 = visibleInputs(type1, funcType1);
-        auto inputs2 = visibleInputs(type2, funcType2);
-        auto isVoid = [](mlir::TypeRange results) {
-            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
-        };
+        mlir::Type widest;
+        mlir::ArrayRef<mlir::Type> widestInputs;
+        for (auto type : types)
+        {
+            if (!type || !mth.isAnyFunctionType(type) || mth.isGenericType(type))
+            {
+                return mlir::Type();
+            }
 
-        auto sameResults = funcType1.getResults() == funcType2.getResults()
-                           || (isVoid(funcType1.getResults()) && isVoid(funcType2.getResults()));
-        auto shorter = inputs1.size() <= inputs2.size() ? inputs1 : inputs2;
-        auto longer = inputs1.size() <= inputs2.size() ? inputs2 : inputs1;
-        if (!sameResults || shorter.size() == longer.size() || !llvm::equal(shorter, longer.take_front(shorter.size())))
+            auto funcType = mth.GetFunctionType(type);
+            if (!funcType || funcType.isVarArg() || funcType.isCVarArg())
+            {
+                return mlir::Type();
+            }
+
+            auto inputs = visibleInputs(type, funcType);
+            if (!widest || inputs.size() > widestInputs.size())
+            {
+                widest = type;
+                widestInputs = inputs;
+            }
+        }
+
+        auto anyVoid = false;
+        auto sameResults = true;
+        auto sameCounts = true;
+        auto widestResults = mth.GetFunctionType(widest).getResults();
+        for (auto type : types)
+        {
+            auto funcType = mth.GetFunctionType(type);
+            auto inputs = visibleInputs(type, funcType);
+            if (!llvm::equal(inputs, widestInputs.take_front(inputs.size())))
+            {
+                return mlir::Type();
+            }
+
+            sameCounts &= inputs.size() == widestInputs.size();
+            anyVoid |= isVoid(funcType.getResults());
+            sameResults &= funcType.getResults() == widestResults
+                           || (isVoid(funcType.getResults()) && isVoid(widestResults));
+        }
+
+        if (sameResults)
+        {
+            return sameCounts ? mlir::Type() : widest;
+        }
+
+        if (!anyVoid)
         {
             return mlir::Type();
         }
 
-        return inputs2.size() > inputs1.size() ? type2 : type1;
+        // the widest one's parameters, returning nothing
+        return mlir_ts::HybridFunctionType::get(
+            builder.getContext(), mlir_ts::FunctionType::get(builder.getContext(), widestInputs, {}, false));
     }
 
     // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
