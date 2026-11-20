@@ -373,6 +373,7 @@ set_tests_properties(test-members-table-entries PROPERTIES PASS_REGULAR_EXPRESSI
 add_test(NAME test-members-table-empty COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_members_table.ts" -o -)
 set_tests_properties(test-members-table-empty PROPERTIES PASS_REGULAR_EXPRESSION "@Q\\.\\.members = [^\n]*zeroinitializer" FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-compile-00-for-in-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_any.ts")
 tslang_add_test(NAME test-compile-00-instanceof-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-compile-00-any-cast-back-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
 tslang_add_test(NAME test-compile-00-field-type-class-declared-later COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
@@ -1100,6 +1101,7 @@ tslang_add_test(NAME test-jit-00-class-keys-heap-values COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-00-any-keys-union-members COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_union_members.ts")
 tslang_add_test(NAME test-jit-00-class-keyof-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_keyof_keys.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-jit-00-for-in-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in_any.ts")
 tslang_add_test(NAME test-jit-00-instanceof-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
 tslang_add_test(NAME test-jit-00-field-type-class-declared-later COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
@@ -2123,9 +2125,12 @@ foreach(issues_mm gc rc none own)
     endforeach()
 endforeach()
 # ...and what stays refused there, with an error that says why instead of a crash, a hang or a lowering failure
+# (`for...in` over an `any` reads its keys at run time now, 00for_in_any.ts - but not under -mm=own, as `x[k]` is not)
 add_test(NAME test-compile-for-in-any-error
-         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/for_in_any_error.ts")
-set_tests_properties(test-compile-for-in-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'for\\.\\.\\.in' over a value of type 'any' is not supported"
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/for_in_any_error.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/for-in-any-error.obj")
+set_tests_properties(test-compile-for-in-any-error PROPERTIES PASS_REGULAR_EXPRESSION "'for\\.\\.\\.in' or Object\\.keys of a value of type 'any' is not supported under -mm=own"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-enum-variable-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_variable_error.ts")
@@ -3219,6 +3224,7 @@ set(TSLANG_CORPUS
     00any_keys_union_members.ts
     00class_keyof_keys.ts
     00any_keys_write.ts
+    00for_in_any.ts
     00instanceof_generic.ts
     00any_cast_back_function.ts
     00field_type_class_declared_later.ts

@@ -1592,6 +1592,18 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto objectValue = V(result);
 
+        // an `any`'s keys are known at run time only: its keys adapter lists them (ANY_KEYS_OP_KEYS)
+        if (method == "keys" && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(objectValue.getType()))
+        {
+            if (!isa<mlir_ts::AnyType>(objectValue.getType()))
+            {
+                CAST(objectValue, location, getAnyType(), objectValue, genContext);
+            }
+
+            auto noKey = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            return mlirGenAnyKey(location, objectValue, noKey, ANY_KEYS_OP_KEYS, genContext);
+        }
+
         SmallVector<std::string> keys;
         if (!forInFieldKeys(objectValue.getType(), keys))
         {

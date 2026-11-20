@@ -1593,13 +1593,34 @@ namespace mlirgen
         // The loop is still a loop, so `break` and `continue` keep their meaning.
         SmallVector<std::string> fieldKeys;
         auto iteratedType = evaluate(forInStatementAST->expression, genContext);
-        // an `any` holds a value whose keys are known only at run time, which nothing here reads
+        // An `any` holds a value whose keys are known only at run time: its keys adapter lists them
+        // (ANY_KEYS_OP_KEYS), and the loop is `for (key of <those keys>) body`. The keys are read once, before the
+        // first turn, as JavaScript reads them; the body reads `x[key]` through the adapter too.
         if (iteratedType && (isa<mlir_ts::AnyType>(iteratedType) || isa<mlir_ts::UnknownType>(iteratedType)))
         {
-            emitError(loc(forInStatementAST->expression))
-                << "'for...in' over a value of type '" << to_print(iteratedType)
-                << "' is not supported: its keys are not known; give it an object, a tuple or an array type";
-            return mlir::failure();
+            auto iteratedLocation = loc(forInStatementAST->expression);
+            auto iterated = mlirGen(forInStatementAST->expression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(iterated)
+            auto iteratedValue = V(iterated);
+            if (!isa<mlir_ts::AnyType>(iteratedValue.getType()))
+            {
+                CAST(iteratedValue, iteratedLocation, getAnyType(), iteratedValue, genContext);
+            }
+
+            auto noKey = builder.create<mlir_ts::UndefOp>(iteratedLocation, getUndefinedType());
+            auto keys = mlirGenAnyKey(iteratedLocation, iteratedValue, noKey, ANY_KEYS_OP_KEYS, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(keys)
+
+            auto keysName = StringRef(".for_in_keys");
+            auto keysDeclaration = std::make_shared<VariableDeclarationDOM>(keysName, V(keys).getType(), iteratedLocation);
+            declare(iteratedLocation, keysDeclaration, V(keys), genContext);
+
+            auto forOf = nf.createForOfStatement(undefined, forInStatementAST->initializer, nf.createIdentifier(S(".for_in_keys")),
+                                                 forInStatementAST->statement);
+            forOf->pos = forInStatementAST->pos;
+            forOf->_end = forInStatementAST->_end;
+            forOf->parent = forInStatementAST->parent;
+            return mlirGen(forOf.as<Statement>(), genContext);
         }
 
         if (forInFieldKeys(iteratedType, fieldKeys))

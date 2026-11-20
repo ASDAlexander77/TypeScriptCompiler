@@ -4985,6 +4985,7 @@ namespace mlirgen
 
         auto has = std::to_string(ANY_KEYS_OP_HAS);
         auto set = std::to_string(ANY_KEYS_OP_SET);
+        auto keysOp = std::to_string(ANY_KEYS_OP_KEYS);
         // a write of a key the type has not got: a value's keys are its type's, none is added
         auto noNewKey = "if (op == " + set + ") " +
                         throwTypeErrorSource("a key the type of the value in the value of type any has not got can't be written") + "\n";
@@ -5011,6 +5012,7 @@ namespace mlirgen
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
                   "const kt = typeof key;\n"
                   "const a = <T>box;\n"
+                  "if (op == " + keysOp + ") { const r: string[] = []; for (let i = 0; i < a.length; i++) r.push(\"\" + i); return <any>r; }\n"
                   "if (" + anyKeyIsNumberSource + ") {\n"
                   "const i = <number>key;\n"
                   "const inside = i >= 0 && i < a.length && i % 1 == 0;\n"
@@ -5052,28 +5054,77 @@ namespace mlirgen
             };
 
             name = "__any_keys_" + std::to_string(hash);
-            // a number key is its text, as a tuple's position is
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
-                  "const kt = typeof key;\n"
-                  "let k = \"\";\n"
-                  "if (kt == \"string\") k = <string>key;\n"
-                  "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
-                  "else {\n" + notThere + "}\n"
                   "const o = <T>box;\n";
 
             // an object of a subclass has keys of its own: its class's adapter reads them (its member table,
             // CLASS_VTABLE_MEMBERS_SLOT), as JavaScript reads the object, not the type it was boxed as
-            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            auto classType = dyn_cast<mlir_ts::ClassType>(type);
+            if (classType)
             {
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 if (classInfo && classInfo->getHasVirtualTable() && !classInfo->isCppVTable)
                 {
                     // a null object of the class: its vtable is not there to ask
-                    src += "if (o == null) " + throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n"
+                    src += "if (o == null) { if (op == " + keysOp + ") { const e: string[] = []; return <any>e; } " +
+                           throwTypeErrorSource("a key of null or undefined can't be read or written") + " }\n"
                            "const actual = __actual_class_keys(o);\n"
                            "if (actual != null) return (<(box: any, op: number, key: any, value: any) => any>actual)(box, op, key, value);\n";
                 }
             }
+
+            // its keys (ANY_KEYS_OP_KEYS): a class object's are its fields, base class first, as JavaScript makes
+            // them (an accessor or a method is the prototype's); an object's or a tuple's are every value key
+            SmallVector<std::string> enumerable;
+            if (classType)
+            {
+                std::function<void(ClassInfo::TypePtr)> fieldsOf = [&](ClassInfo::TypePtr info) {
+                    for (auto &baseClass : info->baseClasses)
+                    {
+                        fieldsOf(baseClass);
+                    }
+
+                    auto storageType = mlir::cast<mlir_ts::ClassStorageType>(info->classType.getStorageType());
+                    for (auto &field : storageType.getFields())
+                    {
+                        auto fieldName = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                        if (fieldName && field.accessLevel == mlir_ts::AccessLevel::Public
+                            && llvm::is_contained(values, fieldName.getValue().str())
+                            && !llvm::is_contained(enumerable, fieldName.getValue().str()))
+                        {
+                            enumerable.push_back(fieldName.getValue().str());
+                        }
+                    }
+                };
+
+                if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()))
+                {
+                    fieldsOf(classInfo);
+                }
+            }
+            else
+            {
+                enumerable.append(values.begin(), values.end());
+            }
+
+            src += "if (op == " + keysOp + ") {\nconst r: string[] = [];\n";
+            for (auto &key : enumerable)
+            {
+                auto read = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type) && isIndex(key) ? "o[" + key + "]"
+                                                                                                    : "o[" + quote(key) + "]";
+                // an optional field is a key only while it is set
+                src += optionals.contains(key) ? "if (typeof " + read + " != \"undefined\") r.push(" + quote(key) + ");\n"
+                                               : "r.push(" + quote(key) + ");\n";
+            }
+
+            src += "return <any>r;\n}\n";
+
+            // a number key is its text, as a tuple's position is
+            src += "const kt = typeof key;\n"
+                   "let k = \"\";\n"
+                   "if (kt == \"string\") k = <string>key;\n"
+                   "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
+                   "else {\n" + notThere + "}\n";
 
             // a tuple is a value: the `any` holds a copy of it, which a write would change and nothing else
             auto tuple = isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(type);
@@ -5199,7 +5250,9 @@ namespace mlirgen
     {
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
-            emitError(location) << (op == ANY_KEYS_OP_HAS ? "'k in x' of a value of type 'any'" : "element access of a value of type 'any' ('x[k]')")
+            emitError(location) << (op == ANY_KEYS_OP_HAS    ? "'k in x' of a value of type 'any'"
+                                    : op == ANY_KEYS_OP_KEYS ? "'for...in' or Object.keys of a value of type 'any'"
+                                                             : "element access of a value of type 'any' ('x[k]')")
                                 << " is not supported under -mm=own: cast it to its type first";
             return mlir::failure();
         }
@@ -5224,14 +5277,20 @@ namespace mlirgen
         {
             auto has = std::to_string(ANY_KEYS_OP_HAS);
             auto set = std::to_string(ANY_KEYS_OP_SET);
+            auto keysOp = std::to_string(ANY_KEYS_OP_KEYS);
+            // the keys of what has none (`for (k in null)` runs no times, as in JavaScript)
+            auto noKeys = "if (op == " + keysOp + ") { const e: string[] = []; return <T><any>e; }\n";
             // `b`: `box` before `typeof` narrowed it
             std::string src =
                 "function __any_key<T>(box: any, op: number, key: any, value: any): T {\n"
                 "const kt = typeof key;\n"
                 "const b = box;\n"
                 "const t = typeof b;\n"
-                "if (t == \"null\" || t == \"undefined\") " + throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n"
+                "if (t == \"null\" || t == \"undefined\") {\n" + noKeys +
+                throwTypeErrorSource("a key of null or undefined can't be read or written") + "\n}\n"
                 "if (t == \"string\") {\n"
+                "if (op == " + keysOp + ") { const r: string[] = []; const cs = <string>b; "
+                "for (let i = 0; i < cs.length; i++) r.push(\"\" + i); return <T><any>r; }\n"
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a string is not allowed") + "\n"
                 "if (op == " + set + ") " + throwTypeErrorSource("a string can't be changed") + "\n"
                 "const s = <string>b;\n"
@@ -5246,7 +5305,8 @@ namespace mlirgen
                 "const keys = __any_keys_adapter(b);\n"
                 "if (keys == null) {\n"
                 "if (t == \"class\" || t == \"tuple\" || t == \"interface\" || t == \"array\" || t == \"object\") " +
-                throwTypeErrorSource("the keys of the value in the value of type any are not known: it was boxed where they were not") + "\n"
+                throwTypeErrorSource("the keys of the value in the value of type any are not known: it was boxed where they were not") + "\n" +
+                noKeys +
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a value that is not an object is not allowed") + "\n"
                 "if (op == " + set + ") " + throwTypeErrorSource("a key of a value that is not an object can't be written") + "\n"
                 "return <T>undefined;\n"
@@ -5314,6 +5374,12 @@ namespace mlirgen
         {
             // `x[k] = v` is `v`
             return value;
+        }
+
+        if (op == ANY_KEYS_OP_KEYS)
+        {
+            // a new array each time: the keys, as `for...in` and Object.keys give them
+            return cast(location, mlir_ts::ArrayType::get(getStringType()), V(result), genContext);
         }
 
         if (auto definingOp = V(result).getDefiningOp())
