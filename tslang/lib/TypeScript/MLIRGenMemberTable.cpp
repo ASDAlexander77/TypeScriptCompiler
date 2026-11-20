@@ -4,8 +4,9 @@
 //
 // Every class with a vtable has one, as its vtable - made with the class - names it before the module knows
 // whether anything reads the class by name. A class something reads by name (requestMemberTable: boxed into
-// `any`, exported, read with a key known only at run time), and every class of the module extending one, has
-// its members in it; any other has an empty one, which keeps nothing alive.
+// `any`, read with a key known only at run time), and every class of the module extending one, has its members
+// and its keys adapter in it; an exported class has its members (for an importer's layout check) and no
+// adapter; any other has an empty one, which keeps nothing alive.
 
 #include "MLIRGenImpl.h"
 
@@ -56,9 +57,9 @@ namespace mlirgen
         }
     }
 
-    // an exported class: an importer checks its layout against the table, and reads an object of it held as a base
-    // by its keys (a module of a program is imported as an object of its own, as a library's is). Not under
-    // --export=none, where no class is exported.
+    // the entries of a table: of an exported class, as an importer checks its layout against them, and of a class
+    // read by name. Not under --export=none, where no class is exported. Only a class read by name gets a keys
+    // adapter (makeMemberTables).
     bool MLIRGenImpl::isMemberTableRequested(ClassInfo::TypePtr classInfo)
     {
         return classInfo->isExport || isReadByName(classInfo);
@@ -159,15 +160,18 @@ namespace mlirgen
             return;
         }
 
-        // the keys adapters of the classes read by name: a table names its class's (TYPE_DESCR_KEYS). Making one
-        // can box another class (a field's), which asks for its table: again until none is new
+        // the keys adapters of the classes read by name here: a table names its class's (TYPE_DESCR_KEYS). Making
+        // one can box another class (a field's), which asks for its table: again until none is new. Not of a class
+        // only exported: its adapter would keep all its methods linked (a library's DLL grew by a third to a half)
+        // for an importer reading an object of it held as a base by key, which reads it by the base's keys instead
+        // (the table's keys are null)
         llvm::SmallPtrSet<ClassInfo *, 8> ensured;
         for (auto changed = true; changed;)
         {
             changed = false;
             for (auto &[location, classInfo] : membersTableClasses)
             {
-                if (isMemberTableRequested(classInfo) && ensured.insert(classInfo.get()).second)
+                if (isReadByName(classInfo) && ensured.insert(classInfo.get()).second)
                 {
                     ensureAnyKeysAdapter(location, classInfo->classType, genContext);
                     changed = true;
