@@ -1658,3 +1658,102 @@ and recursive conditional types, `await` in `try`/`finally` of an async function
 a class passed as a constructor type (`f(Banana)` for `new (...args) => T`).
 
 Tests: `00generic_function_arguments.ts` (all four models); `diagnostic-location/namespace_as_value.ts`.
+
+137 (fixed in #884, except the open items at the end; found 2026-11-17 on main 363b13ce; TypeScript's compiler test
+`tests/cases/compiler/abstractClassUnionInstantiation.ts`): `tslang abstractClassUnionInstantiation.ts`
+failed with "Can't resolve property 'map' of type [ConcreteA, AbstractA, AbstractB]". The file:
+
+```typescript
+class ConcreteA {}
+class ConcreteB {}
+abstract class AbstractA { a: string; }
+abstract class AbstractB { b: string; }
+
+type Abstracts = typeof AbstractA | typeof AbstractB;
+type Concretes = typeof ConcreteA | typeof ConcreteB;
+type ConcretesOrAbstracts = Concretes | Abstracts;
+
+declare const cls1: ConcretesOrAbstracts;
+declare const cls2: Abstracts;
+declare const cls3: Concretes;
+
+new cls1(); // should error
+new cls2(); // should error
+new cls3(); // should work
+
+[ConcreteA, AbstractA, AbstractB].map(cls => new cls()); // should error
+[AbstractA, AbstractB, ConcreteA].map(cls => new cls()); // should error
+[ConcreteA, ConcreteB].map(cls => new cls()); // should work
+[AbstractA, AbstractB].map(cls => new cls()); // should error
+```
+
+Five gaps behind it, each fixed:
+
+- A tuple had no Array members. An array literal of mixed element types (`[1, "a"]`, `[A, B]`) is a tuple,
+  so `.map` did not resolve. TypeScript types it `(number | string)[]`. A tuple of unnamed elements now has
+  Array's members that read it (map, filter, forEach, every, some, reduce, find, join, slice, at, ...), from
+  an array of its elements of the union of their types; `t.length` is its size. Mutators (`t.reverse()`,
+  `t.push(x)`) stay refused: they would change that copy, not the tuple. Under `-mm=own`, a tuple read
+  from a local whose elements own memory is an error (each element would get a second owner).
+- `new c()` with `c: typeof A | typeof B` built a `ts.New` of the union type: "'ts.New' op result #0 must
+  be ..., but got '!ts.union<!ts.class_value<...>, ...>'", then "module verification error". It now makes
+  the class the value holds: `.new` and the constructor come from the value. The arguments are generated
+  once, so every member's constructor must take the same ones. A union holding an abstract class is
+  TypeScript's error: "Cannot create an instance of an abstract class through a value of '...'". A class
+  named as an array element (`[A, B]`) or a ternary branch (`c ? A : B`) was a class reference, not its
+  value: given to `typeof A | typeof B` it was "'ts.Cast' op type ... can't be stored in ...", and even
+  `c ? A : A` given to `typeof A` was refused. Both now give the class's value.
+- A method called on a union of classes called the first member's: `o.name()` with `o: A | B` holding a B
+  returned A's result. A union's tag cannot tell classes apart: `IsTypeTagOf` compares a layout id, and
+  every class (and every class value) has the same one, a pointer. A union of classes laid out alike has
+  no tag at all. A call of a method every member class has, with the same parameters, now evaluates the
+  object and the arguments once, asks the object its class as `instanceof` does (a subclass before its
+  bases) and calls that class's method.
+- `-mm=own`: `(c: typeof A): A | B => new c()` was "a value takes a second reference" (also into `A | null`,
+  a union local, an `(A | B)[]`). MLIRGen marks the `.new` call through a class value as giving a fresh
+  instance (`__own_fresh_result`), but that call is indirect, and LowerToAffineLoops turned it into a
+  `CallInternal` before the ownership inference read it, keeping only the ABI attributes. Without the mark
+  the result had no owner, and its cast to the union could not be a move. The mark now goes onto the
+  replacement call.
+- `-mm=own`: a tagged union was taken to own memory whatever its members. One whose members all hold no
+  memory (numbers, booleans, null, class values: `number | boolean`, `typeof A | typeof B`) owns none now,
+  so `map` over an `(typeof A | typeof B)[]` or a `(number | boolean)[]` lends its elements instead of
+  failing in the default library ("a value that borrows 'this[]' is used here after it may be released").
+
+The file now fails only where TypeScript reports errors, lines 15, 16, 19, 20 and 22, with the abstract
+class error. Lines 17 and 21 compile and run once `cls3` has a value. As written it is declared only, so
+`tslang file.ts` runs `new cls3()` through an empty class value and crashes; that is the test's
+`declare const`, not a compiler fault. Fixed in #884 and #885. Regression tests
+`tslang/test/tester/tests/00tuple_array_methods.ts`, `00union_method_dispatch.ts` (every model),
+`class_value_union_abstract_error.ts`, `own_tuple_as_array_error.ts` and
+`own/own_new_through_value_union.ts`.
+
+Still open, found along the way (each on main before #884):
+- Fixed after: `for (const x of t)` over a tuple was "Element access with a non-constant index is not
+  supported on this type" (before #884, "Can't resolve property 'length'"). `t[i]` of a tuple of unnamed
+  elements at a run-time index now reads each element where it is, as the union of their types, chosen
+  by the index (an index past the end reads the last element), and for...of reads the tuple so. Under
+  `-mm=own` the elements are borrowed, not copied. Still refused under own: for...of straight over a
+  literal of objects it makes (`for (const o of [new A(), new B()])`, "an object literal that holds a
+  value it owns is moved only into a local ..."); kept in a `const` first it works. Fixed in #887.
+  Regression test `tslang/test/tester/tests/00tuple_for_of.ts` (every model).
+- Fixed after: `const c: typeof A | typeof B | null = B; new c(1)` gave a `typeof A` ("'n' through a value
+  of 'typeof A': only a static member can be reached through a class value"). Four gaps behind it:
+  `new` of a union of class values with `| null` built a `ts.New` of the union type, as #884 fixed
+  without the null (now: the class it holds, made after the arguments, and "a class value is null or
+  undefined: there is no class to make" thrown when it holds none); `typeof A | null` was stored as
+  `typeof A`, its null dropped as for a type that holds null in its own pointer, so assigning null was an
+  invalid cast (a class value is four pointers: it keeps null as a member now, as a number does); a class
+  value as a condition (`if (k)`, `!k`) was an invalid cast, and of a union of them "Cast ... to boolean
+  is not supported" (now true, or not null); and a method of `A | B | null` called A's for any object
+  (the dispatch of #884 now passes over null and undefined). Fixed in #889. Regression test
+  `tslang/test/tester/tests/00class_value_union_null.ts` (every model).
+- Fixed after: `-mm=own --no-default-lib`: `map` over a union array holding strings
+  (`const a: (number | string)[] = [1, "a"]; for (const k of a.map(...))`) was "a value that borrows an
+  element cannot be stored, returned or captured" (`filter` too, and with the default library "'filter'
+  would give an element of type 'number | string' a second owner"). The built-in generator keeps each
+  element in its state, which for a `string[]` takes a copy of the string (spec 50); a tagged union was
+  not copyable. A union of strings and data nothing owns (numbers, booleans, null, undefined) is now:
+  `ts.StringCopy` copies its payload when its tag says string, and `@sharesElements` passes it as it
+  passes a string. Fixed in #890. Regression test `tslang/test/tester/tests/00string_union_elements.ts`
+  (every model).
