@@ -4045,6 +4045,10 @@ set(crash_error_cases
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
     # an `object` holds no type information, so which class it is can't be asked (it said false for every object)
     "instanceof_object.ts|instanceof_object\\.ts:2:32: error: 'instanceof' of a value of type 'object' is not supported"
+    # a generic class is no class of its own: with its statics shared its rtti resolved, and the test was
+    # answered false at compile time, or read a null class info at run time (controlFlowInstanceof.ts crashed)
+    "instanceof_generic_class.ts|instanceof_generic_class\\.ts:3:12: error: instanceof a generic class \\('Box'\\) is not supported"
+    "instanceof_generic_union.ts|instanceof_generic_union\\.ts:3:9: error: instanceof a generic class \\('Box'\\) is not supported"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read

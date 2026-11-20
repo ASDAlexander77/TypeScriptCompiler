@@ -1626,7 +1626,18 @@ namespace mlirgen
             if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
             {
                 auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-                assert(interfaceInfo);
+                // an instance of a generic interface never made (a type argument that could not be
+                // inferred: `inject<T>(t: AbstractType<T>)` given a class) - read through null before
+                if (!interfaceInfo)
+                {
+                    if (!genContext.allowPartialResolve)
+                    {
+                        emitError(location) << "type '" << to_print(valueType) << "' can't be cast to interface '"
+                                            << to_print(interfaceType) << "': the interface is not declared";
+                    }
+
+                    return mlir::failure();
+                }
 
                 auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
                 auto isNotNull = builder.create<mlir_ts::LogicalBinaryOp>(
@@ -1773,7 +1784,17 @@ namespace mlirgen
 
         // create interface vtable from current class
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-        assert(interfaceInfo);
+        // a generic interface's instance never made (see castToInterfaceSpecialCases)
+        if (!interfaceInfo)
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "type: " << classType.getName() << " can't be cast to interface "
+                                    << interfaceType.getName() << ": the interface is not declared";
+            }
+
+            return mlir::failure();
+        }
 
         // known from the discovery pass on, wherever in the module the cast is (castAnyToInterface)
         classInterfaceVTablesCast.insert(interfaceVTableNameForClass(classInfo, interfaceInfo));

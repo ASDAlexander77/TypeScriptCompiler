@@ -7658,9 +7658,22 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtablePtr, instanceOfSlot);
-
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        // A generic class (`x instanceof Set`) has no class of its own, only its instances
+        // (`Set<number>`) have, each with its own rtti: asked by the generic's, an instance said false
+        // whatever it was (and before generic statics were shared, its rtti did not resolve at all).
+        if (!classInfo)
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "instanceof a generic class ('" << to_print(classType)
+                                    << "') is not supported: its instances are each a class of their own";
+            }
+
+            return mlir::failure();
+        }
+
+        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtablePtr, instanceOfSlot);
 
         auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
         if (resultRtti.failed_or_no_value())
@@ -7836,6 +7849,18 @@ class MLIRGenImpl
         // a value has no vtable, so nothing to ask its class of
         if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
         {
+            // A generic class (`s instanceof Set`) is no class of its own, only its instances
+            // (`Set<number>`) are, each with its own rtti. Since generic statics are shared, its `.rtti`
+            // resolves, and the test was answered false - at compile time for a `Set<number>`, and at
+            // run time through a vtable - where it used to be an error.
+            if (!getClassInfoByFullName(classType.getName().getValue())
+                && getGenericClassInfoByFullName(classType.getName().getValue()))
+            {
+                emitError(location) << "instanceof a generic class ('" << to_print(classType)
+                                    << "') is not supported: its instances are each a class of their own";
+                return mlir::failure();
+            }
+
             if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()); classInfo && classInfo->isValue)
             {
                 emitError(location) << "instanceof can't be used with the @" VALUE_DECORATOR " class '" << classInfo->name
