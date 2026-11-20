@@ -159,17 +159,37 @@ namespace mlirgen
         llvm::StringSet<> valueNames;
         for (auto &statement : sourceFile->statements)
         {
-            if (statement == SyntaxKind::InterfaceDeclaration || statement == SyntaxKind::TypeAliasDeclaration)
+            // each read through its own node type: their layouts differ, and a `name` read through another
+            // (NamedDeclaration) was a crash under gcc
+            if (statement == SyntaxKind::InterfaceDeclaration)
             {
-                typeOnlyNames.insert(MLIRHelper::getName(statement.as<NamedDeclaration>()->name));
+                typeOnlyNames.insert(MLIRHelper::getName(statement.as<InterfaceDeclaration>()->name));
             }
-            else if (statement == SyntaxKind::ClassDeclaration || statement == SyntaxKind::FunctionDeclaration
-                     || statement == SyntaxKind::EnumDeclaration || statement == SyntaxKind::ModuleDeclaration)
+            else if (statement == SyntaxKind::TypeAliasDeclaration)
             {
-                if (auto declarationName = statement.as<NamedDeclaration>()->name)
+                typeOnlyNames.insert(MLIRHelper::getName(statement.as<TypeAliasDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::ClassDeclaration)
+            {
+                if (auto declarationName = statement.as<ClassDeclaration>()->name)
                 {
                     valueNames.insert(MLIRHelper::getName(declarationName));
                 }
+            }
+            else if (statement == SyntaxKind::FunctionDeclaration)
+            {
+                if (auto declarationName = statement.as<FunctionDeclaration>()->name)
+                {
+                    valueNames.insert(MLIRHelper::getName(declarationName));
+                }
+            }
+            else if (statement == SyntaxKind::EnumDeclaration)
+            {
+                valueNames.insert(MLIRHelper::getName(statement.as<EnumDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::ModuleDeclaration)
+            {
+                valueNames.insert(MLIRHelper::getName(statement.as<ModuleDeclaration>()->name));
             }
             else if (statement == SyntaxKind::VariableStatement)
             {
