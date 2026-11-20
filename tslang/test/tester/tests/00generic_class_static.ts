@@ -82,6 +82,24 @@ class Tally<T> {
     public static names: string[] = [];
 }
 
+// a private static member of a generic class, used inside it through the class: the access level was
+// the generic class's, not the class being compiled ("Class member 'encode' is not accessable")
+class Codec<S> {
+    private static offset = 1;
+
+    private static encode<E>(value: number): number {
+        return value + Codec.offset;
+    }
+
+    private static decode(value: number): number {
+        return value - Codec.offset;
+    }
+
+    public roundTrip(value: number): number {
+        return Codec.decode(Codec.encode<S>(value) * 2);
+    }
+}
+
 function main() {
     const total = Tally.total;
     const named = Tally.names.length == 0 && total == 0;
@@ -109,6 +127,8 @@ function main() {
     assert(Counter.log.length == 3 && n.entries() == 3 && s.entries() == 3, "an initialized array, made once");
     Counter.made = 10;
     assert(n.seen() == 10 && s.seen() == 10, "written through the class, read through each");
+
+    assert(new Codec<string>().roundTrip(5) == 11 && new Codec<number>().roundTrip(0) == 1, "private statics inside the class");
 
     print("done.");
 }

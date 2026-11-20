@@ -749,8 +749,11 @@ namespace mlirgen
                             auto thisClassRef = builder.create<mlir_ts::ClassRefOp>(
                                 location, thisClassType,
                                 mlir::FlatSymbolRefAttr::get(builder.getContext(), thisClassType.getName().getValue()));
+                            // and its private members are this class's own: the level was found for the
+                            // generic class, which is not the class being compiled
                             return ClassMembersAccess(location, thisClassRef, thisClassInfo, name, baseClass, argument,
-                                                      accessingFromLevel, genContext);
+                                                      std::max(accessingFromLevel, detectAccessLevel(thisClassType, genContext)),
+                                                      genContext);
                         }
                     }
                 }
@@ -782,8 +785,10 @@ namespace mlirgen
                         auto specClassRef = builder.create<mlir_ts::ClassRefOp>(
                             location, specClassType,
                             mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
+                        // (a class derived from it reaches its protected members)
                         return ClassMembersAccess(location, specClassRef, specClassType.getName().getValue(), name, baseClass,
-                                                  argument, accessingFromLevel, genContext);
+                                                  argument, std::max(accessingFromLevel, detectAccessLevel(specClassType, genContext)),
+                                                  genContext);
                     }
                 }
 
