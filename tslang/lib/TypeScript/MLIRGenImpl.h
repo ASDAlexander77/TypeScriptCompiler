@@ -10757,6 +10757,21 @@ class MLIRGenImpl
         {
 #endif
             auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
+            // A pass that only finds types, in which the class was instantiated (`const k = Box.count` of a
+            // generic Box): its global is made in the pass that generates the code. The field's type is
+            // what is asked here, and a place to write when it is assigned (`Box.count = 1`).
+            if (!value && genContext.allowPartialResolve)
+            {
+                auto slot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(fieldInfo.type), mlir::Value(),
+                                                                builder.getBoolAttr(false), builder.getIndexAttr(0));
+                return builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, slot);
+            }
+
+            if (!value)
+            {
+                return mlir::Value();
+            }
+
             // load referenced value
             if (classInfo->isDynamicImport)
             {
