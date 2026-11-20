@@ -311,6 +311,9 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenInclude(mlir::Location location, StringRef filePath, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext);
+    mlir::LogicalResult mlirGenCheckLibraryMembers(mlir::Location location, StringRef filePath, StringRef canonicalPath,
+                                                   ArrayRef<LibraryModuleDeclarations> libraryModules,
+                                                   const GenContext &genContext);
 
     // A library an `import` names: its file, and whether it is loaded at run time (no @static).
     struct ImportedLibrary
@@ -12944,7 +12947,13 @@ class MLIRGenImpl
     };
     // the reads mlirGenClassKeyRead made, which a write to turns into stores
     llvm::DenseMap<mlir::Value, ClassKeyRead> classKeyReads;
-    void makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext);
+    void makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext,
+                         bool expected = false);
+    // the classes of the libraries this module imports at run time (`@dllimport('...')`), as they are declared
+    SmallVector<ClassInfo::TypePtr> dynamicImportClasses;
+    // ...and the library each came from (the one whose declarations were being read: currentDynamicLibrary)
+    llvm::StringMap<std::string> dynamicImportClassLibrary;
+    std::string currentDynamicLibrary;
 
     // the classes whose vtables name their tables (mlirGenClassVirtualTableDefinition)
     SmallVector<std::pair<mlir::Location, ClassInfo::TypePtr>> membersTableClasses;

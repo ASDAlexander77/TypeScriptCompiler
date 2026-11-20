@@ -3701,6 +3701,15 @@ foreach(android_mode codegen link)
     set_tests_properties(test-compile-android-${android_mode} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# A program checks the class layout of a shared library it imports as the library loads - see shared-layout-check.cmake.
+add_test(NAME test-compile-shared-layout-check
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/shared-layout-check"
+                 "-DGC_LIB=${TEST_GC_LIBDIR}"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-layout-check.cmake")
 # A gc shared library called from a non-tslang host's own threads - see foreign-thread-gc.cmake.
 # Windows needs gc.dll (a shared library takes its collector from it); ELF links libgc.a in.
 if (NOT WIN32 OR TSLANG_HAVE_SHARED_GC)

@@ -147,9 +147,13 @@ namespace mlirgen
         membersTableClasses.clear();
     }
 
-    void MLIRGenImpl::makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext)
+    // `expected`: the table of a class of a library this module imports, as this module lays it out
+    // (<class>.members_expected), to check against the library's own when it loads (mlirGenImportSharedLib)
+    void MLIRGenImpl::makeMemberTable(mlir::Location location, ClassInfo::TypePtr classInfo, const GenContext &genContext,
+                                      bool expected)
     {
-        auto tableName = concat(classInfo->fullName, MEMBERS_NAME);
+        auto tableName = concat(classInfo->fullName, expected ? MEMBERS_EXPECTED_NAME : MEMBERS_NAME);
+        auto entriesTableName = concat(classInfo->fullName, expected ? MEMBERS_EXPECTED_ENTRIES_NAME : MEMBERS_ENTRIES_NAME);
         if (theModule.lookupSymbol(tableName))
         {
             return;
@@ -159,7 +163,7 @@ namespace mlirgen
         builder.setInsertionPointToEnd(theModule.getBody());
 
         SmallVector<MemberTableEntry> entries;
-        if (isMemberTableRequested(classInfo))
+        if (expected || isMemberTableRequested(classInfo))
         {
             collectMemberTableEntries(classInfo, entries);
         }
@@ -190,8 +194,8 @@ namespace mlirgen
         auto entryType = getTupleType(entryTypeFields);
 
         VariableClass varClass = VariableType::Var;
-        varClass.isExport = classInfo->isExport;
-        varClass.isPublic = classInfo->isPublic;
+        varClass.isExport = classInfo->isExport && !expected;
+        varClass.isPublic = classInfo->isPublic && !expected;
 
         // the entries
         mlir::Type entriesType;
@@ -205,9 +209,8 @@ namespace mlirgen
             }
 
             entriesType = getTupleType(entryFields);
-            auto entriesName = concat(classInfo->fullName, MEMBERS_ENTRIES_NAME);
             registerVariable(
-                location, entriesName, true, varClass,
+                location, entriesTableName, true, varClass,
                 [&](mlir::Location location, const GenContext &) {
                     MLIRCodeLogic mcl(builder, compileOptions);
                     mlir::Value entriesValue = builder.create<mlir_ts::UndefOp>(location, entriesType);
@@ -265,7 +268,7 @@ namespace mlirgen
             [&](mlir::Location location, const GenContext &) {
                 // the class's keys adapter, when one was made (makeAnyKeysAdapter)
                 mlir::Value keys = nullOpaque();
-                if (!entries.empty())
+                if (!entries.empty() && !expected)
                 {
                     auto hash = MLIRHelper::hashOfType(TypeOfOpHelper::typeOfBaseType(classInfo->classType));
                     if (auto adapters = theModule->getAttrOfType<mlir::DictionaryAttr>(ANY_KEYS_ADAPTERS_ATTR_NAME))
@@ -287,7 +290,7 @@ namespace mlirgen
                 if (!entries.empty())
                 {
                     auto entriesAddress = builder.create<mlir_ts::AddressOfOp>(
-                        location, mlir_ts::RefType::get(entriesType), concat(classInfo->fullName, MEMBERS_ENTRIES_NAME),
+                        location, mlir_ts::RefType::get(entriesType), entriesTableName,
                         ::mlir::IntegerAttr());
                     entriesValue = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), entriesAddress);
                 }

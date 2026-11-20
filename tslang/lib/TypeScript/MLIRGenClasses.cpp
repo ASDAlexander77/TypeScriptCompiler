@@ -460,6 +460,12 @@ namespace mlirgen
                     if (args.size() > 0)
                     {
                         newClassPtr->isDynamicImport = true;
+                        // its layout is checked when its library loads (mlirGenImportSharedLib)
+                        if (!llvm::is_contained(dynamicImportClasses, newClassPtr))
+                        {
+                            dynamicImportClasses.push_back(newClassPtr);
+                            dynamicImportClassLibrary[newClassPtr->fullName] = currentDynamicLibrary;
+                        }
                     }
                 }
 

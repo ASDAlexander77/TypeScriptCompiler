@@ -1,4 +1,5 @@
 #include "TypeScript/DataStructs.h"
+#include "TypeScript/MemberTableCheck.h"
 
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -407,6 +408,13 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 // was before any of this. Pass `--shared-libs=TypeScriptRuntime.dll` to get the real one.
 //
 // Resolved dynamically rather than called directly because tslang.exe does not link the collector.
+// a library class's layout against the one the program was compiled with (ts.CheckMembers)
+static void jitCheckMembers(const void *expected, const void *actual, const char *library, const char *className,
+                            intptr_t expectedSize, const void *actualSize)
+{
+    typescript_member_table::check(expected, actual, library, className, expectedSize, actualSize);
+}
+
 static void jitEnableGCThreads()
 {
     if (auto *allowRegisterThreads = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_allow_register_threads"))
@@ -1258,6 +1266,8 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
             llvm::orc::ExecutorAddr::fromPtr(&jitLoadLibraryPermanently), llvm::JITSymbolFlags::Exported};
         dynamicLibrarySymbols[interner("tslang_search_for_address_of_symbol")] = {
             llvm::orc::ExecutorAddr::fromPtr(&jitSearchForAddressOfSymbol), llvm::JITSymbolFlags::Exported};
+        dynamicLibrarySymbols[interner("tslang_check_members")] = {
+            llvm::orc::ExecutorAddr::fromPtr(&jitCheckMembers), llvm::JITSymbolFlags::Exported};
         if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(dynamicLibrarySymbols))))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define the shared library loader, error: " << err << "\n";

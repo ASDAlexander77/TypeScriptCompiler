@@ -404,6 +404,32 @@ class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchF
     }
 };
 
+// the runtime's tslang_check_members (MemberTableCheck.h): a library class's layout against an importer's
+class CheckMembersOpLowering : public TsLlvmPattern<mlir_ts::CheckMembersOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::CheckMembersOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CheckMembersOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+
+        auto i8PtrTy = th.getPtrType();
+        auto indexType = transformed.getExpectedSize().getType();
+        auto checkFuncOp = ch.getOrInsertFunction(
+            "tslang_check_members",
+            th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy, i8PtrTy, indexType, i8PtrTy}));
+        rewriter.create<LLVM::CallOp>(op->getLoc(), checkFuncOp,
+                                      ValueRange{transformed.getExpected(), transformed.getActual(), transformed.getLibrary(),
+                                                 transformed.getClassName(), transformed.getExpectedSize(),
+                                                 transformed.getActualSize()});
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
 {
   public:
@@ -10528,7 +10554,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TryEntryOpLowering,VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, AccessorUnwindEdgeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
-        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, AnyCallAdapterOpLowering, AnyKeysAdapterOpLowering, ActualClassKeysOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, IsTupleOfLayoutOpLowering, AnyCallAdapterOpLowering, AnyKeysAdapterOpLowering, ActualClassKeysOpLowering, CheckMembersOpLowering, IsTypeTagOfOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
