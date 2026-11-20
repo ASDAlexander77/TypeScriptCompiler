@@ -254,6 +254,9 @@
 // class nothing reads by name has an empty one (count 0).
 #define MEMBERS_NAME ".members"
 #define MEMBERS_ENTRIES_NAME ".members_entries"
+// the first line of a library's exported declarations (__decls_<module>) when its classes have member tables:
+// an importer of a library without it does not check the library's class layout when it loads
+#define MEMBERS_MARKER "// @members"
 #define MEMBER_KIND_FIELD 0
 #define MEMBER_KIND_ACCESSOR 1
 #define MEMBER_KIND_METHOD 2

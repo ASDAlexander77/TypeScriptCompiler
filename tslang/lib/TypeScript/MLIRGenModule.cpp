@@ -913,7 +913,9 @@ namespace mlirgen
             return mlir::success();
         }
 
-        auto declText = declExports.str();
+        // the library's classes have member tables (`<class>.members`): an importer checks their layout against
+        // them when the library loads (mlirGenImportSharedLib)
+        auto declText = std::string(MEMBERS_MARKER "\n") + declExports.str();
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 

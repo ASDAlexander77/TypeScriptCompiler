@@ -5068,6 +5068,14 @@ namespace mlirgen
                            throwTypeErrorSource("an accessor with no setter can't be written through a value of type any") + "\n";
                 }
 
+                // a value of type any is not cast to a union (`v: number | string`): such a field is read through
+                // any, not written (the adapter did not compile, and the module with it)
+                if (auto fieldType = types.lookup(key); fieldType && isa<mlir_ts::UnionType>(mth.stripOptionalType(fieldType)))
+                {
+                    return "if (op == " + set + ") " +
+                           throwTypeErrorSource("a field of a union type can't be written through a value of type any: cast the value to its type") + "\n";
+                }
+
                 return "if (op == " + set + ") { " + anyKeyValueKindCheck(types.lookup(key), optionals.contains(key), throwWrongKind) +
                        place + " = value; return undefined; }\n";
             };

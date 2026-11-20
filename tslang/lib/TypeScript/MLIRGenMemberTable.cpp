@@ -32,8 +32,7 @@ namespace mlirgen
         return classInfo->isExport || isReadByName(classInfo);
     }
 
-    // read by a key known at run time here: its keys adapter is made. An exported class's entries are there
-    // for an importer's check (an importer that boxes it makes the adapter itself).
+    // read by a key known at run time here (or a subclass of one)
     bool MLIRGenImpl::isReadByName(ClassInfo::TypePtr classInfo)
     {
         if (memberTableRequests.contains(classInfo->fullName))
@@ -131,7 +130,8 @@ namespace mlirgen
         // the keys adapters of the classes read by name: a table names its class's (TYPE_DESCR_KEYS)
         for (auto &[location, classInfo] : membersTableClasses)
         {
-            if (isReadByName(classInfo))
+            // an exported class too: an importer holding one of its objects as a base reads it by its keys
+            if (isMemberTableRequested(classInfo))
             {
                 ensureAnyKeysAdapter(location, classInfo->classType, genContext);
             }
