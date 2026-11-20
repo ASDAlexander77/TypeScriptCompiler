@@ -3694,6 +3694,14 @@ add_test(NAME test-default-lib-dir
                  "-DTSLANG=$<TARGET_FILE:tslang>"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/default-lib-dir.cmake")
 
+# `export default <expression>` and `import x from` - see export-default.cmake
+add_test(NAME test-export-default
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/export-default"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/export-default.cmake")
+
 # how `import` finds a module: .d.ts, folders, package.json, node_modules, @types - see module-resolution.cmake
 add_test(NAME test-module-resolution
          COMMAND ${CMAKE_COMMAND}
@@ -4062,7 +4070,13 @@ set(crash_error_cases
     "export_list.ts|export_list\\.ts:2:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
     "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
-    "export_default_expression.ts|export_default_expression\\.ts:1:1: error: 'export default <expression>' is not supported"
+    # a file's `export default <expression>` is an exported constant (export-default.cmake); one in a `declare module` block is not
+    "export_default_in_module_block.ts|export_default_in_module_block\\.ts:2:5: error: 'export default <expression>' is not supported here: only at a file's top level"
+    # what can't be assigned to says what it is (it said "saving to constant object")
+    "assign_to_class.ts|assign_to_class\\.ts:2:1: error: can't assign to the class 'C': a class is not a variable"
+    "assign_to_namespace.ts|assign_to_namespace\\.ts:2:1: error: can't assign to the namespace 'N': a namespace is not a variable"
+    "assign_to_enum_member.ts|assign_to_enum_member\\.ts:2:1: error: can't assign to the constant 0 \\(a literal, or an enum's member\\)"
+    "assign_to_function.ts|assign_to_function\\.ts:2:1: error: can't assign to 'f': a function declaration is not a variable"
     # `with` resolves names by the object's type: an `any` has no properties known here
     "with_statement.ts|with_statement\\.ts:2:11: error: 'with' over a value of type 'any' is not supported"
     "break_outside_loop.ts|break_outside_loop\\.ts:2:5: error: A 'break' statement can only be used within an enclosing iteration or switch statement"
@@ -4113,7 +4127,7 @@ set(crash_error_cases
     "class_value_to_union_no_member.ts|class_value_to_union_no_member\\.ts:5:1: error: type 'Store' can't be given for 'A \\| B': it is none of the union's types"
     # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
     # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
-    "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export default <expression>' is not supported"
+    "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export =' is not supported"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
@@ -4143,7 +4157,8 @@ set_property(TEST test-compile-crash-errors-stale-errors-of-retried-file APPEND 
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
 foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
-                      module_try_catch_finally_locals call_signature_interface call_any call_untyped_parameter)
+                      module_try_catch_finally_locals call_signature_interface call_any call_untyped_parameter
+                      export_default_expression)
     string(REPLACE "_" "-" crash_ok_slug "${crash_ok_name}")
     add_test(NAME test-compile-crash-errors-${crash_ok_slug}
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none

@@ -582,9 +582,11 @@ namespace mlirgen
         }
         else if (kind == SyntaxKind::ExportAssignment)
         {
+            // a file's own `export default <expression>` is an exported constant by now (lowerDefaultExports);
+            // one in a `declare module "m" { ... }` is not
             emitError(loc(statementAST), statementAST.as<ExportAssignment>()->isExportEquals
                 ? "'export =' is not supported"
-                : "'export default <expression>' is not supported");
+                : "'export default <expression>' is not supported here: only at a file's top level");
             return mlir::failure();
         }
 
