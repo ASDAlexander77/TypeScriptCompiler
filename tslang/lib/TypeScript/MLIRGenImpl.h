@@ -7660,15 +7660,21 @@ class MLIRGenImpl
         }
 
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-        // A generic class (`x instanceof Set`) has no class of its own, only its instances
-        // (`Set<number>`) have, each with its own rtti: asked by the generic's, an instance said false
-        // whatever it was (and before generic statics were shared, its rtti did not resolve at all).
         if (!classInfo)
         {
+            // `x instanceof Set`, a generic class: every instance of it (`Set<number>`) answers its
+            // generic's name too (mlirGenClassInstanceOfMethod), so that is what it is asked
+            if (getGenericClassInfoByFullName(classType.getName().getValue()))
+            {
+                auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtablePtr, instanceOfSlot);
+                auto genericName = builder.create<mlir_ts::ConstantOp>(location, getStringType(),
+                                                                       getStringAttr(classType.getName().getValue().str()));
+                return mlirGenCallInstanceOf(location, instanceOfPtr, thisPtrValue, genericName, genContext);
+            }
+
             if (!genContext.allowPartialResolve)
             {
-                emitError(location) << "instanceof a generic class ('" << to_print(classType)
-                                    << "') is not supported: its instances are each a class of their own";
+                emitError(location) << "instanceof: class '" << to_print(classType) << "' is not declared";
             }
 
             return mlir::failure();
@@ -7702,6 +7708,13 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        return mlirGenCallInstanceOf(location, instanceOfPtr, thisPtrValue, rttiOfClassValue, genContext);
+    }
+
+    // calls the `.instanceOf` read from a vtable slot with the object and the rtti asked about
+    ValueOrLogicalResult mlirGenCallInstanceOf(mlir::Location location, mlir::Value instanceOfPtr, mlir::Value thisPtrValue,
+                                               mlir::Value rtti, const GenContext &genContext)
+    {
         auto instanceOfFuncType = mlir_ts::FunctionType::get(
             builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
             SmallVector<mlir::Type>{getBooleanType()});
@@ -7717,7 +7730,7 @@ class MLIRGenImpl
         // call methos, we need to send, this, and rtti info
         auto callResult = builder.create<mlir_ts::CallIndirectOp>(
             MLIRHelper::getCallSiteLocation(funcPtr, location),
-            funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
+            funcPtr, mlir::ValueRange{thisPtrValue, rtti});
 
         return ValueOrLogicalResult(callResult.getResult(0));
     }
@@ -7850,18 +7863,6 @@ class MLIRGenImpl
         // a value has no vtable, so nothing to ask its class of
         if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
         {
-            // A generic class (`s instanceof Set`) is no class of its own, only its instances
-            // (`Set<number>`) are, each with its own rtti. Since generic statics are shared, its `.rtti`
-            // resolves, and the test was answered false - at compile time for a `Set<number>`, and at
-            // run time through a vtable - where it used to be an error.
-            if (!getClassInfoByFullName(classType.getName().getValue())
-                && getGenericClassInfoByFullName(classType.getName().getValue()))
-            {
-                emitError(location) << "instanceof a generic class ('" << to_print(classType)
-                                    << "') is not supported: its instances are each a class of their own";
-                return mlir::failure();
-            }
-
             if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()); classInfo && classInfo->isValue)
             {
                 emitError(location) << "instanceof can't be used with the @" VALUE_DECORATOR " class '" << classInfo->name
@@ -7877,7 +7878,19 @@ class MLIRGenImpl
             {
                 NodeFactory nf(NodeFactoryFlags::None);
                 NodeArray<Expression> argumentsArray;
-                argumentsArray.push_back(nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(RTTI_NAME))));
+                // A generic class (`s instanceof Set`) is no class of its own - its `.rtti`, shared by
+                // all its instances since generic statics are, named none of them, and the answer was
+                // false. Every instance answers its generic's name too (mlirGenClassInstanceOfMethod).
+                if (!getClassInfoByFullName(classType.getName().getValue())
+                    && getGenericClassInfoByFullName(classType.getName().getValue()))
+                {
+                    argumentsArray.push_back(nf.createStringLiteral(convertUTF8toWide(classType.getName().getValue().str())));
+                }
+                else
+                {
+                    argumentsArray.push_back(nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(RTTI_NAME))));
+                }
+
                 return mlirGenCallThisMethod(location, resultLeftValue, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
             }
 
@@ -15900,6 +15913,30 @@ class MLIRGenImpl
         }
 
         name.append(">");
+    }
+
+    // The generic class an instance class is made from, by name: an instance is named after its generic
+    // with its type arguments after (getSpecializedClassName), `NS.Box<number>` of `NS.Box`. The longest
+    // name before a `<` that is a generic class's is it - a class in a generic function's instance
+    // (`f<number>.Box<string>`) has a `<` earlier, and type arguments may hold `=>`. Empty for a class
+    // not made from a generic.
+    std::string genericClassNameOfInstance(StringRef fullName)
+    {
+        if (!fullName.ends_with(">"))
+        {
+            return std::string();
+        }
+
+        for (auto at = fullName.rfind('<'); at != StringRef::npos && at > 0; at = fullName.rfind('<', at - 1))
+        {
+            auto candidate = fullName.take_front(at);
+            if (getGenericClassInfoByFullName(candidate))
+            {
+                return candidate.str();
+            }
+        }
+
+        return std::string();
     }
 
     std::string getSpecializedClassName(GenericClassInfo::TypePtr geneticClassPtr, const GenContext &genContext)

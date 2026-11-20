@@ -2420,6 +2420,18 @@ namespace mlirgen
                         CAST(value, location, memberType, value, genContext);
                         return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
+
+                    // a class object, a class itself (`inject(Store)` for `A | B`) or an interface that is
+                    // none of the union's types and fits none of its interfaces: the cast made of it was
+                    // refused only when the module was verified ("module verification error")
+                    if (isa<mlir_ts::ClassType, mlir_ts::ClassValueType, mlir_ts::InterfaceType>(valueType))
+                    {
+                        // said in the discovery pass too: a function body failing there is not compiled again,
+                        // and "failed statement" was all that was left
+                        emitError(location) << "type '" << to_print(valueType) << "' can't be given for '"
+                                            << to_print(type) << "': it is none of the union's types";
+                        return mlir::failure();
+                    }
                 }
                 else
                 {

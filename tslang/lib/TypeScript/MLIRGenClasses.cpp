@@ -3873,6 +3873,17 @@ genContext);
 
                 auto cmpLogic = cmpRttiToParam;
 
+                // an instance of a generic class (`Set<number>`) is an instance of the generic too:
+                // `s instanceof Set` asks by the generic's name (mlirGenInstanceOfThroughVTable)
+                auto genericName = genericClassNameOfInstance(newClassPtr->fullName);
+                if (!genericName.empty())
+                {
+                    auto cmpGenericToParam = nf.createBinaryExpression(
+                        nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                        nf.createStringLiteral(convertUTF8toWide(genericName)));
+                    cmpLogic = nf.createBinaryExpression(cmpLogic, nf.createToken(SyntaxKind::BarBarToken), cmpGenericToParam);
+                }
+
                 if (!newClassPtr->baseClasses.empty())
                 {
                     NodeArray<Expression> argumentsArray;
