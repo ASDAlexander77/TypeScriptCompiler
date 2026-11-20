@@ -343,6 +343,7 @@ tslang_add_test(NAME test-compile-00-symbol-unique-key COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-any-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-compile-00-any-keys COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-compile-00-any-keys-write COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-compile-00-instanceof-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-compile-00-any-cast-back-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
 tslang_add_test(NAME test-compile-00-field-type-class-declared-later COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
 tslang_add_test(NAME test-compile-00-generic-infer-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_infer_any.ts")
@@ -1063,6 +1064,7 @@ tslang_add_test(NAME test-jit-00-symbol-unique-key COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-any-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_call.ts")
 tslang_add_test(NAME test-jit-00-any-keys COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys.ts")
 tslang_add_test(NAME test-jit-00-any-keys-write COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_keys_write.ts")
+tslang_add_test(NAME test-jit-00-instanceof-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_generic.ts")
 tslang_add_test(NAME test-jit-00-any-cast-back-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_cast_back_function.ts")
 tslang_add_test(NAME test-jit-00-field-type-class-declared-later COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00field_type_class_declared_later.ts")
 tslang_add_test(NAME test-jit-00-generic-infer-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_infer_any.ts")
@@ -3174,6 +3176,7 @@ set(TSLANG_CORPUS
     00any_call.ts
     00any_keys.ts
     00any_keys_write.ts
+    00instanceof_generic.ts
     00any_cast_back_function.ts
     00field_type_class_declared_later.ts
     00generic_infer_any.ts
@@ -4045,10 +4048,10 @@ set(crash_error_cases
     "new_target.ts|new_target\\.ts:2:12: error: 'new.target' and 'import.meta' are not supported"
     # an `object` holds no type information, so which class it is can't be asked (it said false for every object)
     "instanceof_object.ts|instanceof_object\\.ts:2:32: error: 'instanceof' of a value of type 'object' is not supported"
-    # a generic class is no class of its own: with its statics shared its rtti resolved, and the test was
-    # answered false at compile time, or read a null class info at run time (controlFlowInstanceof.ts crashed)
-    "instanceof_generic_class.ts|instanceof_generic_class\\.ts:3:12: error: instanceof a generic class \\('Box'\\) is not supported"
-    "instanceof_generic_union.ts|instanceof_generic_union\\.ts:3:9: error: instanceof a generic class \\('Box'\\) is not supported"
+    # a class object, or a class itself, given for a union it is none of the types of: the cast was refused
+    # only when the module was verified ("module verification error", strictBestCommonSupertype.ts)
+    "class_to_union_no_member.ts|class_to_union_no_member\\.ts:3:19: error: type 'C' can't be given for 'number \\| string': it is none of the union's types"
+    "class_value_to_union_no_member.ts|class_value_to_union_no_member\\.ts:5:1: error: type 'Store' can't be given for 'A \\| B': it is none of the union's types"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
