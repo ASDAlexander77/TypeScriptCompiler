@@ -333,6 +333,30 @@ namespace mlirgen
             }
         }
 
+        // An object literal whose methods use variables of the function around it reaches them through a hidden
+        // field of its own (`.captured`), read off `this`. Copied into a type with methods but not that field
+        // (`run({ m() { n = 5; } })` for `run(o: { m(): void })`), its methods were called with the copy as `this`
+        // and read past its end (a crash at run time). An interface takes the object itself, and works.
+        auto isNamed = [](mlir_ts::FieldInfo field, StringRef name) {
+            auto nameAttr = dyn_cast_or_null<mlir::StringAttr>(field.id);
+            return nameAttr && nameAttr.getValue() == name;
+        };
+        auto isMethod = [](mlir_ts::FieldInfo field) {
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(field.type);
+            return funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0));
+        };
+        if (llvm::any_of(srcTupleType.getFields(), [&](auto field) { return isNamed(field, CAPTURED_NAME); })
+            && llvm::none_of(fields, [&](auto field) { return isNamed(field, CAPTURED_NAME); })
+            && llvm::any_of(fields, isMethod))
+        {
+            emitError(location) << "an object literal whose methods use variables of the function around it can't be "
+                                   "copied to '"
+                                << to_print(mlir_ts::TupleType::get(builder.getContext(), fields))
+                                << "': its methods would lose them. Declare that type as an interface, which takes the "
+                                   "object itself";
+            return mlir::failure();
+        }
+
         SmallVector<mlir::Value> values;
 
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);

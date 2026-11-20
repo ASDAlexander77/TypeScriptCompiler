@@ -1791,8 +1791,13 @@ Still open, found along the way (each on main before #884):
   released at the branch's end under rc (OwnedReturnConsumptionPass did not follow the cast to the method
   type), so the call read freed memory. Under -mm=own a method given as a function value stays refused; the
   message now counts the parameters a caller gives and says so.
-- Found, not fixed: an object-literal method that captures a local of the enclosing function, given for an
-  optional method (`run({ something() { n = 5; } })`), crashes at run time (main too).
+- An object literal whose methods use variables of the enclosing function, given for a type literal with
+  methods (`run({ something() { n = 5; } })` for `run(o: { something(): void })`), crashed at run time in
+  every memory model (main too). Such a type is a tuple, copied field by field; the literal's methods reach
+  their variables through a hidden field of the literal (`.captured`, read off `this`), which the copy does not
+  have, and were called with the copy as `this`. Now a compile error that says to declare the type as an
+  interface, which takes the object itself (and works). A function-typed field (`something?: () => void`) and
+  a literal whose methods use no outer variables were not affected.
 - Not yet: a declared union of function types
   (`type H = (() => void) | (() => number)`), call signatures through conditional types, generic arrows
   returning generic arrows.
@@ -1805,4 +1810,5 @@ as a value, "'llvm.mlir.addressof' op must reference a global").
 Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
 `00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own); `00bound_method_fewer_parameters.ts` (compile,
 JIT, JIT -mm=rc);
-`diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`.
+`diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`,
+`captured_literal_method_copy.ts`.

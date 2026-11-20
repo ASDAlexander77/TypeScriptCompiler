@@ -3981,6 +3981,17 @@ set_tests_properties(test-compile-diagnostic-location-namespace-in-object-field
                      PROPERTIES PASS_REGULAR_EXPRESSION "namespace_in_object_field\.ts:3:9: error: a namespace is not a value"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
 
+# An object literal whose methods use variables of the function around it, copied to a type with methods
+# (`run({ m() { n = 5; } })` for `run(o: { m(): void })`): an error. Its methods read the variables through a
+# hidden field of the literal, which the copy does not have (a crash at run time, in every memory model).
+add_test(NAME test-compile-diagnostic-location-captured-literal-method-copy
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/captured_literal_method_copy.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-captured-literal-method-copy.obj")
+set_tests_properties(test-compile-diagnostic-location-captured-literal-method-copy
+                     PROPERTIES PASS_REGULAR_EXPRESSION "captured_literal_method_copy\.ts:3:30: error: an object literal whose methods use variables of the function around it"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # `new` on a value that is no class (`any`, a namespace, `undefined`) is an error at the `new`: it failed
 # 'ts.New' verification ("result #0 must be ...").
 add_test(NAME test-compile-diagnostic-location-new-on-any
