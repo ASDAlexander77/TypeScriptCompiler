@@ -145,6 +145,9 @@ tslang
   that file is there (otherwise it is a name the linker looks up).
 - The file may hold comments and trailing commas.
 - `--verbose` prints which project file was read.
+- `tslang --new <name>` writes a `tslang` section with the entry file and the library paths, so
+  `tslang` in the new folder runs the project and `tslang --emit=exe` builds it. A `--cmake`
+  project gets none: CMake passes the options there.
 
 ## Debugging JIT code with GDB (Linux)
 

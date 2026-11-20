@@ -139,6 +139,19 @@ if(NOT status EQUAL 0)
     message(FATAL_ERROR "a tsconfig.json without an entry file changed reading stdin: exit ${status}\n${err}")
 endif()
 
+# --- tslang --new ------------------------------------------------------------------------------
+
+# the project's tsconfig.json names its file in a 'tslang' section: `tslang` in its folder compiles it
+file(MAKE_DIRECTORY "${WORK_DIR}/new")
+check("" "${WORK_DIR}/new" --new hello)
+file(READ "${WORK_DIR}/new/hello/tsconfig.json" newConfig)
+string(FIND "${newConfig}" "\"entry\": \"hello.ts\"" at)
+if(at EQUAL -1)
+    message(FATAL_ERROR "tslang --new: no 'tslang.entry' in tsconfig.json:\n${newConfig}")
+endif()
+check("" "${WORK_DIR}/new/hello" --emit=mlir --no-default-lib)
+check("" "${WORK_DIR}/new" -p hello --emit=mlir --no-default-lib)
+
 # --- errors ----------------------------------------------------------------------------------
 
 file(WRITE "${WORK_DIR}/unknown.json" [=[{ "files": ["app/main.ts"], "tslang": { "mmm": "rc" } }]=])

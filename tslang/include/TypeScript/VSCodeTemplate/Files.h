@@ -19,7 +19,7 @@ const auto TSCONFIG_JSON_DATA = R"raw(
       "lib": ["ESNext"],
       "types": ["./types/tslang", "<<DEFAULT_LIB_PATH>>/defaultlib/lib.d.ts"]
     },
-    "include": <<INCLUDE>>
+<<TSLANG_SECTION>>    "include": <<INCLUDE>>
 }
 )raw";
 
