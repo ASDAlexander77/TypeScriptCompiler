@@ -639,8 +639,7 @@ namespace mlirgen
         // discover type & args
         // seems we need to discover it all the time due to captured vars
         auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered)
-            && !funcProto->getIsGeneric();
-        // An instance of a generic function (countDown<string>) whose return type is declared: its type is known
+            && !funcProto->getIsGeneric();        // An instance of a generic function (countDown<string>) whose return type is declared: its type is known
         // before its body is, and a call of itself in the body (`return countDown(value, n - 1) + 1`) takes it
         // from here (instantiateSpecializedFunction). A function at the top level was registered by the pass
         // over the module's declarations before its body was discovered; an instance is made only when called.
@@ -826,9 +825,23 @@ namespace mlirgen
         // (`{ let x = 1; let a = () => x; }`) is not one there, so what it captures is not known yet. Registered,
         // it was not discovered again where it is generated, captured nothing, and read `x` across its isolated
         // region ("'ts.Load' op using value defined outside the region", TSLANG 105).
+        // So is a function declared in a block of the module's code (`{ let x = 1; function foo() { x } }`,
+        // `for (let x; ;) { function foo() { x } }`): it reads the block's locals as well.
+        // (marked by mlirGen(Block): the parser leaves no parent link to tell)
+        auto isNestedInModuleBlock = functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+            && (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::InModuleBlock) == InternalFlags::InModuleBlock;
+        // And a method or an accessor of an object literal (`{ let x = 1; const o = { foo() { return x; } }; }`).
+        auto memberParentKind = functionLikeDeclarationBaseAST->parent ? (SyntaxKind)functionLikeDeclarationBaseAST->parent
+                                                                       : SyntaxKind::Unknown;
+        auto isObjectLiteralMember = (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
+            && memberParentKind == SyntaxKind::ObjectLiteralExpression;
         auto isModuleDiscoveryExpression = genContext.dummyRun && !genContext.funcOp
             && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
-                || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
+                || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression
+                || isNestedInModuleBlock
+                || isObjectLiteralMember);
         if (!funcProto->getIsGeneric() && !isModuleDiscoveryExpression)
         {
             auto funcTypeIt = getFunctionTypeMap().find(fullName);
@@ -1443,6 +1456,15 @@ namespace mlirgen
         else
         {
             assert(funcGenContext.capturedVars == nullptr);
+        }
+
+        // A function of a block of the module's code was entered by the pass over the module's declarations,
+        // without the captures found here (isModuleDiscoveryExpression): its entry is this one. Called with the
+        // old one's type, `foo()` had no captures to pass and crashed.
+        if ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::InModuleBlock) == InternalFlags::InModuleBlock
+            && !genContext.dummyRun)
+        {
+            getFunctionMap().erase(funcProto->getNameWithoutNamespace());
         }
 
         // register function to be able to call it if used in recursive call
@@ -2181,6 +2203,16 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // what a closure captures is named before its parameters are: a parameter's default value reads it
+        // (`(b = y) => b`, `(b = super.m()) => b`), and read across the closure's isolated region it was
+        // "'ts.Load' op using value defined outside the region". Captures held by an object's `this` are
+        // reached through that parameter, and come after it (below).
+        auto capturesInThis = funcGenContext.thisType != nullptr && isa<mlir_ts::ObjectType>(funcGenContext.thisType);
+        if (!capturesInThis && failed(mlirGenFunctionCaptures(location, funcProto, funcGenContext)))
+        {
+            return mlir::failure();
+        }
+
         // allocate function parameters as variable
         if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
         {
@@ -2234,7 +2266,7 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCaptures(location, funcProto, funcGenContext)))
+        if (capturesInThis && failed(mlirGenFunctionCaptures(location, funcProto, funcGenContext)))
         {
             return mlir::failure();
         }

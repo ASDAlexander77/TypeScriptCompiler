@@ -6254,6 +6254,14 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                     // a number or a boolean made into a string allocates it (#469)
                     createAsGlobalConstructor = true;
                 }
+                else if (isa<mlir_ts::AnyType>(castType) || isa<mlir_ts::UnknownType>(castType) ||
+                         isa<mlir_ts::AnyType>(inType) || isa<mlir_ts::UnknownType>(inType))
+                {
+                    // a value given as `any` is boxed (allocated), and one read from it is unboxed
+                    // with a type check: `let r: any = 5;` at module level was refused by LLVM's
+                    // verifier ("ops with side effects not allowed in global initializers")
+                    createAsGlobalConstructor = true;
+                }
                 else
                 {
                     // see CreateUnionInstanceOp above: a cast to or from a tagged union lowers to
