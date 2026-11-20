@@ -3183,6 +3183,39 @@ namespace mlirgen
 
         auto templateExpressionAST = taggedTemplateExpressionAST->_template;
 
+        // a generic tag (`id\`hello\`` with `function id<T>(x: T)`) is the call `id(["hello"])`, which
+        // infers its type arguments; called as is, its reference named no function ('ts.Call' op 'id'
+        // does not reference a valid function). The tag is evaluated first, as in JavaScript.
+        auto tagResult = mlirGen(taggedTemplateExpressionAST->tag, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(tagResult)
+        auto callee = V(tagResult);
+        {
+            if (isGenericFunctionReference(callee))
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                NodeArray<Expression> strings;
+                strings.push_back(nf.createStringLiteral(
+                    templateExpressionAST->head ? templateExpressionAST->head->text : templateExpressionAST->text));
+                NodeArray<Expression> callArguments;
+                for (auto span : templateExpressionAST->templateSpans)
+                {
+                    strings.push_back(nf.createStringLiteral(span->literal->text));
+                }
+
+                callArguments.push_back(nf.createArrayLiteralExpression(strings, false));
+                for (auto span : templateExpressionAST->templateSpans)
+                {
+                    callArguments.push_back(span->expression);
+                }
+
+                auto callExpression = nf.createCallExpression(taggedTemplateExpressionAST->tag,
+                                                              taggedTemplateExpressionAST->typeArguments, callArguments);
+                callExpression->pos = taggedTemplateExpressionAST->pos;
+                callExpression->_end = taggedTemplateExpressionAST->_end;
+                return mlirGen(callExpression.as<Expression>(), genContext);
+            }
+        }
+
         SmallVector<mlir::Attribute, 4> strs;
         SmallVector<mlir::Value, 4> vals;
 
@@ -3217,10 +3250,6 @@ namespace mlirgen
         CAST_A(strArrayValue, location, getArrayType(getStringType()), constStringArray, genContext);
 
         vals.insert(vals.begin(), strArrayValue);
-
-        auto result = mlirGen(taggedTemplateExpressionAST->tag, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
-        auto callee = V(result);
 
         if (!mth.isAnyFunctionType(callee.getType()))
         {

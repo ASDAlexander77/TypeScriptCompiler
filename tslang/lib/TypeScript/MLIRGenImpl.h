@@ -14140,6 +14140,17 @@ class MLIRGenImpl
             itemValue = V(classValue);
         }
 
+        // an element holds one function: a generic one nothing gives types to is instantiated with `any`
+        // (`[x => x]`), as a field's is (TSLANG 106); left generic, the array stored the address of a
+        // function never made ('llvm.mlir.addressof' op must reference a global)
+        if (item != SyntaxKind::SpreadElement && isGenericFunctionReference(itemValue)
+            && !(recevierContext.receiverElementType && mth.isAnyFunctionType(recevierContext.receiverElementType)))
+        {
+            auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+            itemValue = V(instantiated);
+        }
+
         auto type = itemValue.getType();
 
         if (item == SyntaxKind::SpreadElement)

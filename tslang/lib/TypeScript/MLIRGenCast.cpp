@@ -916,6 +916,20 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // a generic function given as `any` (`g(r => r)` with `g(a: any)`): nothing gives its untyped
+        // parameters types, so they are `any` (TSLANG 106); boxed generic, the box held the address of a
+        // function never made ('llvm.mlir.addressof' op must reference a global)
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) && isGenericFunctionReference(value))
+        {
+            auto instantiated = instantiateGenericFunctionWithAny(location, value, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+            // a new value when the instance captures, else the reference retyped in place
+            if (V(instantiated) != value || V(instantiated).getType() != valueType)
+            {
+                return cast(location, type, V(instantiated), genContext, disableStrictNullCheck);
+            }
+        }
+
         // a `never` is every type (`return assertNever(x)`, `const n: number = fail()`): the code that has
         // one is never reached, so whatever it is converted to is only a placeholder for that type
         if (isa<mlir_ts::NeverType>(valueType))
