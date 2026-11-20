@@ -1757,3 +1757,69 @@ Still open, found along the way (each on main before #884):
   `ts.StringCopy` copies its payload when its tag says string, and `@sharesElements` passes it as it
   passes a string. Fixed in #890. Regression test `tslang/test/tester/tests/00string_union_elements.ts`
   (every model).
+
+138 (tenth batch of the compiler-tests sweep, 2026-11-20; internal errors that reached the user). Fixed:
+- `new` on a value that is no class - an `any` (`var A; A = class {}; new A()`, `new (<any>a).b`), a namespace
+  (`new Promise(...)` where Promise is only a namespace) or `undefined` - built a `ts.New` of that type, which
+  failed verification ("'ts.New' op result #0 must be ..."). Now an error at the `new`: "'new' on a value of
+  type 'any' is not supported: its class is known at run time only; give it a class type ('typeof C')".
+- A tagged template whose tag is a generic function (`id\`hello\`` with `function id<T>(x: T)`) called the
+  generic itself ("'ts.Call' op 'id' does not reference a valid function"). It is now the call
+  `id(["hello"], ...values)`, which infers the type arguments. The tag is evaluated before the values, as in
+  JavaScript.
+- An arrow with untyped parameters that nothing gives types to, as an array element (`[x => x]`) or given as
+  `any` (`g(r => r)` with `g(a: any)`), stayed generic and the address of a function never made was stored
+  ("'llvm.mlir.addressof' op must reference a global"). It is instantiated with `any`, as a field's or a
+  `let`'s is (TSLANG 106); boxed in an `any` it gets its call adapter, so `a(5)` through the `any` works.
+- A namespace in a field of an object literal (`{ m: M }`): "a namespace is not a value", where the lowering
+  failed ("failed to legalize operation 'ts.NamespaceRef'").
+- A class given to a constructor type (`register(B)` for `register(c: new (...args: any[]) => A)`): "a value of
+  the constructor type '...' is not supported: use the class's type, 'typeof C'", where a bare class
+  reference failed in the lowering ("failed to legalize operation 'ts.ClassRef'").
+
+- "not a function to call" (the error now names the type): `b && f || g` was `boolean | F` - `&&` of a boolean
+  is `false | F` now, as in TypeScript, and `||` drops the `false` its left side may hold, so it is `F | G`;
+  `c ? f : g` and `o.f ?? g` of two different function types made a union that can't be called - they are the
+  one taking the most parameters, when the other's are the first of them and the results match, the other
+  cast to it (a named function or an arrow given fewer parameters goes through its thunk).
+- A bound method - a class's, or an interface's (`val.something`) - given as a function type with more
+  parameters after its own (`o.something ?? val.something`, `apply(c.something)` for `(a, b) => void`):
+  refused ("it takes 1 argument(s), 2 expected", the `this` counted). It goes into a box with an adapter bound
+  to it that calls the method with the first arguments (boundMethodWiderTypeAdapter, which did this only for
+  extra parameters first). Two bugs on the way: given as a bound method type, the adapter kept that type's
+  `this` as a parameter after the box (gc ran by luck, rc read a missing argument); and made in a branch it was
+  released at the branch's end under rc (OwnedReturnConsumptionPass did not follow the cast to the method
+  type), so the call read freed memory. Under -mm=own a method given as a function value stays refused; the
+  message now counts the parameters a caller gives and says so.
+- An object literal whose methods use variables of the enclosing function, given for a type literal with
+  methods (`run({ something() { n = 5; } })` for `run(o: { something(): void })`), crashed at run time in
+  every memory model (main too). Such a type is a tuple, copied field by field; the literal's methods reach
+  their variables through a hidden field of the literal (`.captured`, read off `this`), which the copy does not
+  have, and were called with the copy as `this`. Now a compile error that says to declare the type as an
+  interface, which takes the object itself (and works). A function-typed field (`something?: () => void`) and
+  a literal whose methods use no outer variables were not affected.
+- A declared union of function types (`type H = (() => void) | (() => number)`, `x()`): "not a function to call",
+  and no call could tell its members apart (each is tagged "function"). It is now one type
+  (getMergedFunctionType): the widest parameters, when each member's are the first of them, returning `void`
+  when one member does (with the same results, the widest member). `c ? f : g` / `a ?? g` merge the same way.
+  For that, a function returning a value is given as one returning `void`, as TypeScript allows
+  (`let f: () => void = n`, refused before: "one returns a value and the other does not"): a named function or a
+  closure through its thunk, a bound method through its boxed adapter, each dropping (releasing) the result.
+  Under -mm=own a method given so stays refused, and the message says so. Churn of 3M dropped strings: no leak
+  (rc 5.4 MB peak, own 5.4 MB). A declared union whose widest member's extra parameters are optional
+  (`((v) => void) | ((v, i?) => void)`) stays a union: it is given as its narrower member's type, which the
+  merged type (taking `i`) could not be.
+- Not yet: a function union with `| null`/`| undefined`, or one whose members return different non-void values
+  (`(() => string) | (() => number)`), calling a declared union whose extra parameters are optional, call signatures through conditional types, generic arrows
+  returning generic arrows.
+
+Still open: values of constructor types (`new (...) => T` as a parameter type; `typeof C` works); a class
+declared in a nested block with the name of an outer one ("redefinition of symbol named 'C..instanceOf'":
+block-scoped declarations share the function's namespace); `x.constructor === Symbol` (the built-in `Symbol`
+as a value, "'llvm.mlir.addressof' op must reference a global").
+
+Tests: `00untyped_arrows_and_tags.ts` (compile and JIT; not -mm=own, where calling `any` is refused);
+`00call_logical_of_functions.ts` (compile, JIT, JIT -mm=own); `00bound_method_fewer_parameters.ts` (compile,
+JIT, JIT -mm=rc); `00function_union_call.ts` (compile, JIT, JIT -mm=rc, JIT -mm=own);
+`diagnostic-location/new_on_any.ts`, `namespace_in_object_field.ts`, `constructor_type_value.ts`,
+`captured_literal_method_copy.ts`.

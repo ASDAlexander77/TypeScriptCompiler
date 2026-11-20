@@ -3533,6 +3533,27 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! new op (no method): " << typeOfInstance << "\n";);
 
+        // only a class or a boxed value can be made here: `new x()` of an `any`, a namespace or
+        // `undefined` failed 'ts.New' verification ("result #0 must be ...")
+        if (!isa<mlir_ts::ValueRefType>(typeOfInstance))
+        {
+            if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(typeOfInstance))
+            {
+                emitError(location) << "'new' on a value of type '" << to_print(typeOfInstance)
+                                    << "' is not supported: its class is known at run time only; give it a class type ('typeof C')";
+            }
+            else if (auto namespaceType = dyn_cast<mlir_ts::NamespaceType>(typeOfInstance))
+            {
+                emitError(location) << "'" << namespaceType.getName().getValue() << "' is a namespace, not a class: 'new' needs a class";
+            }
+            else
+            {
+                emitError(location) << "'new' on a value of type '" << to_print(typeOfInstance) << "' is not supported: it is not a class";
+            }
+
+            return mlir::failure();
+        }
+
         auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(stackAlloc));
         return V(newOp);
     }

@@ -6765,6 +6765,33 @@ class MLIRGenImpl
                 {
                     resultTrue = builder.create<mlir_ts::CastOp>(location, optType.getElementType(), resultTrue);
                 }
+
+                // `l || r` takes `l` only when it is true: a `false` it may hold is not in the result (`false | F`
+                // of `b && f`, `|| g`, is `F | G`)
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(resultTrue.getType()))
+                {
+                    auto isFalseLiteral = [](mlir::Type type) {
+                        auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
+                        auto boolAttr = literalType ? dyn_cast<mlir::BoolAttr>(literalType.getValue()) : mlir::BoolAttr();
+                        return boolAttr && !boolAttr.getValue();
+                    };
+
+                    mlir::SmallVector<mlir::Type> truthyTypes;
+                    for (auto subType : unionType.getTypes())
+                    {
+                        if (!isFalseLiteral(subType))
+                        {
+                            truthyTypes.push_back(subType);
+                        }
+                    }
+
+                    if (!truthyTypes.empty() && truthyTypes.size() != unionType.getTypes().size())
+                    {
+                        auto truthyType = getUnionType(truthyTypes);
+                        resultTrue = castToNarrowedType(location, resultTrue, truthyType, genContext);
+                        VALIDATE(resultTrue, location)
+                    }
+                }
             }
 
             if (andOp)
@@ -6779,7 +6806,15 @@ class MLIRGenImpl
             if (andOp)
             {
                 resultFalse = leftExpressionValue;
-                if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
+                // a boolean is only `false` where `&&` gives it: `b && f` is `false | F`, as in TypeScript, so
+                // `b && f || g` is `F | G` and can be called (it was `boolean | F`: "not a function to call")
+                if (!saveResult && isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                {
+                    resultFalse = builder.create<mlir_ts::ConstantOp>(
+                        location, mlir_ts::LiteralType::get(builder.getBoolAttr(false), getBooleanType()),
+                        builder.getBoolAttr(false));
+                }
+                else if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
                 {
                     // a function is never falsy: an optional one is false only when it is not there, so
                     // `compare && compare(a, b)` is `undefined | number`, as in TypeScript
@@ -6850,6 +6885,118 @@ class MLIRGenImpl
 
         // (`a ||= b`, `a &&= b` stored `b` where it ran)
         return ifOp.getResults().front();
+    }
+
+    // Two function types a value may have (`a ?? b`, `c ? f : g`): see getMergedFunctionType
+    mlir::Type getCommonFunctionType(mlir::Type type1, mlir::Type type2)
+    {
+        if (!type1 || !type2 || type1 == type2)
+        {
+            return mlir::Type();
+        }
+
+        return getMergedFunctionType({type1, type2});
+    }
+
+    // Function types a value may have, as one type it can be called as (`c ? f : g`, `type H = (() => void) |
+    // (() => number)`). Each one's parameters must be the first of the widest one's. With the same results, the
+    // one taking the most parameters (when the counts differ; with the same counts the types stay as they were);
+    // with different results of which one is `void`, the widest parameters returning nothing - a function
+    // returning a value is given as one returning `void` through a thunk that drops it, as TypeScript allows. Null
+    // when they are not that: a union of them could not be called ("not a function to call"), its tag being
+    // "function" for each. `keepOptionalExtras` false (a declared union) leaves them as they were when the widest one's
+    // extra parameters are optional: such a union is given as its narrower member's type (`let cb: (v) => void = u`
+    // where `u: ((v) => void) | ((v, i?) => void)`), which the widest one could not be given as.
+    mlir::Type getMergedFunctionType(mlir::ArrayRef<mlir::Type> types, bool keepOptionalExtras = true)
+    {
+        if (types.size() < 2)
+        {
+            return mlir::Type();
+        }
+
+        auto isVoid = [](mlir::TypeRange results) {
+            return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
+        };
+
+        // the parameters a caller gives: a bound function's own `this` is not one of them
+        auto visibleInputs = [](mlir::Type type, mlir_ts::FunctionType funcType) {
+            mlir::ArrayRef<mlir::Type> inputs = funcType.getInputs();
+            return isa<mlir_ts::BoundFunctionType>(type) && !inputs.empty() ? inputs.drop_front() : inputs;
+        };
+
+        mlir::Type widest;
+        mlir::ArrayRef<mlir::Type> widestInputs;
+        for (auto type : types)
+        {
+            if (!type || !mth.isAnyFunctionType(type) || mth.isGenericType(type))
+            {
+                return mlir::Type();
+            }
+
+            auto funcType = mth.GetFunctionType(type);
+            if (!funcType || funcType.isVarArg() || funcType.isCVarArg())
+            {
+                return mlir::Type();
+            }
+
+            auto inputs = visibleInputs(type, funcType);
+            if (!widest || inputs.size() > widestInputs.size())
+            {
+                widest = type;
+                widestInputs = inputs;
+            }
+        }
+
+        auto anyVoid = false;
+        auto sameResults = true;
+        auto sameCounts = true;
+        auto widestResults = mth.GetFunctionType(widest).getResults();
+        auto fewestInputs = widestInputs.size();
+        for (auto type : types)
+        {
+            auto funcType = mth.GetFunctionType(type);
+            auto inputs = visibleInputs(type, funcType);
+            if (!llvm::equal(inputs, widestInputs.take_front(inputs.size())))
+            {
+                return mlir::Type();
+            }
+
+            fewestInputs = std::min(fewestInputs, inputs.size());
+
+            sameCounts &= inputs.size() == widestInputs.size();
+            anyVoid |= isVoid(funcType.getResults());
+            sameResults &= funcType.getResults() == widestResults
+                           || (isVoid(funcType.getResults()) && isVoid(widestResults));
+        }
+
+        if (!keepOptionalExtras)
+        {
+            for (auto extra : widestInputs.drop_front(fewestInputs))
+            {
+                auto unionType = dyn_cast<mlir_ts::UnionType>(extra);
+                if (isa<mlir_ts::OptionalType>(extra)
+                    || (unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type t) {
+                            return isa<mlir_ts::UndefinedType>(t);
+                        })))
+                {
+                    return mlir::Type();
+                }
+            }
+        }
+
+        if (sameResults)
+        {
+            return sameCounts ? mlir::Type() : widest;
+        }
+
+        if (!anyVoid)
+        {
+            return mlir::Type();
+        }
+
+        // the widest one's parameters, returning nothing
+        return mlir_ts::HybridFunctionType::get(
+            builder.getContext(), mlir_ts::FunctionType::get(builder.getContext(), widestInputs, {}, false));
     }
 
     // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
@@ -7091,6 +7238,15 @@ class MLIRGenImpl
         auto resultType = leftAlwaysNullish
             ? resultWhenFalseType
             : mth.findBaseType(resultWhenFalseType, leftNonNullishType, merged, defaultUnionType);
+        // two functions (`o.f ?? val.f`): the one taking the most parameters, which the other is cast to here,
+        // where it is known; a union of them could not be called ("not a function to call")
+        if (!leftAlwaysNullish)
+        {
+            if (auto commonFunctionType = getCommonFunctionType(leftNonNullishType, resultWhenFalseType))
+            {
+                resultType = commonFunctionType;
+            }
+        }
 
         auto ifCond = mlirGenIsNullish(location, leftExpressionValue, genContext);
         if (!ifCond)
@@ -14140,6 +14296,17 @@ class MLIRGenImpl
             itemValue = V(classValue);
         }
 
+        // an element holds one function: a generic one nothing gives types to is instantiated with `any`
+        // (`[x => x]`), as a field's is (TSLANG 106); left generic, the array stored the address of a
+        // function never made ('llvm.mlir.addressof' op must reference a global)
+        if (item != SyntaxKind::SpreadElement && isGenericFunctionReference(itemValue)
+            && !(recevierContext.receiverElementType && mth.isAnyFunctionType(recevierContext.receiverElementType)))
+        {
+            auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+            itemValue = V(instantiated);
+        }
+
         auto type = itemValue.getType();
 
         if (item == SyntaxKind::SpreadElement)
@@ -15295,6 +15462,14 @@ class MLIRGenImpl
 
             // a field holds one function: a generic one nothing gives types to is instantiated with `any`
             // (`{ g: (a => 0) }`, `{ genericFunction }`) (TSLANG 106)
+            // a namespace is no run-time value (TSLANG 107): a field holding one failed in the lowering
+            // ("failed to legalize operation 'ts.NamespaceRef'")
+            if (itemValue && isa<mlir_ts::NamespaceType>(itemValue.getType()))
+            {
+                emitError(location) << "a namespace is not a value and can't be stored in a field of an object literal";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
             if (itemValue && !receiverElementType && isGenericFunctionReference(itemValue))
             {
                 auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);
@@ -17953,7 +18128,7 @@ class MLIRGenImpl
 
     mlir::Value fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type);
     mlir::Value boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
-                                            const GenContext &genContext);
+                                            const GenContext &genContext, bool ownParamsFirst = false);
 
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here

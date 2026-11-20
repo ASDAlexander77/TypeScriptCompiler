@@ -333,6 +333,30 @@ namespace mlirgen
             }
         }
 
+        // An object literal whose methods use variables of the function around it reaches them through a hidden
+        // field of its own (`.captured`), read off `this`. Copied into a type with methods but not that field
+        // (`run({ m() { n = 5; } })` for `run(o: { m(): void })`), its methods were called with the copy as `this`
+        // and read past its end (a crash at run time). An interface takes the object itself, and works.
+        auto isNamed = [](mlir_ts::FieldInfo field, StringRef name) {
+            auto nameAttr = dyn_cast_or_null<mlir::StringAttr>(field.id);
+            return nameAttr && nameAttr.getValue() == name;
+        };
+        auto isMethod = [](mlir_ts::FieldInfo field) {
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(field.type);
+            return funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0));
+        };
+        if (llvm::any_of(srcTupleType.getFields(), [&](auto field) { return isNamed(field, CAPTURED_NAME); })
+            && llvm::none_of(fields, [&](auto field) { return isNamed(field, CAPTURED_NAME); })
+            && llvm::any_of(fields, isMethod))
+        {
+            emitError(location) << "an object literal whose methods use variables of the function around it can't be "
+                                   "copied to '"
+                                << to_print(mlir_ts::TupleType::get(builder.getContext(), fields))
+                                << "': its methods would lose them. Declare that type as an interface, which takes the "
+                                   "object itself";
+            return mlir::failure();
+        }
+
         SmallVector<mlir::Value> values;
 
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
@@ -915,6 +939,29 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
+
+        // a constructor type (`new (...args: any[]) => A`) has no run-time value: a class given to one was a
+        // bare class reference with nothing to lower to ("failed to legalize operation 'ts.ClassRef'")
+        if (isa<mlir_ts::ConstructFunctionType>(type))
+        {
+            emitError(location) << "a value of the constructor type '" << to_print(type)
+                                << "' is not supported: use the class's type, 'typeof C'";
+            return mlir::failure();
+        }
+
+        // a generic function given as `any` (`g(r => r)` with `g(a: any)`): nothing gives its untyped
+        // parameters types, so they are `any` (TSLANG 106); boxed generic, the box held the address of a
+        // function never made ('llvm.mlir.addressof' op must reference a global)
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) && isGenericFunctionReference(value))
+        {
+            auto instantiated = instantiateGenericFunctionWithAny(location, value, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(instantiated)
+            // a new value when the instance captures, else the reference retyped in place
+            if (V(instantiated) != value || V(instantiated).getType() != valueType)
+            {
+                return cast(location, type, V(instantiated), genContext, disableStrictNullCheck);
+            }
+        }
 
         // a `never` is every type (`return assertNever(x)`, `const n: number = fail()`): the code that has
         // one is never reached, so whatever it is converted to is only a placeholder for that type
@@ -2767,14 +2814,31 @@ namespace mlirgen
         switch (match.result)
         {
         case MatchResultType::NotMatchArgCount:
-            diag << ": it takes " << inFuncType.getNumInputs() << " argument(s), " << resFuncType.getNumInputs()
+        {
+            // the arguments a caller gives: a bound function's `this` is not one of them
+            auto visibleCount = [](mlir::Type type, mlir_ts::FunctionType funcType) {
+                auto count = funcType.getNumInputs();
+                return isa<mlir_ts::BoundFunctionType>(type) && count > 0 ? count - 1 : count;
+            };
+
+            diag << ": it takes " << visibleCount(valueType, inFuncType) << " argument(s), " << visibleCount(type, resFuncType)
                  << " expected";
+            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
+            {
+                diag << " (under -mm=own a method is not given as a function with more parameters yet)";
+            }
+
             break;
+        }
         case MatchResultType::NotMatchArg:
             diag << ": argument #" << (match.index + 1) << " does not match";
             break;
         case MatchResultType::NotMatchResultCount:
             diag << ": one returns a value and the other does not";
+            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::BoundFunctionType>(valueType))
+            {
+                diag << " (under -mm=own a method is not given as a function returning nothing yet)";
+            }
             break;
         case MatchResultType::NotMatchResult:
             if (match.index < inFuncType.getNumResults() && match.index < resFuncType.getNumResults())
@@ -2833,14 +2897,18 @@ namespace mlirgen
         resInputs.append(resFuncType.getInputs().begin(), resFuncType.getInputs().end());
         auto sameResults = inFuncType.getResults() == resFuncType.getResults()
             || (isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults()));
-        if (inInputs.size() >= resInputs.size() || !sameResults
+        // a function returning a value given as one returning `void` (`let f: () => void = n`, as TypeScript
+        // allows): the thunk calls it and drops the result
+        auto dropResult = !isVoid(inFuncType.getResults()) && isVoid(resFuncType.getResults());
+        if (inInputs.size() > resInputs.size() || (inInputs.size() == resInputs.size() && !dropResult)
+            || !(sameResults || dropResult)
             || !llvm::equal(inInputs, llvm::ArrayRef<mlir::Type>(resInputs).take_front(inInputs.size())))
         {
             return mlir::Value();
         }
 
         auto calleeName = symbolRefOp.getIdentifier();
-        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size())).str();
+        auto thunkName = (calleeName + ".args" + std::to_string(resInputs.size()) + (dropResult ? ".void" : "")).str();
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
         if (!lookupModuleSymbol(thunkName))
         {
@@ -2873,7 +2941,8 @@ namespace mlirgen
             builder.setInsertionPointToStart(&entryBlock);
 
             auto results = inFuncType.getResults();
-            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            // the thunk returns what the callee does, unless it drops it
+            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
             auto entryOp = builder.create<mlir_ts::EntryOp>(
                 noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
 
@@ -2902,6 +2971,11 @@ namespace mlirgen
                 }
 
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
+            {
+                // dropped as a call statement drops it: an owned temporary nothing takes, released
+                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -2933,9 +3007,11 @@ namespace mlirgen
     // itself, are known only at run time (read from a field, `user.sayHi`), so the adapter cannot name it: the
     // bound method goes into a box, as a closure's captures do - the box and the adapter bound to it are again two
     // words, as a bound method's `this` and its function are - and the adapter calls the method with its `this`
-    // and the last arguments, as many as the method takes. Null where it is not that.
+    // and the last arguments, as many as the method takes. With `ownParamsFirst`, the first ones instead: a bound
+    // method given as a function type with more parameters after its own (`o.f ?? val.method` where `o.f` takes
+    // `(b?: string)` and the method none) ignores the rest, as JavaScript does. Null where it is not that.
     mlir::Value MLIRGenImpl::boundMethodWiderTypeAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
-                                                         const GenContext &genContext)
+                                                         const GenContext &genContext, bool ownParamsFirst)
     {
         // -mm=own does not take a bound method given as a function value yet ("takes a second reference"), and
         // says so where it is given; an adapter would only add an error of its own, without a place in the source
@@ -2956,18 +3032,29 @@ namespace mlirgen
             return mlir::Value();
         }
 
-        // the method's own parameters, after its `this`, are the type's last ones
-        auto ownParams = methodType.getNumInputs() - 1;
-        if (destType.getNumInputs() <= ownParams)
+        // a bound method type to give it as (`o.f` of `{ f?(b?: string): void }`) has a `this` of its own first:
+        // the box takes its place, as the bound method's `this` (a call passes the box there, then the arguments)
+        mlir::ArrayRef<mlir::Type> destInputs = destType.getInputs();
+        if (isa<mlir_ts::BoundFunctionType>(type) && !destInputs.empty())
         {
-            return mlir::Value();
+            destInputs = destInputs.drop_front();
         }
 
         auto isVoid = [](mlir::TypeRange results) {
             return results.empty() || (results.size() == 1 && isa<mlir_ts::VoidType>(results.front()));
         };
 
-        if (!(methodType.getResults() == destType.getResults()
+        // a method returning a value given as one returning `void` (with `ownParamsFirst`): the adapter drops it
+        auto dropResult = ownParamsFirst && !isVoid(methodType.getResults()) && isVoid(destType.getResults());
+
+        // the method's own parameters, after its `this`, are the type's last ones
+        auto ownParams = methodType.getNumInputs() - 1;
+        if (destInputs.size() < ownParams || (destInputs.size() == ownParams && !dropResult))
+        {
+            return mlir::Value();
+        }
+
+        if (!(dropResult || methodType.getResults() == destType.getResults()
               || (isVoid(methodType.getResults()) && isVoid(destType.getResults()))))
         {
             return mlir::Value();
@@ -2982,13 +3069,13 @@ namespace mlirgen
         auto boxType = mlir_ts::RefType::get(boxStorageType);
 
         SmallVector<mlir::Type> thunkInputs{boxType};
-        thunkInputs.append(destType.getInputs().begin(), destType.getInputs().end());
+        thunkInputs.append(destInputs.begin(), destInputs.end());
         auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), false);
 
         // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
         std::string typesText;
         llvm::raw_string_ostream typesStream(typesText);
-        typesStream << methodType << "|" << thunkType;
+        typesStream << methodType << "|" << thunkType << (ownParamsFirst ? "|first" : "");
         auto thunkName = ".bound_adapter." + llvm::utohexstr(llvm::xxh3_64bits(typesText));
         if (!lookupModuleSymbol(thunkName))
         {
@@ -3019,7 +3106,7 @@ namespace mlirgen
             builder.setInsertionPointToStart(&entryBlock);
 
             auto results = methodType.getResults();
-            auto hasResult = !results.empty() && !isa<mlir_ts::VoidType>(results.front());
+            auto hasResult = !dropResult && !results.empty() && !isa<mlir_ts::VoidType>(results.front());
             auto entryOp = builder.create<mlir_ts::EntryOp>(
                 noLocation, hasResult ? mlir::Type(mlir_ts::RefType::get(results.front())) : mlir::Type());
 
@@ -3028,7 +3115,8 @@ namespace mlirgen
                                                                    builder.getI32IntegerAttr(0));
             auto bound = builder.create<mlir_ts::LoadOp>(noLocation, boundType, boundRef);
             SmallVector<mlir::Value, 4> operands{builder.create<mlir_ts::GetThisOp>(noLocation, thisType, bound)};
-            auto firstOwn = entryBlock.getNumArguments() - ownParams;
+            // after the box: the first arguments, or the last
+            auto firstOwn = ownParamsFirst ? 1u : entryBlock.getNumArguments() - ownParams;
             for (auto index = 0u; index < ownParams; index++)
             {
                 mlir::Value argument = entryBlock.getArgument(firstOwn + index);
@@ -3060,6 +3148,11 @@ namespace mlirgen
                 }
 
                 builder.create<mlir_ts::ReturnValOp>(noLocation, callOp.getResult(0), entryOp.getReference());
+            }
+            else if (dropResult && mth.ownsHeapMemory(noLocation, results.front()))
+            {
+                // dropped as a call statement drops it: an owned temporary nothing takes, released
+                callOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
             }
 
             builder.create<mlir_ts::ExitOp>(noLocation, hasResult ? entryOp.getReference() : mlir::Value());
@@ -3124,13 +3217,24 @@ namespace mlirgen
             {
                 // test fun types
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
-                if (test.result == MatchResultType::NotMatchArgCount)
+                // fewer parameters, or a result given as `void` (`let f: () => void = n`)
+                if (test.result == MatchResultType::NotMatchArgCount
+                    || test.result == MatchResultType::NotMatchResultCount)
                 {
                     if (auto thunk = fewerParametersThunk(location, value, type))
                     {
                         value = thunk;
                         valueType = thunk.getType();
                         test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                    }
+                    // a bound method (`val.something`, read off an object or an interface) has no function of
+                    // its own to thunk: it goes into a box, and the adapter bound to it calls the method with the
+                    // first arguments, as many as it takes
+                    else if (auto adapter = boundMethodWiderTypeAdapter(location, value, type, genContext, true))
+                    {
+                        value = adapter;
+                        valueType = adapter.getType();
+                        return mlir::success();
                     }
                 }
 
