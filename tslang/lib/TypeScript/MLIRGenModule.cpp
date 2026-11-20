@@ -153,8 +153,72 @@ namespace mlirgen
             }
         };
 
+        // the names the file declares as types only (an interface, a type alias) and not as values too: `export
+        // default Foo` of one exports a type, which no value stands for ("failed to legalize 'ts.InterfaceRef'")
+        llvm::StringSet<> typeOnlyNames;
+        llvm::StringSet<> valueNames;
         for (auto &statement : sourceFile->statements)
         {
+            // each read through its own node type: their layouts differ, and a `name` read through another
+            // (NamedDeclaration) was a crash under gcc
+            if (statement == SyntaxKind::InterfaceDeclaration)
+            {
+                typeOnlyNames.insert(MLIRHelper::getName(statement.as<InterfaceDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::TypeAliasDeclaration)
+            {
+                typeOnlyNames.insert(MLIRHelper::getName(statement.as<TypeAliasDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::ClassDeclaration)
+            {
+                if (auto declarationName = statement.as<ClassDeclaration>()->name)
+                {
+                    valueNames.insert(MLIRHelper::getName(declarationName));
+                }
+            }
+            else if (statement == SyntaxKind::FunctionDeclaration)
+            {
+                if (auto declarationName = statement.as<FunctionDeclaration>()->name)
+                {
+                    valueNames.insert(MLIRHelper::getName(declarationName));
+                }
+            }
+            else if (statement == SyntaxKind::EnumDeclaration)
+            {
+                valueNames.insert(MLIRHelper::getName(statement.as<EnumDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::ModuleDeclaration)
+            {
+                valueNames.insert(MLIRHelper::getName(statement.as<ModuleDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::VariableStatement)
+            {
+                for (auto variable : statement.as<VariableStatement>()->declarationList->declarations)
+                {
+                    if (variable->name == SyntaxKind::Identifier)
+                    {
+                        valueNames.insert(MLIRHelper::getName(variable->name.as<Identifier>()));
+                    }
+                }
+            }
+        }
+
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals
+                && statement.as<ExportAssignment>()->expression == SyntaxKind::Identifier)
+            {
+                auto exportedName = MLIRHelper::getName(statement.as<ExportAssignment>()->expression.as<Identifier>());
+                if (typeOnlyNames.contains(exportedName) && !valueNames.contains(exportedName))
+                {
+                    auto emptyStatement = nf.createEmptyStatement();
+                    emptyStatement->pos = statement->pos;
+                    emptyStatement->_end = statement->_end;
+                    statement = emptyStatement;
+                    continue;
+                }
+            }
+
             if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals)
             {
                 auto constantName = nextName();

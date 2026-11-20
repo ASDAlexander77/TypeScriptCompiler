@@ -437,6 +437,8 @@ tslang_add_test(NAME test-compile-00-bound-method-fewer-parameters COMMAND test-
 tslang_add_test(NAME test-compile-00-function-union-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_union_call.ts")
 tslang_add_test(NAME test-compile-00-function-value-adapter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_adapter.ts")
 tslang_add_test(NAME test-compile-00-block-scoped-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-compile-00-interface-extends-builtin COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_extends_builtin.ts")
+tslang_add_test(NAME test-compile-00-keyof-literal-key COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00keyof_literal_key.ts")
 tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1185,6 +1187,12 @@ tslang_add_test(NAME test-jit-rc-00-function-value-adapter COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-block-scoped-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
 tslang_add_test(NAME test-jit-rc-00-block-scoped-class COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
 tslang_add_test(NAME test-jit-own-00-block-scoped-class COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00block_scoped_class.ts")
+tslang_add_test(NAME test-jit-00-interface-extends-builtin COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_extends_builtin.ts")
+tslang_add_test(NAME test-jit-rc-00-interface-extends-builtin COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_extends_builtin.ts")
+tslang_add_test(NAME test-jit-own-00-interface-extends-builtin COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_extends_builtin.ts")
+tslang_add_test(NAME test-jit-00-keyof-literal-key COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00keyof_literal_key.ts")
+tslang_add_test(NAME test-jit-rc-00-keyof-literal-key COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00keyof_literal_key.ts")
+tslang_add_test(NAME test-jit-own-00-keyof-literal-key COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00keyof_literal_key.ts")
 tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
@@ -4006,6 +4014,15 @@ add_test(NAME test-compile-diagnostic-location-captured-literal-method-copy
 set_tests_properties(test-compile-diagnostic-location-captured-literal-method-copy
                      PROPERTIES PASS_REGULAR_EXPRESSION "captured_literal_method_copy\.ts:3:30: error: an object literal whose methods use variables of the function around it"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# An `await` in a `finally` block is an error at the `await` (the lowering failed on the try).
+add_test(NAME test-compile-diagnostic-location-await-in-finally
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/await_in_finally.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-await-in-finally.obj")
+set_tests_properties(test-compile-diagnostic-location-await-in-finally
+                     PROPERTIES PASS_REGULAR_EXPRESSION "await_in_finally\\.ts:5:35: error: an 'await' in a 'finally' block is not supported yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
 
 # The built-in `Symbol` read as a value is an error at its place (the lowering failed on its address).
 add_test(NAME test-compile-diagnostic-location-builtin-symbol-value

@@ -260,8 +260,9 @@ namespace mlirgen
         // `C` outside it. In the function's namespace it was the function's - after the block `new C()` made the
         // block's, and two blocks declaring one name were "redefinition of symbol named 'C..instanceOf'". The
         // block gets a namespace of its own, inside the function's and named for its place in the source; what is
-        // declared in it is found from the block, the function's and the module's after it as before.
-        if (genContext.parentBlockContext && currentNamespace->isFunctionNamespace
+        // declared in it is found from the block, the function's and the module's after it as before. A block at the
+        // module's or a namespace's top level is always a nested one (their bodies are no blocks), and the same.
+        if ((currentNamespace->isFunctionNamespace ? genContext.parentBlockContext != nullptr : true)
             && (blockAST->internalFlags & InternalFlags::BlockNamespace) != InternalFlags::BlockNamespace
             && llvm::any_of(blockAST->statements, [](Statement statement) {
                    return statement == SyntaxKind::ClassDeclaration;
@@ -2421,6 +2422,27 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGen(TryStatement tryStatementAST, const GenContext &genContext)
     {
         auto location = loc(tryStatementAST);
+
+        // An `await` in a `finally` (of an async function): the finally runs from the try's cleanup, which an
+        // async function can't be suspended in yet - the lowering failed on the try ("failed to legalize operation
+        // 'ts.Try' that was explicitly marked illegal"). Said at the `await`; one in the `try` or a `catch` works.
+        if (tryStatementAST->finallyBlock)
+        {
+            Node awaitNode = undefined;
+            ts::FilterVisitorSkipFuncsAST<Node> awaitVisitor(SyntaxKind::AwaitExpression, [&](Node node) {
+                if (!awaitNode)
+                {
+                    awaitNode = node;
+                }
+            });
+            awaitVisitor.visit(tryStatementAST->finallyBlock);
+            if (awaitNode)
+            {
+                emitError(loc(awaitNode)) << "an 'await' in a 'finally' block is not supported yet: await after the "
+                                             "'try' statement, or in a 'catch' block";
+                return mlir::failure();
+            }
+        }
 
         // the catch binding belongs to its clause, not the enclosing block: without its own scope
         // a second `catch (e)` in the same block was reported as a redeclaration of the first

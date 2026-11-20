@@ -1580,9 +1580,10 @@ namespace mlirgen
         auto arrayType = expression.getType();
 
         // `o[k]` of `const k = Symbol("d")`: its type says which symbol, as a constant key (mlirGenSymbolCall),
-        // also where k is read from a global or a captured variable
+        // also where k is read from a global or a captured variable. So is a key of a string literal's type
+        // (`obj[key]` with `key: K`, `K extends keyof T` given `"n"`): its type says which field
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(argumentExpression.getType());
-            literalType && isa<mlir_ts::SymbolType>(literalType.getElementType())
+            literalType && isa<mlir_ts::SymbolType, mlir_ts::StringType>(literalType.getElementType())
             && !argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
         {
             argumentExpression = builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue());
