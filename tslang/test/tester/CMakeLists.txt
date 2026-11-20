@@ -3639,6 +3639,13 @@ add_test(NAME test-default-lib-dir
                  "-DTSLANG=$<TARGET_FILE:tslang>"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/default-lib-dir.cmake")
 
+# tsconfig.json as the project file - see tsconfig-project.cmake
+add_test(NAME test-tsconfig-project
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/tsconfig-project"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tsconfig-project.cmake")
+
 # Compiling and linking for Android - see android-link.cmake. `codegen` needs no NDK and always
 # runs; `link` is skipped (not failed) without the NDK and the Android libraries.
 foreach(android_mode codegen link)

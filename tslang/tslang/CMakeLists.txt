@@ -81,7 +81,8 @@ add_llvm_executable(tslang
     vscode.cpp
     cmake.cpp
     defaultlib.cpp
-    borrowfacts.cpp)
+    borrowfacts.cpp
+    project.cpp)
 
 llvm_update_compile_flags(tslang)
 target_link_libraries(tslang PRIVATE ${LIBS})

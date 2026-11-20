@@ -84,6 +84,7 @@ int createCMakeFolder(int, char **);
 int installDefaultLib(int, char **);
 std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 int dumpAST();
+int applyProjectConfig(bool);
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
@@ -534,6 +535,15 @@ int main(int argc, char **argv)
     cl::AddExtraVersionPrinter(llvm::TargetRegistry::printRegisteredTargetsForVersion);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
+
+    // tsconfig.json (-p, or ./tsconfig.json without an input file) sets what the command line did
+    // not, before anything below reads an option - see project.cpp
+    auto compilesInput = !newVSCodeFolder && !newCMakeFolder && !installDefaultLibCmd && printBorrowFacts.empty()
+                         && printDefaultLibDir == DefaultLibKindNotAsked;
+    if (auto error = applyProjectConfig(compilesInput))
+    {
+        return error;
+    }
 
     // only `rc` keeps counts for the flag to make atomic
     if (atomicRCOpt && memoryModelOpt != MemoryModelRC)

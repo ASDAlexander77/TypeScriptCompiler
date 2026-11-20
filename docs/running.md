@@ -98,6 +98,54 @@ __jit/hello.ts.<hash>.o.deps   what it was compiled from
 A program whose imports form a cycle is compiled into one object. Its modules can't be compiled
 one by one, which is also true for `--emit=obj`.
 
+## Project file (tsconfig.json)
+
+The options and the file to compile can live in `tsconfig.json`, beside `compilerOptions`, in a
+section of tslang's own. tsc and VS Code ignore it, as tslang ignores what is tsc's.
+
+```jsonc
+{
+    "extends": "./base.json",
+    "compilerOptions": { "strict": true, "outDir": "out" },
+    "files": ["main.ts"],
+    "tslang": {
+        "emit": "exe",
+        "mm": "rc",
+        "opt": true,
+        "lib": ["mylib.lib"]
+    }
+}
+```
+
+```bat
+tslang -p .
+tslang -p path\to\tsconfig.json
+tslang
+```
+
+- `-p` (or `--project`) takes the file or its folder. With no `-p` and no input file, tslang reads
+  `./tsconfig.json` when that names a file to compile; otherwise it reads the program from stdin as
+  before. With an input file and no `-p`, no project file is read.
+- The keys of `tslang` are the command-line options without dashes (`"mm": "rc"`,
+  `"opt_level": 2`, `"di": true`). A list option takes an array. A key that is not an option is an
+  error.
+- The file to compile is `tslang.entry`, else the only name in `files`, else the only `.ts` named
+  in `include` (no wildcards). An input file on the command line wins over all of them. tslang
+  compiles that file and what it imports, not a set of files.
+- Of `compilerOptions`, tslang reads `strictNullChecks` (or `strict`), `outFile` (as `-o`) and
+  `outDir` (the default output name in that folder). The rest are tsc's and ignored, `noEmit`
+  among them, since the `tsconfig.json` that `tslang --new` writes sets it for the editor.
+- An option given on the command line wins over the file, for a list too (the two are not merged).
+  An option in `tslang` wins over the `compilerOptions` one that means the same.
+- `extends` takes a path (or an array of them, a later one winning), relative to the file that
+  names it. A package name (`"@tsconfig/node20"`) is an error: tslang does not look in
+  `node_modules`.
+- Relative paths are relative to the file that names them: the entry, `files`, `outDir`, `-o`,
+  the `*-lib-path` options, `jit-cache-dir`, `obj`, `own-facts`, and `lib` or `shared-libs` when
+  that file is there (otherwise it is a name the linker looks up).
+- The file may hold comments and trailing commas.
+- `--verbose` prints which project file was read.
+
 ## Debugging JIT code with GDB (Linux)
 
 JIT-compiled TypeScript can be debugged at source level with GDB — breakpoints on `.ts` lines,
