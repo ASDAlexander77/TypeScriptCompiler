@@ -153,8 +153,52 @@ namespace mlirgen
             }
         };
 
+        // the names the file declares as types only (an interface, a type alias) and not as values too: `export
+        // default Foo` of one exports a type, which no value stands for ("failed to legalize 'ts.InterfaceRef'")
+        llvm::StringSet<> typeOnlyNames;
+        llvm::StringSet<> valueNames;
         for (auto &statement : sourceFile->statements)
         {
+            if (statement == SyntaxKind::InterfaceDeclaration || statement == SyntaxKind::TypeAliasDeclaration)
+            {
+                typeOnlyNames.insert(MLIRHelper::getName(statement.as<NamedDeclaration>()->name));
+            }
+            else if (statement == SyntaxKind::ClassDeclaration || statement == SyntaxKind::FunctionDeclaration
+                     || statement == SyntaxKind::EnumDeclaration || statement == SyntaxKind::ModuleDeclaration)
+            {
+                if (auto declarationName = statement.as<NamedDeclaration>()->name)
+                {
+                    valueNames.insert(MLIRHelper::getName(declarationName));
+                }
+            }
+            else if (statement == SyntaxKind::VariableStatement)
+            {
+                for (auto variable : statement.as<VariableStatement>()->declarationList->declarations)
+                {
+                    if (variable->name == SyntaxKind::Identifier)
+                    {
+                        valueNames.insert(MLIRHelper::getName(variable->name.as<Identifier>()));
+                    }
+                }
+            }
+        }
+
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals
+                && statement.as<ExportAssignment>()->expression == SyntaxKind::Identifier)
+            {
+                auto exportedName = MLIRHelper::getName(statement.as<ExportAssignment>()->expression.as<Identifier>());
+                if (typeOnlyNames.contains(exportedName) && !valueNames.contains(exportedName))
+                {
+                    auto emptyStatement = nf.createEmptyStatement();
+                    emptyStatement->pos = statement->pos;
+                    emptyStatement->_end = statement->_end;
+                    statement = emptyStatement;
+                    continue;
+                }
+            }
+
             if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals)
             {
                 auto constantName = nextName();

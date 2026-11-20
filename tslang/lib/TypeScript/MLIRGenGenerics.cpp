@@ -1465,7 +1465,13 @@ namespace mlirgen
                 auto typeInfo = std::get<0>(typeParamValue);
                 auto name = typeInfo->getName();
                 auto type = std::get<1>(typeParamValue);
-                auto widenType = mth.wideStorageType(type);
+                // a key of a type (`P extends keyof T`) stays the literal it was given (`"minimizer"`), as in
+                // TypeScript: widened to `string`, `T[P]` had no key to read ("indexing a type by 'string'")
+                auto constraint = typeInfo->getConstraint();
+                auto keepsLiteral = constraint && constraint == SyntaxKind::TypeOperator
+                                    && constraint.as<TypeOperatorNode>()->_operator == SyntaxKind::KeyOfKeyword
+                                    && isa<mlir_ts::LiteralType>(type);
+                auto widenType = keepsLiteral ? type : mth.wideStorageType(type);
                 genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(typeInfo, widenType);
 
                 if (typeParam.getValue().first->getConstraint())

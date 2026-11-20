@@ -1238,6 +1238,19 @@ namespace mlirgen
 
         for (auto &extendsType : heritageClause->types)
         {
+            // `interface Server extends Object {}`, `interface Cb extends Function {}`: the built-in types, which no
+            // declaration of the program names, give the interface no member of their own - every object is an
+            // `Object` - and are left out ("'Object' is a type here, not a value")
+            if (extendsType->expression == SyntaxKind::Identifier && !extendsType->typeArguments.size())
+            {
+                auto baseName = MLIRHelper::getName(extendsType->expression.as<Identifier>());
+                if ((baseName == "Object" || baseName == "Function") && isEmbededType(baseName)
+                    && !getInterfaceInfoByFullName(baseName))
+                {
+                    continue;
+                }
+            }
+
             auto result = mlirGen(extendsType, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result);
             auto ifaceType = V(result);

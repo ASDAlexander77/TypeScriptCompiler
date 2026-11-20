@@ -103,6 +103,42 @@ namespace mlirgen
     std::pair<mlir::LogicalResult, mlir::StringRef> MLIRGenImpl::mlirGen(ClassLikeDeclaration classDeclarationAST,
                                                             const GenContext &genContext)
     {
+        // A declared class's constructor and methods are external symbols, one each, as a declared function is: a
+        // second signature of one (`constructor(n: number); constructor(s: string);`) was "redefinition of symbol
+        // named 'C.constructor'" from the verifier. The same rule as a declared function's overloads, said there.
+        if (hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword)
+            || (classDeclarationAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient)
+        {
+            llvm::StringSet<> declaredMembers;
+            for (auto member : classDeclarationAST->members)
+            {
+                std::string memberName;
+                if (member == SyntaxKind::Constructor)
+                {
+                    memberName = CONSTRUCTOR_NAME;
+                }
+                else if (member == SyntaxKind::MethodDeclaration && member.as<MethodDeclaration>()->name == SyntaxKind::Identifier)
+                {
+                    memberName = MLIRHelper::getName(member.as<MethodDeclaration>()->name.as<Identifier>());
+                }
+                else
+                {
+                    continue;
+                }
+
+                // a static and an instance member of one name are two symbols
+                auto key = (hasModifier(member, SyntaxKind::StaticKeyword) ? "static." : "") + memberName;
+                if (!declaredMembers.insert(key).second)
+                {
+                    emitError(loc(member))
+                        << "'" << MLIRHelper::getName(classDeclarationAST->name) << "." << memberName
+                        << "' is declared again with another signature: a declared class's member is one external "
+                           "symbol, so it can't have overloads. Declare it once, with optional or union parameters";
+                    return {mlir::failure(), ""};
+                }
+            }
+        }
+
         // do not proceed for Generic Interfaces for declaration
         auto isGenericClass = classDeclarationAST->typeParameters.size() > 0;
         if (isGenericClass && genContext.typeParamsWithArgs.size() == 0)

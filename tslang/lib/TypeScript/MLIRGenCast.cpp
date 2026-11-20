@@ -2902,6 +2902,15 @@ namespace mlirgen
     static bool adaptableSignature(mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
                                    mlir::ArrayRef<mlir::Type> destInputs, mlir::TypeRange destResults, bool &dropResult)
     {
+        dropResult = false;
+        // a type that failed to resolve (an error said already, `() => T[P]` indexed by a `string`) adapts nothing
+        auto isNull = [](mlir::Type type) { return !type; };
+        if (llvm::any_of(srcInputs, isNull) || llvm::any_of(destInputs, isNull) || llvm::any_of(srcResults, isNull)
+            || llvm::any_of(destResults, isNull))
+        {
+            return false;
+        }
+
         dropResult = !isVoidResults(srcResults) && isVoidResults(destResults);
         auto sameResults = srcResults == destResults || (isVoidResults(srcResults) && isVoidResults(destResults));
         if (!sameResults && !dropResult
