@@ -138,23 +138,29 @@ namespace mlirgen
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
         NodeFactory nf(NodeFactoryFlags::None);
-        // a module has one default export: only the first is named for it. Another (an error in TypeScript)
-        // is left as it was - two unnamed functions given the one name were a redefinition. Kept per load, as
-        // a file may be loaded again and must name the same one.
-        auto defaultFound = false;
+        // A module has one default export, and the first is what `import x from` binds. Another (an error in
+        // TypeScript, but compiled as before) gets a name of its own, `<name>_<n>`: two unnamed functions given
+        // the one name were a redefinition. Counted per load, as a file may be loaded again and must give
+        // the same names.
+        auto unnamed = 0;
+        auto nextName = [&]() { return unnamed++ == 0 ? name : name + "_" + std::to_string(unnamed - 1); };
+        std::string defaultExport;
+        auto found = [&](StringRef exported) {
+            if (defaultExport.empty())
+            {
+                defaultExport = exported.str();
+                defaultExportByFile[canonicalPath] = defaultExport;
+            }
+        };
+
         for (auto &statement : sourceFile->statements)
         {
-            if (defaultFound)
-            {
-                break;
-            }
-
             if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals)
             {
-                defaultFound = true;
+                auto constantName = nextName();
                 auto exportAssignment = statement.as<ExportAssignment>();
                 NodeArray<VariableDeclaration> declarations;
-                auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(name)), undefined,
+                auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(constantName)), undefined,
                                                                 undefined, exportAssignment->expression);
                 declaration->pos = exportAssignment->pos;
                 declaration->_end = exportAssignment->_end;
@@ -170,21 +176,21 @@ namespace mlirgen
                 variableStatement->_end = exportAssignment->_end;
                 variableStatement->parent = sourceFile;
                 statement = variableStatement;
-                defaultExportByFile[canonicalPath] = name;
+                found(constantName);
                 continue;
             }
 
+            // (a function's overloads are one default export: the first named one is kept)
             if ((statement == SyntaxKind::FunctionDeclaration || statement == SyntaxKind::ClassDeclaration)
                 && hasModifier(statement, SyntaxKind::ExportKeyword) && hasModifier(statement, SyntaxKind::DefaultKeyword))
             {
-                defaultFound = true;
                 auto declaration = statement.as<NamedDeclaration>();
                 if (!declaration->name)
                 {
-                    declaration->name = nf.createIdentifier(convertUTF8toWide(name));
+                    declaration->name = nf.createIdentifier(convertUTF8toWide(nextName()));
                 }
 
-                defaultExportByFile[canonicalPath] = MLIRHelper::getName(declaration->name);
+                found(MLIRHelper::getName(declaration->name));
             }
         }
     }
