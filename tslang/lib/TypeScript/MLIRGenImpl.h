@@ -15306,6 +15306,14 @@ class MLIRGenImpl
 
             // a field holds one function: a generic one nothing gives types to is instantiated with `any`
             // (`{ g: (a => 0) }`, `{ genericFunction }`) (TSLANG 106)
+            // a namespace is no run-time value (TSLANG 107): a field holding one failed in the lowering
+            // ("failed to legalize operation 'ts.NamespaceRef'")
+            if (itemValue && isa<mlir_ts::NamespaceType>(itemValue.getType()))
+            {
+                emitError(location) << "a namespace is not a value and can't be stored in a field of an object literal";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
             if (itemValue && !receiverElementType && isGenericFunctionReference(itemValue))
             {
                 auto instantiated = instantiateGenericFunctionWithAny(location, itemValue, genContext);

@@ -916,6 +916,15 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // a constructor type (`new (...args: any[]) => A`) has no run-time value: a class given to one was a
+        // bare class reference with nothing to lower to ("failed to legalize operation 'ts.ClassRef'")
+        if (isa<mlir_ts::ConstructFunctionType>(type))
+        {
+            emitError(location) << "a value of the constructor type '" << to_print(type)
+                                << "' is not supported: use the class's type, 'typeof C'";
+            return mlir::failure();
+        }
+
         // a generic function given as `any` (`g(r => r)` with `g(a: any)`): nothing gives its untyped
         // parameters types, so they are `any` (TSLANG 106); boxed generic, the box held the address of a
         // function never made ('llvm.mlir.addressof' op must reference a global)
