@@ -2043,3 +2043,18 @@ Tests: `00this_in_defaults.ts` (compile, JIT, rc), `00class_namespace_merge.ts` 
   are (106).
 
 Tests: `00overload_more_params.ts`, `00object_generic_members.ts` (compile, JIT, rc, own).
+
+147 (nineteenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `new SS()` of a generic class with no constructor and no base class, given no arguments: "Generic class 'SS' is
+  missing type arguments". A type parameter with no default is `any` (TypeScript's `unknown`), as an untyped parameter
+  nothing gives a type is (106). Narrow on purpose: applied to every `new` without arguments, the default library's
+  classes were instantiated anew (the typed arrays failed), and a generic class's own `new this()` (its `..new`) made
+  a `Box<any>` whose declaration for a shared library named `!ts.any`. A class whose constructor or base class could
+  give the type arguments, and `new this()`, are as before.
+
+Still open, looked at: a computed property name that is not a constant in an object literal (`{ [m]: i }`) needs
+keys known at run time; an identifier starting with an extended Unicode escape (`const \u{61} = 1`) fails in the
+parser ("Hexadecimal digit expected"), though the escape inside one and in a string scans - some re-scan of the token;
+the same non-exported class in two declarations of one namespace needs each declaration's own scope.
+
+Tests: `00generic_new_without_args.ts` (compile, JIT, rc, own).
