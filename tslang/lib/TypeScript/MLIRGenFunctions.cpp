@@ -1209,9 +1209,31 @@ namespace mlirgen
         // the statements of next() that use the generator object's own `this`, not the body's
         auto ownStatementsCount = nextStatements.size();
 
+        // Generator<T, TReturn> with a TReturn of its own (not T, void, undefined or any): a returned value has no
+        // place in next()'s `{ value: T }` (see nextResultType below)
+        auto returnTypeOfItsOwn = false;
+        if (auto declaredType = functionLikeDeclarationBaseAST->type; declaredType && declaredType == SyntaxKind::TypeReference)
+        {
+            auto typeReference = declaredType.as<TypeReferenceNode>();
+            if (typeReference->typeName == SyntaxKind::Identifier &&
+                MLIRHelper::getName(typeReference->typeName.as<Identifier>()) == "Generator" &&
+                typeReference->typeArguments.size() >= 2)
+            {
+                auto yieldType = typeReference->typeArguments[0];
+                auto returnType = typeReference->typeArguments[1];
+                SyntaxKind returnKind = returnType;
+                returnTypeOfItsOwn = returnKind != SyntaxKind::VoidKeyword && returnKind != SyntaxKind::UndefinedKeyword &&
+                                     returnKind != SyntaxKind::AnyKeyword && print(returnType) != print(yieldType);
+            }
+        }
+
         // a `return` of the body finishes the generator; one of a nested function is that function's own
         FilterVisitorSkipFuncsAST<ReturnStatement> returnsVisitor(SyntaxKind::ReturnStatement, [&](auto returnStatement) {
             returnStatement->internalFlags |= InternalFlags::GeneratorReturn;
+            if (returnTypeOfItsOwn && returnStatement->expression)
+            {
+                returnStatement->internalFlags |= InternalFlags::GeneratorReturnOfOtherType;
+            }
         });
 
         if (functionLikeDeclarationBaseAST->body)
@@ -1242,10 +1264,35 @@ namespace mlirgen
         // create next body
         auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
 
+        // `function* g(): Generator<number>` (Iterator<T>, Iterable<T>, IterableIterator<T>): next() returns
+        // `{ value: T; done: boolean }`, so what is yielded is given T as its type (`yield 1` a number, not the
+        // s32 the literal is), as TypeScript types it; without it the yields' own type was the element's, and
+        // `yield 1` could not be a Generator<number> ("can't assign '() => {value:s32, ...}'")
+        TypeNode nextResultType = undefined;
+        if (auto declaredType = functionLikeDeclarationBaseAST->type;
+            declaredType && declaredType == SyntaxKind::TypeReference && !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::AsyncKeyword))
+        {
+            auto typeReference = declaredType.as<TypeReferenceNode>();
+            if (typeReference->typeName == SyntaxKind::Identifier && typeReference->typeArguments.size() >= 1)
+            {
+                auto typeName = MLIRHelper::getName(typeReference->typeName.as<Identifier>());
+                if (typeName == "Generator" || typeName == "Iterator" || typeName == "Iterable" ||
+                    typeName == "IterableIterator")
+                {
+                    NodeArray<TypeElement> members;
+                    members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("value")), undefined,
+                                                                 typeReference->typeArguments.front()));
+                    members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
+                                                                 nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
+                    nextResultType = nf.createTypeLiteralNode(members);
+                }
+            }
+        }
+
         // create method next in object
         auto nextMethodDecl =
             nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
-                                       undefined, undefined, undefined, nextBody);
+                                       undefined, undefined, nextResultType, nextBody);
         nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext | InternalFlags::GeneratorNext;
 
         // copy location info, to fix issue with names of anonymous functions

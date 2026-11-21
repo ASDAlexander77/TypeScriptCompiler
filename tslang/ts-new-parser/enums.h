@@ -581,7 +581,10 @@ enum class InternalFlags : number
     InModuleBlock = 1 << 18,
     // a `let`/`const` of a function's body read by a function before it: one of the function's variables, declared
     // before the body as a `var` is (declareFunctionVars)
-    HoistedLexical = 1 << 19
+    HoistedLexical = 1 << 19,
+    // `return v` of a generator typed Generator<T, TReturn> whose TReturn is not T: next() gives `{ value: T }`, and
+    // v has no place in it (it was cast to T without a word: "end" became 0)
+    GeneratorReturnOfOtherType = 1 << 20
 };
 
 ENUM_OPS(InternalFlags)

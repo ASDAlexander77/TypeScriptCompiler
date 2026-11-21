@@ -466,6 +466,8 @@ tslang_add_test(NAME test-compile-00-interface-numeric-return COMMAND test-runne
 tslang_add_test(NAME test-compile-00-interface-method-adapters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_adapters.ts")
 tslang_add_test(NAME test-compile-00-own-param-exclusive-moves COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_param_exclusive_moves.ts")
 tslang_add_test(NAME test-compile-00-object-dictionary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
+tslang_add_test(NAME test-compile-00-iterables COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterables.ts")
+tslang_add_test(NAME test-compile-00-generator-typed-yield COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_typed_yield.ts")
 tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1294,6 +1296,10 @@ tslang_add_test(NAME test-jit-own-00-own-param-exclusive-moves COMMAND test-runn
 tslang_add_test(NAME test-jit-00-object-dictionary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
 tslang_add_test(NAME test-jit-rc-00-object-dictionary COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
 tslang_add_test(NAME test-jit-own-00-object-dictionary COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
+tslang_add_test(NAME test-jit-00-iterables COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterables.ts")
+tslang_add_test(NAME test-jit-rc-00-iterables COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterables.ts")
+tslang_add_test(NAME test-jit-00-generator-typed-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_typed_yield.ts")
+tslang_add_test(NAME test-jit-rc-00-generator-typed-yield COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_typed_yield.ts")
 tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
@@ -4141,6 +4147,15 @@ add_test(NAME test-compile-diagnostic-location-generic-construct-signature-type-
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generic-construct-signature-type-literal.obj")
 set_tests_properties(test-compile-diagnostic-location-generic-construct-signature-type-literal
                      PROPERTIES PASS_REGULAR_EXPRESSION "generic_construct_signature_type_literal\\.ts:3:5: error: a generic construct signature in a type literal is not supported yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# A value returned by a generator typed Generator<T, TReturn> of another TReturn is an error at the return.
+add_test(NAME test-compile-diagnostic-location-generator-return-of-other-type
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generator_return_of_other_type.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-return-of-other-type.obj")
+set_tests_properties(test-compile-diagnostic-location-generator-return-of-other-type
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generator_return_of_other_type\\.ts:9:5: error: a value returned by a generator typed Generator<T, TReturn> with a TReturn other than T is not supported"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A generic method in a type literal is an error at the method.

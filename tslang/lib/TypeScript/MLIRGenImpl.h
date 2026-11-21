@@ -18415,6 +18415,8 @@ class MLIRGenImpl
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
     std::optional<mlir::LogicalResult> mlirGenDictionaryDelete(mlir::Location location, Expression operand,
         const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castIterableToIterator(mlir::Location location, mlir::Value value,
+        mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
     ValueOrLogicalResult castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
         mlir_ts::ClassType classType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
