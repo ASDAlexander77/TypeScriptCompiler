@@ -18402,6 +18402,9 @@ class MLIRGenImpl
     ClassInfo::TypePtr dictionaryClassInfoOf(mlir::Type type, const GenContext &genContext);
     mlir::Type getObjectDictionaryType(mlir::Location location, mlir::Type valueType, const GenContext &genContext);
     mlir::Type instantiatedDictionaryType(mlir::Location location, mlir::Type type, const GenContext &genContext);
+    // the constant key of a computed property name an object literal's check for a dictionary made already
+    // (mlirGenObjectLiteralAsDictionary): read again, an imported `const` declared its accessor twice
+    llvm::DenseMap<void *, mlir::Attribute> computedNameConstants;
     std::optional<ValueOrLogicalResult> mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,
         mlir::Value key, bool isConditional, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,

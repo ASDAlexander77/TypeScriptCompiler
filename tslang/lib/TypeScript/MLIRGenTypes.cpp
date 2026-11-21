@@ -2780,6 +2780,11 @@ namespace mlirgen
                 return {builder.getStringAttr(wellKnown), mlir::success()};
             }
 
+            if (auto known = computedNameConstants.lookup(name.as<ComputedPropertyName>().operator->()))
+            {
+                return {known, mlir::success()};
+            }
+
             MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
             if (result.failed_or_no_value())

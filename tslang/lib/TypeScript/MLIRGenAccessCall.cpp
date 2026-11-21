@@ -4025,13 +4025,6 @@ namespace mlirgen
                     continue;
                 }
 
-                auto keyType = evaluate(expression, genContext);
-                if (!keyType || !(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType>(keyType) ||
-                                  isa<mlir::IntegerType>(keyType)))
-                {
-                    continue;
-                }
-
                 auto keyResult = mlirGen(expression, genContext);
                 if (keyResult.failed_or_no_value())
                 {
@@ -4039,9 +4032,33 @@ namespace mlirgen
                 }
 
                 auto value = V(keyResult);
+                auto keyType = value.getType();
+                if (!(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType, mlir_ts::LiteralType>(keyType) ||
+                      isa<mlir::IntegerType>(keyType)))
+                {
+                    continue;
+                }
+
                 computedKeys[index] = value;
                 MLIRCodeLogic mcl(builder, compileOptions);
-                if (!mcl.ExtractAttr(value) && !foldableConstant(value) && !isa<mlir_ts::LiteralType>(value.getType()))
+                mlir::Attribute constant = mcl.ExtractAttr(value);
+                if (!constant)
+                {
+                    if (auto folded = foldableConstant(value))
+                    {
+                        constant = folded.getValue();
+                    }
+                    else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(value.getType()))
+                    {
+                        constant = literalType.getValue();
+                    }
+                }
+
+                if (constant)
+                {
+                    computedNameConstants[name.as<ComputedPropertyName>().operator->()] = constant;
+                }
+                else
                 {
                     runTimeKey = true;
                 }
