@@ -1385,8 +1385,13 @@ namespace mlirgen
         // ...nor is a constructor, which can't have type parameters: `constructor(public x, y)` takes `any`s
         // (made generic, its class failed with "can't find type by name: TGenParam_x")
         auto isConstructor = functionLikeDeclarationBaseAST == SyntaxKind::Constructor;
+        // ...and its type parameters (`{ test: <T>(value: T): T => value }`, `{ m<T>(x: T) {} }`) are `any` - the
+        // field holds one function ("can't find type by name: T")
+        auto objectMemberTypeParamsAny = isObjectLiteralMember && !instantiateSpecializedFunction
+            && bindTypeParamsToAny(functionLikeDeclarationBaseAST, funcDeclGenContext);
+
         auto isGenericFunction =
-            functionLikeDeclarationBaseAST->typeParameters.size() > 0
+            (functionLikeDeclarationBaseAST->typeParameters.size() > 0 && !objectMemberTypeParamsAny)
             || !genContext.isGlobalVarReceiver && !isObjectLiteralMember && !isConstructor
                 && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !instantiateSpecializedFunction)

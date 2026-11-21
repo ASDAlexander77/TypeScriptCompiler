@@ -2031,3 +2031,15 @@ those of the evaluation; a namespace function named as an instance method of the
 "redefinition of symbol").
 
 Tests: `00this_in_defaults.ts` (compile, JIT, rc), `00class_namespace_merge.ts` (compile, JIT, rc, own).
+
+146 (eighteenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- An implementation with fewer parameters than an overload signature of it (`f(a): T; f(a, b): T; f(a) {...}`,
+  methods and constructors too), which TypeScript allows - the further arguments are ignored: a call through the
+  wider overload was "Expected 1 arguments, but got 2". The implementation is given the overload's further parameters,
+  optional and of type `any` (widenOverloadImplementations, run over each file's statements and class members - a walk
+  of every node overflowed the stack on a deep expression, binderBinaryExpressionStress).
+- A generic function held by an object literal's field (`{ test: <T>(value: T): T => value }`, `{ m<T>(x: T) {} }`):
+  "can't find type by name: T". The field holds one function, its type parameters `any`, as its untyped parameters
+  are (106).
+
+Tests: `00overload_more_params.ts`, `00object_generic_members.ts` (compile, JIT, rc, own).

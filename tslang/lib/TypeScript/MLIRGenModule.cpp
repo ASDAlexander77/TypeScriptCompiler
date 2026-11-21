@@ -128,12 +128,221 @@ namespace mlirgen
     // importer compiling the module as declarations declares it, and its initializer runs as any module
     // constant's does. `export default function f` and `export default class C` keep their declarations; an
     // unnamed one is given the constant's name.
+    // An implementation with fewer parameters than an overload signature of it (`f(a): T; f(a, b): T; f(a) {...}`),
+    // which TypeScript allows - a call through that overload passes arguments the implementation ignores: "Expected 1
+    // arguments, but got 2". Given the overload's further parameters, as optional and of type `any`, it takes them.
+    static void widenOverloadImplementations(SourceFile sourceFile)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto paramsOf = [](Node node) -> NodeArray<ParameterDeclaration> * {
+            if (node == SyntaxKind::FunctionDeclaration)
+            {
+                return &node.as<FunctionDeclaration>()->parameters;
+            }
+
+            if (node == SyntaxKind::MethodDeclaration)
+            {
+                return &node.as<MethodDeclaration>()->parameters;
+            }
+
+            if (node == SyntaxKind::Constructor)
+            {
+                return &node.as<ConstructorDeclaration>()->parameters;
+            }
+
+            return nullptr;
+        };
+
+        auto nameOf = [](Node node) -> std::string {
+            if (node == SyntaxKind::Constructor)
+            {
+                return "constructor";
+            }
+
+            auto name = node == SyntaxKind::FunctionDeclaration ? node.as<FunctionDeclaration>()->name
+                                                                : node.as<MethodDeclaration>()->name.as<Node>();
+            return name && name == SyntaxKind::Identifier ? MLIRHelper::getName(name.as<Identifier>()) : std::string();
+        };
+
+        auto hasBody = [](Node node) {
+            return node == SyntaxKind::FunctionDeclaration ? !!node.as<FunctionDeclaration>()->body
+                   : node == SyntaxKind::MethodDeclaration ? !!node.as<MethodDeclaration>()->body
+                                                           : !!node.as<ConstructorDeclaration>()->body;
+        };
+
+        auto hasRest = [](NodeArray<ParameterDeclaration> &parameters) {
+            return llvm::any_of(parameters, [](auto parameter) { return !!parameter->dotDotDotToken; });
+        };
+
+        auto widen = [&](auto &members) {
+            SmallVector<Node> overloads;
+            std::string groupName;
+            for (Node member : members)
+            {
+                auto parameters = paramsOf(member);
+                auto name = parameters ? nameOf(member) : std::string();
+                if (!parameters || name.empty())
+                {
+                    overloads.clear();
+                    continue;
+                }
+
+                if (name != groupName)
+                {
+                    overloads.clear();
+                    groupName = name;
+                }
+
+                if (!hasBody(member))
+                {
+                    overloads.push_back(member);
+                    continue;
+                }
+
+                // the implementation
+                Node widest;
+                for (auto overload : overloads)
+                {
+                    auto overloadParameters = paramsOf(overload);
+                    if (hasRest(*overloadParameters))
+                    {
+                        widest = Node();
+                        break;
+                    }
+
+                    if (!widest || overloadParameters->size() > paramsOf(widest)->size())
+                    {
+                        widest = overload;
+                    }
+                }
+
+                overloads.clear();
+                if (!widest || hasRest(*parameters) || paramsOf(widest)->size() <= parameters->size())
+                {
+                    continue;
+                }
+
+                auto &widestParameters = *paramsOf(widest);
+                for (auto index = parameters->size(); index < widestParameters.size(); index++)
+                {
+                    auto source = widestParameters[index];
+                    auto parameter = nf.createParameterDeclaration(
+                        undefined, undefined,
+                        nf.createIdentifier(S("__overload_arg") + stows(std::to_string(index))),
+                        nf.createToken(SyntaxKind::QuestionToken), nf.createToken(SyntaxKind::AnyKeyword));
+                    parameter->pos = source->pos;
+                    parameter->_end = source->_end;
+                    parameters->push_back(parameter);
+                }
+            }
+        };
+
+        // through statements and class members only: an expression holds no declaration list, and a walk of every
+        // node overflowed the stack on a deep one (binderBinaryExpressionStress)
+        std::function<void(Node)> walk;
+        auto walkStatements = [&](NodeArray<Statement> &statements) {
+            widen(statements);
+            for (auto statement : statements)
+            {
+                walk(statement);
+            }
+        };
+
+        auto walkBody = [&](Node body) {
+            if (body && body == SyntaxKind::Block)
+            {
+                walkStatements(body.as<ts::Block>()->statements);
+            }
+        };
+
+        walk = [&](Node node) {
+            if (!node)
+            {
+                return;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::Block:
+                walkStatements(node.as<ts::Block>()->statements);
+                break;
+            case SyntaxKind::ModuleDeclaration:
+                if (auto body = node.as<ModuleDeclaration>()->body)
+                {
+                    if (body == SyntaxKind::ModuleBlock)
+                    {
+                        walkStatements(body.as<ModuleBlock>()->statements);
+                    }
+                    else
+                    {
+                        walk(body);
+                    }
+                }
+                break;
+            case SyntaxKind::FunctionDeclaration:
+                walkBody(node.as<FunctionDeclaration>()->body);
+                break;
+            case SyntaxKind::ClassDeclaration:
+                widen(node.as<ClassDeclaration>()->members);
+                for (auto member : node.as<ClassDeclaration>()->members)
+                {
+                    if (member == SyntaxKind::MethodDeclaration)
+                    {
+                        walkBody(member.as<MethodDeclaration>()->body);
+                    }
+                    else if (member == SyntaxKind::Constructor)
+                    {
+                        walkBody(member.as<ConstructorDeclaration>()->body);
+                    }
+                }
+                break;
+            case SyntaxKind::IfStatement:
+                walk(node.as<IfStatement>()->thenStatement);
+                walk(node.as<IfStatement>()->elseStatement);
+                break;
+            case SyntaxKind::ForStatement:
+                walk(node.as<ForStatement>()->statement);
+                break;
+            case SyntaxKind::ForInStatement:
+                walk(node.as<ForInStatement>()->statement);
+                break;
+            case SyntaxKind::ForOfStatement:
+                walk(node.as<ForOfStatement>()->statement);
+                break;
+            case SyntaxKind::WhileStatement:
+                walk(node.as<WhileStatement>()->statement);
+                break;
+            case SyntaxKind::DoStatement:
+                walk(node.as<DoStatement>()->statement);
+                break;
+            case SyntaxKind::LabeledStatement:
+                walk(node.as<LabeledStatement>()->statement);
+                break;
+            case SyntaxKind::TryStatement:
+                walk(node.as<TryStatement>()->tryBlock);
+                if (node.as<TryStatement>()->catchClause)
+                {
+                    walk(node.as<TryStatement>()->catchClause->block);
+                }
+                walk(node.as<TryStatement>()->finallyBlock);
+                break;
+            default:
+                break;
+            }
+        };
+
+        walkStatements(sourceFile->statements);
+    }
+
     void MLIRGenImpl::lowerDefaultExports(SourceFile sourceFile, StringRef filePath)
     {
         if (!sourceFile)
         {
             return;
         }
+
+        widenOverloadImplementations(sourceFile);
 
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
