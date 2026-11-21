@@ -2095,3 +2095,14 @@ Tests: `00this_void_param.ts`, `00global_this_members.ts` (compile, JIT, rc, own
   predicate's result crashed the compiler (typePredicateInherit), and a result of another type is not cast.
 
 Tests: `00interface_numeric_return.ts`, `00interface_method_adapters.ts` (compile, JIT, rc, own).
+
+151 (twenty-third batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- A generic construct or call signature in a type literal (`declare var X: { new <T>(): number }`) failed as "failed
+  statement" with nothing said: a clear error, as a generic method there is (144) - an interface can have one.
+
+What remains of the tsc-clean failures is mostly the default library's (`Object.create`/`assign`/`fromEntries`,
+`Record` and `Function` as values, `Iterable`/`Generator`/`AsyncGenerator` types, `Promise.resolve()`/`reject()` and
+`"s".slice()` with no arguments, `toLocaleString(locales)`) and design questions (keys known only at run time in an
+object literal, properties added to a function, a `never` tslang computes, declared-function overloads).
+
+Tests: diagnostic-location `generic_construct_signature_type_literal.ts`.
