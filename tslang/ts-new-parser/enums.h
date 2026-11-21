@@ -578,7 +578,10 @@ enum class InternalFlags : number
     BlockNamespace = 1 << 17,
     // a function declared in a nested block of the module's top-level code: it reads the block's locals
     // (mlirGen(Block), isModuleDiscoveryExpression)
-    InModuleBlock = 1 << 18
+    InModuleBlock = 1 << 18,
+    // a `let`/`const` of a function's body read by a function before it: one of the function's variables, declared
+    // before the body as a `var` is (declareFunctionVars)
+    HoistedLexical = 1 << 19
 };
 
 ENUM_OPS(InternalFlags)

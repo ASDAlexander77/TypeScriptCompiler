@@ -1641,6 +1641,86 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::declareFunctionVars(Node body, const GenContext &genContext)
     {
+        // A `let`/`const` written directly in the body that a function before it reads (`const f = () => n; const n
+        // = 1;`): the function is made before the declaration is reached, and could not capture what was no name
+        // yet ("can't resolve name: n"). It is one of the function's variables, declared before the body, as a
+        // `var` is; its declaration gives it its value.
+        llvm::StringSet<> forwardReferenced;
+        if (body == SyntaxKind::Block)
+        {
+            auto &statements = body.as<ts::Block>()->statements;
+            for (auto [index, statement] : enumerate(statements))
+            {
+                if (statement != SyntaxKind::VariableStatement)
+                {
+                    continue;
+                }
+
+                auto declarationList = statement.as<VariableStatement>()->declarationList;
+                auto collectNames = [&]() {
+                    for (auto declaration : declarationList->declarations)
+                    {
+                        if (declaration->name == SyntaxKind::Identifier)
+                        {
+                            forwardReferenced.insert(MLIRHelper::getName(declaration->name));
+                        }
+                    }
+                };
+
+                // made one of the function's variables by an earlier pass over this body
+                if ((statement->internalFlags & InternalFlags::HoistedLexical) == InternalFlags::HoistedLexical)
+                {
+                    collectNames();
+                    continue;
+                }
+
+                if ((declarationList->flags & (NodeFlags::Let | NodeFlags::Const)) == NodeFlags::None
+                    || (declarationList->flags & NodeFlags::Using) == NodeFlags::Using)
+                {
+                    continue;
+                }
+
+                auto readBefore = false;
+                for (auto declaration : declarationList->declarations)
+                {
+                    if (declaration->name != SyntaxKind::Identifier || !declaration->initializer)
+                    {
+                        continue;
+                    }
+
+                    auto name = declaration->name.as<Identifier>()->escapedText;
+                    for (size_t earlier = 0; earlier < index && !readBefore; earlier++)
+                    {
+                        ts::VisitorAST functions([&](ts::Node node) {
+                            if (readBefore
+                                || !(node == SyntaxKind::ArrowFunction || node == SyntaxKind::FunctionExpression
+                                     || node == SyntaxKind::FunctionDeclaration || node == SyntaxKind::MethodDeclaration
+                                     || node == SyntaxKind::GetAccessor || node == SyntaxKind::SetAccessor))
+                            {
+                                return;
+                            }
+
+                            ts::VisitorAST names([&](ts::Node inner) {
+                                if (inner == SyntaxKind::Identifier && inner.as<Identifier>()->escapedText == name)
+                                {
+                                    readBefore = true;
+                                }
+                            });
+                            names.visit(node);
+                        });
+                        functions.visit(statements[earlier]);
+                    }
+                }
+
+                if (readBefore)
+                {
+                    declarationList->flags &= ~(NodeFlags::Let | NodeFlags::Const);
+                    statement->internalFlags |= InternalFlags::HoistedLexical;
+                    collectNames();
+                }
+            }
+        }
+
         SmallVector<VariableDeclaration> declarations;
         collectFunctionVarDeclarations(body, declarations);
 
@@ -1676,7 +1756,7 @@ namespace mlirgen
 
             // first declared, with its value, directly in the body: declared there, with the value, as `let` is
             // (-mm=own refuses a variable declared without a value that is given one later)
-            if (declaration->initializer && topLevel.contains(declaration->pos.pos))
+            if (declaration->initializer && topLevel.contains(declaration->pos.pos) && !forwardReferenced.contains(name))
             {
                 deferred.insert(name);
                 continue;
