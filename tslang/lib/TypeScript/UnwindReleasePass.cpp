@@ -957,12 +957,18 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         // the releases in the function, by what they release
         llvm::SmallVector<mlir::Value> resources;
         llvm::DenseSet<mlir::Value> seen;
+        llvm::DenseMap<mlir::Value, llvm::SmallVector<mlir::Operation *>> valueReleasesOf;
         funcOp.walk([&](mlir::Operation *op) {
             if (auto resource = resourceOf(op))
             {
                 if (seen.insert(resource).second)
                 {
                     resources.push_back(resource);
+                }
+
+                if (mlir::isa<mlir_ts::ReleaseOp>(op))
+                {
+                    valueReleasesOf[resource].push_back(op);
                 }
             }
         });
@@ -1008,6 +1014,30 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             llvm::SmallVector<mlir::Operation *> releases;
         };
 
+        // asked of each pair of a call and a resource, answered once: a resource's names (aliasesOf) and whether a
+        // release is the giving-up half of an overwrite (isHandOver, a walk on through its block). Nothing is
+        // changed until every plan is made
+        llvm::DenseMap<mlir::Value, llvm::SmallVector<mlir::Value>> aliasesCache;
+        auto aliasesOfResource = [&](mlir::Value resource) -> llvm::SmallVector<mlir::Value> & {
+            auto found = aliasesCache.find(resource);
+            if (found == aliasesCache.end())
+            {
+                found = aliasesCache.try_emplace(resource, aliasesOf(resource)).first;
+            }
+
+            return found->second;
+        };
+        llvm::DenseMap<mlir::Operation *, bool> handOverCache;
+        auto handOver = [&](mlir::Operation *release) {
+            auto [it, inserted] = handOverCache.try_emplace(release, false);
+            if (inserted)
+            {
+                it->second = isHandOver(release);
+            }
+
+            return it->second;
+        };
+
         llvm::SmallVector<Plan> plans;
         for (auto &site : sites)
         {
@@ -1022,9 +1052,23 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                     continue;
                 }
 
+                // given back already on the way to the call: a release of the value (not of a slot, nor the
+                // giving-up half of an overwrite) that every path from the value to the call passes - rc releases a
+                // temporary right after its last use. Nothing is owed for it; and walking on from the call for a
+                // release that is not there went to the end of the function, for each pair. In a loop, the one
+                // found going round again would be of the next turn's value, given back twice.
+                if (auto found = valueReleasesOf.find(resource); found != valueReleasesOf.end() &&
+                    llvm::any_of(found->second, [&](mlir::Operation *release) {
+                        return dominance.properlyDominates(release, site.call) &&
+                               (!definingOp || dominance.properlyDominates(definingOp, release)) && !handOver(release);
+                    }))
+                {
+                    continue;
+                }
+
                 // the handler an invoke unwinds to now must have nothing more to do with it: the
                 // pad gives it back for good
-                if (site.dest && llvm::any_of(aliasesOf(resource), [&](mlir::Value alias) {
+                if (site.dest && llvm::any_of(aliasesOfResource(resource), [&](mlir::Value alias) {
                         return usedFrom(site.dest).contains(alias);
                     }))
                 {
