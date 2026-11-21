@@ -2142,7 +2142,8 @@ reads `T | undefined`, under -mm=own the dictionary owns its values). Fixed:
   nothing extended, no decorator) is the same dictionary - `type Dictionary<T> = { [x: string]: T }`
   (isStringIndexSignatureOnly). It was a record of `get`/`set` functions nothing could fill. A class may still
   `implements` it (nothing to implement); without the default library's dictionary it stays the interface it
-  was. Open: another interface `extends` it ("indexer is not declared" at an index of that one).
+  was. One extending it and adding nothing (`interface More extends Counts {}`) is that
+  dictionary too (`type More = Counts`); one adding members of its own stays an interface.
 - Later: a generic class, interface or type alias instantiated inside a generic function with a type parameter of
   the same name as one of its own (`Box<S>` in `f<T, S>`, Box's parameter named T) took the function's: the
   instance's context starts from the function's type parameters and aliases, a type parameter as an argument did
@@ -2155,9 +2156,11 @@ Still open, looked at:
 - -mm=own: a local moved inside two `if`s one after the other (`if (a) keep(k); if (b) keep(k);`) is "moved here on
   some paths only" - so the dictionary copies its keys rather than taking the caller's; a spread of a record into a
   dictionary is refused (its fields would have two owners).
-- A spread of a dictionary into one of another value type is an error for now. The generic-inference bug it
-  waited on is fixed (above); what is left is the default library's `objectDictionaryAssign<T>(target, source)`
-  taking two type parameters, a library change to land first.
+- Later: a spread of a dictionary into one of another value type (`{ ...ints }` of `int`s where numbers are wanted)
+  calls `__dictionary_assign_values<T, S>`, made from source once a module, each value cast (it was an error: the
+  library's objectDictionaryAssign takes two of one type). A call, not a loop in place: under -mm=own the dictionary
+  made there is lent to it. (Under -mm=own a dictionary of a union holding strings is refused anyway: "a value that
+  borrows the result of 'ObjectDictionary<number | string>.get' cannot be stored", open.)
 - `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
   none: the element store grows the array to `i + 1` first when `i` is at or past the length
   (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative

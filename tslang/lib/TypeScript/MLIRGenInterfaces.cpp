@@ -1446,8 +1446,34 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
     {
+        // `interface I2 extends D {}` of a dictionary interface D, adding nothing: that dictionary, `type I2 = D`
+        // (it was an interface extending a class: "indexer is not declared" at an index of it)
+        if (interfaceDeclarationAST->members.size() == 0 && interfaceDeclarationAST->heritageClauses.size() == 1)
+        {
+            auto heritageClause = interfaceDeclarationAST->heritageClauses.front();
+            if (heritageClause->token == SyntaxKind::ExtendsKeyword && heritageClause->types.size() == 1)
+            {
+                auto extended = heritageClause->types.front();
+                if (extended->expression == SyntaxKind::Identifier &&
+                    dictionaryInterfaces.contains(MLIRHelper::getName(extended->expression.as<Identifier>())))
+                {
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto typeReference = nf.createTypeReferenceNode(extended->expression.as<Identifier>(), extended->typeArguments);
+                    typeReference->pos = extended->pos;
+                    typeReference->_end = extended->_end;
+                    auto typeAlias = nf.createTypeAliasDeclaration(interfaceDeclarationAST->modifiers, interfaceDeclarationAST->name,
+                                                                   interfaceDeclarationAST->typeParameters, typeReference);
+                    typeAlias->pos = interfaceDeclarationAST->pos;
+                    typeAlias->_end = interfaceDeclarationAST->_end;
+                    typeAlias->parent = interfaceDeclarationAST->parent;
+                    return mlirGen(typeAlias, genContext);
+                }
+            }
+        }
+
         if (isStringIndexSignatureOnly(interfaceDeclarationAST, genContext))
         {
+            dictionaryInterfaces.insert(MLIRHelper::getName(interfaceDeclarationAST->name));
             NodeFactory nf(NodeFactoryFlags::None);
             auto typeLiteral = nf.createTypeLiteralNode(interfaceDeclarationAST->members);
             typeLiteral->pos = interfaceDeclarationAST->pos;

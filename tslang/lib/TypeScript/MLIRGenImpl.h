@@ -17846,6 +17846,9 @@ class MLIRGenImpl
                                                               const GenContext &genContext);
 
     bool isStringIndexSignatureOnly(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
+    // the interfaces that are dictionaries (isStringIndexSignatureOnly), by name: one extending one of them and adding
+    // nothing is that dictionary too
+    llvm::StringSet<> dictionaryInterfaces;
 
     mlir::Operation *currentFunctionOp();
     YieldingFinally *yieldingFinallyOf(const GenContext &genContext);
@@ -20242,6 +20245,24 @@ class MLIRGenImpl
         if (!arrayRef || !isa<mlir_ts::RefType>(arrayRef.getType()))
         {
             return;
+        }
+
+        // the right side gave the variable another array (`a[1] = (a = [5], 9)`): the store goes into the array the
+        // left side read, as in JavaScript, and the slot now holds another one - nothing to grow through it
+        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
+        {
+            auto reassigned = false;
+            for (auto *op = loadOp->getNextNode(); op && !reassigned; op = op->getNextNode())
+            {
+                op->walk([&](mlir_ts::StoreOp storeOp) {
+                    reassigned |= storeOp.getReference() == arrayRef;
+                });
+            }
+
+            if (reassigned)
+            {
+                return;
+            }
         }
 
         auto index32 = elementRefOp.getIndex();
