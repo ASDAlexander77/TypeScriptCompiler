@@ -1269,6 +1269,7 @@ namespace mlirgen
         // s32 the literal is), as TypeScript types it; without it the yields' own type was the element's, and
         // `yield 1` could not be a Generator<number> ("can't assign '() => {value:s32, ...}'")
         TypeNode nextResultType = undefined;
+        NodeArray<ParameterDeclaration> nextParameters;
         if (auto declaredType = functionLikeDeclarationBaseAST->type;
             declaredType && declaredType == SyntaxKind::TypeReference && !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::AsyncKeyword))
         {
@@ -1285,6 +1286,14 @@ namespace mlirgen
                     members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
                                                                  nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
                     nextResultType = nf.createTypeLiteralNode(members);
+
+                    // Generator<T, TReturn, TNext>: next(value?: TNext), the value what the resumed `yield` is
+                    if (typeName == "Generator" && typeReference->typeArguments.size() >= 3)
+                    {
+                        nextParameters.push_back(nf.createParameterDeclaration(
+                            undefined, undefined, nf.createIdentifier(S(GENERATOR_SENT_NAME)),
+                            nf.createToken(SyntaxKind::QuestionToken), typeReference->typeArguments[2]));
+                    }
                 }
             }
         }
@@ -1292,7 +1301,7 @@ namespace mlirgen
         // create method next in object
         auto nextMethodDecl =
             nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
-                                       undefined, undefined, nextResultType, nextBody);
+                                       undefined, nextParameters, nextResultType, nextBody);
         nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext | InternalFlags::GeneratorNext;
 
         // copy location info, to fix issue with names of anonymous functions

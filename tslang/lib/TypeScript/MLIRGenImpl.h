@@ -17110,7 +17110,8 @@ class MLIRGenImpl
     // mlirGenClassVirtualTableDefinitionForInterface, mlirGenObjectVirtualTableDefinitionForInterface)
     mlir::LogicalResult generateSynthMethodToCallField(mlir::Location location, mlir::Type thisType,
                                                        StringRef fieldName, StringRef thunkName,
-                                                       mlir_ts::FunctionType funcType, const GenContext &genContext)
+                                                       mlir_ts::FunctionType funcType, const GenContext &genContext,
+                                                       unsigned maxArguments = ~0u)
     {
         auto retType = mth.getReturnTypeFromFuncRef(funcType);
 
@@ -17136,7 +17137,9 @@ class MLIRGenImpl
                 NodeFactory nf(NodeFactoryFlags::None);
 
                 NodeArray<Expression> argumentsArray;
-                for (unsigned index = 1; index < funcType.getNumInputs(); index++)
+                // as many as the field's function takes (maxArguments): a method with fewer parameters than the
+                // interface's member ignores the rest
+                for (unsigned index = 1; index < funcType.getNumInputs() && index - 1 < maxArguments; index++)
                 {
                     std::string paramName("p");
                     paramName += std::to_string(index - 1);

@@ -562,6 +562,9 @@
 // `{ [k]: v }` with a key known only at run time). Outside the class, `d.name` and `d["name"]` are its
 // entries, never its members (ClassInfo::isDictionary).
 #define DICTIONARY_DECORATOR "dictionary"
+// next(value) of a generator typed Generator<T, TReturn, TNext>: the value, the parameter of its next(), is what
+// the `yield` it resumes evaluates to
+#define GENERATOR_SENT_NAME ".sent"
 #define OBJECT_DICTIONARY_CLASS_NAME "ObjectDictionary"
 // the default library's function a spread of a dictionary into a new one calls
 #define OBJECT_DICTIONARY_ASSIGN_NAME "objectDictionaryAssign"

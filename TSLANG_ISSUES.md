@@ -2166,12 +2166,24 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   undefined or any) is an error at the `return`: next() gives `{ value: T }`, and `return "end"` in a
   `Generator<number, string>` was cast to a number without a word (it read 0).
 
+- next(value) of a generator typed `Generator<T, TReturn, TNext>`: its next() takes `value?: TNext`, and the
+  `yield` it resumes evaluates to the value, a TNext (TNext's default - 0, null - when next() is given none: the
+  first one, a for...of). It was undefined.
+- An object-literal method given as an interface's function member of another arity - fewer parameters (`next()`
+  for `next: (value?: number) => ...`, the rest ignored, as JavaScript does) or more optional ones (`next(v?)` for
+  `next: () => ...`): "can't assign '() => ...' to '(p1: number | undefined) => ...': it takes 0 argument(s), 2
+  expected". The vtable's slot holds a thunk giving the method as many arguments as it takes
+  (isArityAdaptableObjectMethod, generateSynthMethodToCallField), as for a field holding a closure. So a generator
+  whose next() takes no value is a Generator whose next takes one, and the other way round. The library's
+  `Generator` declares `next: (value?: TNext)` once a compiler with this is released (a released one without it
+  can't give a plain generator as one).
+
 Still open, looked at:
-- next(value) / TNext: next() would take `value?: TNext` and the resumed `yield` evaluate to it - tried, and it works
-  for a generator cast to an interface declaring `next(value?)` - but a generator's next() is then cast to
-  interfaces declaring `next: () => ...` (a program's own, the library's Iterable), and an object's method of
-  another arity has no adapter in the interface's vtable (castObjectToInterface; a class has them, 150). Needs that
-  adapter, then `Generator`'s next in the library. return(v) / throw(e) likewise.
+- return(v) / throw(e) of a generator.
+- -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
+  is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
+  keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a
+  string works.
 - -mm=own: a generator typed as an interface other than the library-instantiated Iterator<T> - a program's own, or
   Iterable<T> - is "a value takes a second reference; -mm=own cannot prove a move or a borrow here yet" at its
   `for...of` (before these changes too), and so is an array given as an Iterable<T>.
@@ -2182,4 +2194,5 @@ Still open, looked at:
   `[Symbol.asyncIterator]` of an async generator.
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
-diagnostic-location `generator_return_of_other_type.ts`.
+diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`
+(compile, JIT, rc, own).
