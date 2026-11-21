@@ -3076,10 +3076,10 @@ namespace mlirgen
                         typeInit = mth.wideStorageType(typeInit);
                         isConst = isConstValue(val);
 
-                        // `static self = X;`: the class's value, `typeof X` (classRefAsClassValue)
+                        // `static self = X;`: the class's value, `typeof X` (classRefAsClassValue) - and `static y = this`,
+                        // whose `this` is the class (an instance field's is the instance)
                         if (auto classRefOp = val.getDefiningOp<mlir_ts::ClassRefOp>();
-                            classRefOp && !getValueClassInfo(classRefOp.getType())
-                            && propertyDeclaration->initializer != SyntaxKind::ThisKeyword)
+                            classRefOp && !getValueClassInfo(classRefOp.getType()))
                         {
                             typeInit = mlir_ts::ClassValueType::get(classRefOp.getType());
                             isConst = false;
