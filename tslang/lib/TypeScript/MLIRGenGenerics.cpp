@@ -1757,8 +1757,10 @@ namespace mlirgen
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
+            shadowTypeParameters(typeParams, genericTypeGenContext);
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+            shadowTypeParameterAliases(typeParams, genericTypeGenContext);
             if (mlir::failed(result) && hasAnyNamedGenericType == IsGeneric::NoDefaults)
             {
                 // can't instantiate generic type, so check if normal type without generic types exists
@@ -2144,8 +2146,10 @@ namespace mlirgen
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
+            shadowTypeParameters(typeParams, genericTypeGenContext);
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+            shadowTypeParameterAliases(typeParams, genericTypeGenContext);
             if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics)
                 || typeArgumentsTooLong(location, genericTypeGenContext.typeParamsWithArgs))
             {

@@ -694,9 +694,26 @@ namespace mlirgen
             auto typeParams = std::get<0>(genericTypeAliasInfo);
             auto typeNode = std::get<1>(genericTypeAliasInfo);
 
+            // the arguments are the reference's, read where it is (`Pair<T>` in `f<T>` is f's T) - before the
+            // alias's own parameters shadow the names; a default, after, reads them
+            SmallVector<mlir::Type> typeArgs;
+            for (auto typeArgument : typeReferenceAST->typeArguments)
+            {
+                auto typeArg = getType(typeArgument, genContext);
+                if (!typeArg)
+                {
+                    return mlir::Type();
+                }
+
+                typeArgs.push_back(typeArg);
+            }
+
+            shadowTypeParameters(typeParams, genericTypeGenContext);
+
             auto [result, hasAnyNamedGenericType] =
-                zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
+                zipTypeParametersWithArguments(location, typeParams, typeArgs,
                                             genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+            shadowTypeParameterAliases(typeParams, genericTypeGenContext);
 
             if (mlir::failed(result))
             {

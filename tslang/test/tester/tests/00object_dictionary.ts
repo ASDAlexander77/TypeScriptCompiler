@@ -100,6 +100,21 @@ function sum(d: { [key: string]: number }) {
     return total;
 }
 
+// an interface of a string index signature and nothing else is the same dictionary
+interface Counts {
+    [name: string]: number;
+}
+
+interface Table<T> {
+    [key: string]: T;
+}
+
+function total(c: Counts) {
+    let sum: number = 0;
+    for (const k in c) sum += c[k] ?? 0;
+    return sum;
+}
+
 function main() {
     const d: { [key: string]: number } = { a: 1, get: 5 };
     const k = "x" + 1;
@@ -142,6 +157,15 @@ function main() {
     // the last delete, at i = 98, is of p2
     assert(Object.keys(o).length == 9);
     assert(!("p2" in o));
+
+    const counts: Counts = { a: 1, b: 2 };
+    counts["c"] = 3;
+    assert(total(counts) == 6 && counts["z"] === undefined, "an interface of a string index signature");
+
+    const names: Table<string> = {};
+    const key = "k" + 1;
+    names[key] = "v1";
+    assert(names["k1"] == "v1" && names["k2"] === undefined, "a generic one");
 
     print("done.");
 }

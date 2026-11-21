@@ -17835,6 +17835,8 @@ class MLIRGenImpl
                                                               HeritageClause heritageClause, int &orderWeight, bool declareClass,
                                                               const GenContext &genContext);
 
+    bool isStringIndexSignatureOnly(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
+
     mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
 
     template <typename T> mlir::LogicalResult mlirGenInterfaceType(T newInterfacePtr, const GenContext &genContext)
@@ -18588,6 +18590,35 @@ class MLIRGenImpl
     Reason testConstraint(mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext,
         bool reportFailure = true);
+
+    // A generic declaration instantiated inside another generic (`Box<S>` in `f<T, S>`) starts from the
+    // enclosing one's type parameters and aliases: its own of the same name shadow those. Left in, `Box`'s T
+    // was f's T (a type parameter as an argument does not replace what is there, and the prototype of a
+    // generic function names each of its parameters as an alias of itself, looked up first), so `Box<S>` was
+    // made as `Box<T>`: `f(Box<number>, Box<string>)` inferred T = number | string and S = any, and read its
+    // second argument with the wrong layout. Before the arguments are zipped: the parameters.
+    void shadowTypeParameters(llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, GenContext &genContext)
+    {
+        for (auto &typeParam : typeParams)
+        {
+            genContext.typeParamsWithArgs.erase(typeParam->getName());
+        }
+    }
+
+    // After: the alias of a parameter given another type parameter (`Box<S>`'s T = S). Only then - a concrete
+    // argument made inside a generic prototype (`TypedArray<u8>` there) keeps the alias as before: generated
+    // there in full, the instance was taken for done, and the module that uses it had none of its members.
+    void shadowTypeParameterAliases(llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, GenContext &genContext)
+    {
+        for (auto &typeParam : typeParams)
+        {
+            auto arg = genContext.typeParamsWithArgs.lookup(typeParam->getName()).second;
+            if (arg && isa<mlir_ts::NamedGenericType>(arg))
+            {
+                genContext.typeAliasMap.erase(typeParam->getName());
+            }
+        }
+    }
 
     std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,

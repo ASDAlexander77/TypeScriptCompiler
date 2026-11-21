@@ -1834,6 +1834,13 @@ namespace mlirgen
                         // `implements` handling only accepts a genuine InterfaceType - properly
                         // supporting a TupleType target would need synthesizing an anonymous
                         // interface from it, a separate, scoped feature. Fail cleanly for now.
+                        // An interface of a string index signature only is a dictionary (isStringIndexSignatureOnly):
+                        // for a class, what it says is only a type check - nothing to implement.
+                        if (dictionaryClassInfoOf(type, genContext))
+                        {
+                            return;
+                        }
+
                         emitError(loc(implementingType)) << "class cannot implement type: " << to_print(type);
                     });
 
@@ -5149,6 +5156,13 @@ genContext);
                     // type-alias-resolved TupleType target, not a genuine InterfaceType) - this
                     // function builds the vtable definition for whatever `implements` already
                     // registered, so it hits the same real gap from a different stage.
+                    // A dictionary (an interface of a string index signature only): nothing to implement.
+                    if (dictionaryClassInfoOf(type, genContext))
+                    {
+                        success = true;
+                        return;
+                    }
+
                     emitError(loc(implementingType)) << "class cannot implement type: " << to_print(type);
                 });
 
