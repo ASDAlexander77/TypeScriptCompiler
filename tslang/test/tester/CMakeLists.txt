@@ -6820,6 +6820,10 @@ set(import_specialization_dir "${PROJECT_SOURCE_DIR}/test/tester/import-speciali
 # can't be found"). On Linux the name had an `@` (`@Tree`), which ld reads as a symbol version.
 tslang_add_import_tests(import-specialization "${import_specialization_dir}" import_specialization box_module)
 
+# A Map in a module importing another: the keys adapter made while the import was read as declarations was
+# a public declaration, and the module failed to verify.
+tslang_add_import_tests(import-map "${PROJECT_SOURCE_DIR}/test/tester/import-map" import_map map_module)
+
 # The same for a shared library: imported directly and through a source module - see
 # shared-import-reimport.cmake.
 if (WIN32)

@@ -4025,6 +4025,15 @@ namespace mlirgen
                     continue;
                 }
 
+                // only a key whose type is a string or a number, not a literal, is made here; any other (one
+                // that does not resolve yet, a symbol) is the record's, as before
+                auto keyType = evaluate(expression, genContext);
+                if (!keyType || !(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType>(keyType) ||
+                                  isa<mlir::IntegerType>(keyType)))
+                {
+                    continue;
+                }
+
                 auto keyResult = mlirGen(expression, genContext);
                 if (keyResult.failed_or_no_value())
                 {
@@ -4032,12 +4041,6 @@ namespace mlirgen
                 }
 
                 auto value = V(keyResult);
-                auto keyType = value.getType();
-                if (!(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType, mlir_ts::LiteralType>(keyType) ||
-                      isa<mlir::IntegerType>(keyType)))
-                {
-                    continue;
-                }
 
                 computedKeys[index] = value;
                 MLIRCodeLogic mcl(builder, compileOptions);
