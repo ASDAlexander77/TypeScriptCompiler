@@ -859,6 +859,14 @@ namespace mlirgen
         // `return e` in a generator: {value: e, done: true}, and every next() after it is done (step -1)
         if (!!(returnStatementAST->internalFlags & InternalFlags::GeneratorReturn))
         {
+            if (!!(returnStatementAST->internalFlags & InternalFlags::GeneratorReturnOfOtherType))
+            {
+                emitError(location) << "a value returned by a generator typed Generator<T, TReturn> with a TReturn other "
+                                       "than T is not supported: next() gives `{ value: T }` - return it as a T, or "
+                                       "yield it";
+                return mlir::failure();
+            }
+
             NodeFactory nf(NodeFactoryFlags::None);
 
             // as yield sets its resume point: `this.step` of the generator object, or `step` of a captured one
