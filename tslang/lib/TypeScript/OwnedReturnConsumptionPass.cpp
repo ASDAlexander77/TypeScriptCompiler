@@ -2104,8 +2104,15 @@ class OwnedReturnConsumptionPass
             // call, and took half an hour to compile. Not under -mm=own, whose passes after this read where the
             // releases are; and not where a use can't be followed (lastUseInBlock gives none) or is not before
             // the stretch's end.
+            // Only a temporary with no name: a `const` holding the value itself (OWNED_RESULT_NAMED_ATTR_NAME) is a
+            // local, given back where its scope ends - an object let go of earlier is seen let go of
+            // (`Shared.count`, a `WeakRef`'s deref, a destructor).
+            // Nor a view (own_facts::isView: an interface made of an object, a union of a class): its release is the
+            // release of the block it shows, which the value it is made of, and that value's other views, may go on
+            // using - `use(<Something>o); use(<Something>o)` gave the first interface back after its call, and the
+            // object literal's block, born with no count, was freed before the second.
             mlir::Operation *after = nullptr;
-            if (compileOptions.isRefCounted())
+            if (compileOptions.isRefCounted() && !op->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) && !own_facts::isView(op))
             {
                 auto *last = lastUseInBlock(op);
                 if (last && (!before || last->isBeforeInBlock(before)))
@@ -2507,7 +2514,9 @@ class OwnedReturnConsumptionPass
                     return nullptr;
                 }
 
-                if (user->hasAttr(OWNED_RESULT_ATTR_NAME))
+                // (a view is the value still, whatever it is marked: an interface made of an object literal's copy,
+                // `ts.NewInterface`, is that copy - given back right after it, `use(<Something>o)` read freed memory)
+                if (user->hasAttr(OWNED_RESULT_ATTR_NAME) && !own_facts::isView(user))
                 {
                     continue;
                 }
