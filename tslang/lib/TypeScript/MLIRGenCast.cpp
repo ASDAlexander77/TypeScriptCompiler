@@ -1789,6 +1789,17 @@ namespace mlirgen
             // lowering could not make, and the callee read garbage. An interface without members
             // takes any value, as in TypeScript.
             auto baseValueType = mth.stripLiteralType(valueType);
+
+            // an array or a string given where an iterator is wanted (`Iterable<T>`, `Generator<T>`: an object
+            // with `next`, as the default library declares them) is iterated by a generator over its elements
+            if (isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType, mlir_ts::StringType>(baseValueType))
+            {
+                if (auto iterated = castIterableToIterator(location, value, baseValueType, interfaceType, genContext))
+                {
+                    return *iterated;
+                }
+            }
+
             if (baseValueType.isIntOrIndexOrFloat()
                 || isa<mlir_ts::NumberType, mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::CharType,
                        mlir_ts::BigIntType, mlir_ts::ArrayType, mlir_ts::ConstArrayType>(baseValueType))
@@ -1804,6 +1815,123 @@ namespace mlirgen
         }
 
         return std::nullopt;
+    }
+
+    // `sum([1.5, 2])` of `sum(v: Iterable<number>)`, `cat("abc")` of `cat(v: Iterable<string>)`: the interface is
+    // an iterator - it has `next`, whose result's `value` is its element - and an array or a string has none of
+    // its members. A generator over the elements, made here from source once a module (`__array_values`,
+    // `__string_values`), is: its elements are cast to the interface's element type as they are given (`s32`
+    // to `number`). Under -mm=own the generator borrows the array (@borrows), as an array's values() does.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castIterableToIterator(mlir::Location location, mlir::Value value,
+        mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        if (!interfaceInfo)
+        {
+            return std::nullopt;
+        }
+
+        // the element: the `value` of what `next` returns
+        mlir::Type nextType;
+        if (auto *field = interfaceInfo->findField(builder.getStringAttr("next")))
+        {
+            nextType = field->type;
+        }
+        else if (auto *method = interfaceInfo->findMethod("next"))
+        {
+            nextType = method->funcType;
+        }
+
+        auto nextFuncType = dyn_cast_or_null<mlir_ts::FunctionType>(nextType);
+        if (!nextFuncType || nextFuncType.getNumResults() != 1)
+        {
+            return std::nullopt;
+        }
+
+        mlir::Type elementType;
+        llvm::SmallVector<mlir_ts::FieldInfo> resultFields;
+        if (mlir::succeeded(mth.getFields(nextFuncType.getResult(0), resultFields)))
+        {
+            for (auto &field : resultFields)
+            {
+                if (auto name = dyn_cast_or_null<mlir::StringAttr>(field.id); name && name.getValue() == "value")
+                {
+                    elementType = field.type;
+                }
+            }
+        }
+
+        if (!elementType)
+        {
+            return std::nullopt;
+        }
+
+        auto isString = isa<mlir_ts::StringType>(baseValueType);
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = isString ? "___string_values" : "___array_values";
+        auto funcRef = resolveIdentifier(location, funcName, genContext);
+        if (!funcRef)
+        {
+            std::string src = isString ? "@borrows(\"s\")\n"
+                                         "function* __string_values<T>(s: string) {\n"
+                                         "for (const c of s) yield <string>c;\n"
+                                         "}\n"
+                                       : "@borrows(\"a\")\n"
+                                         "function* __array_values<T>(a: T[]) {\n"
+                                         "for (const v of a) yield v;\n"
+                                         "}\n";
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        SmallVector<mlir::Value, 4> operands;
+        NodeArray<TypeNode> typeArguments;
+        GenContext iterGenContext(genContext);
+        if (isString)
+        {
+            auto stringValue = cast(location, getStringType(), value, genContext);
+            if (stringValue.failed_or_no_value())
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            operands.push_back(V(stringValue));
+        }
+        else
+        {
+            // the array of the interface's elements: `s32[]` given to `Iterable<number>` is converted first
+            auto arrayValue = cast(location, getArrayType(elementType), value, genContext);
+            if (arrayValue.failed_or_no_value())
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            operands.push_back(V(arrayValue));
+        }
+
+        // generic, the string one too (its T unused): a function made only in a pass whose module is thrown away
+        // (an evaluation, a discovery pass) left a call to nothing; a specialization is made again where it is used
+        NodeFactory nf(NodeFactoryFlags::None);
+        iterGenContext.typeAliasMap.insert({".ITER_T", isString ? mlir::Type(getStringType()) : elementType});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_T")).as<Node>()));
+
+        auto generator = mlirGenCallExpression(location, funcRef, typeArguments, operands, iterGenContext);
+        if (generator.failed_or_no_value())
+        {
+            return ValueOrLogicalResult(mlir::failure());
+        }
+
+        return cast(location, interfaceType, V(generator), genContext);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenClassInterfaceVTable(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
