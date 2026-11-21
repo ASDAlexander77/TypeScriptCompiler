@@ -2082,3 +2082,16 @@ Looked at and kept: a `never` parameter type tslang computed (an intersection it
 (126).
 
 Tests: `00this_void_param.ts`, `00global_this_members.ts` (compile, JIT, rc, own).
+
+150 (twenty-second batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- A method implementing an interface's numeric method without a return type of its own (`clean(input: number) {
+  return 123; }` for `clean(input: T): T` of Field<number>) returns the interface's type, as an override returns its
+  base method's: the integer literal's s32 was "method signature not matching ... => s32".
+- A class method an interface calls otherwise than it is declared - with a result the interface's `void` drops
+  (`foo(): void` of `foo() { return "x"; }`), or without optional parameters the method has further (`method()` of
+  `method(a = 4)`): "method signature not matching". The interface's slot holds an adapter calling
+  `this.<name>(p0..pn)` as the class declares it (generateSynthMethodToCallField), made in each module that lays out
+  the vtable. Only for a result the interface drops or one both have: a method returning nothing for a type
+  predicate's result crashed the compiler (typePredicateInherit), and a result of another type is not cast.
+
+Tests: `00interface_numeric_return.ts`, `00interface_method_adapters.ts` (compile, JIT, rc, own).
