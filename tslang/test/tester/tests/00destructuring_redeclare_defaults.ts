@@ -41,5 +41,12 @@ function main() {
     [a, , b = 10] = arr;
     assert(a == 3 && b == 10);
 
+    // a target that is a pattern itself is destructured from its element or field
+    [[a, b] = [1, 2]] = [[2, 3]];
+    assert(a == 2 && b == 3);
+    const p: { q: number[]; r: { s: number } } = { q: [6, 7], r: { s: 8 } };
+    ({ q: [a, b], r: { s: c } } = p);
+    assert(a == 6 && b == 7 && c == 8);
+
     print("done.");
 }
