@@ -3054,7 +3054,11 @@ namespace mlirgen
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
-            [&](mlir::Location location, const GenContext &genContext) {
+            [&](mlir::Location location, const GenContext &outerGenContext) {
+                // `this` in a static field's initializer is the class, in an arrow there as well
+                GenContext genContext(outerGenContext);
+                genContext.staticThis = true;
+
                 // `static x` with no type and no initializer is `any`, as an instance field is (it failed
                 // with no type, and no error)
                 if (!propertyDeclaration->type && !propertyDeclaration->initializer)
@@ -5455,6 +5459,7 @@ genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = newClassPtr->classType;
         funcGenContext.thisClassType = newClassPtr->classType;
+        funcGenContext.staticThis = classMethodMemberInfo.isStatic;
         if (!classMethodMemberInfo.isStatic && !classMethodMemberInfo.isConstructor && !funcLikeDeclaration->type)
         {
             if (auto baseReturnType = overriddenNumericReturnType(newClassPtr, classMethodMemberInfo.methodName))

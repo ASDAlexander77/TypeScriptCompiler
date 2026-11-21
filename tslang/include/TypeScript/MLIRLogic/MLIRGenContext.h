@@ -241,6 +241,9 @@ struct GenContext
     llvm::SmallVector<mlir::Value> *ownedVars = nullptr;
     mlir::Type thisType;
     mlir_ts::ClassType thisClassType;
+    // in a static member `this` is the class itself (thisType), with no variable for an arrow to capture: an
+    // arrow made there keeps thisType (mlirGen(ArrowFunction))
+    bool staticThis = false;
     mlir::Type receiverFuncType;
     // the numeric result of the base class's method a method overrides without a return type of its own
     // (`f() { return 3; }`, s32, for `f(): number`): its vtable slot calls it as the base's; for that

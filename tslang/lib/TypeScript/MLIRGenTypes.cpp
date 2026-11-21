@@ -2935,6 +2935,13 @@ namespace mlirgen
                 auto type = getType(typeItem, genContext);
                 if (!type)
                 {
+                    // nothing was said: a variable of such a type failed as a "failed statement"
+                    if (methodSignature->typeParameters.size() > 0)
+                    {
+                        emitError(loc(methodSignature)) << "generic method '" << MLIRHelper::getName(methodSignature->name)
+                                                        << "' in a type literal is not supported yet: declare it in an interface";
+                    }
+
                     return mlir::failure();
                 }
 

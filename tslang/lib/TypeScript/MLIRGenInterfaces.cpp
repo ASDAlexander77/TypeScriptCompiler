@@ -296,6 +296,20 @@ namespace mlirgen
                     auto index = mth.getFieldIndexByFieldName(storeType, fieldId);
                     if (index == -1)
                     {
+                        // Failed here, the cast failed with nothing said ("failed statement"). An optional method
+                        // (`b?(): number`) the object hasn't got has no absent mark in its slot yet - a test of it
+                        // reads as present - while an optional property of a function type has one.
+                        if (method.isConditional)
+                        {
+                            emitError(location) << "the object has no method '" << method.name << "', an optional method of interface '"
+                                                << newInterfacePtr->fullName << "': an absent optional method is not supported yet. "
+                                                << "Declare it as an optional property ('" << method.name
+                                                << "?: (...) => ...'), or give the object one";
+                            return mlir::failure();
+                        }
+
+                        emitError(location) << "method '" << method.name << "' of interface '" << newInterfacePtr->fullName
+                                            << "' can't be found in the object";
                         return mlir::failure();
                     }
 

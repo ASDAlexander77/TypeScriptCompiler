@@ -18478,6 +18478,7 @@ class MLIRGenImpl
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 
+    mlir::LogicalResult checkObjectForIndexSignature(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo);
     ValueOrLogicalResult castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 

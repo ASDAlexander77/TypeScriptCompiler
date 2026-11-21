@@ -450,6 +450,9 @@ tslang_add_test(NAME test-compile-00-default-param-captures COMMAND test-runner 
 tslang_add_test(NAME test-compile-00-module-block-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_block_functions.ts")
 tslang_add_test(NAME test-compile-00-optional-union-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_union_equality.ts")
 tslang_add_test(NAME test-compile-00-destructuring-redeclare-defaults COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_redeclare_defaults.ts")
+tslang_add_test(NAME test-compile-00-void-call-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void_call_return.ts")
+tslang_add_test(NAME test-compile-00-static-this-arrows COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00static_this_arrows.ts")
+tslang_add_test(NAME test-compile-00-forward-closure-refs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00forward_closure_refs.ts")
 tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1232,6 +1235,14 @@ tslang_add_test(NAME test-jit-rc-00-optional-union-equality COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-destructuring-redeclare-defaults COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_redeclare_defaults.ts")
 tslang_add_test(NAME test-jit-rc-00-destructuring-redeclare-defaults COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_redeclare_defaults.ts")
 tslang_add_test(NAME test-jit-own-00-destructuring-redeclare-defaults COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_redeclare_defaults.ts")
+tslang_add_test(NAME test-jit-00-void-call-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void_call_return.ts")
+tslang_add_test(NAME test-jit-rc-00-void-call-return COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00void_call_return.ts")
+tslang_add_test(NAME test-jit-own-00-void-call-return COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00void_call_return.ts")
+tslang_add_test(NAME test-jit-00-static-this-arrows COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00static_this_arrows.ts")
+tslang_add_test(NAME test-jit-rc-00-static-this-arrows COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00static_this_arrows.ts")
+tslang_add_test(NAME test-jit-own-00-static-this-arrows COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00static_this_arrows.ts")
+tslang_add_test(NAME test-jit-00-forward-closure-refs COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00forward_closure_refs.ts")
+tslang_add_test(NAME test-jit-rc-00-forward-closure-refs COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00forward_closure_refs.ts")
 tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
@@ -4052,6 +4063,33 @@ add_test(NAME test-compile-diagnostic-location-captured-literal-method-copy
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-captured-literal-method-copy.obj")
 set_tests_properties(test-compile-diagnostic-location-captured-literal-method-copy
                      PROPERTIES PASS_REGULAR_EXPRESSION "captured_literal_method_copy\.ts:3:30: error: an object literal whose methods use variables of the function around it"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# An object given as an interface with an index signature is an error at the object.
+add_test(NAME test-compile-diagnostic-location-index-signature-object
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/index_signature_object.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-index-signature-object.obj")
+set_tests_properties(test-compile-diagnostic-location-index-signature-object
+                     PROPERTIES PASS_REGULAR_EXPRESSION "index_signature_object\\.ts:4:19: error: an object can't be given as interface 'IMap' yet: it has an index signature"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# An object without an optional method of an interface is an error at the object.
+add_test(NAME test-compile-diagnostic-location-absent-optional-method
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/absent_optional_method.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-absent-optional-method.obj")
+set_tests_properties(test-compile-diagnostic-location-absent-optional-method
+                     PROPERTIES PASS_REGULAR_EXPRESSION "absent_optional_method\\.ts:5:5: error: the object has no method 'b', an optional method of interface 'D'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# A generic method in a type literal is an error at the method.
+add_test(NAME test-compile-diagnostic-location-generic-method-type-literal
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generic_method_type_literal.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generic-method-type-literal.obj")
+set_tests_properties(test-compile-diagnostic-location-generic-method-type-literal
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generic_method_type_literal\\.ts:2:11: error: generic method 'fn' in a type literal is not supported yet"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # An `await` in a `finally` block is an error at the `await` (the lowering failed on the try).
