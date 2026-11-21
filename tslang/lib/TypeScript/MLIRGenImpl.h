@@ -8730,6 +8730,7 @@ class MLIRGenImpl
             // rc). The array and the index are the ones the left side evaluated, as JavaScript has it.
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
+                mlirGenGrowArrayForWrite(location, elementRefOp);
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
             }
 
@@ -20169,6 +20170,44 @@ class MLIRGenImpl
     {
         assert(loc_->pos != loc_->_end);
         return loc(loc_);
+    }
+
+    // `a[i] = v` with `i` at or past the end of the array grows it to `i + 1`, as JavaScript does (`a[a.length] =
+    // v` appends): the slots in between read as the element type's default (SetLengthOf zeroes them). Before, the
+    // write went past the end of the block - under gc into whatever lay there, under rc and own a crash - and the
+    // length stayed. A negative index grows nothing. Only an array with a place to update (a local, a field):
+    // one made for the statement only has nobody to see it grown.
+    void mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
+    {
+        auto array = elementRefOp.getArray();
+        if (!isa<mlir_ts::ArrayType>(array.getType()))
+        {
+            return;
+        }
+
+        MLIRCodeLogic mcl(builder, compileOptions);
+        auto arrayRef = mcl.GetReferenceFromValue(location, array);
+        if (!arrayRef || !isa<mlir_ts::RefType>(arrayRef.getType()))
+        {
+            return;
+        }
+
+        // index >= length, signed: a negative index is never past the end
+        auto index32 = elementRefOp.getIndex();
+        auto i32Type = builder.getI32Type();
+        auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), array);
+        auto length32 = builder.create<mlir_ts::CastOp>(location, i32Type, length);
+        auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanEqualsToken), index32, length32);
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, condition, false);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
+        auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);
+        auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
+        builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
     }
 
     mlir::LogicalResult parsePartialStatements(string src)
