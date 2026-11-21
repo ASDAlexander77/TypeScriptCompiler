@@ -320,7 +320,11 @@ namespace mlirgen
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.clearScopeVars();
             // if we set it to value we will not capture 'this' references
-            allowFuncGenContext.thisType = nullptr;
+            // - except where `this` is the class itself (a static method, a static field's initializer): there is
+            // no `this` to capture, and the arrow's `this` is the class as the code around it has it ("can't
+            // resolve name: this")
+            auto staticThis = genContext.staticThis && genContext.thisType && isa<mlir_ts::ClassType>(genContext.thisType);
+            allowFuncGenContext.thisType = staticThis ? genContext.thisType : nullptr;
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))

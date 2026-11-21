@@ -893,6 +893,7 @@ namespace mlirgen
             genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.thisClassType = genContext.thisClassType;
+            genContextWithPassResult.staticThis = genContext.staticThis;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = &cleanUpsList;
