@@ -1,7 +1,8 @@
-// A module importing another, with a generic class whose code boxes an object into `any` (as the library's
-// Map does, throwing a RangeError): the keys adapter of what it boxed was made while the imported file was
-// read as declarations - a declaration, made public - and the module failed: "'ts.Func' op symbol
-// declaration cannot have public visibility". A dictionary keyed by an imported value is made here too.
+// A dictionary in a module importing another, keyed by imported values, beside a generic class whose code
+// boxes an object into `any`. (With the default library, `import` plus `new Map` failed: the keys adapter of
+// the RangeError Map throws was made while the imported file was read as declarations - a declaration,
+// made public - "'ts.Func' op symbol declaration cannot have public visibility". The tester compiles without
+// the library, and this file does not reach that path without it.)
 import { prefix, count } from "./map_module";
 
 class Failure {

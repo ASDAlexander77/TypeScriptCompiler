@@ -2133,6 +2133,11 @@ reads `T | undefined`, under -mm=own the dictionary owns its values). Fixed:
   needs it. Leak probes, flat at 33 MB: 20M calls moving a parameter on exclusive paths (own), 3M writes,
   overwrites and deletes of a dictionary of objects (rc and own).
 
+- Found on the way: a module importing another and using a Map (`import "./a"; new Map<string, boolean>()`)
+  failed with "'ts.Func' op symbol declaration cannot have public visibility": the keys adapter of the RangeError
+  the library's Map throws was made while the imported file was read as declarations, a declaration, then made
+  public. It is made in full there now, as a specialization is (makeAnyKeysAdapter).
+
 Still open, looked at:
 - An interface with only a string index signature (`interface Dictionary<T> { [x: string]: T }`) is still an
   interface: the dictionary is for the type literal (and so for what is written with it).
