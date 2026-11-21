@@ -238,26 +238,101 @@ namespace mlirgen
             }
         };
 
-        widen(sourceFile->statements);
-        ts::VisitorAST visitor([&](ts::Node node) {
-            if (node == SyntaxKind::Block)
+        // through statements and class members only: an expression holds no declaration list, and a walk of every
+        // node overflowed the stack on a deep one (binderBinaryExpressionStress)
+        std::function<void(Node)> walk;
+        auto walkStatements = [&](NodeArray<Statement> &statements) {
+            widen(statements);
+            for (auto statement : statements)
             {
-                widen(node.as<ts::Block>()->statements);
+                walk(statement);
             }
-            else if (node == SyntaxKind::ModuleBlock)
+        };
+
+        auto walkBody = [&](Node body) {
+            if (body && body == SyntaxKind::Block)
             {
-                widen(node.as<ModuleBlock>()->statements);
+                walkStatements(body.as<ts::Block>()->statements);
             }
-            else if (node == SyntaxKind::ClassDeclaration)
+        };
+
+        walk = [&](Node node) {
+            if (!node)
             {
+                return;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::Block:
+                walkStatements(node.as<ts::Block>()->statements);
+                break;
+            case SyntaxKind::ModuleDeclaration:
+                if (auto body = node.as<ModuleDeclaration>()->body)
+                {
+                    if (body == SyntaxKind::ModuleBlock)
+                    {
+                        walkStatements(body.as<ModuleBlock>()->statements);
+                    }
+                    else
+                    {
+                        walk(body);
+                    }
+                }
+                break;
+            case SyntaxKind::FunctionDeclaration:
+                walkBody(node.as<FunctionDeclaration>()->body);
+                break;
+            case SyntaxKind::ClassDeclaration:
                 widen(node.as<ClassDeclaration>()->members);
+                for (auto member : node.as<ClassDeclaration>()->members)
+                {
+                    if (member == SyntaxKind::MethodDeclaration)
+                    {
+                        walkBody(member.as<MethodDeclaration>()->body);
+                    }
+                    else if (member == SyntaxKind::Constructor)
+                    {
+                        walkBody(member.as<ConstructorDeclaration>()->body);
+                    }
+                }
+                break;
+            case SyntaxKind::IfStatement:
+                walk(node.as<IfStatement>()->thenStatement);
+                walk(node.as<IfStatement>()->elseStatement);
+                break;
+            case SyntaxKind::ForStatement:
+                walk(node.as<ForStatement>()->statement);
+                break;
+            case SyntaxKind::ForInStatement:
+                walk(node.as<ForInStatement>()->statement);
+                break;
+            case SyntaxKind::ForOfStatement:
+                walk(node.as<ForOfStatement>()->statement);
+                break;
+            case SyntaxKind::WhileStatement:
+                walk(node.as<WhileStatement>()->statement);
+                break;
+            case SyntaxKind::DoStatement:
+                walk(node.as<DoStatement>()->statement);
+                break;
+            case SyntaxKind::LabeledStatement:
+                walk(node.as<LabeledStatement>()->statement);
+                break;
+            case SyntaxKind::TryStatement:
+                walk(node.as<TryStatement>()->tryBlock);
+                if (node.as<TryStatement>()->catchClause)
+                {
+                    walk(node.as<TryStatement>()->catchClause->block);
+                }
+                walk(node.as<TryStatement>()->finallyBlock);
+                break;
+            default:
+                break;
             }
-            else if (node == SyntaxKind::ClassExpression)
-            {
-                widen(node.as<ClassExpression>()->members);
-            }
-        });
-        visitor.visit(sourceFile);
+        };
+
+        walkStatements(sourceFile->statements);
     }
 
     void MLIRGenImpl::lowerDefaultExports(SourceFile sourceFile, StringRef filePath)
