@@ -506,6 +506,8 @@ class OwnershipInferencePass
     // function has no release for it, so exactly one taker must move it on, on every way out of
     // the function, and nothing may read it after that.
     void decideParam(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::SetVector<mlir::Operation *> &toErase);
+    bool movesOnExclusivePaths(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, bool released,
+                               llvm::SetVector<mlir::Operation *> &toErase);
 
     // The thrown value, read out of the exception object by a catch's copy thunk (`.eh.copy.*`,
     // which the C++ runtime calls to copy the exception into the catch). rc retains it for the
