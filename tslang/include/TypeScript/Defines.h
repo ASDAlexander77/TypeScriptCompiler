@@ -44,6 +44,9 @@
 // returns a heap value without any retain, and treating one of those as owned would skip a
 // retain nobody performed and free live memory.
 #define OWNED_RESULT_ATTR_NAME "__owned_result"
+// a global constructor that reads globals declared before it (a destructuring `var` of the module): it runs after
+// their own initializers, which the lowering makes - in the order of the module (GlobalConstructorOpLowering)
+#define AFTER_GLOBALS_ATTR_NAME "__after_globals"
 // an adapter for calls through `any` (MLIRGenImpl::ensureAnyCallAdapter), and the call of one in `__any_invoke`:
 // the call returns what the adapter returns, owned when every adapter here returns owned (OwnedReturnConsumptionPass)
 #define ANY_CALL_ADAPTER_ATTR_NAME "__any_call_adapter"

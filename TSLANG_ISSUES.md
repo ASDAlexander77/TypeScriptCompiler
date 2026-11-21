@@ -1964,3 +1964,24 @@ set foo(v: number | string) }`) still take the getter's type for an assignment (
 Tests: `00array_is_array.ts` (compile, JIT, rc, own), `00merged_enum_members.ts` (compile, JIT),
 `00module_block_functions.ts`, `00any_global_initializer.ts` (compile, JIT, rc, own),
 `00default_param_captures.ts` (compile, JIT, rc; -mm=own refuses an escaping closure over a caller's value, as before).
+
+143 (fifteenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `x == "a"` with x of `number | string | undefined` (an optional of a union with a tag) crashed the compiler in
+  lowering (142's open item). It is compared as a union is with a value it has members that can't be compared
+  with: by a helper that asks the member it holds, and an empty one is never equal.
+- A union of function types whose member has a parameter or a result type not resolved yet (the React
+  declarations of the JSX tests) crashed the compiler where 139's union merges function members.
+- A destructuring `var` of the module reading a global declared before it (`var r = {...}; var { a } = r;`): its
+  constructor ran before the global's own initializer and read nothing - a crash at run time. Such a constructor now
+  runs after the globals before it, in the module's order.
+- A destructuring `var` of the module all of whose names were declared before (`var { a } = r; var { a } = s;`):
+  "redefinition of symbol named 'a'". It is an assignment to them, as `var v = 1; var v = 2;` is.
+- An assignment pattern's defaults: `({ a: x = 1 } = o)` failed ("only a variable, a property or an element can be
+  assigned to"), and `[x = 1] = arr` assigned the default before the element; a shorthand's default (`{ a = 1 }`)
+  was ignored. The default is taken when the field is empty, or for an element past the end of the array (where a
+  read of it was whatever follows the array's data); a hole (`[a, , b]`) takes nothing; a target that is a pattern
+  itself (`[[a, b] = [1, 2]] = [[2, 3]]`, `{ q: [a, b] } = o`) is destructured from its element - it was evaluated
+  as an expression, which gave `1 2` for that one, or "only a variable ... can be assigned to".
+
+Tests: `00optional_union_equality.ts` (compile, JIT, rc), `00destructuring_redeclare_defaults.ts` (compile, JIT, rc,
+own).

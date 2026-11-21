@@ -8972,6 +8972,17 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 {
     using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
 
+    // one that runs after the globals before it takes the next priority, as their own initializers do (GlobalOpLowering)
+    uint64_t priorityOf(mlir_ts::GlobalConstructorOp globalConstructorOp) const
+    {
+        if (globalConstructorOp->hasAttr(AFTER_GLOBALS_ATTR_NAME))
+        {
+            return tsLlvmContext->nextGlobalConstructorPriority++;
+        }
+
+        return globalConstructorOp.getPriority().getLimitedValue();
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -8979,7 +8990,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         {
             auto loc = globalConstructorOp->getLoc();
 
-            auto priority = globalConstructorOp.getPriority().getLimitedValue();
+            auto priority = priorityOf(globalConstructorOp);
 
             auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
             //auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>(MLIR_GCTORS);
@@ -9050,7 +9061,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
                 globalConstructorOp,
                 rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }),
-                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }),
+                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(priorityOf(globalConstructorOp)) }),
                 rewriter.getArrayAttr({ LLVM::ZeroAttr::get(rewriter.getContext()) }));
         }
 
@@ -10541,6 +10552,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     TsLlvmContext tsLlvmContext{tsContext.compileOptions};
     for (auto existing : m.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
     {
+        if (existing->hasAttr(AFTER_GLOBALS_ATTR_NAME))
+        {
+            continue;
+        }
+
         tsLlvmContext.nextGlobalConstructorPriority =
             std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, existing.getPriority().getSExtValue() + 1);
     }
