@@ -1210,9 +1210,12 @@ namespace mlirgen
         // the mode, and what throw() was given
         generatorObjectProperties.push_back(
             nf.createPropertyAssignment(nf.createIdentifier(S(GENERATOR_MODE_NAME)), number("0")));
+        // (a number in it, not `<any>undefined`: under -mm=own an object literal's field of `<any>undefined` or
+        // `<any>null` was released twice - its box stored into the object and given back at the end as well, a
+        // double free wasm's heap caught; TSLANG 153)
         generatorObjectProperties.push_back(nf.createPropertyAssignment(
             nf.createIdentifier(S(GENERATOR_THROWN_NAME)),
-            nf.createTypeAssertion(anyType(), nf.createIdentifier(S(UNDEFINED_NAME)))));
+            nf.createTypeAssertion(anyType(), number("0"))));
 
         auto addMethod = [&](const char *name, NodeArray<ParameterDeclaration> parameters, NodeArray<Statement> statements) {
             auto method = nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(stows(std::string(name))), undefined,
