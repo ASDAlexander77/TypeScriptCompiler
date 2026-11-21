@@ -1343,6 +1343,22 @@ namespace mlirgen
             }
         }
 
+        // a member of a namespace merged with the class (`class C {} namespace C { export var x }`), read through the
+        // class (`C.x`): the namespace's
+        if (throughClass && !isSuperClass)
+        {
+            if (auto namespaceInfo = getNamespaceByFullName(classInfo->fullName))
+            {
+                auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+                auto namespaceRef = builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
+                auto member = mlirGenPropertyAccessExpression(location, namespaceRef, name, genContext);
+                if (!member.failed_or_no_value())
+                {
+                    return V(member);
+                }
+            }
+        }
+
         if (isSuperClass || genContext.allowPartialResolve)
         {
             return mlir::Value();

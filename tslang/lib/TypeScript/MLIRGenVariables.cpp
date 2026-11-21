@@ -2377,7 +2377,10 @@ namespace mlirgen
                 enumTypeInfo.second);
         }
 
-        if (getNamespaceMap().count(name))
+        // a namespace merged with a class of its name (`class C {} namespace C { export var x }`): the name is the
+        // class, whose members a namespace member is found after (`C.x`, mlirGenPropertyAccessExpression). As the
+        // namespace, `new C()` was "'C' is a namespace, not a class".
+        if (getNamespaceMap().count(name) && !getClassesMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
             assert(namespaceInfo);
