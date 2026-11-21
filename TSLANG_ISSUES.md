@@ -2212,9 +2212,18 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
     copies the exception into a slot of the frame. It is a local of the frame now, living in one turn.
   - A yield in a catch block is an error at the yield: resuming there is resuming inside the exception handler
     (it crashed in LLVM's instruction selection; before the fixes above the catch did not catch).
+- A yield in a finally block was skipped (`try { yield 1; } finally { print("f"); yield 2; }` gave 1 and not 2,
+  and "f" was not printed): TryOpLowering copies the finally for each way out of the try (the end of its body, the
+  unwind, each return/break/continue), each copy with the yield's resume label, and the generator's switch
+  dispatches by position - the copies shifted every label after them, so the resume landed after the yield in
+  another copy. Now an error at the yield (YieldInFinally), as a yield in a catch is, and a repeated resume label is
+  an error in the lowering rather than a resume somewhere else. Tests `generator_yield_in_finally.ts`
+  (diagnostic-location), `00generator_finally.ts`.
 
 Still open, looked at:
-- A yield in a finally block is skipped (`try { yield 1; } finally { yield 2; }` gives 1 and not 2), as before.
+- A yield in a finally block (an error, above): supporting it needs the finally lowered as straight code after the
+  try when it yields - a catch-all keeping the exception, the way out recorded (end, throw, return, break,
+  continue, the generator's return()/throw()), and taken again after the finally - not as the try's finally region.
 - -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
   is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
   keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a

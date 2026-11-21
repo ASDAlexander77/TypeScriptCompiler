@@ -590,7 +590,12 @@ enum class InternalFlags : number
     GeneratorResumable = 1 << 21,
     // a `yield` in a `catch` clause of a generator: resuming there is resuming inside the clause's exception
     // handler, which can't be entered again (Windows: a catch funclet; LLVM's instruction selection crashed)
-    YieldInCatch = 1 << 22
+    YieldInCatch = 1 << 22,
+    // a `yield` in a `finally` block of a generator: the finally is copied once for each way out of the try (the
+    // end of its body, the unwind, each return/break/continue), the copy on the unwind leg inside an exception
+    // handler, and a resume lands in one copy only - the yield was skipped, and the rest of the finally ran from the
+    // wrong place
+    YieldInFinally = 1 << 23
 };
 
 ENUM_OPS(InternalFlags)
