@@ -2270,6 +2270,14 @@ Still open, looked at:
   given as an Iterable<T> is still "a value takes a second reference": the generator made over it would hold a borrow
   of the array for as long as it lives, which -mm=own can't say yet (open). (A generator typed as such an interface
   with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
+
+Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
+diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,
+`00generator_return_throw.ts` (compile, JIT, rc, own), diagnostic-location `generator_yield_in_catch.ts`.
+
+154 (compile time of a function of many `any` operations, 2026-11-21). The tsc sweep's
+binaryArithmeticControlFlowGraphNotTooLarge - 1300 lines of `any` arithmetic in one function - timed out now and
+then: not flaky, a steady 45 s (gc) against the sweep's 60 s with 8 jobs, and ~27 min under rc.
 - gc (#976): a discovery pass made a generic instance again for every call (`___any_key<any>` for each `x[k]`), a
   module walk after each `any` access, OwnedReturnConsumptionPass and UnwindReleasePass walking the rest of a
   block, or a handler, once for each temporary: 45 s -> 4.7 s.
