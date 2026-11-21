@@ -198,6 +198,12 @@ namespace mlirgen
             newClassPtr->processingModule = theModule.getOperation();
             newClassPtr->processingDeclaration = classDeclarationAST;
         }
+        else if (!newClassPtr->processingDeclaration)
+        {
+            // what the class declares is read from it while it is first declared too (`typeof this.foo` as a
+            // field's type, getTypeByTypeQuery)
+            newClassPtr->processingDeclaration = classDeclarationAST;
+        }
 
         setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
 
