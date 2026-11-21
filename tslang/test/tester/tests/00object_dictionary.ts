@@ -4,6 +4,85 @@
 // written as T. An object literal with a key known only at run time (`{ [m]: i }`) makes one, and so does one
 // given where a dictionary is wanted. `k in d`, `for...in`, `Object.keys` and `delete d[k]` go by its entries.
 // Under -mm=own it owns its values: written in moves, read borrows, overwritten or deleted drops.
+// The tests compile without the default library: its ObjectDictionary (and objectDictionaryAssign), as the
+// compiler finds them by name, over two arrays.
+@dictionary
+class ObjectDictionary<T = any> {
+    private _keys: string[] = [];
+    private _values: T[] = [];
+
+    get size() {
+        return this._keys.length;
+    }
+
+    private find(key: string): int {
+        for (let i = 0; i < this._keys.length; i++) {
+            if (this._keys[i] == key) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    get(key: string): T | undefined {
+        const i = this.find(key);
+        if (i < 0) {
+            return undefined;
+        }
+
+        return this._values[i];
+    }
+
+    set(key: string, value: T | undefined) {
+        if (value === undefined) {
+            this.delete(key);
+            return;
+        }
+
+        const i = this.find(key);
+        if (i < 0) {
+            this._keys.push("" + key);
+            this._values.push(value);
+            return;
+        }
+
+        this._values[i] = value;
+    }
+
+    [key: string]: T | undefined;
+
+    has(key: string): boolean {
+        return this.find(key) >= 0;
+    }
+
+    delete(key: string): boolean {
+        const i = this.find(key);
+        if (i < 0) {
+            return false;
+        }
+
+        this._keys.splice(i, 1);
+        this._values.splice(i, 1);
+        return true;
+    }
+
+    keys(): string[] {
+        const r: string[] = [];
+        for (let i = 0; i < this._keys.length; i++) {
+            r.push("" + this._keys[i]);
+        }
+
+        return r;
+    }
+}
+
+function objectDictionaryAssign<T>(target: ObjectDictionary<T>, source: ObjectDictionary<T>) {
+    for (const k in source) {
+        target[k] = source[k];
+    }
+}
+
 class P {
     constructor(public n: string) {}
 }
@@ -38,7 +117,8 @@ function main() {
     delete d["get"];
     delete d.size;
     assert(!("get" in d));
-    assert(Object.keys(d).join(",") == "a,x1");
+    const keys = Object.keys(d);
+    assert(keys.length == 2 && keys[0] == "a" && keys[1] == "x1");
 
     const e = make("m" + 1, 7);
     assert(e["m1"] == 7);
