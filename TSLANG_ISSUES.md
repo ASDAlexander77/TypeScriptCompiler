@@ -2171,7 +2171,11 @@ Still open, looked at:
   the elements a borrow reads as dropped; in a branch between the value stored and its store, the store as a
   second reference. Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place
   through it - a push too - the local owns what it holds and the parameter is kept, so there the write is as before
-  (open). A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
+  (open). Nor through a handle's payload (`s.value[i] = v`): a push there may move the elements another handle's
+  borrow reads (spec 23.3), so the library's TypedArray.set (and MessageQueue.close, the workers) were taken for
+  methods that release what their callers borrow, and 8 library tests stopped compiling under -mm=own ("a value that
+  borrows 'this.elements' is used here after it may be released"); the write there is as before (open). Test
+  `00array_write_shared.ts`. A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
   rounds (gc, rc, own), clean on the wasm checked heap (own, rc). Not when the right side gave the variable another array (`a[1] = (a = [5],
   9)`): the store goes into the one the left side read; a store of another through another place (`h.a[0] = (h.a =
   [5], 9)`, or in a call) is not seen, and grows the new one (open).
