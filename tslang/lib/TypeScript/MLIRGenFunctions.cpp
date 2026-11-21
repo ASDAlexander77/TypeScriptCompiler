@@ -1410,17 +1410,24 @@ namespace mlirgen
             }
         }
 
-        // a yield in a catch clause can't be resumed (YieldInCatch): said at the yield
+        // a yield in a catch clause (YieldInCatch) or a finally block (YieldInFinally) can't be resumed: said at the
+        // yield
         FilterVisitorSkipFuncsAST<TryStatement> trysVisitor(SyntaxKind::TryStatement, [&](auto tryStatement) {
-            if (!tryStatement->catchClause || !tryStatement->catchClause->block)
+            if (tryStatement->catchClause && tryStatement->catchClause->block)
             {
-                return;
+                FilterVisitorSkipFuncsAST<YieldExpression> yieldsInCatch(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
+                    yieldExpression->internalFlags |= InternalFlags::YieldInCatch;
+                });
+                yieldsInCatch.visit(tryStatement->catchClause->block);
             }
 
-            FilterVisitorSkipFuncsAST<YieldExpression> yieldsInCatch(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
-                yieldExpression->internalFlags |= InternalFlags::YieldInCatch;
-            });
-            yieldsInCatch.visit(tryStatement->catchClause->block);
+            if (tryStatement->finallyBlock)
+            {
+                FilterVisitorSkipFuncsAST<YieldExpression> yieldsInFinally(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
+                    yieldExpression->internalFlags |= InternalFlags::YieldInFinally;
+                });
+                yieldsInFinally.visit(tryStatement->finallyBlock);
+            }
         });
 
         if (functionLikeDeclarationBaseAST->body)

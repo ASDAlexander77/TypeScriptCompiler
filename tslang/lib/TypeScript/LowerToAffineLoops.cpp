@@ -22,6 +22,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/StringSet.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "llvm/Support/Debug.h"
@@ -3033,6 +3034,20 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         };
 
         switchStateOp->getParentOp()->walk(visitorAllStateLabels);
+
+        // A resume point copied along with the code around it (a region cloned for more than one path, as a
+        // try's finally is) is a second label of the same name: positional dispatch would send that state and
+        // every one after it to the wrong place. Said here rather than resumed somewhere else.
+        llvm::StringSet<> labelNames;
+        for (auto op : stateLabels)
+        {
+            auto stateLabelOp = cast<mlir_ts::StateLabelOp>(op);
+            if (!labelNames.insert(stateLabelOp.getLabel()).second)
+            {
+                return stateLabelOp.emitError("a generator's resume point (")
+                       << stateLabelOp.getLabel() << ") is in code copied for more than one path; it can't be resumed";
+            }
+        }
 
         {
             mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
