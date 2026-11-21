@@ -1125,6 +1125,14 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         mlir::Value newCountAsLLVMType =
             rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, op.getNewLength());
 
+        // only growing (`a[i] = v` under -mm=own, mlirGenGrowArrayForWrite): the longer of the two, compared signed -
+        // the length a negative index asks for is never longer
+        if (op->hasAttr(ARRAY_GROWS_ONLY_ATTR_NAME))
+        {
+            auto longer = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, newCountAsLLVMType, countAsLLVMType);
+            newCountAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, longer, newCountAsLLVMType, countAsLLVMType);
+        }
+
         // A longer array grows its block by doubling (a no-op while the capacity suffices), and a
         // shorter one keeps it (spec section 6).
         auto allocated = layout.ensureCapacity(arrayType, header, newCountAsLLVMType);

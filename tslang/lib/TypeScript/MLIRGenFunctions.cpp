@@ -1162,13 +1162,15 @@ namespace mlirgen
     // its own try/catch may catch, and then it goes on to its next yield); one not started yet, or finished, does
     // not run: return(value) gives `{ value, done: true }`, throw(e) throws e. Either finishes the generator
     // (step -1), unless its body caught the throw. GENERATOR_MODE_NAME tells the yield how to resume
-    // (mlirGenGeneratorResumeChecks). A finally block that yields again is not followed: return() still finishes.
+    // (mlirGenGeneratorResumeChecks). A finally block that yields on the way out pauses the generator again:
+    // return() gives what it yields, and the value is the generator's result when the finally is done.
     void MLIRGenImpl::addGeneratorResumeMethods(NodeFactory &nf, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                 TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties)
     {
         // the yields of the body - not of a function inside it - resume checking the mode
+        // (a yield* hands it on to the yields its loop makes, mlirGenYieldStar)
         FilterVisitorSkipFuncsAST<YieldExpression> yieldsVisitor(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
-            if (!yieldExpression->asteriskToken)
+            if (!yieldExpression->asteriskToken || compileOptions.memoryModel != MemoryModelOwn)
             {
                 yieldExpression->internalFlags |= InternalFlags::GeneratorResumable;
             }
@@ -1227,7 +1229,7 @@ namespace mlirgen
         };
 
         // return(value: T) {
-        //     if (this.step > 0) { this.mode = 2; this.next(); }
+        //     if (this.step > 0) { this.mode = 2; this.thrown = <any>value; return this.next(); }
         //     this.step = -1;
         //     return { value: value, done: true };
         // }
@@ -1245,7 +1247,10 @@ namespace mlirgen
 
             NodeArray<Statement> resume;
             resume.push_back(assign(thisProp(GENERATOR_MODE_NAME), number("2")));
-            resume.push_back(nf.createExpressionStatement(callNext()));
+            // the value the generator finishes with (the resume point's `return this.thrown`), a yield of a finally
+            // on the way out given back as the result
+            resume.push_back(assign(thisProp(GENERATOR_THROWN_NAME), nf.createTypeAssertion(anyType(), nf.createIdentifier(S("value")))));
+            resume.push_back(nf.createReturnStatement(callNext()));
 
             NodeArray<ObjectLiteralElementLike> resultProperties;
             resultProperties.push_back(nf.createPropertyAssignment(nf.createIdentifier(S("value")), nf.createIdentifier(S("value"))));
@@ -1318,7 +1323,8 @@ namespace mlirgen
         throwStatements.push_back(resetMode());
         throwStatements.push_back(nf.createThrowStatement(thisProp(GENERATOR_THROWN_NAME)));
 
-        auto finish = nf.createReturnStatement(undefined);
+        // with the value return() was given (kept in `.thrown`)
+        auto finish = nf.createReturnStatement(thisProp(GENERATOR_THROWN_NAME));
         finish->internalFlags |= InternalFlags::GeneratorReturn;
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
@@ -1425,6 +1431,7 @@ namespace mlirgen
             {
                 FilterVisitorSkipFuncsAST<YieldExpression> yieldsInFinally(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
                     yieldExpression->internalFlags |= InternalFlags::YieldInFinally;
+                    tryStatement->internalFlags |= InternalFlags::YieldInFinally;
                 });
                 yieldsInFinally.visit(tryStatement->finallyBlock);
             }

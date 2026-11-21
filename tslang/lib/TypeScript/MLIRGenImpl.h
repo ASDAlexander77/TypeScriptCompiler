@@ -2827,7 +2827,17 @@ class MLIRGenImpl
 
             if (variableDeclarationInfo.allocateInContextThis)
             {
-                auto varValueInThisContext = registerVariableInThisContext(location, variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+                // a generator's local is a field of the generator object, by name: one of a nested block hiding one
+                // around it (`let x = 1; { let x = 2; yield x; } yield x`) gets a field of its own - it shared the
+                // outer one's, and the outer `x` read 2 after the block
+                std::string fieldName = variableDeclarationInfo.variableName.str();
+                if (symbolTable.count(variableDeclarationInfo.variableName))
+                {
+                    LocationHelper lh(builder.getContext());
+                    fieldName += "@" + std::to_string(std::get<0>(lh.getSpan(location)));
+                }
+
+                auto varValueInThisContext = registerVariableInThisContext(location, fieldName, variableDeclarationInfo.type, genContext);
                 variableDeclarationInfo.setStorage(varValueInThisContext);
             }
 
@@ -4802,6 +4812,14 @@ class MLIRGenImpl
         // copy location info, to fix issue with names of anonymous functions
         _yield_expr->pos = yieldExpressionAST->pos;
         _yield_expr->_end = yieldExpressionAST->_end;
+        // where it resumes, return() and throw() of the generator are checked for, as at its own yields (the
+        // delegate is left where it is: its finally blocks do not run). Not under -mm=own yet: there the return and the
+        // throw at the resume point, inside the loop over the delegate - a field of the generator - were taken for a
+        // release of what the loop borrows from it
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            _yield_expr->internalFlags |= yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable;
+        }
 
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
@@ -17836,6 +17854,19 @@ class MLIRGenImpl
                                                               const GenContext &genContext);
 
     bool isStringIndexSignatureOnly(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
+    // the interfaces that are dictionaries (isStringIndexSignatureOnly), by name: one extending one of them and adding
+    // nothing is that dictionary too
+    llvm::StringSet<> dictionaryInterfaces;
+
+    mlir::Operation *currentFunctionOp();
+    YieldingFinally *yieldingFinallyOf(const GenContext &genContext);
+    mlir::LogicalResult mlirGenTryWithYieldingFinally(TryStatement tryStatementAST, const GenContext &genContext);
+    mlir::LogicalResult mlirGenReturnThroughYieldingFinally(ReturnStatement returnStatementAST, YieldingFinally &yieldingFinally,
+                                                            const GenContext &genContext);
+    bool jumpLeavesYieldingFinally(bool isBreak, const std::string &label, const YieldingFinally &yieldingFinally,
+                                   const GenContext &genContext);
+    mlir::LogicalResult mlirGenJumpThroughYieldingFinally(mlir::Location location, bool isBreak, Identifier label,
+                                                          YieldingFinally &yieldingFinally, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
 
@@ -19010,7 +19041,8 @@ class MLIRGenImpl
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
-        if (showWarnings && symbolTable.count(name))
+        // (a generator's local hiding one around it is a field of its own: createLocalVariable)
+        if (showWarnings && symbolTable.count(name) && !genContext.allocateVarsInContextThis)
         {
             auto previousVariable = symbolTable.lookup(name).first;
             if (previousVariable && previousVariable.getParentBlock() == value.getParentBlock())
@@ -20223,17 +20255,56 @@ class MLIRGenImpl
             return;
         }
 
-        // Not under -mm=own yet: the array's slot written - a parameter's, a `let` over one ("'src' is a parameter,
-        // kept here") - and the array read once more before the store (a field's: "a value takes a second
-        // reference") are ways its passes do not take yet (TSLANG 152)
+        // the right side gave the variable another array (`a[1] = (a = [5], 9)`): the store goes into the array the
+        // left side read, as in JavaScript, and the slot now holds another one - nothing to grow through it
+        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
+        {
+            auto reassigned = false;
+            for (auto *op = loadOp->getNextNode(); op && !reassigned; op = op->getNextNode())
+            {
+                op->walk([&](mlir_ts::StoreOp storeOp) {
+                    reassigned |= storeOp.getReference() == arrayRef;
+                });
+            }
+
+            if (reassigned)
+            {
+                return;
+            }
+        }
+
+        auto index32 = elementRefOp.getIndex();
+        auto i32Type = builder.getI32Type();
+
+        // Under -mm=own in place, unconditionally, marked as only growing - its lowering keeps the longer of the two
+        // lengths, and a negative index grows nothing. Its passes took a call given the array's slot for one that may
+        // keep the slot's value (a parameter's: "'src' is a parameter, kept here") or drop the elements a borrow
+        // reads, and a growth in a branch between the value stored and its store for a second reference of it; they
+        // read this as a push (growsOnly).
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
+            // Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place through
+            // it - a push too - the local owns what it holds, and the parameter is kept, which the callers can't be
+            // made to give up; every write through it, past the end or not, was refused. As before there (TSLANG 152).
+            if (auto varOp = arrayRef.getDefiningOp<mlir_ts::VariableOp>(); varOp && varOp->getNumOperands() > 0)
+            {
+                if (auto loadOp = varOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
+                    loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ParamOp>())
+                {
+                    return;
+                }
+            }
+
+            auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
+            auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);
+            auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
+            auto growOp = builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
+            growOp->setAttr(ARRAY_GROWS_ONLY_ATTR_NAME, builder.getUnitAttr());
             return;
         }
 
         // index >= length, signed: a negative index is never past the end
-        auto index32 = elementRefOp.getIndex();
-        auto i32Type = builder.getI32Type();
         auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), array);
         auto length32 = builder.create<mlir_ts::CastOp>(location, i32Type, length);
         auto condition = builder.create<mlir_ts::LogicalBinaryOp>(

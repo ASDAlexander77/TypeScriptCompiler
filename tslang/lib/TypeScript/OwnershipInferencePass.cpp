@@ -916,7 +916,7 @@ namespace own_inference
                     drops.push_back(op);
                 }
             }
-            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op) || growsOnly(op))
             {
                 // through a handle, it may move the elements another handle's borrow reads (spec 23.3)
                 if (reachesSharedValue(op->getOperand(0)))

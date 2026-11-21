@@ -2142,7 +2142,8 @@ reads `T | undefined`, under -mm=own the dictionary owns its values). Fixed:
   nothing extended, no decorator) is the same dictionary - `type Dictionary<T> = { [x: string]: T }`
   (isStringIndexSignatureOnly). It was a record of `get`/`set` functions nothing could fill. A class may still
   `implements` it (nothing to implement); without the default library's dictionary it stays the interface it
-  was. Open: another interface `extends` it ("indexer is not declared" at an index of that one).
+  was. One extending it and adding nothing (`interface More extends Counts {}`) is that
+  dictionary too (`type More = Counts`); one adding members of its own stays an interface.
 - Later: a generic class, interface or type alias instantiated inside a generic function with a type parameter of
   the same name as one of its own (`Box<S>` in `f<T, S>`, Box's parameter named T) took the function's: the
   instance's context starts from the function's type parameters and aliases, a type parameter as an argument did
@@ -2155,16 +2156,25 @@ Still open, looked at:
 - -mm=own: a local moved inside two `if`s one after the other (`if (a) keep(k); if (b) keep(k);`) is "moved here on
   some paths only" - so the dictionary copies its keys rather than taking the caller's; a spread of a record into a
   dictionary is refused (its fields would have two owners).
-- A spread of a dictionary into one of another value type is an error for now. The generic-inference bug it
-  waited on is fixed (above); what is left is the default library's `objectDictionaryAssign<T>(target, source)`
-  taking two type parameters, a library change to land first.
+- Later: a spread of a dictionary into one of another value type (`{ ...ints }` of `int`s where numbers are wanted)
+  calls `__dictionary_assign_values<T, S>`, made from source once a module, each value cast (it was an error: the
+  library's objectDictionaryAssign takes two of one type). A call, not a loop in place: under -mm=own the dictionary
+  made there is lent to it. (Under -mm=own a dictionary of a union holding strings is refused anyway: "a value that
+  borrows the result of 'ObjectDictionary<number | string>.get' cannot be stored", open.)
 - `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
   none: the element store grows the array to `i + 1` first when `i` is at or past the length
   (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative
-  index grows nothing). Test `00array_write_grows.ts`. Still open under -mm=own: growing through the array's
-  slot - a parameter's, or a `let`'s over one - reads to its passes as keeping the parameter ("'src' is a
-  parameter, kept here"), and a field's extra read of the array as a second reference; under own the write is
-  as before.
+  index grows nothing). Test `00array_write_grows.ts`. Later under -mm=own too: there the growth is a
+  SetLengthOf in place, unconditional and marked as only growing (ARRAY_GROWS_ONLY_ATTR_NAME: its lowering keeps the
+  longer length, a negative index grows nothing), which -mm=own's passes read as a push (growsOnly). As the call
+  the other models make, they read the array's slot given to it as kept ("'src' is a parameter, kept here") and
+  the elements a borrow reads as dropped; in a branch between the value stored and its store, the store as a
+  second reference. Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place
+  through it - a push too - the local owns what it holds and the parameter is kept, so there the write is as before
+  (open). A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
+  rounds (gc, rc, own), clean on the wasm checked heap (own, rc). Not when the right side gave the variable another array (`a[1] = (a = [5],
+  9)`): the store goes into the one the left side read; a store of another through another place (`h.a[0] = (h.a =
+  [5], 9)`, or in a call) is not seen, and grows the new one (open).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 
@@ -2227,9 +2237,21 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   and "f" was not printed): TryOpLowering copies the finally for each way out of the try (the end of its body, the
   unwind, each return/break/continue), each copy with the yield's resume label, and the generator's switch
   dispatches by position - the copies shifted every label after them, so the resume landed after the yield in
-  another copy. Now an error at the yield (YieldInFinally), as a yield in a catch is, and a repeated resume label is
-  an error in the lowering rather than a resume somewhere else. Tests `generator_yield_in_finally.ts`
-  (diagnostic-location), `00generator_finally.ts`.
+  another copy. First an error (#980); then, USER DECISION, made to work as JavaScript's
+  (mlirGenTryWithYieldingFinally): the try and its catch clause in a labelled block with a catch-all keeping the
+  exception; each `return` in them (and return()'s at a resume point), and each `break`/`continue` out of them,
+  records its way out in a mode variable and leaves the block (YieldingFinally); the finally once after it, as code
+  a yield resumes in; then the way out taken. A return's value is kept in a variable of the generator; one through
+  two such finallys is handed on with the same one. return(v) gives what the finally yields and finishes with v
+  (kept in `.thrown`). A repeated resume label is an error in the lowering rather than a resume somewhere else.
+  return() while paused in a yield* finishes through the finally too (the delegate is left where it is: its own
+  finally blocks do not run). Under -mm=own, open: an object thrown through such a finally stops with "cannot copy
+  an 'any' that holds an object" (the exception kept is an `any`; numbers and strings work); a value that owns
+  memory returned through it is an error at the return (what is returned would be a borrow of the generator's
+  field); return() in a yield* is as before (and a yield* of a Generator<T> is refused under own already: "a value
+  that borrows a field is used here after it may be released", before these changes too). Also: a `let` of a nested block hiding one around
+  it in a generator shared its field of the generator object (the outer `x` read the inner's value after the
+  block): a field of its own now. Tests `00generator_yield_in_finally.ts` (results node's), `00generator_finally.ts`.
 
 - Later: a generator is its own iterator - `g[Symbol.iterator]()` (`[Symbol.asyncIterator]` of an async one) is g
   itself, made at the call: a generator's object has a step and no member of that name. It was "Can't resolve
@@ -2239,16 +2261,20 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   `00generator_symbol_iterator.ts` (compile, JIT, rc, own).
 
 Still open, looked at:
-- A yield in a finally block (an error, above): supporting it needs the finally lowered as straight code after the
-  try when it yields - a catch-all keeping the exception, the way out recorded (end, throw, return, break,
-  continue, the generator's return()/throw()), and taken again after the finally - not as the try's finally region.
-- -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
-  is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
-  keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a
-  string works.
-- -mm=own: a generator typed as an interface other than the library-instantiated Iterator<T> - a program's own, or
-  Iterable<T> - is "a value takes a second reference; -mm=own cannot prove a move or a borrow here yet" at its
-  `for...of` (before these changes too), and so is an array given as an Iterable<T>.
+- -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`): the generator keeps what it
+  is sent (`const b = yield x` is a variable of the generator), and next() is called through the Generator
+  interface, whose callers can't be made to give it up. Sent as a Shared<T> it works; one of another type is now an
+  error at the yield that says so (it was "'this value' is a parameter, kept here"). Tests
+  `00generator_next_shared.ts`, diagnostic-location `generator_next_object_own.ts`.
+- -mm=own: a generator typed as an interface of the program's own (an Iterable<T> with next) works now. An array
+  given as an Iterable<T> was "a value takes a second reference": the generator made over it would hold a borrow of
+  the array for as long as it lives, which -mm=own can't say. USER DECISION 2026-11-21: under -mm=own it iterates a
+  copy - `__array_values_owned<T, I>` borrows the array, pushes its elements into a local and moves that into
+  `__array_values_of_copy<T, I>` (@keeps), declared to return the interface: a generator object becomes an interface
+  only at its own function's return under -mm=own. A string the same way (`__string_values_owned`). An array of
+  objects can't be copied there (refused); a for...of over such an interface of strings is still "a second
+  reference" (open). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
+  with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
 diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,

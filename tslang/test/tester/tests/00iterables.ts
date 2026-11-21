@@ -1,7 +1,7 @@
 // An array or a string given where an iterator interface is wanted (`Iterable<T>`: an object with `next`, as the
 // default library declares it) was "type 'number[]' can't be cast to interface 'Iterable<number>': it has none of
 // the interface's members". A generator over its elements is given; an `s32[]` given to an `Iterable<number>` is
-// converted first. (-mm=own: a generator typed as an interface other than the library's is still refused.)
+// converted first. (-mm=own: 00iterable_array_copy.ts.)
 // as the default library declares them (the tests compile without it)
 type IterateResult<T> = { value: T, done: boolean };
 interface Iterable<T> {

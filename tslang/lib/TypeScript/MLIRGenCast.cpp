@@ -1821,7 +1821,9 @@ namespace mlirgen
     // an iterator - it has `next`, whose result's `value` is its element - and an array or a string has none of
     // its members. A generator over the elements, made here from source once a module (`__array_values`,
     // `__string_values`), is: its elements are cast to the interface's element type as they are given (`s32`
-    // to `number`). Under -mm=own the generator borrows the array (@borrows), as an array's values() does.
+    // to `number`). Under -mm=own it iterates a copy of the array, which it owns (USER DECISION 2026-11-21): a
+    // generator borrowing the array would have to hold the borrow for as long as it lives, which -mm=own can't say -
+    // `sum(a)` was "a value takes a second reference". (An array of objects, which can't be copied, stays refused.)
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castIterableToIterator(mlir::Location location, mlir::Value value,
         mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
@@ -1867,19 +1869,37 @@ namespace mlirgen
         }
 
         auto isString = isa<mlir_ts::StringType>(baseValueType);
+        auto ownModel = compileOptions.memoryModel == MemoryModelOwn;
+        auto ownsCopy = !isString && ownModel;
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = isString ? "___string_values" : "___array_values";
+        auto funcName = isString ? (ownModel ? "___string_values_owned" : "___string_values")
+                                 : ownsCopy ? "___array_values_owned" : "___array_values";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {
-            std::string src = isString ? "@borrows(\"s\")\n"
+            // under -mm=own declared to return the interface (I): there a generator object becomes an interface only
+            // at its function's own return ("a value takes a second reference" anywhere else)
+            std::string src = isString && ownModel ? "@keeps(\"s\")\n"
+                                                     "function* __string_values_owned<T, I>(s: string): I {\n"
+                                                     "for (const c of s) yield <string>c;\n"
+                                                     "}\n"
+                              : isString ? "@borrows(\"s\")\n"
                                          "function* __string_values<T>(s: string) {\n"
                                          "for (const c of s) yield <string>c;\n"
                                          "}\n"
-                                       : "@borrows(\"a\")\n"
-                                         "function* __array_values<T>(a: T[]) {\n"
-                                         "for (const v of a) yield v;\n"
-                                         "}\n";
+                              : ownsCopy ? "@keeps(\"c\")\n"
+                                           "function* __array_values_of_copy<T, I>(c: T[]): I {\n"
+                                           "for (const v of c) yield v;\n"
+                                           "}\n"
+                                           "function __array_values_owned<T, I>(a: T[]): I {\n"
+                                           "const c: T[] = [];\n"
+                                           "for (const v of a) c.push(v);\n"
+                                           "return __array_values_of_copy<T, I>(c);\n"
+                                           "}\n"
+                                         : "@borrows(\"a\")\n"
+                                           "function* __array_values<T>(a: T[]) {\n"
+                                           "for (const v of a) yield v;\n"
+                                           "}\n";
             MLIRLocationGuard vgLoc(overwriteLoc);
             overwriteLoc = location;
             if (mlir::failed(parsePartialStatements(stows(src))))
@@ -1916,7 +1936,8 @@ namespace mlirgen
                 return ValueOrLogicalResult(mlir::failure());
             }
 
-            operands.push_back(V(arrayValue));
+            auto elements = V(arrayValue);
+            operands.push_back(elements);
         }
 
         // generic, the string one too (its T unused): a function made only in a pass whose module is thrown away
@@ -1924,6 +1945,11 @@ namespace mlirgen
         NodeFactory nf(NodeFactoryFlags::None);
         iterGenContext.typeAliasMap.insert({".ITER_T", isString ? mlir::Type(getStringType()) : elementType});
         typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_T")).as<Node>()));
+        if (ownModel)
+        {
+            iterGenContext.typeAliasMap.insert({".ITER_I", interfaceType});
+            typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_I")).as<Node>()));
+        }
 
         auto generator = mlirGenCallExpression(location, funcRef, typeArguments, operands, iterGenContext);
         if (generator.failed_or_no_value())

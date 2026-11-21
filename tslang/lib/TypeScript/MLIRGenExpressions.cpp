@@ -458,14 +458,6 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (!!(yieldExpressionAST->internalFlags & InternalFlags::YieldInFinally))
-        {
-            emitError(location, "a yield in a finally block of a generator is not supported yet: the finally is run "
-                                "from each way out of the try statement, and the generator can't resume in the one "
-                                "that runs while an exception unwinds; yield after the try statement");
-            return mlir::failure();
-        }
-
         if (yieldExpressionAST->asteriskToken)
         {
             // it gives back nothing yet: it can only stand as a statement of its own
@@ -540,6 +532,24 @@ namespace mlirgen
         // TNext> has - or undefined. It is read after the label: the turn that resumes here is the one that uses it.
         if (auto sent = resolveIdentifier(location, GENERATOR_SENT_NAME, genContext))
         {
+            // -mm=own: a value the generator uses is one it keeps (`const b = yield x` is a variable of the generator,
+            // which lives between turns), and next() is called through the Generator interface, whose callers can't be
+            // made to give their value up - a Shared<T> they can (a string is copied)
+            auto sentType = sent.getType();
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(sentType))
+            {
+                sentType = optType.getElementType();
+            }
+
+            if (compileOptions.memoryModel == MemoryModelOwn && supportedYield->second && !isa<mlir_ts::SharedType>(sentType) && !isa<mlir_ts::StringType>(sentType) &&
+                mth.ownsHeapMemory(location, sentType))
+            {
+                emitError(location) << "-mm=own: a value of type '" << to_print(sentType)
+                                    << "' sent by next() is kept by the generator, and its callers can't be made to give it "
+                                       "up: give the generator's TNext as Shared<" << to_print(sentType) << ">";
+                return mlir::failure();
+            }
+
             // a TNext, as TypeScript types the `yield`: the parameter is optional (the first next(), a for...of,
             // give none), and a turn given none reads TNext's default (0 for a number, null for a class)
             if (auto optType = dyn_cast<mlir_ts::OptionalType>(sent.getType()))

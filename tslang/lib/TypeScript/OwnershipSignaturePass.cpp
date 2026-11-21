@@ -2239,7 +2239,8 @@ namespace own_signature
                     }
                 }
             }
-            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
+            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op) &&
+                     !growsOnly(op))
             {
                 if (reachesOutside(op->getOperand(0), funcOp))
                 {
@@ -2256,7 +2257,7 @@ namespace own_signature
                     }
                 }
             }
-            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op) || growsOnly(op))
             {
                 drops.any |= reachesSharedValue(op->getOperand(0));
             }
@@ -2466,7 +2467,8 @@ namespace own_signature
                         (slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
                          isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op) && !isCountedReadSlot(slot)));
             }
-            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
+            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op) &&
+                     !growsOnly(op))
             {
                 drops = reachesOutside(op->getOperand(0), funcOp);
             }
@@ -2475,7 +2477,7 @@ namespace own_signature
                 // the caller's borrow of a place it exchanges reads another place's value (spec 42)
                 drops = reachesOutside(swapOp.getFirst(), funcOp) || reachesOutside(swapOp.getSecond(), funcOp);
             }
-            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op) || growsOnly(op))
             {
                 // through a handle, it may move the elements another handle's borrow reads (spec 23.3)
                 drops = reachesSharedValue(op->getOperand(0));

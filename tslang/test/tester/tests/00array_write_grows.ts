@@ -1,13 +1,22 @@
 // `a[i] = v` with `i` at or past the end of the array grows it to `i + 1`, as in JavaScript
 // (`a[a.length] = v` appends); the slots in between read as the element type's default. Before, the
 // length stayed and the write went past the end of the block: under gc into whatever lay there, under
-// rc and own a crash. (Not under -mm=own yet: TSLANG 152.)
+// rc and own a crash.
 class Item {
     constructor(public n: number) {}
 }
 
 class Holder {
     items: Item[] = [];
+}
+
+// through a parameter's array, and a field's of a parameter
+function append(src: number[], n: number) {
+    for (let i = 0; i < n; i++) src[src.length] = i;
+}
+
+function addTo(h: Holder, n: number) {
+    h.items[h.items.length] = new Item(n);
 }
 
 function main() {
@@ -32,9 +41,22 @@ function main() {
     for (const item of h.items) total += item.n;
     assert(h.items.length == 50 && total == 1225, "objects in a field");
 
+    append(a, 2);
+    assert(a.length == 9 && a[8] == 1, "a parameter's array");
+    addTo(h, 99);
+    assert(h.items.length == 51 && h.items[50].n == 99, "a parameter's field");
+
+    // an array of arrays, each grown
+    const m: string[][] = [];
+    for (let i = 0; i < 3; i++) {
+        m[i] = [];
+        for (let j = 0; j < 3; j++) m[i][j] = "c" + i + j;
+    }
+    assert(m.length == 3 && m[2].length == 3 && m[2][2] == "c22", "nested");
+
     // within the length: no change
     a[0] = 10;
-    assert(a.length == 7 && a[0] == 10, "inside");
+    assert(a.length == 9 && a[0] == 10, "inside");
 
     print("done.");
 }

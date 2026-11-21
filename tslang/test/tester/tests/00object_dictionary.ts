@@ -109,6 +109,10 @@ interface Table<T> {
     [key: string]: T;
 }
 
+// ...and one extending it, adding nothing
+interface MoreCounts extends Counts {}
+interface Rows<T> extends Table<T> {}
+
 function total(c: Counts) {
     let sum: number = 0;
     for (const k in c) sum += c[k] ?? 0;
@@ -166,6 +170,19 @@ function main() {
     const key = "k" + 1;
     names[key] = "v1";
     assert(names["k1"] == "v1" && names["k2"] === undefined, "a generic one");
+
+    // a spread of a dictionary: of the same values (the library's objectDictionaryAssign), and of others, each value
+    // cast (it was "the values' types have to be the same")
+    const same: Counts = { ...counts, d: 4 };
+    assert(total(same) == 10, "a spread of the same values");
+    const ints: { [k: string]: int } = { p: 1, q: 2 };
+    const widened: Counts = { ...ints, r: 3.5 };
+    assert(widened["p"] == 1 && total(widened) == 6.5 && Object.keys(widened).length == 3, "a spread of other values");
+
+    const more: MoreCounts = { m: 5 };
+    const rows: Rows<boolean> = {};
+    rows["r" + 1] = true;
+    assert(total(more) == 5 && rows["r1"] === true, "an interface extending one");
 
     print("done.");
 }

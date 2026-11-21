@@ -4176,12 +4176,42 @@ namespace mlirgen
                 auto spreadValue = V(spreadResult);
                 if (dictionaryClassInfoOf(spreadValue.getType(), genContext))
                 {
+                    // of values of another type (`{ ...counts }` of numbers into a dictionary of `number | string`): a
+                    // function made here from source once a module, each value cast to the dictionary's - the library's
+                    // objectDictionaryAssign takes two of one type. A call, as that one's: under -mm=own the dictionary
+                    // made here is lent to it (in place, the loop's second name for it was a second reference)
                     if (spreadValue.getType() != dictionary.getType())
                     {
-                        emitError(spreadLocation) << "a spread of '" << to_print(spreadValue.getType()) << "' into '"
-                                                  << to_print(dictionary.getType())
-                                                  << "' is not supported yet: the values' types have to be the same";
-                        return ValueOrLogicalResult(mlir::failure());
+                        // ("_" in front of "__", as the scanner puts it)
+                        auto convertName = "___dictionary_assign_values";
+                        auto convert = resolveIdentifier(spreadLocation, convertName, genContext);
+                        if (!convert)
+                        {
+                            std::string src = std::string("function __dictionary_assign_values<T, S>(target: ") +
+                                              OBJECT_DICTIONARY_CLASS_NAME + "<T>, source: " + OBJECT_DICTIONARY_CLASS_NAME +
+                                              "<S>) {\nfor (const k in source) { const v = source[k]; if (v !== undefined) target[k] = v; }\n}\n";
+                            MLIRLocationGuard vgLoc(overwriteLoc);
+                            overwriteLoc = spreadLocation;
+                            if (mlir::failed(parsePartialStatements(stows(src))))
+                            {
+                                return ValueOrLogicalResult(mlir::failure());
+                            }
+
+                            convert = resolveIdentifier(spreadLocation, convertName, genContext);
+                            if (!convert)
+                            {
+                                return ValueOrLogicalResult(mlir::failure());
+                            }
+                        }
+
+                        SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
+                        auto converted = mlirGenCallExpression(spreadLocation, convert, {}, operands, genContext);
+                        if (mlir::failed(converted.result))
+                        {
+                            return ValueOrLogicalResult(mlir::failure());
+                        }
+
+                        continue;
                     }
 
                     auto assign = resolveIdentifier(spreadLocation, OBJECT_DICTIONARY_ASSIGN_NAME, genContext);
