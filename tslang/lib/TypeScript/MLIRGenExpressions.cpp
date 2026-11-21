@@ -1794,6 +1794,22 @@ namespace mlirgen
 
         auto callExpr = callExpression->expression.as<Expression>();
 
+        // `g[Symbol.iterator]()` of a generator (`[Symbol.asyncIterator]` of an async one): the generator itself,
+        // as JavaScript's generators are their own iterators. Its object has a step and no member of that name;
+        // a method returning `this` on it was resolved through an outer generator's alias when one generator is
+        // made inside another's machinery, and under -mm=own is refused - the expression itself is not.
+        if (callExpression->arguments.size() == 0 && callExpr == SyntaxKind::ElementAccessExpression)
+        {
+            auto elementAccess = callExpr.as<ElementAccessExpression>();
+            auto wellKnown = wellKnownSymbolName(elementAccess->argumentExpression);
+            if ((wellKnown == SYMBOL_ITERATOR || wellKnown == SYMBOL_ASYNC_ITERATOR) &&
+                evaluateProperty(elementAccess->expression, GENERATOR_STEP, genContext) &&
+                !evaluateProperty(elementAccess->expression, wellKnown.str(), genContext))
+            {
+                return mlirGen(elementAccess->expression.as<Expression>(), genContext);
+            }
+        }
+
         // `a.concat(x, [y, z])`: an argument that is not an array is one element, as `[x]` - the array's
         // concat (lib.generics), and the default library's `Array<T>` class's, take arrays only
         if (callExpr == SyntaxKind::PropertyAccessExpression

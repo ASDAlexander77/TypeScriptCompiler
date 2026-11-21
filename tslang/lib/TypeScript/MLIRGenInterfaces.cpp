@@ -1408,8 +1408,58 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // `interface D<T> { [k: string]: T }`: a string index signature and nothing else, nothing extended, no
+    // decorator - the dictionary the same type literal is (getTupleType(TypeLiteralNode)), so it is
+    // `type D<T> = { [k: string]: T }`. As an interface it was a record of `get`/`set` functions nothing could
+    // fill.
+    bool MLIRGenImpl::isStringIndexSignatureOnly(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
+    {
+        // without the default library's dictionary, the interface it was (an object given as it is a clear error)
+        if (!getGenericClassInfoByFullName(OBJECT_DICTIONARY_CLASS_NAME))
+        {
+            return false;
+        }
+
+        if (interfaceDeclarationAST->members.size() != 1 || interfaceDeclarationAST->heritageClauses.size() > 0)
+        {
+            return false;
+        }
+
+        auto member = interfaceDeclarationAST->members.front();
+        if (member != SyntaxKind::IndexSignature)
+        {
+            return false;
+        }
+
+        auto indexSignature = member.as<IndexSignatureDeclaration>();
+        if (indexSignature->parameters.size() != 1 || !indexSignature->type ||
+            !indexSignature->parameters.front()->type ||
+            indexSignature->parameters.front()->type != SyntaxKind::StringKeyword)
+        {
+            return false;
+        }
+
+        auto decorated = false;
+        iterateDecorators(interfaceDeclarationAST, genContext, [&](StringRef, SmallVector<StringRef>) { decorated = true; });
+        return !decorated;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
     {
+        if (isStringIndexSignatureOnly(interfaceDeclarationAST, genContext))
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            auto typeLiteral = nf.createTypeLiteralNode(interfaceDeclarationAST->members);
+            typeLiteral->pos = interfaceDeclarationAST->pos;
+            typeLiteral->_end = interfaceDeclarationAST->_end;
+            auto typeAlias = nf.createTypeAliasDeclaration(interfaceDeclarationAST->modifiers, interfaceDeclarationAST->name,
+                                                           interfaceDeclarationAST->typeParameters, typeLiteral);
+            typeAlias->pos = interfaceDeclarationAST->pos;
+            typeAlias->_end = interfaceDeclarationAST->_end;
+            typeAlias->parent = interfaceDeclarationAST->parent;
+            return mlirGen(typeAlias, genContext);
+        }
+
         // do not proceed for Generic Interfaces for declaration
         if (interfaceDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
         {

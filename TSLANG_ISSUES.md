@@ -2138,15 +2138,26 @@ reads `T | undefined`, under -mm=own the dictionary owns its values). Fixed:
   the library's Map throws was made while the imported file was read as declarations, a declaration, then made
   public. It is made in full there now, as a specialization is (makeAnyKeysAdapter).
 
+- Later: an interface of a string index signature and nothing else (`interface Dictionary<T> { [x: string]: T }`;
+  nothing extended, no decorator) is the same dictionary - `type Dictionary<T> = { [x: string]: T }`
+  (isStringIndexSignatureOnly). It was a record of `get`/`set` functions nothing could fill. A class may still
+  `implements` it (nothing to implement); without the default library's dictionary it stays the interface it
+  was. Open: another interface `extends` it ("indexer is not declared" at an index of that one).
+- Later: a generic class, interface or type alias instantiated inside a generic function with a type parameter of
+  the same name as one of its own (`Box<S>` in `f<T, S>`, Box's parameter named T) took the function's: the
+  instance's context starts from the function's type parameters and aliases, a type parameter as an argument did
+  not replace the T there, and an alias is looked up first - `Box<S>` was made as `Box<T>`, so
+  `f(Box<number>, Box<string>)` inferred T = number | string, S = any, and read its second argument with the wrong
+  layout (a crash). The declaration's own parameters shadow the enclosing ones now (shadowTypeParameters); a
+  type alias's arguments are read before. Test `00generic_shadowed_type_param.ts`.
+
 Still open, looked at:
-- An interface with only a string index signature (`interface Dictionary<T> { [x: string]: T }`) is still an
-  interface: the dictionary is for the type literal (and so for what is written with it).
 - -mm=own: a local moved inside two `if`s one after the other (`if (a) keep(k); if (b) keep(k);`) is "moved here on
   some paths only" - so the dictionary copies its keys rather than taking the caller's; a spread of a record into a
   dictionary is refused (its fields would have two owners).
-- A spread of a dictionary into one of another value type is an error for now: inferring `f<T, S>(a: Box<T>, b:
-  Box<S>)` from `f(Box<number>, Box<string>)` gives T = number | string and S = any, and the call then reads the
-  second argument with the wrong layout (a crash) - a generic-inference bug of its own.
+- A spread of a dictionary into one of another value type is an error for now. The generic-inference bug it
+  waited on is fixed (above); what is left is the default library's `objectDictionaryAssign<T>(target, source)`
+  taking two type parameters, a library change to land first.
 - `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
   none: the element store grows the array to `i + 1` first when `i` is at or past the length
   (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative
@@ -2220,6 +2231,13 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   an error in the lowering rather than a resume somewhere else. Tests `generator_yield_in_finally.ts`
   (diagnostic-location), `00generator_finally.ts`.
 
+- Later: a generator is its own iterator - `g[Symbol.iterator]()` (`[Symbol.asyncIterator]` of an async one) is g
+  itself, made at the call: a generator's object has a step and no member of that name. It was "Can't resolve
+  property 'iterator'". A method `[Symbol.iterator]() { return this; }` on the generator object was tried before
+  and backed out: a generator made inside another's machinery (an iterator's builtin map/filter) resolved that
+  `this` through the outer one's alias, and under -mm=own a method returning `this` is refused. Test
+  `00generator_symbol_iterator.ts` (compile, JIT, rc, own).
+
 Still open, looked at:
 - A yield in a finally block (an error, above): supporting it needs the finally lowered as straight code after the
   try when it yields - a catch-all keeping the exception, the way out recorded (end, throw, return, break,
@@ -2231,11 +2249,6 @@ Still open, looked at:
 - -mm=own: a generator typed as an interface other than the library-instantiated Iterator<T> - a program's own, or
   Iterable<T> - is "a value takes a second reference; -mm=own cannot prove a move or a borrow here yet" at its
   `for...of` (before these changes too), and so is an array given as an Iterable<T>.
-- A generator as its own iterator (`gen[Symbol.iterator]()`: "field "iterator" can't be found"): a method
-  `[Symbol.iterator]() { return this; }` on the generator object was tried - a generator made inside another's
-  machinery (the builtin map/filter of an iterator) then resolved that `this` through the outer one's alias
-  ("can't resolve name: .this"), and under -mm=own a method returning `this` is refused. Likewise
-  `[Symbol.asyncIterator]` of an async generator.
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
 diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,
