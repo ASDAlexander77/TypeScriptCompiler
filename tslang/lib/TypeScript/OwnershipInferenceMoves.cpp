@@ -500,8 +500,8 @@ namespace own_inference
                 return true;
             }
 
-            return mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) && use.getOperandNumber() == 0 &&
-                   !reachableAfter(read, user, builder);
+            return (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) || growsOnly(user)) &&
+                   use.getOperandNumber() == 0 && !reachableAfter(read, user, builder);
         });
     }
 
@@ -565,7 +565,8 @@ namespace own_inference
                 });
             }
 
-            return mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) && use.getOperandNumber() == 0;
+            return (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) || growsOnly(user)) &&
+                   use.getOperandNumber() == 0;
         });
     }
 

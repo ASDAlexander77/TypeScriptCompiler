@@ -363,6 +363,9 @@
 #define CALL_FIELD_NAME ".call"
 #define THIS_ALIAS ".this"
 #define GENERATOR_STEP ".step"
+// a SetLengthOf of `a[i] = v` past the end of the array under -mm=own (mlirGenGrowArrayForWrite): it only grows -
+// it releases no element - so to -mm=own's passes it is what a push is to the array, not a change of length
+#define ARRAY_GROWS_ONLY_ATTR_NAME "__grows_only"
 #define GENERATOR_SWITCHSTATE ".switchstate"
 #define GENERATOR_STATELABELPREFIX ".state"
 

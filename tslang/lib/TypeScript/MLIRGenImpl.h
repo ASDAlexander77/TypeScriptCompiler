@@ -20223,13 +20223,38 @@ class MLIRGenImpl
             return;
         }
 
-        // Under -mm=own too: the growth is a call of the function below given the array's slot, which -mm=own's
-        // passes read as a borrow of the array - it keeps no element and gives the array no other owner. Made in
-        // place (SetLengthOf here), they read the slot written as the parameter's kept ("'src' is a parameter,
-        // kept here") and a field's array read once more as a second reference.
-        // index >= length, signed: a negative index is never past the end
         auto index32 = elementRefOp.getIndex();
         auto i32Type = builder.getI32Type();
+
+        // Under -mm=own in place, unconditionally, marked as only growing - its lowering keeps the longer of the two
+        // lengths, and a negative index grows nothing. Its passes took a call given the array's slot for one that may
+        // keep the slot's value (a parameter's: "'src' is a parameter, kept here") or drop the elements a borrow
+        // reads, and a growth in a branch between the value stored and its store for a second reference of it; they
+        // read this as a push (growsOnly).
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            // Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place through
+            // it - a push too - the local owns what it holds, and the parameter is kept, which the callers can't be
+            // made to give up; every write through it, past the end or not, was refused. As before there (TSLANG 152).
+            if (auto varOp = arrayRef.getDefiningOp<mlir_ts::VariableOp>(); varOp && varOp->getNumOperands() > 0)
+            {
+                if (auto loadOp = varOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
+                    loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ParamOp>())
+                {
+                    return;
+                }
+            }
+
+            auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
+            auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);
+            auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
+            auto growOp = builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
+            growOp->setAttr(ARRAY_GROWS_ONLY_ATTR_NAME, builder.getUnitAttr());
+            return;
+        }
+
+        // index >= length, signed: a negative index is never past the end
         auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), array);
         auto length32 = builder.create<mlir_ts::CastOp>(location, i32Type, length);
         auto condition = builder.create<mlir_ts::LogicalBinaryOp>(

@@ -2161,12 +2161,15 @@ Still open, looked at:
 - `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
   none: the element store grows the array to `i + 1` first when `i` is at or past the length
   (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative
-  index grows nothing). Test `00array_write_grows.ts`. Later under -mm=own too: the growth is a call of a
-  function of its own for each array type (`.array_grow.<type>`, given the array's slot), which -mm=own's passes
-  take as they take any call given a slot; made in place, they read the slot written as a parameter's kept
-  ("'src' is a parameter, kept here") and a field's array read once more as a second reference. A parameter's
-  array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000 rounds (gc, rc,
-  own), clean on the wasm checked heap (own, rc).
+  index grows nothing). Test `00array_write_grows.ts`. Later under -mm=own too: there the growth is a
+  SetLengthOf in place, unconditional and marked as only growing (ARRAY_GROWS_ONLY_ATTR_NAME: its lowering keeps the
+  longer length, a negative index grows nothing), which -mm=own's passes read as a push (growsOnly). As the call
+  the other models make, they read the array's slot given to it as kept ("'src' is a parameter, kept here") and
+  the elements a borrow reads as dropped; in a branch between the value stored and its store, the store as a
+  second reference. Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place
+  through it - a push too - the local owns what it holds and the parameter is kept, so there the write is as before
+  (open). A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
+  rounds (gc, rc, own), clean on the wasm checked heap (own, rc).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 

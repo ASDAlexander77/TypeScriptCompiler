@@ -798,6 +798,12 @@ inline bool isFresh(mlir::Value value)
     return def->hasAttr(OWNED_RESULT_ATTR_NAME) || isLiteral(def);
 }
 
+// A SetLengthOf that only grows the array (`a[i] = v` past its end): it releases no element
+inline bool growsOnly(mlir::Operation *op)
+{
+    return mlir::isa<mlir_ts::SetLengthOfOp>(op) && op->hasAttr(ARRAY_GROWS_ONLY_ATTR_NAME);
+}
+
 inline bool isCall(mlir::Operation *op)
 {
     return mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp,

@@ -688,6 +688,11 @@ namespace own_inference
                 return false;
             }
 
+            if (growsOnly(op))
+            {
+                return false;
+            }
+
             return (isCall(op) && !callNoDrops(op)) ||
                    mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp,
                              mlir_ts::SwapOp, mlir_ts::ReleaseSlotOp, mlir_ts::DeleteOp>(op);

@@ -436,7 +436,7 @@ namespace own_signature
                         }
 
                         // `this.values.push(0.0)`: a write of that array field, and of nothing else
-                        if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp>(refUser) && refUser->getOperand(0) == propertyRefOp.getResult())
+                        if ((mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp>(refUser) || growsOnly(refUser)) && refUser->getOperand(0) == propertyRefOp.getResult())
                         {
                             stores[propertyRefOp.getPosition()]++;
                             continue;
@@ -971,8 +971,8 @@ namespace own_signature
                     }
 
                     // an array filled in place through the local before the move: `t.push(x)` (TSLANG 72)
-                    if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
-                                  mlir_ts::ArraySpliceOp>(user) &&
+                    if ((mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                                   mlir_ts::ArraySpliceOp>(user) || growsOnly(user)) &&
                         !reaches(store, user, slot->getBlock()))
                     {
                         continue;
@@ -981,8 +981,8 @@ namespace own_signature
                     // ...and after it, through the place it moved to: `const sets = []; this.frames.push(new
                     // Frame(sets)); for (...) sets.push(set)` (TSLANG 77)
                     if (inPlaceAfter &&
-                        mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
-                                  mlir_ts::ArraySpliceOp>(user) &&
+                        (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                                   mlir_ts::ArraySpliceOp>(user) || growsOnly(user)) &&
                         dominance.properlyDominates(store, user))
                     {
                         for (auto &operand : user->getOpOperands())
