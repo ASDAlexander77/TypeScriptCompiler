@@ -2147,7 +2147,13 @@ Still open, looked at:
 - A spread of a dictionary into one of another value type is an error for now: inferring `f<T, S>(a: Box<T>, b:
   Box<S>)` from `f(Box<number>, Box<string>)` gives T = number | string and S = any, and the call then reads the
   second argument with the wrong layout (a crash) - a generic-inference bug of its own.
-- `a[a.length] = x` on an array does not grow it (gc writes past the end; rc and own crash).
+- `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
+  none: the element store grows the array to `i + 1` first when `i` is at or past the length
+  (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative
+  index grows nothing). Test `00array_write_grows.ts`. Still open under -mm=own: growing through the array's
+  slot - a parameter's, or a `let`'s over one - reads to its passes as keeping the parameter ("'src' is a
+  parameter, kept here"), and a field's extra read of the array as a second reference; under own the write is
+  as before.
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 

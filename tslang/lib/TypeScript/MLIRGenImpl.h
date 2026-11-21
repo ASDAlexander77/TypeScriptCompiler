@@ -8730,6 +8730,7 @@ class MLIRGenImpl
             // rc). The array and the index are the ones the left side evaluated, as JavaScript has it.
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
+                mlirGenGrowArrayForWrite(location, elementRefOp);
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
             }
 
@@ -20169,6 +20170,103 @@ class MLIRGenImpl
     {
         assert(loc_->pos != loc_->_end);
         return loc(loc_);
+    }
+
+    // `a[i] = v` with `i` at or past the end of the array grows it to `i + 1`, as JavaScript does (`a[a.length] =
+    // v` appends): the slots in between read as the element type's default (SetLengthOf zeroes them). Before, the
+    // write went past the end of the block - under gc into whatever lay there, under rc and own a crash - and the
+    // length stayed. A negative index grows nothing. Only an array with a place to update (a local, a field):
+    // one made for the statement only has nobody to see it grown.
+    void mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
+    {
+        auto array = elementRefOp.getArray();
+        if (!isa<mlir_ts::ArrayType>(array.getType()))
+        {
+            return;
+        }
+
+        MLIRCodeLogic mcl(builder, compileOptions);
+        auto arrayRef = mcl.GetReferenceFromValue(location, array);
+        if (!arrayRef || !isa<mlir_ts::RefType>(arrayRef.getType()))
+        {
+            return;
+        }
+
+        // Not under -mm=own yet: the array's slot written - a parameter's, a `let` over one ("'src' is a parameter,
+        // kept here") - and the array read once more before the store (a field's: "a value takes a second
+        // reference") are ways its passes do not take yet (TSLANG 152)
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return;
+        }
+
+        // index >= length, signed: a negative index is never past the end
+        auto index32 = elementRefOp.getIndex();
+        auto i32Type = builder.getI32Type();
+        auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), array);
+        auto length32 = builder.create<mlir_ts::CastOp>(location, i32Type, length);
+        auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanEqualsToken), index32, length32);
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, condition, false);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
+        auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);
+        auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
+
+        // the growth itself in a function of its own, one for each array type: SetLengthOf lowers to a capacity
+        // check, a reallocation and the zeroing of the new slots, and made at every write, a function of many of
+        // them (the sweep's largeControlFlowGraph, 10000 `data[0] = 0`) took a minute to lower to LLVM
+        auto growFunc = arrayGrowFunction(location, mlir::cast<mlir_ts::RefType>(arrayRef.getType()));
+        builder.create<mlir_ts::CallIndirectOp>(location, growFunc, mlir::ValueRange{arrayRef, newLength});
+    }
+
+    // `.array_grow.<type>(array: ref<T[]>, length: index)`: SetLengthOf (mlirGenGrowArrayForWrite)
+    mlir::Value arrayGrowFunction(mlir::Location location, mlir_ts::RefType arrayRefType)
+    {
+        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), {arrayRefType, builder.getIndexType()}, {}, false);
+
+        std::string typeText;
+        llvm::raw_string_ostream typeStream(typeText);
+        typeStream << arrayRefType;
+        auto name = ".array_grow." + llvm::utohexstr(llvm::xxh3_64bits(typeText));
+        if (!lookupModuleSymbol(name))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(theModule.getBody());
+
+            // compiler glue, as fewerParametersThunk's: without --di the place it is made for, with --di a
+            // subprogram of its own there (its lowering's calls need a location)
+            mlir::Location noLocation = compileOptions.generateDebugInfo
+                ? mlir::Location(mlir::UnknownLoc::get(builder.getContext()))
+                : stripMetadata(location);
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, name, funcType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            DITableScopeT debugFuncScope(debugScope);
+            if (compileOptions.generateDebugInfo)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                auto plainLocation = stripMetadata(location);
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, name, name, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+            auto entryOp = builder.create<mlir_ts::EntryOp>(noLocation, mlir::Type());
+            builder.create<mlir_ts::SetLengthOfOp>(noLocation, entryBlock.getArgument(0), entryBlock.getArgument(1));
+            builder.create<mlir_ts::ExitOp>(noLocation, mlir::Value());
+            (void)entryOp;
+
+            pushFunction(funcOp);
+        }
+
+        return builder.create<mlir_ts::SymbolRefOp>(location, funcType,
+                                                    mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
     mlir::LogicalResult parsePartialStatements(string src)
