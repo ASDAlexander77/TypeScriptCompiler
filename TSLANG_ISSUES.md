@@ -2058,3 +2058,13 @@ parser ("Hexadecimal digit expected"), though the escape inside one and in a str
 the same non-exported class in two declarations of one namespace needs each declaration's own scope.
 
 Tests: `00generic_new_without_args.ts` (compile, JIT, rc, own).
+
+148 (twentieth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `typeof this.foo` as a field's type (`bar: typeof this.foo`): "Class member 'foo' can't be found" - while the class
+  is first declared its fields are not members yet. The member's type is read from the class's declaration (its
+  annotation, or its initializer's type); the declaration is now known in that first pass too (processingDeclaration).
+
+Still open, looked at: an object literal's accessor reading the `const` it initializes (`const a = { get self() {
+return a; } }`) - its type is circular (TypeScript's `any`); a getter returning itself (`get p() { return this.p; }`).
+
+Tests: `00typeof_this_field.ts` (compile, JIT, rc, own).
