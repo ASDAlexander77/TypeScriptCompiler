@@ -259,6 +259,13 @@ namespace mlirgen
                 continue;
             }
 
+            // `this: void` says the function uses no `this`: no parameter at all ("'Void' can't be used as
+            // parameter type")
+            if (namePtr == THIS_NAME && arg->type && arg->type == SyntaxKind::VoidKeyword)
+            {
+                continue;
+            }
+
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
