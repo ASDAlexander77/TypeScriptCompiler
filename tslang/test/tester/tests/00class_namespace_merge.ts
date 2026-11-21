@@ -19,6 +19,13 @@ namespace C {
     export const label = "c";
 }
 
+// a type of the namespace is named through it, as a value of the class is
+namespace C {
+    export interface Shape {
+        a: number;
+    }
+}
+
 namespace N {
     export class D {
         w = 3;
@@ -35,6 +42,8 @@ function main() {
     assert(C.boo() == 2);
     assert(C.make().v == 5);
     assert(C.label == "c");
+    const shape: C.Shape = { a: 3 };
+    assert(shape.a == 3);
     assert(new N.D().w == 3 && N.D.y == 12);
     print("done.");
 }
