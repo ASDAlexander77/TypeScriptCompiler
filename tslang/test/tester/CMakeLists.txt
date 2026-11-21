@@ -1219,6 +1219,7 @@ tslang_add_test(NAME test-jit-own-00-array-is-array COMMAND test-runner -jit -mm
 tslang_add_test(NAME test-jit-00-merged-enum-members COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00merged_enum_members.ts")
 tslang_add_test(NAME test-jit-00-any-global-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_global_initializer.ts")
 tslang_add_test(NAME test-jit-rc-00-any-global-initializer COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_global_initializer.ts")
+tslang_add_test(NAME test-jit-own-00-any-global-initializer COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_global_initializer.ts")
 tslang_add_test(NAME test-jit-00-default-param-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00default_param_captures.ts")
 tslang_add_test(NAME test-jit-rc-00-default-param-captures COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00default_param_captures.ts")
 tslang_add_test(NAME test-jit-00-module-block-functions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00module_block_functions.ts")
