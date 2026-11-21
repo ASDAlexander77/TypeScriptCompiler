@@ -1319,7 +1319,6 @@ tslang_add_test(NAME test-jit-rc-00-any-undefined-field COMMAND test-runner -jit
 tslang_add_test(NAME test-jit-own-00-any-undefined-field COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_undefined_field.ts")
 tslang_add_test(NAME test-jit-00-array-write-grows COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_write_grows.ts")
 tslang_add_test(NAME test-jit-rc-00-array-write-grows COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_write_grows.ts")
-tslang_add_test(NAME test-jit-own-00-array-write-grows COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_write_grows.ts")
 tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")

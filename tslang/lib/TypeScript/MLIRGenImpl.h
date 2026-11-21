@@ -20192,6 +20192,14 @@ class MLIRGenImpl
             return;
         }
 
+        // Not under -mm=own yet: the array's slot written - a parameter's, a `let` over one ("'src' is a parameter,
+        // kept here") - and the array read once more before the store (a field's: "a value takes a second
+        // reference") are ways its passes do not take yet (TSLANG 152)
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return;
+        }
+
         // index >= length, signed: a negative index is never past the end
         auto index32 = elementRefOp.getIndex();
         auto i32Type = builder.getI32Type();

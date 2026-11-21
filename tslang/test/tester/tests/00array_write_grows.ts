@@ -1,7 +1,7 @@
 // `a[i] = v` with `i` at or past the end of the array grows it to `i + 1`, as in JavaScript
 // (`a[a.length] = v` appends); the slots in between read as the element type's default. Before, the
 // length stayed and the write went past the end of the block: under gc into whatever lay there, under
-// rc and own a crash.
+// rc and own a crash. (Not under -mm=own yet: TSLANG 152.)
 class Item {
     constructor(public n: number) {}
 }
