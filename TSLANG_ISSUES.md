@@ -2266,9 +2266,14 @@ Still open, looked at:
   interface, whose callers can't be made to give it up. Sent as a Shared<T> it works; one of another type is now an
   error at the yield that says so (it was "'this value' is a parameter, kept here"). Tests
   `00generator_next_shared.ts`, diagnostic-location `generator_next_object_own.ts`.
-- -mm=own: a generator typed as an interface of the program's own (an Iterable<T> with next) works now; an array
-  given as an Iterable<T> is still "a value takes a second reference": the generator made over it would hold a borrow
-  of the array for as long as it lives, which -mm=own can't say yet (open). (A generator typed as such an interface
+- -mm=own: a generator typed as an interface of the program's own (an Iterable<T> with next) works now. An array
+  given as an Iterable<T> was "a value takes a second reference": the generator made over it would hold a borrow of
+  the array for as long as it lives, which -mm=own can't say. USER DECISION 2026-11-21: under -mm=own it iterates a
+  copy - `__array_values_owned<T, I>` borrows the array, pushes its elements into a local and moves that into
+  `__array_values_of_copy<T, I>` (@keeps), declared to return the interface: a generator object becomes an interface
+  only at its own function's return under -mm=own. A string the same way (`__string_values_owned`). An array of
+  objects can't be copied there (refused); a for...of over such an interface of strings is still "a second
+  reference" (open). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
   with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),

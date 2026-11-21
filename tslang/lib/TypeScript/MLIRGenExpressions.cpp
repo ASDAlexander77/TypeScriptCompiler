@@ -534,14 +534,14 @@ namespace mlirgen
         {
             // -mm=own: a value the generator uses is one it keeps (`const b = yield x` is a variable of the generator,
             // which lives between turns), and next() is called through the Generator interface, whose callers can't be
-            // made to give their value up - a Shared<T> they can
+            // made to give their value up - a Shared<T> they can (a string is copied)
             auto sentType = sent.getType();
             if (auto optType = dyn_cast<mlir_ts::OptionalType>(sentType))
             {
                 sentType = optType.getElementType();
             }
 
-            if (compileOptions.memoryModel == MemoryModelOwn && supportedYield->second && !isa<mlir_ts::SharedType>(sentType) &&
+            if (compileOptions.memoryModel == MemoryModelOwn && supportedYield->second && !isa<mlir_ts::SharedType>(sentType) && !isa<mlir_ts::StringType>(sentType) &&
                 mth.ownsHeapMemory(location, sentType))
             {
                 emitError(location) << "-mm=own: a value of type '" << to_print(sentType)
