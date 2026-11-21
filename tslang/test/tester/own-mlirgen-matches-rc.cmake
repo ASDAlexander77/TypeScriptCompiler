@@ -6,6 +6,9 @@ foreach(model rc own)
                     OUTPUT_VARIABLE out_${model} ERROR_VARIABLE err_${model} RESULT_VARIABLE rc_${model})
     string(APPEND out_${model} "${err_${model}}")
     string(REPLACE "__tsmm_${model}_" "__tsmm_MODEL_" out_${model} "${out_${model}}")
+    # where a discarded temporary is given back is the models' own (OwnedReturnConsumptionPass, which
+    # --emit=mlir has run: rc right after its last use, own where its stretch ends); a release has no result
+    string(REGEX REPLACE "[^\r\n]*\"ts[.]Release\"[(][^\r\n]*[\r\n]+" "" out_${model} "${out_${model}}")
 endforeach()
 if(NOT out_rc STREQUAL out_own)
     message(FATAL_ERROR "MLIRGen output differs between -mm=rc and -mm=own:\n--- rc\n${out_rc}\n--- own\n${out_own}")

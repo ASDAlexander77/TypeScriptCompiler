@@ -2066,7 +2066,9 @@ class OwnedReturnConsumptionPass
         };
 
         BlockScan scan;
-        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> endReleases;
+        // a temporary, the op its release goes in front of (null: the block's end), and the op it goes right
+        // after instead (rc: its last use), when there is one
+        llvm::SmallVector<std::tuple<mlir::Operation *, mlir::Operation *, mlir::Operation *>> endReleases;
         for (auto *op : discarded)
         {
             if (!allUsesReleasableInOwnBlock(op, scan) || storedIntoUnownedLocalOutside(op))
@@ -2076,6 +2078,48 @@ class OwnedReturnConsumptionPass
 
             auto *block = op->getBlock();
             auto rangeEnd = scan.releaseRangeEnd(op);
+
+            // Where the stretch would end (see below): in front of the first op that leaves the block, of the
+            // end of the range, or of the block's terminator
+            mlir::Operation *before = nullptr;
+            auto *exiting = scan.firstExitingOpAfter(op);
+            if (exiting && (rangeEnd == block->end() || exiting->isBeforeInBlock(&*rangeEnd)))
+            {
+                before = exiting;
+            }
+            else if (rangeEnd != block->end())
+            {
+                before = &*rangeEnd;
+            }
+            else if (auto *terminator = block->getTerminator())
+            {
+                before = terminator;
+            }
+
+            // -mm=rc: the temporary is given back right after the op of its block that uses it last
+            // (lastUseInBlock), not where its stretch ends. Held to the end, each one was live across every call
+            // after it in its block, and each call that may throw had to give all of them back on its unwind
+            // path (UnwindReleasePass): a function of many - 1300 lines of `any` arithmetic,
+            // binaryArithmeticControlFlowGraphNotTooLarge - got a cleanup pad of thousands of releases for each
+            // call, and took half an hour to compile. Not under -mm=own, whose passes after this read where the
+            // releases are; and not where a use can't be followed (lastUseInBlock gives none) or is not before
+            // the stretch's end.
+            // Only a temporary with no name: a `const` holding the value itself (OWNED_RESULT_NAMED_ATTR_NAME) is a
+            // local, given back where its scope ends - an object let go of earlier is seen let go of
+            // (`Shared.count`, a `WeakRef`'s deref, a destructor).
+            // Nor a view (own_facts::isView: an interface made of an object, a union of a class): its release is the
+            // release of the block it shows, which the value it is made of, and that value's other views, may go on
+            // using - `use(<Something>o); use(<Something>o)` gave the first interface back after its call, and the
+            // object literal's block, born with no count, was freed before the second.
+            mlir::Operation *after = nullptr;
+            if (compileOptions.isRefCounted() && !op->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) && !own_facts::isView(op))
+            {
+                auto *last = lastUseInBlock(op);
+                if (last && (!before || last->isBeforeInBlock(before)))
+                {
+                    after = last;
+                }
+            }
 
             // The end of the block is not the only way out of it. A `return` written inside an
             // `if` - which is where returns are usually written - leaves from a nested region and
@@ -2103,10 +2147,13 @@ class OwnedReturnConsumptionPass
             // jumpLeavesBlock answers it by walking from the jump up to this block and asking
             // whether anything on the way catches it.
             //
-            // The exits of the ops between the definition and the end of its range (exitsOf).
+            // The exits of the ops between the definition and the end of its range (exitsOf) - with the release
+            // right after the last use (`after`), the exits up to that op only: one after it leaves with the
+            // value given back already.
             for (auto [top, nested] : exitsOf(block))
             {
-                if (!op->isBeforeInBlock(top) || (rangeEnd != block->end() && !top->isBeforeInBlock(&*rangeEnd)))
+                if (!op->isBeforeInBlock(top) || (rangeEnd != block->end() && !top->isBeforeInBlock(&*rangeEnd)) ||
+                    (after && after->isBeforeInBlock(top)))
                 {
                     continue;
                 }
@@ -2118,31 +2165,20 @@ class OwnedReturnConsumptionPass
                 }
             }
 
-            mlir::Operation *before = nullptr;
-            auto *exiting = scan.firstExitingOpAfter(op);
-            if (exiting && (rangeEnd == block->end() || exiting->isBeforeInBlock(&*rangeEnd)))
-            {
-                before = exiting;
-            }
-            else if (rangeEnd != block->end())
-            {
-                before = &*rangeEnd;
-            }
-            else if (auto *terminator = block->getTerminator())
-            {
-                before = terminator;
-            }
-
-            endReleases.push_back({op, before});
+            endReleases.push_back({op, before, after});
         }
 
         // The releases at the end of the temporaries' stretches go in once every place is found: one put
         // into a block left no room in its order between its neighbours, and the next temporary's
         // isBeforeInBlock numbered the whole block again - for each of them, in a block of many. In the
         // order found, each in front of its op (or at the block's end), as they went in one by one.
-        for (auto [op, before] : endReleases)
+        for (auto [op, before, after] : endReleases)
         {
-            if (before)
+            if (after)
+            {
+                builder.setInsertionPointAfter(after);
+            }
+            else if (before)
             {
                 builder.setInsertionPoint(before);
             }
@@ -2387,6 +2423,114 @@ class OwnedReturnConsumptionPass
     // that result's users that decide (handedOnByConditional). A receiver of a result nobody owns
     // retains, and a branch that makes it owned retained `h` for it (consumeConditionalResults),
     // so `h`'s own reference is still given back at the end of its block either way.
+    // The op of `op`'s block that holds the last use of its value (rc's release goes right after it), or none
+    // when one can't be followed - the release then stays where the stretch ends. The value goes by other names
+    // than its own, and their uses are its uses:
+    // - what an op makes of it, unless that comes with a reference of its own (OWNED_RESULT_ATTR_NAME): a view
+    //   (a cast, a union made of it), a place in it (`ts.PropertyRef`, then a load), a number read out of it;
+    // - what a conditional hands on (handedOnByConditional);
+    // - what is loaded from a local of the block it is stored into: every use of that local is a load or a
+    //   store, or the local is one it can't follow.
+    // A store anywhere else, or a terminator handing it on otherwise (a loop's), is a use it can't follow.
+    static mlir::Operation *lastUseInBlock(mlir::Operation *op)
+    {
+        auto *block = op->getBlock();
+        mlir::Operation *last = op;
+        auto later = [&](mlir::Operation *user) {
+            auto *inBlock = block->findAncestorOpInBlock(*user);
+            if (!inBlock)
+            {
+                return false;
+            }
+
+            if (last->isBeforeInBlock(inBlock))
+            {
+                last = inBlock;
+            }
+
+            return true;
+        };
+
+        llvm::SmallVector<mlir::Value> values{op->getResult(0)};
+        llvm::DenseSet<mlir::Value> seen;
+        while (!values.empty())
+        {
+            auto value = values.pop_back_val();
+            if (!seen.insert(value).second)
+            {
+                continue;
+            }
+
+            for (auto *user : value.getUsers())
+            {
+                if (!later(user))
+                {
+                    return nullptr;
+                }
+
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+                {
+                    if (storeOp.getValue() != value)
+                    {
+                        continue;
+                    }
+
+                    auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    if (!varOp)
+                    {
+                        return nullptr;
+                    }
+
+                    for (auto *varUser : varOp->getUsers())
+                    {
+                        if (!later(varUser))
+                        {
+                            return nullptr;
+                        }
+
+                        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(varUser))
+                        {
+                            values.push_back(loadOp.getResult());
+                        }
+                        else if (auto varStoreOp = mlir::dyn_cast<mlir_ts::StoreOp>(varUser);
+                                 !varStoreOp || varStoreOp.getReference() != varOp.getResult())
+                        {
+                            return nullptr;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (auto handedOn = handedOnByConditional(user))
+                {
+                    values.push_back(handedOn);
+                    continue;
+                }
+
+                // handed on by a terminator other than a conditional's
+                if (user->hasTrait<mlir::OpTrait::IsTerminator>())
+                {
+                    return nullptr;
+                }
+
+                // (a view is the value still, whatever it is marked: an interface made of an object literal's copy,
+                // `ts.NewInterface`, is that copy - given back right after it, `use(<Something>o)` read freed memory)
+                if (user->hasAttr(OWNED_RESULT_ATTR_NAME) && !own_facts::isView(user))
+                {
+                    continue;
+                }
+
+                for (auto result : user->getResults())
+                {
+                    values.push_back(result);
+                }
+            }
+        }
+
+        return last;
+    }
+
     struct BlockScan;
 
     static bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
