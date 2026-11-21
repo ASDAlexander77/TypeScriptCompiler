@@ -803,7 +803,23 @@ namespace mlirgen
                     auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
                     assert(namespaceInfo);
 
-                    currentNamespace = namespaceInfo;            
+                    currentNamespace = namespaceInfo;
+                }
+                // a class of the namespace's name (merged with it, or a class expression named as it is: `C.type`) -
+                // the name is the class as a value, and the namespace in a type
+                else if (auto classRefOp = expressionValue.getDefiningOp<mlir_ts::ClassRefOp>();
+                         classRefOp
+                         && (getNamespaceByFullName(mlir::cast<mlir_ts::ClassType>(classRefOp.getType()).getName().getValue())
+                             || (expression == SyntaxKind::Identifier
+                                 && getNamespaceMap().count(MLIRHelper::getName(expression.as<Identifier>())))))
+                {
+                    auto namespaceInfo = getNamespaceByFullName(mlir::cast<mlir_ts::ClassType>(classRefOp.getType()).getName().getValue());
+                    if (!namespaceInfo)
+                    {
+                        namespaceInfo = getNamespaceMap().lookup(MLIRHelper::getName(expression.as<Identifier>()));
+                    }
+
+                    currentNamespace = namespaceInfo;
                 }
                 else
                 {

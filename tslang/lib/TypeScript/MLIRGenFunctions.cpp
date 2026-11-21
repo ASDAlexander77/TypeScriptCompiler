@@ -216,6 +216,18 @@ namespace mlirgen
         {
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
+
+            // a parameter's default value is evaluated here for its type, and may read `this` - in an arrow too
+            // (`bar(f = () => this)`), which captures it: named, as an explicit `this:` is below ("can't resolve
+            // name: this")
+            if (genContext.thisType && isa<mlir_ts::ClassType>(genContext.thisType)
+                && llvm::any_of(parametersContextAST->parameters, [](auto parameter) { return !!parameter->initializer; }))
+            {
+                auto location = loc(parametersContextAST);
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, genContext.thisType, location);
+                auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(location, genContext.thisType);
+                declare(location, varDecl, typeRefVal, genContext);
+            }
         }
         else if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
             (kind == SyntaxKind::FunctionExpression ||
@@ -287,10 +299,31 @@ namespace mlirgen
             auto initializer = arg->initializer;
             if (initializer)
             {
-                auto evalType = evaluate(initializer, genContext);
+                GenContext defaultGenContext(genContext);
+                defaultGenContext.evaluatingParameterDefault = true;
+                auto evalType = evaluate(initializer, defaultGenContext);
                 if (evalType)
                 {
                     evalType = mth.wideStorageType(evalType);
+
+                    // a function given as the default (`f = () => this.n`) may be a closure, which a plain function
+                    // type has no room for: held as a hybrid one, as a `let` given an arrow is (cast to the plain
+                    // type, the closure lost its captures - "invalid cast" in lowering)
+                    if (auto funcType = dyn_cast<mlir_ts::FunctionType>(evalType); funcType && !funcType.isCVarArg())
+                    {
+                        evalType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+                    }
+                    // ...and so is the closure itself, as the default is evaluated where it captures (a bound function
+                    // whose first input is its capture box): typed so, the parameter disagreed with the signature, and a
+                    // plain function given for it was called with the box - "function signature mismatch" in wasm
+                    else if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(evalType);
+                             boundFuncType && boundFuncType.getInputs().size() > 0)
+                    {
+                        evalType = mlir_ts::HybridFunctionType::get(
+                            builder.getContext(),
+                            mlir_ts::FunctionType::get(builder.getContext(), boundFuncType.getInputs().drop_front(),
+                                                       boundFuncType.getResults(), boundFuncType.isVarArg()));
+                    }
 
                     // TODO: set type if not provided
                     isOptional = true;
@@ -837,11 +870,18 @@ namespace mlirgen
                                       || functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
                                       || functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
             && memberParentKind == SyntaxKind::ObjectLiteralExpression;
-        auto isModuleDiscoveryExpression = genContext.dummyRun && !genContext.funcOp
+        // ...and an arrow or a function expression met where an expression is only evaluated for its type (a
+        // parameter's default value, `bar(f = () => this)`): what it captures there is not what it captures where it
+        // is generated
+        auto isEvaluatedExpression = genContext.evaluatingParameterDefault && genContext.funcOp
+            && genContext.funcOp == tempFuncOp
+            && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
+        auto isModuleDiscoveryExpression = (genContext.dummyRun && !genContext.funcOp
             && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
                 || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression
                 || isNestedInModuleBlock
-                || isObjectLiteralMember);
+                || isObjectLiteralMember)) || isEvaluatedExpression;
         if (!funcProto->getIsGeneric() && !isModuleDiscoveryExpression)
         {
             auto funcTypeIt = getFunctionTypeMap().find(fullName);
