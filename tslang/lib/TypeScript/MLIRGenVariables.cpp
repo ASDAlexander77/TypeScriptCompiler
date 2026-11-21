@@ -1090,7 +1090,7 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
-                addGlobalConstructor(location, fullInitGlobalFuncName);
+                addGlobalConstructor(location, fullInitGlobalFuncName, /*afterGlobals=*/true);
             }
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
@@ -1266,6 +1266,70 @@ namespace mlirgen
                 }
             }
 
+            // ...and a destructuring `var` all of whose names were declared before
+            // (`var { name: a } = r; var { name: a } = s;`): an assignment to them
+            if (itemVarClass.type == VariableType::Var && !genContext.functionVars && !declarationMode
+                && !itemVarClass.isImport && !itemVarClass.isDynamicImport && item->initializer
+                && (item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern))
+            {
+                SmallVector<std::string> names;
+                collectBindingPatternNames(item->name, names);
+                auto allDeclared = !names.empty() && llvm::all_of(names, [&](const std::string &name) {
+                    auto found = moduleVarFirstDeclaration.find(concatFullNamespaceName(name));
+                    return found != moduleVarFirstDeclaration.end() && found->second != item->pos.pos;
+                });
+
+                if (allDeclared)
+                {
+                    if (!genContext.funcOp && genContext.dummyRun)
+                    {
+                        // a dummy run of the module's statements: the assignment is the real run's
+                        continue;
+                    }
+
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto target = bindingPatternAsAssignmentTarget(nf, item->name);
+                    auto assignment = nf.createBinaryExpression(target, nf.createToken(SyntaxKind::EqualsToken),
+                                                                item->initializer);
+                    assignment->pos = item->pos;
+                    assignment->_end = item->_end;
+
+                    if (genContext.funcOp)
+                    {
+                        auto result = mlirGen(assignment.as<Expression>(), genContext);
+                        EXIT_IF_FAILED(result)
+                        continue;
+                    }
+
+                    // no code of the module runs in a function: the assignment runs from a constructor of its own,
+                    // as a destructuring declaration there does (mlirGen(VariableDeclaration))
+                    auto location = loc(item);
+                    auto name = MLIRHelper::getAnonymousName(location, ".gc", "");
+                    auto fullInitGlobalFuncName = getFullNamespaceName(name);
+                    {
+                        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                        if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, getFunctionType({}, {}, false),
+                            [&](mlir::Location location, const GenContext &genContext) {
+                                auto result = mlirGen(assignment.as<Expression>(), genContext);
+                                EXIT_IF_FAILED(result)
+                                return mlir::success();
+                            }, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+
+                        addGlobalConstructor(location, fullInitGlobalFuncName, /*afterGlobals=*/true);
+                    }
+
+                    continue;
+                }
+
+                for (auto &name : names)
+                {
+                    moduleVarFirstDeclaration.try_emplace(concatFullNamespaceName(name), item->pos.pos);
+                }
+            }
+
             if (mlir::failed(mlirGen(item, itemVarClass, genContext)))
             {
                 return mlir::failure();
@@ -1273,6 +1337,113 @@ namespace mlirgen
         }
 
         return mlir::success();
+    }
+
+    // the names a destructuring pattern declares
+    void MLIRGenImpl::collectBindingPatternNames(Node name, SmallVector<std::string> &names)
+    {
+        if (name == SyntaxKind::Identifier)
+        {
+            names.push_back(MLIRHelper::getName(name.as<Identifier>()));
+            return;
+        }
+
+        if (name == SyntaxKind::ObjectBindingPattern)
+        {
+            for (auto element : name.as<ObjectBindingPattern>()->elements)
+            {
+                collectBindingPatternNames(element->name, names);
+            }
+        }
+        else if (name == SyntaxKind::ArrayBindingPattern)
+        {
+            for (auto element : name.as<ArrayBindingPattern>()->elements)
+            {
+                if (element == SyntaxKind::BindingElement)
+                {
+                    collectBindingPatternNames(element.as<BindingElement>()->name, names);
+                }
+            }
+        }
+    }
+
+    // `{ a: x, y = 1, ...r }` / `[x, , y = 1, ...r]` as the target of an assignment, as written in one
+    Expression MLIRGenImpl::bindingPatternAsAssignmentTarget(NodeFactory &nf, Node name)
+    {
+        // each node made here is where the one it is made from is: a node with no place in the source crashed
+        // what reports or locates it
+        auto place = [](auto node, Node from) {
+            node->pos = from->pos;
+            node->_end = from->_end;
+            return node;
+        };
+
+        if (name == SyntaxKind::Identifier)
+        {
+            return place(nf.createIdentifier(name.as<Identifier>()->escapedText), name);
+        }
+
+        auto withDefault = [&](Expression target, Expression initializer, Node from) -> Expression {
+            if (!initializer)
+            {
+                return target;
+            }
+
+            return place(nf.createBinaryExpression(target, place(nf.createToken(SyntaxKind::EqualsToken), from), initializer),
+                         from).template as<Expression>();
+        };
+
+        if (name == SyntaxKind::ObjectBindingPattern)
+        {
+            NodeArray<ObjectLiteralElementLike> properties;
+            for (auto element : name.as<ObjectBindingPattern>()->elements)
+            {
+                if (element->dotDotDotToken)
+                {
+                    properties.push_back(
+                        place(nf.createSpreadAssignment(bindingPatternAsAssignmentTarget(nf, element->name)), element));
+                }
+                else if (!element->propertyName && element->name == SyntaxKind::Identifier)
+                {
+                    properties.push_back(place(nf.createShorthandPropertyAssignment(
+                        place(nf.createIdentifier(element->name.as<Identifier>()->escapedText), element->name),
+                        element->initializer), element));
+                }
+                else
+                {
+                    auto propertyName = element->propertyName ? element->propertyName : element->name.as<PropertyName>();
+                    properties.push_back(place(nf.createPropertyAssignment(
+                        propertyName,
+                        withDefault(bindingPatternAsAssignmentTarget(nf, element->name), element->initializer, element)),
+                        element));
+                }
+            }
+
+            return place(nf.createObjectLiteralExpression(properties, false), name);
+        }
+
+        NodeArray<Expression> elements;
+        for (auto element : name.as<ArrayBindingPattern>()->elements)
+        {
+            if (element != SyntaxKind::BindingElement)
+            {
+                elements.push_back(place(nf.createOmittedExpression(), element));
+                continue;
+            }
+
+            auto bindingElement = element.as<BindingElement>();
+            auto target = bindingPatternAsAssignmentTarget(nf, bindingElement->name);
+            if (bindingElement->dotDotDotToken)
+            {
+                elements.push_back(place(nf.createSpreadElement(target), element).template as<Expression>());
+            }
+            else
+            {
+                elements.push_back(withDefault(target, bindingElement->initializer, element));
+            }
+        }
+
+        return place(nf.createArrayLiteralExpression(elements, false), name);
     }
 
     // The `var` declarations of a function body, in source order: in its blocks, branches, loops, `try`, `switch` and

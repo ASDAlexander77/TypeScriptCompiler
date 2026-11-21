@@ -289,7 +289,7 @@ class MLIRGenImpl
     bool hasGlobalInitialization(NodeArray<Statement> statements);
 
     // appends GlobalConstructorOp after the last one in the module; LAST priority so it runs after CRT init
-    void addGlobalConstructor(mlir::Location location, StringRef funcName);
+    void addGlobalConstructor(mlir::Location location, StringRef funcName, bool afterGlobals = false);
 
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
                           bool hasDeferredStatements, const GenContext &genContext);
@@ -3317,6 +3317,8 @@ class MLIRGenImpl
 
     // `var` in a function (MDN `var`): one variable of the function, declared before its body
     void collectFunctionVarDeclarations(Node node, SmallVector<VariableDeclaration> &declarations, bool inLoopHeader = false);
+    void collectBindingPatternNames(Node name, SmallVector<std::string> &names);
+    Expression bindingPatternAsAssignmentTarget(NodeFactory &nf, Node name);
 
     mlir::LogicalResult declareFunctionVar(mlir::Location location, StringRef name, mlir::Type type, bool typeProvided,
                                            const GenContext &genContext);
@@ -7000,6 +7002,13 @@ class MLIRGenImpl
                 return mlir::Type();
             }
 
+            // a type not resolved yet (a declaration file being read): nothing to merge, and `isa` on it crashed
+            auto isNull = [](mlir::Type t) { return !t; };
+            if (llvm::any_of(funcType.getInputs(), isNull) || llvm::any_of(funcType.getResults(), isNull))
+            {
+                return mlir::Type();
+            }
+
             auto inputs = visibleInputs(type, funcType);
             if (!widest || inputs.size() > widestInputs.size())
             {
@@ -9300,26 +9309,69 @@ class MLIRGenImpl
         {
             for (auto [index, leftItem] : enumerate(arrayLiteralExpression->elements))
             {
-                auto result = mlirGen(leftItem, genContext);
+                // a hole (`[a, , b] = arr`) takes nothing
+                if (leftItem == SyntaxKind::OmittedExpression)
+                {
+                    continue;
+                }
+
+                // `[a = 1, b = 2] = arr`: the target is `a`, 1 its default (evaluated as written, it assigned the
+                // default)
+                Expression target = leftItem;
+                Expression defaultValue;
+                if (leftItem == SyntaxKind::BinaryExpression
+                    && leftItem.as<BinaryExpression>()->operatorToken == SyntaxKind::EqualsToken)
+                {
+                    defaultValue = leftItem.as<BinaryExpression>()->right;
+                    target = leftItem.as<BinaryExpression>()->left;
+                }
+
+                auto result = mlirGen(target, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto leftExpressionValue = V(result);
 
-                // special case for [a = 1, b = 2] = [2, 3];
-                if (leftItem == SyntaxKind::BinaryExpression)
+                // an element past the end of the array is undefined: the target's default, or its type's (read, it
+                // was whatever follows the array's data), as a destructuring declaration has it
+                // (a constant array's length is known here)
+                mlir::Value inBoundsValue;
+                if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(rightExpressionValue.getType()))
                 {
-                    auto binExpr = leftItem.as<BinaryExpression>();
-                    auto result = mlirGen(binExpr->left, genContext);
-                    EXIT_IF_FAILED_OR_NO_VALUE(result)
-                    leftExpressionValue = V(result);
+                    inBoundsValue = builder.create<mlir_ts::ConstantOp>(
+                        location, getBooleanType(), builder.getBoolAttr((int64_t)index < (int64_t)constArrayType.getSize()));
                 }
+                else
+                {
+                    auto lengthValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), rightExpressionValue);
+                    auto boundValue = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), mth.getIndexAttrValue(index));
+                    inBoundsValue = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                        builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), lengthValue, boundValue));
+                }
+                auto conditional = conditionalValue(location, inBoundsValue,
+                    [&]() {
+                        auto indexValue = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                              builder.getI32IntegerAttr(index));
+                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType),
+                                                                            rightExpressionValue, indexValue);
+                        return ValueOrLogicalResult(V(builder.create<mlir_ts::LoadOp>(location, elementType, elemRef)));
+                    },
+                    [&](mlir::Type valueType) -> ValueOrLogicalResult {
+                        if (defaultValue)
+                        {
+                            auto defaultResult = mlirGen(defaultValue, genContext);
+                            EXIT_IF_FAILED_OR_NO_VALUE(defaultResult)
+                            auto value = V(defaultResult);
+                            if (value.getType() != valueType)
+                            {
+                                CAST(value, location, valueType, value, genContext);
+                            }
 
-                // TODO: unify array access like Property access
-                auto indexValue =
-                    builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
+                            return value;
+                        }
 
-                auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType),
-                                                                    rightExpressionValue, indexValue);
-                auto rightValue = builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
+                        return ValueOrLogicalResult(V(builder.create<mlir_ts::DefaultOp>(location, valueType)));
+                    });
+                EXIT_IF_FAILED_OR_NO_VALUE(conditional)
+                auto rightValue = V(conditional);
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext)))
                 {
@@ -9331,25 +9383,47 @@ class MLIRGenImpl
         {
             for (auto [index, leftItem] : enumerate(arrayLiteralExpression->elements))
             {
-                auto result = mlirGen(leftItem, genContext);
+                if (leftItem == SyntaxKind::OmittedExpression)
+                {
+                    continue;
+                }
+
+                // `[a = 1, b = "abc"] = [2, "def"]`: the target is `a`, 1 its default. Evaluated first as written,
+                // the target was an assignment of the default.
+                Expression target = leftItem;
+                Expression defaultValue;
+                if (leftItem == SyntaxKind::BinaryExpression
+                    && leftItem.as<BinaryExpression>()->operatorToken == SyntaxKind::EqualsToken)
+                {
+                    defaultValue = leftItem.as<BinaryExpression>()->right;
+                    target = leftItem.as<BinaryExpression>()->left;
+                }
+
+                auto result = mlirGen(target, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto leftExpressionValue = V(result);
 
-                // special case for [a = 1, b = "abc"] = [2, "def"];
-                if (leftItem == SyntaxKind::BinaryExpression)
+                // past the end of the tuple the element is undefined: its default, if it has one
+                if (index >= tupleType.size() && defaultValue)
                 {
-                    auto binExpr = leftItem.as<BinaryExpression>();
-                    auto result = mlirGen(binExpr->left, genContext);
-                    EXIT_IF_FAILED_OR_NO_VALUE(result)
-                    leftExpressionValue = V(result);
+                    auto defaultResult = mlirGen(defaultValue, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(defaultResult)
+                    if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, V(defaultResult), genContext)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    continue;
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
-                auto rightValue = cl.Tuple(tupleType, true);
+                mlir::Value rightValue = cl.Tuple(tupleType, true);
                 if (!rightValue)
                 {
                     return mlir::failure();
                 }
+
+                EXIT_IF_FAILED(applyDestructuringDefault(location, rightValue, defaultValue, genContext));
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext)))
                 {
@@ -9360,6 +9434,26 @@ class MLIRGenImpl
         }
 
         // no passing value
+        return mlir::success();
+    }
+
+    // the default of a destructuring assignment's target (`{ a = 1 } = o`): taken when the field is empty -
+    // an optional one; a field that always holds a value has no use for it
+    mlir::LogicalResult applyDestructuringDefault(mlir::Location location, mlir::Value &value, Expression defaultValue,
+                                                  const GenContext &genContext)
+    {
+        if (!defaultValue)
+        {
+            return mlir::success();
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+        {
+            auto result = optionalValueOrDefault(location, optionalType.getElementType(), value, defaultValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            value = V(result);
+        }
+
         return mlir::success();
     }
 
@@ -9379,7 +9473,18 @@ class MLIRGenImpl
 
                 auto propertyName = MLIRHelper::getName(propertyAssignment->name);
 
-                auto result = mlirGen(propertyAssignment->initializer, genContext);
+                // `{ a: x = 1 } = o`: the target is `x`, and 1 is its default - evaluated as an expression, the
+                // target was an assignment ("only a variable, a property or an element can be assigned to")
+                Expression target = propertyAssignment->initializer;
+                Expression defaultValue;
+                if (target == SyntaxKind::BinaryExpression
+                    && target.as<BinaryExpression>()->operatorToken == SyntaxKind::EqualsToken)
+                {
+                    defaultValue = target.as<BinaryExpression>()->right;
+                    target = target.as<BinaryExpression>()->left;
+                }
+
+                auto result = mlirGen(target, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ident = V(result);
 
@@ -9388,6 +9493,7 @@ class MLIRGenImpl
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
                 auto subInit = V(subInitResult);
+                EXIT_IF_FAILED(applyDestructuringDefault(location, subInit, defaultValue, genContext));
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -9412,6 +9518,8 @@ class MLIRGenImpl
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(subInitResult)
                 auto subInit = V(subInitResult);
+                EXIT_IF_FAILED(applyDestructuringDefault(
+                    location, subInit, shorthandPropertyAssignment->objectAssignmentInitializer, genContext));
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
                 {
@@ -10800,12 +10908,28 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto leftUnionType = dyn_cast<mlir_ts::UnionType>(leftExpressionValue.getType());
-        auto rightUnionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType());
+        // an optional of such a union (`number | string | undefined`) is one too, whose empty case is not equal
+        // to the value: compared as an optional, the lowering met the union inside and crashed
+        auto unionOrOptionalUnion = [](mlir::Type type, bool &optional) -> mlir_ts::UnionType {
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+            {
+                optional = true;
+                return dyn_cast<mlir_ts::UnionType>(optionalType.getElementType());
+            }
+
+            return dyn_cast<mlir_ts::UnionType>(type);
+        };
+
+        auto leftOptional = false;
+        auto rightOptional = false;
+        auto leftUnionType = unionOrOptionalUnion(leftExpressionValue.getType(), leftOptional);
+        auto rightUnionType = unionOrOptionalUnion(rightExpressionValue.getType(), rightOptional);
         if (!leftUnionType == !rightUnionType)
         {
             return mlir::success();
         }
+
+        auto unionIsOptional = leftUnionType ? leftOptional : rightOptional;
 
         auto unionType = leftUnionType ? leftUnionType : rightUnionType;
         auto unionValue = leftUnionType ? leftExpressionValue : rightExpressionValue;
@@ -10824,7 +10948,8 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        if (llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isComparableForEquality(location, member, valueType); }))
+        if (!unionIsOptional
+            && llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isComparableForEquality(location, member, valueType); }))
         {
             return mlir::success();
         }
@@ -10890,7 +11015,8 @@ class MLIRGenImpl
         assert(funcResult);
 
         GenContext funcCallGenContext(genContext);
-        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_L", unionType});
+        // the optional itself: cast to the union to be passed, an empty one was read as a member
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_L", unionIsOptional ? unionValue.getType() : mlir::Type(unionType)});
         funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_R", valueType});
 
         for (auto [index, instanceOfType] : enumerate(classInstances))

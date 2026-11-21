@@ -1348,10 +1348,40 @@ namespace mlirgen
         return false;
     }
 
-    void MLIRGenImpl::addGlobalConstructor(mlir::Location location, StringRef funcName)
+    void MLIRGenImpl::addGlobalConstructor(mlir::Location location, StringRef funcName, bool afterGlobals)
     {
         mlir::OpBuilder::InsertionGuard insertGuard(builder);
         MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+
+        // after the globals declared before it, which the lowering gives their initializers in this order
+        if (afterGlobals)
+        {
+            // ...and after the ones of this kind before it
+            mlir::Operation *lastGlobal = nullptr;
+            for (auto &op : *theModule.getBody())
+            {
+                if (isa<mlir_ts::GlobalOp>(&op)
+                    || (isa<mlir_ts::GlobalConstructorOp>(&op) && op.hasAttr(AFTER_GLOBALS_ATTR_NAME)))
+                {
+                    lastGlobal = &op;
+                }
+            }
+
+            if (lastGlobal)
+            {
+                builder.setInsertionPointAfter(lastGlobal);
+            }
+            else
+            {
+                builder.setInsertionPointToStart(theModule.getBody());
+            }
+
+            auto ctorOp = builder.create<mlir_ts::GlobalConstructorOp>(
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName),
+                builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
+            ctorOp->setAttr(AFTER_GLOBALS_ATTR_NAME, builder.getUnitAttr());
+            return;
+        }
 
         builder.setInsertionPointToStart(theModule.getBody());
         mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(theModule.getBody());
