@@ -20215,7 +20215,58 @@ class MLIRGenImpl
         auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
             location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);
         auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
-        builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
+
+        // the growth itself in a function of its own, one for each array type: SetLengthOf lowers to a capacity
+        // check, a reallocation and the zeroing of the new slots, and made at every write, a function of many of
+        // them (the sweep's largeControlFlowGraph, 10000 `data[0] = 0`) took a minute to lower to LLVM
+        auto growFunc = arrayGrowFunction(location, mlir::cast<mlir_ts::RefType>(arrayRef.getType()));
+        builder.create<mlir_ts::CallIndirectOp>(location, growFunc, mlir::ValueRange{arrayRef, newLength});
+    }
+
+    // `.array_grow.<type>(array: ref<T[]>, length: index)`: SetLengthOf (mlirGenGrowArrayForWrite)
+    mlir::Value arrayGrowFunction(mlir::Location location, mlir_ts::RefType arrayRefType)
+    {
+        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), {arrayRefType, builder.getIndexType()}, {}, false);
+
+        std::string typeText;
+        llvm::raw_string_ostream typeStream(typeText);
+        typeStream << arrayRefType;
+        auto name = ".array_grow." + llvm::utohexstr(llvm::xxh3_64bits(typeText));
+        if (!lookupModuleSymbol(name))
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(theModule.getBody());
+
+            // compiler glue, as fewerParametersThunk's: without --di the place it is made for, with --di a
+            // subprogram of its own there (its lowering's calls need a location)
+            mlir::Location noLocation = compileOptions.generateDebugInfo
+                ? mlir::Location(mlir::UnknownLoc::get(builder.getContext()))
+                : stripMetadata(location);
+            auto funcOp = mlir_ts::FuncOp::create(noLocation, name, funcType);
+            funcOp.setPrivate();
+            funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+            DITableScopeT debugFuncScope(debugScope);
+            if (compileOptions.generateDebugInfo)
+            {
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                auto plainLocation = stripMetadata(location);
+                funcOp->setLoc(mdi.getSubprogram(plainLocation, name, name, plainLocation));
+                noLocation = locFuseWithScope(plainLocation);
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+            auto entryOp = builder.create<mlir_ts::EntryOp>(noLocation, mlir::Type());
+            builder.create<mlir_ts::SetLengthOfOp>(noLocation, entryBlock.getArgument(0), entryBlock.getArgument(1));
+            builder.create<mlir_ts::ExitOp>(noLocation, mlir::Value());
+            (void)entryOp;
+
+            pushFunction(funcOp);
+        }
+
+        return builder.create<mlir_ts::SymbolRefOp>(location, funcType,
+                                                    mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
     mlir::LogicalResult parsePartialStatements(string src)
