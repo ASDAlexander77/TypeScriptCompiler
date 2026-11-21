@@ -4523,6 +4523,31 @@ namespace mlirgen
         return V(ifOp.getResults().front());
     }
 
+    // An interface with an index signature (`[key: string]: T`) is read and written through methods an object
+    // literal does not have: given one, the cast failed with nothing said ("failed statement").
+    mlir::LogicalResult MLIRGenImpl::checkObjectForIndexSignature(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo)
+    {
+        if (!interfaceInfo)
+        {
+            return mlir::success();
+        }
+
+        std::function<bool(InterfaceInfo::TypePtr)> hasIndex = [&](InterfaceInfo::TypePtr info) {
+            return !info->indexes.empty()
+                || llvm::any_of(info->extends, [&](auto &extended) { return extended.second && hasIndex(extended.second); });
+        };
+
+        if (hasIndex(interfaceInfo))
+        {
+            emitError(location) << "an object can't be given as interface '" << interfaceInfo->fullName
+                                << "' yet: it has an index signature ([key: K]: T). Use a Map, or an interface "
+                                << "of named members";
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
@@ -4534,6 +4559,11 @@ namespace mlirgen
             // an instance of a generic interface not made where the cast is (a generic arrow's `W<p>` return
             // type, instantiated as the arrow is given a type): it was read through a null pointer
             emitError(location) << "can't find interface '" << interfaceType.getName().getValue() << "'";
+            return mlir::failure();
+        }
+
+        if (mlir::failed(checkObjectForIndexSignature(location, interfaceInfo)))
+        {
             return mlir::failure();
         }
 
@@ -4653,9 +4683,13 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext, mlir::Value vtableStorage)
     {
+        if (mlir::failed(checkObjectForIndexSignature(location, interfaceInfo)))
+        {
+            return mlir::failure();
+        }
+
         auto inEffective = in;
         auto effectiveObjType = objType;
-
         // same field-type-coercion fallback as castTupleToInterface (e.g. a literal
         // integer field inferred as si32 vs an interface declaring `number`): an
         // object literal with methods is boxed as ObjectType before ever reaching

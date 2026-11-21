@@ -908,6 +908,18 @@ namespace mlirgen
             EXIT_IF_FAILED(result)
             
             auto expressionValue = V(result);
+
+            // `return g()` of a call that returns nothing: the call, and a `return;` (in discovery the missing value
+            // failed the function with nothing said - "failed statement")
+            if (!expressionValue && expression == SyntaxKind::CallExpression)
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                auto bareReturn = nf.createReturnStatement(undefined);
+                bareReturn->pos = returnStatementAST->pos;
+                bareReturn->_end = returnStatementAST->_end;
+                return mlirGen(bareReturn, genContext);
+            }
+
             if (!expressionValue)
             {
                 // Nothing below can run without a value: the cast to the declared return type and

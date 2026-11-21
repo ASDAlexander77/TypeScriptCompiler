@@ -410,6 +410,13 @@ namespace mlirgen
                         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
                     }
 
+                    // past the end of the tuple (`var [a, b, c] = [1, "x"]`, a literal taken as a tuple): undefined,
+                    // as the element of an array is; read, it was no value and the statement failed with nothing said
+                    if (index >= (int)constTupleType.size())
+                    {
+                        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+                    }
+
                     return cl.Tuple(constTupleType, true); 
                 })
                 .template Case<mlir_ts::TupleType>([&](auto tupleType) { 
@@ -439,6 +446,13 @@ namespace mlirgen
                         }
                 
                         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
+                    }
+
+                    // past the end of the tuple (`var [a, b, c] = [1, "x"]`, a literal taken as a tuple): undefined,
+                    // as the element of an array is; read, it was no value and the statement failed with nothing said
+                    if (index >= (int)tupleType.size())
+                    {
+                        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
                     }
 
                     return cl.Tuple(tupleType, true); 
