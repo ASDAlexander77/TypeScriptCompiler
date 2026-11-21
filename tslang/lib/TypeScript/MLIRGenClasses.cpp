@@ -2062,6 +2062,25 @@ namespace mlirgen
             }
         }
 
+        // ...or of an interface the class implements: `clean(input: number) { return 123; }` for `clean(input: T): T`
+        // of Field<number> ("method signature not matching ... Found method: ... => s32")
+        for (auto &implement : classInfo->implements)
+        {
+            if (!implement.interface)
+            {
+                continue;
+            }
+
+            if (auto *method = implement.interface->findMethod(methodName))
+            {
+                auto funcType = method->funcType;
+                if (funcType && funcType.getNumResults() > 0 && mth.isNumericType(funcType.getResult(0)))
+                {
+                    return funcType.getResult(0);
+                }
+            }
+        }
+
         return mlir::Type();
     }
 
