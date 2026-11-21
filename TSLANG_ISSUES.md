@@ -2161,10 +2161,12 @@ Still open, looked at:
 - `a[a.length] = x` on an array did not grow it (gc wrote past the end; rc and own crashed). Fixed under gc, rc and
   none: the element store grows the array to `i + 1` first when `i` is at or past the length
   (mlirGenGrowArrayForWrite, SetLengthOf: the slots in between read as the element type's default; a negative
-  index grows nothing). Test `00array_write_grows.ts`. Still open under -mm=own: growing through the array's
-  slot - a parameter's, or a `let`'s over one - reads to its passes as keeping the parameter ("'src' is a
-  parameter, kept here"), and a field's extra read of the array as a second reference; under own the write is
-  as before.
+  index grows nothing). Test `00array_write_grows.ts`. Later under -mm=own too: the growth is a call of a
+  function of its own for each array type (`.array_grow.<type>`, given the array's slot), which -mm=own's passes
+  take as they take any call given a slot; made in place, they read the slot written as a parameter's kept
+  ("'src' is a parameter, kept here") and a field's array read once more as a second reference. A parameter's
+  array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000 rounds (gc, rc,
+  own), clean on the wasm checked heap (own, rc).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 

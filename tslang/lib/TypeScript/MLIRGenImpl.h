@@ -20223,14 +20223,10 @@ class MLIRGenImpl
             return;
         }
 
-        // Not under -mm=own yet: the array's slot written - a parameter's, a `let` over one ("'src' is a parameter,
-        // kept here") - and the array read once more before the store (a field's: "a value takes a second
-        // reference") are ways its passes do not take yet (TSLANG 152)
-        if (compileOptions.memoryModel == MemoryModelOwn)
-        {
-            return;
-        }
-
+        // Under -mm=own too: the growth is a call of the function below given the array's slot, which -mm=own's
+        // passes read as a borrow of the array - it keeps no element and gives the array no other owner. Made in
+        // place (SetLengthOf here), they read the slot written as the parameter's kept ("'src' is a parameter,
+        // kept here") and a field's array read once more as a second reference.
         // index >= length, signed: a negative index is never past the end
         auto index32 = elementRefOp.getIndex();
         auto i32Type = builder.getI32Type();

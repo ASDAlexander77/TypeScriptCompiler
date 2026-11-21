@@ -17,4 +17,3 @@ json.ts none                    # (default library) builds a 100000-character st
 01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)
 00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)
 00let_without_initializer_owns.ts own # copies an `any` holding an object, which -mm=own refuses at run time by design (native own: the same assert)
-00array_write_grows.ts own      # a[i] = v past the end does not grow the array under -mm=own yet (TSLANG 152): the write goes past the block
