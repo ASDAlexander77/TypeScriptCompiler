@@ -2062,6 +2062,25 @@ namespace mlirgen
             }
         }
 
+        // ...or of an interface the class implements: `clean(input: number) { return 123; }` for `clean(input: T): T`
+        // of Field<number> ("method signature not matching ... Found method: ... => s32")
+        for (auto &implement : classInfo->implements)
+        {
+            if (!implement.interface)
+            {
+                continue;
+            }
+
+            if (auto *method = implement.interface->findMethod(methodName))
+            {
+                auto funcType = method->funcType;
+                if (funcType && funcType.getNumResults() > 0 && mth.isNumericType(funcType.getResult(0)))
+                {
+                    return funcType.getResult(0);
+                }
+            }
+        }
+
         return mlir::Type();
     }
 
@@ -4546,6 +4565,37 @@ genContext);
                 auto foundMethodFunctionType = foundMethodPtr->funcType;
 
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
+                // a method the interface calls otherwise than it is declared - with a result the interface drops
+                // (`foo(): void` of `foo() { return "x"; }`), or without the optional parameters the method has
+                // further (`method(a = 0)` for `method()`): the slot holds an adapter calling it as the class does
+                // (only a result the interface drops, or one both have: a method returning nothing can't give the
+                // interface's `boolean` - a type predicate's `this is ...` of `method1() { }` crashed the compiler)
+                auto interfaceResult = mth.getReturnTypeFromFuncRef(funcType);
+                auto methodResult = mth.getReturnTypeFromFuncRef(foundMethodFunctionType);
+                auto resultsAdapt = !interfaceResult || isa<mlir_ts::VoidType>(interfaceResult)
+                    || (methodResult && mth.stripLiteralType(methodResult) == mth.stripLiteralType(interfaceResult));
+                if (result.result != MatchResultType::Match && resultsAdapt && !foundMethodPtr->isStatic
+                    && name != NEW_CTOR_METHOD_NAME && funcType.getNumInputs() > 0)
+                {
+                    auto adapterName = concat(newClassPtr->fullName, newInterfacePtr->fullName, name, interfacePosIndex)
+                                           .str() + "..adapt";
+                    auto adapterType = getFunctionType(funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
+                    // made in this module (a discovery pass's module is thrown away)
+                    if (lookupModuleSymbol<mlir_ts::FuncOp>(adapterName)
+                        || mlir::succeeded(generateSynthMethodToCallField(location, newClassPtr->classType, name,
+                                                                          adapterName, adapterType, genContext)))
+                    {
+                        if (auto existing = newClassPtr->findMethod(adapterName))
+                        {
+                            return {*existing, mlir::success()};
+                        }
+
+                        newClassPtr->methods.push_back({adapterName, adapterType, adapterName, false, false, false, -1,
+                                                        interfacePosIndex, mlir_ts::AccessLevel::Public});
+                        return {newClassPtr->methods.back(), mlir::success()};
+                    }
+                }
+
                 if (result.result != MatchResultType::Match)
                 {
                     emitError(location) << "method signature not matching '" << name << ":" << to_print(funcType)
