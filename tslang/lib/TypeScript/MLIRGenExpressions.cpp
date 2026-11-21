@@ -2524,7 +2524,11 @@ namespace mlirgen
         // `new Set([2, 4, 6, 8])`: a generic class written without type arguments takes them from
         // its constructor's arguments (see inferClassTypeFromConstructorArguments). Ahead of the
         // receiver below, which overrides it: `const s: Set<number> = new Set([1, 2])` is Set<number>.
-        if (inferTypeArguments && newExpression->arguments.size() > 0)
+        // With none (`new SS()`), a type parameter is `any` (inferClassTypeFromConstructorArguments) - not for `new this()`,
+        // which the class makes itself (its `..new`): in a generic class that is the class being instantiated, and given
+        // `any` it made a `Box<any>` no one asked for (a library's declarations then named `!ts.any`).
+        if (inferTypeArguments
+            && (newExpression->arguments.size() > 0 || newExpression->expression != SyntaxKind::ThisKeyword))
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(value.getType()))
             {
