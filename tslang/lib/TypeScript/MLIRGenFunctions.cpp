@@ -1313,25 +1313,6 @@ namespace mlirgen
 
         generatorObjectProperties.push_back(nextMethodDecl);
 
-        // `[Symbol.iterator]() { return this; }`: a generator is its own iterator, as in JavaScript, so it is given
-        // where an object with [Symbol.iterator] is wanted (`gen[Symbol.iterator]()` was "field "iterator" can't be
-        // found"). Not an async generator's ([Symbol.asyncIterator]), and not under -mm=own, where a method
-        // returning `this` is refused ("'this' is a parameter, returned here") and every generator failed.
-        if (!hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::AsyncKeyword) &&
-            compileOptions.memoryModel != MemoryModelOwn)
-        {
-            NodeArray<Statement> iteratorStatements;
-            iteratorStatements.push_back(nf.createReturnStatement(nf.createToken(SyntaxKind::ThisKeyword)));
-            auto iteratorName = nf.createComputedPropertyName(nf.createPropertyAccessExpression(
-                nf.createIdentifier(S("Symbol")), nf.createIdentifier(S("iterator"))));
-            auto iteratorMethodDecl = nf.createMethodDeclaration(undefined, undefined, iteratorName, undefined, undefined,
-                                                                 undefined, undefined,
-                                                                 nf.createBlock(iteratorStatements, /*multiLine*/ false));
-            iteratorMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
-            iteratorMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
-            generatorObjectProperties.push_back(iteratorMethodDecl);
-        }
-
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
         // the generator object has mutable identity (`step` advanced by next());
         // it must be a reference type so aliases (params, closures, const bindings)

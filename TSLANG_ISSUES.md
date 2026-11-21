@@ -2150,3 +2150,36 @@ Still open, looked at:
 - `a[a.length] = x` on an array does not grow it (gc writes past the end; rc and own crash).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
+
+153 (iterables and generators, the compiler side of the default library's iteration types - TypeScriptCompilerDefaultLib
+#113, whose `Iterable<T>`, `Generator<T, TReturn, TNext>` and the rest are objects with `next`, 2026-11-21). Fixed:
+- An array or a string given where an iterator interface is wanted (`sum([1.5, 2])` of `sum(v: Iterable<number>)`,
+  `cat("abc")` of `cat(v: Iterable<string>)`): "type 'number[]' can't be cast to interface 'Iterable<number>': it has
+  none of the interface's members". A generator over its elements is given - `__array_values<T>` /
+  `__string_values<T>`, made from source once a module, generic so that a pass whose module is thrown away does not
+  leave a call to nothing - its element the interface's (`next`'s result's `value`): an `s32[]` given to an
+  `Iterable<number>` is converted first (castIterableToIterator). Under -mm=own the generator borrows the array.
+- A generator typed `Generator<T>` (`Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`) yields T: its next() is
+  declared `{ value: T; done: boolean }`, so `yield 1` is a number. It was typed by what it yields, the literal's
+  s32: "can't assign '() => {value:s32, done:boolean}' to '() => {value:number, done:boolean}'".
+- A value returned by a generator typed `Generator<T, TReturn>` with a TReturn other than T (and not void,
+  undefined or any) is an error at the `return`: next() gives `{ value: T }`, and `return "end"` in a
+  `Generator<number, string>` was cast to a number without a word (it read 0).
+
+Still open, looked at:
+- next(value) / TNext: next() would take `value?: TNext` and the resumed `yield` evaluate to it - tried, and it works
+  for a generator cast to an interface declaring `next(value?)` - but a generator's next() is then cast to
+  interfaces declaring `next: () => ...` (a program's own, the library's Iterable), and an object's method of
+  another arity has no adapter in the interface's vtable (castObjectToInterface; a class has them, 150). Needs that
+  adapter, then `Generator`'s next in the library. return(v) / throw(e) likewise.
+- -mm=own: a generator typed as an interface other than the library-instantiated Iterator<T> - a program's own, or
+  Iterable<T> - is "a value takes a second reference; -mm=own cannot prove a move or a borrow here yet" at its
+  `for...of` (before these changes too), and so is an array given as an Iterable<T>.
+- A generator as its own iterator (`gen[Symbol.iterator]()`: "field "iterator" can't be found"): a method
+  `[Symbol.iterator]() { return this; }` on the generator object was tried - a generator made inside another's
+  machinery (the builtin map/filter of an iterator) then resolved that `this` through the outer one's alias
+  ("can't resolve name: .this"), and under -mm=own a method returning `this` is refused. Likewise
+  `[Symbol.asyncIterator]` of an async generator.
+
+Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
+diagnostic-location `generator_return_of_other_type.ts`.
