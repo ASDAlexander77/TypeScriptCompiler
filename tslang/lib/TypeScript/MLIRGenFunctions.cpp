@@ -313,6 +313,17 @@ namespace mlirgen
                     {
                         evalType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
                     }
+                    // ...and so is the closure itself, as the default is evaluated where it captures (a bound function
+                    // whose first input is its capture box): typed so, the parameter disagreed with the signature, and a
+                    // plain function given for it was called with the box - "function signature mismatch" in wasm
+                    else if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(evalType);
+                             boundFuncType && boundFuncType.getInputs().size() > 0)
+                    {
+                        evalType = mlir_ts::HybridFunctionType::get(
+                            builder.getContext(),
+                            mlir_ts::FunctionType::get(builder.getContext(), boundFuncType.getInputs().drop_front(),
+                                                       boundFuncType.getResults(), boundFuncType.isVarArg()));
+                    }
 
                     // TODO: set type if not provided
                     isOptional = true;
