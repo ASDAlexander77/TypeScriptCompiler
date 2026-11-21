@@ -2063,8 +2063,10 @@ Tests: `00generic_new_without_args.ts` (compile, JIT, rc, own).
 - `typeof this.foo` as a field's type (`bar: typeof this.foo`): "Class member 'foo' can't be found" - while the class
   is first declared its fields are not members yet. The member's type is read from the class's declaration (its
   annotation, or its initializer's type); the declaration is now known in that first pass too (processingDeclaration).
+- `C[0]` of a class member named `0` (`static 0 = 1`, `1 = "one"`): the member, as `C["0"]` is - read as an
+  indexer's key it was "can't resolve property/field/base '.index'".
 
 Still open, looked at: an object literal's accessor reading the `const` it initializes (`const a = { get self() {
 return a; } }`) - its type is circular (TypeScript's `any`); a getter returning itself (`get p() { return this.p; }`).
 
-Tests: `00typeof_this_field.ts` (compile, JIT, rc, own).
+Tests: `00typeof_this_field.ts`, `00numeric_member_keys.ts` (compile, JIT, rc, own).
