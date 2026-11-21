@@ -17,3 +17,4 @@ json.ts none                    # (default library) builds a 100000-character st
 01tuple.ts own                  # frees a block it does not own (native own: the program does not finish either)
 00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)
 00let_without_initializer_owns.ts own # copies an `any` holding an object, which -mm=own refuses at run time by design (native own: the same assert)
+00generator_yield_in_finally_values.ts own # a string or an object returned through a finally that yields, and a yield* of a Generator<T>, are errors under -mm=own yet (TSLANG 153)

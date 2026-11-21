@@ -4812,6 +4812,14 @@ class MLIRGenImpl
         // copy location info, to fix issue with names of anonymous functions
         _yield_expr->pos = yieldExpressionAST->pos;
         _yield_expr->_end = yieldExpressionAST->_end;
+        // where it resumes, return() and throw() of the generator are checked for, as at its own yields (the
+        // delegate is left where it is: its finally blocks do not run). Not under -mm=own yet: there the return and the
+        // throw at the resume point, inside the loop over the delegate - a field of the generator - were taken for a
+        // release of what the loop borrows from it
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            _yield_expr->internalFlags |= yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable;
+        }
 
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,

@@ -1168,8 +1168,9 @@ namespace mlirgen
                                                 TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties)
     {
         // the yields of the body - not of a function inside it - resume checking the mode
+        // (a yield* hands it on to the yields its loop makes, mlirGenYieldStar)
         FilterVisitorSkipFuncsAST<YieldExpression> yieldsVisitor(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
-            if (!yieldExpression->asteriskToken)
+            if (!yieldExpression->asteriskToken || compileOptions.memoryModel != MemoryModelOwn)
             {
                 yieldExpression->internalFlags |= InternalFlags::GeneratorResumable;
             }

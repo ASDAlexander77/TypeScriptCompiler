@@ -2659,6 +2659,25 @@ namespace mlirgen
         NodeArray<Statement> statements;
         if (returnStatementAST->expression)
         {
+            // -mm=own: the value kept for after the finally is a field of the generator, and what it returns is then a
+            // borrow of it - one that owns nothing (a number, a boolean) only, for now
+            // (not return()'s at a resume point, `return this.thrown`: under -mm=own a generator has return() only for a
+            // T that owns nothing)
+            auto isReturnOfResume = returnStatementAST->expression == SyntaxKind::PropertyAccessExpression &&
+                MLIRHelper::getName(returnStatementAST->expression.as<PropertyAccessExpression>()->name) == GENERATOR_THROWN_NAME;
+            if (compileOptions.memoryModel == MemoryModelOwn && !isReturnOfResume)
+            {
+                auto valueType = evaluate(returnStatementAST->expression, genContext);
+                if (valueType && mth.ownsHeapMemory(loc(returnStatementAST), valueType))
+                {
+                    emitError(loc(returnStatementAST))
+                        << "-mm=own: a value of type '" << to_print(valueType)
+                        << "' returned through a finally block that yields is not supported yet: return it after the "
+                           "try statement, or yield it";
+                    return mlir::failure();
+                }
+            }
+
             exit.slot = yieldingFinally.slotPrefix + std::to_string(yieldingFinally.exits.size());
             NodeArray<VariableDeclaration> declarations;
             declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(stows(exit.slot)), undefined, undefined,

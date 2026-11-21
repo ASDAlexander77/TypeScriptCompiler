@@ -471,6 +471,7 @@ tslang_add_test(NAME test-compile-00-generator-typed-yield COMMAND test-runner "
 tslang_add_test(NAME test-compile-00-object-method-arity COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_method_arity.ts")
 tslang_add_test(NAME test-compile-00-generator-next-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_next_value.ts")
 tslang_add_test(NAME test-compile-00-generator-return-throw COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_return_throw.ts")
+tslang_add_test(NAME test-compile-00-generator-yield-in-finally-values COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally_values.ts")
 tslang_add_test(NAME test-compile-00-generator-yield-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally.ts")
 tslang_add_test(NAME test-compile-00-generator-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_finally.ts")
 tslang_add_test(NAME test-compile-00-generator-symbol-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_symbol_iterator.ts")
@@ -1318,6 +1319,8 @@ tslang_add_test(NAME test-jit-own-00-generator-next-value COMMAND test-runner -j
 tslang_add_test(NAME test-jit-00-generator-return-throw COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_return_throw.ts")
 tslang_add_test(NAME test-jit-rc-00-generator-return-throw COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_return_throw.ts")
 tslang_add_test(NAME test-jit-own-00-generator-return-throw COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_return_throw.ts")
+tslang_add_test(NAME test-jit-00-generator-yield-in-finally-values COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally_values.ts")
+tslang_add_test(NAME test-jit-rc-00-generator-yield-in-finally-values COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally_values.ts")
 tslang_add_test(NAME test-jit-00-generator-yield-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally.ts")
 tslang_add_test(NAME test-jit-rc-00-generator-yield-in-finally COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally.ts")
 tslang_add_test(NAME test-jit-own-00-generator-yield-in-finally COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_in_finally.ts")
@@ -4203,6 +4206,15 @@ set_tests_properties(test-compile-diagnostic-location-generator-yield-in-catch
                      PROPERTIES PASS_REGULAR_EXPRESSION "generator_yield_in_catch\\.ts:8:9: error: a yield in a catch block of a generator is not supported"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+
+# -mm=own: a value that owns memory returned through a finally block that yields is an error at the return.
+add_test(NAME test-compile-diagnostic-location-generator-return-through-yielding-finally-own
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generator_return_through_yielding_finally_own.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-return-through-yielding-finally-own.obj")
+set_tests_properties(test-compile-diagnostic-location-generator-return-through-yielding-finally-own
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generator_return_through_yielding_finally_own\\.ts:6:9: error: -mm=own: a value of type 'string' returned through a finally block that yields is not supported yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A generic method in a type literal is an error at the method.
 add_test(NAME test-compile-diagnostic-location-generic-method-type-literal

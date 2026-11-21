@@ -2172,7 +2172,9 @@ Still open, looked at:
   second reference. Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place
   through it - a push too - the local owns what it holds and the parameter is kept, so there the write is as before
   (open). A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
-  rounds (gc, rc, own), clean on the wasm checked heap (own, rc).
+  rounds (gc, rc, own), clean on the wasm checked heap (own, rc). Not when the right side gave the variable another array (`a[1] = (a = [5],
+  9)`): the store goes into the one the left side read; a store of another through another place (`h.a[0] = (h.a =
+  [5], 9)`, or in a call) is not seen, and grows the new one (open).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 
@@ -2242,8 +2244,12 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   a yield resumes in; then the way out taken. A return's value is kept in a variable of the generator; one through
   two such finallys is handed on with the same one. return(v) gives what the finally yields and finishes with v
   (kept in `.thrown`). A repeated resume label is an error in the lowering rather than a resume somewhere else.
-  Under -mm=own an object thrown through such a finally stops with "cannot copy an 'any' that holds an object"
-  (the exception kept is an `any`); numbers and strings work. Also: a `let` of a nested block hiding one around
+  return() while paused in a yield* finishes through the finally too (the delegate is left where it is: its own
+  finally blocks do not run). Under -mm=own, open: an object thrown through such a finally stops with "cannot copy
+  an 'any' that holds an object" (the exception kept is an `any`; numbers and strings work); a value that owns
+  memory returned through it is an error at the return (what is returned would be a borrow of the generator's
+  field); return() in a yield* is as before (and a yield* of a Generator<T> is refused under own already: "a value
+  that borrows a field is used here after it may be released", before these changes too). Also: a `let` of a nested block hiding one around
   it in a generator shared its field of the generator object (the outer `x` read the inner's value after the
   block): a field of its own now. Tests `00generator_yield_in_finally.ts` (results node's), `00generator_finally.ts`.
 

@@ -23,6 +23,14 @@ function* g6(): Generator<number> { try { try { yield 1; return 7; } finally { y
 function* g7(): Generator<number> { let x = 1; try { let x = 2; yield x; return x; } finally { yield x; } }
 function* g8(): Generator<number> { try { yield 1; } finally { yield 2; throw "e8"; } }
 
+function* untyped() { try { yield 1; return 2; } finally { yield 3; } }
+class C {
+    k = 10;
+    *gen() { try { yield this.k; return this.k + 1; } finally { yield this.k + 2; } }
+}
+// a function in the try returns from itself, not through the finally
+function* closure() { try { const f = () => { return 5; }; yield f(); } finally { yield 6; } }
+
 function show(r: IterateResult<number>) {
     return r.done ? (r.value === undefined ? "D" : "D" + r.value) : "" + r.value;
 }
@@ -64,5 +72,17 @@ function main() {
         let b = ""; try { b = show(it.next()); } catch (e) { b = "throw:" + e; }
         assert(a == "2" && b == "throw:t", "throw() in the try");
     }
+    let u = "";
+    for (const v of untyped()) u += v;
+    assert(u == "13", "for...of an untyped generator");
+
+    let c = "";
+    for (const it = new C().gen(); ;) { const r = it.next(); c += (r.done ? "D" : "") + r.value + " "; if (r.done) break; }
+    assert(c == "10 12 D11 ", "a generator method of a class");
+
+    let cl = "";
+    for (const v of closure()) cl += v;
+    assert(cl == "56", "a function in the try");
+
     print("done.");
 }
