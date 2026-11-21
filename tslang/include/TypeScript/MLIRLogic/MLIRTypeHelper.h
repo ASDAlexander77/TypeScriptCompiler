@@ -1370,6 +1370,39 @@ class MLIRTypeHelper
         return false;
     }
 
+    // An object-literal method (`this` first) an interface's function member can call through a thunk that gives
+    // it as many arguments as it takes: it takes fewer parameters than the member (`next()` for `next(value?)`,
+    // the rest ignored, as JavaScript does), or more, each of them optional (`next(value?)` for `next()`). The
+    // parameters both have, and the results, match. A generator's `next` is given as an iterator's this way.
+    bool isArityAdaptableObjectMethod(mlir::Location location, mlir::Type methodType, mlir::Type memberType)
+    {
+        auto srcType = dyn_cast<mlir_ts::FunctionType>(methodType);
+        auto destType = dyn_cast<mlir_ts::FunctionType>(memberType);
+        if (!srcType || !destType || srcType == destType || isObjectFieldFunctionWithoutThis(srcType)
+            || destType.getNumInputs() == 0 || srcType.isVarArg() || destType.isVarArg()
+            || srcType.getNumInputs() == destType.getNumInputs())
+        {
+            return false;
+        }
+
+        auto common = std::min(srcType.getNumInputs(), destType.getNumInputs());
+        for (auto extra : srcType.getInputs().drop_front(common))
+        {
+            auto unionType = dyn_cast<mlir_ts::UnionType>(extra);
+            if (!isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::AnyType, mlir_ts::UnknownType>(extra)
+                && !(unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type t) { return isa<mlir_ts::UndefinedType>(t); })))
+            {
+                return false;
+            }
+        }
+
+        // the method as if it took the member's parameters past the common ones: then it has to match
+        SmallVector<mlir::Type> inputs(srcType.getInputs().take_front(common));
+        inputs.append(destType.getInputs().begin() + common, destType.getInputs().end());
+        auto aligned = mlir_ts::FunctionType::get(context, inputs, srcType.getResults(), false);
+        return TestFunctionTypesMatchWithObjectMethods(location, aligned, destType).result == MatchResultType::Match;
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
@@ -1680,6 +1713,13 @@ class MLIRTypeHelper
                         {
                             return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
                         }
+                    }
+
+                    // a method taking fewer parameters, or more optional ones, is called through a thunk too
+                    // (isArityAdaptableObjectMethod)
+                    if (isArityAdaptableObjectMethod(location, foundField.type, fieldType))
+                    {
+                        return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
                     }
 
                     auto test = isa<mlir_ts::FunctionType>(foundField.type) && isa<mlir_ts::FunctionType>(fieldType)

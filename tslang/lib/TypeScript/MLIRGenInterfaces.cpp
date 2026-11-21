@@ -316,7 +316,8 @@ namespace mlirgen
                     // a field the interface calls through a thunk has the thunk in its slot already
                     auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
                     if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty()
-                        && !mth.isObjectFieldFunctionWithoutThis(fieldInfo.type))
+                        && !mth.isObjectFieldFunctionWithoutThis(fieldInfo.type)
+                        && !mth.isArityAdaptableObjectMethod(location, fieldInfo.type, method.funcType))
                     {
                         methodsNeedingPatch.push_back({methodPtr, vtableOffset});
                     }
@@ -860,7 +861,9 @@ namespace mlirgen
             }
 
             auto storageFieldType = tupleStorageType.getFieldInfo(storageIndex).type;
-            if (storageFieldType == funcType || !mth.isObjectFieldFunctionWithoutThis(storageFieldType))
+            // a method of another arity (isArityAdaptableObjectMethod) is given as many arguments as it takes
+            auto arityAdapted = mth.isArityAdaptableObjectMethod(location, storageFieldType, funcType);
+            if (storageFieldType == funcType || !mth.isObjectFieldFunctionWithoutThis(storageFieldType) && !arityAdapted)
             {
                 continue;
             }
@@ -872,8 +875,9 @@ namespace mlirgen
             }
 
             auto thunkName = concat(fullClassInterfaceVTableFieldName, fieldName.getValue(), "thunk");
+            auto maxArguments = arityAdapted ? mlir::cast<mlir_ts::FunctionType>(storageFieldType).getNumInputs() - 1 : ~0u;
             if (mlir::failed(generateSynthMethodToCallField(location, objectType, fieldName.getValue(), thunkName,
-                                                             funcType, genContext)))
+                                                             funcType, genContext, maxArguments)))
             {
                 return mlir::failure();
             }
