@@ -1449,6 +1449,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
         auto parentTryOp = tsContext->parentTryOp.lookup(tryOp.getOperation());
 
+        // a generator's next(): its switch resumes turns in the middle of the body (see "Body:catch vars")
+        mlir::Block *generatorEntryBlock = nullptr;
+        if (auto funcOp = tryOp->getParentOfType<mlir_ts::FuncOp>())
+        {
+            auto resumes = funcOp->walk([](mlir::Operation *op) {
+                return isa<mlir_ts::SwitchStateOp, mlir_ts::SwitchStateInternalOp, mlir_ts::StateLabelOp>(op)
+                    ? WalkResult::interrupt()
+                    : WalkResult::advance();
+            });
+            if (resumes.wasInterrupted())
+            {
+                generatorEntryBlock = &funcOp.getBody().front();
+            }
+        }
+
         // Where an exception this try does not catch has to go next within the function: the
         // parent's landing pad for a try in the parent's body, the parent's finally for one in
         // the parent's catch clause (whose exceptions the parent does not catch, but whose
@@ -2190,20 +2205,31 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     tsFuncContext->accessorUnwinds.push_back({op, landingBlock});
                 }
             };
-            auto it = bodyBlock;
-            do
+            // every block of the body: a generator's yield splits it at its label, and a throw or a call after a
+            // resumed yield went past the try (only the first block was walked - `continue` in a `do ... while
+            // (false)` ends it): its finally did not run, its catch did not catch
+            for (auto it = bodyBlock;; it = it->getNextNode())
             {
                 it->walk(visitorCallOpContinue);
-                if (it != bodyBlockLast)
+                if (it == bodyBlockLast)
                 {
-                    it = it->getNextNode();
-                    continue;
+                    break;
                 }
-            } while (false);
+            }
         }
 
-        // Body:catch vars
-        rewriter.setInsertionPointToStart(bodyBlock);
+        // Body:catch vars - constants the pads below read. In a generator's next() they go to the function's entry:
+        // a turn resuming inside the body (its switch jumps to the yield's label) does not pass the body's start,
+        // and the pad a throw there unwinds to read a constant that did not dominate it ("operand #0 does not
+        // dominate this use" at the `try`)
+        if (generatorEntryBlock)
+        {
+            rewriter.setInsertionPointToStart(generatorEntryBlock);
+        }
+        else
+        {
+            rewriter.setInsertionPointToStart(bodyBlock);
+        }
         auto catch1 = rttih.hasType()
                           ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());

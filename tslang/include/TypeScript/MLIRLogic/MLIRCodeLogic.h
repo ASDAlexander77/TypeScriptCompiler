@@ -1124,6 +1124,7 @@ class MLIRCustomMethods
         // __switchstate call in the caller's scope - see GenContext
         const_cast<GenContext &>(genContext).allocateVarsOutsideOfOperation = true;
         const_cast<GenContext &>(genContext).currentOperation = switchStateOp;
+        const_cast<GenContext &>(genContext).generatorSwitchOperation = switchStateOp;
 
         return mlir::success();
     }

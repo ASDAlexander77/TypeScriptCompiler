@@ -111,6 +111,7 @@ struct GenContext
         unwindCleanupOp = nullptr;
 
         currentOperation = nullptr;
+        generatorSwitchOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
         allocateScopeOwnedVarsOutsideOfOperation = false;
     }
@@ -200,6 +201,10 @@ struct GenContext
     bool discoverParamsOnly = false;
     bool insertIntoParentScope = false;
     mlir::Operation *currentOperation = nullptr;
+    // a generator's `__switchstate` (armed with currentOperation): a local of its body is a field of the
+    // generator object, and its storage goes in front of the switch, which every resume point follows - not in
+    // front of a `try` it is declared in (currentOperation there), which the resume points inside it don't
+    mlir::Operation *generatorSwitchOperation = nullptr;
     mlir_ts::FuncOp funcOp;
     // funcOp's `return` statements evaluate their value and drop it (an arrow given to a function
     // type that returns nothing, see FunctionPrototypeDOM::discardsReturnValue)

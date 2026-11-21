@@ -565,6 +565,10 @@
 // next(value) of a generator typed Generator<T, TReturn, TNext>: the value, the parameter of its next(), is what
 // the `yield` it resumes evaluates to
 #define GENERATOR_SENT_NAME ".sent"
+// return(v) / throw(e) of a generator typed Generator<...>: how the paused generator resumes - 0 as next() asks,
+// 1 throwing GENERATOR_THROWN_NAME at its yield, 2 returning there (its finally blocks run)
+#define GENERATOR_MODE_NAME ".mode"
+#define GENERATOR_THROWN_NAME ".thrown"
 #define OBJECT_DICTIONARY_CLASS_NAME "ObjectDictionary"
 // the default library's function a spread of a dictionary into a new one calls
 #define OBJECT_DICTIONARY_ASSIGN_NAME "objectDictionaryAssign"

@@ -2177,9 +2177,37 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   whose next() takes no value is a Generator whose next takes one, and the other way round. The library's
   `Generator` declares `next: (value?: TNext)` once a compiler with this is released (a released one without it
   can't give a plain generator as one).
+- return(value) and throw(e) of a generator typed `Generator<T, ...>`, as JavaScript's: paused at a yield, it
+  resumes there finishing (`return`, so its finally blocks run) or throwing e (its own try/catch may catch it, and
+  it goes on to its next yield); one not started yet, or finished, does not run - return(value) gives `{ value,
+  done: true }`, throw(e) throws e. The generator object holds a mode its yields check where they resume
+  (addGeneratorResumeMethods, mlirGenGeneratorResumeChecks). Under -mm=own return() only for a T that owns
+  nothing (a number, a boolean): its result would hold the value the caller lends. The library's `Generator`
+  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither) once a compiler with
+  them is released. Under -mm=own a call through an optional one is read as moving the generator, so there a
+  program declaring them required calls them.
+- Found on the way, generators and `try` (all memory models):
+  - A throw or a call after a resumed yield inside a `try` went past it - its catch did not catch, its finally did
+    not run (`try { yield 1; throw "x"; } catch (e) {...}`: "uncaught exception"). A yield splits the body at its
+    label, and only the body's first block got unwind edges (TryOpLowering: `continue` in a `do ... while
+    (false)`).
+  - A throw after a yield in a loop in a `try` did not compile ("operand #0 does not dominate this use" at the
+    `try`): the catch-type constants the landing pad reads were made at the start of the body, which a resumed
+    turn does not pass - in a generator they go to the function's entry.
+  - A `let` in a `try` read after a yield did not compile, the same error: its storage was put in front of the
+    try, not of the generator's switch (GenContext::generatorSwitchOperation).
+  - A catch variable of a generator was a field of the generator object, and its use crashed: the catch handler
+    copies the exception into a slot of the frame. It is a local of the frame now, living in one turn.
+  - A yield in a catch block is an error at the yield: resuming there is resuming inside the exception handler
+    (it crashed in LLVM's instruction selection; before the fixes above the catch did not catch).
 
 Still open, looked at:
-- return(v) / throw(e) of a generator.
+- -mm=own: an object literal's field of `<any>undefined` or `<any>null` (`{ t: <any>undefined, n: 1 }`) is
+  released twice: OwnershipInferencePass does not count the store of its box into the object as a move (a box of
+  `<any>5` it does), so the release at the end of the function stays and the object's release frees the box again.
+  wasm's heap caught it ("free of ...: not a block the heap gave out"), and Linux under -mm=own; Windows did not.
+  The generator object's `.thrown` holds `<any>0` for that reason (its first version was `<any>undefined`).
+- A yield in a finally block is skipped (`try { yield 1; } finally { yield 2; }` gives 1 and not 2), as before.
 - -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
   is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
   keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a
@@ -2194,5 +2222,5 @@ Still open, looked at:
   `[Symbol.asyncIterator]` of an async generator.
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
-diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`
-(compile, JIT, rc, own).
+diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,
+`00generator_return_throw.ts` (compile, JIT, rc, own), diagnostic-location `generator_yield_in_catch.ts`.

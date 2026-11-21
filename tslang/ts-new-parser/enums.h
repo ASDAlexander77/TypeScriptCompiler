@@ -584,7 +584,13 @@ enum class InternalFlags : number
     HoistedLexical = 1 << 19,
     // `return v` of a generator typed Generator<T, TReturn> whose TReturn is not T: next() gives `{ value: T }`, and
     // v has no place in it (it was cast to T without a word: "end" became 0)
-    GeneratorReturnOfOtherType = 1 << 20
+    GeneratorReturnOfOtherType = 1 << 20,
+    // a `yield` of a generator typed Generator<...>, which has return() and throw(): where it resumes, the
+    // generator may be asked to finish or to throw there instead
+    GeneratorResumable = 1 << 21,
+    // a `yield` in a `catch` clause of a generator: resuming there is resuming inside the clause's exception
+    // handler, which can't be entered again (Windows: a catch funclet; LLVM's instruction selection crashed)
+    YieldInCatch = 1 << 22
 };
 
 ENUM_OPS(InternalFlags)

@@ -450,6 +450,14 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        if (!!(yieldExpressionAST->internalFlags & InternalFlags::YieldInCatch))
+        {
+            emitError(location, "a yield in a catch block of a generator is not supported: the generator can't resume "
+                                "inside the block's exception handler; keep what the catch needs in a variable and "
+                                "yield after the try statement");
+            return mlir::failure();
+        }
+
         if (yieldExpressionAST->asteriskToken)
         {
             // it gives back nothing yet: it can only stand as a statement of its own
@@ -512,6 +520,13 @@ namespace mlirgen
         std::stringstream label;
         label << GENERATOR_STATELABELPREFIX << state;
         builder.create<mlir_ts::StateLabelOp>(location, label.str());
+
+        // resumed by return() or throw() of a generator typed Generator<...>: it finishes or throws here
+        if (!!(yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable)
+            && evaluateProperty(nf.createToken(SyntaxKind::ThisKeyword), GENERATOR_MODE_NAME, genContext))
+        {
+            EXIT_IF_FAILED(mlirGenGeneratorResumeChecks(location, genContext));
+        }
 
         // The value passed to next(value) - next()'s parameter, which a generator typed Generator<T, TReturn,
         // TNext> has - or undefined. It is read after the label: the turn that resumes here is the one that uses it.
