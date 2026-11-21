@@ -13,7 +13,7 @@ function make(m: string, i: number) {
 }
 
 function sum(d: { [key: string]: number }) {
-    let total = 0;
+    let total: number = 0;
     for (const k in d) {
         total += d[k] ?? 0;
     }
@@ -59,7 +59,9 @@ function main() {
 
     const p = o["p9"];
     assert(p !== undefined && p.n == "w99");
-    assert(Object.keys(o).length == 10);
+    // the last delete, at i = 98, is of p2
+    assert(Object.keys(o).length == 9);
+    assert(!("p2" in o));
 
     print("done.");
 }
