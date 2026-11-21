@@ -1723,6 +1723,29 @@ namespace mlirgen
                         return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
                     }
                 }
+
+                // `C[0]` of `static 0 = 1`: a number naming a member is that member's name, as `C["0"]` is (it was
+                // read as an indexer's key: "can't resolve property/field/base '.index'")
+                std::string numberName;
+                if (auto intAttr = dyn_cast<mlir::IntegerAttr>(attr))
+                {
+                    numberName = std::to_string(intAttr.getValue().getSExtValue());
+                }
+                else if (auto floatAttr = dyn_cast<mlir::FloatAttr>(attr);
+                         floatAttr && floatAttr.getValueAsDouble() == (double)(int64_t)floatAttr.getValueAsDouble())
+                {
+                    numberName = std::to_string((int64_t)floatAttr.getValueAsDouble());
+                }
+
+                if (!numberName.empty())
+                {
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    if (classInfo && classHasMember(classInfo, numberName) && !classHasAnyIndexer(classInfo))
+                    {
+                        return mlirGenPropertyAccessExpression(location, expression, builder.getStringAttr(numberName),
+                                                               isConditionalAccess, genContext);
+                    }
+                }
             }
 
             // a key that is one of the class's member names, known only at run time (`keyof C`): a switch over them,

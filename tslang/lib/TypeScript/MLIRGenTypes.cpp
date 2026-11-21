@@ -1726,6 +1726,44 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {
         auto exprName = typeQueryAST->exprName;
+
+        // `typeof this.foo` as a field's type, while the class is being declared: its fields are not members yet
+        // ("Class member 'foo' can't be found"). The member's own type, as its declaration gives it.
+        if (exprName == SyntaxKind::QualifiedName && genContext.thisType && isa<mlir_ts::ClassType>(genContext.thisType))
+        {
+            auto qualifiedName = exprName.as<QualifiedName>();
+            auto left = qualifiedName->left;
+            auto isThis = left == SyntaxKind::ThisKeyword
+                || (left == SyntaxKind::Identifier && MLIRHelper::getName(left.as<Identifier>()) == THIS_NAME);
+            auto classInfo = isThis
+                ? getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.thisType).getName().getValue())
+                : ClassInfo::TypePtr();
+            if (classInfo && classInfo->processingDeclaration)
+            {
+                auto memberName = MLIRHelper::getName(qualifiedName->right);
+                for (auto member : classInfo->processingDeclaration->members)
+                {
+                    if (member != SyntaxKind::PropertyDeclaration
+                        || MLIRHelper::getName(member.as<PropertyDeclaration>()->name) != memberName)
+                    {
+                        continue;
+                    }
+
+                    auto propertyDeclaration = member.as<PropertyDeclaration>();
+                    if (propertyDeclaration->type)
+                    {
+                        return getType(propertyDeclaration->type, genContext);
+                    }
+
+                    if (propertyDeclaration->initializer)
+                    {
+                        auto type = evaluate(propertyDeclaration->initializer, genContext);
+                        return type ? mth.wideStorageType(type) : type;
+                    }
+                }
+            }
+        }
+
         if (exprName == SyntaxKind::QualifiedName)
         {
             // TODO: it seems namespace access, can u optimize it somehow?
