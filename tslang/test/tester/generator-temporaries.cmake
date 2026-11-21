@@ -1,6 +1,7 @@
 # What a generator body makes and what it yields is given back (00generator_temporaries.ts). No
 # run shows which references leak, so the IR is read, after OwnedReturnConsumptionPass
-# (--emit=mlir). Under rc:
+# (--emit=mlir). The releases are counted in front of the yield (or of the `if` holding one), not
+# read as the ops right before it: rc gives a temporary back right after its last use. Under rc:
 #  - lengths:     `yield ("a" + i).length` releases the number's string and the concatenation
 #                 before the yield;
 #  - strings:     `yield "s" + i` retains the record before the yield and then releases both
@@ -46,6 +47,30 @@ function(count pattern body outVar)
     set(${outVar} ${n} PARENT_SCOPE)
 endfunction()
 
+# the text of `body` in front of the first `marker`, and the rest after it
+function(split_at marker body beforeVar afterVar)
+    string(FIND "${body}" "${marker}" at)
+    if(at EQUAL -1)
+        message(FATAL_ERROR "no `${marker}` in:\n${body}")
+    endif()
+    string(SUBSTRING "${body}" 0 ${at} before)
+    string(LENGTH "${marker}" length)
+    math(EXPR at "${at} + ${length}")
+    string(SUBSTRING "${body}" ${at} -1 after)
+    set(${beforeVar} "${before}" PARENT_SCOPE)
+    set(${afterVar} "${after}" PARENT_SCOPE)
+endfunction()
+
+# the text of `body` in front of the last `marker` there is in `head`
+function(before_last marker head outVar)
+    string(FIND "${head}" "${marker}" at REVERSE)
+    if(at EQUAL -1)
+        message(FATAL_ERROR "no `${marker}` in:\n${head}")
+    endif()
+    string(SUBSTRING "${head}" 0 ${at} before)
+    set(${outVar} "${before}" PARENT_SCOPE)
+endfunction()
+
 # (CMake's regex has no {n})
 set(release "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.](string|class<@Item[^)]*)[)] -> [(][)][\r\n]+ *")
 set(recordRetain "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]tuple<[^\r\n]*[\r\n]+ *")
@@ -54,29 +79,45 @@ set(stringRelease "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]string[)]")
 
 emit(rc out)
 
+set(yieldOp "\"ts.YieldReturnVal\"")
+
 func_body("${out}" "\".f_lengths.." body)
-if(NOT body MATCHES "${release}${release}${yield}")
+split_at("${yieldOp}" "${body}" head tail)
+count("${release}" "${head}" n)
+if(n LESS 2)
     message(FATAL_ERROR "`lengths` does not release its two temporaries before the yield:\n${body}")
 endif()
 
 func_body("${out}" "\".f_strings.." body)
-if(NOT body MATCHES "${recordRetain}${release}${release}${yield}")
+split_at("${yieldOp}" "${body}" head tail)
+count("${release}" "${head}" n)
+count("${recordRetain}" "${head}" retains)
+if(n LESS 2 OR retains LESS 1)
     message(FATAL_ERROR "`strings` does not retain its record and release both strings before the yield:\n${body}")
 endif()
 
 func_body("${out}" "\".f_items.." body)
-if(NOT body MATCHES "${recordRetain}${release}${yield}")
+split_at("${yieldOp}" "${body}" head tail)
+count("${release}" "${head}" n)
+count("${recordRetain}" "${head}" retains)
+if(n LESS 1 OR retains LESS 1)
     message(FATAL_ERROR "`items` does not retain its record and release the instance before the yield:\n${body}")
 endif()
 
 func_body("${out}" "\".f_branchYield.." body)
-if(NOT body MATCHES "${release}${release}\"ts[.]If\"")
+split_at("${yieldOp}" "${body}" head tail)
+before_last("\"ts.If\"" "${head}" beforeIf)
+count("${release}" "${beforeIf}" n)
+if(n LESS 2)
     message(FATAL_ERROR "`branchYield` does not release its temporaries before the `if` holding the yield:\n${body}")
 endif()
 
 func_body("${out}" "\".f_twoSegments.." body)
-count("${release}${release}${yield}" "${body}" n)
-if(NOT n EQUAL 2)
+split_at("${yieldOp}" "${body}" first rest)
+split_at("${yieldOp}" "${rest}" second tail)
+count("${release}" "${first}" n1)
+count("${release}" "${second}" n2)
+if(n1 LESS 2 OR n2 LESS 2)
     message(FATAL_ERROR "`twoSegments` does not release two temporaries before each yield:\n${body}")
 endif()
 

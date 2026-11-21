@@ -2224,3 +2224,22 @@ Still open, looked at:
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
 diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,
 `00generator_return_throw.ts` (compile, JIT, rc, own), diagnostic-location `generator_yield_in_catch.ts`.
+
+154 (compile time of a function of many `any` operations, 2026-11-21). The tsc sweep's
+binaryArithmeticControlFlowGraphNotTooLarge - 1300 lines of `any` arithmetic in one function - timed out now and
+then: not flaky, a steady 45 s (gc) against the sweep's 60 s with 8 jobs, and ~27 min under rc.
+- gc (#976): a discovery pass made a generic instance again for every call (`___any_key<any>` for each `x[k]`), a
+  module walk after each `any` access, OwnedReturnConsumptionPass and UnwindReleasePass walking the rest of a
+  block, or a handler, once for each temporary: 45 s -> 4.7 s.
+- rc: OwnedReturnConsumptionPass gave a discarded temporary back where its stretch of the block ends, so every
+  temporary was live across every call after it, and each call that may throw got a cleanup pad giving all of
+  them back - quadratic code (UnwindReleasePass ~8-11 min, LLVM's optimizer ~14 min). Now a temporary is given
+  back right after the op of its block that uses it last (lastUseInBlock: its users' results unless they come with
+  a reference of their own, views followed even then, what a conditional hands on, loads of a local it is stored
+  into; a use that can't be followed keeps the old place). Not a named `const` (a local: `Shared.count`, a
+  WeakRef see it let go of) nor a view (its release is the block it shows: an interface of an object literal's
+  copy freed the literal before its next use). UnwindReleasePass skips a value whose release dominates the call.
+  ~27 min -> 10.6 s; the cleanup releases grow linearly. rc only: own's passes read where the releases are.
+
+Verified: ctest (8781), the wasm32 rc tester suite debug and release (763 each), mm_fuzz run (551 programs) and
+leaks (80): no failures.
