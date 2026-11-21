@@ -2106,3 +2106,47 @@ What remains of the tsc-clean failures is mostly the default library's (`Object.
 object literal, properties added to a function, a `never` tslang computes, declared-function overloads).
 
 Tests: diagnostic-location `generic_construct_signature_type_literal.ts`.
+
+152 (keys known only at run time, 2026-11-21; USER DECISIONS: a string index signature is a dictionary, an absent key
+reads `T | undefined`, under -mm=own the dictionary owns its values). Fixed:
+- `{ [key: string]: T }`, a string index signature and nothing else, is the default library's `ObjectDictionary<T>`
+  (`@dictionary`, TypeScriptCompilerDefaultLib #114): entries by key known at run time, in the order they were added.
+  Before, it was a record of `get`/`set` functions nothing could fill: `const d: { [k: string]: number } = { a: 1 }`
+  was "field "get" can't be found in tuple '{a:s32}'".
+- `d[k]`, `d["name"]` and `d.name` of a dictionary, outside its own class, are its entries - never its members, so
+  `d.get` and `d.size` are entries too - read as `T | undefined` (undefined for a key it does not hold) and written as
+  T. `k in d`, `for...in`, `Object.keys(d)` and `delete d[k]` / `delete d.name` go by its entries.
+- An object literal with a key known only at run time (`{ [m]: i }` with `m: string`) makes a dictionary of its values'
+  type, and so does one given where a dictionary is wanted (`const d: { [k: string]: T } = { a: 1 }`, an argument, a
+  return). A spread into one copies a record's fields, or a dictionary's entries (the library's
+  `objectDictionaryAssign`). Before: "a computed property name must be a constant (a literal, or a `const` holding
+  one), or a well-known symbol". Whether a key is a constant is decided as before: its value's constant, or its
+  literal type's (an imported `const`, `"a" + "b"` folded).
+- A dictionary type given from elsewhere (a `return`'s receiver, a result type found in an earlier pass) is
+  instantiated again where the literal is made: it may have been instantiated only in an evaluation, and then its
+  members were generated nowhere ("'ObjectDictionary<si32>.constructor' does not reference a valid function").
+- -mm=own: a parameter moved on paths that exclude each other - `if (f) a.push(v); else a[0] = v;`, a move then
+  `return` and another move after it, a `T | undefined` narrowed once and moved on two paths - was "'v' is used here
+  after its value was moved" (only one move of a parameter was allowed). Each move empties the parameter, so the
+  release at the exit, kept for a path that moves nothing, frees nothing on the others; one the function keeps on
+  every path is reached at each exit only through one of the moves (movesOnExclusivePaths). The dictionary's `set`
+  needs it. Leak probes, flat at 33 MB: 20M calls moving a parameter on exclusive paths (own), 3M writes,
+  overwrites and deletes of a dictionary of objects (rc and own).
+
+- Found on the way: a module importing another and using a Map (`import "./a"; new Map<string, boolean>()`)
+  failed with "'ts.Func' op symbol declaration cannot have public visibility": the keys adapter of the RangeError
+  the library's Map throws was made while the imported file was read as declarations, a declaration, then made
+  public. It is made in full there now, as a specialization is (makeAnyKeysAdapter).
+
+Still open, looked at:
+- An interface with only a string index signature (`interface Dictionary<T> { [x: string]: T }`) is still an
+  interface: the dictionary is for the type literal (and so for what is written with it).
+- -mm=own: a local moved inside two `if`s one after the other (`if (a) keep(k); if (b) keep(k);`) is "moved here on
+  some paths only" - so the dictionary copies its keys rather than taking the caller's; a spread of a record into a
+  dictionary is refused (its fields would have two owners).
+- A spread of a dictionary into one of another value type is an error for now: inferring `f<T, S>(a: Box<T>, b:
+  Box<S>)` from `f(Box<number>, Box<string>)` gives T = number | string and S = any, and the call then reads the
+  second argument with the wrong layout (a crash) - a generic-inference bug of its own.
+- `a[a.length] = x` on an array does not grow it (gc writes past the end; rc and own crash).
+
+Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).

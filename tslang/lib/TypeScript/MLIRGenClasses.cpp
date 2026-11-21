@@ -458,6 +458,11 @@ namespace mlirgen
                     newClassPtr->isExport = true;
                 }
 
+                if (name == DICTIONARY_DECORATOR)
+                {
+                    newClassPtr->isDictionary = true;
+                }
+
                 if (name == DLL_IMPORT)
                 {
                     newClassPtr->isDeclaration = true;

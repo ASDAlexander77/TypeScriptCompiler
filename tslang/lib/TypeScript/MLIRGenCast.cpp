@@ -413,6 +413,12 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning)
     {
+        // `const d: { [key: string]: number } = { a: 1 }`: a dictionary holding the literal's fields
+        if (dictionaryClassInfoOf(classType, genContext))
+        {
+            return castTupleToDictionary(location, value, srcTupleType, classType, genContext);
+        }
+
         SmallVector<mlir::Value> values;
         
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
@@ -5000,6 +5006,11 @@ namespace mlirgen
         auto adapterName = symbolRefOp.getIdentifierAttr().getValue();
         if (auto adapterOp = theModule.lookupSymbol(adapterName))
         {
+            if (auto adapterFunc = dyn_cast<mlir_ts::FuncOp>(adapterOp); adapterFunc && adapterFunc.isDeclaration())
+            {
+                return;
+            }
+
             mlir::SymbolTable::setSymbolVisibility(adapterOp, mlir::SymbolTable::Visibility::Public);
             // its call in `__any_invoke` returns what it returns (OwnedReturnConsumptionPass)
             adapterOp->setAttr(ANY_CALL_ADAPTER_ATTR_NAME, builder.getUnitAttr());
@@ -5630,6 +5641,11 @@ namespace mlirgen
         GenContext adapterGenContext(genContext);
         adapterGenContext.postponedMessages = &postponedMessages;
         mlir::OpBuilder::InsertionGuard insertionGuard(builder);
+        // made in full even while an imported file is only being declared (its library's code boxed the type),
+        // as a specialization is: as a declaration it was made public, "'ts.Func' op symbol declaration cannot
+        // have public visibility", which failed every module importing another that made one
+        MLIRValueGuard<bool> declarationModeGuard(declarationMode);
+        declarationMode = false;
 
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "_" + name;

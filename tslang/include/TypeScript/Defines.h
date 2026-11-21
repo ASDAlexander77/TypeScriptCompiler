@@ -558,6 +558,13 @@
 // a Shared<T> handle (counted): an object, whose block has one owner, goes through Shared<T>.
 // The other memory models ignore it.
 #define SHARED_ELEMENTS_DECORATOR "sharedElements"
+// `@dictionary class ObjectDictionary<T>`: the value of a string index signature (`{ [key: string]: T }`,
+// `{ [k]: v }` with a key known only at run time). Outside the class, `d.name` and `d["name"]` are its
+// entries, never its members (ClassInfo::isDictionary).
+#define DICTIONARY_DECORATOR "dictionary"
+#define OBJECT_DICTIONARY_CLASS_NAME "ObjectDictionary"
+// the default library's function a spread of a dictionary into a new one calls
+#define OBJECT_DICTIONARY_ASSIGN_NAME "objectDictionaryAssign"
 // On a `ts.ThisVirtualSymbolRef` (a method's) or a `ts.VirtualSymbolRef` (an accessor's): the
 // receiver's class is @final, but defined in another module, so the call still goes through the
 // vtable. The slot holds the method the reference names, which

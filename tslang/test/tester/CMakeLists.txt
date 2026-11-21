@@ -464,6 +464,8 @@ tslang_add_test(NAME test-compile-00-this-void-param COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-global-this-members COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_this_members.ts")
 tslang_add_test(NAME test-compile-00-interface-numeric-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_numeric_return.ts")
 tslang_add_test(NAME test-compile-00-interface-method-adapters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_adapters.ts")
+tslang_add_test(NAME test-compile-00-own-param-exclusive-moves COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_param_exclusive_moves.ts")
+tslang_add_test(NAME test-compile-00-object-dictionary COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
 tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1286,6 +1288,12 @@ tslang_add_test(NAME test-jit-own-00-interface-numeric-return COMMAND test-runne
 tslang_add_test(NAME test-jit-00-interface-method-adapters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_adapters.ts")
 tslang_add_test(NAME test-jit-rc-00-interface-method-adapters COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_adapters.ts")
 tslang_add_test(NAME test-jit-own-00-interface-method-adapters COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_method_adapters.ts")
+tslang_add_test(NAME test-jit-00-own-param-exclusive-moves COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_param_exclusive_moves.ts")
+tslang_add_test(NAME test-jit-rc-00-own-param-exclusive-moves COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_param_exclusive_moves.ts")
+tslang_add_test(NAME test-jit-own-00-own-param-exclusive-moves COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_param_exclusive_moves.ts")
+tslang_add_test(NAME test-jit-00-object-dictionary COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
+tslang_add_test(NAME test-jit-rc-00-object-dictionary COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
+tslang_add_test(NAME test-jit-own-00-object-dictionary COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_dictionary.ts")
 tslang_add_test(NAME test-jit-00-constructor-type-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-rc-00-constructor-type-value COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-jit-own-00-constructor-type-value COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
@@ -6811,6 +6819,10 @@ set(import_specialization_dir "${PROJECT_SOURCE_DIR}/test/tester/import-speciali
 # (`class Box<!ts.class<Tree, ...>>`), and before the generic it is made from ("generic type Box
 # can't be found"). On Linux the name had an `@` (`@Tree`), which ld reads as a symbol version.
 tslang_add_import_tests(import-specialization "${import_specialization_dir}" import_specialization box_module)
+
+# A Map in a module importing another: the keys adapter made while the import was read as declarations was
+# a public declaration, and the module failed to verify.
+tslang_add_import_tests(import-map "${PROJECT_SOURCE_DIR}/test/tester/import-map" import_map map_module)
 
 # The same for a shared library: imported directly and through a source module - see
 # shared-import-reimport.cmake.

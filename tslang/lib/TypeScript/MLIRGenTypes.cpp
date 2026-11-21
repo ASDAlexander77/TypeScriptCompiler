@@ -2780,6 +2780,11 @@ namespace mlirgen
                 return {builder.getStringAttr(wellKnown), mlir::success()};
             }
 
+            if (auto known = computedNameConstants.lookup(name.as<ComputedPropertyName>().operator->()))
+            {
+                return {known, mlir::success()};
+            }
+
             MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
             if (result.failed_or_no_value())
@@ -3166,6 +3171,25 @@ namespace mlirgen
         if (mlir::failed(result))
         {
             return mlir::Type();
+        }
+
+        // `{ [key: string]: T }`, a string index signature and nothing else: a dictionary of T, its entries
+        // known at run time (ObjectDictionary in the default library). Without the library, the old
+        // get/set record.
+        if (typeLiteral->members.size() == 1 && typeLiteral->members.front() == SyntaxKind::IndexSignature &&
+            types.size() == 2)
+        {
+            // the get function, (this, key) => value; `{ []; }` and `{ [k: any]; }` have no key or no value type
+            auto getType = dyn_cast_or_null<mlir_ts::FunctionType>(types.front().type);
+            auto keyType = getType && getType.getNumInputs() == 2 ? getType.getInput(1) : mlir::Type();
+            auto valueType = getType && getType.getNumResults() == 1 ? getType.getResult(0) : mlir::Type();
+            if (keyType && isa<mlir_ts::StringType>(keyType) && valueType)
+            {
+                if (auto dictionaryType = getObjectDictionaryType(loc(typeLiteral), valueType, genContext))
+                {
+                    return dictionaryType;
+                }
+            }
         }
 
         // `{ (n: number): string }`, one call signature and nothing else, is the function type

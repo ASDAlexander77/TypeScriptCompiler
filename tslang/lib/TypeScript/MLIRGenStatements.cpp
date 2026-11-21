@@ -1643,19 +1643,31 @@ namespace mlirgen
         // An `any` holds a value whose keys are known only at run time: its keys adapter lists them
         // (ANY_KEYS_OP_KEYS), and the loop is `for (key of <those keys>) body`. The keys are read once, before the
         // first turn, as JavaScript reads them; the body reads `x[key]` through the adapter too.
-        if (iteratedType && (isa<mlir_ts::AnyType>(iteratedType) || isa<mlir_ts::UnknownType>(iteratedType)))
+        // A dictionary's keys are its entries', listed by it (`keys`), in the order they were added.
+        auto dictionary = iteratedType && dictionaryClassInfoOf(iteratedType, genContext);
+        if (iteratedType && (isa<mlir_ts::AnyType>(iteratedType) || isa<mlir_ts::UnknownType>(iteratedType) || dictionary))
         {
             auto iteratedLocation = loc(forInStatementAST->expression);
             auto iterated = mlirGen(forInStatementAST->expression, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(iterated)
             auto iteratedValue = V(iterated);
-            if (!isa<mlir_ts::AnyType>(iteratedValue.getType()))
+            ValueOrLogicalResult keys(mlir::failure());
+            if (dictionary)
             {
-                CAST(iteratedValue, iteratedLocation, getAnyType(), iteratedValue, genContext);
+                SmallVector<mlir::Value, 4> noOperands;
+                keys = mlirGenDictionaryCall(iteratedLocation, iteratedValue, "keys", noOperands, genContext);
+            }
+            else
+            {
+                if (!isa<mlir_ts::AnyType>(iteratedValue.getType()))
+                {
+                    CAST(iteratedValue, iteratedLocation, getAnyType(), iteratedValue, genContext);
+                }
+
+                auto noKey = builder.create<mlir_ts::UndefOp>(iteratedLocation, getUndefinedType());
+                keys = mlirGenAnyKey(iteratedLocation, iteratedValue, noKey, ANY_KEYS_OP_KEYS, genContext);
             }
 
-            auto noKey = builder.create<mlir_ts::UndefOp>(iteratedLocation, getUndefinedType());
-            auto keys = mlirGenAnyKey(iteratedLocation, iteratedValue, noKey, ANY_KEYS_OP_KEYS, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(keys)
 
             auto keysName = StringRef(".for_in_keys");

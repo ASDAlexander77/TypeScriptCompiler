@@ -96,6 +96,12 @@ namespace own_inference
         auto *taker = takerOf(receiver.retain, receiver.value);
         if (receivers.size() > 1)
         {
+            // moved on paths that exclude each other (`if (f) a.push(v); else a[0] = v;`)
+            if (movesOnExclusivePaths(slot, receivers, isReleasedParam(slot), toErase))
+            {
+                return;
+            }
+
             auto &second = receivers[1];
             auto *secondTaker = takerOf(second.retain, second.value);
             reportUseAfterMove(secondTaker ? secondTaker : second.retain, taker ? taker : receiver.retain, name);
@@ -139,6 +145,133 @@ namespace own_inference
         {
             toErase.insert(receiver.retain);
         }
+    }
+
+    // A parameter the body releases on the paths that do not move it (released): each move empties
+    // its slot after its taker, so the releases at the exits free nothing on the paths that moved
+    // it. One the function keeps on every path: each exit is reached only through one of the moves.
+    // No read of the slot may follow a move, and no move may meet itself again around a loop.
+    bool OwnershipInferencePass::movesOnExclusivePaths(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, bool released,
+                                                       llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto assignments = slotAssignments(slot);
+        llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
+        if (auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            kills.push_back(varOp);
+        }
+
+        // the taker of a retain: what takerOf says, or - for a read unwrapped once (`value` of
+        // `T | undefined`, narrowed) and moved on each path - the next op that uses what was retained
+        auto takerAfter = [&](const SlotReceiver &receiver) -> mlir::Operation * {
+            if (auto *taker = takerOf(receiver.retain, receiver.value))
+            {
+                return taker;
+            }
+
+            if (!mlir::isa<mlir_ts::RetainOp>(receiver.retain))
+            {
+                return nullptr;
+            }
+
+            auto retained = receiver.retain->getOperand(0);
+            for (auto *op = receiver.retain->getNextNode(); op; op = op->getNextNode())
+            {
+                if (!mlir::isa<mlir_ts::RetainOp>(op) && llvm::is_contained(op->getOperands(), retained))
+                {
+                    return op;
+                }
+            }
+
+            return nullptr;
+        };
+
+        // what the read returned reaches only the retains and the takers, unwrapped on the way
+        std::function<bool(mlir::Value)> onlyMoved = [&](mlir::Value value) {
+            return llvm::all_of(value.getUsers(), [&](mlir::Operation *user) {
+                if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+                {
+                    return true;
+                }
+
+                if (mlir::isa<mlir_ts::ValueOp, mlir_ts::CastOp>(user))
+                {
+                    return onlyMoved(user->getResult(0));
+                }
+
+                return llvm::any_of(receivers, [&](const SlotReceiver &other) {
+                    return user == other.retain || user == takerAfter(other);
+                });
+            });
+        };
+
+        llvm::SmallVector<mlir::Operation *> takers;
+        for (auto &receiver : receivers)
+        {
+            auto *taker = takerAfter(receiver);
+            auto load = receiver.load;
+            if (!taker || !orderedInBody(load, taker) || reachableAfter(taker, load, kills))
+            {
+                return false;
+            }
+
+            if (!onlyMoved(receiver.value))
+            {
+                return false;
+            }
+
+            for (auto *use : slot.getUsers())
+            {
+                if (!mlir::isa<mlir_ts::ReleaseSlotOp>(use) && use != load.getOperation() &&
+                    reachableAfter(taker, use, kills))
+                {
+                    return false;
+                }
+            }
+
+            takers.push_back(taker);
+        }
+
+        // the moves exclude each other: none is reached from another
+        for (auto *from : takers)
+        {
+            for (auto *to : takers)
+            {
+                if (from != to && reachableAfter(from, to, kills))
+                {
+                    return false;
+                }
+            }
+        }
+
+        if (!released)
+        {
+            auto *definition = slot.getDefiningOp();
+            auto everyPath = definition != nullptr;
+            getFunction().walk([&](mlir_ts::ReturnInternalOp returnOp) {
+                everyPath = everyPath && !reachableAfter(definition, returnOp, takers);
+            });
+            if (!everyPath)
+            {
+                return false;
+            }
+        }
+
+        for (auto [receiver, taker] : llvm::zip(receivers, takers))
+        {
+            if (released)
+            {
+                slotClears.push_back({slot, taker});
+            }
+
+            markBoundMethodsTaking(taker, receiver.value);
+            if (!isCall(receiver.retain))
+            {
+                toErase.insert(receiver.retain);
+            }
+        }
+
+        return true;
     }
 
     bool OwnershipInferencePass::isReadOutOfException(mlir::Value value)
