@@ -1157,6 +1157,186 @@ namespace mlirgen
         return std::get<0>(res);
     }
 
+    // return(value: T) and throw(e) of a generator typed Generator<T, ...>, as JavaScript's: a generator paused at a
+    // yield resumes there - through next() - finishing (`return`, so its finally blocks run) or throwing e (which
+    // its own try/catch may catch, and then it goes on to its next yield); one not started yet, or finished, does
+    // not run: return(value) gives `{ value, done: true }`, throw(e) throws e. Either finishes the generator
+    // (step -1), unless its body caught the throw. GENERATOR_MODE_NAME tells the yield how to resume
+    // (mlirGenGeneratorResumeChecks). A finally block that yields again is not followed: return() still finishes.
+    void MLIRGenImpl::addGeneratorResumeMethods(NodeFactory &nf, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties)
+    {
+        // the yields of the body - not of a function inside it - resume checking the mode
+        FilterVisitorSkipFuncsAST<YieldExpression> yieldsVisitor(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
+            if (!yieldExpression->asteriskToken)
+            {
+                yieldExpression->internalFlags |= InternalFlags::GeneratorResumable;
+            }
+        });
+
+        if (functionLikeDeclarationBaseAST->body)
+        {
+            yieldsVisitor.visit(functionLikeDeclarationBaseAST->body);
+        }
+
+        auto thisProp = [&](const char *name) {
+            return nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(stows(std::string(name))));
+        };
+        auto number = [&](const char *value) { return nf.createNumericLiteral(stows(std::string(value)), TokenFlags::None); };
+        auto assign = [&](Expression target, Expression value) {
+            return nf.createExpressionStatement(
+                nf.createBinaryExpression(target, nf.createToken(SyntaxKind::EqualsToken), value));
+        };
+        auto finished = [&]() {
+            return assign(thisProp(GENERATOR_STEP),
+                          nf.createPrefixUnaryExpression(SyntaxKind::MinusToken, number("1")));
+        };
+        auto paused = [&]() {
+            return nf.createBinaryExpression(thisProp(GENERATOR_STEP), nf.createToken(SyntaxKind::GreaterThanToken),
+                                             number("0"));
+        };
+        auto resultType = [&]() {
+            NodeArray<TypeElement> members;
+            members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("value")), undefined, yieldType));
+            members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
+                                                         nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
+            return nf.createTypeLiteralNode(members);
+        };
+        auto anyType = [&]() { return nf.createToken(SyntaxKind::AnyKeyword).as<TypeNode>(); };
+        auto callNext = [&]() {
+            return nf.createCallExpression(thisProp(ITERATOR_NEXT), undefined, NodeArray<Expression>());
+        };
+
+        // the mode, and what throw() was given
+        generatorObjectProperties.push_back(
+            nf.createPropertyAssignment(nf.createIdentifier(S(GENERATOR_MODE_NAME)), number("0")));
+        generatorObjectProperties.push_back(nf.createPropertyAssignment(
+            nf.createIdentifier(S(GENERATOR_THROWN_NAME)),
+            nf.createTypeAssertion(anyType(), nf.createIdentifier(S(UNDEFINED_NAME)))));
+
+        auto addMethod = [&](const char *name, NodeArray<ParameterDeclaration> parameters, NodeArray<Statement> statements) {
+            auto method = nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(stows(std::string(name))), undefined,
+                                                     undefined, parameters, resultType(),
+                                                     nf.createBlock(statements, /*multiLine*/ false));
+            method->pos = functionLikeDeclarationBaseAST->pos;
+            method->_end = functionLikeDeclarationBaseAST->_end;
+            generatorObjectProperties.push_back(method);
+        };
+
+        // return(value: T) {
+        //     if (this.step > 0) { this.mode = 2; this.next(); }
+        //     this.step = -1;
+        //     return { value: value, done: true };
+        // }
+        // Under -mm=own only for a T that owns nothing (a number, a boolean): the result would hold the value the
+        // caller lends ("an object literal that holds a value it owns is moved only into a local ..."), as next(v)
+        // keeps one; the generator then has no return() (the library declares it optional)
+        SyntaxKind yieldKind = yieldType;
+        auto ownsNothing = yieldKind == SyntaxKind::NumberKeyword || yieldKind == SyntaxKind::BooleanKeyword
+                           || yieldKind == SyntaxKind::BigIntKeyword;
+        if (compileOptions.memoryModel != MemoryModelOwn || ownsNothing)
+        {
+            NodeArray<ParameterDeclaration> parameters;
+            parameters.push_back(
+                nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined, yieldType));
+
+            NodeArray<Statement> resume;
+            resume.push_back(assign(thisProp(GENERATOR_MODE_NAME), number("2")));
+            resume.push_back(nf.createExpressionStatement(callNext()));
+
+            NodeArray<ObjectLiteralElementLike> resultProperties;
+            resultProperties.push_back(nf.createPropertyAssignment(nf.createIdentifier(S("value")), nf.createIdentifier(S("value"))));
+            resultProperties.push_back(nf.createPropertyAssignment(nf.createIdentifier(S("done")), nf.createToken(SyntaxKind::TrueKeyword)));
+
+            NodeArray<Statement> statements;
+            statements.push_back(nf.createIfStatement(paused(), nf.createBlock(resume, false), undefined));
+            statements.push_back(finished());
+            statements.push_back(nf.createReturnStatement(nf.createObjectLiteralExpression(resultProperties, false)));
+            addMethod("return", parameters, statements);
+        }
+
+        // throw(e: any) {
+        //     if (this.step > 0) {
+        //         this.mode = 1; this.thrown = e;
+        //         try { return this.next(); } catch (x) { this.step = -1; throw x; }
+        //     }
+        //     this.step = -1;
+        //     throw e;
+        // }
+        {
+            NodeArray<ParameterDeclaration> parameters;
+            parameters.push_back(
+                nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("e")), undefined, anyType()));
+
+            NodeArray<Statement> tryStatements;
+            tryStatements.push_back(nf.createReturnStatement(callNext()));
+
+            NodeArray<Statement> catchStatements;
+            catchStatements.push_back(finished());
+            catchStatements.push_back(nf.createThrowStatement(nf.createIdentifier(S("x"))));
+            auto catchClause = nf.createCatchClause(
+                nf.createVariableDeclaration(nf.createIdentifier(S("x")), undefined, undefined, undefined),
+                nf.createBlock(catchStatements, false));
+
+            NodeArray<Statement> resume;
+            resume.push_back(assign(thisProp(GENERATOR_MODE_NAME), number("1")));
+            resume.push_back(assign(thisProp(GENERATOR_THROWN_NAME), nf.createIdentifier(S("e"))));
+            resume.push_back(nf.createTryStatement(nf.createBlock(tryStatements, false), catchClause, undefined));
+
+            NodeArray<Statement> statements;
+            statements.push_back(nf.createIfStatement(paused(), nf.createBlock(resume, false), undefined));
+            statements.push_back(finished());
+            statements.push_back(nf.createThrowStatement(nf.createIdentifier(S("e"))));
+            addMethod("throw", parameters, statements);
+        }
+    }
+
+    // Where a yield of a generator typed Generator<...> resumes (GeneratorResumable): throw() asked it to throw
+    // there, return() to finish there (addGeneratorResumeMethods).
+    //     if (this.mode == 1) { this.mode = 0; throw this.thrown; }
+    //     if (this.mode == 2) { this.mode = 0; return; }
+    mlir::LogicalResult MLIRGenImpl::mlirGenGeneratorResumeChecks(mlir::Location location, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto thisProp = [&](const char *name) {
+            return nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(stows(std::string(name))));
+        };
+        auto modeIs = [&](const char *value) {
+            return nf.createBinaryExpression(thisProp(GENERATOR_MODE_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                                             nf.createNumericLiteral(stows(std::string(value)), TokenFlags::None));
+        };
+        auto resetMode = [&]() {
+            return nf.createExpressionStatement(nf.createBinaryExpression(
+                thisProp(GENERATOR_MODE_NAME), nf.createToken(SyntaxKind::EqualsToken),
+                nf.createNumericLiteral(S("0"), TokenFlags::None)));
+        };
+
+        NodeArray<Statement> throwStatements;
+        throwStatements.push_back(resetMode());
+        throwStatements.push_back(nf.createThrowStatement(thisProp(GENERATOR_THROWN_NAME)));
+
+        auto finish = nf.createReturnStatement(undefined);
+        finish->internalFlags |= InternalFlags::GeneratorReturn;
+        NodeArray<Statement> returnStatements;
+        returnStatements.push_back(resetMode());
+        returnStatements.push_back(finish);
+
+        LocationHelper lh(builder.getContext());
+        auto [pos, _end] = lh.getSpan(location);
+        for (auto [mode, statements] : {std::make_pair("1", throwStatements), std::make_pair("2", returnStatements)})
+        {
+            auto ifStatement = nf.createIfStatement(modeIs(mode), nf.createBlock(statements, false), undefined);
+            ifStatement->pos = pos;
+            ifStatement->_end = _end;
+            if (mlir::failed(mlirGen(ifStatement, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
     FunctionLikeDeclarationBase MLIRGenImpl::buildGeneratorWrapperDeclaration(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location)
     {
@@ -1227,6 +1407,24 @@ namespace mlirgen
             }
         }
 
+        // a yield in a catch clause can't be resumed (YieldInCatch): said at the yield
+        FilterVisitorSkipFuncsAST<TryStatement> trysVisitor(SyntaxKind::TryStatement, [&](auto tryStatement) {
+            if (!tryStatement->catchClause || !tryStatement->catchClause->block)
+            {
+                return;
+            }
+
+            FilterVisitorSkipFuncsAST<YieldExpression> yieldsInCatch(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
+                yieldExpression->internalFlags |= InternalFlags::YieldInCatch;
+            });
+            yieldsInCatch.visit(tryStatement->catchClause->block);
+        });
+
+        if (functionLikeDeclarationBaseAST->body)
+        {
+            trysVisitor.visit(functionLikeDeclarationBaseAST->body);
+        }
+
         // a `return` of the body finishes the generator; one of a nested function is that function's own
         FilterVisitorSkipFuncsAST<ReturnStatement> returnsVisitor(SyntaxKind::ReturnStatement, [&](auto returnStatement) {
             returnStatement->internalFlags |= InternalFlags::GeneratorReturn;
@@ -1270,6 +1468,8 @@ namespace mlirgen
         // `yield 1` could not be a Generator<number> ("can't assign '() => {value:s32, ...}'")
         TypeNode nextResultType = undefined;
         NodeArray<ParameterDeclaration> nextParameters;
+        // Generator<T, ...>: return(value: T) and throw(e) besides next() (generatorResumeMethods)
+        TypeNode resumableYieldType = undefined;
         if (auto declaredType = functionLikeDeclarationBaseAST->type;
             declaredType && declaredType == SyntaxKind::TypeReference && !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::AsyncKeyword))
         {
@@ -1286,6 +1486,11 @@ namespace mlirgen
                     members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
                                                                  nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
                     nextResultType = nf.createTypeLiteralNode(members);
+
+                    if (typeName == "Generator")
+                    {
+                        resumableYieldType = typeReference->typeArguments.front();
+                    }
 
                     // Generator<T, TReturn, TNext>: next(value?: TNext), the value what the resumed `yield` is
                     if (typeName == "Generator" && typeReference->typeArguments.size() >= 3)
@@ -1321,6 +1526,11 @@ namespace mlirgen
         }
 
         generatorObjectProperties.push_back(nextMethodDecl);
+
+        if (resumableYieldType)
+        {
+            addGeneratorResumeMethods(nf, functionLikeDeclarationBaseAST, resumableYieldType, generatorObjectProperties);
+        }
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
         // the generator object has mutable identity (`step` advanced by next());

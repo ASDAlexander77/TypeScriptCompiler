@@ -2816,7 +2816,13 @@ class MLIRGenImpl
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
             if (variableDeclarationInfo.allocateOutsideOfOperation)
             {
-                builder.setInsertionPoint(genContext.currentOperation);
+                // in a generator's next(), in front of its switch, which dominates every resume point - not in front of
+                // a `try` the turn may resume inside (a `let` in a `try` read after a yield: "operand #0 does not
+                // dominate this use"). A local of the body is a field of the generator object, kept between turns;
+                // one of the frame (a catch variable) lives in one turn
+                builder.setInsertionPoint(genContext.generatorSwitchOperation
+                    ? genContext.generatorSwitchOperation
+                    : genContext.currentOperation);
             }
 
             if (variableDeclarationInfo.allocateInContextThis)
@@ -4425,6 +4431,11 @@ class MLIRGenImpl
     // method prototype registration) can reuse it without running full body codegen twice.
     FunctionLikeDeclarationBase buildGeneratorWrapperDeclaration(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location);
+
+    void addGeneratorResumeMethods(NodeFactory &nf, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                   TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties);
+
+    mlir::LogicalResult mlirGenGeneratorResumeChecks(mlir::Location location, const GenContext &genContext);
 
     std::pair<mlir::LogicalResult, std::string> registerGenericFunctionLike(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, bool ignoreFunctionArgsDetection,

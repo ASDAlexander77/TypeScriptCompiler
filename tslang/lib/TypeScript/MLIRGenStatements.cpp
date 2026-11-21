@@ -2538,6 +2538,10 @@ namespace mlirgen
             varName = ".caught";
             GenContext catchVariableGenContext(genContext);
             catchVariableGenContext.declaringCatchVariable = true;
+            // a local of the function's frame even in a generator's next() (not a field of the generator object):
+            // the exception is copied into it by the catch's handler, which takes a slot of the frame, and it lives
+            // in one turn only - a yield in a catch is an error (YieldInCatch). As a field, its use crashed
+            catchVariableGenContext.allocateVarsInContextThis = false;
             auto declaredType = registerVariable(
                 location, varName, false, VariableType::Let,
                 [&](mlir::Location, const GenContext &) -> TypeValueInitType {
@@ -2557,6 +2561,10 @@ namespace mlirgen
                 varName = MLIRHelper::getName(varDecl->name);
                 GenContext catchVariableGenContext(genContext);
                 catchVariableGenContext.declaringCatchVariable = true;
+            // a local of the function's frame even in a generator's next() (not a field of the generator object):
+            // the exception is copied into it by the catch's handler, which takes a slot of the frame, and it lives
+            // in one turn only - a yield in a catch is an error (YieldInCatch). As a field, its use crashed
+            catchVariableGenContext.allocateVarsInContextThis = false;
                 if (mlir::failed(mlirGen(varDecl, VariableType::Let, catchVariableGenContext)))
                 {
                     return mlir::failure();
