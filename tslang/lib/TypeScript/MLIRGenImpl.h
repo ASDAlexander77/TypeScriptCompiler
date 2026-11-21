@@ -15413,6 +15413,30 @@ class MLIRGenImpl
         return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
     }
 
+    // A function an object literal's field holds is one function, not a generic one: its type parameters
+    // (`{ test: <T>(value: T): T => value }`, `{ m<T>(x: T) {} }`) are `any`, as its untyped parameters are -
+    // "can't find type by name: T". True when it had some.
+    bool bindTypeParamsToAny(FunctionLikeDeclarationBase funcLikeDecl, GenContext &genContext)
+    {
+        if (funcLikeDecl->typeParameters.size() == 0)
+        {
+            return false;
+        }
+
+        llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+        if (mlir::failed(processTypeParameters(funcLikeDecl->typeParameters, typeParams, genContext)))
+        {
+            return false;
+        }
+
+        for (auto &typeParam : typeParams)
+        {
+            genContext.typeParamsWithArgs[typeParam->getName()] = std::make_pair(typeParam, getAnyType());
+        }
+
+        return true;
+    }
+
     mlir::LogicalResult processObjectFunctionLikeProto(ObjectLiteralInfo &oli, mlir::Attribute fieldId,
                                                        FunctionLikeDeclarationBase funcLikeDecl, const GenContext &genContext)
     {
@@ -15421,6 +15445,7 @@ class MLIRGenImpl
         funcGenContext.clearReceiverTypes();
         funcGenContext.receiverFuncType = getObjectLiteralMemberReceiverFuncType(oli, fieldId);
         funcGenContext.thisType = oli.objThis;
+        bindTypeParamsToAny(funcLikeDecl, funcGenContext);
 
         funcLikeDecl->parent = oli.objectLiteral;
 
@@ -15526,6 +15551,8 @@ class MLIRGenImpl
                 {
                     // its untyped parameters take their types from the receiver's member, as a method's do
                     receiverTypeGenContext.receiverFuncType = getObjectLiteralMemberReceiverFuncType(oli, fieldId);
+                    // a member of the object: its type parameters are `any` (bindTypeParamsToAny)
+                    propertyAssignment->initializer->parent = propertyAssignment;
                 }
 
                 auto result = mlirGen(propertyAssignment->initializer, receiverTypeGenContext);
