@@ -1985,3 +1985,24 @@ Tests: `00array_is_array.ts` (compile, JIT, rc, own), `00merged_enum_members.ts`
 
 Tests: `00optional_union_equality.ts` (compile, JIT, rc), `00destructuring_redeclare_defaults.ts` (compile, JIT, rc,
 own).
+
+144 (sixteenth batch of the compiler-tests sweep, 2026-11-21). Statements that failed with nothing said ("failed
+statement" and no reason), and `this` in static arrows. Fixed:
+- `return g()` of a call that returns nothing (`function h() { return g(); }`, `return super.foo()`, in an arrow):
+  the missing value failed the function's discovery with no message. It is the call and a `return;`.
+- An element past the end of a tuple a literal is taken as (`var a = [1, "x"]; var [x, y, z] = a;`) is undefined.
+- `this` in an arrow made in a static member (`static foo = () => this.n`, an arrow in a static method): "can't
+  resolve name: this". An arrow captures `this`, and a static member has none to capture; its `this` is the class,
+  as the code around it has it (GenContext::staticThis).
+- Clear errors where there were none: an object given as an interface with an index signature (`[s: string]: T`
+  - not supported yet: a Map, or an interface of named members); an object without an optional method of an
+  interface (`b?(): number` - an absent one has no absent mark in its slot yet, so a test of it would read as present;
+  an optional property of a function type, `b?: () => number`, works); a generic method in a type literal (an
+  interface can have one).
+
+Still open, looked at: `this` in an arrow in a default parameter value of an instance method or a constructor
+(`bar(f = () => this)`) - the default is evaluated for the signature before `this` exists; `static y = this` fails
+in lowering (ClassRef); `(Foo as any) = null`.
+
+Tests: `00void_call_return.ts`, `00static_this_arrows.ts` (compile, JIT, rc, own); diagnostic-location
+`index_signature_object.ts`, `absent_optional_method.ts`, `generic_method_type_literal.ts`.
