@@ -244,6 +244,9 @@ struct GenContext
     // in a static member `this` is the class itself (thisType), with no variable for an arrow to capture: an
     // arrow made there keeps thisType (mlirGen(ArrowFunction))
     bool staticThis = false;
+    // a parameter's default value evaluated for the parameter's type (mlirGenParameters): an arrow met there is
+    // discovered again where it is generated (isEvaluatedExpression)
+    bool evaluatingParameterDefault = false;
     mlir::Type receiverFuncType;
     // the numeric result of the base class's method a method overrides without a return type of its own
     // (`f() { return 3; }`, s32, for `f(): number`): its vtable slot calls it as the base's; for that

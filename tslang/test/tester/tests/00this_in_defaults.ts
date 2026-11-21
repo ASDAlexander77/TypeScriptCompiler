@@ -1,6 +1,7 @@
 // `this` in a parameter's default value, in an arrow there too (`bar(f = () => this)`): "can't resolve name: this",
 // then a closure held in a plain function type that lost its captures. A function given as a default is held as a
 // hybrid function. And `static y = this` is the class's value, as `static self = P` is (it failed in lowering).
+// An arrow returning an arrow that reads `this`, as an instance field, is generated (it crashed the compiler).
 class P {
     static k = 7;
     static y = this;
@@ -19,6 +20,8 @@ class P {
         return g();
     }
 
+    nested = () => () => this;
+
     constructor(public z = 1, zzz = (p = this) => this) {
         this.n = zzz().n + 1;
     }
@@ -33,5 +36,6 @@ function main() {
     assert(p.baz(() => 1) == 1);
     assert(p.x.n == 4);
     assert(P.y.k == 7);
+    assert(p.nested()().n == 4);
     print("done.");
 }

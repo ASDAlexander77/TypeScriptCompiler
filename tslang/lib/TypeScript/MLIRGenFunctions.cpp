@@ -299,7 +299,9 @@ namespace mlirgen
             auto initializer = arg->initializer;
             if (initializer)
             {
-                auto evalType = evaluate(initializer, genContext);
+                GenContext defaultGenContext(genContext);
+                defaultGenContext.evaluatingParameterDefault = true;
+                auto evalType = evaluate(initializer, defaultGenContext);
                 if (evalType)
                 {
                     evalType = mth.wideStorageType(evalType);
@@ -860,7 +862,8 @@ namespace mlirgen
         // ...and an arrow or a function expression met where an expression is only evaluated for its type (a
         // parameter's default value, `bar(f = () => this)`): what it captures there is not what it captures where it
         // is generated
-        auto isEvaluatedExpression = genContext.funcOp && genContext.funcOp == tempFuncOp
+        auto isEvaluatedExpression = genContext.evaluatingParameterDefault && genContext.funcOp
+            && genContext.funcOp == tempFuncOp
             && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
                 || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
         auto isModuleDiscoveryExpression = (genContext.dummyRun && !genContext.funcOp
