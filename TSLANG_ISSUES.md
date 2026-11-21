@@ -2070,3 +2070,15 @@ Still open, looked at: an object literal's accessor reading the `const` it initi
 return a; } }`) - its type is circular (TypeScript's `any`); a getter returning itself (`get p() { return this.p; }`).
 
 Tests: `00typeof_this_field.ts`, `00numeric_member_keys.ts` (compile, JIT, rc, own).
+
+149 (twenty-first batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `this: void` (`function f(this: void, x: number)`), which says a function uses no `this`: no parameter at all -
+  "'Void' can't be used as parameter type".
+- `globalThis.x` where no `globalThis` is declared: the global `x`, named from the module's root, as a value and in a
+  type query (`typeof globalThis.isNaN`) - "can't resolve name: globalThis". (`globalThis.Symbol` stays an error: the
+  built-in `Symbol` is not a value, 140.)
+
+Looked at and kept: a `never` parameter type tslang computed (an intersection it can't express) stays an error
+(126).
+
+Tests: `00this_void_param.ts`, `00global_this_members.ts` (compile, JIT, rc, own).
