@@ -2012,3 +2012,22 @@ in lowering (ClassRef); `(Foo as any) = null`.
 Tests: `00void_call_return.ts`, `00static_this_arrows.ts` (compile, JIT, rc, own), `00forward_closure_refs.ts`
 (compile, JIT, rc); diagnostic-location
 `index_signature_object.ts`, `absent_optional_method.ts`, `generic_method_type_literal.ts`.
+
+145 (seventeenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `static y = this`: the class's value, as `static self = P` is - `this` in a static field is the class (an instance
+  field's `this` is the instance, which 133 excluded for both). It failed in lowering (`ts.ClassRef`).
+- `this` in a parameter's default value of a method or a constructor, in an arrow too (`bar(f = () => this)`,
+  `constructor(z = 1, zzz = (p = this) => this)`): "can't resolve name: this". The method's own `this` is named while
+  the defaults are evaluated for their types, as an explicit `this:` was; an arrow met there is discovered again where
+  it is generated (GenContext::evaluatingParameterDefault - applied to every evaluated expression, an instance field's
+  `() => () => this` crashed the compiler). A parameter typed by a function given as its default is a hybrid
+  function: a closure held as a plain one lost its captures ("invalid cast" in lowering).
+- A class merged with a namespace of its name (`class C {} namespace C { export var x }`): `new C()` was "'C' is a
+  namespace, not a class". The name is the class; a member it hasn't got is the namespace's (`C.x`), and in a type the
+  name's qualified part is the namespace (`C.Shape`, also for a class expression named as a namespace is).
+
+Still open, looked at: an arrow nested in an arrow given as a default (`f = () => () => this`) - its captures are
+those of the evaluation; a namespace function named as an instance method of the class it merges with (`C.foo`:
+"redefinition of symbol").
+
+Tests: `00this_in_defaults.ts` (compile, JIT, rc), `00class_namespace_merge.ts` (compile, JIT, rc, own).
