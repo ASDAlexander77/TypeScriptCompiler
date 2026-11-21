@@ -2827,7 +2827,17 @@ class MLIRGenImpl
 
             if (variableDeclarationInfo.allocateInContextThis)
             {
-                auto varValueInThisContext = registerVariableInThisContext(location, variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+                // a generator's local is a field of the generator object, by name: one of a nested block hiding one
+                // around it (`let x = 1; { let x = 2; yield x; } yield x`) gets a field of its own - it shared the
+                // outer one's, and the outer `x` read 2 after the block
+                std::string fieldName = variableDeclarationInfo.variableName.str();
+                if (symbolTable.count(variableDeclarationInfo.variableName))
+                {
+                    LocationHelper lh(builder.getContext());
+                    fieldName += "@" + std::to_string(std::get<0>(lh.getSpan(location)));
+                }
+
+                auto varValueInThisContext = registerVariableInThisContext(location, fieldName, variableDeclarationInfo.type, genContext);
                 variableDeclarationInfo.setStorage(varValueInThisContext);
             }
 
@@ -17837,6 +17847,16 @@ class MLIRGenImpl
 
     bool isStringIndexSignatureOnly(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
 
+    mlir::Operation *currentFunctionOp();
+    YieldingFinally *yieldingFinallyOf(const GenContext &genContext);
+    mlir::LogicalResult mlirGenTryWithYieldingFinally(TryStatement tryStatementAST, const GenContext &genContext);
+    mlir::LogicalResult mlirGenReturnThroughYieldingFinally(ReturnStatement returnStatementAST, YieldingFinally &yieldingFinally,
+                                                            const GenContext &genContext);
+    bool jumpLeavesYieldingFinally(bool isBreak, const std::string &label, const YieldingFinally &yieldingFinally,
+                                   const GenContext &genContext);
+    mlir::LogicalResult mlirGenJumpThroughYieldingFinally(mlir::Location location, bool isBreak, Identifier label,
+                                                          YieldingFinally &yieldingFinally, const GenContext &genContext);
+
     mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext);
 
     template <typename T> mlir::LogicalResult mlirGenInterfaceType(T newInterfacePtr, const GenContext &genContext)
@@ -19010,7 +19030,8 @@ class MLIRGenImpl
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
-        if (showWarnings && symbolTable.count(name))
+        // (a generator's local hiding one around it is a field of its own: createLocalVariable)
+        if (showWarnings && symbolTable.count(name) && !genContext.allocateVarsInContextThis)
         {
             auto previousVariable = symbolTable.lookup(name).first;
             if (previousVariable && previousVariable.getParentBlock() == value.getParentBlock())

@@ -856,6 +856,12 @@ namespace mlirgen
     {
         auto location = loc(returnStatementAST);
 
+        // in a `try` whose `finally` yields: through it (mlirGenTryWithYieldingFinally)
+        if (auto *yieldingFinally = yieldingFinallyOf(genContext))
+        {
+            return mlirGenReturnThroughYieldingFinally(returnStatementAST, *yieldingFinally, genContext);
+        }
+
         // `return e` in a generator: {value: e, done: true}, and every next() after it is done (step -1)
         if (!!(returnStatementAST->internalFlags & InternalFlags::GeneratorReturn))
         {
@@ -1936,6 +1942,12 @@ namespace mlirgen
         auto location = loc(continueStatementAST);
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
+        if (auto *yieldingFinally = yieldingFinallyOf(genContext);
+            yieldingFinally && jumpLeavesYieldingFinally(false, label, *yieldingFinally, genContext))
+        {
+            return mlirGenJumpThroughYieldingFinally(location, false, continueStatementAST->label, *yieldingFinally, genContext);
+        }
+
         // a `continue` to the label of a block (not a loop) starts the block again: an extension
         // TypeScript doesn't have (tests/00break_continue.ts)
         if (!label.empty() && !llvm::is_contained(activeLabels, label))
@@ -1956,6 +1968,13 @@ namespace mlirgen
         auto location = loc(breakStatementAST);
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
+        if (auto *yieldingFinally = yieldingFinallyOf(genContext);
+            yieldingFinally && label != yieldingFinally->label &&
+            jumpLeavesYieldingFinally(true, label, *yieldingFinally, genContext))
+        {
+            return mlirGenJumpThroughYieldingFinally(location, true, breakStatementAST->label, *yieldingFinally, genContext);
+        }
+
         if (!label.empty() && !llvm::is_contained(activeLabels, label))
         {
             emitError(location, "A 'break' statement can only jump to a label of an enclosing statement");
@@ -2465,8 +2484,261 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // the function the insertion point is in: a jump redirected by a YieldingFinally is one of its own function's
+    mlir::Operation *MLIRGenImpl::currentFunctionOp()
+    {
+        auto *block = builder.getInsertionBlock();
+        if (!block || !block->getParent())
+        {
+            return nullptr;
+        }
+
+        if (auto funcOp = mlir::dyn_cast_or_null<mlir_ts::FuncOp>(block->getParentOp()))
+        {
+            return funcOp;
+        }
+
+        return block->getParent()->getParentOfType<mlir_ts::FuncOp>();
+    }
+
+    YieldingFinally *MLIRGenImpl::yieldingFinallyOf(const GenContext &genContext)
+    {
+        auto *yieldingFinally = genContext.yieldingFinally;
+        return yieldingFinally && yieldingFinally->funcOp == currentFunctionOp() ? yieldingFinally : nullptr;
+    }
+
+    // `try { ...; yield ...; } finally { ...; yield ...; }` in a generator. The finally is not the try's finally
+    // region: TryOpLowering copies that for each way out of the try, the copy on the unwind leg inside an
+    // exception handler, and a resume lands in one copy only. Here it is code of its own after the try, once:
+    //
+    //     let M = 0, E: any = <any>0;
+    //     L: { try { <try> catch <catch> } catch (X) { E = X; M = 1; } }
+    //     <finally>
+    //     if (M == 1) throw E;
+    //     if (M == 2) return this.R2; ...  if (M == k) break label; ...
+    //
+    // Each `return` in the try or the catch clause (and the one return() makes at a resume point), and each
+    // `break` or `continue` out of them, sets M and leaves L instead (yieldingFinallyOf, YieldingFinally). A
+    // `return`'s value is kept in a variable of the generator, which lives between turns.
+    mlir::LogicalResult MLIRGenImpl::mlirGenTryWithYieldingFinally(TryStatement tryStatementAST, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto base = std::string("$fin") + std::to_string(tryStatementAST->pos);
+
+        YieldingFinally yieldingFinally;
+        yieldingFinally.label = base + "_l";
+        yieldingFinally.mode = base + "_m";
+        yieldingFinally.slotPrefix = base + "_r";
+        yieldingFinally.funcOp = currentFunctionOp();
+
+        auto ident = [&](const std::string &name) { return nf.createIdentifier(stows(name)); };
+        auto number = [&](int value) { return nf.createNumericLiteral(stows(std::to_string(value)), TokenFlags::None); };
+        auto placed = [&](auto node) {
+            node->pos = tryStatementAST->pos;
+            node->_end = tryStatementAST->_end;
+            return node;
+        };
+        auto assign = [&](const std::string &name, Expression value) {
+            return placed(nf.createExpressionStatement(
+                nf.createBinaryExpression(ident(name), nf.createToken(SyntaxKind::EqualsToken), value)));
+        };
+        auto declare = [&](const std::string &name, Expression init) {
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(ident(name), undefined, undefined, init));
+            return placed(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Let)));
+        };
+        auto modeIs = [&](int value) {
+            return nf.createBinaryExpression(ident(yieldingFinally.mode), nf.createToken(SyntaxKind::EqualsEqualsEqualsToken),
+                                             number(value));
+        };
+
+        auto excName = base + "_e";
+        auto caughtName = base + "_x";
+
+        EXIT_IF_FAILED(mlirGen(declare(yieldingFinally.mode, number(0)), genContext));
+        // (a number in it, not `<any>undefined`, as the generator's own `.thrown`)
+        EXIT_IF_FAILED(mlirGen(declare(excName, nf.createTypeAssertion(nf.createToken(SyntaxKind::AnyKeyword).as<TypeNode>(), number(0))),
+                               genContext));
+
+        // the try and its catch clause, without the finally
+        NodeArray<Statement> innerStatements;
+        if (tryStatementAST->catchClause)
+        {
+            innerStatements.push_back(placed(nf.createTryStatement(tryStatementAST->tryBlock, tryStatementAST->catchClause, undefined)));
+        }
+        else
+        {
+            innerStatements.push_back(tryStatementAST->tryBlock);
+        }
+
+        // what they throw, kept for after the finally
+        NodeArray<Statement> caughtStatements;
+        caughtStatements.push_back(assign(excName, ident(caughtName)));
+        caughtStatements.push_back(assign(yieldingFinally.mode, number(1)));
+        auto catchAll = nf.createCatchClause(nf.createVariableDeclaration(ident(caughtName), undefined, undefined, undefined),
+                                             placed(nf.createBlock(caughtStatements, false)));
+        auto outerTry = placed(nf.createTryStatement(placed(nf.createBlock(innerStatements, false)), catchAll, undefined));
+
+        NodeArray<Statement> labelledStatements;
+        labelledStatements.push_back(outerTry);
+        auto labelled = placed(nf.createLabeledStatement(ident(yieldingFinally.label), placed(nf.createBlock(labelledStatements, false))));
+
+        {
+            GenContext bodyGenContext(genContext);
+            bodyGenContext.yieldingFinally = &yieldingFinally;
+            EXIT_IF_FAILED(mlirGen(labelled, bodyGenContext));
+        }
+
+        // the finally, once, where a yield can resume
+        EXIT_IF_FAILED(mlirGen(tryStatementAST->finallyBlock, genContext));
+
+        // then the way out the try took
+        EXIT_IF_FAILED(mlirGen(placed(nf.createIfStatement(modeIs(1), placed(nf.createThrowStatement(ident(excName))), undefined)),
+                               genContext));
+
+        for (auto [index, exit] : llvm::enumerate(yieldingFinally.exits))
+        {
+            Statement statement;
+            switch (exit.kind)
+            {
+            case YieldingFinallyExit::Return:
+            {
+                // in a `try` around this one whose finally yields too: on through its finally, with the same slot
+                if (auto *outer = yieldingFinallyOf(genContext))
+                {
+                    auto code = 2 + (int)outer->exits.size();
+                    outer->exits.push_back(exit);
+                    NodeArray<Statement> forward;
+                    forward.push_back(assign(outer->mode, number(code)));
+                    forward.push_back(placed(nf.createBreakStatement(ident(outer->label))));
+                    statement = placed(nf.createBlock(forward, false));
+                    break;
+                }
+
+                Expression value = undefined;
+                // (while the generator's variables are being found, the slot is not one of its fields yet)
+                if (!exit.slot.empty() && !genContext.passResult)
+                {
+                    value = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), ident(exit.slot));
+                }
+
+                auto returnStatement = placed(nf.createReturnStatement(value));
+                returnStatement->internalFlags = (InternalFlags)exit.internalFlags;
+                statement = returnStatement;
+                break;
+            }
+            case YieldingFinallyExit::Break:
+                statement = placed(nf.createBreakStatement(exit.label.empty() ? Identifier(undefined) : ident(exit.label)));
+                break;
+            case YieldingFinallyExit::Continue:
+                statement = placed(nf.createContinueStatement(exit.label.empty() ? Identifier(undefined) : ident(exit.label)));
+                break;
+            }
+
+            EXIT_IF_FAILED(mlirGen(placed(nf.createIfStatement(modeIs(2 + (int)index), statement, undefined)), genContext));
+        }
+
+        return mlir::success();
+    }
+
+    // A `return` in the try or catch clause of a YieldingFinally: its value kept, its way out recorded, and the
+    // labelled block left - the finally runs before the return is made.
+    mlir::LogicalResult MLIRGenImpl::mlirGenReturnThroughYieldingFinally(ReturnStatement returnStatementAST,
+                                                                          YieldingFinally &yieldingFinally,
+                                                                          const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto code = 2 + (int)yieldingFinally.exits.size();
+        auto placed = [&](auto node) {
+            node->pos = returnStatementAST->pos;
+            node->_end = returnStatementAST->_end;
+            return node;
+        };
+
+        YieldingFinallyExit exit{YieldingFinallyExit::Return, "", "", (unsigned)returnStatementAST->internalFlags};
+        NodeArray<Statement> statements;
+        if (returnStatementAST->expression)
+        {
+            exit.slot = yieldingFinally.slotPrefix + std::to_string(yieldingFinally.exits.size());
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(stows(exit.slot)), undefined, undefined,
+                                                                returnStatementAST->expression));
+            statements.push_back(placed(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Let))));
+        }
+
+        statements.push_back(placed(nf.createExpressionStatement(nf.createBinaryExpression(
+            nf.createIdentifier(stows(yieldingFinally.mode)), nf.createToken(SyntaxKind::EqualsToken),
+            nf.createNumericLiteral(stows(std::to_string(code)), TokenFlags::None)))));
+        statements.push_back(placed(nf.createBreakStatement(nf.createIdentifier(stows(yieldingFinally.label)))));
+
+        yieldingFinally.exits.push_back(exit);
+        return mlirGen(placed(nf.createBlock(statements, false)), genContext);
+    }
+
+    // Whether a `break` (isBreak) or `continue` to `label` leaves the labelled block of a YieldingFinally: it gets
+    // there before the loop, switch or label it goes to. A context is a copy of the one around it, so the innermost
+    // one already tells.
+    bool MLIRGenImpl::jumpLeavesYieldingFinally(bool isBreak, const std::string &label,
+                                                const YieldingFinally &yieldingFinally, const GenContext &genContext)
+    {
+        for (auto *context = &genContext; context; context = context->parentBlockContext)
+        {
+            if (label.empty())
+            {
+                if (context->isLoopBodyScope || (isBreak && context->isSwitchScope))
+                {
+                    return false;
+                }
+            }
+            else if ((context->isLoopBodyScope && context->loopBodyLabel == label) || context->labelledScopeLabel == label)
+            {
+                return false;
+            }
+
+            if (context->labelledScopeLabel == yieldingFinally.label)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenJumpThroughYieldingFinally(mlir::Location location, bool isBreak, Identifier label,
+                                                                        YieldingFinally &yieldingFinally,
+                                                                        const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto code = 2 + (int)yieldingFinally.exits.size();
+        yieldingFinally.exits.push_back(
+            {isBreak ? YieldingFinallyExit::Break : YieldingFinallyExit::Continue, MLIRHelper::getName(label), "", 0});
+
+        NodeArray<Statement> statements;
+        statements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+            nf.createIdentifier(stows(yieldingFinally.mode)), nf.createToken(SyntaxKind::EqualsToken),
+            nf.createNumericLiteral(stows(std::to_string(code)), TokenFlags::None))));
+        statements.push_back(nf.createBreakStatement(nf.createIdentifier(stows(yieldingFinally.label))));
+        auto block = nf.createBlock(statements, false);
+        LocationHelper lh(builder.getContext());
+        auto [pos, _end] = lh.getSpan(location);
+        block->pos = pos;
+        block->_end = _end;
+        for (auto statement : statements)
+        {
+            statement->pos = pos;
+            statement->_end = _end;
+        }
+
+        return mlirGen(block, genContext);
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(TryStatement tryStatementAST, const GenContext &genContext)
     {
+        if (!!(tryStatementAST->internalFlags & InternalFlags::YieldInFinally))
+        {
+            return mlirGenTryWithYieldingFinally(tryStatementAST, genContext);
+        }
+
         auto location = loc(tryStatementAST);
 
         // An `await` in a `finally` (of an async function): the finally runs from the try's cleanup, which an

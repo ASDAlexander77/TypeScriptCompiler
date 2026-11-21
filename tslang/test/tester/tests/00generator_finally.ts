@@ -1,5 +1,5 @@
 // A generator's try/finally around its yields: the finally runs once, after the last turn in the try, before what
-// follows. A yield in the finally itself is an error (diagnostic-location/generator_yield_in_finally.ts); a
+// follows. A yield in the finally itself: 00generator_yield_in_finally.ts. A
 // generator declared in a finally block is a function of its own and may yield.
 let log = "";
 

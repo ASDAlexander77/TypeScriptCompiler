@@ -458,14 +458,6 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        if (!!(yieldExpressionAST->internalFlags & InternalFlags::YieldInFinally))
-        {
-            emitError(location, "a yield in a finally block of a generator is not supported yet: the finally is run "
-                                "from each way out of the try statement, and the generator can't resume in the one "
-                                "that runs while an exception unwinds; yield after the try statement");
-            return mlir::failure();
-        }
-
         if (yieldExpressionAST->asteriskToken)
         {
             // it gives back nothing yet: it can only stand as a statement of its own

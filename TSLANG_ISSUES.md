@@ -2232,9 +2232,17 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   and "f" was not printed): TryOpLowering copies the finally for each way out of the try (the end of its body, the
   unwind, each return/break/continue), each copy with the yield's resume label, and the generator's switch
   dispatches by position - the copies shifted every label after them, so the resume landed after the yield in
-  another copy. Now an error at the yield (YieldInFinally), as a yield in a catch is, and a repeated resume label is
-  an error in the lowering rather than a resume somewhere else. Tests `generator_yield_in_finally.ts`
-  (diagnostic-location), `00generator_finally.ts`.
+  another copy. First an error (#980); then, USER DECISION, made to work as JavaScript's
+  (mlirGenTryWithYieldingFinally): the try and its catch clause in a labelled block with a catch-all keeping the
+  exception; each `return` in them (and return()'s at a resume point), and each `break`/`continue` out of them,
+  records its way out in a mode variable and leaves the block (YieldingFinally); the finally once after it, as code
+  a yield resumes in; then the way out taken. A return's value is kept in a variable of the generator; one through
+  two such finallys is handed on with the same one. return(v) gives what the finally yields and finishes with v
+  (kept in `.thrown`). A repeated resume label is an error in the lowering rather than a resume somewhere else.
+  Under -mm=own an object thrown through such a finally stops with "cannot copy an 'any' that holds an object"
+  (the exception kept is an `any`); numbers and strings work. Also: a `let` of a nested block hiding one around
+  it in a generator shared its field of the generator object (the outer `x` read the inner's value after the
+  block): a field of its own now. Tests `00generator_yield_in_finally.ts` (results node's), `00generator_finally.ts`.
 
 - Later: a generator is its own iterator - `g[Symbol.iterator]()` (`[Symbol.asyncIterator]` of an async one) is g
   itself, made at the call: a generator's object has a step and no member of that name. It was "Can't resolve
@@ -2244,9 +2252,6 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   `00generator_symbol_iterator.ts` (compile, JIT, rc, own).
 
 Still open, looked at:
-- A yield in a finally block (an error, above): supporting it needs the finally lowered as straight code after the
-  try when it yields - a catch-all keeping the exception, the way out recorded (end, throw, return, break,
-  continue, the generator's return()/throw()), and taken again after the finally - not as the try's finally region.
 - -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
   is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
   keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a

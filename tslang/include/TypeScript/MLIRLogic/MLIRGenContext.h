@@ -97,6 +97,28 @@ struct WithScope
     std::shared_ptr<WithScope> outer;
 };
 
+// A `try` of a generator whose `finally` yields (mlirGenTryWithYieldingFinally): its body and catch clause are
+// generated in a labelled block, and each way out of them other than its end - a `return` (and the one return()
+// makes at a resume point), a `break` or `continue` out of the `try` - records which it was in the mode variable
+// and leaves the block; the finally is generated once after it, as code of its own a yield can resume in, and
+// then each recorded way out is taken. A `return`'s value is kept in a variable of the generator (`slot`).
+struct YieldingFinallyExit
+{
+    enum Kind { Return, Break, Continue } kind;
+    std::string label;
+    std::string slot;
+    unsigned internalFlags = 0;
+};
+
+struct YieldingFinally
+{
+    std::string label;
+    std::string mode;
+    std::string slotPrefix;
+    mlir::Operation *funcOp = nullptr;
+    llvm::SmallVector<YieldingFinallyExit> exits;
+};
+
 struct GenContext
 {
     GenContext() = default;
@@ -334,6 +356,8 @@ struct GenContext
     // there - one entry for each place they go, and the finally gets the rest of the scope exit
     // for each. Shared by the body's guard and the catch clause's, which is a copy of it.
     mlir::SmallVector<std::pair<bool, std::string>> *finallyEscapingJumps = nullptr;
+    // In a `try` of a generator whose `finally` yields: where its ways out go (YieldingFinally)
+    YieldingFinally *yieldingFinally = nullptr;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;
