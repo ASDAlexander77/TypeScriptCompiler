@@ -1934,10 +1934,18 @@ inline bool isConstantData(mlir::Value value)
     }
 
     // null or undefined seen as what may hold a block (`on() ? mk(3) : null` as a `Node | null`):
-    // it holds none
+    // it holds none - but not one boxed into `any` (or `unknown`) on the way, a block of its own which
+    // its release frees: taken for constant data, `{ t: <any>undefined }` was not checked for a move,
+    // so the store into the object took the box and the temporary's release gave it back as well (a
+    // double free, which wasm's checked heap and Linux caught; TSLANG 153)
     auto root = value;
     while (auto castOp = root.getDefiningOp<mlir_ts::CastOp>())
     {
+        if (mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(castOp.getType()))
+        {
+            return false;
+        }
+
         root = castOp.getIn();
     }
 
