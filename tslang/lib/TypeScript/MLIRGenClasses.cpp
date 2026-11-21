@@ -4568,7 +4568,13 @@ genContext);
                 // a method the interface calls otherwise than it is declared - with a result the interface drops
                 // (`foo(): void` of `foo() { return "x"; }`), or without the optional parameters the method has
                 // further (`method(a = 0)` for `method()`): the slot holds an adapter calling it as the class does
-                if (result.result != MatchResultType::Match && !foundMethodPtr->isStatic
+                // (only a result the interface drops, or one both have: a method returning nothing can't give the
+                // interface's `boolean` - a type predicate's `this is ...` of `method1() { }` crashed the compiler)
+                auto interfaceResult = mth.getReturnTypeFromFuncRef(funcType);
+                auto methodResult = mth.getReturnTypeFromFuncRef(foundMethodFunctionType);
+                auto resultsAdapt = !interfaceResult || isa<mlir_ts::VoidType>(interfaceResult)
+                    || (methodResult && mth.stripLiteralType(methodResult) == mth.stripLiteralType(interfaceResult));
+                if (result.result != MatchResultType::Match && resultsAdapt && !foundMethodPtr->isStatic
                     && name != NEW_CTOR_METHOD_NAME && funcType.getNumInputs() > 0)
                 {
                     auto adapterName = concat(newClassPtr->fullName, newInterfacePtr->fullName, name, interfacePosIndex)
