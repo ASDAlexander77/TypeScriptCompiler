@@ -1920,3 +1920,47 @@ broke the compiler's own escaped names; every place a member name becomes a fiel
 
 Tests: `00branded_primitives.ts`, `00divergent_accessors.ts`, `00untyped_binding_params.ts` (compile, JIT, rc, own);
 `00conditional_untyped_functions.ts` (compile, JIT, rc).
+
+142 (fourteenth batch of the compiler-tests sweep, 2026-11-21). Fixed:
+- `Array.isArray(x)`: "Class member 'isArray' can't be found" (the default library's Array<T> has no such
+  static). It is `typeof x === "array"`, answered from x's type at compile time or by a union's or an `any`'s tag,
+  and it narrows x in both branches and after an `if` that returns, as TypeScript's type guard. (The narrowing of a
+  condition's `false` was read from the expression as written, not the one tested: it now reads the same one.)
+
+- A member of another declaration of an enum named in a later one's initializer (`enum E { a } enum E { c = a }`):
+  "can't resolve name: a". The earlier declarations' members are names there, as the same declaration's are.
+
+Still open, looked at: a module-level arrow calling a `const` arrow declared after it, with top-level code in
+the module (the code runs in a function of its own, where a later `const` is no name yet - as in any function:
+`const a = () => b(); const b = ...` in a function is "can't resolve name: b"); an `async function*` given a
+type naming `AsyncGenerator` (not in the default library) crashes after the error, on Windows only.
+
+- A module-level variable given a value as `any` or `unknown`, or one read from it (`let r: any = 5;`, `const a = r
+  as number`): LLVM refused the global ("ops with side effects not allowed in global initializers") - boxing
+  allocates, and a read from it checks the type, and both were left in the global's constant initializer. It is set
+  by a global constructor, as an array or a string concatenation is.
+- A function declared in a block of the module's top-level code (`{ let x = 1; function foo() { x } }`,
+  `for (let x; ;) { function foo() { x } }`), and a method of an object literal there: "'ts.Load' op using value
+  defined outside the region", and a call of it crashed. The pass over the module's declarations met it first,
+  where the block's locals are not known, and registered it with no captures; it is discovered where it is
+  generated, as an arrow there is (105).
+- A parameter's default value that reads what the closure captures (`(b = super.m()) => b`, `(b = this.m()) =>
+  b`, `(b = y) => b`): read across the closure's region, as above. A closure's captures are named before its
+  parameters now (an object literal's method reaches them through its `this`, which is a parameter, and keeps
+  the old order).
+- A parameter whose type holds `undefined` and has a default (`foo: number | string | undefined = 2`): "'ts.Value'
+  op failed to verify that type of 'value' matches element type of 'optional'". The argument is optional of the
+  type without `undefined`, and is stored as the parameter's own type.
+
+Still open, looked at: under -mm=rc a module-level `let u: unknown = 7` is read as freed memory ("Can't cast
+from any type"): `unknown` is boxed as `any` is, but the box is given back at the end of the statement and an
+`unknown` variable owns nothing. Counting `unknown` as an owner, as `any` is, broke a value that is no box - a
+construct signature with no return type (`new(x: number)`) returns `unknown`, and the class object comes through
+it as it is (rc corpus newWithSpread). `x == "a"` with x of `number | string | undefined` (an optional of a union) crashes the
+compiler in lowering - also before this batch; a type literal's divergent accessors (`type T = { get foo(): number;
+set foo(v: number | string) }`) still take the getter's type for an assignment (an interface's take the setter's,
+141).
+
+Tests: `00array_is_array.ts` (compile, JIT, rc, own), `00merged_enum_members.ts` (compile, JIT),
+`00module_block_functions.ts`, `00any_global_initializer.ts` (compile, JIT, rc, own),
+`00default_param_captures.ts` (compile, JIT, rc; -mm=own refuses an escaping closure over a caller's value, as before).

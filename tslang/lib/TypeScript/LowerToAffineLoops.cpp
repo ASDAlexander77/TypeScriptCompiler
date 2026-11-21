@@ -290,7 +290,20 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         rewriter.setInsertionPointToStart(&thenRegion.back());
 
-        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
+        // the argument is optional of the type without `undefined`: `foo: number | string | undefined = 2` keeps
+        // its own type, which holds the value as a cast does ("'ts.Value' op failed to verify that type of
+        // 'value' matches element type of 'optional'")
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, dataTypeIn, paramOp.getArgValue());
+        if (auto optStoreType = dyn_cast<mlir_ts::OptionalType>(storeType);
+            optStoreType && optStoreType.getElementType() == dataTypeIn)
+        {
+            value = rewriter.create<mlir_ts::OptionalValueOp>(location, storeType, value);
+        }
+        else if (dataTypeIn != storeType)
+        {
+            value = rewriter.create<mlir_ts::CastOp>(location, storeType, value);
+        }
+
         rewriter.create<mlir_ts::ResultOp>(location, value);
 
         // else block

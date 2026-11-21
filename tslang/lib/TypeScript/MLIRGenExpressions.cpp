@@ -1691,6 +1691,12 @@ namespace mlirgen
     {
         auto location = loc(callExpression);
 
+        // `Array.isArray(x)`: `typeof x === "array"` (arrayIsArrayAsTypeOf)
+        if (auto asTypeOf = arrayIsArrayAsTypeOf(callExpression))
+        {
+            return mlirGen(asTypeOf, genContext);
+        }
+
         auto callExpr = callExpression->expression.as<Expression>();
 
         // `a.concat(x, [y, z])`: an argument that is not an array is one element, as `[x]` - the array's

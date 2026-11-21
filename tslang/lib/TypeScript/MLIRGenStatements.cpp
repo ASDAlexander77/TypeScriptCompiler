@@ -256,6 +256,20 @@ namespace mlirgen
             return result;
         }
 
+        // A function declared in a block of the module's code reads the block's locals, which the pass over the
+        // module's declarations does not know yet: marked, it is discovered where it is generated
+        // (mlirGenFunctionPrototype's caller, isModuleDiscoveryExpression)
+        if (!genContext.funcOp || genContext.funcOp == genContext.rootStatementsFuncOp)
+        {
+            for (auto statement : blockAST->statements)
+            {
+                if (statement == SyntaxKind::FunctionDeclaration)
+                {
+                    statement->internalFlags |= InternalFlags::InModuleBlock;
+                }
+            }
+        }
+
         // A class declared in a nested block of a function is that block's, as a `let` is: `{ class C {} }` with a
         // `C` outside it. In the function's namespace it was the function's - after the block `new C()` made the
         // block's, and two blocks declaring one name were "redefinition of symbol named 'C..instanceOf'". The

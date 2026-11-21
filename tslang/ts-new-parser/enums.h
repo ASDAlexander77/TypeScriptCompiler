@@ -575,7 +575,10 @@ enum class InternalFlags : number
     // the key, which names what it makes from a location (MLIRHelper::anonymousNameCopy)
     ForInFieldCopy = 1 << 16,
     // a nested block of a function that declares a class, being generated in its own namespace (mlirGen(Block))
-    BlockNamespace = 1 << 17
+    BlockNamespace = 1 << 17,
+    // a function declared in a nested block of the module's top-level code: it reads the block's locals
+    // (mlirGen(Block), isModuleDiscoveryExpression)
+    InModuleBlock = 1 << 18
 };
 
 ENUM_OPS(InternalFlags)
