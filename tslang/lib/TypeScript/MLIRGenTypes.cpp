@@ -3026,6 +3026,13 @@ namespace mlirgen
                 auto type = getType(typeItem, genContext);
                 if (!type)
                 {
+                    // nothing was said: a variable of such a type failed as a "failed statement"
+                    if (typeItem.as<SignatureDeclarationBase>()->typeParameters.size() > 0)
+                    {
+                        emitError(loc(typeItem)) << "a generic construct signature in a type literal is not supported yet: "
+                                                 << "declare it in an interface";
+                    }
+
                     return mlir::failure();
                 }
 
@@ -3047,6 +3054,13 @@ namespace mlirgen
                 auto type = getType(typeItem, genContext);
                 if (!type)
                 {
+                    // nothing was said: a variable of such a type failed as a "failed statement"
+                    if (typeItem.as<SignatureDeclarationBase>()->typeParameters.size() > 0)
+                    {
+                        emitError(loc(typeItem)) << "a generic call signature in a type literal is not supported yet: "
+                                                 << "declare it in an interface";
+                    }
+
                     return mlir::failure();
                 }
 

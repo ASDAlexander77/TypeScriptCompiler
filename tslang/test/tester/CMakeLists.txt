@@ -4126,6 +4126,15 @@ set_tests_properties(test-compile-diagnostic-location-absent-optional-method
                      PROPERTIES PASS_REGULAR_EXPRESSION "absent_optional_method\\.ts:5:5: error: the object has no method 'b', an optional method of interface 'D'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# A generic construct signature in a type literal is an error at the signature.
+add_test(NAME test-compile-diagnostic-location-generic-construct-signature-type-literal
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generic_construct_signature_type_literal.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generic-construct-signature-type-literal.obj")
+set_tests_properties(test-compile-diagnostic-location-generic-construct-signature-type-literal
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generic_construct_signature_type_literal\\.ts:3:5: error: a generic construct signature in a type literal is not supported yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A generic method in a type literal is an error at the method.
 add_test(NAME test-compile-diagnostic-location-generic-method-type-literal
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
