@@ -1932,8 +1932,15 @@ namespace mlirgen
             }
         }
 
-        // (with arguments, the constructor is a base class's, which is not looked at here)
+        // (with arguments, the constructor is a base class's, which is not looked at here); with none, only a class with
+        // no constructor and no base class is answered (below)
         if (constructorDeclarations.empty() && !arguments.empty())
+        {
+            return mlir_ts::ClassType();
+        }
+
+        if (arguments.empty()
+            && (!constructorDeclarations.empty() || !genericClassInfo->classDeclaration->heritageClauses.empty()))
         {
             return mlir_ts::ClassType();
         }
@@ -1973,7 +1980,7 @@ namespace mlirgen
         // in declaration order: what the arguments gave; then, for the trailing ones they do not reach, their defaults
         // (left to the instantiation); and a type parameter with neither is `any`, as TypeScript's `unknown`
         // (`new SS()`: "missing type arguments"), as an untyped parameter nothing gives a type is (TSLANG 106)
-        auto typeArgumentsFrom = [&](StringMap<mlir::Type> &inferredTypes) -> SmallVector<mlir::Type> {
+        auto typeArgumentsFrom = [&](StringMap<mlir::Type> &inferredTypes, bool anyForMissing) -> SmallVector<mlir::Type> {
             auto &typeParams = genericClassInfo->typeParams;
             auto trailingDefaults = typeParams.size();
             while (trailingDefaults > 0 && typeParams[trailingDefaults - 1]->hasDefault()
@@ -1989,7 +1996,7 @@ namespace mlirgen
                 if (found == inferredTypes.end())
                 {
                     // one with a default before an inferred one: its default is not known here
-                    if (typeParams[index]->hasDefault())
+                    if (typeParams[index]->hasDefault() || !anyForMissing)
                     {
                         return {};
                     }
@@ -2064,7 +2071,7 @@ namespace mlirgen
                 }
             }
 
-            return typeArgumentsFrom(inferredTypes);
+            return typeArgumentsFrom(inferredTypes, /*anyForMissing=*/false);
         };
 
         SmallVector<mlir::Type> typeArguments;
@@ -2077,11 +2084,13 @@ namespace mlirgen
             }
         }
 
-        // a class with no constructor of its own, given no arguments (`new SS()`): nothing to infer from
-        if (typeArguments.empty() && constructorDeclarations.empty() && arguments.empty())
+        // a class with no constructor of its own and no base class, given no arguments (`new SS()`): nothing to infer
+        // from - its type parameters are `any`. (Applied wider, the library's classes were instantiated anew.)
+        if (typeArguments.empty() && constructorDeclarations.empty() && arguments.empty()
+            && genericClassInfo->classDeclaration->heritageClauses.empty())
         {
             StringMap<mlir::Type> noneInferred;
-            typeArguments = typeArgumentsFrom(noneInferred);
+            typeArguments = typeArgumentsFrom(noneInferred, /*anyForMissing=*/true);
         }
 
         if (typeArguments.empty())
