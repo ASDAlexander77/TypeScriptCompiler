@@ -1932,7 +1932,8 @@ namespace mlirgen
             }
         }
 
-        if (constructorDeclarations.empty())
+        // (with arguments, the constructor is a base class's, which is not looked at here)
+        if (constructorDeclarations.empty() && !arguments.empty())
         {
             return mlir_ts::ClassType();
         }
@@ -1969,8 +1970,54 @@ namespace mlirgen
             templateGenContext.typeParamsWithArgs[typeParam->getName()] = {typeParam, getNamedGenericType(typeParam->getName())};
         }
 
+        // in declaration order: what the arguments gave; then, for the trailing ones they do not reach, their defaults
+        // (left to the instantiation); and a type parameter with neither is `any`, as TypeScript's `unknown`
+        // (`new SS()`: "missing type arguments"), as an untyped parameter nothing gives a type is (TSLANG 106)
+        auto typeArgumentsFrom = [&](StringMap<mlir::Type> &inferredTypes) -> SmallVector<mlir::Type> {
+            auto &typeParams = genericClassInfo->typeParams;
+            auto trailingDefaults = typeParams.size();
+            while (trailingDefaults > 0 && typeParams[trailingDefaults - 1]->hasDefault()
+                   && !inferredTypes.count(typeParams[trailingDefaults - 1]->getName()))
+            {
+                trailingDefaults--;
+            }
+
+            SmallVector<mlir::Type> typeArguments;
+            for (auto index = 0u; index < trailingDefaults; index++)
+            {
+                auto found = inferredTypes.find(typeParams[index]->getName());
+                if (found == inferredTypes.end())
+                {
+                    // one with a default before an inferred one: its default is not known here
+                    if (typeParams[index]->hasDefault())
+                    {
+                        return {};
+                    }
+
+                    typeArguments.push_back(getAnyType());
+                    continue;
+                }
+
+                auto type = mth.wideStorageType(found->getValue());
+                if (mth.isGenericType(type))
+                {
+                    return {};
+                }
+
+                typeArguments.push_back(type);
+            }
+
+            // all left to their defaults: the instantiation has none to take from here
+            if (typeArguments.empty())
+            {
+                return {};
+            }
+
+            return typeArguments;
+        };
+
         // the type arguments one constructor's parameters give, or none
-        auto inferFromConstructor = [&](ConstructorDeclaration constructorDeclaration) -> SmallVector<mlir::Type> {
+        auto inferFromConstructor =[&](ConstructorDeclaration constructorDeclaration) -> SmallVector<mlir::Type> {
             auto parameters = constructorDeclaration->parameters;
 
             // can it take that many arguments: a spread's count is not known
@@ -2017,34 +2064,7 @@ namespace mlirgen
                 }
             }
 
-            // in declaration order, up to the first the arguments do not reach; the rest must have defaults
-            SmallVector<mlir::Type> typeArguments;
-            for (auto &typeParam : genericClassInfo->typeParams)
-            {
-                auto found = inferredTypes.find(typeParam->getName());
-                if (found == inferredTypes.end())
-                {
-                    break;
-                }
-
-                auto type = mth.wideStorageType(found->getValue());
-                if (mth.isGenericType(type))
-                {
-                    return {};
-                }
-
-                typeArguments.push_back(type);
-            }
-
-            for (auto index = typeArguments.size(); index < genericClassInfo->typeParams.size(); index++)
-            {
-                if (!genericClassInfo->typeParams[index]->hasDefault())
-                {
-                    return {};
-                }
-            }
-
-            return typeArguments;
+            return typeArgumentsFrom(inferredTypes);
         };
 
         SmallVector<mlir::Type> typeArguments;
@@ -2055,6 +2075,13 @@ namespace mlirgen
             {
                 break;
             }
+        }
+
+        // a class with no constructor of its own, given no arguments (`new SS()`): nothing to infer from
+        if (typeArguments.empty() && constructorDeclarations.empty() && arguments.empty())
+        {
+            StringMap<mlir::Type> noneInferred;
+            typeArguments = typeArgumentsFrom(noneInferred);
         }
 
         if (typeArguments.empty())
