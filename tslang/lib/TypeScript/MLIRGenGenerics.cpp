@@ -1555,6 +1555,20 @@ namespace mlirgen
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
+                // A discovery pass (dummyRun) whose module is thrown away needs the instance's type only, and an
+                // instance made already has it in the function map: its module does not keep the function, so
+                // mlirGenFunctionLikeDeclaration found none and made it again - for each call. Every `x[k]` of an
+                // `any` made `___any_key<any>` (and its `___unbox`es) again in each such pass: a function of 1300
+                // lines of them took 45 s (binaryArithmeticControlFlowGraphNotTooLarge). Its type arguments given,
+                // the type is the one the real pass makes the instance with.
+                if (genericTypeGenContext.dummyRun && typeArguments && typeArguments.size() == typeParams.size())
+                {
+                    if (auto funcEntry = lookupFunctionMap(name))
+                    {
+                        return {mlir::success(), funcEntry.funcType, fullName};
+                    }
+                }
+
                 // `f<T>` calling `f<T[]>` would make instances without end
                 if (functionGenericTypeInfo->processing.size() >= MAX_NESTED_GENERIC_INSTANCES)
                 {

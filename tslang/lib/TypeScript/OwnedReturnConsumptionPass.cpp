@@ -2017,15 +2017,65 @@ class OwnedReturnConsumptionPass
 
         mlir::OpBuilder builder(&getContext());
         std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> placedAfterFinally;
+
+        // The ways out of a block from inside its ops' regions (see below), each with the op of the block it is
+        // in, in the block's order: found once for a block, as they are the block's - not one temporary's. Looked
+        // for again after each temporary, a function of many of them (1300 lines of `any` arithmetic,
+        // binaryArithmeticControlFlowGraphNotTooLarge) walked the rest of its block once for each: 2.7 s here.
+        llvm::DenseMap<mlir::Block *, llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>>> exitsOfBlock;
+        auto exitsOf = [&](mlir::Block *block) -> llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> & {
+            auto found = exitsOfBlock.find(block);
+            if (found != exitsOfBlock.end())
+            {
+                return found->second;
+            }
+
+            auto &exits = exitsOfBlock[block];
+            for (auto &top : *block)
+            {
+                if (top.getNumRegions() == 0)
+                {
+                    continue;
+                }
+
+                top.walk([&](mlir::Operation *nested) {
+                    // A nested function's `return` returns from that function, and its jumps are
+                    // its own; nothing inside one is on a path out of this block.
+                    if (mlir::isa<mlir_ts::FuncOp>(nested))
+                    {
+                        return mlir::WalkResult::skip();
+                    }
+
+                    // A `throw` leaves as a `return` does - `const s = "x" + i; if (c) throw i;` lost
+                    // `s` on every throw - unless a `try` between it and this block takes it: the
+                    // block may then go on and give the value back at its own end.
+                    auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
+                                       (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
+                                        jumpLeavesBlock(nested, block)) ||
+                                       (mlir::isa<mlir_ts::ThrowOp>(nested) && !throwLandsWithin(nested, block));
+                    if (leavesBlock)
+                    {
+                        exits.push_back({&top, nested});
+                    }
+
+                    return mlir::WalkResult::advance();
+                });
+            }
+
+            return exits;
+        };
+
+        BlockScan scan;
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> endReleases;
         for (auto *op : discarded)
         {
-            if (!allUsesReleasableInOwnBlock(op) || storedIntoUnownedLocalOutside(op))
+            if (!allUsesReleasableInOwnBlock(op, scan) || storedIntoUnownedLocalOutside(op))
             {
                 continue;
             }
 
             auto *block = op->getBlock();
-            auto rangeEnd = releaseRangeEnd(op);
+            auto rangeEnd = scan.releaseRangeEnd(op);
 
             // The end of the block is not the only way out of it. A `return` written inside an
             // `if` - which is where returns are usually written - leaves from a nested region and
@@ -2052,54 +2102,53 @@ class OwnedReturnConsumptionPass
             //
             // jumpLeavesBlock answers it by walking from the jump up to this block and asking
             // whether anything on the way catches it.
-            for (auto it = std::next(mlir::Block::iterator(op)); it != rangeEnd; ++it)
+            //
+            // The exits of the ops between the definition and the end of its range (exitsOf).
+            for (auto [top, nested] : exitsOf(block))
             {
-                if (it->getNumRegions() == 0)
+                if (!op->isBeforeInBlock(top) || (rangeEnd != block->end() && !top->isBeforeInBlock(&*rangeEnd)))
                 {
                     continue;
                 }
 
-                it->walk([&](mlir::Operation *nested) {
-                    // A nested function's `return` returns from that function, and its jumps are
-                    // its own; nothing inside one is on a path out of this block.
-                    if (mlir::isa<mlir_ts::FuncOp>(nested))
-                    {
-                        return mlir::WalkResult::skip();
-                    }
-
-                    // A `throw` leaves as a `return` does - `const s = "x" + i; if (c) throw i;` lost
-                    // `s` on every throw - unless a `try` between it and this block takes it: the
-                    // block may then go on and give the value back at its own end.
-                    auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
-                                       (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
-                                        jumpLeavesBlock(nested, block)) ||
-                                       (mlir::isa<mlir_ts::ThrowOp>(nested) && !throwLandsWithin(nested, block));
-                    if (leavesBlock && !releaseAfterFinally(builder, op, nested, block, placedAfterFinally))
-                    {
-                        builder.setInsertionPoint(nested);
-                        builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
-                    }
-
-                    return mlir::WalkResult::advance();
-                });
+                if (!releaseAfterFinally(builder, op, nested, block, placedAfterFinally))
+                {
+                    builder.setInsertionPoint(nested);
+                    builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
+                }
             }
 
-            auto *exiting = firstExitingOpAfter(op);
+            mlir::Operation *before = nullptr;
+            auto *exiting = scan.firstExitingOpAfter(op);
             if (exiting && (rangeEnd == block->end() || exiting->isBeforeInBlock(&*rangeEnd)))
             {
-                builder.setInsertionPoint(exiting);
+                before = exiting;
             }
             else if (rangeEnd != block->end())
             {
-                builder.setInsertionPoint(&*rangeEnd);
+                before = &*rangeEnd;
             }
             else if (auto *terminator = block->getTerminator())
             {
-                builder.setInsertionPoint(terminator);
+                before = terminator;
+            }
+
+            endReleases.push_back({op, before});
+        }
+
+        // The releases at the end of the temporaries' stretches go in once every place is found: one put
+        // into a block left no room in its order between its neighbours, and the next temporary's
+        // isBeforeInBlock numbered the whole block again - for each of them, in a block of many. In the
+        // order found, each in front of its op (or at the block's end), as they went in one by one.
+        for (auto [op, before] : endReleases)
+        {
+            if (before)
+            {
+                builder.setInsertionPoint(before);
             }
             else
             {
-                builder.setInsertionPointToEnd(block);
+                builder.setInsertionPointToEnd(op->getBlock());
             }
 
             builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
@@ -2338,10 +2387,12 @@ class OwnedReturnConsumptionPass
     // that result's users that decide (handedOnByConditional). A receiver of a result nobody owns
     // retains, and a branch that makes it owned retained `h` for it (consumeConditionalResults),
     // so `h`'s own reference is still given back at the end of its block either way.
-    static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
+    struct BlockScan;
+
+    static bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
     {
         auto *block = op->getBlock();
-        auto rangeEnd = releaseRangeEnd(op);
+        auto rangeEnd = scan.releaseRangeEnd(op);
 
         llvm::SmallVector<mlir::Value> values{op->getResult(0)};
         while (!values.empty())
@@ -2397,41 +2448,103 @@ class OwnedReturnConsumptionPass
     // definition. A statement with a yield inside - `if (c) { yield 1; }` - is the same: resuming
     // in the middle of it falls through to the rest of the block. A plain function has neither and
     // gets the whole block.
-    static mlir::Block::iterator releaseRangeEnd(mlir::Operation *op)
+    //
+    // The ops of a block that end such a stretch, and the ones that end its execution (firstExitingOpAfter), are
+    // the block's: BlockScan finds them once for a block, in its order, and answers each temporary from them.
+    // Looked for again from each temporary on, a function of many of them (1300 lines of `any` arithmetic,
+    // binaryArithmeticControlFlowGraphNotTooLarge) walked the rest of its block, regions and all, for each.
+    // Releases put in afterwards neither end a stretch nor leave the block.
+    struct BlockScan
     {
-        auto *block = op->getBlock();
-        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+        llvm::DenseMap<mlir::Block *, llvm::SmallVector<mlir::Operation *>> resumesOf;
+        llvm::DenseMap<mlir::Block *, llvm::SmallVector<mlir::Operation *>> exitingOf;
+
+        llvm::SmallVector<mlir::Operation *> &resumes(mlir::Block *block)
         {
-            if (mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(*it))
+            auto found = resumesOf.find(block);
+            if (found != resumesOf.end())
             {
-                return it;
+                return found->second;
             }
 
-            if (it->getNumRegions() == 0)
+            auto &ops = resumesOf[block];
+            for (auto &it : *block)
             {
-                continue;
-            }
-
-            auto resumes = it->walk([&](mlir::Operation *nested) {
-                // a nested function's yields are its own
-                if (mlir::isa<mlir_ts::FuncOp>(nested))
+                if (mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(it))
                 {
-                    return mlir::WalkResult::skip();
+                    ops.push_back(&it);
+                    continue;
                 }
 
-                return mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(nested)
-                           ? mlir::WalkResult::interrupt()
-                           : mlir::WalkResult::advance();
-            });
+                if (it.getNumRegions() == 0)
+                {
+                    continue;
+                }
 
-            if (resumes.wasInterrupted())
-            {
-                return it;
+                auto resumes = it.walk([&](mlir::Operation *nested) {
+                    // a nested function's yields are its own
+                    if (mlir::isa<mlir_ts::FuncOp>(nested))
+                    {
+                        return mlir::WalkResult::skip();
+                    }
+
+                    return mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(nested)
+                               ? mlir::WalkResult::interrupt()
+                               : mlir::WalkResult::advance();
+                });
+
+                if (resumes.wasInterrupted())
+                {
+                    ops.push_back(&it);
+                }
             }
+
+            return ops;
         }
 
-        return block->end();
-    }
+        mlir::Block::iterator releaseRangeEnd(mlir::Operation *op)
+        {
+            auto *block = op->getBlock();
+            for (auto *resume : resumes(block))
+            {
+                if (op->isBeforeInBlock(resume))
+                {
+                    return mlir::Block::iterator(resume);
+                }
+            }
+
+            return block->end();
+        }
+
+        mlir::Operation *firstExitingOpAfter(mlir::Operation *op)
+        {
+            auto *block = op->getBlock();
+            auto found = exitingOf.find(block);
+            if (found == exitingOf.end())
+            {
+                auto &ops = exitingOf[block];
+                for (auto &it : *block)
+                {
+                    if (exitsBlock(&it))
+                    {
+                        ops.push_back(&it);
+                    }
+                }
+
+                found = exitingOf.find(block);
+            }
+
+            for (auto *exiting : found->second)
+            {
+                if (op->isBeforeInBlock(exiting))
+                {
+                    return exiting;
+                }
+            }
+
+            return nullptr;
+        }
+    };
 
     // Does this generator temporary, or a view of it, get stored somewhere? Asked under every model but
     // rc (only own has releases left by the time it matters). Under own the `{ value, done }` record a `yield` hands back is filled by stores that move the
@@ -2485,21 +2598,12 @@ class OwnedReturnConsumptionPass
     // Releasing before the return is right for a discarded temporary by definition: what is
     // being returned was consumed by the return's own retain (§9.24) and so is not in this set.
     // A generator's `yield` ends the call the same way (releaseRangeEnd).
-    static mlir::Operation *firstExitingOpAfter(mlir::Operation *op)
+    // (BlockScan::firstExitingOpAfter) - and a `throw`: what follows it in the block never runs, so a temporary of
+    // the thrown expression - `throw "x" + i`'s number printed into a string - was never given back
+    static bool exitsBlock(mlir::Operation *op)
     {
-        auto *block = op->getBlock();
-        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
-        {
-            // (and a `throw`: what follows it in the block never runs, so a temporary of the thrown
-            // expression - `throw "x" + i`'s number printed into a string - was never given back)
-            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp,
-                          mlir_ts::ThrowOp>(*it))
-            {
-                return &*it;
-            }
-        }
-
-        return nullptr;
+        return mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp,
+                         mlir_ts::ThrowOp>(op);
     }
 
     static bool producesOwnedResult(mlir::Value value)
