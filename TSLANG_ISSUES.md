@@ -2202,6 +2202,11 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
     (it crashed in LLVM's instruction selection; before the fixes above the catch did not catch).
 
 Still open, looked at:
+- -mm=own: an object literal's field of `<any>undefined` or `<any>null` (`{ t: <any>undefined, n: 1 }`) is
+  released twice: OwnershipInferencePass does not count the store of its box into the object as a move (a box of
+  `<any>5` it does), so the release at the end of the function stays and the object's release frees the box again.
+  wasm's heap caught it ("free of ...: not a block the heap gave out"), and Linux under -mm=own; Windows did not.
+  The generator object's `.thrown` holds `<any>0` for that reason (its first version was `<any>undefined`).
 - A yield in a finally block is skipped (`try { yield 1; } finally { yield 2; }` gives 1 and not 2), as before.
 - -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
   is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
