@@ -2261,21 +2261,15 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   `00generator_symbol_iterator.ts` (compile, JIT, rc, own).
 
 Still open, looked at:
-- -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`) is refused ("'this value'
-  is a parameter, kept here, but -mm=own cannot make the callers of this function expression give it up"): next()
-  keeps what it is given, and a method used other than by a call can't make its callers give it up. A number or a
-  string works.
-- -mm=own: a generator typed as an interface other than the library-instantiated Iterator<T> - a program's own, or
-  Iterable<T> - is "a value takes a second reference; -mm=own cannot prove a move or a borrow here yet" at its
-  `for...of` (before these changes too), and so is an array given as an Iterable<T>.
-
-Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
-diagnostic-location `generator_return_of_other_type.ts`; `00generator_next_value.ts`, `00object_method_arity.ts`,
-`00generator_return_throw.ts` (compile, JIT, rc, own), diagnostic-location `generator_yield_in_catch.ts`.
-
-154 (compile time of a function of many `any` operations, 2026-11-21). The tsc sweep's
-binaryArithmeticControlFlowGraphNotTooLarge - 1300 lines of `any` arithmetic in one function - timed out now and
-then: not flaky, a steady 45 s (gc) against the sweep's 60 s with 8 jobs, and ~27 min under rc.
+- -mm=own: next(value) of a generator sending it an object (`Generator<T, void, Box>`): the generator keeps what it
+  is sent (`const b = yield x` is a variable of the generator), and next() is called through the Generator
+  interface, whose callers can't be made to give it up. Sent as a Shared<T> it works; one of another type is now an
+  error at the yield that says so (it was "'this value' is a parameter, kept here"). Tests
+  `00generator_next_shared.ts`, diagnostic-location `generator_next_object_own.ts`.
+- -mm=own: a generator typed as an interface of the program's own (an Iterable<T> with next) works now; an array
+  given as an Iterable<T> is still "a value takes a second reference": the generator made over it would hold a borrow
+  of the array for as long as it lives, which -mm=own can't say yet (open). (A generator typed as such an interface
+  with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
 - gc (#976): a discovery pass made a generic instance again for every call (`___any_key<any>` for each `x[k]`), a
   module walk after each `any` access, OwnedReturnConsumptionPass and UnwindReleasePass walking the rest of a
   block, or a handler, once for each temporary: 45 s -> 4.7 s.
