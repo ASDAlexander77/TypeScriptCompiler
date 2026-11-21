@@ -5193,6 +5193,29 @@ namespace mlirgen
         return mlir::failed(result) ? mlir::failure() : mlir::success();
     }
 
+    // The calls through a value in the specializations of a helper made from source (`___any_key<...>`,
+    // `___any_invoke<...>`) are the adapter's (ANY_CALL_ADAPTER_CALL_ATTR_NAME). The helpers are functions of the
+    // module's own, so only its top-level functions are looked at, and one marked already is passed over: walking
+    // every op of the module after each `x[k]` or call of an `any` made a function of many of them quadratic
+    // (binaryArithmeticControlFlowGraphNotTooLarge, 1300 lines: 45 s, near the sweep's time limit)
+    void MLIRGenImpl::markAnyAdapterCalls(StringRef namePrefix)
+    {
+        for (auto funcOp : theModule.getOps<mlir_ts::FuncOp>())
+        {
+            if (!funcOp.getName().starts_with(namePrefix))
+            {
+                continue;
+            }
+
+            funcOp.walk([&](mlir_ts::CallIndirectOp callOp) {
+                if (!callOp->hasAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME))
+                {
+                    callOp->setAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME, builder.getUnitAttr());
+                }
+            });
+        }
+    }
+
     // `a(x, y)` of `a: any`: `__any_invoke(a, [<any>x, <any>y])`, which calls the adapter of the function `a`
     // holds (TYPE_DESCR_CALL): the result is `any`, a value that is no function a TypeError
     ValueOrLogicalResult MLIRGenImpl::mlirGenAnyCall(mlir::Location location, mlir::Value callee, CallExpression callExpression,
@@ -5259,14 +5282,7 @@ namespace mlirgen
 
         // the one call through a value in `__any_invoke` is the adapter's: it returns what the adapter returns,
         // a box its caller owns (OwnedReturnConsumptionPass) - counted as a call of nothing known, it leaked
-        theModule.walk([&](mlir_ts::FuncOp funcOp) {
-            if (funcOp.getName().starts_with("___any_invoke<"))
-            {
-                funcOp.walk([&](mlir_ts::CallIndirectOp callOp) {
-                    callOp->setAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME, builder.getUnitAttr());
-                });
-            }
-        });
+        markAnyAdapterCalls("___any_invoke<");
 
         return result;
     }
@@ -5944,14 +5960,7 @@ namespace mlirgen
 
         // the one call through a value in `__any_key` is the adapter's: it returns what the adapter returns, a box
         // its caller owns (OwnedReturnConsumptionPass)
-        theModule.walk([&](mlir_ts::FuncOp funcOp) {
-            if (funcOp.getName().starts_with("___any_key<"))
-            {
-                funcOp.walk([&](mlir_ts::CallIndirectOp callOp) {
-                    callOp->setAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME, builder.getUnitAttr());
-                });
-            }
-        });
+        markAnyAdapterCalls("___any_key<");
 
         if (op == ANY_KEYS_OP_HAS)
         {

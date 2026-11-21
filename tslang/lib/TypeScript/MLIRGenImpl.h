@@ -13399,6 +13399,8 @@ class MLIRGenImpl
 
     // A call of a value of type `any` (user ruling 11-18): through the adapter made for the function's
     // type when it was boxed (TYPE_DESCR_CALL); a TypeError when it holds no function, or one with none
+    void markAnyAdapterCalls(StringRef namePrefix);
+
     ValueOrLogicalResult mlirGenAnyCall(mlir::Location location, mlir::Value callee, CallExpression callExpression,
                                         const GenContext &genContext);
 

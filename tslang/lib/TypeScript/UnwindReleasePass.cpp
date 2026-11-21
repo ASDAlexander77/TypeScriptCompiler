@@ -738,6 +738,19 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         auto &region = funcOp.getBody();
         mlir::DominanceInfo dominance(funcOp);
 
+        // a resource's names (aliasesOf), found once for it rather than once for each pad. The clones put in
+        // below are of releases, which add no name to any resource
+        llvm::DenseMap<mlir::Value, llvm::SmallVector<mlir::Value>> aliasesCache;
+        auto aliasesOfResource = [&](mlir::Value resource) -> llvm::SmallVector<mlir::Value> & {
+            auto found = aliasesCache.find(resource);
+            if (found == aliasesCache.end())
+            {
+                found = aliasesCache.try_emplace(resource, aliasesOf(resource)).first;
+            }
+
+            return found->second;
+        };
+
         llvm::SmallVector<mlir::Block *> pads;
         for (auto &block : region)
         {
@@ -833,12 +846,32 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                 continue;
             }
 
+            // what the handler's ops read, once for the pad: a resource none of whose names it reads is the
+            // chained pad's, and is passed over without walking the handler for it (each resource walked
+            // every handler of the function, a function of thousands of calls - 1300 lines of `any`
+            // arithmetic, binaryArithmeticControlFlowGraphNotTooLarge - took 8 minutes here under rc)
+            llvm::DenseSet<mlir::Value> readInHandler;
+            for (auto *block : blocks)
+            {
+                for (auto &op : *block)
+                {
+                    op.walk([&](mlir::Operation *nested) {
+                        readInHandler.insert(nested->operand_begin(), nested->operand_end());
+                    });
+                }
+            }
+
             for (auto resource : resources)
             {
-                auto aliases = aliasesOf(resource);
+                auto &aliases = aliasesOfResource(resource);
 
                 // read there, or the chained pad gives it back
-                auto read = false;
+                auto read = llvm::any_of(aliases, [&](mlir::Value alias) { return readInHandler.contains(alias); });
+                if (!read)
+                {
+                    continue;
+                }
+
                 auto touched = false;
                 for (auto *block : blocks)
                 {
@@ -847,14 +880,13 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                         op.walk([&](mlir::Operation *nested) {
                             for (auto alias : aliases)
                             {
-                                read |= llvm::is_contained(nested->getOperands(), alias);
                                 touched |= touches(nested, alias);
                             }
                         });
                     }
                 }
 
-                if (!read || touched)
+                if (touched)
                 {
                     continue;
                 }
@@ -894,7 +926,9 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                 for (auto *exit : exits)
                 {
                     builder.setInsertionPoint(exit);
-                    builder.clone(*release);
+                    auto *clone = builder.clone(*release);
+                    // read by the handler from now on, as a walk of it after this would see
+                    readInHandler.insert(clone->operand_begin(), clone->operand_end());
                 }
             }
         }
