@@ -7538,6 +7538,14 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
         auto rightExpressionValue = V(resultRight);
 
+        // `k in d` of a dictionary: whether it holds an entry k
+        if (dictionaryClassInfoOf(rightExpressionValue.getType(), genContext))
+        {
+            CAST_A(key, location, getStringType(), leftExpressionValue, genContext);
+            SmallVector<mlir::Value, 4> operands{key};
+            return mlirGenDictionaryCall(location, rightExpressionValue, "has", operands, genContext);
+        }
+
         // `k in x` of `x: any`: asked of the keys of the value it holds, at run time (user ruling 11-19)
         if (isa<mlir_ts::AnyType>(rightExpressionValue.getType()))
         {
@@ -18389,6 +18397,25 @@ class MLIRGenImpl
 
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsClassInstance(mlir::Location location, ObjectLiteralInfo &oli,
         const GenContext &genContext);
+
+    // a string index signature's value (OBJECT_DICTIONARY_CLASS_NAME): see MLIRGenAccessCall.cpp
+    ClassInfo::TypePtr dictionaryClassInfoOf(mlir::Type type, const GenContext &genContext);
+    mlir::Type getObjectDictionaryType(mlir::Location location, mlir::Type valueType, const GenContext &genContext);
+    mlir::Type instantiatedDictionaryType(mlir::Location location, mlir::Type type, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,
+        mlir::Value key, bool isConditional, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,
+        StringRef name, bool isConditional, const GenContext &genContext);
+    mlir::LogicalResult mlirGenDictionarySet(mlir::Location location, mlir::Value dictionary, mlir::Value key,
+        mlir::Value value, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenDictionaryCall(mlir::Location location, mlir::Value dictionary, StringRef method,
+        SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
+    std::optional<mlir::LogicalResult> mlirGenDictionaryDelete(mlir::Location location, Expression operand,
+        const GenContext &genContext);
+    ValueOrLogicalResult castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
+        mlir_ts::ClassType classType, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
+        ObjectLiteralExpression objectLiteral, const GenContext &genContext);
 
     ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);

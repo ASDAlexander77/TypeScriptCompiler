@@ -413,6 +413,12 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning)
     {
+        // `const d: { [key: string]: number } = { a: 1 }`: a dictionary holding the literal's fields
+        if (dictionaryClassInfoOf(classType, genContext))
+        {
+            return castTupleToDictionary(location, value, srcTupleType, classType, genContext);
+        }
+
         SmallVector<mlir::Value> values;
         
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);

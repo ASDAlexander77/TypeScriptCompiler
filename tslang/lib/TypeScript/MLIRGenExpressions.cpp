@@ -1559,6 +1559,13 @@ namespace mlirgen
             return V(builder.create<mlir_ts::ConstantOp>(location, getSymbolType(), builder.getStringAttr(wellKnown)));
         }
 
+        // `d.name` of a dictionary is its entry `name`
+        if (auto entry = mlirGenDictionaryEntry(location, expressionValue, namePtr,
+                                                !!propertyAccessExpression->questionDotToken, genContext))
+        {
+            return *entry;
+        }
+
         auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression)).copy(stringAllocator);
 
         auto fieldResult = mlirGenPropertyAccessExpression(location, expressionValue, namePtr,
@@ -1592,6 +1599,12 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
 
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
+        if (auto entry = mlirGenDictionaryEntry(location, V(result), namePtr,
+                                                !!propertyAccessExpression->questionDotToken, genContext))
+        {
+            return *entry;
+        }
+
         return mlirGenPropertyAccessExpression(location, V(result), namePtr,
                                                !!propertyAccessExpression->questionDotToken, genContext);
     }
@@ -1667,6 +1680,13 @@ namespace mlirgen
 
             auto noKey = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
             return mlirGenAnyKey(location, objectValue, noKey, ANY_KEYS_OP_KEYS, genContext);
+        }
+
+        // a dictionary's keys, in the order its entries were added
+        if (method == "keys" && dictionaryClassInfoOf(objectValue.getType(), genContext))
+        {
+            SmallVector<mlir::Value, 4> noOperands;
+            return mlirGenDictionaryCall(location, objectValue, "keys", noOperands, genContext);
         }
 
         SmallVector<std::string> keys;
@@ -2842,6 +2862,11 @@ namespace mlirgen
 
         auto location = loc(deleteExpression);
 
+        if (auto deleted = mlirGenDictionaryDelete(location, deleteExpression->expression, genContext))
+        {
+            return *deleted;
+        }
+
         auto result = mlirGen(deleteExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
@@ -3556,6 +3581,12 @@ namespace mlirgen
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 return cast(location, valueType, V(result), genContext);
             }
+        }
+
+        // `{ [m]: i }` with a key known only at run time: a dictionary
+        if (auto dictionary = mlirGenObjectLiteralAsDictionary(location, objectLiteral, genContext))
+        {
+            return *dictionary;
         }
 
         ObjectLiteralInfo oli{};

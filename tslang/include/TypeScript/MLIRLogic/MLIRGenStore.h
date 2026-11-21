@@ -897,6 +897,9 @@ struct ClassInfo
     // else, a slot left to a declared C++ method null), may have a constructor and field
     // initializers, and `.new`; still no RTTI. tslang allocates its objects.
     bool isCppVTableImplementation = false;
+    // `@dictionary`: the value of a string index signature. Outside its own methods `d.name`
+    // and `d["name"]` read and write its entries, not its members.
+    bool isDictionary = false;
     // `@atomic`: its objects may be used by several threads at once. Under -mm=rc a new object is
     // marked shared, with everything it holds, once its constructor has run, and a value stored
     // into one of its fields is marked before the store (ts.MarkShared), so every block reachable

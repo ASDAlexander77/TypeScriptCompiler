@@ -1710,6 +1710,12 @@ namespace mlirgen
         }
         else if (auto classType = dyn_cast<mlir_ts::ClassType>(arrayType))
         {
+            // `d[k]` of a dictionary is its entry `k`, whatever k names
+            if (auto entry = mlirGenDictionaryEntry(location, expression, argumentExpression, isConditionalAccess, genContext))
+            {
+                return *entry;
+            }
+
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
@@ -3736,6 +3742,518 @@ namespace mlirgen
         }
 
         return mlirGenCallExpression(location, newCtorMethod, typeArguments, operands, genContext);        
+    }
+
+    // ---- a string index signature's value: ObjectDictionary<T> (OBJECT_DICTIONARY_CLASS_NAME) ----
+    //
+    // `{ [key: string]: T }` is a dictionary of T whose keys are known at run time, a class of the default
+    // library marked @dictionary. Outside its own methods `d.name`, `d["name"]` and `d[k]` are its
+    // entries - read as `T | undefined`, written as T - and never its members. An object literal
+    // with a key known only at run time (`{ [m]: i }`), or one given where a dictionary is wanted,
+    // makes one.
+
+    ClassInfo::TypePtr MLIRGenImpl::dictionaryClassInfoOf(mlir::Type type, const GenContext &genContext)
+    {
+        auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type);
+        if (!classType)
+        {
+            return ClassInfo::TypePtr();
+        }
+
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        return classInfo && classInfo->isDictionary ? classInfo : ClassInfo::TypePtr();
+    }
+
+    mlir::Type MLIRGenImpl::getObjectDictionaryType(mlir::Location location, mlir::Type valueType, const GenContext &genContext)
+    {
+        auto genericClassInfo = getGenericClassInfoByFullName(OBJECT_DICTIONARY_CLASS_NAME);
+        if (!genericClassInfo || !valueType)
+        {
+            return mlir::Type();
+        }
+
+        SmallVector<mlir::Type> typeArguments{valueType};
+        auto [result, specializedType] =
+            instantiateSpecializedClassType(location, genericClassInfo->classType, typeArguments, genContext, true);
+        if (mlir::failed(result))
+        {
+            return mlir::Type();
+        }
+
+        return specializedType;
+    }
+
+    // The dictionary type `type`, instantiated again here. A type given from elsewhere - the receiver of a
+    // `return`, the function's result type found in an earlier pass - may have been instantiated only where
+    // nothing was kept (an evaluation, a discovery pass), and then its members are generated nowhere ("'ts.Call'
+    // op 'ObjectDictionary<si32>.constructor' does not reference a valid function"). `new C<T>()` always
+    // resolves its type here; a dictionary made for an object literal must too.
+    mlir::Type MLIRGenImpl::instantiatedDictionaryType(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
+        auto classInfo = dictionaryClassInfoOf(type, genContext);
+        if (!classInfo || classInfo->typeParamsWithArgs.size() != 1)
+        {
+            return type;
+        }
+
+        auto valueType = std::get<1>(classInfo->typeParamsWithArgs.begin()->getValue());
+        auto instantiated = getObjectDictionaryType(location, valueType, genContext);
+        return instantiated ? instantiated : type;
+    }
+
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,
+        mlir::Value key, bool isConditional, const GenContext &genContext)
+    {
+        // inside its own methods, `this.name` is the member
+        if (!dictionaryClassInfoOf(objectValue.getType(), genContext) ||
+            (genContext.thisType && genContext.thisType == objectValue.getType()))
+        {
+            return std::nullopt;
+        }
+
+        if (!isa<mlir_ts::StringType>(key.getType()))
+        {
+            auto stringKey = cast(location, getStringType(), key, genContext);
+            if (stringKey.failed_or_no_value())
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            key = V(stringKey);
+        }
+
+        auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+        return mlirGenPropertyAccessExpression(location, objectValue, indexAccessor, isConditional, key, genContext);
+    }
+
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenDictionaryEntry(mlir::Location location, mlir::Value objectValue,
+        StringRef name, bool isConditional, const GenContext &genContext)
+    {
+        if (!dictionaryClassInfoOf(objectValue.getType(), genContext) ||
+            (genContext.thisType && genContext.thisType == objectValue.getType()))
+        {
+            return std::nullopt;
+        }
+
+        auto key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+        return mlirGenDictionaryEntry(location, objectValue, key, isConditional, genContext);
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenDictionarySet(mlir::Location location, mlir::Value dictionary, mlir::Value key,
+        mlir::Value value, const GenContext &genContext)
+    {
+        if (!isa<mlir_ts::StringType>(key.getType()))
+        {
+            auto stringKey = cast(location, getStringType(), key, genContext);
+            if (stringKey.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            key = V(stringKey);
+        }
+
+        SmallVector<mlir::Value, 4> operands{key, value};
+        auto result = mlirGenDictionaryCall(location, dictionary, INDEX_ACCESS_SET_FIELD_NAME, operands, genContext);
+        return mlir::failed(result.result) ? mlir::failure() : mlir::success();
+    }
+
+    // a member of the dictionary itself (`has`, `keys`, `delete`, `set`): what a dictionary's name access, an
+    // entry, would not give
+    ValueOrLogicalResult MLIRGenImpl::mlirGenDictionaryCall(mlir::Location location, mlir::Value dictionary, StringRef method,
+        SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        auto methodResult = mlirGenPropertyAccessExpression(location, dictionary, method, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(methodResult)
+        return mlirGenCall(location, V(methodResult), operands, genContext);
+    }
+
+    // `delete d[k]` and `delete d.name` of a dictionary: its entry is deleted (not the object freed)
+    std::optional<mlir::LogicalResult> MLIRGenImpl::mlirGenDictionaryDelete(mlir::Location location, Expression operand,
+        const GenContext &genContext)
+    {
+        Expression objectExpression;
+        if (operand == SyntaxKind::ElementAccessExpression)
+        {
+            objectExpression = operand.as<ElementAccessExpression>()->expression;
+        }
+        else if (operand == SyntaxKind::PropertyAccessExpression)
+        {
+            objectExpression = operand.as<PropertyAccessExpression>()->expression;
+        }
+        else
+        {
+            return std::nullopt;
+        }
+
+        if (!dictionaryClassInfoOf(evaluate(objectExpression, genContext), genContext))
+        {
+            return std::nullopt;
+        }
+
+        auto objectResult = mlirGen(objectExpression, genContext);
+        if (objectResult.failed_or_no_value())
+        {
+            return mlir::failure();
+        }
+
+        mlir::Value key;
+        if (operand == SyntaxKind::ElementAccessExpression)
+        {
+            auto keyResult = mlirGen(operand.as<ElementAccessExpression>()->argumentExpression, genContext);
+            if (keyResult.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            key = V(keyResult);
+            if (!isa<mlir_ts::StringType>(key.getType()))
+            {
+                auto stringKey = cast(location, getStringType(), key, genContext);
+                if (stringKey.failed_or_no_value())
+                {
+                    return mlir::failure();
+                }
+
+                key = V(stringKey);
+            }
+        }
+        else
+        {
+            auto name = MLIRHelper::getName(operand.as<PropertyAccessExpression>()->name, stringAllocator);
+            key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+        }
+
+        SmallVector<mlir::Value, 4> operands{key};
+        auto result = mlirGenDictionaryCall(location, V(objectResult), "delete", operands, genContext);
+        return mlir::failed(result.result) ? mlir::failure() : mlir::success();
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
+        mlir_ts::ClassType classType, const GenContext &genContext)
+    {
+        SmallVector<mlir::Value, 4> noOperands;
+        auto newResult = NewClassInstance(location, mlir::cast<mlir_ts::ClassType>(instantiatedDictionaryType(location, classType, genContext)),
+                                          noOperands, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(newResult)
+        auto dictionary = V(newResult);
+
+        for (auto &field : srcTupleType.getFields())
+        {
+            auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+            if (!name)
+            {
+                emitError(location) << "a field of '" << to_print(srcTupleType) << "' has no name a dictionary can hold";
+                return mlir::failure();
+            }
+
+            auto fieldResult = mlirGenPropertyAccessExpression(location, value, field.id, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(fieldResult)
+            auto key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), name);
+            if (mlir::failed(mlirGenDictionarySet(location, dictionary, key, V(fieldResult), genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return dictionary;
+    }
+
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenObjectLiteralAsDictionary(mlir::Location location,
+        ObjectLiteralExpression objectLiteral, const GenContext &genContext)
+    {
+        auto receiverType = genContext.receiverType ? mth.stripOptionalType(genContext.receiverType) : mlir::Type();
+        auto dictionaryType = dictionaryClassInfoOf(receiverType, genContext) ? receiverType : mlir::Type();
+
+        auto nameOf = [](Node property) -> Node {
+            if (property == SyntaxKind::PropertyAssignment)
+            {
+                return property.as<PropertyAssignment>()->name;
+            }
+
+            if (property == SyntaxKind::MethodDeclaration)
+            {
+                return property.as<MethodDeclaration>()->name;
+            }
+
+            if (property == SyntaxKind::GetAccessor)
+            {
+                return property.as<GetAccessorDeclaration>()->name;
+            }
+
+            if (property == SyntaxKind::SetAccessor)
+            {
+                return property.as<SetAccessorDeclaration>()->name;
+            }
+
+            return Node();
+        };
+
+        // A spread of a dictionary makes one too (`{ ...m }` of `m: { [k: string]: T }`)
+        auto spreadsDictionary = false;
+        for (auto property : objectLiteral->properties)
+        {
+            if (property == SyntaxKind::SpreadAssignment &&
+                dictionaryClassInfoOf(evaluate(property.as<SpreadAssignment>()->expression, genContext), genContext))
+            {
+                spreadsDictionary = true;
+            }
+        }
+
+        // A computed name whose key is known only at run time: a string or a number with no constant to it,
+        // as getNameFromComputedPropertyName finds one (its value's, or its literal type's). The keys are
+        // made here, in order, and kept for the dictionary: a constant one left unused is only a constant.
+        auto runTimeKey = false;
+        SmallVector<mlir::Value> computedKeys(objectLiteral->properties.size());
+        auto anyComputed = llvm::any_of(objectLiteral->properties, [&](Node property) {
+            auto name = nameOf(property);
+            return name && name == SyntaxKind::ComputedPropertyName;
+        });
+        if (anyComputed)
+        {
+            for (auto [index, property] : llvm::enumerate(objectLiteral->properties))
+            {
+                auto name = nameOf(property);
+                if (!name || name != SyntaxKind::ComputedPropertyName)
+                {
+                    continue;
+                }
+
+                auto expression = name.as<ComputedPropertyName>()->expression;
+                if (!wellKnownSymbolName(expression).empty())
+                {
+                    continue;
+                }
+
+                auto keyType = evaluate(expression, genContext);
+                if (!keyType || !(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType>(keyType) ||
+                                  isa<mlir::IntegerType>(keyType)))
+                {
+                    continue;
+                }
+
+                auto keyResult = mlirGen(expression, genContext);
+                if (keyResult.failed_or_no_value())
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                auto value = V(keyResult);
+                computedKeys[index] = value;
+                MLIRCodeLogic mcl(builder, compileOptions);
+                if (!mcl.ExtractAttr(value) && !foldableConstant(value) && !isa<mlir_ts::LiteralType>(value.getType()))
+                {
+                    runTimeKey = true;
+                }
+            }
+        }
+
+        if (!runTimeKey && !dictionaryType && !spreadsDictionary)
+        {
+            return std::nullopt;
+        }
+
+        for (auto property : objectLiteral->properties)
+        {
+            if (property != SyntaxKind::PropertyAssignment && property != SyntaxKind::ShorthandPropertyAssignment &&
+                property != SyntaxKind::SpreadAssignment)
+            {
+                // a dictionary wanted, but a method here: made as a record and cast, as before
+                if (!runTimeKey && !spreadsDictionary)
+                {
+                    return std::nullopt;
+                }
+
+                emitError(loc(property)) << "an object literal that makes a dictionary (a key known only at run time, or a "
+                                            "dictionary spread into it) can hold only properties and spreads";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        auto valueExpressionOf = [](Node property) -> Expression {
+            if (property == SyntaxKind::PropertyAssignment)
+            {
+                return property.as<PropertyAssignment>()->initializer;
+            }
+
+            return property.as<ShorthandPropertyAssignment>()->name.as<Expression>();
+        };
+
+        if (!dictionaryType)
+        {
+            SmallVector<mlir::Type> valueTypes;
+            for (auto property : objectLiteral->properties)
+            {
+                if (property == SyntaxKind::SpreadAssignment)
+                {
+                    auto spreadType = evaluate(property.as<SpreadAssignment>()->expression, genContext);
+                    if (auto classInfo = dictionaryClassInfoOf(spreadType, genContext); classInfo && classInfo->typeParamsWithArgs.size() == 1)
+                    {
+                        valueTypes.push_back(std::get<1>(classInfo->typeParamsWithArgs.begin()->getValue()));
+                        continue;
+                    }
+
+                    llvm::SmallVector<mlir_ts::FieldInfo> fields;
+                    if (!spreadType || mlir::failed(mth.getFields(spreadType, fields)))
+                    {
+                        emitError(loc(property)) << "a spread into a dictionary of a value of type '" << to_print(spreadType)
+                                                 << "' is not supported";
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    for (auto &field : fields)
+                    {
+                        valueTypes.push_back(mth.wideStorageType(mth.stripLiteralType(field.type)));
+                    }
+
+                    continue;
+                }
+
+                auto valueType = evaluate(valueExpressionOf(property), genContext);
+                if (!valueType)
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                valueTypes.push_back(mth.wideStorageType(mth.stripLiteralType(valueType)));
+            }
+
+            auto valueType = valueTypes.empty() ? mlir::Type(getAnyType()) : mth.getUnionTypeWithMerge(location, valueTypes);
+            dictionaryType = getObjectDictionaryType(location, valueType, genContext);
+            if (!dictionaryType)
+            {
+                emitError(location) << "a key known only at run time makes a dictionary, the default library's '"
+                                    << OBJECT_DICTIONARY_CLASS_NAME << "', which is not there";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        SmallVector<mlir::Value, 4> noOperands;
+        dictionaryType = instantiatedDictionaryType(location, dictionaryType, genContext);
+        auto newResult = NewClassInstance(location, mlir::cast<mlir_ts::ClassType>(dictionaryType), noOperands, genContext);
+        if (newResult.failed_or_no_value())
+        {
+            return ValueOrLogicalResult(mlir::failure());
+        }
+
+        auto dictionary = V(newResult);
+
+        GenContext valueGenContext(genContext);
+        valueGenContext.receiverType = mlir::Type();
+        for (auto [index, property] : llvm::enumerate(objectLiteral->properties))
+        {
+            // `...s`: a record's fields, known here, each set; a dictionary's entries, copied by the default
+            // library's objectDictionaryAssign (a generic function: made only where it is used)
+            if (property == SyntaxKind::SpreadAssignment)
+            {
+                auto spreadLocation = loc(property);
+                auto spreadResult = mlirGen(property.as<SpreadAssignment>()->expression, genContext);
+                if (spreadResult.failed_or_no_value())
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                auto spreadValue = V(spreadResult);
+                if (dictionaryClassInfoOf(spreadValue.getType(), genContext))
+                {
+                    if (spreadValue.getType() != dictionary.getType())
+                    {
+                        emitError(spreadLocation) << "a spread of '" << to_print(spreadValue.getType()) << "' into '"
+                                                  << to_print(dictionary.getType())
+                                                  << "' is not supported yet: the values' types have to be the same";
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    auto assign = resolveIdentifier(spreadLocation, OBJECT_DICTIONARY_ASSIGN_NAME, genContext);
+                    if (!assign)
+                    {
+                        emitError(spreadLocation) << "a spread of a dictionary needs the default library's '"
+                                                  << OBJECT_DICTIONARY_ASSIGN_NAME << "', which is not there";
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
+                    auto assigned = mlirGenCallExpression(spreadLocation, assign, {}, operands, genContext);
+                    if (mlir::failed(assigned.result))
+                    {
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    continue;
+                }
+
+                llvm::SmallVector<mlir_ts::FieldInfo> fields;
+                if (mlir::failed(mth.getFields(spreadValue.getType(), fields)))
+                {
+                    emitError(spreadLocation) << "a spread into a dictionary of a value of type '"
+                                              << to_print(spreadValue.getType()) << "' is not supported";
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                for (auto &field : fields)
+                {
+                    auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                    if (!name)
+                    {
+                        emitError(spreadLocation) << "a field of '" << to_print(spreadValue.getType())
+                                                  << "' has no name a dictionary can hold";
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    auto fieldResult = mlirGenPropertyAccessExpression(spreadLocation, spreadValue, field.id, genContext);
+                    if (fieldResult.failed_or_no_value())
+                    {
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+
+                    auto fieldKey = builder.create<mlir_ts::ConstantOp>(spreadLocation, getStringType(), name);
+                    if (mlir::failed(mlirGenDictionarySet(spreadLocation, dictionary, fieldKey, V(fieldResult), genContext)))
+                    {
+                        return ValueOrLogicalResult(mlir::failure());
+                    }
+                }
+
+                continue;
+            }
+
+            mlir::Value key = computedKeys[index];
+            Node name = property == SyntaxKind::PropertyAssignment ? property.as<PropertyAssignment>()->name
+                                                                   : property.as<ShorthandPropertyAssignment>()->name.as<Node>();
+            if (!key && name == SyntaxKind::ComputedPropertyName)
+            {
+                auto keyResult = mlirGen(name.as<ComputedPropertyName>()->expression, genContext);
+                if (keyResult.failed_or_no_value())
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                key = V(keyResult);
+            }
+            else if (!key)
+            {
+                auto nameAttr = dyn_cast_or_null<mlir::StringAttr>(TupleFieldName(name, genContext));
+                if (!nameAttr)
+                {
+                    emitError(loc(property)) << "a key a dictionary can't hold";
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                key = builder.create<mlir_ts::ConstantOp>(loc(property), getStringType(), nameAttr);
+            }
+
+            auto valueResult = mlirGen(valueExpressionOf(property), valueGenContext);
+            if (valueResult.failed_or_no_value())
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            if (mlir::failed(mlirGenDictionarySet(loc(property), dictionary, key, V(valueResult), genContext)))
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        return ValueOrLogicalResult(dictionary);
     }
 
 } // namespace mlirgen
