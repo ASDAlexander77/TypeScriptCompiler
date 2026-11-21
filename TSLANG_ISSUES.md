@@ -2214,9 +2214,13 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   done: true }`, throw(e) throws e. The generator object holds a mode its yields check where they resume
   (addGeneratorResumeMethods, mlirGenGeneratorResumeChecks). Under -mm=own return() only for a T that owns
   nothing (a number, a boolean): its result would hold the value the caller lends. The library's `Generator`
-  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither) once a compiler with
-  them is released. Under -mm=own a call through an optional one is read as moving the generator, so there a
-  program declaring them required calls them.
+  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither; fields of a function type
+  as `next`, not methods - a method shifts the vtable, and a Generator then can't be cast to an Iterable, whose
+  `next` has another type). Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
+  was read as moving the object: the method value bound to it is wrapped in an optional, given out of the If that
+  tests the member (lowered by then: a branch's block argument), tested and unwrapped for the call - all of which
+  only calls it now lends the object (isBoundForCall, boundOnlyCalled), as a call of a member that is not optional
+  does. Test `00interface_optional_member_call.ts` (compile, JIT, rc, own).
 - -mm=own: an object literal's field of `<any>undefined` or `<any>null` (`{ t: <any>undefined, n: 1 }`) was
   released twice: own_facts::isConstantData took null or undefined seen through its casts for data nothing owns,
   a box into `any` included - so the store of the box into the object was not checked as a move, and the

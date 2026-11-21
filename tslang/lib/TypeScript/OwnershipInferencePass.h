@@ -1132,6 +1132,7 @@ class OwnershipInferencePass
     // interface's `this` (`ts.ExtractInterfaceThis`) is bound so for a call of a function-typed
     // field (`i.toString()` where `toString: () => string`).
     static bool isBoundForCall(mlir::Operation *thisOp);
+    static bool boundOnlyCalled(mlir::Value bound, int depth);
 
     // Is `value` an argument the call's callee keeps?
     static bool isKeptArgument(mlir::Operation *call, mlir::Value value);
