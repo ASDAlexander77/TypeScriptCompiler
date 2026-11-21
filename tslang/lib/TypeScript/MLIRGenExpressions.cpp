@@ -1496,6 +1496,11 @@ namespace mlirgen
         auto location = loc(qualifiedName);
 
         auto expression = qualifiedName->left;
+        if (auto global = globalThisMember(location, expression, MLIRHelper::getName(qualifiedName->right), genContext))
+        {
+            return global;
+        }
+
         auto result = mlirGenModuleReference(expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
@@ -1505,11 +1510,40 @@ namespace mlirgen
         return mlirGenPropertyAccessExpression(location, expressionValue, name, genContext);
     }
 
+    // `globalThis.x` where no `globalThis` is declared: the global `x`, named from the module's root ("can't resolve
+    // name: globalThis")
+    mlir::Value MLIRGenImpl::globalThisMember(mlir::Location location, Node expression, StringRef name,
+                                              const GenContext &genContext)
+    {
+        if (expression != SyntaxKind::Identifier || MLIRHelper::getName(expression.as<Identifier>()) != "globalThis")
+        {
+            return mlir::Value();
+        }
+
+        {
+            // declared by the program: that one
+            MLIRNamespaceGuard probeGuard(currentNamespace);
+            if (resolveIdentifier(location, "globalThis", genContext))
+            {
+                return mlir::Value();
+            }
+        }
+
+        MLIRNamespaceGuard nsGuard(currentNamespace);
+        currentNamespace = rootNamespace;
+        return resolveIdentifier(location, StringRef(name).copy(stringAllocator), genContext);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
     {
         auto location = loc(propertyAccessExpression);
 
         auto expression = propertyAccessExpression->expression.as<Expression>();
+        if (auto global = globalThisMember(location, expression, MLIRHelper::getName(propertyAccessExpression->name), genContext))
+        {
+            return global;
+        }
+
         auto result = mlirGen(expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
