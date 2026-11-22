@@ -2437,3 +2437,6 @@ owns nothing). In every model: a generator function that names itself (`yield* d
 resolve name"), a method likewise; one that goes through another function works.
 
 Tests `00generator_yield_star_delegate.ts` (compile, JIT, rc, own), `00generator_yield_star_return.ts` now under own too.
+
+Verified: ctest (8867), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
+under -mm=own (236), mm_fuzz run (914 programs), a million rounds of each shape at a flat 5.7 MB: no failures.
