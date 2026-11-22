@@ -2363,3 +2363,38 @@ finally block that yields is not supported: catch it inside the try statement, o
 thrown by a called function, or a rethrown `any` holding one, still stops at run time; the complete fix would move
 the caught value into the kept slot rather than copy it. Tests `00generator_throw_through_yielding_finally.ts` (all
 models) and diagnostic-location `generator_throw_object_through_yielding_finally_own.ts`.
+157 (-mm=own: a for...of over an Iterable<string>, a dictionary of `number | string` read and stored, 2026-11-22;
+USER RULING: both are to work, not to be errors).
+- `function cat(v: Iterable<string>) { for (const c of v) s += c; }` was "a value takes a second reference" at the
+  `for`, for an array, a string or a generator given: next() called through the interface was not known to hand
+  over the `{value, done}` it returns - a closed interface's members keep their own facts (spec 31), and a
+  generator's next reads as borrowing its state. Every function behind such a slot that is a generator's own next
+  (isGeneratorNext: named `next`, its first parameter a generator's state object, its result the record) moves what
+  it yields into the record - a yield of a borrow is an error in its body - so the call's result is fresh, as a
+  direct call's is (isIteratorNext). `let r = v.next(); r = v.next()` by hand works the same way.
+- `{ [k: string]: number | string }`: `e["z"] = d["c"]`, `arr.push(d["c"])`, `bx.v = d["c"]`, `l = d["c"]` were "a
+  value that borrows the result of 'ObjectDictionary<...>.get' cannot be stored, returned or captured". A read
+  borrows the entry, and a string's is copied where it is kept; this one is an optional of a tagged union,
+  `(number | string) | undefined`, which isCopyableString left out. Now ts.StringCopy copies it (the union when the
+  flag says it holds one, its string when the tag says string), and `ts.ValueOrDefault` of text - what a store into
+  a `number | string` reads the optional through - is a view of the read, so the store copies it. A union that
+  holds nothing (the zero one ValueOrDefault gives for a key the dictionary does not hold) has no tag: the copy
+  tests for it (it read the descriptor of a null tag: a crash in an executable).
+- Found by the 1M-round check, leaks under -mm=own before these changes too: an array literal of new values given
+  straight to a call - `f(["x" + i, "y" + i])`, 95 MB a million calls - was given back by nothing, with its
+  strings (a literal of numbers was, and one of values borrowed for the call is given back shallow, spec 49): now
+  owned when each element that owns memory is a new value moved into it (holdsOnlyMovedInElements), and released
+  after the call or moved into a callee that keeps it. And the array a conversion makes for a call (`f(a)` of an
+  `int[]` given as a `number[]`, or as an Iterable<number>): a `ts.NewArray` filled by a loop, which the "its one
+  use is the call" test did not see (isConvertedArrayFor).
+
+Still open, looked at: `x == 1.5` of an `x?: number | string` (a dictionary's read compared with a number) is "a
+value is merged from several branches" under -mm=own - `___union_eq_equals` over the optional merges a new string
+with a literal; compared through a local of the union it works. A generator that yields its object's own strings
+(`*each() { for (const s of this.items) yield s; }`) is refused under -mm=own as before ("a value that borrows a
+field cannot be stored, returned or captured"): it does not copy what it yields.
+
+Tests `00iterable_string_for_of.ts`, `00dictionary_union_values.ts` (compile, JIT, rc, own).
+
+Verified: ctest (8850), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
+under -mm=own (236), a million rounds of each shape at a flat 5.5 MB: no failures.

@@ -312,6 +312,62 @@ class OwnedReturnConsumptionPass
         releaseDiscardedTemporaries(mth, module);
     }
 
+    // An array literal each of whose elements that own memory is a new value moved into it - an owned
+    // result its receiver consumed, used by nothing else than the literal and its retains: the array is
+    // their one owner (`["x" + i, mk()]`)
+    static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op)
+    {
+        auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
+        if (!arrayOp || arrayOp->getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        return llvm::all_of(arrayOp->getOperands(), [&](mlir::Value element) {
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()))
+            {
+                return true;
+            }
+
+            auto *elementOp = element.getDefiningOp();
+            return elementOp && elementOp->hasAttr(OWNED_RESULT_ATTR_NAME) && elementOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
+                   llvm::count(arrayOp->getOperands(), element) == 1 &&
+                   llvm::all_of(element.getUsers(), [&](mlir::Operation *user) {
+                       return user == arrayOp.getOperation() || mlir::isa<mlir_ts::RetainOp>(user);
+                   });
+        });
+    }
+
+    // The array a conversion makes for one call (`f(a)` of an `int[]` given as a `number[]`, an array given as
+    // an Iterable<number>): a `ts.NewArray` whose elements are written one by one, then given to the call -
+    // its other uses are the element references of that loop
+    static bool isConvertedArrayFor(mlir::Value value, mlir::Operation *call)
+    {
+        if (!value.getDefiningOp<mlir_ts::NewArrayOp>())
+        {
+            return false;
+        }
+
+        auto calls = 0;
+        for (auto *user : value.getUsers())
+        {
+            if (user == call)
+            {
+                calls++;
+                continue;
+            }
+
+            auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
+            if (!elementRefOp || elementRefOp.getArray() != value ||
+                llvm::any_of(elementRefOp->getUsers(), [](mlir::Operation *refUser) { return !mlir::isa<mlir_ts::LoadOp, mlir_ts::StoreOp>(refUser); }))
+            {
+                return false;
+            }
+        }
+
+        return calls == 1 && llvm::count(call->getOperands(), value) == 1;
+    }
+
     // A new array, born uncounted: a literal's CreateArray, `new Array(n)`, or the read of a spread literal's slot
     static bool isNewArray(mlir::Operation *op)
     {
@@ -815,10 +871,15 @@ class OwnedReturnConsumptionPass
                 // as `new C()` is: marked owned, it is released at the end of the block when nothing takes
                 // it (releaseDiscardedTemporaries), and moved into a callee that keeps it. Only an array of
                 // elements that own nothing: one of strings or objects - a rest parameter's
-                // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over.
+                // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over. Or a
+                // literal each of whose elements is a new value moved into it (`f(["x" + i, mk()])`): it is
+                // theirs to own already, and nothing else gives them back, so every call leaked the array
+                // and what it held (the classifyArgumentArrays of the inference leaves such an array as it is).
                 auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(argument.getType());
                 if (compileOptions.memoryModel == MemoryModelOwn && arrayType &&
-                    !mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) && arrayMadeFor(argument, op, false))
+                    (!mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) ||
+                     holdsOnlyMovedInElements(mth, argument.getDefiningOp())) &&
+                    (arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
                 {
                     if (auto *definingOp = argument.getDefiningOp())
                     {

@@ -1448,15 +1448,22 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
             auto taggedType = tagged.getType();
             auto partialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {i8PtrTy, i8PtrTy}, UNION_TYPE_PACKED);
             auto tag = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, tagged, MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
+            // a union that holds nothing has no tag (the zero one `ts.ValueOrDefault` gives for an optional
+            // without a value - a dictionary's read of a key it does not hold): there is no descriptor to read
             return clh.conditionalExpressionLowering(
-                loc, taggedType, tdl.isKind(tag, TYPE_KIND_STRING),
+                loc, taggedType, isSet(tag),
                 [&](OpBuilder &, Location) -> mlir::Value {
-                    auto asText = castLogic.castLLVMTypes(tagged, taggedType, partialType, partialType, /*sizesMayDiffer=*/true);
-                    auto text = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, asText,
-                                                                      MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
-                    auto withCopy = rewriter.create<LLVM::InsertValueOp>(loc, asText, copyOf(text, isSet(text)),
-                                                                         MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
-                    return castLogic.castLLVMTypes(withCopy, partialType, taggedType, taggedType, /*sizesMayDiffer=*/true);
+                    return clh.conditionalExpressionLowering(
+                        loc, taggedType, tdl.isKind(tag, TYPE_KIND_STRING),
+                        [&](OpBuilder &, Location) -> mlir::Value {
+                            auto asText = castLogic.castLLVMTypes(tagged, taggedType, partialType, partialType, /*sizesMayDiffer=*/true);
+                            auto text = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, asText,
+                                                                              MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
+                            auto withCopy = rewriter.create<LLVM::InsertValueOp>(loc, asText, copyOf(text, isSet(text)),
+                                                                                 MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
+                            return castLogic.castLLVMTypes(withCopy, partialType, taggedType, taggedType, /*sizesMayDiffer=*/true);
+                        },
+                        [&](OpBuilder &, Location) -> mlir::Value { return tagged; });
                 },
                 [&](OpBuilder &, Location) -> mlir::Value { return tagged; });
         };
