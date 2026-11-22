@@ -754,12 +754,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
         auto found = families.find({interfaceType.getName().getValue().str(), position});
-        if (getenv("OWN_TRACE")) // TEMP-TRACE
-        {
-            llvm::errs() << "TRACE slot " << interfaceType.getName().getValue() << " pos=" << position << " found=" << (found != families.end());
-            if (found != families.end()) llvm::errs() << " closed=" << found->second.closed << " fieldEq=" << (found->second.field == identifier) << " members=" << found->second.members.size();
-            llvm::errs() << "(TEMP-TRACE)" << "\n";
-        }
         if (found == families.end() || !found->second.closed || found->second.field != identifier ||
             found->second.members.empty())
         {

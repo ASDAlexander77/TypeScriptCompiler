@@ -284,8 +284,38 @@ namespace own_signature
             // a generator's own `next` (isGeneratorNext), whose facts say it reads its state though
             // it moves what it yields out. Nor one whose result is a borrowing record (spec 32): the
             // caller owns the box, but what it borrows bounds it.
+            // ...or the thunk a generator is given a `Generator<T>` with (`next(value?)` over its own
+            // `next()`, a method cell's function): it makes that one call and returns what it gives
+            auto forwardsGeneratorNext = [&](mlir_ts::FuncOp thunk) {
+                if (!thunk.getSymName().ends_with(".thunk") || thunk.getFunctionType().getNumResults() != 1)
+                {
+                    return false;
+                }
+
+                auto forwarded = 0;
+                for (auto &inner : calls)
+                {
+                    if (inner.op->getParentOfType<mlir_ts::FuncOp>() != thunk)
+                    {
+                        continue;
+                    }
+
+                    if (!isIteratorNext(inner.op) || inner.callees.viaInterface || !inner.callees.known || inner.callees.funcs.empty() ||
+                        !llvm::all_of(inner.callees.funcs, [](mlir_ts::FuncOp callee) { return isGeneratorNext(callee); }) ||
+                        inner.op->getResult(0).getType() != thunk.getFunctionType().getResult(0))
+                    {
+                        return false;
+                    }
+
+                    forwarded++;
+                }
+
+                return forwarded == 1;
+            };
             auto generatorsOnly = call.callees.viaInterface && call.callees.known && !call.callees.funcs.empty() &&
-                                  llvm::all_of(call.callees.funcs, [](mlir_ts::FuncOp callee) { return isGeneratorNext(callee); });
+                                  llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) {
+                                      return isGeneratorNext(callee) || forwardsGeneratorNext(callee);
+                                  });
             if (((isIteratorNext(call.op) && (!call.callees.viaInterface || generatorsOnly)) || makesGeneratorState(call.op)) &&
                 !isRecordResult(call.op))
             {
@@ -293,13 +323,6 @@ namespace own_signature
             }
 
             call.op->removeAttr(OWN_DROP_FIELDS_ATTR_NAME);
-            if (getenv("OWN_TRACE") && isIteratorNext(call.op)) // TEMP-TRACE
-            {
-                llvm::errs() << "TRACE next in " << call.op->getParentOfType<mlir_ts::FuncOp>().getSymName() << " known=" << call.callees.known
-                             << " viaInterface=" << call.callees.viaInterface << " imported=" << call.callees.imported << " funcs=";
-                for (auto f : call.callees.funcs) llvm::errs() << f.getSymName() << "(nodrops=" << noDrops.contains(f) << ") ";
-                llvm::errs() << " named=" << call.callees.named.size() << '\n';
-            }
             if (!call.callees.known)
             {
                 // a method of a class another module may extend, called through its vtable: say so

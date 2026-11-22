@@ -1170,10 +1170,7 @@ namespace mlirgen
         // the yields of the body - not of a function inside it - resume checking the mode
         // (a yield* hands it on to the yields its loop makes, mlirGenYieldStar)
         FilterVisitorSkipFuncsAST<YieldExpression> yieldsVisitor(SyntaxKind::YieldExpression, [&](auto yieldExpression) {
-            if (!yieldExpression->asteriskToken || compileOptions.memoryModel != MemoryModelOwn)
-            {
-                yieldExpression->internalFlags |= InternalFlags::GeneratorResumable;
-            }
+            yieldExpression->internalFlags |= InternalFlags::GeneratorResumable;
         });
 
         if (functionLikeDeclarationBaseAST->body)
@@ -1329,7 +1326,52 @@ namespace mlirgen
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
         // at the yield of a yield*: the delegate's return() first, with the same value (mlirGenYieldStar)
-        if (genContext.yieldStarDelegate)
+        if (genContext.yieldStarDelegate && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            // -mm=own: the delegate is exchanged into a local of next() for the call and back, as for its
+            // next() (mlirGenYieldStar): `{ let .yq: G | undefined = undefined; [.yq, .yd] = [.yd, .yq];
+            // try { .yq!.return?.(this.thrown); } finally { [.yq, .yd] = [.yd, .yq]; } }`
+            auto delegateIdent = nf.createIdentifier(stows(std::string(genContext.yieldStarDelegate)));
+            auto localIdent = nf.createIdentifier(stows(".yq" + std::string(genContext.yieldStarDelegate)));
+            auto exchange = [&]() {
+                NodeArray<Expression> targets;
+                targets.push_back(localIdent);
+                targets.push_back(delegateIdent);
+                NodeArray<Expression> values;
+                values.push_back(delegateIdent);
+                values.push_back(localIdent);
+                return nf.createExpressionStatement(nf.createBinaryExpression(
+                           nf.createArrayLiteralExpression(targets, false), nf.createToken(SyntaxKind::EqualsToken),
+                           nf.createArrayLiteralExpression(values, false))).as<Statement>();
+            };
+
+            NodeArray<TypeNode> members;
+            members.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".YS_G")).as<Node>()).as<TypeNode>());
+            members.push_back(nf.createToken(SyntaxKind::UndefinedKeyword).as<TypeNode>());
+            auto localDeclaration = nf.createVariableDeclaration(localIdent, undefined, nf.createUnionTypeNode(members).as<TypeNode>(),
+                                                                 nf.createIdentifier(S(UNDEFINED_NAME)));
+            localDeclaration->internalFlags |= InternalFlags::StackLocal;
+            NodeArray<VariableDeclaration> localDeclarations;
+            localDeclarations.push_back(localDeclaration);
+
+            NodeArray<Expression> arguments;
+            arguments.push_back(thisProp(GENERATOR_THROWN_NAME));
+            NodeArray<Statement> callStatements;
+            callStatements.push_back(nf.createExpressionStatement(nf.createCallChain(
+                nf.createPropertyAccessExpression(nf.createNonNullExpression(localIdent), nf.createIdentifier(S("return"))),
+                nf.createToken(SyntaxKind::QuestionDotToken), undefined, arguments)));
+            NodeArray<Statement> backStatements;
+            backStatements.push_back(exchange());
+
+            NodeArray<Statement> delegateStatements;
+            delegateStatements.push_back(
+                nf.createVariableStatement(undefined, nf.createVariableDeclarationList(localDeclarations, NodeFlags::Let)));
+            delegateStatements.push_back(exchange());
+            delegateStatements.push_back(nf.createTryStatement(nf.createBlock(callStatements, false), undefined,
+                                                               nf.createBlock(backStatements, false)));
+            returnStatements.push_back(nf.createBlock(delegateStatements, false));
+        }
+        else if (genContext.yieldStarDelegate)
         {
             NodeArray<Expression> arguments;
             arguments.push_back(thisProp(GENERATOR_THROWN_NAME));
