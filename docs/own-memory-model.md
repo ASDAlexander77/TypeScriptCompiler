@@ -218,8 +218,9 @@ anything (see [`@nodrops`](#nodrops), [`@final`](#final) and
 [Separate compilation](#separate-compilation)).
 
 **A `readonly` field is not freed by a call.** Only the constructor of the class that declares a
-`readonly` field writes it (in every memory model, as TypeScript has it: anywhere else
-`o.f = v`, `o.f++`, `[o.f] = ...`, `o[k] = v` and `delete o.f` are compile errors). So no call
+`readonly` field writes it, and arrows it calls where they are written
+(`(() => { this.a = 1; })()`) - in every memory model, as TypeScript has it: anywhere else
+`o.f = v`, `o.f++`, `[o.f] = ...`, `o[k] = v` and `delete o.f` are compile errors. So no call
 overwrites one, and a borrow of it lasts as long as its object does. That holds when the object
 is a parameter, `this`, or a local the function owns, and down a chain of `readonly` fields
 (`o.mid.inner`):

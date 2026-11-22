@@ -6115,7 +6115,9 @@ set(readonly_error_cases
     "key|key\\.ts:2:59: error: cannot assign to 'v' because it is a read-only property of 'N'"
     "method|method\\.ts:3:15: error: cannot assign to 'f' because it is a read-only property of 'E'"
     "subclass_constructor|subclass_constructor\\.ts:2:46: error: cannot assign to 'k' because it is a read-only property of 'B'"
-    "arrow_in_constructor|arrow_in_constructor\\.ts:3:39: error: cannot assign to 'f' because it is a read-only property of 'E'")
+    "arrow_in_constructor|arrow_in_constructor\\.ts:3:39: error: cannot assign to 'f' because it is a read-only property of 'E'"
+    "iife_in_method|iife_in_method\\.ts:3:20: error: cannot assign to 'a' because it is a read-only property of 'C'"
+    "iife_in_later_arrow|iife_in_later_arrow\\.ts:3:48: error: cannot assign to 'a' because it is a read-only property of 'C'")
 foreach(readonly_error_mm gc own)
     foreach(readonly_error_case ${readonly_error_cases})
         string(FIND "${readonly_error_case}" "|" readonly_error_sep)
@@ -6133,8 +6135,10 @@ foreach(readonly_error_mm gc own)
 endforeach()
 # ...so under own a borrow of a readonly field lasts as long as its object (OWN_READONLY_FIELDS_ATTR_NAME)
 foreach(readonly_mm gc rc none own)
-    tslang_add_test(NAME test-jit-own_readonly_stable-${readonly_mm} COMMAND test-runner -jit -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_readonly_stable.ts")
-    tslang_add_test(NAME test-compile-own_readonly_stable-${readonly_mm} COMMAND test-runner -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_readonly_stable.ts")
+    foreach(readonly_test own_readonly_stable own_readonly_constructor_iife)
+        tslang_add_test(NAME test-jit-${readonly_test}-${readonly_mm} COMMAND test-runner -jit -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${readonly_test}.ts")
+        tslang_add_test(NAME test-compile-${readonly_test}-${readonly_mm} COMMAND test-runner -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${readonly_test}.ts")
+    endforeach()
 endforeach()
 
 # an abstract field of a class type implemented by a field: under own its accessors say @lends and @keeps

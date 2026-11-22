@@ -976,6 +976,8 @@ namespace mlirgen
             genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.thisClassType = genContext.thisClassType;
             genContextWithPassResult.staticThis = genContext.staticThis;
+            genContextWithPassResult.immediatelyCalledIn =
+                functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction ? genContext.immediatelyCalledIn : std::string();
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = &cleanUpsList;
@@ -2630,6 +2632,11 @@ namespace mlirgen
         // its parameters, for `arguments` (mlirGenArguments)
         funcGenContext.bodyFuncProto = funcProto;
         funcGenContext.bodyIsArrow = functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction;
+        // only an arrow runs inside the function around it (a method of a class declared there does not)
+        if (!funcGenContext.bodyIsArrow)
+        {
+            funcGenContext.immediatelyCalledIn.clear();
+        }
         funcGenContext.discardReturnValue = funcProto->getDiscardsReturnValue();
 
         auto *blockPtr = funcOp.addEntryBlock();
@@ -2909,6 +2916,7 @@ namespace mlirgen
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.discardReturnValue = false;
+        funcGenContext.immediatelyCalledIn.clear();
         // a synthesized function has no `var`s of its own, and is not the function it may be made in
         funcGenContext.functionVars = nullptr;
         funcGenContext.functionTopLevelVars = nullptr;

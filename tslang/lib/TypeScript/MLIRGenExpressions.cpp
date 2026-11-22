@@ -325,6 +325,15 @@ namespace mlirgen
             // resolve name: this")
             auto staticThis = genContext.staticThis && genContext.thisType && isa<mlir_ts::ClassType>(genContext.thisType);
             allowFuncGenContext.thisType = staticThis ? genContext.thisType : nullptr;
+            // called where it is written: it runs inside the function around it (or the one that one runs in)
+            allowFuncGenContext.immediatelyCalledIn.clear();
+            if (genContext.funcOp && immediatelyCalledArrows.contains(static_cast<const void *>(arrowFunctionAST.operator->())))
+            {
+                auto outerFuncOp = genContext.funcOp;
+                allowFuncGenContext.immediatelyCalledIn =
+                    !genContext.immediatelyCalledIn.empty() ? genContext.immediatelyCalledIn : outerFuncOp.getSymName().str();
+            }
+
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
@@ -1805,6 +1814,20 @@ namespace mlirgen
         }
 
         auto callExpr = callExpression->expression.as<Expression>();
+
+        // `(() => { ... })()`: an arrow called where it is written (GenContext::immediatelyCalledIn)
+        {
+            auto callee = callExpr;
+            while (callee == SyntaxKind::ParenthesizedExpression)
+            {
+                callee = callee.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (callee == SyntaxKind::ArrowFunction)
+            {
+                immediatelyCalledArrows.insert(static_cast<const void *>(callee.operator->()));
+            }
+        }
 
         // `g[Symbol.iterator]()` of a generator (`[Symbol.asyncIterator]` of an async one): the generator itself,
         // as JavaScript's generators are their own iterators. Its object has a step and no member of that name;

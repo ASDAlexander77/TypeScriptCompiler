@@ -1597,8 +1597,10 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // (an arrow the function calls where it is written runs inside it)
         auto funcOp = genContext.funcOp;
-        if (funcOp.getSymName().starts_with((declaring->fullName + "." CONSTRUCTOR_NAME).str()))
+        auto writer = !genContext.immediatelyCalledIn.empty() ? StringRef(genContext.immediatelyCalledIn) : funcOp.getSymName();
+        if (writer.starts_with((declaring->fullName + "." CONSTRUCTOR_NAME).str()))
         {
             return mlir::success();
         }
@@ -21519,6 +21521,8 @@ class MLIRGenImpl
 
     // `Array.isArray(x)` calls and the `typeof x === "array"` each is (arrayIsArrayAsTypeOf)
     llvm::DenseMap<const void *, Expression> arrayIsArrayRewrites;
+    // the arrows a call is made of where they are written (GenContext::immediatelyCalledIn)
+    llvm::SmallPtrSet<const void *, 8> immediatelyCalledArrows;
 
     // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
     // were refused does not go on to the defaults (`any`), which would only be refused again
