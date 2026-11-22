@@ -8746,9 +8746,10 @@ class MLIRGenImpl
             // `a[0] = f()` with `f` pushing to `a` moved its elements to a new block, and the store went
             // into the one given back (a value lost under every model, a freed block written to under
             // rc). The array and the index are the ones the left side evaluated, as JavaScript has it.
+            mlir::Value heldArray;
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
-                mlirGenGrowArrayForWrite(location, elementRefOp);
+                heldArray = mlirGenGrowArrayForWrite(location, elementRefOp);
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
             }
 
@@ -8757,6 +8758,11 @@ class MLIRGenImpl
             // local: the read moves the value out, and the release of what the slot held came after it.
             if (isSelfStore(savingValue, storeReference))
             {
+                if (heldArray)
+                {
+                    builder.create<mlir_ts::ReleaseOp>(location, heldArray);
+                }
+
                 return mlir::success();
             }
 
@@ -8792,6 +8798,12 @@ class MLIRGenImpl
             // writable array
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, storeReference);
             cloneAtomicAttributes(loadOp, storeOp);
+
+            // the array the left side read, kept alive across the right side (mlirGenGrowArrayForWrite)
+            if (heldArray)
+            {
+                builder.create<mlir_ts::ReleaseOp>(location, heldArray);
+            }
         }
         else if (auto extractPropertyOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
@@ -9699,6 +9711,36 @@ class MLIRGenImpl
         return baseType;
     }
 
+    // An operand of a `T | undefined` in arithmetic: its value, or - a number that has none - NaN, as JavaScript
+    // gives (`m + 1` of an undefined `m` was 1: the default, 0, and a "casting from optional" warning). A bitwise
+    // or shift operator reads undefined as 0 there too, so the default stays for them.
+    mlir::Value unwrapOptionalOperand(mlir::Location location, SyntaxKind opCode, mlir_ts::OptionalType optType, mlir::Value value)
+    {
+        auto arithmetic = opCode == SyntaxKind::PlusToken || opCode == SyntaxKind::MinusToken ||
+                          opCode == SyntaxKind::AsteriskToken || opCode == SyntaxKind::SlashToken ||
+                          opCode == SyntaxKind::PercentToken || opCode == SyntaxKind::AsteriskAsteriskToken;
+        if (!arithmetic || !isa<mlir_ts::NumberType>(optType.getElementType()))
+        {
+            auto valueOrDefault = builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value);
+            // a number's default, 0, is what a bitwise or shift operator reads undefined as: no warning for it
+            if (isa<mlir_ts::NumberType>(optType.getElementType()))
+            {
+                valueOrDefault->setAttr(EXPLICIT_CAST_ATTR_NAME, builder.getUnitAttr());
+            }
+
+            return valueOrDefault;
+        }
+
+        auto valueOrNaN = builder.create<mlir_ts::OptionalValueOrDefaultOp>(location, optType.getElementType(), value);
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.createBlock(&valueOrNaN.getDefaultValueRegion());
+            builder.create<mlir_ts::ResultOp>(location, getNaN(location));
+        }
+
+        return valueOrNaN;
+    }
+
     mlir::LogicalResult unwrapForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                           mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
@@ -9748,20 +9790,33 @@ class MLIRGenImpl
 
             // end todo
 
+            // `"" + u` of a `T | undefined`: its text, "undefined" when it has none (as `${u}`), not its default
+            if ((SyntaxKind)opCode == SyntaxKind::PlusToken)
+            {
+                if (isa<mlir_ts::OptionalType>(leftExpressionValue.getType()) &&
+                    isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getStringType(), leftExpressionValue, genContext);
+                }
+                else if (isa<mlir_ts::OptionalType>(rightExpressionValue.getType()) &&
+                         isa<mlir_ts::StringType>(leftExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getStringType(), rightExpressionValue, genContext);
+                }
+            }
+
             if (!MLIRLogicHelper::isLogicOp(opCode))
             {
                 // TODO: review it
                 // cast from optional<T> type
                 if (auto leftOptType = dyn_cast<mlir_ts::OptionalType>(leftExpressionValue.getType()))
                 {
-                    leftExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, leftOptType.getElementType(), leftExpressionValue);
+                    leftExpressionValue = unwrapOptionalOperand(location, opCode, leftOptType, leftExpressionValue);
                 }
 
                 if (auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightExpressionValue.getType()))
                 {
-                    rightExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, rightOptType.getElementType(), rightExpressionValue);
+                    rightExpressionValue = unwrapOptionalOperand(location, opCode, rightOptType, rightExpressionValue);
                 }
             }
         }
@@ -9773,10 +9828,8 @@ class MLIRGenImpl
             {
                 if (auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightExpressionValue.getType()))
                 {
-                    leftExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, leftOptType.getElementType(), leftExpressionValue);
-                    rightExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, rightOptType.getElementType(), rightExpressionValue);
+                    leftExpressionValue = unwrapOptionalOperand(location, opCode, leftOptType, leftExpressionValue);
+                    rightExpressionValue = unwrapOptionalOperand(location, opCode, rightOptType, rightExpressionValue);
                 }
             }
         }
@@ -18467,6 +18520,9 @@ class MLIRGenImpl
         const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castIterableToIterator(mlir::Location location, mlir::Value value,
         mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
+    mlir::Type iteratorElementType(mlir_ts::InterfaceType interfaceType);
+    std::optional<ValueOrLogicalResult> castIteratorToIterator(mlir::Location location, mlir::Value value,
+        mlir_ts::InterfaceType srcInterfaceType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
     ValueOrLogicalResult castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
         mlir_ts::ClassType classType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
@@ -20240,36 +20296,81 @@ class MLIRGenImpl
     // write went past the end of the block - under gc into whatever lay there, under rc and own a crash - and the
     // length stayed. A negative index grows nothing. Only an array with a place to update (a local, a field):
     // one made for the statement only has nobody to see it grown.
-    void mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
+    // Under -mm=rc, the array the left side read when the right side may give its place another one: retained
+    // until the store, which releases it (the caller) - else the right side's store released it, and the write
+    // and the growth went into a freed block.
+    mlir::Value mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
     {
         auto array = elementRefOp.getArray();
         if (!isa<mlir_ts::ArrayType>(array.getType()))
         {
-            return;
+            return mlir::Value();
         }
 
         MLIRCodeLogic mcl(builder, compileOptions);
         auto arrayRef = mcl.GetReferenceFromValue(location, array);
         if (!arrayRef || !isa<mlir_ts::RefType>(arrayRef.getType()))
         {
-            return;
+            return mlir::Value();
         }
 
-        // the right side gave the variable another array (`a[1] = (a = [5], 9)`): the store goes into the array the
-        // left side read, as in JavaScript, and the slot now holds another one - nothing to grow through it
-        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
+        mlir::Value held;
+
+        // The right side may give the place another array (`a[1] = (a = [5], 9)`, `h.a[5] = (h.a = [7], 8)`, a call
+        // that does): the store goes into the array the left side read, as in JavaScript, so that one grows - held in
+        // a slot of its own, not reached through the place, which then holds another array (TSLANG 152). An array
+        // stored anywhere, or a call when the place is not a local the call can't reach, may be such a change.
+        // -mm=own refuses the left side's array released by the right side, and grows through the place as before
+        // (its exceptions - a let over a parameter, a handle's payload - read the place): only the place itself given
+        // another array skips the growth there.
+        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>();
+            loadOp && loadOp->getBlock() == builder.getInsertionBlock() && compileOptions.memoryModel == MemoryModelOwn)
         {
             auto reassigned = false;
             for (auto *op = loadOp->getNextNode(); op && !reassigned; op = op->getNextNode())
             {
-                op->walk([&](mlir_ts::StoreOp storeOp) {
-                    reassigned |= storeOp.getReference() == arrayRef;
-                });
+                op->walk([&](mlir_ts::StoreOp storeOp) { reassigned |= storeOp.getReference() == arrayRef; });
             }
 
             if (reassigned)
             {
-                return;
+                return held;
+            }
+        }
+        else if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
+        {
+            auto placeIsLocal = arrayRef.getDefiningOp<mlir_ts::VariableOp>() || arrayRef.getDefiningOp<mlir_ts::ParamOp>();
+            auto storesArray = false;
+            auto calls = false;
+            for (auto *op = loadOp->getNextNode(); op; op = op->getNextNode())
+            {
+                op->walk([&](mlir::Operation *inner) {
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(inner))
+                    {
+                        storesArray |= storeOp.getReference() == arrayRef ||
+                                       isa<mlir_ts::ArrayType>(storeOp.getValue().getType());
+                    }
+                    else if (!placeIsLocal && mlir::isa<mlir::CallOpInterface>(inner))
+                    {
+                        calls = true;
+                    }
+                });
+            }
+
+            if (storesArray || calls)
+            {
+                arrayRef = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(array.getType()), array,
+                                                               builder.getBoolAttr(false), builder.getIndexAttr(0));
+                // retained only for a store of an array here: its release after the store is not run when the right
+                // side throws, and `k.nums[i] = f(i)` of an `f` that throws leaked the array once a throw (a call
+                // that gives the place another array - and releases the one read - stays open under -mm=rc)
+                if (compileOptions.memoryModel == MemoryModelRC && storesArray)
+                {
+                    mlir::OpBuilder::InsertionGuard guard(builder);
+                    builder.setInsertionPointAfter(loadOp);
+                    builder.create<mlir_ts::RetainOp>(location, array);
+                    held = array;
+                }
             }
         }
 
@@ -20291,7 +20392,7 @@ class MLIRGenImpl
                 if (auto loadOp = varOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
                     loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ParamOp>())
                 {
-                    return;
+                    return held;
                 }
             }
 
@@ -20300,7 +20401,7 @@ class MLIRGenImpl
             // element would be taken for one that releases what its callers borrow. As before there.
             if (own_facts::reachesSharedValue(arrayRef))
             {
-                return;
+                return held;
             }
 
             auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
@@ -20309,7 +20410,7 @@ class MLIRGenImpl
             auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
             auto growOp = builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
             growOp->setAttr(ARRAY_GROWS_ONLY_ATTR_NAME, builder.getUnitAttr());
-            return;
+            return held;
         }
 
         // index >= length, signed: a negative index is never past the end
@@ -20331,6 +20432,7 @@ class MLIRGenImpl
         // them (the sweep's largeControlFlowGraph, 10000 `data[0] = 0`) took a minute to lower to LLVM
         auto growFunc = arrayGrowFunction(location, mlir::cast<mlir_ts::RefType>(arrayRef.getType()));
         builder.create<mlir_ts::CallIndirectOp>(location, growFunc, mlir::ValueRange{arrayRef, newLength});
+        return held;
     }
 
     // `.array_grow.<type>(array: ref<T[]>, length: index)`: SetLengthOf (mlirGenGrowArrayForWrite)
