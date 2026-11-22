@@ -2132,16 +2132,85 @@ namespace mlirgen
             }
         };
 
-        // ...and one that can't be let through even laid out the same: a member function of another number of
-        // parameters is called with another signature (a `next: (value?: N) =>` called as an Iterable's
-        // `next: () =>`: wasm's "function signature mismatch", natively a value never given; TSLANG 153). Members
-        // of other types that are laid out alike (an interface for an interface, `mutrec`'s `x: A` and `x: B`)
-        // are read as they always were.
+        // ...and one that can't be let through even laid out the same: a member function called with another
+        // signature - another number of parameters, or a parameter or result passed otherwise (a `next: (value?:
+        // N) =>` called as an Iterable's `next: () =>`, or as a Generator<T>'s `next: (value?: any) =>`: wasm's
+        // "function signature mismatch", natively a value never given or read as another; TSLANG 153). Members of
+        // other types that are passed alike (an interface for an interface, `mutrec`'s `x: A` and `x: B`, a class,
+        // an array, a string, any: a reference each) are read as they always were.
         mlir::Attribute refusedMember;
+        std::function<bool(mlir::Type, mlir::Type)> passedAlike = [&](mlir::Type a, mlir::Type b) {
+            a = mth.stripLiteralType(a);
+            b = mth.stripLiteralType(b);
+            if (a == b)
+            {
+                return true;
+            }
+
+            auto srcOptType = dyn_cast<mlir_ts::OptionalType>(a);
+            auto optType = dyn_cast<mlir_ts::OptionalType>(b);
+            if (srcOptType || optType)
+            {
+                return srcOptType && optType && passedAlike(srcOptType.getElementType(), optType.getElementType());
+            }
+
+            auto srcTupleType = dyn_cast<mlir_ts::TupleType>(a);
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(b);
+            if (srcTupleType || tupleType)
+            {
+                if (!srcTupleType || !tupleType || srcTupleType.getFields().size() != tupleType.getFields().size())
+                {
+                    return false;
+                }
+
+                for (auto [srcField, field] : llvm::zip(srcTupleType.getFields(), tupleType.getFields()))
+                {
+                    if (!passedAlike(srcField.type, field.type))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            auto isReference = [](mlir::Type t) {
+                return isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ArrayType, mlir_ts::StringType,
+                           mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::ObjectType>(t);
+            };
+            return isReference(a) && isReference(b);
+        };
         auto otherArity = [&](mlir::Type srcType, mlir::Type type) {
             auto srcFuncType = dyn_cast<mlir_ts::FunctionType>(srcType);
             auto funcType = dyn_cast<mlir_ts::FunctionType>(type);
-            return srcFuncType && funcType && srcFuncType.getNumInputs() != funcType.getNumInputs();
+            if (!srcFuncType || !funcType)
+            {
+                return false;
+            }
+
+            if (srcFuncType.getNumInputs() != funcType.getNumInputs() ||
+                srcFuncType.getNumResults() != funcType.getNumResults())
+            {
+                return true;
+            }
+
+            for (auto [srcInput, input] : llvm::zip(srcFuncType.getInputs(), funcType.getInputs()))
+            {
+                if (!passedAlike(srcInput, input))
+                {
+                    return true;
+                }
+            }
+
+            for (auto [srcResult, result] : llvm::zip(srcFuncType.getResults(), funcType.getResults()))
+            {
+                if (!passedAlike(srcResult, result))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         };
 
         // the slots of the target, in its vtable's order: each `extends` block, then its own methods and

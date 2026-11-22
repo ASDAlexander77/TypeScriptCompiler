@@ -33,7 +33,17 @@ function sum(values: Steps<number>) {
     return s;
 }
 
+// a Generator<T, TReturn, TNext> given to a Generator<T>: its next() takes a value of another type (a number, not
+// an any) - adapted the same way
+function drive(g: Generator<number>) {
+    g.next();
+    const a = g.next();
+    const b = g.next(5);
+    return a.value + b.value;
+}
+
 function main() {
+    assert(drive(running()) == 3, "a Generator<T, TReturn, TNext> as a Generator<T>");
     assert(sum(numbers()) == 3.5, "a Generator<T>");
     assert(sum(running()) == 3, "a Generator<T, TReturn, TNext>");
 

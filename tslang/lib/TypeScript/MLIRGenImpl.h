@@ -20320,30 +20320,51 @@ class MLIRGenImpl
         // that does): the store goes into the array the left side read, as in JavaScript, so that one grows - held in
         // a slot of its own, not reached through the place, which then holds another array (TSLANG 152). An array
         // stored anywhere, or a call when the place is not a local the call can't reach, may be such a change.
-        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
+        // -mm=own refuses the left side's array released by the right side, and grows through the place as before
+        // (its exceptions - a let over a parameter, a handle's payload - read the place): only the place itself given
+        // another array skips the growth there.
+        if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>();
+            loadOp && loadOp->getBlock() == builder.getInsertionBlock() && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto reassigned = false;
+            for (auto *op = loadOp->getNextNode(); op && !reassigned; op = op->getNextNode())
+            {
+                op->walk([&](mlir_ts::StoreOp storeOp) { reassigned |= storeOp.getReference() == arrayRef; });
+            }
+
+            if (reassigned)
+            {
+                return held;
+            }
+        }
+        else if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
         {
             auto placeIsLocal = arrayRef.getDefiningOp<mlir_ts::VariableOp>() || arrayRef.getDefiningOp<mlir_ts::ParamOp>();
-            auto mayChange = false;
-            for (auto *op = loadOp->getNextNode(); op && !mayChange; op = op->getNextNode())
+            auto storesArray = false;
+            auto calls = false;
+            for (auto *op = loadOp->getNextNode(); op; op = op->getNextNode())
             {
                 op->walk([&](mlir::Operation *inner) {
                     if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(inner))
                     {
-                        mayChange |= storeOp.getReference() == arrayRef ||
-                                     isa<mlir_ts::ArrayType>(storeOp.getValue().getType());
+                        storesArray |= storeOp.getReference() == arrayRef ||
+                                       isa<mlir_ts::ArrayType>(storeOp.getValue().getType());
                     }
                     else if (!placeIsLocal && mlir::isa<mlir::CallOpInterface>(inner))
                     {
-                        mayChange = true;
+                        calls = true;
                     }
                 });
             }
 
-            if (mayChange)
+            if (storesArray || calls)
             {
                 arrayRef = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(array.getType()), array,
                                                                builder.getBoolAttr(false), builder.getIndexAttr(0));
-                if (compileOptions.memoryModel == MemoryModelRC)
+                // retained only for a store of an array here: its release after the store is not run when the right
+                // side throws, and `k.nums[i] = f(i)` of an `f` that throws leaked the array once a throw (a call
+                // that gives the place another array - and releases the one read - stays open under -mm=rc)
+                if (compileOptions.memoryModel == MemoryModelRC && storesArray)
                 {
                     mlir::OpBuilder::InsertionGuard guard(builder);
                     builder.setInsertionPointAfter(loadOp);
