@@ -2456,4 +2456,5 @@ function's call of itself is let go unresolved while its type is discovered; a f
 - One with no declared type is refused as before ("can't resolve name"): the type of the call is what is being
   found. tsc refuses it too under noImplicitAny (TS7023).
 
-Test `00generator_names_itself.ts` (compile, JIT, rc).
+Tests `00generator_names_itself.ts` (compile, JIT, rc, own), `00generator_names_itself_methods.ts` (compile, JIT, rc:
+the call in a for...of and the methods, which -mm=own does not take yet - 159).
