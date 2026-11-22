@@ -2459,6 +2459,19 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exception = V(result);
 
+        // -mm=own: a YieldingFinally keeps what is thrown through it in an `any` (to throw it again after the finally),
+        // and an `any` that holds an object can't be copied there - it stopped at run time. Said here where the
+        // thrown value's type is known (an object a called function throws still stops there).
+        if (compileOptions.memoryModel == MemoryModelOwn && !genContext.throwCaughtBeforeYieldingFinally &&
+            yieldingFinallyOf(genContext) && !own_facts::isCopyableValue(exception.getType()) &&
+            mth.ownsHeapMemory(location, exception.getType()))
+        {
+            emitError(location) << "-mm=own: an object of type '" << to_print(exception.getType())
+                                << "' thrown through a finally block that yields is not supported: catch it inside "
+                                   "the try statement, or throw a string";
+            return mlir::failure();
+        }
+
         // The exception leaves every scope from here out to the nearest TryOp body, and those
         // scopes have no landing pad of their own to release their locals from - the function's
         // body, a `catch` clause's enclosing scopes. So the throw gives them back itself, as a
@@ -2586,6 +2599,7 @@ namespace mlirgen
         {
             GenContext bodyGenContext(genContext);
             bodyGenContext.yieldingFinally = &yieldingFinally;
+            bodyGenContext.throwCaughtBeforeYieldingFinally = false;
             EXIT_IF_FAILED(mlirGen(labelled, bodyGenContext));
         }
 
@@ -2917,6 +2931,12 @@ namespace mlirgen
             tryBodyGenContext.isUnwindCleanupScope = true;
             tryBodyGenContext.unwindCleanupOp = tryOp;
             tryBodyGenContext.isLoop = false;
+            // a catch clause of the code's own, not the one a YieldingFinally puts around its body
+            if (catchClause && !(catchClause->variableDeclaration &&
+                                 StringRef(MLIRHelper::getName(catchClause->variableDeclaration->name)).starts_with("$fin")))
+            {
+                tryBodyGenContext.throwCaughtBeforeYieldingFinally = true;
+            }
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();
