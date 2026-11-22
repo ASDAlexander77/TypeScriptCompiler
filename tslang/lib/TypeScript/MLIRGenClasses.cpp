@@ -5595,10 +5595,19 @@ genContext);
 
         auto [result, funcOp, funcName, isGeneric] =
             mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+        // the entry a generator method was known by while its own body was generated (mlirGenFunctionPrototype):
+        // the method is registered as what it is below
+        // (it stays when the body can't be generated yet: another generator method it names is not known yet, and
+        // may name this one)
         if (mlir::failed(result))
         {
             return mlir::failure();
         }
+
+        llvm::erase_if(newClassPtr->methods, [&](const MethodInfo &methodInfo) {
+            return methodInfo.orderWeight == GENERATOR_SELF_METHOD_ORDER && methodInfo.name == classMethodMemberInfo.methodName &&
+                   methodInfo.isStatic == classMethodMemberInfo.isStatic;
+        });
 
         if (funcOp)
         {

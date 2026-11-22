@@ -690,6 +690,41 @@ namespace mlirgen
             getFunctionTypeMap().insert({fullName, funcType});
         }
 
+        // A generator that names itself (`function* walk(n) { ... yield* walk(n - 1); }`, a method's
+        // `yield* this.left.walk()`): its body is next() of the object its wrapper returns, and the variables of
+        // that body are fields of the object, so they must all have their types before the wrapper has its own -
+        // while a function is known by its name only once its type is found ("can't resolve name: walk", "Class
+        // member 'walk' can't be found"). With a declared type (`: Generator<number>`) the wrapper's type is known
+        // before its body is: it is known by its name, or as its class's method, while the body is discovered.
+        // (Without one the type of the call is what is being found.)
+        // The entry stays when the body can't be generated yet - it names another generator that is declared after
+        // it, and names this one - so that the other finds this one, and this one is done on the next try. A
+        // function's entry is the one it is registered with; a method's is taken out by mlirGenClassMethodMember,
+        // which registers the method as what it is (GENERATOR_SELF_METHOD_ORDER marks it).
+        if (detectReturnType
+            && (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::GeneratorWrapper) == InternalFlags::GeneratorWrapper
+            && functionLikeDeclarationBaseAST->type && funcType && funcType.getNumResults() > 0
+            && !mth.isNoneType(funcType.getResult(0)))
+        {
+            SyntaxKind wrapperKind = functionLikeDeclarationBaseAST;
+            auto classType = genContext.thisType ? dyn_cast<mlir_ts::ClassType>(genContext.thisType) : mlir_ts::ClassType();
+            if (wrapperKind == SyntaxKind::MethodDeclaration && classType)
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                auto methodName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+                auto isStatic = hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::StaticKeyword);
+                if (classInfo && !methodName.empty() && classInfo->getMethodIndexExact(methodName, isStatic) < 0)
+                {
+                    classInfo->methods.push_back({methodName, funcType, fullName.str(), isStatic, false, false, -1,
+                                                  GENERATOR_SELF_METHOD_ORDER, mlir_ts::AccessLevel::Public, std::string()});
+                }
+            }
+            else if (wrapperKind == SyntaxKind::FunctionDeclaration && !getFunctionMap().count(funcProto->getNameWithoutNamespace()))
+            {
+                getFunctionMap().insert({funcProto->getNameWithoutNamespace(), FunctionEntry{fullName.str(), funcType, std::string()}});
+            }
+        }
+
         if (detectReturnType)
         {
             // register function to be able to call it if used in recursive call
@@ -1663,6 +1698,7 @@ namespace mlirgen
             // exported class was private, and an importer calling it by name found no symbol.
             methodOp->internalFlags |= functionLikeDeclarationBaseAST->internalFlags &
                                        (InternalFlags::DllExport | InternalFlags::DllImport | InternalFlags::IsPublic);
+            methodOp->internalFlags |= InternalFlags::GeneratorWrapper;
 
             LLVM_DEBUG(printDebug(methodOp););
 
@@ -1678,6 +1714,7 @@ namespace mlirgen
             // copy location info, to fix issue with names of anonymous functions
             funcOp->pos = functionLikeDeclarationBaseAST->pos;
             funcOp->_end = functionLikeDeclarationBaseAST->_end;
+            funcOp->internalFlags |= InternalFlags::GeneratorWrapper;
 
             LLVM_DEBUG(printDebug(funcOp););
 

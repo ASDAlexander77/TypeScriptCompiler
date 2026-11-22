@@ -2440,3 +2440,21 @@ Tests `00generator_yield_star_delegate.ts` (compile, JIT, rc, own), `00generator
 
 Verified: ctest (8867), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
 under -mm=own (236), mm_fuzz run (914 programs), a million rounds of each shape at a flat 5.7 MB: no failures.
+
+160 (a generator that names itself, 2026-11-22). `function* deep(d: number): Generator<number> { yield d; if (d > 0)
+yield* deep(d - 1); }` was "can't resolve name: deep", and so was the call kept in a variable or iterated by a
+for...of; a method's `yield* this.left.walk()` was "Class member 'walk' can't be found" - in every memory model. A
+generator is rewritten into a wrapper function that returns the generator's object, whose next() is the body; the
+variables of the body are fields of that object, so the body is discovered in full, with every type, before the
+wrapper has a type of its own - and a function is entered under its name only once its type is found (an ordinary
+function's call of itself is let go unresolved while its type is discovered; a for...of over nothing can't be).
+- A wrapper with a declared type (`: Generator<number>`, InternalFlags::GeneratorWrapper) has its type before its
+  body: mlirGenFunctionPrototype enters it by its name - a method as a method of its class - before the body is
+  discovered. The entry stays when the body can't be generated yet, so two generators that name each other
+  (`ping` and `pong`, a class's `up` and `down`) find each other on the next try; a method's is replaced by the
+  method's own registration (mlirGenClassMethodMember, GENERATOR_SELF_METHOD_ORDER).
+- One with no declared type is refused as before ("can't resolve name"): the type of the call is what is being
+  found. tsc refuses it too under noImplicitAny (TS7023).
+
+Tests `00generator_names_itself.ts` (compile, JIT, rc, own), `00generator_names_itself_methods.ts` (compile, JIT, rc:
+the call in a for...of and the methods, which -mm=own does not take yet - 159).

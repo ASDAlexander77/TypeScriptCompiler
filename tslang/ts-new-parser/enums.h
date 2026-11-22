@@ -598,7 +598,10 @@ enum class InternalFlags : number
     YieldInFinally = 1 << 23,
     // a variable of a generator's body that is a local of next(), not a variable of the generator: no yield
     // stands in its block, and it does not live past it (mlirGenYieldStar's exchange of the delegate, -mm=own)
-    StackLocal = 1 << 25
+    StackLocal = 1 << 25,
+    // the function a generator is rewritten into (buildGeneratorWrapperDeclaration): its body is the generator's
+    // object, whose next() is the generator's own body - which may call the generator by its name
+    GeneratorWrapper = 1 << 26
 };
 
 ENUM_OPS(InternalFlags)
