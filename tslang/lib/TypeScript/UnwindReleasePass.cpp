@@ -247,6 +247,22 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                 addressTaken.insert(it->second);
             }
         });
+        // ...and a function an object literal's constant holds: a generator's next() is a field of its object,
+        // called through it (and through the thunk a Generator<T> has for it). Not seen, a call that reaches it
+        // was taken not to throw, and a frame a generator's exception went through gave back nothing: `function
+        // run() { const g = gen(); return sum(g); }`, 80 bytes each time `gen` threw.
+        module.walk([&](mlir_ts::ConstantOp constantOp) {
+            constantOp.getValue().walk([&](mlir::Attribute nested) {
+                if (auto symbolRef = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(nested))
+                {
+                    auto it = functions.find(symbolRef.getValue());
+                    if (it != functions.end())
+                    {
+                        addressTaken.insert(it->second);
+                    }
+                }
+            });
+        });
 
         for (auto &entry : functions)
         {
@@ -674,6 +690,62 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         return used;
     }
 
+    // Is `value` used on a path from `dest` before it is made again? The handler of a `try` in a loop goes back
+    // round the loop, where the same op makes the next turn's value and uses that: not a use of the one the
+    // call held when it threw (usedFrom alone counted it, so no temporary of a loop's body was given back by
+    // a call that threw into a catch of the same function - `try { f("x" + i); } catch {}`, 80 bytes a turn).
+    bool usedAgainFrom(mlir::Block *dest, mlir::Value value)
+    {
+        if (!usedFrom(dest).contains(value))
+        {
+            return false;
+        }
+
+        auto *definingOp = value.getDefiningOp();
+        if (!definingOp)
+        {
+            return true;
+        }
+
+        llvm::SmallPtrSet<mlir::Block *, 16> visited;
+        llvm::SmallVector<mlir::Block *> worklist{dest};
+        while (!worklist.empty())
+        {
+            auto *block = worklist.pop_back_val();
+            if (!visited.insert(block).second)
+            {
+                continue;
+            }
+
+            auto madeAgain = false;
+            for (auto &op : *block)
+            {
+                if (&op == definingOp)
+                {
+                    madeAgain = true;
+                    break;
+                }
+
+                auto used = false;
+                op.walk([&](mlir::Operation *nested) { used = used || llvm::is_contained(nested->getOperands(), value); });
+                if (used)
+                {
+                    return true;
+                }
+            }
+
+            if (!madeAgain)
+            {
+                for (auto *successor : block->getSuccessors())
+                {
+                    worklist.push_back(successor);
+                }
+            }
+        }
+
+        return false;
+    }
+
     // The names a resource goes by: a value, the slots it is stored into and what is loaded from
     // them; a slot, what is stored into it and loaded from it. A hold kept both as a value and in a
     // slot of its own (OwnedReturnConsumptionPass::holdGlobalArguments) is released through either.
@@ -1069,7 +1141,7 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                 // the handler an invoke unwinds to now must have nothing more to do with it: the
                 // pad gives it back for good
                 if (site.dest && llvm::any_of(aliasesOfResource(resource), [&](mlir::Value alias) {
-                        return usedFrom(site.dest).contains(alias);
+                        return usedAgainFrom(site.dest, alias);
                     }))
                 {
                     continue;
