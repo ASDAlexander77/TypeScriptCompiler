@@ -2176,9 +2176,13 @@ Still open, looked at:
   methods that release what their callers borrow, and 8 library tests stopped compiling under -mm=own ("a value that
   borrows 'this.elements' is used here after it may be released"); the write there is as before (open). Test
   `00array_write_shared.ts`. A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
-  rounds (gc, rc, own), clean on the wasm checked heap (own, rc). Not when the right side gave the variable another array (`a[1] = (a = [5],
-  9)`): the store goes into the one the left side read; a store of another through another place (`h.a[0] = (h.a =
-  [5], 9)`, or in a call) is not seen, and grows the new one (open).
+  rounds (gc, rc, own), clean on the wasm checked heap (own, rc). When the right side may give the place another
+  array - itself (`a[1] = (a = [5], 9)`), another place (`h.a[5] = (h.a = [7], 8)`), a call when the place is not a
+  local - the store goes into the array the left side read, and that one grows, held in a slot of its own (it grew
+  the new one, and the store went past the old one's end: an out-of-bounds write, garbage under rc). Under -mm=rc that
+  array is retained from its read to the store (the right side's store had released it: a freed block written to
+  and grown, wasm's "realloc of ... not a block the heap gave out"); -mm=own refuses it (the left side borrows what
+  the right side releases). Test `00array_write_reassigned.ts` (compile, JIT, rc); flat over 20M rounds (rc).
 
 Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT, rc, own).
 
@@ -2219,7 +2223,13 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   as it is - castInterfaceToInterface reports a member of another type only when the vtable must be remapped, and
   `next` is the first slot of both - so an Iterable's next() called a function of another signature: wasm's
   "function signature mismatch" (the library's iteration_types.ts), natively a yield reading a value never given
-  (open: such a cast is not refused; next(value) through the library's Generator). Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
+  - fixed: such a cast is refused when a member function takes another number of parameters (castInterfaceToInterface,
+  refusedMember: members of other types laid out alike, `mutrec`'s `x: A` and `x: B`, are read as before), and an
+  iterator given as another whose `next` is of another type is iterated by a generator over its values
+  (castIteratorToIterator, `__iterator_values`: a while over next(), not a for...of - under -mm=own the for...of's
+  read of the kept iterator across the yield was "a value that borrows a field ... may be released"). The library
+  declares `next: (value?: TNext) =>` again. Tests `00generator_iterable_adapter.ts` (compile, JIT, rc, own),
+  diagnostic-location `interface_member_other_type.ts`. Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
   was read as moving the object: the method value bound to it is wrapped in an optional, given out of the If that
   tests the member (lowered by then: a branch's block argument), tested and unwrapped for the call - all of which
   only calls it now lends the object (isBoundForCall, boundOnlyCalled), as a call of a member that is not optional
@@ -2309,3 +2319,15 @@ then: not flaky, a steady 45 s (gc) against the sweep's 60 s with 8 jobs, and ~2
 
 Verified: ctest (8781), the wasm32 rc tester suite debug and release (763 each), mm_fuzz run (551 programs) and
 leaks (80): no failures.
+
+155 (a `T | undefined` that has no value, put into a string or into arithmetic, 2026-11-22). A `string | number |
+undefined` put into a string - print, `"" + u`, `u + "!"`, a template, `<string>u` - gave its union's default, "0"
+(and a "casting from optional" warning with no location), not "undefined": a union that may be missing was
+unwrapped to its default before the cast (castToOptionalType's union path, and unwrapForBinaryOp for `+` with a
+string). Now the cast of it to a string tests for a value, as a `number | undefined`'s did. Arithmetic on a `number
+| undefined` that has none (`m + 1`, `-`, `*`, `/`, `%`, `**`) gave the default too, 0 - now NaN, as JavaScript
+(unwrapOptionalOperand); a bitwise or shift operator reads undefined as 0 there as well, so it keeps the default,
+without the warning. Tests `00optional_union_to_string.ts`, `00optional_number_arithmetic.ts` (compile, JIT, rc, own).
+
+Verified: ctest (8838), the tsc sweep (3263, no change), the wasm32 tester and default-library suites (rc, none,
+own; the library with `next(value?)` back), the library's tests.ps1 release (gc, rc, none, own): no failures.

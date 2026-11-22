@@ -1824,16 +1824,16 @@ namespace mlirgen
     // to `number`). Under -mm=own it iterates a copy of the array, which it owns (USER DECISION 2026-11-21): a
     // generator borrowing the array would have to hold the borrow for as long as it lives, which -mm=own can't say -
     // `sum(a)` was "a value takes a second reference". (An array of objects, which can't be copied, stays refused.)
-    std::optional<ValueOrLogicalResult> MLIRGenImpl::castIterableToIterator(mlir::Location location, mlir::Value value,
-        mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    // The element of an iterator interface (an object with `next`): the `value` of what its `next` returns; null when
+    // it is none
+    mlir::Type MLIRGenImpl::iteratorElementType(mlir_ts::InterfaceType interfaceType)
     {
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
         if (!interfaceInfo)
         {
-            return std::nullopt;
+            return mlir::Type();
         }
 
-        // the element: the `value` of what `next` returns
         mlir::Type nextType;
         if (auto *field = interfaceInfo->findField(builder.getStringAttr("next")))
         {
@@ -1847,7 +1847,7 @@ namespace mlirgen
         auto nextFuncType = dyn_cast_or_null<mlir_ts::FunctionType>(nextType);
         if (!nextFuncType || nextFuncType.getNumResults() != 1)
         {
-            return std::nullopt;
+            return mlir::Type();
         }
 
         mlir::Type elementType;
@@ -1863,6 +1863,77 @@ namespace mlirgen
             }
         }
 
+        return elementType;
+    }
+
+    // `sum(g)` of `sum(v: Iterable<number>)` and a `g: Generator<number, void, number>`: its `next` takes a value,
+    // `(value?: number) =>`, the Iterable's none, `() =>` - one function type can't be read as the other (wasm's
+    // "function signature mismatch"; natively a yield read a value never given). A generator over its values is
+    // given instead, as for an array (castIterableToIterator): `__iterator_values`, made from source once a module.
+    // Under -mm=own it keeps the iterator it is given, as a generator over a copy of an array keeps that copy.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castIteratorToIterator(mlir::Location location, mlir::Value value,
+        mlir_ts::InterfaceType srcInterfaceType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        auto elementType = iteratorElementType(interfaceType);
+        if (!elementType || !iteratorElementType(srcInterfaceType))
+        {
+            return std::nullopt;
+        }
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___iterator_values";
+        auto funcRef = resolveIdentifier(location, funcName, genContext);
+        if (!funcRef)
+        {
+            // (a while over next(), not a for...of: under -mm=own the for...of's read of the kept iterator was "a
+            // value that borrows a field ... may be released" across the yield)
+            std::string src = "@keeps(\"g\")\n"
+                              "function* __iterator_values<T, S, I>(g: S): I {\n"
+                              "while (true) {\n"
+                              "const r = g.next();\n"
+                              "if (r.done) break;\n"
+                              "yield <T>r.value;\n"
+                              "}\n"
+                              "}\n";
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+            if (mlir::failed(parsePartialStatements(stows(src))))
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
+            funcRef = resolveIdentifier(location, funcName, genContext);
+            if (!funcRef)
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        GenContext iterGenContext(genContext);
+        NodeArray<TypeNode> typeArguments;
+        iterGenContext.typeAliasMap.insert({".ITER_T", elementType});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_T")).as<Node>()));
+        iterGenContext.typeAliasMap.insert({".ITER_S", srcInterfaceType});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_S")).as<Node>()));
+        iterGenContext.typeAliasMap.insert({".ITER_I", interfaceType});
+        typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".ITER_I")).as<Node>()));
+
+        SmallVector<mlir::Value, 4> operands{value};
+        auto generator = mlirGenCallExpression(location, funcRef, typeArguments, operands, iterGenContext);
+        if (generator.failed_or_no_value())
+        {
+            return ValueOrLogicalResult(mlir::failure());
+        }
+
+        return cast(location, interfaceType, V(generator), genContext);
+    }
+
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castIterableToIterator(mlir::Location location, mlir::Value value,
+        mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        // the element: the `value` of what `next` returns
+        auto elementType = iteratorElementType(interfaceType);
         if (!elementType)
         {
             return std::nullopt;
@@ -2061,6 +2132,18 @@ namespace mlirgen
             }
         };
 
+        // ...and one that can't be let through even laid out the same: a member function of another number of
+        // parameters is called with another signature (a `next: (value?: N) =>` called as an Iterable's
+        // `next: () =>`: wasm's "function signature mismatch", natively a value never given; TSLANG 153). Members
+        // of other types that are laid out alike (an interface for an interface, `mutrec`'s `x: A` and `x: B`)
+        // are read as they always were.
+        mlir::Attribute refusedMember;
+        auto otherArity = [&](mlir::Type srcType, mlir::Type type) {
+            auto srcFuncType = dyn_cast<mlir_ts::FunctionType>(srcType);
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(type);
+            return srcFuncType && funcType && srcFuncType.getNumInputs() != funcType.getNumInputs();
+        };
+
         // the slots of the target, in its vtable's order: each `extends` block, then its own methods and
         // fields (InterfaceInfo::getAllMethodsWithVTableOffset)
         std::function<void(InterfaceInfo::TypePtr, int)> mapSlots = [&](InterfaceInfo::TypePtr info, int baseOffset) {
@@ -2080,6 +2163,10 @@ namespace mlirgen
                     if (srcMethod->funcType != method.funcType)
                     {
                         cannotCast(builder.getStringAttr(method.name), "has another type");
+                        if (!refusedMember && otherArity(srcMethod->funcType, method.funcType))
+                        {
+                            refusedMember = builder.getStringAttr(method.name);
+                        }
                     }
 
                     vtableMap[slot] = srcMethod->virtualIndex + srcOffset + INTERFACE_VTABLE_HEADER_SLOTS;
@@ -2099,6 +2186,10 @@ namespace mlirgen
                     if (mth.stripLiteralType(srcField->type) != mth.stripLiteralType(field.type))
                     {
                         cannotCast(field.id, "has another type");
+                        if (!refusedMember && otherArity(srcField->type, field.type))
+                        {
+                            refusedMember = field.id;
+                        }
                     }
 
                     if (srcField->isConditional && !field.isConditional)
@@ -2118,12 +2209,29 @@ namespace mlirgen
 
         mapSlots(interfaceInfo, 0);
 
-        // A member of another type is refused whether or not the vtable must be remapped: laid out the same, it was
-        // let through as it is, and a read of it read another type - a `next: (value?: N) =>` called as an
-        // Iterable's `next: () =>` was a call of another signature (wasm's "function signature mismatch", natively
-        // a value never given; TSLANG 153)
-        if (problemMember)
+        // an interface the source extends, or one laid out the same: the vtable serves as it is - unless a member
+        // function of it takes another number of parameters (refusedMember)
+        auto laidOutTheSame =
+            llvm::all_of(llvm::enumerate(vtableMap), [](auto slot) { return slot.value() == (int32_t)slot.index(); });
+        if (laidOutTheSame && refusedMember)
         {
+            problemMember = refusedMember;
+            problem = "has another type";
+        }
+
+        if (problemMember && (!laidOutTheSame || refusedMember))
+        {
+            // an iterator given as another whose `next` has another type (a Generator's `next(value?)` for an
+            // Iterable's `next()`): a generator over its values instead
+            if (auto memberName = dyn_cast<mlir::StringAttr>(problemMember);
+                memberName && memberName.getValue() == ITERATOR_NEXT && problem == "has another type")
+            {
+                if (auto iterated = castIteratorToIterator(location, value, srcInterfaceType, interfaceType, genContext))
+                {
+                    return *iterated;
+                }
+            }
+
             auto diagnostic = emitError(location);
             diagnostic << "interface '" << to_print(srcInterfaceType) << "' can't be cast to interface '"
                        << to_print(interfaceType) << "': member ";
@@ -2140,8 +2248,7 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        // an interface the source extends, or one laid out the same: the vtable serves as it is
-        if (llvm::all_of(llvm::enumerate(vtableMap), [](auto slot) { return slot.value() == (int32_t)slot.index(); }))
+        if (laidOutTheSame)
         {
             return std::nullopt;
         }

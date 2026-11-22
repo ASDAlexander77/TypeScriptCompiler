@@ -9711,6 +9711,36 @@ class MLIRGenImpl
         return baseType;
     }
 
+    // An operand of a `T | undefined` in arithmetic: its value, or - a number that has none - NaN, as JavaScript
+    // gives (`m + 1` of an undefined `m` was 1: the default, 0, and a "casting from optional" warning). A bitwise
+    // or shift operator reads undefined as 0 there too, so the default stays for them.
+    mlir::Value unwrapOptionalOperand(mlir::Location location, SyntaxKind opCode, mlir_ts::OptionalType optType, mlir::Value value)
+    {
+        auto arithmetic = opCode == SyntaxKind::PlusToken || opCode == SyntaxKind::MinusToken ||
+                          opCode == SyntaxKind::AsteriskToken || opCode == SyntaxKind::SlashToken ||
+                          opCode == SyntaxKind::PercentToken || opCode == SyntaxKind::AsteriskAsteriskToken;
+        if (!arithmetic || !isa<mlir_ts::NumberType>(optType.getElementType()))
+        {
+            auto valueOrDefault = builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value);
+            // a number's default, 0, is what a bitwise or shift operator reads undefined as: no warning for it
+            if (isa<mlir_ts::NumberType>(optType.getElementType()))
+            {
+                valueOrDefault->setAttr(EXPLICIT_CAST_ATTR_NAME, builder.getUnitAttr());
+            }
+
+            return valueOrDefault;
+        }
+
+        auto valueOrNaN = builder.create<mlir_ts::OptionalValueOrDefaultOp>(location, optType.getElementType(), value);
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.createBlock(&valueOrNaN.getDefaultValueRegion());
+            builder.create<mlir_ts::ResultOp>(location, getNaN(location));
+        }
+
+        return valueOrNaN;
+    }
+
     mlir::LogicalResult unwrapForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                           mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
@@ -9781,14 +9811,12 @@ class MLIRGenImpl
                 // cast from optional<T> type
                 if (auto leftOptType = dyn_cast<mlir_ts::OptionalType>(leftExpressionValue.getType()))
                 {
-                    leftExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, leftOptType.getElementType(), leftExpressionValue);
+                    leftExpressionValue = unwrapOptionalOperand(location, opCode, leftOptType, leftExpressionValue);
                 }
 
                 if (auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightExpressionValue.getType()))
                 {
-                    rightExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, rightOptType.getElementType(), rightExpressionValue);
+                    rightExpressionValue = unwrapOptionalOperand(location, opCode, rightOptType, rightExpressionValue);
                 }
             }
         }
@@ -9800,10 +9828,8 @@ class MLIRGenImpl
             {
                 if (auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightExpressionValue.getType()))
                 {
-                    leftExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, leftOptType.getElementType(), leftExpressionValue);
-                    rightExpressionValue =
-                        builder.create<mlir_ts::ValueOrDefaultOp>(location, rightOptType.getElementType(), rightExpressionValue);
+                    leftExpressionValue = unwrapOptionalOperand(location, opCode, leftOptType, leftExpressionValue);
+                    rightExpressionValue = unwrapOptionalOperand(location, opCode, rightOptType, rightExpressionValue);
                 }
             }
         }
@@ -18494,6 +18520,9 @@ class MLIRGenImpl
         const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castIterableToIterator(mlir::Location location, mlir::Value value,
         mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
+    mlir::Type iteratorElementType(mlir_ts::InterfaceType interfaceType);
+    std::optional<ValueOrLogicalResult> castIteratorToIterator(mlir::Location location, mlir::Value value,
+        mlir_ts::InterfaceType srcInterfaceType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
     ValueOrLogicalResult castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
         mlir_ts::ClassType classType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
