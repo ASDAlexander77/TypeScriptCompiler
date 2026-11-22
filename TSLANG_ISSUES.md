@@ -2342,3 +2342,13 @@ The tsc sweep: 3261, two fewer - identicalTypesNoDifferByCheckOrder and
 nongenericPartialInstantiationsRelatedInBothDirections cast an interface whose call (construct) signature takes a
 tuple, passed by value, to one whose takes an interface: a call through it would pass the argument otherwise, now
 refused (castInterfaceToInterface, passedAlike).
+
+156 (return() of a generator paused in a `yield*`, 2026-11-22). A `yield*` is a loop over its delegate whose yield
+return() and throw() resume at; return() finished the generator there and left the delegate where it was, so the
+delegate's finally blocks never ran (JavaScript calls its return()). Now a delegate whose type has `return` (a
+Generator) is held in a variable (`.yd`, mlirGenYieldStar), and the resume check at that yield calls
+`.yd.return?.(value)` with the value the generator's return() was given before it finishes
+(mlirGenGeneratorResumeChecks, GenContext::yieldStarDelegate): the delegate's finally blocks run, then the
+generator's own. Open: throw() still throws at the yield rather than handing the exception to the delegate's
+throw() (which may catch it and go on yielding); -mm=own, where a yield* of a Generator<T> is refused already. Test
+`00generator_yield_star_return.ts` (compile, JIT, rc).

@@ -4821,6 +4821,44 @@ class MLIRGenImpl
             _yield_expr->internalFlags |= yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable;
         }
 
+        // A delegate that has `return` (a Generator): held in a variable, and a return() of this generator, at the
+        // yield the loop makes, calls the delegate's return() with the same value first - its finally blocks run, as
+        // JavaScript's yield* has it (they were skipped: the delegate was left where it was). throw() still throws at
+        // that yield without handing the exception to the delegate.
+        if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable))
+        {
+            auto delegateType = evaluate(yieldExpressionAST->expression, genContext);
+            if (auto delegateInterface = dyn_cast_or_null<mlir_ts::InterfaceType>(delegateType))
+            {
+                auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
+                if (delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
+                                     delegateInfo->findMethod("return")))
+                {
+                    auto delegateIdent = nf.createIdentifier(S(".yd"));
+                    NodeArray<VariableDeclaration> delegateDeclarations;
+                    delegateDeclarations.push_back(
+                        nf.createVariableDeclaration(delegateIdent, undefined, undefined, yieldExpressionAST->expression));
+                    NodeArray<Statement> statements;
+                    statements.push_back(nf.createVariableStatement(
+                        undefined, nf.createVariableDeclarationList(delegateDeclarations, NodeFlags::Const)));
+                    statements.push_back(nf.createForOfStatement(undefined, declList, delegateIdent,
+                                                                 nf.createExpressionStatement(_yield_expr)));
+
+                    GenContext delegateGenContext(genContext);
+                    delegateGenContext.yieldStarDelegate = ".yd";
+                    for (auto statement : statements)
+                    {
+                        if (mlir::failed(mlirGen(statement, delegateGenContext)))
+                        {
+                            return mlir::failure();
+                        }
+                    }
+
+                    return mlir::success();
+                }
+            }
+        }
+
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
                                     nf.createExpressionStatement(_yield_expr));
