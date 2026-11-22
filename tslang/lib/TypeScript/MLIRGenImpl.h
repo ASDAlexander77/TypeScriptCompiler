@@ -8746,9 +8746,10 @@ class MLIRGenImpl
             // `a[0] = f()` with `f` pushing to `a` moved its elements to a new block, and the store went
             // into the one given back (a value lost under every model, a freed block written to under
             // rc). The array and the index are the ones the left side evaluated, as JavaScript has it.
+            mlir::Value heldArray;
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
-                mlirGenGrowArrayForWrite(location, elementRefOp);
+                heldArray = mlirGenGrowArrayForWrite(location, elementRefOp);
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
             }
 
@@ -8757,6 +8758,11 @@ class MLIRGenImpl
             // local: the read moves the value out, and the release of what the slot held came after it.
             if (isSelfStore(savingValue, storeReference))
             {
+                if (heldArray)
+                {
+                    builder.create<mlir_ts::ReleaseOp>(location, heldArray);
+                }
+
                 return mlir::success();
             }
 
@@ -8792,6 +8798,12 @@ class MLIRGenImpl
             // writable array
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, storeReference);
             cloneAtomicAttributes(loadOp, storeOp);
+
+            // the array the left side read, kept alive across the right side (mlirGenGrowArrayForWrite)
+            if (heldArray)
+            {
+                builder.create<mlir_ts::ReleaseOp>(location, heldArray);
+            }
         }
         else if (auto extractPropertyOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
@@ -9747,6 +9759,21 @@ class MLIRGenImpl
             }
 
             // end todo
+
+            // `"" + u` of a `T | undefined`: its text, "undefined" when it has none (as `${u}`), not its default
+            if ((SyntaxKind)opCode == SyntaxKind::PlusToken)
+            {
+                if (isa<mlir_ts::OptionalType>(leftExpressionValue.getType()) &&
+                    isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getStringType(), leftExpressionValue, genContext);
+                }
+                else if (isa<mlir_ts::OptionalType>(rightExpressionValue.getType()) &&
+                         isa<mlir_ts::StringType>(leftExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getStringType(), rightExpressionValue, genContext);
+                }
+            }
 
             if (!MLIRLogicHelper::isLogicOp(opCode))
             {
@@ -20240,36 +20267,60 @@ class MLIRGenImpl
     // write went past the end of the block - under gc into whatever lay there, under rc and own a crash - and the
     // length stayed. A negative index grows nothing. Only an array with a place to update (a local, a field):
     // one made for the statement only has nobody to see it grown.
-    void mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
+    // Under -mm=rc, the array the left side read when the right side may give its place another one: retained
+    // until the store, which releases it (the caller) - else the right side's store released it, and the write
+    // and the growth went into a freed block.
+    mlir::Value mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
     {
         auto array = elementRefOp.getArray();
         if (!isa<mlir_ts::ArrayType>(array.getType()))
         {
-            return;
+            return mlir::Value();
         }
 
         MLIRCodeLogic mcl(builder, compileOptions);
         auto arrayRef = mcl.GetReferenceFromValue(location, array);
         if (!arrayRef || !isa<mlir_ts::RefType>(arrayRef.getType()))
         {
-            return;
+            return mlir::Value();
         }
 
-        // the right side gave the variable another array (`a[1] = (a = [5], 9)`): the store goes into the array the
-        // left side read, as in JavaScript, and the slot now holds another one - nothing to grow through it
+        mlir::Value held;
+
+        // The right side may give the place another array (`a[1] = (a = [5], 9)`, `h.a[5] = (h.a = [7], 8)`, a call
+        // that does): the store goes into the array the left side read, as in JavaScript, so that one grows - held in
+        // a slot of its own, not reached through the place, which then holds another array (TSLANG 152). An array
+        // stored anywhere, or a call when the place is not a local the call can't reach, may be such a change.
         if (auto loadOp = array.getDefiningOp<mlir_ts::LoadOp>(); loadOp && loadOp->getBlock() == builder.getInsertionBlock())
         {
-            auto reassigned = false;
-            for (auto *op = loadOp->getNextNode(); op && !reassigned; op = op->getNextNode())
+            auto placeIsLocal = arrayRef.getDefiningOp<mlir_ts::VariableOp>() || arrayRef.getDefiningOp<mlir_ts::ParamOp>();
+            auto mayChange = false;
+            for (auto *op = loadOp->getNextNode(); op && !mayChange; op = op->getNextNode())
             {
-                op->walk([&](mlir_ts::StoreOp storeOp) {
-                    reassigned |= storeOp.getReference() == arrayRef;
+                op->walk([&](mlir::Operation *inner) {
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(inner))
+                    {
+                        mayChange |= storeOp.getReference() == arrayRef ||
+                                     isa<mlir_ts::ArrayType>(storeOp.getValue().getType());
+                    }
+                    else if (!placeIsLocal && mlir::isa<mlir::CallOpInterface>(inner))
+                    {
+                        mayChange = true;
+                    }
                 });
             }
 
-            if (reassigned)
+            if (mayChange)
             {
-                return;
+                arrayRef = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(array.getType()), array,
+                                                               builder.getBoolAttr(false), builder.getIndexAttr(0));
+                if (compileOptions.memoryModel == MemoryModelRC)
+                {
+                    mlir::OpBuilder::InsertionGuard guard(builder);
+                    builder.setInsertionPointAfter(loadOp);
+                    builder.create<mlir_ts::RetainOp>(location, array);
+                    held = array;
+                }
             }
         }
 
@@ -20291,7 +20342,7 @@ class MLIRGenImpl
                 if (auto loadOp = varOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
                     loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ParamOp>())
                 {
-                    return;
+                    return held;
                 }
             }
 
@@ -20300,7 +20351,7 @@ class MLIRGenImpl
             // element would be taken for one that releases what its callers borrow. As before there.
             if (own_facts::reachesSharedValue(arrayRef))
             {
-                return;
+                return held;
             }
 
             auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
@@ -20309,7 +20360,7 @@ class MLIRGenImpl
             auto newLength = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), newLength32);
             auto growOp = builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, newLength);
             growOp->setAttr(ARRAY_GROWS_ONLY_ATTR_NAME, builder.getUnitAttr());
-            return;
+            return held;
         }
 
         // index >= length, signed: a negative index is never past the end
@@ -20331,6 +20382,7 @@ class MLIRGenImpl
         // them (the sweep's largeControlFlowGraph, 10000 `data[0] = 0`) took a minute to lower to LLVM
         auto growFunc = arrayGrowFunction(location, mlir::cast<mlir_ts::RefType>(arrayRef.getType()));
         builder.create<mlir_ts::CallIndirectOp>(location, growFunc, mlir::ValueRange{arrayRef, newLength});
+        return held;
     }
 
     // `.array_grow.<type>(array: ref<T[]>, length: index)`: SetLengthOf (mlirGenGrowArrayForWrite)

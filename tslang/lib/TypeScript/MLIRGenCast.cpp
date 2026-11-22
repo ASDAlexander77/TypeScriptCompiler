@@ -2118,12 +2118,10 @@ namespace mlirgen
 
         mapSlots(interfaceInfo, 0);
 
-        // an interface the source extends, or one laid out the same: the vtable serves as it is
-        if (llvm::all_of(llvm::enumerate(vtableMap), [](auto slot) { return slot.value() == (int32_t)slot.index(); }))
-        {
-            return std::nullopt;
-        }
-
+        // A member of another type is refused whether or not the vtable must be remapped: laid out the same, it was
+        // let through as it is, and a read of it read another type - a `next: (value?: N) =>` called as an
+        // Iterable's `next: () =>` was a call of another signature (wasm's "function signature mismatch", natively
+        // a value never given; TSLANG 153)
         if (problemMember)
         {
             auto diagnostic = emitError(location);
@@ -2140,6 +2138,12 @@ namespace mlirgen
 
             diagnostic << problem;
             return mlir::failure();
+        }
+
+        // an interface the source extends, or one laid out the same: the vtable serves as it is
+        if (llvm::all_of(llvm::enumerate(vtableMap), [](auto slot) { return slot.value() == (int32_t)slot.index(); }))
+        {
+            return std::nullopt;
         }
 
         auto castOp = builder.create<mlir_ts::CastOp>(location, interfaceType, value);
@@ -2855,8 +2859,10 @@ namespace mlirgen
                 isa<mlir_ts::StringType>(type) && MLIRTypeHelper::getMissingValueElement(optType);
             // ...nor its truth: the default of a union is zeroed, its type "undefined", and that is
             // not null, so `while (curr)` over a `null | { ... }` that has none was true (below, a
-            // missing value is false)
-            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString && !isa<mlir_ts::BooleanType>(type))
+            // missing value is false) - nor its text: `print(u)` of a `string | number | undefined` that has none
+            // gave the union's default ("0", and a "casting from optional" warning), not "undefined" (below)
+            if (isa<mlir_ts::UnionType>(optType.getElementType()) && !missingValueToString &&
+                !isa<mlir_ts::BooleanType, mlir_ts::StringType>(type))
             {
                 auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
                 CAST_A(unwrappedValue, location, type, val, genContext);
