@@ -4859,6 +4859,118 @@ class MLIRGenImpl
             }
         }
 
+        // -mm=own, a delegate seen through an interface (a Generator<T>, an Iterable<T>): the loop over it would
+        // call next() on a delegate it borrows from a variable of the generator - a field of its object - and
+        // what next() runs may, as far as its type says, be this same generator function's next(), which gives
+        // that field a new value ("a value that borrows a field is used here after it may be released or
+        // overwritten"). So the delegate is kept in a variable `.yd` and each step exchanges it with a local of
+        // next() (StackLocals), calls its next() there - the local owns it for the call, and nothing is borrowed
+        // from the generator - and exchanges it back:
+        //   let .yd: G | undefined = <delegate>; let .yc: { value: T, done: boolean } = { value: undefined, done: true };
+        //   for (;;) {
+        //     { let .yl: G | undefined = undefined; [.yl, .yd] = [.yd, .yl]; .yc = .yl!.next(); [.yl, .yd] = [.yd, .yl]; }
+        //     if (.yc.done) break;
+        //     const .v = .yc.value; yield .v;
+        //   }
+        // (the variables named for the yield*: each has its own). Only a delegate made there, by a call: one read
+        // out of a variable or a parameter (`yield* it`) is not the generator's to keep, and is iterated as before.
+        Expression delegateExpression = yieldExpressionAST->expression;
+        while (delegateExpression == SyntaxKind::ParenthesizedExpression)
+        {
+            delegateExpression = delegateExpression.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (compileOptions.memoryModel == MemoryModelOwn && delegateExpression == SyntaxKind::CallExpression)
+        {
+            auto delegateType = evaluate(yieldExpressionAST->expression, genContext);
+            auto delegateInterface = dyn_cast_or_null<mlir_ts::InterfaceType>(delegateType);
+            auto elementType = delegateInterface ? iteratorElementType(delegateInterface) : mlir::Type();
+            if (elementType)
+            {
+                GenContext delegateGenContext(genContext);
+                delegateGenContext.typeAliasMap.insert({".YS_G", delegateInterface});
+                delegateGenContext.typeAliasMap.insert({".YS_T", elementType});
+
+                auto typeOf = [&](const char *alias) {
+                    return nf.createTypeReferenceNode(nf.createIdentifier(stows(alias)).as<Node>()).as<TypeNode>();
+                };
+                auto orUndefined = [&](TypeNode type) {
+                    NodeArray<TypeNode> members;
+                    members.push_back(type);
+                    members.push_back(nf.createToken(SyntaxKind::UndefinedKeyword).as<TypeNode>());
+                    return nf.createUnionTypeNode(members).as<TypeNode>();
+                };
+                auto undefinedValue = [&]() { return nf.createIdentifier(S(UNDEFINED_NAME)).as<Expression>(); };
+                auto declare = [&](Identifier name, TypeNode type, Expression initializer, NodeFlags flags) {
+                    NodeArray<VariableDeclaration> declarations;
+                    declarations.push_back(nf.createVariableDeclaration(name, undefined, type, initializer));
+                    return nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, flags)).as<Statement>();
+                };
+                auto exchange = [&](Identifier left, Identifier right) {
+                    NodeArray<Expression> targets;
+                    targets.push_back(left);
+                    targets.push_back(right);
+                    NodeArray<Expression> values;
+                    values.push_back(right);
+                    values.push_back(left);
+                    return nf.createExpressionStatement(nf.createBinaryExpression(
+                               nf.createArrayLiteralExpression(targets, false), nf.createToken(SyntaxKind::EqualsToken),
+                               nf.createArrayLiteralExpression(values, false))).as<Statement>();
+                };
+
+                auto site = std::to_string(static_cast<long long>(yieldExpressionAST->pos));
+                auto delegateIdent = nf.createIdentifier(stows(".yd" + site));
+                auto resultIdent = nf.createIdentifier(stows(".yc" + site));
+                auto localIdent = nf.createIdentifier(stows(".yl" + site));
+
+                NodeArray<TypeElement> resultMembers;
+                resultMembers.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("value")), undefined, typeOf(".YS_T")));
+                resultMembers.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
+                                                                   nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
+
+                // the step, in locals of next()
+                NodeArray<Statement> stepStatements;
+                stepStatements.push_back(declare(localIdent, orUndefined(typeOf(".YS_G")), undefinedValue(), NodeFlags::Let));
+                stepStatements.push_back(exchange(localIdent, delegateIdent));
+                NodeArray<Expression> nextArgs;
+                stepStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+                    resultIdent, nf.createToken(SyntaxKind::EqualsToken),
+                    nf.createCallExpression(
+                        nf.createPropertyAccessExpression(nf.createNonNullExpression(localIdent), nf.createIdentifier(S(ITERATOR_NEXT))),
+                        undefined, nextArgs))));
+                stepStatements.push_back(exchange(localIdent, delegateIdent));
+                auto stepBlock = nf.createBlock(stepStatements, false);
+                stepBlock->internalFlags |= InternalFlags::StackLocals;
+
+                NodeArray<Statement> loopStatements;
+                loopStatements.push_back(stepBlock);
+                loopStatements.push_back(nf.createIfStatement(
+                    nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("done"))),
+                    nf.createBreakStatement(), undefined));
+                loopStatements.push_back(declare(
+                    _v_ident, undefined,
+                    nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("value"))),
+                    NodeFlags::Const));
+                loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+
+                NodeArray<Statement> statements;
+                statements.push_back(declare(delegateIdent, orUndefined(typeOf(".YS_G")), yieldExpressionAST->expression, NodeFlags::Let));
+                statements.push_back(declare(resultIdent, nf.createTypeLiteralNode(resultMembers).as<TypeNode>(),
+                                             getYieldReturnObject(nf, loc(yieldExpressionAST), undefinedValue(), true),
+                                             NodeFlags::Let));
+                statements.push_back(nf.createForStatement(undefined, undefined, undefined, nf.createBlock(loopStatements, false)));
+                for (auto statement : statements)
+                {
+                    if (mlir::failed(mlirGen(statement, delegateGenContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                return mlir::success();
+            }
+        }
+
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
                                     nf.createExpressionStatement(_yield_expr));

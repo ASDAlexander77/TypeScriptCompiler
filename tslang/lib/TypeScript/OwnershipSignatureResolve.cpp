@@ -465,6 +465,13 @@ namespace own_signature
             if (refOp && isInterfaceField(refOp.getResult()) && thisOp && thisOp.getInterfaceVal() == refOp.getInterfaceVal())
             {
                 resolveInterfaceSlot(refOp, interfaceFieldFamilies, callees);
+                // ...or a slot every vtable fills with a function, not with a field of its object: the
+                // thunk a generator is given a `Generator<T>` with (its `next(value?)` over the
+                // generator's own `next()`)
+                if (!callees.known && callees.named.empty())
+                {
+                    resolveInterfaceSlot(refOp, interfaceFamilies, callees);
+                }
             }
 
             return;

@@ -293,6 +293,13 @@ namespace own_signature
             }
 
             call.op->removeAttr(OWN_DROP_FIELDS_ATTR_NAME);
+            if (getenv("OWN_TRACE") && isIteratorNext(call.op)) // TEMP-TRACE
+            {
+                llvm::errs() << "TRACE next in " << call.op->getParentOfType<mlir_ts::FuncOp>().getSymName() << " known=" << call.callees.known
+                             << " viaInterface=" << call.callees.viaInterface << " imported=" << call.callees.imported << " funcs=";
+                for (auto f : call.callees.funcs) llvm::errs() << f.getSymName() << "(nodrops=" << noDrops.contains(f) << ") ";
+                llvm::errs() << " named=" << call.callees.named.size() << '\n';
+            }
             if (!call.callees.known)
             {
                 // a method of a class another module may extend, called through its vtable: say so

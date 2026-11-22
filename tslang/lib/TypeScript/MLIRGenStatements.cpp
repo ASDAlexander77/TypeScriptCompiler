@@ -256,6 +256,15 @@ namespace mlirgen
             return result;
         }
 
+        // a block whose variables are locals of the function generated, in a generator's next() too
+        if ((blockAST->internalFlags & InternalFlags::StackLocals) == InternalFlags::StackLocals &&
+            genContext.allocateVarsInContextThis)
+        {
+            GenContext localsGenContext(genContext);
+            localsGenContext.allocateVarsInContextThis = false;
+            return mlirGen(blockAST, localsGenContext, skipStatements);
+        }
+
         // A function declared in a block of the module's code reads the block's locals, which the pass over the
         // module's declarations does not know yet: marked, it is discovered where it is generated
         // (mlirGenFunctionPrototype's caller, isModuleDiscoveryExpression)
