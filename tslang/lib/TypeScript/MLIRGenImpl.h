@@ -4440,7 +4440,8 @@ class MLIRGenImpl
     // from. Factored out so callers that only need the correctly-typed prototype (e.g. object-literal
     // method prototype registration) can reuse it without running full body codegen twice.
     FunctionLikeDeclarationBase buildGeneratorWrapperDeclaration(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location);
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location,
+        const GenContext *genContext = nullptr);
 
     void addGeneratorResumeMethods(NodeFactory &nf, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                    TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties);
@@ -15801,7 +15802,7 @@ class MLIRGenImpl
         // (used for the object literal's own type) is wrong and later access like `obj.gen().next()`
         // fails to resolve.
         auto protoDecl = funcLikeDecl->asteriskToken
-            ? buildGeneratorWrapperDeclaration(funcLikeDecl, loc(funcLikeDecl))
+            ? buildGeneratorWrapperDeclaration(funcLikeDecl, loc(funcLikeDecl), &funcGenContext)
             : funcLikeDecl;
 
         auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(protoDecl, funcGenContext);

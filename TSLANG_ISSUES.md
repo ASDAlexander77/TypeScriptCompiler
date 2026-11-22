@@ -2458,3 +2458,46 @@ function's call of itself is let go unresolved while its type is discovered; a f
 
 Tests `00generator_names_itself.ts` (compile, JIT, rc, own), `00generator_names_itself_methods.ts` (compile, JIT, rc:
 the call in a for...of and the methods, which -mm=own does not take yet - 159).
+
+161 (the items 158-160 left open, 2026-11-22). Fixed:
+- -mm=own: `x == 1.5` of an `x?: number | string` (a dictionary's read compared with a value) was "a value is merged
+  from several branches". The helper that compares a union member by member (`___union_eq_*`) narrowed the optional
+  itself, and its string member compared with a number made, for an empty one, a text beside the converted one. Under
+  -mm=own the empty case is tested where the comparison is (not equal to any value), and the union it holds is
+  compared as any union is (binaryOpLogicForUnionAndValue).
+- A call that throws into a `catch` of its own function gave back nothing its frame held in a loop's body - the
+  argument's temporary string, an array literal - under -mm=rc and -mm=own (`try { f("x" + i); } catch {}`: 80 bytes
+  a turn). UnwindReleasePass releases at an invoke's pad only what "nothing reachable from the pad uses again",
+  and the handler goes back round the loop, where the same op makes the next turn's value and uses that: counted
+  as a use. Now a path that passes the value's definition again is not one (usedAgainFrom).
+- A generator's exception through a frame with no `try` gave back nothing either (`function run() { const g = gen();
+  return sum(g); }`, 80 bytes): a call that reaches a generator's next() was taken not to throw - next() is a field
+  of the generator's object, its address in the object's constant, and only `ts.SymbolRef`s counted as functions an
+  indirect call may reach. The functions an object constant holds count too (computeMayThrow).
+- -mm=own: an array literal given straight to a call was given back only when every element was a new value used by
+  nothing else (158). Also now: one of new objects (`f([new C("a"), new C("b")])`, 140 MB a million calls - the
+  object's constructor call and the like come before the literal, isMovedIn), and one that mixes a new value with
+  text something else owns (`f(["x" + i, s])`, 95 MB: the literal is given a copy of `s`, copyBorrowedTextElements).
+- -mm=own: `yield* it` of a parameter of the generator (a Generator<T>, an Iterable<T>) was "a value that borrows a
+  field is used here after it may be released or overwritten": the loop called next() on a copy of the parameter kept
+  in a variable of the generator. next() is called on the name itself now, as a loop written by hand does; return()
+  of the generator calls the delegate's return() first (mlirGenYieldStar).
+- -mm=own: a `Generator<P>` of objects did not compile ("a value that borrows the result of '___unbox<...>' cannot be
+  stored, returned or captured"): return(value: P) keeps its value in an `any` for the yield it resumes at, which an
+  object can't be read back out of as its owner. A generator whose T owns memory and is not text has no return() and
+  throw() under -mm=own (the interface's are optional); it is given up by being released.
+
+Still open, looked at:
+- -mm=own: a `yield*` over a Generator of objects (`yield* people(k)`: the value is read out of the step's record
+  and yielded - an object can't be copied out of it); `yield* this.range()` in a class's generator method and a
+  for...of over `this.items` in one (what is made borrows `this`, and can't be kept in a variable of the generator -
+  the consumer may change `this` between two steps; read by index, `this.items[i]`, it works); a `d.next()` written
+  by hand on a generator that a variable of a generator holds (fields are told apart by position and type, not by
+  object: 159). An array literal with an object something else owns (`f([new C(), c])`) moves `c` in, as before, and
+  is not given back.
+- every model: a generator that names itself with no declared type ("can't resolve name": the type of the call is
+  what is being found; tsc refuses it too, TS7023). `"1.50" === 1.5` of a `number | string` member is true (the
+  text is converted), as before.
+
+Tests `00optional_union_compare.ts`, `00array_literal_argument.ts`, `00generator_yield_star_parameter.ts` (compile,
+JIT, rc, own).
