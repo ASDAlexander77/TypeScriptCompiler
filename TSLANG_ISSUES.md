@@ -2352,3 +2352,14 @@ Generator) is held in a variable (`.yd`, mlirGenYieldStar), and the resume check
 generator's own. Open: throw() still throws at the yield rather than handing the exception to the delegate's
 throw() (which may catch it and go on yielding); -mm=own, where a yield* of a Generator<T> is refused already. Test
 `00generator_yield_star_return.ts` (compile, JIT, rc).
+
+157 (-mm=own: an object thrown through a finally that yields, 2026-11-22). The exception is kept in an `any` for
+after the finally (mlirGenTryWithYieldingFinally), and an `any` that holds an object can't be copied under -mm=own,
+so a class instance thrown there stopped at run time ("cannot copy an 'any' that holds an object"). USER RULING
+2026-11-22: a clear compile error. It is said at a `throw` whose value's type is an object (owns memory and is not a
+string, a number or an `any`) when it gets to such a finally - not caught first by the try's own catch clause or a
+try inside it (GenContext::throwCaughtBeforeYieldingFinally): "-mm=own: an object of type 'Failure' thrown through a
+finally block that yields is not supported: catch it inside the try statement, or throw a string". Open: an object
+thrown by a called function, or a rethrown `any` holding one, still stops at run time; the complete fix would move
+the caught value into the kept slot rather than copy it. Tests `00generator_throw_through_yielding_finally.ts` (all
+models) and diagnostic-location `generator_throw_object_through_yielding_finally_own.ts`.

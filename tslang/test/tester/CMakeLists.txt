@@ -486,6 +486,7 @@ tslang_add_test(NAME test-compile-00-optional-union-to-string COMMAND test-runne
 tslang_add_test(NAME test-compile-00-optional-number-arithmetic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_number_arithmetic.ts")
 tslang_add_test(NAME test-compile-00-generator-iterable-adapter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_iterable_adapter.ts")
 tslang_add_test(NAME test-compile-00-generator-yield-star-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_return.ts")
+tslang_add_test(NAME test-compile-00-generator-throw-through-yielding-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_throw_through_yielding_finally.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-member-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_member_call.ts")
 tslang_add_test(NAME test-compile-00-constructor-type-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00constructor_type_value.ts")
 tslang_add_test(NAME test-compile-00-string-concat-chain COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_chain.ts")
@@ -1370,6 +1371,9 @@ tslang_add_test(NAME test-jit-rc-00-generator-iterable-adapter COMMAND test-runn
 tslang_add_test(NAME test-jit-own-00-generator-iterable-adapter COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_iterable_adapter.ts")
 tslang_add_test(NAME test-jit-00-generator-yield-star-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_return.ts")
 tslang_add_test(NAME test-jit-rc-00-generator-yield-star-return COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_return.ts")
+tslang_add_test(NAME test-jit-00-generator-throw-through-yielding-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_throw_through_yielding_finally.ts")
+tslang_add_test(NAME test-jit-rc-00-generator-throw-through-yielding-finally COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_throw_through_yielding_finally.ts")
+tslang_add_test(NAME test-jit-own-00-generator-throw-through-yielding-finally COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_throw_through_yielding_finally.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-member-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_member_call.ts")
 tslang_add_test(NAME test-jit-rc-00-interface-optional-member-call COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_member_call.ts")
 tslang_add_test(NAME test-jit-own-00-interface-optional-member-call COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_member_call.ts")
@@ -4258,6 +4262,16 @@ add_test(NAME test-compile-diagnostic-location-generator-return-through-yielding
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-return-through-yielding-finally-own.obj")
 set_tests_properties(test-compile-diagnostic-location-generator-return-through-yielding-finally-own
                      PROPERTIES PASS_REGULAR_EXPRESSION "generator_return_through_yielding_finally_own\\.ts:6:9: error: -mm=own: a value of type 'string' returned through a finally block that yields is not supported yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# -mm=own: an object thrown through a finally block that yields is an error at the throw (kept in an `any` there, which
+# can't hold a copy of an object); caught inside the try, or a string or number, it works.
+add_test(NAME test-compile-diagnostic-location-generator-throw-object-through-yielding-finally-own
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generator_throw_object_through_yielding_finally_own.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-throw-object-through-yielding-finally-own.obj")
+set_tests_properties(test-compile-diagnostic-location-generator-throw-object-through-yielding-finally-own
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generator_throw_object_through_yielding_finally_own\\.ts:10:20: error: -mm=own: an object of type 'Failure' thrown through a finally block that yields is not supported"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # -mm=own: an object sent by next() is an error at the yield that reads it, pointing at Shared<T>.

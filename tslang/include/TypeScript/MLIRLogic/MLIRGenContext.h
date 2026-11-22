@@ -358,6 +358,9 @@ struct GenContext
     mlir::SmallVector<std::pair<bool, std::string>> *finallyEscapingJumps = nullptr;
     // In a `try` of a generator whose `finally` yields: where its ways out go (YieldingFinally)
     YieldingFinally *yieldingFinally = nullptr;
+    // In the body of a `try` with a catch clause inside such a YieldingFinally: a `throw` here is caught before it
+    // gets to the finally (the catch clause itself, and a YieldingFinally's own body, have it false)
+    bool throwCaughtBeforeYieldingFinally = false;
     // In the loop a `yield*` makes over a delegate that has `return`: the variable holding it, whose return() a
     // return() of the generator calls first at that yield (mlirGenGeneratorResumeChecks)
     const char *yieldStarDelegate = nullptr;
