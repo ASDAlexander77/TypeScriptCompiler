@@ -924,6 +924,14 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
+        // a local of the function generated, in a generator's next() too (InternalFlags::StackLocal)
+        if ((item->internalFlags & InternalFlags::StackLocal) == InternalFlags::StackLocal && genContext.allocateVarsInContextThis)
+        {
+            GenContext localGenContext(genContext);
+            localGenContext.allocateVarsInContextThis = false;
+            return mlirGen(item, varClass, localGenContext);
+        }
+
         auto location = loc(item);
 
 #ifndef ANY_AS_DEFAULT

@@ -4859,6 +4859,141 @@ class MLIRGenImpl
             }
         }
 
+        // -mm=own, a delegate seen through an interface (a Generator<T>, an Iterable<T>): the loop over it would
+        // call next() on a delegate it borrows from a variable of the generator - a field of its object - and
+        // what next() runs may, as far as its type says, be this same generator function's next(), which gives
+        // that field a new value ("a value that borrows a field is used here after it may be released or
+        // overwritten"). So the delegate is kept in a variable `.yd` and each step exchanges it with a local of
+        // next() (StackLocal), calls its next() there - the local owns it for the call, and nothing is borrowed
+        // from the generator - and exchanges it back:
+        //   let .yd: G | undefined = <delegate>;
+        //   { let .yl: G | undefined = undefined; [.yl, .yd] = [.yd, .yl];
+        //     try { var .yc = .yl!.next(); } finally { [.yl, .yd] = [.yd, .yl]; } }
+        //   for (; !.yc.done; ) {
+        //     const .v = .yc.value; yield .v;
+        //     { let .yl: G | undefined = undefined; [.yl, .yd] = [.yd, .yl]; .yc = .yl!.next(); [.yl, .yd] = [.yd, .yl]; }
+        //   }
+        // (the variables named for the yield*: each has its own). Only a delegate made there, by a call: one read
+        // out of a variable or a parameter (`yield* it`) is not the generator's to keep, and is iterated as before.
+        Expression delegateExpression = yieldExpressionAST->expression;
+        while (delegateExpression == SyntaxKind::ParenthesizedExpression)
+        {
+            delegateExpression = delegateExpression.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (compileOptions.memoryModel == MemoryModelOwn && delegateExpression == SyntaxKind::CallExpression)
+        {
+            auto delegateType = evaluate(yieldExpressionAST->expression, genContext);
+            auto delegateInterface = dyn_cast_or_null<mlir_ts::InterfaceType>(delegateType);
+            auto elementType = delegateInterface ? iteratorElementType(delegateInterface) : mlir::Type();
+            if (elementType)
+            {
+                GenContext delegateGenContext(genContext);
+                delegateGenContext.typeAliasMap.insert({".YS_G", delegateInterface});
+                // nothing is borrowed from the generator at the yield, so return() and throw() are checked for
+                // where it resumes, as at the generator's own yields
+                _yield_expr->internalFlags |= yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable;
+
+                auto delegateOrUndefined = [&]() {
+                    NodeArray<TypeNode> members;
+                    members.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".YS_G")).as<Node>()).as<TypeNode>());
+                    members.push_back(nf.createToken(SyntaxKind::UndefinedKeyword).as<TypeNode>());
+                    return nf.createUnionTypeNode(members).as<TypeNode>();
+                };
+                auto declare = [&](Identifier name, TypeNode type, Expression initializer, NodeFlags flags, bool stackLocal) {
+                    NodeArray<VariableDeclaration> declarations;
+                    auto declaration = nf.createVariableDeclaration(name, undefined, type, initializer);
+                    if (stackLocal)
+                    {
+                        declaration->internalFlags |= InternalFlags::StackLocal;
+                    }
+
+                    declarations.push_back(declaration);
+                    return nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, flags)).as<Statement>();
+                };
+                auto exchange = [&](Identifier left, Identifier right) {
+                    NodeArray<Expression> targets;
+                    targets.push_back(left);
+                    targets.push_back(right);
+                    NodeArray<Expression> values;
+                    values.push_back(right);
+                    values.push_back(left);
+                    return nf.createExpressionStatement(nf.createBinaryExpression(
+                               nf.createArrayLiteralExpression(targets, false), nf.createToken(SyntaxKind::EqualsToken),
+                               nf.createArrayLiteralExpression(values, false))).as<Statement>();
+                };
+
+                auto site = std::to_string(static_cast<long long>(yieldExpressionAST->pos));
+                auto delegateName = ".yd" + site;
+                auto delegateIdent = nf.createIdentifier(stows(delegateName));
+                auto resultIdent = nf.createIdentifier(stows(".yc" + site));
+                // ...and a return() of this generator calls the delegate's return() first, when it has one
+                // (mlirGenGeneratorResumeChecks)
+                auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
+                if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) && delegateInfo &&
+                    (delegateInfo->findField(builder.getStringAttr("return")) || delegateInfo->findMethod("return")))
+                {
+                    delegateGenContext.yieldStarDelegate = delegateName.c_str();
+                }
+
+                // one step, in a block of its own: the local is given back where the block ends, before the yield
+                auto step = [&](const char *localName, bool declaresResult) {
+                    auto localIdent = nf.createIdentifier(stows(localName + site));
+                    NodeArray<Expression> nextArgs;
+                    auto nextCall = nf.createCallExpression(
+                        nf.createPropertyAccessExpression(nf.createNonNullExpression(localIdent), nf.createIdentifier(S(ITERATOR_NEXT))),
+                        undefined, nextArgs);
+
+                    NodeArray<Statement> stepStatements;
+                    stepStatements.push_back(declare(localIdent, delegateOrUndefined(), nf.createIdentifier(S(UNDEFINED_NAME)),
+                                                     NodeFlags::Let, true));
+                    stepStatements.push_back(exchange(localIdent, delegateIdent));
+                    // (back in a finally: a next() that throws leaves the delegate the generator's, to give back)
+                    NodeArray<Statement> callStatements;
+                    if (declaresResult)
+                    {
+                        callStatements.push_back(declare(resultIdent, undefined, nextCall, NodeFlags::None, false));
+                    }
+                    else
+                    {
+                        callStatements.push_back(nf.createExpressionStatement(
+                            nf.createBinaryExpression(resultIdent, nf.createToken(SyntaxKind::EqualsToken), nextCall)));
+                    }
+
+                    NodeArray<Statement> backStatements;
+                    backStatements.push_back(exchange(localIdent, delegateIdent));
+                    stepStatements.push_back(nf.createTryStatement(nf.createBlock(callStatements, false), undefined,
+                                                                   nf.createBlock(backStatements, false)));
+                    return nf.createBlock(stepStatements, false).as<Statement>();
+                };
+
+                NodeArray<Statement> loopStatements;
+                loopStatements.push_back(declare(
+                    _v_ident, undefined, nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("value"))),
+                    NodeFlags::Const, false));
+                loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                loopStatements.push_back(step(".ym", false));
+
+                NodeArray<Statement> statements;
+                statements.push_back(declare(delegateIdent, delegateOrUndefined(), yieldExpressionAST->expression, NodeFlags::Let, false));
+                statements.push_back(step(".yl", true));
+                statements.push_back(nf.createForStatement(
+                    undefined,
+                    nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken),
+                                                   nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("done")))),
+                    undefined, nf.createBlock(loopStatements, false)));
+                for (auto statement : statements)
+                {
+                    if (mlir::failed(mlirGen(statement, delegateGenContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                return mlir::success();
+            }
+        }
+
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
                                     nf.createExpressionStatement(_yield_expr));

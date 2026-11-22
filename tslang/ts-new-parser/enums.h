@@ -595,7 +595,10 @@ enum class InternalFlags : number
     // end of its body, the unwind, each return/break/continue), the copy on the unwind leg inside an exception
     // handler, and a resume lands in one copy only - the yield was skipped, and the rest of the finally ran from the
     // wrong place
-    YieldInFinally = 1 << 23
+    YieldInFinally = 1 << 23,
+    // a variable of a generator's body that is a local of next(), not a variable of the generator: no yield
+    // stands in its block, and it does not live past it (mlirGenYieldStar's exchange of the delegate, -mm=own)
+    StackLocal = 1 << 25
 };
 
 ENUM_OPS(InternalFlags)
