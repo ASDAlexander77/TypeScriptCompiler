@@ -675,6 +675,52 @@ namespace own_signature
         return symbolRefOp ? symbolRefOp.getIdentifierAttr().getAttr() : mlir::StringAttr();
     }
 
+    mlir::StringAttr OwnershipSignaturePass::slotMethodCellFunction(mlir::Value value)
+    {
+        // `ts.Cast(ts.ArithmeticBinary(ts.Cast(ts.AddressOf @cell), INTERFACE_METHOD_CELL_TAG))`
+        while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+        {
+            value = castOp.getIn();
+        }
+
+        auto addOp = value ? value.getDefiningOp<mlir_ts::ArithmeticBinaryOp>() : mlir_ts::ArithmeticBinaryOp();
+        auto tagOp = addOp ? addOp.getOperand2().getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+        auto tag = tagOp ? mlir::dyn_cast<mlir::IntegerAttr>(tagOp.getValue()) : mlir::IntegerAttr();
+        auto addressOfOp = addOp ? addressOfThroughCasts(addOp.getOperand1()) : mlir_ts::AddressOfOp();
+        if (!addressOfOp || !tag || tag.getInt() != INTERFACE_METHOD_CELL_TAG || !addressOfOp.getGlobalName().ends_with(".method"))
+        {
+            return {};
+        }
+
+        auto cellOp = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::GlobalOp>(addressOfOp, addressOfOp.getGlobalNameAttr());
+        if (!cellOp)
+        {
+            return {};
+        }
+
+        llvm::DenseMap<int64_t, mlir::Value> values;
+        auto fields = 0;
+        cellOp.getInitializerRegion().walk([&](mlir_ts::InsertPropertyOp insertOp) {
+            fields++;
+            if (insertOp.getPosition().size() == 1)
+            {
+                values[insertOp.getPosition()[0]] = insertOp.getValue();
+            }
+        });
+
+        auto isMinusOne = [&](mlir::Value offset) {
+            auto constantOp = offset ? offset.getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+            auto number = constantOp ? mlir::dyn_cast<mlir::IntegerAttr>(constantOp.getValue()) : mlir::IntegerAttr();
+            return number && number.getInt() == -1;
+        };
+        if (fields != 3 || values.size() != 3 || !isMinusOne(values.lookup(1)) || !isMinusOne(values.lookup(2)))
+        {
+            return {};
+        }
+
+        return slotFunction(values.lookup(0));
+    }
+
     mlir_ts::AddressOfOp OwnershipSignaturePass::addressOfThroughCasts(mlir::Value value)
     {
         while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
@@ -809,6 +855,11 @@ namespace own_signature
                 if (position >= INTERFACE_VTABLE_HEADER_SLOTS)
                 {
                     vtable.slots[position] = slotFunction(value);
+                    if (!vtable.slots[position])
+                    {
+                        vtable.slots[position] = slotMethodCellFunction(value);
+                    }
+
                     if (auto field = slotField(value); field.first)
                     {
                         vtable.fields[position] = field;

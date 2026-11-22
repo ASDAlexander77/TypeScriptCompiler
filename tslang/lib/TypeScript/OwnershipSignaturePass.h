@@ -357,6 +357,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // The function a vtable slot holds: `ts.SymbolRef`, seen through casts. Null for anything else.
     static mlir::StringAttr slotFunction(mlir::Value value);
 
+    // The function a slot's method cell holds: the slot of a function-typed member of an interface is the
+    // tagged address of a cell `{method, flagOffset, fieldOffset}` (`<name>..vtbl.<member>.method`) when what
+    // implements it is a function rather than a field of the object - a class's method, or the thunk a
+    // generator is given a `Generator<T>` with (`next(value?)` over its own `next()`). Only a cell that is
+    // always present (flagOffset -1) and never written through (fieldOffset -1). Null for anything else.
+    static mlir::StringAttr slotMethodCellFunction(mlir::Value value);
+
     static mlir_ts::AddressOfOp addressOfThroughCasts(mlir::Value value);
 
     // The words of the module's exported declarations (`__decls*` globals): what another module

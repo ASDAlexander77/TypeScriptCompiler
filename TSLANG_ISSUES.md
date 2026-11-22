@@ -2404,6 +2404,43 @@ Tests `00iterable_string_for_of.ts`, `00dictionary_union_values.ts` (compile, JI
 Verified: ctest (8855), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
 under -mm=own (236), a million rounds of each shape at a flat 5.5 MB: no failures.
 
+159 (-mm=own: `yield*` of a Generator<T>, 2026-11-22; USER RULING: to be supported, with the delegate kept).
+`function* outer(): Generator<number> { yield 100; yield* inner(3); yield 200; }` was "a value that borrows a field
+is used here after it may be released or overwritten" at the `yield*`, and so was any `d.next()` on a generator held
+in a field (`this.d.next()` of a class).
+- The call was not resolved: a `Generator<T>`'s `next` is a member of function type, and what implements it for a
+  generator is not a field of its object but a thunk (`next(value?)` over the generator's own `next()`), kept in a
+  method cell `{method, flagOffset, fieldOffset}` whose tagged address the vtable slot holds. The scan of interface
+  vtables reads such a cell now (slotMethodCellFunction: one always present and never written through), and a call
+  of a function-typed member looks in the method families when no field family answers. `this.d.next()` of a class
+  field compiles with that alone. Such a thunk counts as a generator's own next for what the call hands over
+  (forwardsGeneratorNext, with 158's isGeneratorNext).
+- In a generator that is not enough: its variables are fields of its object, the `yield*` loop called next() on a
+  delegate borrowed from one, and what that next() runs may, as far as its type says, be this same generator
+  function's next() - a generator delegating to itself - which gives that field a new value. Fields are told apart
+  by position and type, not by object. So under -mm=own a `yield*` of a delegate a call makes, seen through an
+  interface, keeps it in a variable of its own and exchanges it with a local of next() for each step
+  (`[.yl, .yd] = [.yd, .yl]`, the documented way to take a value out of a place): the local owns the delegate for
+  the call, nothing is borrowed from the generator, and a `finally` exchanges it back - also when next() throws
+  (it leaked there). The local is a real local of next() (InternalFlags::StackLocal on its declaration), in a
+  block that ends before the yield. mlirGenYieldStar; the other models, and a delegate that is an array or a
+  string, are iterated as before.
+- return() and throw() of the generator are checked for at the yield of such a `yield*` too (they were not, under
+  -mm=own), and return() calls the delegate's return() first, exchanged the same way: its finally blocks run, as
+  156 has it for the other models.
+
+Still open, as before these changes: a `yield*` of a delegate read out of a parameter or a variable (`yield* it`,
+which the generator does not own), and of a generator made by a method of `this` in a class's generator method
+(`yield* this.range()`: it borrows `this`, and can't be kept in a variable of the generator); a `d.next()` written
+by hand on a generator a generator's variable holds; a Generator<T> of objects (156's return() is for a T that
+owns nothing). In every model: a generator function that names itself (`yield* deep(d - 1)` in `deep`: "can't
+resolve name"), a method likewise; one that goes through another function works.
+
+Tests `00generator_yield_star_delegate.ts` (compile, JIT, rc, own), `00generator_yield_star_return.ts` now under own too.
+
+Verified: ctest (8867), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
+under -mm=own (236), mm_fuzz run (914 programs), a million rounds of each shape at a flat 5.7 MB: no failures.
+
 160 (a generator that names itself, 2026-11-22). `function* deep(d: number): Generator<number> { yield d; if (d > 0)
 yield* deep(d - 1); }` was "can't resolve name: deep", and so was the call kept in a variable or iterated by a
 for...of; a method's `yield* this.left.walk()` was "Class member 'walk' can't be found" - in every memory model. A
