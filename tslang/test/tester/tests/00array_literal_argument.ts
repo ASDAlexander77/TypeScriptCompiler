@@ -17,7 +17,7 @@ class Keeper {
     }
 }
 
-function read(a: C[]) {
+function describe(a: C[]) {
     return a[0].n.length + a.length;
 }
 
@@ -58,7 +58,7 @@ function main() {
     const k = new Keeper();
     let caught = 0;
     for (let i = 0; i < 1000; i++) {
-        assert(read([new C("a" + i), new C("b" + i)]) == ("a" + i).length + 2);
+        assert(describe([new C("a" + i), new C("b" + i)]) == ("a" + i).length + 2);
 
         k.keep([new C("k" + i), new C("l" + i)]);
         assert(k.items.length == 2 && k.items[1].n == "l" + i);
