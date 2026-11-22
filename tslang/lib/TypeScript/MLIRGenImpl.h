@@ -20295,6 +20295,14 @@ class MLIRGenImpl
                 }
             }
 
+            // Not through a handle's payload (`s.value[i] = v`, the library's TypedArray.set): a growth there, as a
+            // push, may move the elements another handle's borrow reads (spec 23.3), so a method that writes one
+            // element would be taken for one that releases what its callers borrow. As before there.
+            if (own_facts::reachesSharedValue(arrayRef))
+            {
+                return;
+            }
+
             auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));
             auto newLength32 = builder.create<mlir_ts::ArithmeticBinaryOp>(
                 location, i32Type, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), index32, one);

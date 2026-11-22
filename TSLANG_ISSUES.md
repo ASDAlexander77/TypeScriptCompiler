@@ -2171,7 +2171,11 @@ Still open, looked at:
   the elements a borrow reads as dropped; in a branch between the value stored and its store, the store as a
   second reference. Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place
   through it - a push too - the local owns what it holds and the parameter is kept, so there the write is as before
-  (open). A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
+  (open). Nor through a handle's payload (`s.value[i] = v`): a push there may move the elements another handle's
+  borrow reads (spec 23.3), so the library's TypedArray.set (and MessageQueue.close, the workers) were taken for
+  methods that release what their callers borrow, and 8 library tests stopped compiling under -mm=own ("a value that
+  borrows 'this.elements' is used here after it may be released"); the write there is as before (open). Test
+  `00array_write_shared.ts`. A parameter's array, a field's of a parameter, arrays of objects and of arrays: flat at 6 MB over 200000
   rounds (gc, rc, own), clean on the wasm checked heap (own, rc). Not when the right side gave the variable another array (`a[1] = (a = [5],
   9)`): the store goes into the one the left side read; a store of another through another place (`h.a[0] = (h.a =
   [5], 9)`, or in a call) is not seen, and grows the new one (open).
@@ -2210,9 +2214,16 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   done: true }`, throw(e) throws e. The generator object holds a mode its yields check where they resume
   (addGeneratorResumeMethods, mlirGenGeneratorResumeChecks). Under -mm=own return() only for a T that owns
   nothing (a number, a boolean): its result would hold the value the caller lends. The library's `Generator`
-  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither) once a compiler with
-  them is released. Under -mm=own a call through an optional one is read as moving the generator, so there a
-  program declaring them required calls them.
+  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither), and its next() takes no
+  value: declared `next: (value?: TNext) =>`, a Generator given to an Iterable<T> (`next: () =>`) was let through
+  as it is - castInterfaceToInterface reports a member of another type only when the vtable must be remapped, and
+  `next` is the first slot of both - so an Iterable's next() called a function of another signature: wasm's
+  "function signature mismatch" (the library's iteration_types.ts), natively a yield reading a value never given
+  (open: such a cast is not refused; next(value) through the library's Generator). Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
+  was read as moving the object: the method value bound to it is wrapped in an optional, given out of the If that
+  tests the member (lowered by then: a branch's block argument), tested and unwrapped for the call - all of which
+  only calls it now lends the object (isBoundForCall, boundOnlyCalled), as a call of a member that is not optional
+  does. Test `00interface_optional_member_call.ts` (compile, JIT, rc, own).
 - -mm=own: an object literal's field of `<any>undefined` or `<any>null` (`{ t: <any>undefined, n: 1 }`) was
   released twice: own_facts::isConstantData took null or undefined seen through its casts for data nothing owns,
   a box into `any` included - so the store of the box into the object was not checked as a move, and the

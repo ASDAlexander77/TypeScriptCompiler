@@ -899,15 +899,56 @@ namespace own_inference
                 return false;
             }
 
-            return llvm::all_of(boundOp->getUsers(), [](mlir::Operation *boundUser) {
-                if (mlir::isa<mlir_ts::GetMethodOp>(boundUser))
-                {
-                    return true;
-                }
+            return boundOnlyCalled(boundOp.getResult(), 0);
+        });
+    }
 
-                return mlir::isa<mlir_ts::GetThisOp>(boundUser) &&
-                       llvm::all_of(boundUser->getUsers(), [](mlir::Operation *thisUser) { return isCall(thisUser); });
-            });
+    // A bound function only called: its method and object taken for a call, or - a call of an optional member,
+    // `g.return?.(v)`, `g.return(v)` of `return?: ...` - wrapped in an optional, given out of an If, tested and
+    // unwrapped for the call. Its object is lent to the call, not moved into a value that outlives it.
+    bool OwnershipInferencePass::boundOnlyCalled(mlir::Value bound, int depth)
+    {
+        if (depth > 6)
+        {
+            return false;
+        }
+
+        return llvm::all_of(bound.getUses(), [&](mlir::OpOperand &use) {
+            auto *boundUser = use.getOwner();
+            if (mlir::isa<mlir_ts::GetMethodOp, mlir_ts::HasValueOp>(boundUser))
+            {
+                return true;
+            }
+
+            if (mlir::isa<mlir_ts::GetThisOp>(boundUser))
+            {
+                return llvm::all_of(boundUser->getUsers(), [](mlir::Operation *thisUser) { return isCall(thisUser); });
+            }
+
+            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(boundUser))
+            {
+                return mlir::isa<mlir_ts::BooleanType>(castOp.getType());
+            }
+
+            if (mlir::isa<mlir_ts::OptionalValueOp, mlir_ts::ValueOp>(boundUser))
+            {
+                return boundOnlyCalled(boundUser->getResult(0), depth + 1);
+            }
+
+            if (auto resultOp = mlir::dyn_cast<mlir_ts::ResultOp>(boundUser))
+            {
+                auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(resultOp->getParentOp());
+                return ifOp && use.getOperandNumber() < ifOp->getNumResults() &&
+                       boundOnlyCalled(ifOp->getResult(use.getOperandNumber()), depth + 1);
+            }
+
+            // the If lowered: its result a block argument
+            if (auto brOp = mlir::dyn_cast<mlir::cf::BranchOp>(boundUser))
+            {
+                return boundOnlyCalled(brOp.getDest()->getArgument(use.getOperandNumber()), depth + 1);
+            }
+
+            return false;
         });
     }
 
