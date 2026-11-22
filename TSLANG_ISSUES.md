@@ -2396,5 +2396,5 @@ field cannot be stored, returned or captured"): it does not copy what it yields.
 
 Tests `00iterable_string_for_of.ts`, `00dictionary_union_values.ts` (compile, JIT, rc, own).
 
-Verified: ctest (8850), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
+Verified: ctest (8853), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
 under -mm=own (236), a million rounds of each shape at a flat 5.5 MB: no failures.
