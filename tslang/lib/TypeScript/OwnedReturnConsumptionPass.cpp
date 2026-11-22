@@ -312,9 +312,28 @@ class OwnedReturnConsumptionPass
         releaseDiscardedTemporaries(mth, module);
     }
 
-    // An array literal each of whose elements that own memory is a new value moved into it - an owned
-    // result its receiver consumed, used by nothing else than the literal and its retains: the array is
-    // their one owner (`["x" + i, mk()]`)
+    // An array literal that can own what it holds: each element that owns memory is
+    // - a new value moved into it - an owned result its receiver consumed, used after that by nothing but the
+    //   literal and its retains (`"x" + i`; a `new C()`, whose constructor's call and the like come before), or
+    // - text that something else owns (`s`, a named string): the literal is given a copy of it
+    //   (copyBorrowedTextElements), as a place a string is stored into is.
+    // (`["x" + i, mk()]`, `[new C(), new C()]`, `["x" + i, s]`.) An object something else owns can't be copied.
+    static bool isBorrowedText(mlir::Value element)
+    {
+        return own_facts::isCopyableString(element.getType());
+    }
+
+    static bool isMovedIn(mlir_ts::CreateArrayOp arrayOp, mlir::Value element)
+    {
+        auto *elementOp = element.getDefiningOp();
+        return elementOp && elementOp->hasAttr(OWNED_RESULT_ATTR_NAME) && elementOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
+               llvm::count(arrayOp->getOperands(), element) == 1 &&
+               llvm::all_of(element.getUsers(), [&](mlir::Operation *user) {
+                   return user == arrayOp.getOperation() || mlir::isa<mlir_ts::RetainOp>(user) ||
+                          (user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp));
+               });
+    }
+
     static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op)
     {
         auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
@@ -324,18 +343,48 @@ class OwnedReturnConsumptionPass
         }
 
         return llvm::all_of(arrayOp->getOperands(), [&](mlir::Value element) {
-            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()))
+            return !mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isMovedIn(arrayOp, element) || isBorrowedText(element);
+        });
+    }
+
+    // ...the copies: the retain the literal took of each such element becomes the copy it holds
+    static void copyBorrowedTextElements(MLIRTypeHelper &mth, mlir::Operation *op)
+    {
+        auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
+        if (!arrayOp)
+        {
+            return;
+        }
+
+        for (auto &operand : arrayOp->getOpOperands())
+        {
+            auto element = operand.get();
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isMovedIn(arrayOp, element) || !isBorrowedText(element))
             {
-                return true;
+                continue;
             }
 
-            auto *elementOp = element.getDefiningOp();
-            return elementOp && elementOp->hasAttr(OWNED_RESULT_ATTR_NAME) && elementOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
-                   llvm::count(arrayOp->getOperands(), element) == 1 &&
-                   llvm::all_of(element.getUsers(), [&](mlir::Operation *user) {
-                       return user == arrayOp.getOperation() || mlir::isa<mlir_ts::RetainOp>(user);
-                   });
-        });
+            // the literal's own retain of it: the last one before the literal, in its block
+            mlir::Operation *retain = nullptr;
+            for (auto *user : element.getUsers())
+            {
+                if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp) &&
+                    (!retain || retain->isBeforeInBlock(user)))
+                {
+                    retain = user;
+                }
+            }
+
+            mlir::OpBuilder builder(arrayOp);
+            auto copy = builder.create<mlir_ts::StringCopyOp>(arrayOp->getLoc(), element.getType(), element);
+            copy->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(arrayOp->getContext()));
+            copy->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(arrayOp->getContext()));
+            operand.set(copy);
+            if (retain)
+            {
+                retain->erase();
+            }
+        }
     }
 
     // The array a conversion makes for one call (`f(a)` of an `int[]` given as a `number[]`, an array given as
@@ -872,9 +921,10 @@ class OwnedReturnConsumptionPass
                 // it (releaseDiscardedTemporaries), and moved into a callee that keeps it. Only an array of
                 // elements that own nothing: one of strings or objects - a rest parameter's
                 // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over. Or a
-                // literal each of whose elements is a new value moved into it (`f(["x" + i, mk()])`): it is
-                // theirs to own already, and nothing else gives them back, so every call leaked the array
-                // and what it held (the classifyArgumentArrays of the inference leaves such an array as it is).
+                // literal that can own what it holds (holdsOnlyMovedInElements: new values moved into it, and
+                // text it is given copies of - `f(["x" + i, mk()])`, `f([new C()])`, `f(["x" + i, s])`): nothing
+                // else gives the new values back, so every call leaked the array and what it held (the
+                // classifyArgumentArrays of the inference leaves such an array as it is).
                 auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(argument.getType());
                 if (compileOptions.memoryModel == MemoryModelOwn && arrayType &&
                     (!mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) ||
@@ -883,6 +933,7 @@ class OwnedReturnConsumptionPass
                 {
                     if (auto *definingOp = argument.getDefiningOp())
                     {
+                        copyBorrowedTextElements(mth, definingOp);
                         definingOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                     }
 
