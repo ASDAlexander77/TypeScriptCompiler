@@ -6103,6 +6103,40 @@ foreach(weak_field_mm gc none own)
     endforeach()
 endforeach()
 tslang_add_test(NAME test-compile-noopt-00weak_field-own COMMAND test-runner -noopt -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00weak_field.ts")
+# A field declared `readonly` is written only by the constructor of the class that declares it - its
+# field initializers too - in every memory model, as TypeScript has it (TS2540, TS2704). Each file in
+# readonly-errors/ writes one where it may not. Plain add_test: these compile nothing.
+set(readonly_error_cases
+    "assign|assign\\.ts:2:39: error: cannot assign to 'v' because it is a read-only property of 'N'"
+    "compound|compound\\.ts:2:39: error: cannot assign to 'v' because it is a read-only property of 'N'"
+    "increment|increment\\.ts:2:39: error: cannot assign to 'v' because it is a read-only property of 'N'"
+    "destructuring|destructuring\\.ts:2:39: error: cannot assign to 'v' because it is a read-only property of 'N'"
+    "delete|delete\\.ts:2:39: error: the operand of a 'delete' operator cannot be 'v', a read-only property of 'N'"
+    "key|key\\.ts:2:59: error: cannot assign to 'v' because it is a read-only property of 'N'"
+    "method|method\\.ts:3:15: error: cannot assign to 'f' because it is a read-only property of 'E'"
+    "subclass_constructor|subclass_constructor\\.ts:2:46: error: cannot assign to 'k' because it is a read-only property of 'B'"
+    "arrow_in_constructor|arrow_in_constructor\\.ts:3:39: error: cannot assign to 'f' because it is a read-only property of 'E'")
+foreach(readonly_error_mm gc own)
+    foreach(readonly_error_case ${readonly_error_cases})
+        string(FIND "${readonly_error_case}" "|" readonly_error_sep)
+        string(SUBSTRING "${readonly_error_case}" 0 ${readonly_error_sep} readonly_error_name)
+        math(EXPR readonly_error_sep "${readonly_error_sep} + 1")
+        string(SUBSTRING "${readonly_error_case}" ${readonly_error_sep} -1 readonly_error_message)
+        add_test(NAME test-compile-readonly-errors-${readonly_error_name}-${readonly_error_mm}
+                 COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=${readonly_error_mm}
+                         "${PROJECT_SOURCE_DIR}/test/tester/readonly-errors/${readonly_error_name}.ts"
+                         -o "${CMAKE_CURRENT_BINARY_DIR}/readonly-errors-${readonly_error_name}-${readonly_error_mm}.obj")
+        set_tests_properties(test-compile-readonly-errors-${readonly_error_name}-${readonly_error_mm}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "${readonly_error_message}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
+endforeach()
+# ...so under own a borrow of a readonly field lasts as long as its object (OWN_READONLY_FIELDS_ATTR_NAME)
+foreach(readonly_mm gc rc none own)
+    tslang_add_test(NAME test-jit-own_readonly_stable-${readonly_mm} COMMAND test-runner -jit -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_readonly_stable.ts")
+    tslang_add_test(NAME test-compile-own_readonly_stable-${readonly_mm} COMMAND test-runner -mm=${readonly_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_readonly_stable.ts")
+endforeach()
+
 # an abstract field of a class type implemented by a field: under own its accessors say @lends and @keeps
 foreach(abstract_field_mm gc none own)
     tslang_add_test(NAME test-jit-own_abstract_field_class-${abstract_field_mm} COMMAND test-runner -jit -mm=${abstract_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_abstract_field_class.ts")
@@ -6718,7 +6752,11 @@ set(own_error_cases
     "own_err_pushed_twice|:17:5: error: 'n' is used here after its value was moved"
     "own_err_param_copy_then_global|:19:10: error: a value that borrows 'HG.n' cannot be stored, returned or captured"
     "own_err_param_element_then_borrow|:19:11: error: 'c' is used here after its value was moved"
-    "own_err_field_taken_through_copy|:27:5: error: a value that borrows 'copy[.]v' cannot be stored, returned or captured")
+    "own_err_field_taken_through_copy|:27:5: error: a value that borrows 'copy[.]v' cannot be stored, returned or captured"
+    "own_err_readonly_reassigned|:11:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
+    "own_err_readonly_captured|:12:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
+    "own_err_readonly_global|:10:11: error: 'i' borrows 'gl.inner' but is used here after it may be released or overwritten"
+    "own_err_readonly_redeclared|:7:11: error: 'i' borrows 'b.inner' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

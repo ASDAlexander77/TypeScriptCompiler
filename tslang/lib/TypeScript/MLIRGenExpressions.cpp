@@ -831,7 +831,8 @@ namespace mlirgen
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
             // an assignment as well: a field of a @value value is readonly
-            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)) ||
+                mlir::failed(checkReadonlyFieldAssignment(location, expressionValue, genContext)))
             {
                 return mlir::failure();
             }
@@ -872,7 +873,8 @@ namespace mlirgen
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
             // an assignment as well: a field of a @value value is readonly
-            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)) ||
+                mlir::failed(checkReadonlyFieldAssignment(location, expressionValue, genContext)))
             {
                 return mlir::failure();
             }
@@ -2933,6 +2935,11 @@ namespace mlirgen
         auto result = mlirGen(deleteExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
+        if (mlir::failed(checkReadonlyFieldAssignment(location, expr, genContext, /*deleting=*/true)))
+        {
+            return mlir::failure();
+        }
+
         // what the expression named, before an array is turned into a reference to its elements
         auto place = expr;
 

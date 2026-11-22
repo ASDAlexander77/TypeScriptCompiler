@@ -707,6 +707,73 @@ namespace own_inference
         });
     }
 
+    bool OwnershipInferencePass::readsStableFieldsOfHeldRoot(mlir::Operation *read, const Chain &chain)
+    {
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
+        auto ref = loadOp ? loadOp.getReference() : mlir::Value();
+        auto stableFields = 0;
+        while (ref)
+        {
+            auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+            if (!propertyRefOp)
+            {
+                return false;
+            }
+
+            // the part of a subclass's object that is its base class's is the object itself, not a field
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getType());
+            auto basePart = refType && mlir::isa<mlir_ts::ClassStorageType>(refType.getElementType());
+            if (!basePart)
+            {
+                if (!isStableField(propertyRefOp.getResult()))
+                {
+                    return false;
+                }
+
+                stableFields++;
+            }
+
+            auto object = propertyRefOp.getObjectRef();
+            if (object.getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                ref = object;
+                continue;
+            }
+
+            // a value this function made, held by no slot (a `const` kept as its value): it ends where it
+            // is released or taken (rootEnds)
+            auto objectLoad = object.getDefiningOp<mlir_ts::LoadOp>();
+            if (!objectLoad)
+            {
+                return stableFields > 0 && llvm::any_of(chain.roots, [&](auto &root) {
+                           return root.first == object && root.second == Chain::Owned;
+                       });
+            }
+
+            if (objectLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                ref = objectLoad.getReference();
+                continue;
+            }
+
+            auto slot = objectLoad.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (!slot || stableFields == 0 || isCellVariable(slot.getResult()))
+            {
+                return false;
+            }
+
+            int index = -1;
+            if (isParameterSlot(slot, index))
+            {
+                return isUnassignedSlot(slot.getResult());
+            }
+
+            return llvm::any_of(chain.roots, [&](auto &root) { return root.first == slot.getResult() && root.second == Chain::Slot; });
+        }
+
+        return false;
+    }
+
     bool OwnershipInferencePass::dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed)
     {
         if (read && drop == read)
@@ -801,21 +868,15 @@ namespace own_inference
                 return true;
             }
 
-            // a private field nothing writes after construction, read straight off a parameter or `this`
-            // (TSLANG 73): no call overwrites it, and it is released only with its object, which the
-            // caller holds while this function runs
-            if (read && chain.places.size() == 1 && !chain.anyPlace)
+            // stable fields - private ones nothing writes after construction (TSLANG 73), and `readonly` ones,
+            // which only their class's constructor writes - read off a parameter, `this` or a local this
+            // function owns, one after another (`o.mid.inner`): no call overwrites any of them, and each is
+            // released only with its object. The caller holds a parameter's object while this function runs;
+            // a local's ends where it is released, assigned or moved away (rootEnds), not inside a call that
+            // borrows it. Not a local a closure may assign through its cell.
+            if (read && !chain.anyPlace && readsStableFieldsOfHeldRoot(read, chain))
             {
-                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
-                auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
-                auto objectLoad = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
-                auto objectSlot = objectLoad ? objectLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-                int index = -1;
-                if (propertyRefOp && isStableField(propertyRefOp.getResult()) && objectSlot && isParameterSlot(objectSlot, index) &&
-                    isUnassignedSlot(objectSlot.getResult()))
-                {
-                    return false;
-                }
+                return false;
             }
 
             // a call given a closure may run it, and its box may hold anything

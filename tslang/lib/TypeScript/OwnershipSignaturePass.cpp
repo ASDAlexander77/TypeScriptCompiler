@@ -180,6 +180,24 @@ namespace own_signature
                 &getContext(), {mlir::TypeAttr::get(storage), mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), key.second)}));
         }
 
+        // ...and the fields declared `readonly` (MLIRGen's markReadonlyFields): only their class's constructor
+        // writes them, whatever their access level, so they are stable too. One of a class code outside this
+        // module may extend counts only in a program, whose classes nothing else extends (spec 31).
+        if (auto readonlyFields = module->getAttrOfType<mlir::ArrayAttr>(OWN_READONLY_FIELDS_ATTR_NAME))
+        {
+            for (auto entry : readonlyFields.getAsRange<mlir::ArrayAttr>())
+            {
+                if (mlir::cast<mlir::BoolAttr>(entry[2]).getValue() && !executable)
+                {
+                    continue;
+                }
+
+                stableFields.insert(mlir::ArrayAttr::get(
+                    &getContext(), {entry[0], mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32),
+                                                                     mlir::cast<mlir::IntegerAttr>(entry[1]).getInt())}));
+            }
+        }
+
         if (!stableFields.empty())
         {
             module->setAttr(OWN_STABLE_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), stableFields.getArrayRef()));
