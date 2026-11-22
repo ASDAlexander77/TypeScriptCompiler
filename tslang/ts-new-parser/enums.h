@@ -595,7 +595,10 @@ enum class InternalFlags : number
     // end of its body, the unwind, each return/break/continue), the copy on the unwind leg inside an exception
     // handler, and a resume lands in one copy only - the yield was skipped, and the rest of the finally ran from the
     // wrong place
-    YieldInFinally = 1 << 23
+    YieldInFinally = 1 << 23,
+    // the function a generator is rewritten into (buildGeneratorWrapperDeclaration): its body is the generator's
+    // object, whose next() is the generator's own body - which may call the generator by its name
+    GeneratorWrapper = 1 << 26
 };
 
 ENUM_OPS(InternalFlags)

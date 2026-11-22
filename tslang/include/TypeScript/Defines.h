@@ -312,6 +312,8 @@
 // closure) is filled the same way, with a thunk calling the field; its cell is always present and
 // is not written through.
 #define INTERFACE_METHOD_CELL_TAG 1
+// MethodInfo::orderWeight of the entry a class's generator method is known by while its own body is generated
+#define GENERATOR_SELF_METHOD_ORDER (-777)
 // A field (not optional, not function-typed) a class fills with accessors (`get prop()`, `set prop(v)`) has no
 // storage in the object: its slot is instead the address of a global cell {getter, setter}, either null where
 // the class has none, plus this bit - the sign bit, which an offset never has (a symbol plus a constant, so it
