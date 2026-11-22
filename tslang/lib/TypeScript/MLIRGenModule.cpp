@@ -1006,6 +1006,83 @@ namespace mlirgen
         {
             theModule->setAttr(CLASS_BASES_ATTR_NAME, builder.getArrayAttr(bases));
         }
+
+        markReadonlyFields();
+    }
+
+    // -mm=own: the fields of each class that are `readonly` where they are declared (OWN_READONLY_FIELDS_ATTR_NAME):
+    // nothing but the declaring class's constructor writes one (checkReadonlyFieldAssignment), so it is released
+    // only with its object, as a stable private field is (OWN_STABLE_FIELDS_ATTR_NAME). Not one a subclass here
+    // redeclares writable - the subclass writes the same slot. A class code outside the module may extend is
+    // marked so: a subclass there may redeclare the field, and the signature pass counts it only in a program
+    // no other module links.
+    void MLIRGenImpl::markReadonlyFields()
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        auto seenOutside = [](const ClassInfo::TypePtr &classInfo) {
+            return classInfo->isExport || classInfo->isPublic || classInfo->isDeclaration || classInfo->isImport ||
+                   classInfo->isDynamicImport || classInfo->isCppVTable;
+        };
+
+        // does a class here extending `classInfo`, directly or not, redeclare `name` writable?
+        auto redeclaredWritable = [&](ClassInfo *classInfo, llvm::StringRef name) {
+            return llvm::any_of(moduleClasses, [&](const ClassInfo::TypePtr &other) {
+                if (other.get() == classInfo || !other->hasBase(classInfo->classType))
+                {
+                    return false;
+                }
+
+                auto found = other->declaredFields.find(name);
+                return found != other->declaredFields.end() && !found->second;
+            });
+        };
+
+        llvm::SmallVector<mlir::Attribute> entries;
+        for (auto &classInfo : moduleClasses)
+        {
+            if (classInfo->isCppVTable || !classInfo->classType || classInfo->isValue)
+            {
+                continue;
+            }
+
+            auto storageType = dyn_cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+            if (!storageType)
+            {
+                continue;
+            }
+
+            for (auto [position, field] : llvm::enumerate(storageType.getFields()))
+            {
+                auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                if (!name)
+                {
+                    continue;
+                }
+
+                ClassInfo *declaring = nullptr;
+                auto isReadonly = classInfo->declaredFieldReadonly(name.getValue(), &declaring);
+                if (!isReadonly || !*isReadonly || !declaring || redeclaredWritable(declaring, name.getValue()))
+                {
+                    continue;
+                }
+
+                auto entry = builder.getArrayAttr({mlir::TypeAttr::get(storageType), builder.getI32IntegerAttr(position),
+                                                   builder.getBoolAttr(seenOutside(classInfo))});
+                if (!llvm::is_contained(entries, entry))
+                {
+                    entries.push_back(entry);
+                }
+            }
+        }
+
+        if (!entries.empty())
+        {
+            theModule->setAttr(OWN_READONLY_FIELDS_ATTR_NAME, builder.getArrayAttr(entries));
+        }
     }
 
     void MLIRGenImpl::devirtualizeClosedMethods()

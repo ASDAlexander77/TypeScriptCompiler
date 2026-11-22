@@ -217,9 +217,35 @@ knows nothing about - a C function, a virtual method another module may override
 anything (see [`@nodrops`](#nodrops), [`@final`](#final) and
 [Separate compilation](#separate-compilation)).
 
+**A `readonly` field is not freed by a call.** Only the constructor of the class that declares a
+`readonly` field writes it, and arrows it calls where they are written
+(`(() => { this.a = 1; })()`) - in every memory model, as TypeScript has it: anywhere else
+`o.f = v`, `o.f++`, `[o.f] = ...`, `o[k] = v` and `delete o.f` are compile errors. So no call
+overwrites one, and a borrow of it lasts as long as its object does. That holds when the object
+is a parameter, `this`, or a local the function owns, and down a chain of `readonly` fields
+(`o.mid.inner`):
+
+```typescript
+class Inner { constructor(public x: number) {} }
+class Outer { constructor(readonly inner: Inner) {} }
+declare function unknown(o: Outer): void;
+
+function f(o: Outer) {
+    const i = o.inner;  // borrows o.inner
+    unknown(o);         // may free anything, but cannot write o.inner
+    print(i.x);         // compiles; without `readonly` this is the error above
+}
+```
+
+The borrow still ends where the object does: the local is assigned, moved away, or assigned
+by a closure, or the object is a global some call may replace. A `private` field nothing writes
+after the constructor counts the same. A subclass that declares the field again without
+`readonly` writes the same slot, so the field is then not counted. A class another module may
+extend is counted only in a program (`--emit=exe` or the JIT), not in a library.
+
 The usual ways out are the Rust ones: move instead of borrowing (give the value up), store a
-fresh value (`new`, a copy), keep the borrow shorter than its owner, or share the object with
-[`Shared<T>`](#shared-ownership-sharedt).
+fresh value (`new`, a copy), keep the borrow shorter than its owner, mark the field `readonly`,
+or share the object with [`Shared<T>`](#shared-ownership-sharedt).
 
 ## Strings
 

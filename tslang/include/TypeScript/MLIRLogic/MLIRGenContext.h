@@ -240,6 +240,10 @@ struct GenContext
     FunctionPrototypeDOM::TypePtr bodyFuncProto;
     // ...and that function is an arrow, which has no `arguments` of its own
     bool bodyIsArrow = false;
+    // an arrow called where it is written (`(() => { this.a = 1; })()`), and arrows so called in it: the
+    // name of the function it runs inside - a constructor writes its class's readonly fields in such an
+    // arrow too, as tsc has it (checkReadonlyFieldAssignment). Empty in any other function.
+    std::string immediatelyCalledIn;
     // The `var`s of the function whose body is generated (mlirGenFunctionBody): a `var` belongs to its
     // function, not to the block it is written in, and a second declaration of it is an assignment.
     // `functionVars` names the ones declared so far; one that could not be declared before the body

@@ -860,6 +860,33 @@ struct ClassInfo
     // the @weak fields this class declares (own spec 93), by name: the type the program reads and
     // writes (`Node | null`); under -mm=own the slot holds a !ts.weak_ref of the class
     llvm::StringMap<mlir::Type> weakFieldTypes;
+    // the instance fields this class declares (a parameter property and a redeclaration of a base class's
+    // field too), by name: true for a `readonly` one, written only by the constructor of the class that
+    // declares it and its field initializers (checkReadonlyFieldAssignment); under -mm=own a borrow of one
+    // lasts as long as its object (OWN_READONLY_FIELDS_ATTR_NAME). The nearest declaration up the base
+    // classes is the one that counts (declaredFieldReadonly).
+    llvm::StringMap<bool> declaredFields;
+
+    // Is `name` readonly where it is declared nearest to this class: is there a declaration, and does it
+    // say `readonly`? Nothing when no class up the chain declares it.
+    std::optional<bool> declaredFieldReadonly(llvm::StringRef name, ClassInfo **declaring = nullptr)
+    {
+        for (auto *classInfo = this; classInfo;
+             classInfo = classInfo->baseClasses.empty() ? nullptr : classInfo->baseClasses.front().get())
+        {
+            if (auto found = classInfo->declaredFields.find(name); found != classInfo->declaredFields.end())
+            {
+                if (declaring)
+                {
+                    *declaring = classInfo;
+                }
+
+                return found->second;
+            }
+        }
+
+        return std::nullopt;
+    }
     // a field was declared wrongly (a @weak that cannot be): reported, laid out as if it were right, and the
     // class fails once its layout is set (mlirGenClassStorageType)
     bool fieldDeclarationError = false;

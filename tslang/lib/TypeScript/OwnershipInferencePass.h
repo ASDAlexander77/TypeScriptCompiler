@@ -897,6 +897,10 @@ class OwnershipInferencePass
     bool overwritesChain(int64_t position, mlir::Type slotType, const Chain &chain);
     bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed = {});
 
+    // Is `read` a stable field (isStableField) of a stable field ... of a parameter nothing assigns, `this`, or
+    // an owning local of `chain` that no closure assigns: what no call drops (dropsChain).
+    static bool readsStableFieldsOfHeldRoot(mlir::Operation *read, const Chain &chain);
+
     // A read out of a container is a borrow of it (spec 2.3), and so is a `let` declared from one:
     // its retain and releases go when the check passes, as for any borrowing `let` (phase 2).
     // Reports and returns false when the read is kept, or used after something that may destroy

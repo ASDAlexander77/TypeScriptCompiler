@@ -309,6 +309,7 @@ class MLIRGenImpl
     // calls through a vtable to methods no class overrides made direct, once the module is generated
     void devirtualizeClosedMethods();
     void markFinalClasses();
+    void markReadonlyFields();
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false);
 
@@ -1518,6 +1519,97 @@ class MLIRGenImpl
     // parameter (isValueConstructorSlot). A closure inside the constructor sees the slot through its box
     // (and its store would go uncounted), a method has a copy of the value, and any other place holds a
     // value of its own.
+    // `o.f = v` (and `o.f += v`, `o.f++`) of a field a class declares `readonly`: only the constructor of
+    // the class that declares it writes it - its field initializers run there - as TypeScript has it
+    // (TS2540). Every memory model; under -mm=own the field is then stable (OWN_READONLY_FIELDS_ATTR_NAME).
+    mlir::LogicalResult checkReadonlyFieldAssignment(mlir::Location location, mlir::Value left, const GenContext &genContext,
+                                                     bool deleting = false)
+    {
+        auto loadOp = left.getDefiningOp<mlir_ts::LoadOp>();
+        auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        // the object's class, or the part of a subclass's object that is its base class's (`this.k` of a
+        // field `B` declares, in `D`'s methods: a reference to B's storage)
+        auto objectType = propertyRefOp ? propertyRefOp.getObjectRef().getType() : mlir::Type();
+        if (auto refType = dyn_cast_or_null<mlir_ts::RefType>(objectType))
+        {
+            objectType = refType.getElementType();
+        }
+
+        if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(objectType))
+        {
+            objectType = classType.getStorageType();
+        }
+
+        auto storageType = dyn_cast_or_null<mlir_ts::ClassStorageType>(objectType);
+        auto position = propertyRefOp ? (int64_t)propertyRefOp.getPosition() : -1;
+        if (!storageType || position < 0 || position >= (int64_t)storageType.getFields().size())
+        {
+            return mlir::success();
+        }
+
+        // ...whose declaration counts from the class the object was reached as: `g.k` of a `G` redeclaring
+        // B's `readonly k` writable is G's field, though it is B's slot
+        auto startStorage = storageType;
+        for (auto object = propertyRefOp.getObjectRef(); object;)
+        {
+            auto baseRefOp = object.getDefiningOp<mlir_ts::PropertyRefOp>();
+            if (!baseRefOp)
+            {
+                break;
+            }
+
+            object = baseRefOp.getObjectRef();
+            auto type = object.getType();
+            if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+            {
+                type = refType.getElementType();
+            }
+
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                type = classType.getStorageType();
+            }
+
+            if (auto outerStorage = dyn_cast<mlir_ts::ClassStorageType>(type))
+            {
+                startStorage = outerStorage;
+                continue;
+            }
+
+            break;
+        }
+
+        auto name = dyn_cast_or_null<mlir::StringAttr>(storageType.getFields()[position].id);
+        auto classInfo = name ? getClassInfoByFullName(startStorage.getName().getValue()) : ClassInfo::TypePtr();
+        ClassInfo *declaring = nullptr;
+        auto isReadonly = classInfo ? classInfo->declaredFieldReadonly(name.getValue(), &declaring) : std::nullopt;
+        if (!isReadonly || !*isReadonly || !declaring || !genContext.funcOp)
+        {
+            return mlir::success();
+        }
+
+        // (`.constructor#1`, an overload of a @cpp class's, is one as well)
+        // `delete o.f` ends the field's owner under -mm=own (TS2704), in the constructor too
+        if (deleting)
+        {
+            emitError(location) << "the operand of a 'delete' operator cannot be '" << name.getValue()
+                                << "', a read-only property of '" << declaring->name << "'";
+            return mlir::failure();
+        }
+
+        // (an arrow the function calls where it is written runs inside it)
+        auto funcOp = genContext.funcOp;
+        auto writer = !genContext.immediatelyCalledIn.empty() ? StringRef(genContext.immediatelyCalledIn) : funcOp.getSymName();
+        if (writer.starts_with((declaring->fullName + "." CONSTRUCTOR_NAME).str()))
+        {
+            return mlir::success();
+        }
+
+        emitError(location) << "cannot assign to '" << name.getValue() << "' because it is a read-only property of '"
+                            << declaring->name << "'";
+        return mlir::failure();
+    }
+
     mlir::LogicalResult checkValueFieldAssignment(mlir::Location location, mlir::Value left)
     {
         mlir_ts::ValueType valueType;
@@ -8918,7 +9010,8 @@ class MLIRGenImpl
             leftExpressionValueBeforeCast = safeCastOp.getValue();
         }
 
-        if (mlir::failed(checkValueFieldAssignment(location, leftExpressionValueBeforeCast)))
+        if (mlir::failed(checkValueFieldAssignment(location, leftExpressionValueBeforeCast)) ||
+            mlir::failed(checkReadonlyFieldAssignment(location, leftExpressionValueBeforeCast, genContext)))
         {
             return mlir::failure();
         }
@@ -21428,6 +21521,8 @@ class MLIRGenImpl
 
     // `Array.isArray(x)` calls and the `typeof x === "array"` each is (arrayIsArrayAsTypeOf)
     llvm::DenseMap<const void *, Expression> arrayIsArrayRewrites;
+    // the arrows a call is made of where they are written (GenContext::immediatelyCalledIn)
+    llvm::SmallPtrSet<const void *, 8> immediatelyCalledArrows;
 
     // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
     // were refused does not go on to the defaults (`any`), which would only be refused again

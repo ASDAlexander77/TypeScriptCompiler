@@ -192,6 +192,8 @@
 #define OWN_BACK_REFERENCE_FIELDS_ATTR_NAME "ts.own_back_reference_fields"
 // the private fields of this module's classes nothing writes after the constructor (TSLANG 73)
 #define OWN_STABLE_FIELDS_ATTR_NAME "ts.own_stable_fields"
+// the fields readonly where declared: [storage type, position, seen outside the module] (markReadonlyFields)
+#define OWN_READONLY_FIELDS_ATTR_NAME "ts.own_readonly_fields"
 // the classes of the module, its own or imported, declared @final: their objects are of that class only,
 // so what one holds is what its fields' types can hold (TSLANG 84)
 #define OWN_FINAL_CLASSES_ATTR_NAME "ts.own_final_classes"

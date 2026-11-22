@@ -2546,6 +2546,13 @@ namespace mlirgen
             }
         }
 
+        // an `accessor` field is a getter and a setter over a hidden slot: what is written is the accessor
+        if (!isAccessor)
+        {
+            newClassPtr->declaredFields[MLIRHelper::getName(propertyDeclaration->name)] =
+                hasModifier(propertyDeclaration, SyntaxKind::ReadonlyKeyword);
+        }
+
         // an instance field: a static one is a global, not part of the value
         auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, location,
                                             MLIRHelper::getName(name));
@@ -3290,6 +3297,8 @@ namespace mlirgen
             }
 
             LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
+
+            newClassPtr->declaredFields[MLIRHelper::getName(parameter->name)] = isReadonly;
 
             if (redeclaresBaseField(newClassPtr, fieldId, type))
             {

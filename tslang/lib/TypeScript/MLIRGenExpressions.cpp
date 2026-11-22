@@ -325,6 +325,15 @@ namespace mlirgen
             // resolve name: this")
             auto staticThis = genContext.staticThis && genContext.thisType && isa<mlir_ts::ClassType>(genContext.thisType);
             allowFuncGenContext.thisType = staticThis ? genContext.thisType : nullptr;
+            // called where it is written: it runs inside the function around it (or the one that one runs in)
+            allowFuncGenContext.immediatelyCalledIn.clear();
+            if (genContext.funcOp && immediatelyCalledArrows.contains(static_cast<const void *>(arrowFunctionAST.operator->())))
+            {
+                auto outerFuncOp = genContext.funcOp;
+                allowFuncGenContext.immediatelyCalledIn =
+                    !genContext.immediatelyCalledIn.empty() ? genContext.immediatelyCalledIn : outerFuncOp.getSymName().str();
+            }
+
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
@@ -831,7 +840,8 @@ namespace mlirgen
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
             // an assignment as well: a field of a @value value is readonly
-            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)) ||
+                mlir::failed(checkReadonlyFieldAssignment(location, expressionValue, genContext)))
             {
                 return mlir::failure();
             }
@@ -872,7 +882,8 @@ namespace mlirgen
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
             // an assignment as well: a field of a @value value is readonly
-            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)) ||
+                mlir::failed(checkReadonlyFieldAssignment(location, expressionValue, genContext)))
             {
                 return mlir::failure();
             }
@@ -1803,6 +1814,20 @@ namespace mlirgen
         }
 
         auto callExpr = callExpression->expression.as<Expression>();
+
+        // `(() => { ... })()`: an arrow called where it is written (GenContext::immediatelyCalledIn)
+        {
+            auto callee = callExpr;
+            while (callee == SyntaxKind::ParenthesizedExpression)
+            {
+                callee = callee.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (callee == SyntaxKind::ArrowFunction)
+            {
+                immediatelyCalledArrows.insert(static_cast<const void *>(callee.operator->()));
+            }
+        }
 
         // `g[Symbol.iterator]()` of a generator (`[Symbol.asyncIterator]` of an async one): the generator itself,
         // as JavaScript's generators are their own iterators. Its object has a step and no member of that name;
@@ -2933,6 +2958,11 @@ namespace mlirgen
         auto result = mlirGen(deleteExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
+        if (mlir::failed(checkReadonlyFieldAssignment(location, expr, genContext, /*deleting=*/true)))
+        {
+            return mlir::failure();
+        }
+
         // what the expression named, before an array is turned into a reference to its elements
         auto place = expr;
 
