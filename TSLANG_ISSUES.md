@@ -2214,9 +2214,12 @@ Tests: `00object_dictionary.ts`, `00own_param_exclusive_moves.ts` (compile, JIT,
   done: true }`, throw(e) throws e. The generator object holds a mode its yields check where they resume
   (addGeneratorResumeMethods, mlirGenGeneratorResumeChecks). Under -mm=own return() only for a T that owns
   nothing (a number, a boolean): its result would hold the value the caller lends. The library's `Generator`
-  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither; fields of a function type
-  as `next`, not methods - a method shifts the vtable, and a Generator then can't be cast to an Iterable, whose
-  `next` has another type). Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
+  declares them optional (`return?`, `throw?`: a generator declared otherwise has neither), and its next() takes no
+  value: declared `next: (value?: TNext) =>`, a Generator given to an Iterable<T> (`next: () =>`) was let through
+  as it is - castInterfaceToInterface reports a member of another type only when the vtable must be remapped, and
+  `next` is the first slot of both - so an Iterable's next() called a function of another signature: wasm's
+  "function signature mismatch" (the library's iteration_types.ts), natively a yield reading a value never given
+  (open: such a cast is not refused; next(value) through the library's Generator). Under -mm=own a call of an optional function-typed member of an interface (`g.return(v)`)
   was read as moving the object: the method value bound to it is wrapped in an optional, given out of the If that
   tests the member (lowered by then: a branch's block argument), tested and unwrapped for the call - all of which
   only calls it now lends the object (isBoundForCall, boundOnlyCalled), as a call of a member that is not optional
