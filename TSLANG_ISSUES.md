@@ -2300,8 +2300,8 @@ Still open, looked at:
   copy - `__array_values_owned<T, I>` borrows the array, pushes its elements into a local and moves that into
   `__array_values_of_copy<T, I>` (@keeps), declared to return the interface: a generator object becomes an interface
   only at its own function's return under -mm=own. A string the same way (`__string_values_owned`). An array of
-  objects can't be copied there (refused); a for...of over such an interface of strings is still "a second
-  reference" (open). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
+  objects can't be copied there (refused); a for...of over such an interface of strings was still "a second
+  reference" (fixed: 157). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
   with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
@@ -2392,9 +2392,13 @@ Still open, looked at: `x == 1.5` of an `x?: number | string` (a dictionary's re
 value is merged from several branches" under -mm=own - `___union_eq_equals` over the optional merges a new string
 with a literal; compared through a local of the union it works. A generator that yields its object's own strings
 (`*each() { for (const s of this.items) yield s; }`) is refused under -mm=own as before ("a value that borrows a
-field cannot be stored, returned or captured"): it does not copy what it yields.
+field cannot be stored, returned or captured"): it does not copy what it yields. Leaks -mm=own still has for an
+array literal given straight to a call (as before these changes, a million calls each): one of new objects
+(`f([new C(), new C()])`, 140 MB - an object's other uses, its constructor's call, are not followed), one mixing a
+new value with a named one (`f(["x" + i, s])`, 95 MB), and any of them when the call throws (220 MB: the array is
+released after the call, not on the way out of it).
 
 Tests `00iterable_string_for_of.ts`, `00dictionary_union_values.ts` (compile, JIT, rc, own).
 
-Verified: ctest (8853), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
+Verified: ctest (8855), the wasm32 tester and default-library suites (rc, none, own), the library's tests release
 under -mm=own (236), a million rounds of each shape at a flat 5.5 MB: no failures.

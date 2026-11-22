@@ -6042,6 +6042,8 @@ tslang_add_test(NAME test-compile-00-f16-conversions COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-debug-00-f16-conversions COMMAND test-runner -noopt "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
 tslang_add_test(NAME test-jit-00-f16-conversions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00f16_conversions.ts")
 tslang_add_test(NAME test-compile-00-bigint-mixed-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
+tslang_add_test(NAME test-compile-own-00-iterable-string-for-of COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterable_string_for_of.ts")
+tslang_add_test(NAME test-compile-own-00-dictionary-union-values COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00dictionary_union_values.ts")
 tslang_add_test(NAME test-compile-own-00-bigint-mixed-arith COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-jit-00-bigint-mixed-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")
 tslang_add_test(NAME test-jit-own-00-bigint-mixed-arith COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_mixed_arith.ts")

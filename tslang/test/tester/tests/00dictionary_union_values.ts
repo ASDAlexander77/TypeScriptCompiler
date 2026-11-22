@@ -3,7 +3,7 @@
 // what is stored is a copy of it - as for a dictionary of strings. It was "a value that borrows the result of
 // 'ObjectDictionary<...>.get' cannot be stored, returned or captured": the read is an optional of a tagged union,
 // `(number | string) | undefined`, which was not copied (TSLANG 157). A key the dictionary does not hold reads
-// as before in every model (a union holding nothing).
+// as before in every model (a union holding nothing; with a "casting from optional" warning where it is stored).
 // The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name, over two
 // arrays.
 @dictionary
@@ -109,6 +109,16 @@ function main() {
     assert(l == 7.5 && bx.v == 7.5);
     e["m"] = d2["missing"];
     assert(e["m"] === undefined);
+    // ...stored where a `number | string` is kept: a union that holds nothing, which has no tag to copy by (it
+    // read a null tag's descriptor under -mm=own: a crash in an executable)
+    const before = arr.length;
+    arr.push(d2["missing"]);
+    bx.v = d2["missing"];
+    l = d2["missing"];
+    assert(arr.length == before + 1);
+    l = d2["c"];
+    bx.v = d2["c"];
+    assert(l == "x7" && bx.v == "x7");
 
     print("done.");
 }
