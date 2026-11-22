@@ -7,6 +7,13 @@
 #include <string>
 #include <vector>
 
+// -mm=own, --own-fallback: what inference does where it cannot prove a move or a borrow.
+enum class OwnFallback
+{
+    Error, // report an error
+    Count  // keep rc's count for that object, with a warning
+};
+
 struct CompileOptions
 {
     bool isJit;
@@ -129,6 +136,15 @@ struct CompileOptions
     bool atomicRefCounts() const
     {
         return (isRefCounted() && atomicRC) || memoryModel == MemoryModelOwn;
+    }
+
+    // --own-fallback=count: under `own`, an object whose ownership inference cannot prove keeps rc's
+    // count instead of being an error.
+    OwnFallback ownFallback = OwnFallback::Error;
+
+    bool ownCountsFallback() const
+    {
+        return memoryModel == MemoryModelOwn && ownFallback == OwnFallback::Count;
     }
 
     // Whether the ownership operations are live and lower to code - retains and releases under
