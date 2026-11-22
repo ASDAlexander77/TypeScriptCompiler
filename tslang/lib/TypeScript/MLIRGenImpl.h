@@ -11323,6 +11323,36 @@ class MLIRGenImpl
             CAST(value, location, valueType, value, genContext);
         }
 
+        // -mm=own, the optional of a union (`x?: number | string`, a dictionary's read): the helper narrowed
+        // the optional member by member, and a string member compared with a number made, for an empty one, a
+        // text beside the one converted - "a value is merged from several branches". The empty case is not
+        // equal to the value, so it is tested here, and the union it holds is compared as any union is.
+        if (unionIsOptional && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto equalWhenEmpty = opCode == SyntaxKind::ExclamationEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken;
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), unionValue);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{getBooleanType()}, hasValue, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            mlir::Value held = builder.create<mlir_ts::ValueOp>(location, unionType, unionValue);
+            auto compared = leftUnionType ? mlirGenBinaryValues(location, opCode, held, value, genContext)
+                                          : mlirGenBinaryValues(location, opCode, value, held, genContext);
+            if (compared.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            CAST_A(comparedBoolean, location, getBooleanType(), V(compared), genContext);
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{comparedBoolean});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            builder.create<mlir_ts::ResultOp>(
+                location, mlir::ValueRange{builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(equalWhenEmpty))});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResult(0));
+        }
+
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___union_eq_" + opName(opCode);
 
