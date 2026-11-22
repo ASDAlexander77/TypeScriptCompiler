@@ -4440,7 +4440,8 @@ class MLIRGenImpl
     // from. Factored out so callers that only need the correctly-typed prototype (e.g. object-literal
     // method prototype registration) can reuse it without running full body codegen twice.
     FunctionLikeDeclarationBase buildGeneratorWrapperDeclaration(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location);
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location,
+        const GenContext *genContext = nullptr);
 
     void addGeneratorResumeMethods(NodeFactory &nf, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                    TypeNode yieldType, NodeArray<ObjectLiteralElementLike> &generatorObjectProperties);
@@ -4873,12 +4874,62 @@ class MLIRGenImpl
         //     const .v = .yc.value; yield .v;
         //     { let .yl: G | undefined = undefined; [.yl, .yd] = [.yd, .yl]; .yc = .yl!.next(); [.yl, .yd] = [.yd, .yl]; }
         //   }
-        // (the variables named for the yield*: each has its own). Only a delegate made there, by a call: one read
-        // out of a variable or a parameter (`yield* it`) is not the generator's to keep, and is iterated as before.
+        // (the variables named for the yield*: each has its own). Only a delegate made there, by a call. One named -
+        // `yield* it`, a parameter of the generator - is not copied into a variable at all: next() is called on
+        // the name itself, as a loop written by hand does, and a parameter is a place no call of the generator
+        // writes:
+        //   var .yc = it.next(); for (; !.yc.done; .yc = it.next()) { const .v = .yc.value; yield .v; }
         Expression delegateExpression = yieldExpressionAST->expression;
         while (delegateExpression == SyntaxKind::ParenthesizedExpression)
         {
             delegateExpression = delegateExpression.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (compileOptions.memoryModel == MemoryModelOwn && delegateExpression == SyntaxKind::Identifier)
+        {
+            auto delegateType = evaluate(yieldExpressionAST->expression, genContext);
+            auto delegateInterface = dyn_cast_or_null<mlir_ts::InterfaceType>(delegateType);
+            if (delegateInterface && iteratorElementType(delegateInterface))
+            {
+                GenContext delegateGenContext(genContext);
+                _yield_expr->internalFlags |= yieldExpressionAST->internalFlags & InternalFlags::GeneratorResumable;
+
+                auto site = std::to_string(static_cast<long long>(yieldExpressionAST->pos));
+                auto resultIdent = nf.createIdentifier(stows(".yc" + site));
+                auto delegateName = MLIRHelper::getName(delegateExpression.as<Identifier>());
+                // a return() of this generator calls the delegate's return() first, when it has one
+                auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
+                if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) && delegateInfo &&
+                    (delegateInfo->findField(builder.getStringAttr("return")) || delegateInfo->findMethod("return")))
+                {
+                    delegateGenContext.yieldStarDelegate = delegateName.c_str();
+                }
+
+                auto nextCall = [&]() {
+                    NodeArray<Expression> nextArgs;
+                    return nf.createCallExpression(
+                        nf.createPropertyAccessExpression(delegateExpression, nf.createIdentifier(S(ITERATOR_NEXT))), undefined, nextArgs);
+                };
+
+                NodeArray<VariableDeclaration> resultDeclarations;
+                resultDeclarations.push_back(nf.createVariableDeclaration(resultIdent, undefined, undefined, nextCall()));
+
+                NodeArray<VariableDeclaration> valueDeclarations;
+                valueDeclarations.push_back(nf.createVariableDeclaration(
+                    _v_ident, undefined, undefined, nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("value")))));
+                NodeArray<Statement> loopStatements;
+                loopStatements.push_back(
+                    nf.createVariableStatement(undefined, nf.createVariableDeclarationList(valueDeclarations, NodeFlags::Const)));
+                loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+
+                auto loop = nf.createForStatement(
+                    nf.createVariableDeclarationList(resultDeclarations, NodeFlags::Let),
+                    nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken),
+                                                   nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("done")))),
+                    nf.createBinaryExpression(resultIdent, nf.createToken(SyntaxKind::EqualsToken), nextCall()),
+                    nf.createBlock(loopStatements, false));
+                return mlirGen(loop, delegateGenContext);
+            }
         }
 
         if (compileOptions.memoryModel == MemoryModelOwn && delegateExpression == SyntaxKind::CallExpression)
@@ -11323,6 +11374,36 @@ class MLIRGenImpl
             CAST(value, location, valueType, value, genContext);
         }
 
+        // -mm=own, the optional of a union (`x?: number | string`, a dictionary's read): the helper narrowed
+        // the optional member by member, and a string member compared with a number made, for an empty one, a
+        // text beside the one converted - "a value is merged from several branches". The empty case is not
+        // equal to the value, so it is tested here, and the union it holds is compared as any union is.
+        if (unionIsOptional && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto equalWhenEmpty = opCode == SyntaxKind::ExclamationEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken;
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), unionValue);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{getBooleanType()}, hasValue, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            mlir::Value held = builder.create<mlir_ts::ValueOp>(location, unionType, unionValue);
+            auto compared = leftUnionType ? mlirGenBinaryValues(location, opCode, held, value, genContext)
+                                          : mlirGenBinaryValues(location, opCode, value, held, genContext);
+            if (compared.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            CAST_A(comparedBoolean, location, getBooleanType(), V(compared), genContext);
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{comparedBoolean});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            builder.create<mlir_ts::ResultOp>(
+                location, mlir::ValueRange{builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(equalWhenEmpty))});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResult(0));
+        }
+
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___union_eq_" + opName(opCode);
 
@@ -15721,7 +15802,7 @@ class MLIRGenImpl
         // (used for the object literal's own type) is wrong and later access like `obj.gen().next()`
         // fails to resolve.
         auto protoDecl = funcLikeDecl->asteriskToken
-            ? buildGeneratorWrapperDeclaration(funcLikeDecl, loc(funcLikeDecl))
+            ? buildGeneratorWrapperDeclaration(funcLikeDecl, loc(funcLikeDecl), &funcGenContext)
             : funcLikeDecl;
 
         auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(protoDecl, funcGenContext);

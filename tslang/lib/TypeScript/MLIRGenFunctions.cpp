@@ -1361,7 +1361,7 @@ namespace mlirgen
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
         // at the yield of a yield*: the delegate's return() first, with the same value (mlirGenYieldStar)
-        if (genContext.yieldStarDelegate && compileOptions.memoryModel == MemoryModelOwn)
+        if (genContext.yieldStarDelegate && compileOptions.memoryModel == MemoryModelOwn && genContext.typeAliasMap.count(".YS_G"))
         {
             // -mm=own: the delegate is exchanged into a local of next() for the call and back, as for its
             // next() (mlirGenYieldStar): `{ let .yq: G | undefined = undefined; [.yq, .yd] = [.yd, .yq];
@@ -1437,7 +1437,7 @@ namespace mlirgen
     }
 
     FunctionLikeDeclarationBase MLIRGenImpl::buildGeneratorWrapperDeclaration(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location)
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location, const GenContext *genContext)
     {
         auto fixThisReference = functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration;
         auto thisIsParameter = false;
@@ -1634,6 +1634,27 @@ namespace mlirgen
 
         generatorObjectProperties.push_back(nextMethodDecl);
 
+        // -mm=own: return(value: T) keeps its value for the yield it resumes at, in an `any` - which a T that owns
+        // memory and is not text (an object, an array) can't be read back out of as its owner ("a value that
+        // borrows the result of '___unbox<...>' cannot be stored, returned or captured": no Generator<P> of objects
+        // compiled). Such a generator has no return() and throw(): the interface's are optional, and it is given
+        // up by being released.
+        if (resumableYieldType && genContext && compileOptions.memoryModel == MemoryModelOwn)
+        {
+            auto yieldType = getType(resumableYieldType, *genContext);
+            auto isText = [&](mlir::Type type) {
+                return isa<mlir_ts::StringType>(mth.stripLiteralType(type));
+            };
+            auto unionType = yieldType ? dyn_cast<mlir_ts::UnionType>(yieldType) : mlir_ts::UnionType();
+            auto ownsOnlyText = yieldType && (isText(yieldType) || (unionType && llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                                                  return isText(member) || !mth.ownsHeapMemory(location, member);
+                                              })));
+            if (yieldType && !mth.isGenericType(yieldType) && mth.ownsHeapMemory(location, yieldType) && !ownsOnlyText)
+            {
+                resumableYieldType = undefined;
+            }
+        }
+
         if (resumableYieldType)
         {
             addGeneratorResumeMethods(nf, functionLikeDeclarationBaseAST, resumableYieldType, generatorObjectProperties);
@@ -1726,7 +1747,7 @@ namespace mlirgen
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
-        auto wrapperDecl = buildGeneratorWrapperDeclaration(functionLikeDeclarationBaseAST, location);
+        auto wrapperDecl = buildGeneratorWrapperDeclaration(functionLikeDeclarationBaseAST, location, &genContext);
         return mlirGenFunctionLikeDeclaration(wrapperDecl, genContext);
     }
 
