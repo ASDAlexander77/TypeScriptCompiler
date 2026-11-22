@@ -280,9 +280,13 @@ namespace own_signature
 
             // an iterator's `next()`, whoever implements it, and a generator's state, whoever makes
             // it: see isIteratorNext. Not a `next()` through a closed interface: its members keep
-            // their facts (spec 31), and the call gets theirs like any other. Nor one whose result is
-            // a borrowing record (spec 32): the caller owns the box, but what it borrows bounds it.
-            if (((isIteratorNext(call.op) && !call.callees.viaInterface) || makesGeneratorState(call.op)) &&
+            // their facts (spec 31), and the call gets theirs like any other - unless every member is
+            // a generator's own `next` (isGeneratorNext), whose facts say it reads its state though
+            // it moves what it yields out. Nor one whose result is a borrowing record (spec 32): the
+            // caller owns the box, but what it borrows bounds it.
+            auto generatorsOnly = call.callees.viaInterface && call.callees.known && !call.callees.funcs.empty() &&
+                                  llvm::all_of(call.callees.funcs, [](mlir_ts::FuncOp callee) { return isGeneratorNext(callee); });
+            if (((isIteratorNext(call.op) && (!call.callees.viaInterface || generatorsOnly)) || makesGeneratorState(call.op)) &&
                 !isRecordResult(call.op))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));

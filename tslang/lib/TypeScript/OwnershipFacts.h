@@ -395,10 +395,15 @@ inline bool isView(mlir::Operation *op)
                });
     }
 
-    // (`ts.ValueOrDefault` of a class: the optional's object, or null - the same block or none, spec 77)
+    // (`ts.ValueOrDefault` of a class: the optional's object, or null - the same block or none, spec 77;
+    // of text, a string or a union holding one (`number | string` of a dictionary's read): the optional's
+    // value, or a zero one that owns nothing - copied where it is kept, as the read it shows)
     if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
                               mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op) ||
-        (mlir::isa_and_nonnull<mlir_ts::ValueOrDefaultOp>(op) && mlir::isa<mlir_ts::ClassType>(op->getResult(0).getType())))
+        (mlir::isa_and_nonnull<mlir_ts::ValueOrDefaultOp>(op) &&
+         (mlir::isa<mlir_ts::ClassType>(op->getResult(0).getType()) ||
+          (mlir::isa<mlir_ts::StringType, mlir_ts::UnionType>(op->getResult(0).getType()) &&
+           isCopyableString(op->getResult(0).getType())))))
     {
         return true;
     }
@@ -1827,10 +1832,9 @@ inline bool isCopyableString(mlir::Type type)
 
     if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
     {
-        // `{ptr, i1}` only: an optional of a tagged union is not copied (ts.StringCopy's lowering)
-        auto elementUnion = mlir::dyn_cast<mlir_ts::UnionType>(optionalType.getElementType());
+        // `{ptr, i1}`, or `{union, i1}` of a tagged union (`(number | string) | undefined`, a dictionary's
+        // read): ts.StringCopy copies what it holds when the flag says it holds something
         return !mlir::isa<mlir_ts::OptionalType>(optionalType.getElementType()) &&
-               !(elementUnion && typeHelper(type.getContext()).isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), elementUnion)) &&
                isCopyableString(optionalType.getElementType());
     }
 

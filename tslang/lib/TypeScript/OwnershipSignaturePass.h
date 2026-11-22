@@ -529,6 +529,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // symbol - whose one result is a `{value, done}` record.
     static bool isIteratorNext(mlir::Operation *op);
 
+    // A generator's own `next`: a function named `next` whose first parameter is its state object
+    // (makesGeneratorState's shape) and whose result is a `{value, done}` record. It moves what it
+    // yields into the record, so a closed interface's `next()` that reaches only such functions (an
+    // `Iterable<string>` given a generator, an array or a string) is fresh as a direct call is.
+    static bool isGeneratorNext(mlir_ts::FuncOp funcOp);
+
     // A generator another module made: its state object's type is only its shape here, and what each
     // field owns - a local, a yielded value now the caller's, what it borrows from its arguments - is
     // known in that module alone. A release routine made here from the shape would give back what is
@@ -541,6 +547,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // `next`): a generator function made it, a `ts.New` block it hands over (spec 18.1), which the
     // caller owns - in another module too, as the iteration that follows needs.
     static bool makesGeneratorState(mlir::Operation *op);
+    // ...the type of such an object: its fields are `.step` and `next`
+    static bool isGeneratorStateType(mlir::Type type);
 
     // storageTupleOf, without the pass's context: an object's storage, a reference's or a tuple
     static mlir_ts::TupleType storageTupleOfType(mlir::Type type);

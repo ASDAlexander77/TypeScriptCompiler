@@ -145,6 +145,29 @@ namespace own_signature
         module->setAttr(OWN_BORROWING_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));
     }
 
+    bool OwnershipSignaturePass::isGeneratorNext(mlir_ts::FuncOp funcOp)
+    {
+        auto name = funcOp.getSymName();
+        auto funcType = funcOp.getFunctionType();
+        if (!(name == "next" || name.ends_with(".next")) || funcType.getNumInputs() < 1 || funcType.getNumResults() != 1 ||
+            !mlir::isa<mlir_ts::ObjectType>(funcType.getInput(0)) || !isGeneratorStateType(funcType.getInput(0)))
+        {
+            return false;
+        }
+
+        auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(funcType.getResult(0));
+        if (!tupleType || tupleType.getFields().size() != 2)
+        {
+            return false;
+        }
+
+        auto fieldName = [&](int index) {
+            auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
+            return id ? id.getValue() : llvm::StringRef();
+        };
+        return fieldName(0) == "value" && fieldName(1) == "done";
+    }
+
     bool OwnershipSignaturePass::makesGeneratorState(mlir::Operation *op)
     {
         if (op->getNumResults() != 1 || !mlir::isa<mlir_ts::ObjectType>(op->getResult(0).getType()))
@@ -152,7 +175,12 @@ namespace own_signature
             return false;
         }
 
-        auto tupleType = storageTupleOfType(op->getResult(0).getType());
+        return isGeneratorStateType(op->getResult(0).getType());
+    }
+
+    bool OwnershipSignaturePass::isGeneratorStateType(mlir::Type type)
+    {
+        auto tupleType = storageTupleOfType(type);
         if (!tupleType)
         {
             return false;

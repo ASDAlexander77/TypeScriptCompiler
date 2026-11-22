@@ -1440,27 +1440,50 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
         // A tagged union of a string and data nothing owns (`number | string`, isCopyableString):
         // `{tag, payload}`, its payload a copy of the string when the tag says string, and the union
         // itself when it holds anything else
-        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(op.getIn().getType());
-            unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType))
-        {
+        auto copyTaggedUnion = [&](mlir::Value tagged) -> mlir::Value {
             TypeDescriptorLogic tdl(rewriter, tch, loc, tsLlvmContext->compileOptions);
             CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
 
             // the union seen as {tag, string pointer}, as GetValueFromUnionOp reads a member
+            auto taggedType = tagged.getType();
             auto partialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {i8PtrTy, i8PtrTy}, UNION_TYPE_PACKED);
-            auto tag = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, in, MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
-            auto unionCopy = clh.conditionalExpressionLowering(
-                loc, in.getType(), tdl.isKind(tag, TYPE_KIND_STRING),
+            auto tag = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, tagged, MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
+            return clh.conditionalExpressionLowering(
+                loc, taggedType, tdl.isKind(tag, TYPE_KIND_STRING),
                 [&](OpBuilder &, Location) -> mlir::Value {
-                    auto asText = castLogic.castLLVMTypes(in, in.getType(), partialType, partialType, /*sizesMayDiffer=*/true);
+                    auto asText = castLogic.castLLVMTypes(tagged, taggedType, partialType, partialType, /*sizesMayDiffer=*/true);
                     auto text = rewriter.create<LLVM::ExtractValueOp>(loc, i8PtrTy, asText,
                                                                       MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
                     auto withCopy = rewriter.create<LLVM::InsertValueOp>(loc, asText, copyOf(text, isSet(text)),
                                                                          MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
-                    return castLogic.castLLVMTypes(withCopy, partialType, in.getType(), in.getType(), /*sizesMayDiffer=*/true);
+                    return castLogic.castLLVMTypes(withCopy, partialType, taggedType, taggedType, /*sizesMayDiffer=*/true);
                 },
-                [&](OpBuilder &, Location) -> mlir::Value { return in; });
-            rewriter.replaceOp(op, ValueRange{unionCopy});
+                [&](OpBuilder &, Location) -> mlir::Value { return tagged; });
+        };
+
+        auto isTaggedUnion = [&](mlir::Type type) {
+            auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type);
+            return unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType);
+        };
+
+        if (isTaggedUnion(op.getIn().getType()))
+        {
+            rewriter.replaceOp(op, ValueRange{copyTaggedUnion(in)});
+            return success();
+        }
+
+        // an optional of such a union (`T | undefined` of a dictionary read): `{union, i1}`, its union
+        // copied as above when the flag says it holds one - one that holds none may be anything
+        if (auto optionalOfUnion = mlir::dyn_cast<mlir_ts::OptionalType>(op.getIn().getType());
+            optionalOfUnion && isTaggedUnion(optionalOfUnion.getElementType()))
+        {
+            auto tagged = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{0});
+            auto hasValue = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{1});
+            auto copied = clh.conditionalExpressionLowering(
+                loc, tagged.getType(), hasValue,
+                [&](OpBuilder &, Location) -> mlir::Value { return copyTaggedUnion(tagged); },
+                [&](OpBuilder &, Location) -> mlir::Value { return tagged; });
+            rewriter.replaceOp(op, ValueRange{rewriter.create<LLVM::InsertValueOp>(loc, in, copied, ArrayRef<int64_t>{0})});
             return success();
         }
 
