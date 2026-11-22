@@ -2,7 +2,7 @@
 // somewhere else: into another dictionary, an array, a field, a local. Under -mm=own a read borrows the entry, and
 // what is stored is a copy of it - as for a dictionary of strings. It was "a value that borrows the result of
 // 'ObjectDictionary<...>.get' cannot be stored, returned or captured": the read is an optional of a tagged union,
-// `(number | string) | undefined`, which was not copied (TSLANG 157). A key the dictionary does not hold reads
+// `(number | string) | undefined`, which was not copied (TSLANG 158). A key the dictionary does not hold reads
 // as before in every model (a union holding nothing; with a "casting from optional" warning where it is stored).
 // The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name, over two
 // arrays.

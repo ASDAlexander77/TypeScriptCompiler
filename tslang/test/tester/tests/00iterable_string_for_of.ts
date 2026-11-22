@@ -1,7 +1,7 @@
 // for...of over an iterator interface of strings (`cat(v: Iterable<string>)`), given an array, a string or a
 // generator. Under -mm=own it was "a value takes a second reference": next() called through the interface was
 // not known to hand over what it returns. Every function behind it is a generator's own next, which moves what
-// it yields into the record it returns, so the loop owns each string (TSLANG 157). The array literal given
+// it yields into the record it returns, so the loop owns each string (TSLANG 158). The array literal given
 // straight to the call (`cat(["x" + i])`) leaked under -mm=own, with its strings: nothing gave it back.
 type IterateResult<T> = { value: T, done: boolean };
 interface Iterable<T> {

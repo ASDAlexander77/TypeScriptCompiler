@@ -2301,7 +2301,7 @@ Still open, looked at:
   `__array_values_of_copy<T, I>` (@keeps), declared to return the interface: a generator object becomes an interface
   only at its own function's return under -mm=own. A string the same way (`__string_values_owned`). An array of
   objects can't be copied there (refused); a for...of over such an interface of strings was still "a second
-  reference" (fixed: 157). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
+  reference" (fixed: 158). Test `00iterable_array_copy.ts` (compile, JIT, rc, own). (A generator typed as such an interface
   with yields of integer literals is typed by them, not by T, in every model: only the library's names give T.)
 
 Tests: `00iterables.ts`, `00generator_typed_yield.ts` (compile, JIT, rc),
@@ -2363,7 +2363,8 @@ finally block that yields is not supported: catch it inside the try statement, o
 thrown by a called function, or a rethrown `any` holding one, still stops at run time; the complete fix would move
 the caught value into the kept slot rather than copy it. Tests `00generator_throw_through_yielding_finally.ts` (all
 models) and diagnostic-location `generator_throw_object_through_yielding_finally_own.ts`.
-157 (-mm=own: a for...of over an Iterable<string>, a dictionary of `number | string` read and stored, 2026-11-22;
+
+158 (-mm=own: a for...of over an Iterable<string>, a dictionary of `number | string` read and stored, 2026-11-22;
 USER RULING: both are to work, not to be errors).
 - `function cat(v: Iterable<string>) { for (const c of v) s += c; }` was "a value takes a second reference" at the
   `for`, for an array, a string or a generator given: next() called through the interface was not known to hand
