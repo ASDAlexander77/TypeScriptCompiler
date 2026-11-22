@@ -1328,6 +1328,19 @@ namespace mlirgen
         finish->internalFlags |= InternalFlags::GeneratorReturn;
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
+        // at the yield of a yield*: the delegate's return() first, with the same value (mlirGenYieldStar)
+        if (genContext.yieldStarDelegate)
+        {
+            NodeArray<Expression> arguments;
+            arguments.push_back(thisProp(GENERATOR_THROWN_NAME));
+            // `.yd.return?.(this.thrown)`
+            auto delegateReturn = nf.createCallChain(
+                nf.createPropertyAccessExpression(nf.createIdentifier(stows(std::string(genContext.yieldStarDelegate))),
+                                                  nf.createIdentifier(S("return"))),
+                nf.createToken(SyntaxKind::QuestionDotToken), undefined, arguments);
+            returnStatements.push_back(nf.createExpressionStatement(delegateReturn));
+        }
+
         returnStatements.push_back(finish);
 
         LocationHelper lh(builder.getContext());
