@@ -1361,7 +1361,7 @@ namespace mlirgen
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
         // at the yield of a yield*: the delegate's return() first, with the same value (mlirGenYieldStar)
-        if (genContext.yieldStarDelegate && compileOptions.memoryModel == MemoryModelOwn)
+        if (genContext.yieldStarDelegate && compileOptions.memoryModel == MemoryModelOwn && genContext.typeAliasMap.count(".YS_G"))
         {
             // -mm=own: the delegate is exchanged into a local of next() for the call and back, as for its
             // next() (mlirGenYieldStar): `{ let .yq: G | undefined = undefined; [.yq, .yd] = [.yd, .yq];
