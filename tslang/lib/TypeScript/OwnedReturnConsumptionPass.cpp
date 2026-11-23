@@ -2464,25 +2464,42 @@ class OwnedReturnConsumptionPass
             // so the receiver's retain after the `ts.If` comes too late. The branch retains it first.
             // An element read out of a new array the branch made (`c ? ["c" + i][0] : d`) is the same under rc:
             // the array is given back at the end of the branch (holdReadOnlyNewArrays), and with it the element.
-            // So is an element read out of an element of one (`c ? [[mk(i)]][0][0] : null`, any depth): the outer
-            // array is given back there, and with it the inner arrays and what they hold.
+            // So is what is read out of an element of one, any depth down: an element of an inner array
+            // (`c ? [[mk(i)]][0][0] : null`), a field of an element (`c ? [mk(i)][0].s : null`, `c ? [{ v: mk(i)
+            // }][0].v : null`), and so on - the outer array is given back there, and with it all it holds.
             auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
                 auto value = producerOf(resultOp->getOperand(0));
                 if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
                 {
-                    while (auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>())
+                    // the place read, walked down through fields and elements to the array it is in
+                    auto place = loadOp.getReference();
+                    while (place)
                     {
+                        if (auto propertyRefOp = place.getDefiningOp<mlir_ts::PropertyRefOp>())
+                        {
+                            // a field of a value held in place (a tuple element), or of an object read out
+                            auto object = propertyRefOp.getObjectRef();
+                            auto objectRead = object.getDefiningOp<mlir_ts::LoadOp>();
+                            place = mlir::isa<mlir_ts::RefType>(object.getType()) ? object
+                                    : objectRead                                 ? objectRead.getReference()
+                                                                                 : mlir::Value();
+                            continue;
+                        }
+
+                        auto elementRefOp = place.getDefiningOp<mlir_ts::ElementRefOp>();
+                        if (!elementRefOp)
+                        {
+                            break;
+                        }
+
                         auto *arrayOp = elementRefOp->getOperand(0).getDefiningOp();
                         if (arrayOp && isNewArray(arrayOp) && arrayOp->getParentRegion() == resultOp->getParentRegion())
                         {
                             return true;
                         }
 
-                        loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(arrayOp);
-                        if (!loadOp)
-                        {
-                            break;
-                        }
+                        auto arrayRead = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(arrayOp);
+                        place = arrayRead ? arrayRead.getReference() : mlir::Value();
                     }
                 }
 

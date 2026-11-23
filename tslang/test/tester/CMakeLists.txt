@@ -5533,6 +5533,12 @@ foreach(nested_literal_mm rc gc own)
     tslang_add_test(NAME test-jit-${nested_literal_mm}-rc_conditional_nested_literal COMMAND test-runner -jit -mm=${nested_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
     tslang_add_test(NAME test-compile-${nested_literal_mm}-rc_conditional_nested_literal COMMAND test-runner -mm=${nested_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
 endforeach()
+# ...and a field read out of an element (`c ? [mk(i)][0].s : null`, `c ? [{ v: mk(i) }][0].v : null`); own
+# refuses `[mk(i)][0].s`, so rc and gc only.
+foreach(literal_field_mm rc gc)
+    tslang_add_test(NAME test-jit-${literal_field_mm}-rc_conditional_literal_field COMMAND test-runner -jit -mm=${literal_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_literal_field.ts")
+    tslang_add_test(NAME test-compile-${literal_field_mm}-rc_conditional_literal_field COMMAND test-runner -mm=${literal_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_literal_field.ts")
+endforeach()
 # ...the IR: the branch's retain of the element right before the release of the outer literal (none before).
 add_test(NAME test-rc-conditional-nested-literal-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
