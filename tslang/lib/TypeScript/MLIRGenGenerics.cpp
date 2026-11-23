@@ -500,9 +500,24 @@ namespace mlirgen
             {
                 instanceType = classValueType.getClassType();
             }
-            else if (isa<mlir_ts::ClassType>(concreteType))
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(concreteType))
             {
                 instanceType = concreteType;
+
+                // a generic class given with no type arguments (`make(Box, 4)` for `new (n: number) => T`): they come
+                // from the constructor type's parameters, as `new Box(4)`'s come from its arguments (TSLANG 171)
+                if (!getClassInfoByFullName(classType.getName().getValue()))
+                {
+                    if (auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue()))
+                    {
+                        NodeArray<Expression> noArguments;
+                        if (auto specClassType = inferClassTypeFromConstructorArguments(
+                                location, genericClassInfo, noArguments, genContext, tempConstructType.getInputs()))
+                        {
+                            instanceType = specClassType;
+                        }
+                    }
+                }
             }
 
             if (instanceType && tempConstructType.getNumResults() == 1)
@@ -1958,8 +1973,12 @@ namespace mlirgen
     mlir_ts::ClassType MLIRGenImpl::inferClassTypeFromConstructorArguments(mlir::Location location,
                                                                           GenericClassInfo::TypePtr genericClassInfo,
                                                                           NodeArray<Expression> arguments,
-                                                                          const GenContext &genContext)
+                                                                          const GenContext &genContext,
+                                                                          ArrayRef<mlir::Type> knownArgumentTypes)
     {
+        // the arguments' count: of the call, or of the types given for them (a constructor type's parameters,
+        // `make(Box, 4)` of `make<T>(c: new (n: number) => T, n)`)
+        auto argumentCount = arguments.empty() ? knownArgumentTypes.size() : arguments.size();
         SmallVector<ConstructorDeclaration> constructorDeclarations;
         for (auto member : genericClassInfo->classDeclaration->members)
         {
@@ -1971,12 +1990,12 @@ namespace mlirgen
 
         // (with arguments, the constructor is a base class's, which is not looked at here); with none, only a class with
         // no constructor and no base class is answered (below)
-        if (constructorDeclarations.empty() && !arguments.empty())
+        if (constructorDeclarations.empty() && argumentCount > 0)
         {
             return mlir_ts::ClassType();
         }
 
-        if (arguments.empty()
+        if (argumentCount == 0
             && (!constructorDeclarations.empty() || !genericClassInfo->classDeclaration->heritageClauses.empty()))
         {
             return mlir_ts::ClassType();
@@ -1984,7 +2003,7 @@ namespace mlirgen
 
         // the arguments' types, in the caller's scope; a function argument's parameters are typed
         // by the constructor's, which is what is being worked out, so it tells nothing
-        SmallVector<mlir::Type> argumentTypes;
+        SmallVector<mlir::Type> argumentTypes(knownArgumentTypes.begin(), knownArgumentTypes.end());
         auto hasSpread = false;
         for (auto argument : arguments)
         {
@@ -2075,7 +2094,7 @@ namespace mlirgen
                 }
             }
 
-            if (!hasSpread && (arguments.size() < required || (!hasRest && arguments.size() > parameters.size())))
+            if (!hasSpread && (argumentCount < required || (!hasRest && argumentCount > parameters.size())))
             {
                 return {};
             }
@@ -2123,7 +2142,7 @@ namespace mlirgen
 
         // a class with no constructor of its own and no base class, given no arguments (`new SS()`): nothing to infer
         // from - its type parameters are `any`. (Applied wider, the library's classes were instantiated anew.)
-        if (typeArguments.empty() && constructorDeclarations.empty() && arguments.empty()
+        if (typeArguments.empty() && constructorDeclarations.empty() && argumentCount == 0
             && genericClassInfo->classDeclaration->heritageClauses.empty())
         {
             StringMap<mlir::Type> noneInferred;

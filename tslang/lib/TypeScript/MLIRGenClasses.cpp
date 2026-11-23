@@ -6206,6 +6206,17 @@ genContext);
         if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
         {
             classType = classRefOp.getType();
+
+            // a generic class named with no type arguments, given to a specialization of itself (`make(Box, 4)` of
+            // `make<T>(c: new (n: number) => T, n)`, T inferred as Box<number>): that specialization (TSLANG 171)
+            if (classType != baseClassType && !getClassInfoByFullName(classType.getName().getValue()))
+            {
+                if (auto baseClassInfo = getClassInfoByFullName(baseClassType.getName().getValue());
+                    baseClassInfo && baseClassInfo->originClassType == classType)
+                {
+                    classType = baseClassType;
+                }
+            }
         }
         else if (auto valueClassValueType = dyn_cast<mlir_ts::ClassValueType>(value.getType()))
         {

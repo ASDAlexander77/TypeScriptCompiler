@@ -2747,7 +2747,24 @@ Tests `00tslang_issue_169.ts` (compile, JIT, gc, rc, none, own).
   reference of its own, which is why it worked). Flat at 3M with `const`, `let`, a returned literal and one given straight
   to a call.
 
-Still open: under gc and none, an `any` taken from an `object` holds the `object` (`typeof` its tag "object"), so
-`o === a` is false and `<L>a` throws "Can't cast from any type"; under rc both work.
+Fixed by 171 for gc and none.
 
 Tests `00tslang_issue_170.ts` (gc, rc, none); `00tslang_issue_169.ts` checks the null and `unknown` comparisons in every model.
+
+171 (leftovers of 169 and 170, 2026-11-23). Fixed:
+- gc and none box an `object` as rc does (170), so `object` reads the same in every model but own: an `any` taken
+  from an `object` is what the `object` holds, so `o === a` is true and `<L>a` is the class object (it threw "Can't
+  cast from any type"); 165's separate block for `<object>{...}` under gc and none is gone, the box replaces it.
+- A generic class given to a constructor type with no type arguments (`make(Box, 4)` of
+  `make<T>(ctor: new (n: number) => T, n)`, `makePair(Pair)` for `new (s: string, n: number) => T`): its type
+  arguments come from the constructor type's parameters (inferClassTypeFromConstructorArguments, as `new Box(4)`
+  takes them from its arguments), and the class given is that specialization (castToClassValue). It was "Can't find
+  class Box". `make(Box<number>, 3)` already worked (169's note was about `make(Box, 3)`).
+
+Still open, looked at:
+- -mm=own: `typeof a === "string"` of a `const a` holding the `any` a call returned is "a value takes a second
+  reference" at the unboxed string's retain (a `let` works): own's inference does not take the string read out of a
+  call's box held by a folded `const` as a borrow of that box.
+
+Tests `00tslang_issue_171.ts` (compile, JIT, gc, rc, none, own); `00tslang_issue_170.ts` checks `a === o`, `u === o` and
+`<L>a` again.
