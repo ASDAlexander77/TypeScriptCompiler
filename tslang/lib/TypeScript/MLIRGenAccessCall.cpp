@@ -533,9 +533,19 @@ namespace mlirgen
                         return mlirGenPropertyAccessExpression(location, V(present), name, false, genContext);
                     }
 
-                    // TODO: when access of property in union is finished use it instead of using first type
-                    // all union types must have the same property
-                    // 1) cast to first type
+                    // a field of the member the value holds, where the members differ up to it
+                    auto fieldRead = mlirGenUnionFieldRead(location, objectValue, name, genContext);
+                    if (fieldRead.failed())
+                    {
+                        return mlir::Value();
+                    }
+
+                    if (fieldRead.value)
+                    {
+                        return V(fieldRead);
+                    }
+
+                    // the same field in every member (or a method, dispatched where it is called): read as the first
                     auto frontType = mth.getFirstNonNullUnionType(unionType);
                     //auto casted = cast(location, frontType, objectValue, genContext);
                     auto casted = builder.create<mlir_ts::GetValueFromUnionOp>(location, frontType, objectValue);

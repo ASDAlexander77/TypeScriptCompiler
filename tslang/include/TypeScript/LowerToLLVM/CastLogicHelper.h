@@ -1047,6 +1047,31 @@ class CastLogicHelper
             return val;
         }
 
+        // a pointer and a struct, a union's storage read as a member or made of one (a union of classes is the
+        // object's pointer alone, MLIRTypeHelper::isClassesOnlyUnion): their bytes, through memory
+        if (sizesMayDiffer
+            && ((isa<LLVM::LLVMPointerType>(inLLVMType) && isa<LLVM::LLVMStructType>(resLLVMType))
+                || (isa<LLVM::LLVMStructType>(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))))
+        {
+            LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
+            auto srcSize = llvmtch.getTypeAllocSizeInBytes(inLLVMType);
+            auto dstSize = llvmtch.getTypeAllocSizeInBytes(resLLVMType);
+            if (dstSize >= srcSize)
+            {
+                auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType),
+                    mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+                auto dstPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(dstAddr.getType()), dstAddr);
+                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, resLLVMType), dstPtr);
+                rewriter.create<LLVM::StoreOp>(loc, in, dstPtr);
+                return rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
+            }
+
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(
+                loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            auto srcPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(srcAddr.getType()), srcAddr);
+            return rewriter.create<LLVM::LoadOp>(loc, resLLVMType, srcPtr);
+        }
+
         // value to ref of value
         if (auto destPtr = dyn_cast<LLVM::LLVMPointerType>(resLLVMType))
         {

@@ -452,6 +452,13 @@ class LLVMDebugInfoHelper
 
         auto diTypeAttrUnion = getDIUnionType(location, unionType, file, line, scope);
 
+        // shapes told apart by their first field have no tag: the value is the member's bytes; a union of classes
+        // is the object's pointer
+        if (MLIRTypeHelper::isTaglessUnion(unionType, nullptr))
+        {
+            return diTypeAttrUnion;
+        }
+
         return getDIStructType(MLIRHelper::getAnonymousName(unionType, "struct"), {
             {"type", diStrType},
             {"data", diTypeAttrUnion},

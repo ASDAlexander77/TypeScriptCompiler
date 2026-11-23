@@ -2642,8 +2642,166 @@ class MLIRTypeHelper
         }
 
         auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
+
+        // shapes with the same field names merge into one (tupleMergeType), stored as the largest and read as the
+        // merged shape: right only while each field is stored alike in every member. `{ label: string } |
+        // { label: object }` merges `label` into `object | string`, stored with a tag of its own - neither
+        // member's field - so the shapes stay a union, told apart by its tag (TSLANG 112)
+        if (auto mergedTuple = dyn_cast<mlir_ts::TupleType>(storeType); mergedTuple && !mergedShapesStoredAlike(location, unionType, mergedTuple))
+        {
+            baseType = unionType;
+            return true;
+        }
+
         baseType = storeType;
         return isa<mlir_ts::UnionType>(storeType);
+    }
+
+    // A union of object shapes told apart by their first field: every member a shape whose first field, of the
+    // same name and type in each, is a literal of its own (`{ kind: "sq"; size: number } | { kind: "ci"; r: number }`).
+    // That field is the tag: the union is stored as its largest shape alone, with no tag in front (user ruling
+    // 2026-11-23). MLIRGen still sees a tagged union - the tag is read from the field (DiscriminatedUnionLogic).
+    static bool isFirstFieldDiscriminatedUnion(mlir_ts::UnionType unionType)
+    {
+        auto types = unionType.getTypes();
+        if (types.size() < 2)
+        {
+            return false;
+        }
+
+        mlir::Attribute id;
+        mlir::Type elementType;
+        llvm::SmallVector<mlir::Attribute> values;
+        for (auto member : types)
+        {
+            auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+            if (!tuple || tuple.getFields().empty())
+            {
+                return false;
+            }
+
+            auto &field = tuple.getFields().front();
+            auto literal = dyn_cast<mlir_ts::LiteralType>(field.type);
+            if (!literal || field.isConditional)
+            {
+                return false;
+            }
+
+            // a string's or a number's literal, compared where the tag is read
+            auto memberElementType = literal.getElementType();
+            if (!isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType, mlir::FloatType>(memberElementType))
+            {
+                return false;
+            }
+
+            if (!id)
+            {
+                id = field.id;
+                elementType = memberElementType;
+            }
+            else if (field.id != id || memberElementType != elementType)
+            {
+                return false;
+            }
+
+            if (llvm::is_contained(values, literal.getValue()))
+            {
+                return false;
+            }
+
+            values.push_back(literal.getValue());
+        }
+
+        return true;
+    }
+
+    // A union of classes, null perhaps among them (`A | B | null`), every one able to say which it is: stored as the
+    // object's pointer alone, the class asked of the object (`.instanceOf`) where the tag is read (user ruling
+    // 2026-11-23). Not one with a class of CLASSES_WITHOUT_RTTI_ATTR_NAME in it. MLIRGen still sees a tagged union.
+    static bool isClassesOnlyUnion(mlir_ts::UnionType unionType, mlir::Operation *inModule)
+    {
+        auto module = inModule ? (mlir::isa<mlir::ModuleOp>(inModule) ? mlir::cast<mlir::ModuleOp>(inModule)
+                                                                     : inModule->getParentOfType<mlir::ModuleOp>())
+                               : mlir::ModuleOp();
+        auto withoutRtti = module ? module->getAttrOfType<mlir::ArrayAttr>(CLASSES_WITHOUT_RTTI_ATTR_NAME) : mlir::ArrayAttr();
+
+        auto classes = 0;
+        for (auto member : unionType.getTypes())
+        {
+            if (isa<mlir_ts::NullType>(member))
+            {
+                continue;
+            }
+
+            auto classType = dyn_cast<mlir_ts::ClassType>(member);
+            if (!classType)
+            {
+                return false;
+            }
+
+            if (withoutRtti && llvm::any_of(withoutRtti, [&](mlir::Attribute attr) {
+                    auto other = dyn_cast<mlir_ts::ClassType>(mlir::cast<mlir::TypeAttr>(attr).getValue());
+                    return other && other.getName() == classType.getName();
+                }))
+            {
+                return false;
+            }
+
+            classes++;
+        }
+
+        return classes >= 2;
+    }
+
+    // stored without a tag of its own (isFirstFieldDiscriminatedUnion, isClassesOnlyUnion)
+    static bool isTaglessUnion(mlir_ts::UnionType unionType, mlir::Operation *inModule)
+    {
+        return isFirstFieldDiscriminatedUnion(unionType) || isClassesOnlyUnion(unionType, inModule);
+    }
+
+    // the type a field of `type` is stored as: a literal as its type, a union without a tag as its base
+    mlir::Type fieldStorageType(mlir::Location location, mlir::Type type)
+    {
+        type = stripLiteralType(type);
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            mlir::Type baseType;
+            if (!isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                return stripLiteralType(baseType);
+            }
+        }
+
+        return type;
+    }
+
+    bool mergedShapesStoredAlike(mlir::Location location, mlir_ts::UnionType unionType, mlir_ts::TupleType mergedTuple)
+    {
+        auto mergedFields = mergedTuple.getFields();
+        for (auto member : unionType.getTypes())
+        {
+            auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+            if (!tuple)
+            {
+                continue;
+            }
+
+            auto fields = tuple.getFields();
+            if (fields.size() != mergedFields.size())
+            {
+                return false;
+            }
+
+            for (auto [field, mergedField] : llvm::zip(fields, mergedFields))
+            {
+                if (fieldStorageType(location, field.type) != fieldStorageType(location, mergedField.type))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     ExtendsResult appendInferTypeToContext(mlir::Location location, mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)

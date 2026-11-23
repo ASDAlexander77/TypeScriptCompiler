@@ -1007,6 +1007,21 @@ namespace mlirgen
             theModule->setAttr(CLASS_BASES_ATTR_NAME, builder.getArrayAttr(bases));
         }
 
+        // (CLASSES_WITHOUT_RTTI_ATTR_NAME)
+        llvm::SmallVector<mlir::Attribute> withoutRtti;
+        for (auto &classInfo : moduleClasses)
+        {
+            if (classInfo->classType && (classInfo->isCppVTable || classInfo->isValue || classInfo->isStatic))
+            {
+                withoutRtti.push_back(mlir::TypeAttr::get(classInfo->classType));
+            }
+        }
+
+        if (!withoutRtti.empty())
+        {
+            theModule->setAttr(CLASSES_WITHOUT_RTTI_ATTR_NAME, builder.getArrayAttr(withoutRtti));
+        }
+
         markReadonlyFields();
     }
 
