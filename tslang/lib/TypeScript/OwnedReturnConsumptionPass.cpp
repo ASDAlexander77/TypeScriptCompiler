@@ -2464,16 +2464,24 @@ class OwnedReturnConsumptionPass
             // so the receiver's retain after the `ts.If` comes too late. The branch retains it first.
             // An element read out of a new array the branch made (`c ? ["c" + i][0] : d`) is the same under rc:
             // the array is given back at the end of the branch (holdReadOnlyNewArrays), and with it the element.
+            // So is an element read out of an element of one (`c ? [[mk(i)]][0][0] : null`, any depth): the outer
+            // array is given back there, and with it the inner arrays and what they hold.
             auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
                 auto value = producerOf(resultOp->getOperand(0));
                 if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
                 {
-                    if (auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>())
+                    while (auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>())
                     {
                         auto *arrayOp = elementRefOp->getOperand(0).getDefiningOp();
                         if (arrayOp && isNewArray(arrayOp) && arrayOp->getParentRegion() == resultOp->getParentRegion())
                         {
                             return true;
+                        }
+
+                        loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(arrayOp);
+                        if (!loadOp)
+                        {
+                            break;
                         }
                     }
                 }

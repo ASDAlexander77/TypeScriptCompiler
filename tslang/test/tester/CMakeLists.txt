@@ -5526,6 +5526,20 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
+# A conditional's branch yielding an element of an array literal nested in another (`c ? [[mk(i)]][0][0] :
+# null`) retains it for the result before the outer literal is given back at the end of the branch, as for a
+# flat literal; under rc it was freed first (an access violation). The same program under gc and own.
+foreach(nested_literal_mm rc gc own)
+    tslang_add_test(NAME test-jit-${nested_literal_mm}-rc_conditional_nested_literal COMMAND test-runner -jit -mm=${nested_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
+    tslang_add_test(NAME test-compile-${nested_literal_mm}-rc_conditional_nested_literal COMMAND test-runner -mm=${nested_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
+endforeach()
+# ...the IR: the branch's retain of the element right before the release of the outer literal (none before).
+add_test(NAME test-rc-conditional-nested-literal-retained
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
+set_tests_properties(test-rc-conditional-nested-literal-retained
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]union<!ts[.]class<@N[^\n]*\n *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # Under rc, a call through an interface carries the result its implementation retained: no
 # `ts.CallIndirect` returning a C through an interface slot is left without `__owned_result`
 # (`__owned_result_named` alone only says it initialises a `const`).
