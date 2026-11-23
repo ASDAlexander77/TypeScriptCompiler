@@ -1470,7 +1470,8 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
 
         auto isTaggedUnion = [&](mlir::Type type) {
             auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type);
-            return unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType);
+            return unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType)
+                && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType);
         };
 
         if (isTaggedUnion(op.getIn().getType()))
@@ -4057,7 +4058,19 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         types.push_back(i8PtrTy);
         types.push_back(valueType);
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
-        if (!mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getType())))
+        // shapes told apart by their first field have no tag: the value is the member's bytes, in the largest's room
+        if (mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getType()))
+            && MLIRTypeHelper::isFirstFieldDiscriminatedUnion(cast<mlir_ts::UnionType>(op.getType())))
+        {
+            auto casted = castLogic.castLLVMTypes(in, in.getType(), resType, resType, /*sizesMayDiffer=*/true);
+            if (!casted)
+            {
+                return mlir::failure();
+            }
+
+            rewriter.replaceOp(op, ValueRange{casted});
+        }
+        else if (!mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getType())))
         {
             // this is union of tuples, no need to add Tag to it
             // create tagged union
@@ -4107,7 +4120,21 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
 
         bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()));
-        if (needTag)
+        // shapes told apart by their first field have no tag: the value is the member's bytes
+        if (needTag && MLIRTypeHelper::isFirstFieldDiscriminatedUnion(cast<mlir_ts::UnionType>(op.getIn().getType())))
+        {
+            CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
+            auto valueType = tch.convertType(op.getType());
+            auto casted = castLogic.castLLVMTypes(transformed.getIn(), transformed.getIn().getType(), valueType, valueType,
+                                                  /*sizesMayDiffer=*/true);
+            if (!casted)
+            {
+                return mlir::failure();
+            }
+
+            rewriter.replaceOp(op, ValueRange{casted});
+        }
+        else if (needTag)
         {
             auto in = transformed.getIn();
 
@@ -4158,7 +4185,28 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
 
         mlir::Type baseType;
         bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()), baseType);
-        if (needTag)
+        auto unionType = cast<mlir_ts::UnionType>(op.getIn().getType());
+        if (needTag && MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+        {
+            // the tag of the member its first field names: that member's descriptor, null when it names none
+            DiscriminatedUnionLogic dul(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+            auto index = dul.memberIndexOfValue(unionType, transformed.getIn());
+
+            TypeHelper th(rewriter);
+            TypeOfOpHelper toh(rewriter);
+            auto tagType = tch.convertType(op.getType());
+            mlir::Value tag = rewriter.create<LLVM::ZeroOp>(loc, tagType);
+            for (auto [memberIndex, member] : llvm::enumerate(unionType.getTypes()))
+            {
+                auto descriptor = rewriter.create<mlir_ts::DialectCastOp>(loc, tagType, toh.typeDescriptorValue(loc, member));
+                auto thisIndex = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)memberIndex));
+                auto isMember = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, index, thisIndex);
+                tag = rewriter.create<LLVM::SelectOp>(loc, isMember, descriptor, tag);
+            }
+
+            rewriter.replaceOp(op, ValueRange{tag});
+        }
+        else if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
                                                               MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
@@ -9801,7 +9849,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
                                 << "\n union type: " << type << "\n";);
 
         SmallVector<mlir::Type> convertedTypes;
-        if (needTag)
+        // shapes told apart by their first field keep no tag: the field is it (DiscriminatedUnionLogic)
+        if (needTag && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(type))
         {
             convertedTypes.push_back(th.getPtrType());
         }

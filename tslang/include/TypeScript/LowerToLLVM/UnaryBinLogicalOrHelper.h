@@ -120,6 +120,14 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);
         auto llvmUnion = asLLVMUnion(unionValue, unionType);
 
+        // shapes told apart by their first field: no member is null, and there is no tag to read
+        if (::typescript::MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+        {
+            auto falseValue = builder.create<LLVM::ConstantOp>(loc, builder.getI1Type(), builder.getBoolAttr(false));
+            auto trueValue = builder.create<LLVM::ConstantOp>(loc, builder.getI1Type(), builder.getBoolAttr(true));
+            return builder.create<StdIOpTy>(loc, v1, falseValue, trueValue);
+        }
+
         mlir::Type actualType;
         mth.isUnionTypeNeedsTag(loc, unionType, actualType);
         auto actualUnionType = dyn_cast<mlir_ts::UnionType>(actualType);

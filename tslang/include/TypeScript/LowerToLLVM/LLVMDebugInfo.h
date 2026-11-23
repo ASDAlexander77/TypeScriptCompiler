@@ -452,6 +452,12 @@ class LLVMDebugInfoHelper
 
         auto diTypeAttrUnion = getDIUnionType(location, unionType, file, line, scope);
 
+        // shapes told apart by their first field have no tag: the value is the member's bytes
+        if (MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+        {
+            return diTypeAttrUnion;
+        }
+
         return getDIStructType(MLIRHelper::getAnonymousName(unionType, "struct"), {
             {"type", diStrType},
             {"data", diTypeAttrUnion},

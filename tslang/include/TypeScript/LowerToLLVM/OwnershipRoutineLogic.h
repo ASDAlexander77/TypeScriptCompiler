@@ -13,6 +13,7 @@
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 #include "TypeScript/LowerToLLVM/ArrayLayout.h"
 #include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
+#include "TypeScript/LowerToLLVM/DiscriminatedUnionLogic.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/ADT/SmallString.h"
@@ -1363,6 +1364,48 @@ class OwnershipRoutineLogic
         rewriter.setInsertionPointToStart(continuationBlock);
     }
 
+    void emitIfTrue(mlir::Value condition, llvm::function_ref<void()> thenBody)
+    {
+        auto loc = op->getLoc();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        thenBody();
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
+    // Shapes told apart by their first field have no tag (DiscriminatedUnionLogic): `body` of the member the
+    // field at `slotPtr` names, the value being that member's bytes there. False for any other union.
+    bool forDiscriminatedMember(mlir::Location loc, mlir_ts::UnionType unionType, mlir::Value slotPtr,
+                                llvm::function_ref<void(mlir::Type)> body)
+    {
+        if (!MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+        {
+            return false;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        DiscriminatedUnionLogic dul(op, rewriter, tch, loc, compileOptions);
+        auto index = dul.memberIndex(unionType, slotPtr);
+        for (auto [memberIndex, member] : llvm::enumerate(unionType.getTypes()))
+        {
+            auto thisIndex = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)memberIndex));
+            auto isMember = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, index, thisIndex);
+            emitIfTrue(isMember, [&]() { body(member); });
+        }
+
+        return true;
+    }
+
     // The classes of this module that extend `classType`, at any depth (CLASS_BASES_ATTR_NAME), each with
     // its vtable in the module.
     llvm::SmallVector<mlir_ts::ClassType> subclassesOf(mlir_ts::ClassType classType)
@@ -2088,7 +2131,10 @@ class OwnershipRoutineLogic
         {
             MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            if (forDiscriminatedMember(loc, unionType, slotPtr, [&](mlir::Type member) { releaseSlot(member, slotPtr); }))
+            {
+            }
+            else if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
             {
                 auto llvmUnionType = tch.convertType(unionType);
                 auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
@@ -2252,7 +2298,10 @@ class OwnershipRoutineLogic
         {
             MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            if (forDiscriminatedMember(loc, unionType, slotPtr, [&](mlir::Type member) { retainSlot(member, slotPtr); }))
+            {
+            }
+            else if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
             {
                 auto llvmUnionType = tch.convertType(unionType);
                 auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
@@ -2663,7 +2712,10 @@ class OwnershipRoutineLogic
         {
             MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            if (forDiscriminatedMember(loc, unionType, slotPtr, [&](mlir::Type member) { shareSlot(member, slotPtr); }))
+            {
+            }
+            else if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
             {
                 auto llvmUnionType = tch.convertType(unionType);
                 auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,

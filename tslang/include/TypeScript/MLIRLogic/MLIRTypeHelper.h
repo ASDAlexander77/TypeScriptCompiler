@@ -2657,6 +2657,64 @@ class MLIRTypeHelper
         return isa<mlir_ts::UnionType>(storeType);
     }
 
+    // A union of object shapes told apart by their first field: every member a shape whose first field, of the
+    // same name and type in each, is a literal of its own (`{ kind: "sq"; size: number } | { kind: "ci"; r: number }`).
+    // That field is the tag: the union is stored as its largest shape alone, with no tag in front (user ruling
+    // 2026-11-23). MLIRGen still sees a tagged union - the tag is read from the field (DiscriminatedUnionLogic).
+    static bool isFirstFieldDiscriminatedUnion(mlir_ts::UnionType unionType)
+    {
+        auto types = unionType.getTypes();
+        if (types.size() < 2)
+        {
+            return false;
+        }
+
+        mlir::Attribute id;
+        mlir::Type elementType;
+        llvm::SmallVector<mlir::Attribute> values;
+        for (auto member : types)
+        {
+            auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+            if (!tuple || tuple.getFields().empty())
+            {
+                return false;
+            }
+
+            auto &field = tuple.getFields().front();
+            auto literal = dyn_cast<mlir_ts::LiteralType>(field.type);
+            if (!literal || field.isConditional)
+            {
+                return false;
+            }
+
+            // a string's or a number's literal, compared where the tag is read
+            auto memberElementType = literal.getElementType();
+            if (!isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType, mlir::FloatType>(memberElementType))
+            {
+                return false;
+            }
+
+            if (!id)
+            {
+                id = field.id;
+                elementType = memberElementType;
+            }
+            else if (field.id != id || memberElementType != elementType)
+            {
+                return false;
+            }
+
+            if (llvm::is_contained(values, literal.getValue()))
+            {
+                return false;
+            }
+
+            values.push_back(literal.getValue());
+        }
+
+        return true;
+    }
+
     // the type a field of `type` is stored as: a literal as its type, a union without a tag as its base
     mlir::Type fieldStorageType(mlir::Location location, mlir::Type type)
     {
