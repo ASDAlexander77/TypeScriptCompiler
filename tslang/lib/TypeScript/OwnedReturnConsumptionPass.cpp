@@ -781,10 +781,21 @@ class OwnedReturnConsumptionPass
             // end of the block, it would be freed first. Unless the branch took a count of it for the
             // `ts.If` result (consumeConditionalResults, borrowsBranchTemporary), which then carries it.
             // (seen through the casts that only widen it: `c ? [s][0] : null` yields it as `string | null`)
+            // Under rc, for an optional chain on the literal (`[mk(i)]?.[0]`: the literal's truthiness is tested), a
+            // conditional within the literal's block that yields the element on - the chain, and its conversion to
+            // `| null` (`ts.Value` of the chain's optional) - hands it to its own result, which is followed the same
+            // way: it leaves only if that does (borrowsBranchTemporary has the enclosing branch retain it when it
+            // goes on to that branch's `ts.Result`).
+            auto isTruthinessTest = [](mlir::Operation *user) {
+                return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
+            };
+            auto chained = !own && llvm::any_of(op->getUsers(), isTruthinessTest);
             std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
-                for (auto *user : value.getUsers())
+                for (auto &use : value.getUses())
                 {
-                    if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
+                    auto *user = use.getOwner();
+                    if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) ||
+                        (chained && mlir::isa<mlir_ts::ValueOp>(user)))
                     {
                         if (leavesUncounted(user->getResult(0)))
                         {
@@ -806,6 +817,17 @@ class OwnedReturnConsumptionPass
                                          user->getPrevNode()->getOperand(0) == user->getOperand(0);
                     if (!yieldsCounted)
                     {
+                        if (chained && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                            op->getParentRegion()->isAncestor(conditional->getParentRegion()))
+                        {
+                            if (leavesUncounted(conditional->getResult(use.getOperandNumber())))
+                            {
+                                return true;
+                            }
+
+                            continue;
+                        }
+
                         return true;
                     }
                 }
@@ -833,8 +855,9 @@ class OwnedReturnConsumptionPass
                 });
             };
 
+            // (under rc, its truthiness test too: an optional chain on the literal tests it before reading it)
             auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
-                return mlir::isa<mlir_ts::LengthOfOp>(user) ||
+                return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
                        (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
             });
             if (onlyRead)

@@ -5534,7 +5534,7 @@ endforeach()
 # first (an access violation, or a read of freed memory). The same programs under gc and own; the shapes own
 # refuses (`c ? [mk(i)][0].s : null`, a tuple literal holding a value it owns) under rc and gc only.
 foreach(conditional_literal_test conditional_nested_literal conditional_literal_field conditional_optional_chain
-                                 conditional_element_field conditional_tuple_literal)
+                                 conditional_element_field conditional_tuple_literal literal_optional_chain)
     string(REPLACE "_" "-" conditional_literal_name "${conditional_literal_test}")
     set(conditional_literal_models rc gc own)
     if(conditional_literal_test STREQUAL "conditional_element_field" OR conditional_literal_test STREQUAL "conditional_tuple_literal")
@@ -5563,6 +5563,14 @@ foreach(conditional_field_test conditional_literal_field conditional_element_fie
                          PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.](union|optional)<[^\n]*\n( *\"ts[.]Release\"[^\n]*\n)* *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 endforeach()
+# An optional chain on an array literal (`[mk(i)]?.[0]`) is given back at the end of its block under rc (it leaked
+# before): a `ts.Release` of the literal (none before).
+add_test(NAME test-rc-literal-optional-chain-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_literal_optional_chain.ts")
+set_tests_properties(test-rc-literal-optional-chain-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 add_test(NAME test-rc-conditional-tuple-literal-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_tuple_literal.ts")
