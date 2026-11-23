@@ -5897,26 +5897,45 @@ add_test(NAME test-own-string-copy-in-store-block
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
 # -mm=own --own-fallback=count: what inference refuses keeps rc's count, with a warning. Inference
-# only so far: the IR is read (the warning, and how many retains are kept marked `__own_counted`:
-# each test's count is rc's for its object, and one too few frees it early). A shape that has
-# nothing to keep stays an error with the flag.
-foreach(fallback_case own_fallback_second_owner:2 own_fallback_move_overwrite:2 own_fallback_fresh_second_owner:2
-                      own_fallback_call_second_owner:2 own_fallback_swap:3 own_fallback_global_lent:1
-                      own_fallback_unwind:2 own_fallback_generator:2 own_fallback_kept_lent:1)
+# only so far: the IR is read - the warning, how many retains are kept marked `__own_counted`, and
+# how many releases of the counted type the function under test makes (each test's counts are rc's
+# for its object; one retain too few, or a release erased or added, frees it early or leaks it).
+# Each case is test:retains:function:type:releases ("-" for no release check).
+foreach(fallback_case own_fallback_second_owner:2:link:@Node:3 own_fallback_move_overwrite:2:main:@Node:4
+                      own_fallback_fresh_second_owner:2:main:@Node:3 own_fallback_call_second_owner:2:main:@Node:3
+                      own_fallback_swap:3:swap:@Node:3 own_fallback_global_lent:1:main:@Node:2
+                      own_fallback_unwind:2:link:@Node:4 own_fallback_generator:2:-:-:-
+                      own_fallback_kept_lent:1:main:@Node:1 own_fallback_kept_call_twice:2:main:@Node:1
+                      own_fallback_kept_twice_one_call:3:main:@Node:2
+                      own_fallback_string_second_owner:2:link:ts.string:3)
     string(REPLACE ":" ";" fallback_case "${fallback_case}")
     list(GET fallback_case 0 fallback_test)
     list(GET fallback_case 1 fallback_counted)
+    list(GET fallback_case 2 fallback_func)
+    list(GET fallback_case 3 fallback_released)
+    list(GET fallback_case 4 fallback_releases)
+    set(fallback_release_check)
+    if(NOT fallback_func STREQUAL "-")
+        set(fallback_release_check -DFUNC=${fallback_func} -DRELEASED=${fallback_released} -DRELEASES=${fallback_releases})
+    endif()
     add_test(NAME test-own-fallback-ir-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=${fallback_counted}
+                     ${fallback_release_check}
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
-# ...and a refusal by design, raised where a retain is kept for another value at the same place: a
-# Shared<T> in an owning union is never counted away
-foreach(fallback_test own_fallback_result_borrow_stays_error own_err_shared_union_owned)
-    add_test(NAME test-own-fallback-ir-${fallback_test}
+# ...and what stays an error with the flag: a shape with nothing to keep (a borrow of a call's
+# result), a refusal by design (a Shared<T> in an owning union), an error about a value not counted
+# at the place of one that is, and refusals beyond tier 1: a closure that escapes with what it
+# captured still used (user ruling 11-13), a parameter its exported function's callers cannot be told
+# it keeps
+foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
+                      own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
+                      own/own_err_param_kept_exported)
+    get_filename_component(fallback_name "${fallback_test}" NAME)
+    add_test(NAME test-own-fallback-ir-${fallback_name}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
-                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
 

@@ -886,6 +886,14 @@ namespace own_inference
         while (!values.empty())
         {
             auto pending = values.pop_back_val();
+            // a counted read (--own-fallback=count) holds a count of its own from its read on: what
+            // uses it no longer borrows what it was read out of
+            if (!dryRun && pending.value != start && pending.value.getDefiningOp<mlir_ts::LoadOp>() &&
+                countedValues.contains(countedUnitOf(pending.value)))
+            {
+                continue;
+            }
+
             for (auto &use : pending.value.getUses())
             {
                 auto *user = use.getOwner();

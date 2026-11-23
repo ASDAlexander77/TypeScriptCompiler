@@ -204,13 +204,38 @@ class OwnershipInferencePass
     llvm::SmallVector<mlir::Value> countedOrder;
     // the error each counted value's dry run would have reported (the warning's notes)
     llvm::DenseMap<mlir::Value, RecordedDiagnostic> dryRunDiagnostics;
-    // what the dry run's report sites emitted, in order, swallowed (the flag only)
-    llvm::SmallVector<RecordedDiagnostic> dryRunCapture;
-    // the errors the real run raised where a counted value's was reported: notes of its warning, not
-    // errors, in order
+    // what the dry run's report sites emitted, in order, swallowed (the flag only), each with the
+    // value it concerns (reportSubject at its `reporting()`), or null
+    llvm::SmallVector<std::pair<mlir::Value, RecordedDiagnostic>> dryRunCapture;
+    // the errors the real run raised about a counted value: notes of its warning, not errors, in order
     llvm::SmallVector<std::pair<mlir::Value, RecordedDiagnostic>> countedErrors;
-    // the counted value an op at a location concerns (an op that names it, or its retain)
-    llvm::DenseMap<mlir::Location, mlir::Value> countedAt;
+
+    // The value the check running now is about (SubjectScope), given to the report a `reporting()`
+    // arms: an error is linked to a value only so, never by where it is. A report outside a check
+    // that names its value, one a site emits without `reporting()`, and one beyond what the fallback
+    // counts (reportingUncounted, disarmReport) concern no value: they stay errors.
+    mlir::Value reportSubject;
+    mlir::Value armedSubject;
+    struct SubjectScope
+    {
+        OwnershipInferencePass &pass;
+        mlir::Value saved;
+        SubjectScope(OwnershipInferencePass &pass, mlir::Value subject) : pass(pass), saved(pass.reportSubject)
+        {
+            pass.reportSubject = subject;
+        }
+        ~SubjectScope()
+        {
+            pass.reportSubject = saved;
+        }
+    };
+    // `reporting()` for a refusal the fallback does not count (beyond tier 1: closures that escape,
+    // parameters the callers cannot be told about)
+    bool reportingUncounted();
+    void disarmReport()
+    {
+        armedSubject = {};
+    }
     // with the flag, failure is decided after the real run: signalled, and errors left as errors
     bool failureSignalled = false;
     unsigned uncountedErrors = 0;
@@ -245,8 +270,6 @@ class OwnershipInferencePass
     // A call that keeps a counted value's argument takes one owner of it: a retain of its own before
     // the call (rc's callee retains for what it keeps; own's erases that).
     void retainKeptCountedArguments();
-    // The locations the dry run reported at whose ops name a counted value (countedAt).
-    void indexCountedLocations();
     // The real run: every op of a counted value stays, its retains marked OWN_COUNTED_ATTR_NAME.
     void keepCountedOps(llvm::SetVector<mlir::Operation *> &toErase);
     void markCountedRetains();

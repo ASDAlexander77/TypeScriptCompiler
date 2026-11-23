@@ -1254,6 +1254,7 @@ namespace own_inference
             // ...and, with --own-fallback=count, a read that cannot be copied given to a call that keeps
             // it: a count of its own for the callee, as a handle's, when the repair counts it
             else if (dryRun && countsFallback && kept && isCall(kept) && !copiesInto(kept, result) &&
+                     !isCopyableValueAt(kept, result.getType()) && !isHandle(result) &&
                      !mlir::isa<mlir_ts::InvokeOp>(kept) &&
                      llvm::count_if(kept->getOperands(), [&](mlir::Value operand) { return rootOf(operand) == result; }) == 1)
             {
@@ -1311,6 +1312,7 @@ namespace own_inference
                     // ...and, with --own-fallback=count, a read that cannot be copied: given a count
                     // of its own for the call, as a handle is, when the repair counts it
                     else if (dryRun && countsFallback && use.op == drop && !copiesInto(drop, result) &&
+                             !isCopyableValueAt(drop, result.getType()) && !isHandle(result) &&
                              !mlir::isa<mlir_ts::InvokeOp>(drop) &&
                              llvm::count_if(drop->getOperands(), [&](mlir::Value operand) { return rootOf(operand) == result; }) == 1)
                     {

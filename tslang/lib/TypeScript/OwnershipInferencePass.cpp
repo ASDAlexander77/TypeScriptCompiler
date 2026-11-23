@@ -207,7 +207,8 @@ namespace own_inference
         dryRunDiagnostics.clear();
         dryRunCapture.clear();
         countedErrors.clear();
-        countedAt.clear();
+        reportSubject = {};
+        armedSubject = {};
         failureSignalled = false;
         uncountedErrors = 0;
 
@@ -224,6 +225,10 @@ namespace own_inference
                 {
                     return mlir::failure();
                 }
+
+                // the value the report is about: the one its `reporting()` armed, used once
+                auto subject = armedSubject;
+                armedSubject = {};
 
                 // a refusal by design is no reason to count, and is never a counted value's note
                 if (refusingByDesign > 0)
@@ -245,14 +250,14 @@ namespace own_inference
 
                 if (dryRun)
                 {
-                    dryRunCapture.push_back(std::move(recorded));
+                    dryRunCapture.push_back({subject, std::move(recorded)});
                     return mlir::success();
                 }
 
-                auto found = countedAt.find(diag.getLocation());
-                if (found != countedAt.end())
+                // only an error about a counted value is that value's note
+                if (auto unit = countedUnitOf(subject); unit && countedValues.contains(unit))
                 {
-                    countedErrors.push_back({found->second, std::move(recorded)});
+                    countedErrors.push_back({unit, std::move(recorded)});
                     return mlir::success();
                 }
 
@@ -287,7 +292,6 @@ namespace own_inference
                 if (!countedValues.empty())
                 {
                     retainKeptCountedArguments();
-                    indexCountedLocations();
                 }
 
                 splitBorrowingLets();
@@ -642,11 +646,13 @@ namespace own_inference
 
         for (auto &entry : slotReceivers)
         {
+            SubjectScope subject(*this, entry.first);
             decideSlot(entry.first, entry.second, toErase);
         }
 
         for (auto &entry : paramReceivers)
         {
+            SubjectScope subject(*this, entry.first);
             decideParam(entry.first, entry.second, toErase);
         }
 
@@ -1100,6 +1106,7 @@ namespace own_inference
                 continue;
             }
 
+            SubjectScope subject(*this, value);
             if (checkValueMoves(value, toErase) && isFresh(value))
             {
                 proven.insert(value);
@@ -1114,11 +1121,13 @@ namespace own_inference
                 continue;
             }
 
+            SubjectScope subject(*this, read->getNumResults() == 1 ? read->getResult(0) : mlir::Value());
             checkPlaceRead(read, toErase);
         }
 
         for (auto read : ops.globalReads)
         {
+            SubjectScope subject(*this, read.getResult());
             checkGlobalRead(read);
         }
 
@@ -1137,6 +1146,7 @@ namespace own_inference
         // are several, each borrows it, since a borrow pins its owner.
         for (auto *op : ops.retains)
         {
+            SubjectScope subject(*this, countedUnitOfOp(op));
             if (touchesHandle(op))
             {
                 continue;
@@ -1329,6 +1339,7 @@ namespace own_inference
                 }
 
                 auto arg = args[index];
+                SubjectScope subject(*this, arg);
                 auto root = rootOf(arg);
                 if (auto load = slotLoadOf(arg))
                 {
@@ -1436,6 +1447,8 @@ namespace own_inference
             return false;
         }
 
+        // the report is about the value the running check is about (fallbackHandler takes it)
+        armedSubject = reportSubject;
         if (dryRun)
         {
             ++failures;
@@ -1445,6 +1458,13 @@ namespace own_inference
         }
 
         return true;
+    }
+
+    bool OwnershipInferencePass::reportingUncounted()
+    {
+        auto result = reporting();
+        armedSubject = {};
+        return result;
     }
 
     void OwnershipInferencePass::setAttrTracked(mlir::Operation *op, llvm::StringRef name)
@@ -1931,7 +1951,7 @@ namespace own_inference
         {
             auto type = mlir::cast<mlir_ts::RefType>(varOp.getType()).getElementType();
             if (varOp.getCaptured().value_or(false) || isCellVariable(varOp.getResult()) || isHandle(varOp.getResult()) ||
-                !ownsHeap(def->getLoc(), type) || isCopyableValueAt(def, type))
+                !ownsHeap(def->getLoc(), type) || (isCopyableValueAt(def, type) && !isCopyableString(type)))
             {
                 return false;
             }
@@ -1963,7 +1983,8 @@ namespace own_inference
             return bornRoot(initUnit);
         }
 
-        if (isCopyableValueAt(def, unit.getType()) || !bornRoot(unit))
+        // (a string copyForRetain refused counts as an object does; `any` and `@copies` arrays stay copies)
+        if ((isCopyableValueAt(def, unit.getType()) && !isCopyableString(unit.getType())) || !bornRoot(unit))
         {
             return false;
         }
@@ -2016,40 +2037,25 @@ namespace own_inference
 
     void OwnershipInferencePass::countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased)
     {
-        // what the dry run reported, by the location it reported it at
-        llvm::DenseMap<mlir::Location, const RecordedDiagnostic *> reportedAt;
-        for (auto &recorded : dryRunCapture)
+        // the value each report is about (its subject, SubjectScope), and its first report
+        llvm::DenseMap<mlir::Value, const RecordedDiagnostic *> reportOf;
+        for (auto &[subject, recorded] : dryRunCapture)
         {
-            reportedAt.try_emplace(recorded.loc, &recorded);
+            if (auto unit = countedUnitOf(subject))
+            {
+                reportOf.try_emplace(unit, &recorded);
+            }
         }
 
-        if (reportedAt.empty())
+        if (reportOf.empty())
         {
             return;
         }
 
-        // the values each report concerns: those an op it was reported at names
-        llvm::DenseMap<mlir::Value, const RecordedDiagnostic *> reportOf;
-        getFunction()->walk([&](mlir::Operation *op) {
-            auto found = reportedAt.find(op->getLoc());
-            if (found == reportedAt.end())
-            {
-                return;
-            }
-
-            if (auto unit = countedUnitOfOp(op))
-            {
-                reportOf.try_emplace(unit, found->second);
-            }
-
-            for (auto operand : op->getOperands())
-            {
-                reportOf.try_emplace(countedUnitOf(operand), found->second);
-            }
-        });
-
-        // The retains the dry run could not erase (the set makeStringCopies walks), and the reads it
-        // lent to a call that may free them (callCopies). A string the copy is made for stays a copy.
+        // The retains the dry run could not erase (the set makeStringCopies walks), the reads it lent
+        // to a call that may free them (callCopies), and a value reported that a call keeps (rc gives
+        // a keeping call no retain: retainKeptCountedArguments makes one for each). A string gets its
+        // copy first, as today; one copyForRetain refuses is refused.
         llvm::SetVector<mlir::Value> refused;
         llvm::SmallVector<mlir::Operation *> retains;
         getFunction()->walk([&](mlir::Operation *op) {
@@ -2062,10 +2068,24 @@ namespace own_inference
 
         for (auto *retain : retains)
         {
-            if (auto unit = countedUnitOfOp(retain))
+            auto unit = countedUnitOfOp(retain);
+            if (!unit)
             {
-                refused.insert(unit);
+                continue;
             }
+
+            auto type = unit.getType();
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type); refType && unit.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                type = refType.getElementType();
+            }
+
+            if (isCopyableValueAt(retain, type) && copyForRetain(retain))
+            {
+                continue;
+            }
+
+            refused.insert(unit);
         }
 
         for (auto [read, call] : callCopies)
@@ -2076,24 +2096,55 @@ namespace own_inference
             }
         }
 
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (!isCall(op))
+            {
+                return;
+            }
+
+            auto args = callArgs(op);
+            for (auto index : ownedParams(op))
+            {
+                if (static_cast<size_t>(index) < args.size() && reportOf.count(countedUnitOf(args[index])))
+                {
+                    refused.insert(countedUnitOf(args[index]));
+                }
+            }
+        });
+
         for (auto unit : refused)
         {
-            auto found = reportOf.find(unit);
-            if (!unit || found == reportOf.end() || countedValues.contains(unit))
+            if (!unit || countedValues.contains(unit))
             {
                 continue;
             }
 
-            // counted with its group, or not at all; warned once, for the value reported
+            // counted with its group, or not at all: when a report is about one of the group;
+            // warned once, with that report
             llvm::SetVector<mlir::Value> group;
             if (!countedGroup(unit, group))
             {
                 continue;
             }
 
+            const RecordedDiagnostic *report = nullptr;
+            for (auto member : group)
+            {
+                if (auto found = reportOf.find(member); found != reportOf.end())
+                {
+                    report = found->second;
+                    break;
+                }
+            }
+
+            if (!report)
+            {
+                continue;
+            }
+
             countedValues.insert(group.begin(), group.end());
             countedOrder.push_back(unit);
-            dryRunDiagnostics.try_emplace(unit, *found->second);
+            dryRunDiagnostics.try_emplace(unit, *report);
         }
     }
 
@@ -2173,60 +2224,30 @@ namespace own_inference
                 return;
             }
 
+            // one count for each kept parameter a counted value is given to, less the retains made
+            // right before the call already (callCopies: of the read the argument is a view of)
             auto args = callArgs(op);
+            llvm::MapVector<mlir::Value, llvm::SmallVector<mlir::Value>> kept;
             for (auto index : ownedParams(op))
             {
-                if (static_cast<size_t>(index) >= args.size() || !countedValues.contains(countedUnitOf(args[index])))
+                if (static_cast<size_t>(index) < args.size() && countedValues.contains(countedUnitOf(args[index])))
                 {
-                    continue;
+                    kept[rootOf(args[index])].push_back(args[index]);
                 }
+            }
 
-                // given a count for the call already (callCopies: a retain of the read the argument is a
-                // view of)
-                auto arg = args[index];
-                auto given = false;
+            for (auto &[root, given] : kept)
+            {
+                size_t retained = 0;
                 for (auto *prev = op->getPrevNode(); prev && mlir::isa<mlir_ts::RetainOp>(prev); prev = prev->getPrevNode())
                 {
-                    given = given || rootOf(prev->getOperand(0)) == rootOf(arg);
+                    retained += rootOf(prev->getOperand(0)) == root ? 1 : 0;
                 }
 
-                if (!given)
+                mlir::OpBuilder builder(op);
+                for (auto i = retained; i < given.size(); ++i)
                 {
-                    mlir::OpBuilder builder(op);
-                    builder.create<mlir_ts::RetainOp>(op->getLoc(), arg);
-                }
-            }
-        });
-    }
-
-    void OwnershipInferencePass::indexCountedLocations()
-    {
-        // only where the dry run reported, at an op that names a counted value: the real run's error
-        // there is that value's (`a value that borrows 'current'` of the global a counted field read
-        // is read through); an error anywhere else stays an error
-        llvm::DenseSet<mlir::Location> reported;
-        for (auto &recorded : dryRunCapture)
-        {
-            reported.insert(recorded.loc);
-        }
-
-        getFunction()->walk([&](mlir::Operation *op) {
-            if (!reported.contains(op->getLoc()))
-            {
-                return;
-            }
-
-            if (auto unit = countedUnitOfOp(op); unit && countedValues.contains(unit))
-            {
-                countedAt.try_emplace(op->getLoc(), unit);
-            }
-
-            for (auto operand : op->getOperands())
-            {
-                auto unit = countedUnitOf(operand);
-                if (countedValues.contains(unit))
-                {
-                    countedAt.try_emplace(op->getLoc(), unit);
+                    builder.create<mlir_ts::RetainOp>(op->getLoc(), given[i]);
                 }
             }
         });
