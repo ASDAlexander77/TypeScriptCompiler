@@ -121,8 +121,9 @@ and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fi
   field of an object literal (rc counts it with a retain of the whole literal), a store whose release of
   the field's old value another value's decision took (`p.v = p.v; p.v = p.v`), and a captured `const`
   given a counted value in a loop (was the lowering failure, now own's error at its place).
-- The 7 leaks are not the flag's: each leaks the same under own without the flag once its counted line is
-  removed, and each is flat with the flag once one shape is replaced - an array literal no local holds,
+- The 7 leaks are not the flag's: five of them (043, 152, 184, 290, 304) leak the same under own without
+  the flag once their counted lines are removed, and all seven are flat with the flag once one shape is
+  replaced - an array literal no local holds,
   indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). Own leaks that array without the flag, in
   the release from before this branch too (v0.0-pre-alpha134). It is an own bug, not fixed here.
 

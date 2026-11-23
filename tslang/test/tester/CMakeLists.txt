@@ -5950,10 +5950,10 @@ add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_tuple_in_union_stays_error.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 # ...and a value put into a field of a record built by value (the record's retain is erased, its
-# release goes through the field), and a captured `const` given a counted parameter (its retain no count
-# keeps; was a lowering failure at <unknown>), and a read whose store's release the dry run gave to
+# release goes through the field), and a captured `const` given a parameter's value (a group with a
+# captured local is not counted; was a lowering failure at <unknown>), and a read whose store's release the dry run gave to
 # another value's erased retain (`p.v = p.v` twice): own's errors, at their places
-foreach(fallback_case own_fallback_record_field_stays_error:15:20 own_fallback_captured_let_stays_error:16:15
+foreach(fallback_case own_fallback_record_field_stays_error:15:20 own_fallback_captured_let_stays_error:17:15
                       own_fallback_self_assign_stays_error:13:5)
     string(REPLACE ":" ";" fallback_case "${fallback_case}")
     list(GET fallback_case 0 fallback_test)

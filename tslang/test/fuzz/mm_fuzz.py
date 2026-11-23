@@ -529,7 +529,10 @@ class Gen:
             if c < 0.7:
                 # a closure capturing a string
                 return "(k: number): string => \"c\" + k + %s" % self.expr(ctx, "S", 0.2, 3)
-            return "(k: number): string => %s" % self.pick(["\"f\" + k", "`g${k}`", "ms(k + 1)", "[\"e\" + k][0]"])
+            bodies = ["\"f\" + k", "`g${k}`", "ms(k + 1)", "[\"e\" + k][0]"]
+            if "literal-temp" in self.avoid:
+                bodies[3] = "\"e\" + k"
+            return "(k: number): string => %s" % self.pick(bodies)
         raise ValueError(ty)
 
     def arg(self, ctx, ty, previous):

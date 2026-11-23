@@ -210,9 +210,11 @@ retains it.
   local and keep the other.
 - A value given to a call that keeps it, for which the repair makes a copy (`callCopies`: a string,
   `any`), gets its copy as without the flag, never a count.
-- After the real run, a retain left that no count keeps (an error taken for a counted value's note,
-  about another value's retain, such as a captured `const` given a counted parameter) is an error at
-  its place, the one recorded there, not a lowering failure.
+- A captured local declared from a counted local's read (`const n8 = p2` with `() => n8...` in a loop)
+  is in its group and cannot be counted, so the group is not: own's error stays. (Counted, the real
+  run's error about the captured local was taken for the counted value's note, and its retain reached
+  the lowering.) The lowering's "ownership inference left a retain behind" stays the check that no
+  unmarked retain is left.
 
 **The word is rc's count minus one.** Own's word counts owners beyond the first, so for each counted
 value the kept rc ops must leave the word at rc's count minus one. *(Corrected 2026-11-23 from Task 2,

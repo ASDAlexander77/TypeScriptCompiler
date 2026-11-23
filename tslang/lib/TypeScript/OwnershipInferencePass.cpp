@@ -330,7 +330,6 @@ namespace own_inference
 
         markCountedRetains();
         warnCounted();
-        refuseUnkeptRetains();
         // an error nobody counted, or a failure no counted value's error explains
         if (uncountedErrors > 0 || (failureSignalled && countedErrors.empty()))
         {
@@ -2547,73 +2546,6 @@ namespace own_inference
             {
                 op->setAttr(OWN_COUNTED_ATTR_NAME, unit);
             }
-        });
-    }
-
-    void OwnershipInferencePass::refuseUnkeptRetains()
-    {
-        if (countedValues.empty())
-        {
-            return;
-        }
-
-        // A retain the real run neither erased nor kept for a counted value: an error it raised was taken
-        // for a counted value's note (its subject is in a counted group), but the retain it was about is
-        // another value's - a captured `let` given a counted parameter in a loop (`const n8 = p2` with
-        // `() => n8...`). Nothing counts that one, so its ops are not whole, and the lowering would stop
-        // at it with no place to show. The error it stands for stays an error, at its place: the one
-        // recorded there. (A handle's retains are rc's: RetainOpLowering.)
-        getFunction()->walk([&](mlir::Operation *op) {
-            if (!mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) || op->hasAttr(OWN_COUNTED_ATTR_NAME))
-            {
-                return;
-            }
-
-            auto type = op->getOperand(0).getType();
-            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type); refType && mlir::isa<mlir_ts::RetainSlotOp>(op))
-            {
-                type = refType.getElementType();
-            }
-
-            if (MLIRTypeHelper::isSharedHandleType(type))
-            {
-                return;
-            }
-
-            // (the same place: a location may be wrapped - a name, a call site - around its line and column)
-            auto place = [](mlir::Location loc) {
-                auto fileLoc = loc->findInstanceOf<mlir::FileLineColLoc>();
-                return fileLoc ? std::make_tuple(fileLoc.getFilename().str(), fileLoc.getLine(), fileLoc.getColumn())
-                               : std::make_tuple(std::string(), 0u, 0u);
-            };
-
-            const RecordedDiagnostic *recorded = nullptr;
-            for (auto &[unit, error] : countedErrors)
-            {
-                if (error.loc == op->getLoc() || (std::get<1>(place(error.loc)) != 0 && place(error.loc) == place(op->getLoc())))
-                {
-                    recorded = &error;
-                    break;
-                }
-            }
-
-            // Only a retain an error was taken away from: one the real run reported at its place and
-            // gave to a counted value. (A retain later passes take out - a capture's in a closure a
-            // thread starts - is left alone, as without counts.)
-            if (!recorded)
-            {
-                return;
-            }
-
-            // (a refusal: the handler passes it on, as an error nobody counted)
-            ++refusingByDesign;
-            auto diag = mlir::emitError(recorded->loc, recorded->message);
-            for (auto &[noteLoc, note] : recorded->notes)
-            {
-                diag.attachNote(noteLoc) << note;
-            }
-
-            --refusingByDesign;
         });
     }
 

@@ -289,9 +289,6 @@ class OwnershipInferencePass
     void markCountedRetains();
     // One warning per counted value, its recorded error and notes as notes.
     void warnCounted();
-    // With counted values: a retain left behind that no count keeps is an error at its place, not a
-    // lowering failure.
-    void refuseUnkeptRetains();
 
     // `op->setAttr(name, unit)`, undone after the dry run when the op did not have it
     void setAttrTracked(mlir::Operation *op, llvm::StringRef name);
