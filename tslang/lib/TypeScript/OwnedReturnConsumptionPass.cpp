@@ -2464,12 +2464,36 @@ class OwnedReturnConsumptionPass
             // so the receiver's retain after the `ts.If` comes too late. The branch retains it first.
             // An element read out of a new array the branch made (`c ? ["c" + i][0] : d`) is the same under rc:
             // the array is given back at the end of the branch (holdReadOnlyNewArrays), and with it the element.
-            // So is what is read out of an element of one, any depth down: an element of an inner array
-            // (`c ? [[mk(i)]][0][0] : null`), a field of an element (`c ? [mk(i)][0].s : null`, `c ? [{ v: mk(i)
-            // }][0].v : null`), and so on - the outer array is given back there, and with it all it holds.
+            // So is what is read out of an element of one, through elements and fields: an element of an inner
+            // array (`c ? [[mk(i)]][0][0] : null`), a field of an element (`c ? [mk(i)][0].s : null`, `c ? [{ v:
+            // mk(i) }][0].v : null`), and so on - the outer array is given back there, and with it all it holds.
+            // A cast that only narrows a union or an optional to a member (`!`, `as N`, `<N>` of an `N | null`
+            // element) is the same block, and is looked through on the way.
+            auto narrowed = [](mlir::Value value) {
+                while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    if (!mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getIn().getType()) ||
+                        !mlir::isa<mlir_ts::ClassType, mlir_ts::StringType, mlir_ts::ArrayType, mlir_ts::UnionType>(
+                            castOp.getType()))
+                    {
+                        break;
+                    }
+
+                    value = castOp.getIn();
+                }
+
+                return value;
+            };
             auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
                 auto value = producerOf(resultOp->getOperand(0));
-                if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
+                // (through widening and narrowing casts alike)
+                auto read = value;
+                for (auto peeled = narrowed(read); peeled != read; peeled = narrowed(read))
+                {
+                    read = producerOf(peeled);
+                }
+
+                if (auto loadOp = read.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
                 {
                     // the place read, walked down through fields and elements to the array it is in
                     auto place = loadOp.getReference();
@@ -2478,7 +2502,7 @@ class OwnedReturnConsumptionPass
                         if (auto propertyRefOp = place.getDefiningOp<mlir_ts::PropertyRefOp>())
                         {
                             // a field of a value held in place (a tuple element), or of an object read out
-                            auto object = propertyRefOp.getObjectRef();
+                            auto object = narrowed(propertyRefOp.getObjectRef());
                             auto objectRead = object.getDefiningOp<mlir_ts::LoadOp>();
                             place = mlir::isa<mlir_ts::RefType>(object.getType()) ? object
                                     : objectRead                                 ? objectRead.getReference()
@@ -2492,7 +2516,8 @@ class OwnedReturnConsumptionPass
                             break;
                         }
 
-                        auto *arrayOp = elementRefOp->getOperand(0).getDefiningOp();
+                        auto array = narrowed(elementRefOp->getOperand(0));
+                        auto *arrayOp = array.getDefiningOp();
                         if (arrayOp && isNewArray(arrayOp) && arrayOp->getParentRegion() == resultOp->getParentRegion())
                         {
                             return true;

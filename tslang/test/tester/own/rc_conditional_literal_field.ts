@@ -1,9 +1,10 @@
 // -mm=rc: a conditional expression whose branch yields a field read out of an element of an array literal
-// (`c ? [mk(i)][0].s : null`, `c ? [{ v: mk(i) }][0].v : null`, a record in a record, an array in a record): the
-// branch retains it for the conditional's result before the literal is given back at the end of the branch.
-// Before, the literal was released with what it holds and the receiver's retain came too late (a use after
-// free the guard-page heap faults at). Under gc the same program; own refuses `[mk(i)][0].s` (a borrow of the
-// element's field), so it is not run under own.
+// (`c ? [{ v: mk(i) }][0].v : null`, a record in a record, an array in a record), also past a cast that only
+// narrows (`[[<N | null>mk(i)]][0][0]!.s`, `([[<N | null>mk(i)]][0][0] as N).s`): the branch retains it for the
+// conditional's result before the literal is given back at the end of the branch. Before, the literal was
+// released with what it holds and the receiver's retain came too late (a use after free the guard-page heap
+// faults at). The same program under gc and own. (`c ? [mk(i)][0].s : null`, which own refuses, is in
+// rc_conditional_element_field.)
 class N {
     x: number;
     s: string;
@@ -41,12 +42,7 @@ function main() {
     for (let i = 0; i < 400; i++) {
         const c = i % 2 == 0;
 
-        // a field read out of an element: of an object, of a record literal, of a record in a record
-        const f = c ? [mk(i)][0].s : null;
-        if (f) {
-            total += f.length;
-        }
-
+        // a field read out of an element: of a record literal, of a record in a record, of an array in a record
         const g = c ? [{ v: mk(i) }][0].v : null;
         if (g) {
             total += g.x + g.s.length;
@@ -67,10 +63,31 @@ function main() {
             total += l.x + l.s.length;
         }
 
+        // ...past a cast that only narrows an `N | null` element: `!`, `as N`, a record's field `!`, a flat literal
+        const m = c ? [[<N | null>mk(i)]][0][0]!.s : null;
+        if (m) {
+            total += m.length;
+        }
+
+        const p = c ? ([[<N | null>mk(i)]][0][0] as N).s : null;
+        if (p) {
+            total += p.length;
+        }
+
+        const q = c ? [{ v: <N | null>mk(i) }][0].v!.s : null;
+        if (q) {
+            total += q.length;
+        }
+
+        const r = c ? [<N | null>mk(i)][0]!.s : null;
+        if (r) {
+            total += r.length;
+        }
+
         churn();
     }
 
     print(total);
-    assert(total == 123125, "total");
+    assert(total == 125360, "total");
     print("done.");
 }

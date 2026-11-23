@@ -86,10 +86,21 @@ function main() {
             total += e.x + e.s.length;
         }
 
+        // an `N | null` element narrowed by a cast (`<N>`), nested and flat
+        const u = c ? <N>[[<N | null>mk(i)]][0][0] : null;
+        if (u) {
+            total += u.x + u.s.length;
+        }
+
+        const w = c ? <N>[<N | null>mk(i)][0] : null;
+        if (w) {
+            total += w.x + w.s.length;
+        }
+
         churn();
     }
 
     print(total);
-    assert(total == 261827, "total");
+    assert(total == 342917, "total");
     print("done.");
 }
