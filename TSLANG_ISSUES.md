@@ -2750,4 +2750,4 @@ Tests `00tslang_issue_169.ts` (compile, JIT, gc, rc, none, own).
 Still open: under gc and none, an `any` taken from an `object` holds the `object` (`typeof` its tag "object"), so
 `o === a` is false and `<L>a` throws "Can't cast from any type"; under rc both work.
 
-Tests `00tslang_issue_170.ts` (rc); `00tslang_issue_169.ts` checks the null and `unknown` comparisons in every model.
+Tests `00tslang_issue_170.ts` (gc, rc, none); `00tslang_issue_169.ts` checks the null and `unknown` comparisons in every model.
