@@ -197,12 +197,14 @@ namespace mlirgen
         {
             newClassPtr->processingModule = theModule.getOperation();
             newClassPtr->processingDeclaration = classDeclarationAST;
+            newClassPtr->processingFile = mainSourceFileName.str();
         }
         else if (!newClassPtr->processingDeclaration)
         {
             // what the class declares is read from it while it is first declared too (`typeof this.foo` as a
             // field's type, getTypeByTypeQuery)
             newClassPtr->processingDeclaration = classDeclarationAST;
+            newClassPtr->processingFile = mainSourceFileName.str();
         }
 
         setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
@@ -1586,6 +1588,8 @@ namespace mlirgen
             }
         }
 
+        addInheritedStaticsReadingThis(classDeclarationAST, newClassPtr);
+
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -2696,6 +2700,99 @@ namespace mlirgen
         }
 
         return mlir::success();
+    }
+
+    // `this` in a static method is the class it is called through: `Derived.me()` of `Base`'s
+    // `static me() { return this; }` is Derived (TSLANG 108). A static method is compiled once, with
+    // `this` the class that declares it, so each subclass gets a copy of its own of a base class's static
+    // method that reads `this` - the base's declaration, compiled as if the subclass declared it, which is
+    // an override in its vtable too, so a call through a `typeof Base` holding Derived reaches it. Not one
+    // that reads `super` (that is the base's base, not the base), nor one of a generic base, of another
+    // file or namespace, or one the subclass declares itself: those keep the base's method.
+    void MLIRGenImpl::addInheritedStaticsReadingThis(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr)
+    {
+        auto readsThisNotSuper = [](Node body) {
+            auto readsThis = false;
+            auto readsSuper = false;
+            ts::FuncT<> visitNode;
+            ts::ArrayFuncT<> visitArray;
+            visitNode = [&](Node node) -> Node {
+                if (!node || readsSuper)
+                {
+                    return undefined;
+                }
+
+                // a function or a class of its own has a `this` of its own; an arrow reads the method's
+                if (node == SyntaxKind::FunctionDeclaration || node == SyntaxKind::FunctionExpression ||
+                    node == SyntaxKind::ClassDeclaration || node == SyntaxKind::ClassExpression)
+                {
+                    return undefined;
+                }
+
+                if (node == SyntaxKind::ThisKeyword)
+                {
+                    readsThis = true;
+                }
+                else if (node == SyntaxKind::SuperKeyword)
+                {
+                    readsSuper = true;
+                }
+
+                ts::forEachChild(node, visitNode, visitArray);
+                return undefined;
+            };
+            visitArray = [&](NodeArray<Node> array) -> Node {
+                for (auto node : array)
+                {
+                    visitNode(node);
+                }
+
+                return undefined;
+            };
+            visitNode(body);
+            return readsThis && !readsSuper;
+        };
+
+        auto declares = [](ClassLikeDeclaration declaration, StringRef name) {
+            return llvm::any_of(declaration->members, [&](ClassElement member) {
+                return member->name && hasModifier(member, SyntaxKind::StaticKeyword) && MLIRHelper::getName(member->name) == name;
+            });
+        };
+
+        llvm::StringSet<> seen;
+        for (auto base = newClassPtr->baseClasses.empty() ? ClassInfo::TypePtr() : newClassPtr->baseClasses.front(); base;
+             base = base->baseClasses.empty() ? ClassInfo::TypePtr() : base->baseClasses.front())
+        {
+            auto baseDeclaration = base->processingDeclaration;
+            if (!baseDeclaration || !base->typeParamsWithArgs.empty() || base->isDeclaration || base->isCppVTable ||
+                base->processingFile != newClassPtr->processingFile || base->elementNamespace != newClassPtr->elementNamespace)
+            {
+                break;
+            }
+
+            for (auto member : baseDeclaration->members)
+            {
+                if (member != SyntaxKind::MethodDeclaration || !hasModifier(member, SyntaxKind::StaticKeyword) ||
+                    hasModifier(member, SyntaxKind::AbstractKeyword) || !member->name)
+                {
+                    continue;
+                }
+
+                auto method = member.as<MethodDeclaration>();
+                auto name = MLIRHelper::getName(method->name);
+                // the nearest declaration counts: one in a class between hides one further up
+                if (!method->body || !seen.insert(name).second || declares(classDeclarationAST, name) ||
+                    !readsThisNotSuper(method->body))
+                {
+                    continue;
+                }
+
+                if (llvm::none_of(newClassPtr->extraMembers, [&](ClassElement extra) { return extra == member; }))
+                {
+                    newClassPtr->extraMembers.push_back(member);
+                }
+            }
+        }
     }
 
     mlir::LogicalResult MLIRGenImpl::refuseWeakDecorator(Node node)

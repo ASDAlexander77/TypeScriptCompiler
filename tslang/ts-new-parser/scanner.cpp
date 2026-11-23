@@ -2322,6 +2322,8 @@ auto Scanner::scanIdentifierParts() -> string
             ch = peekExtendedUnicodeEscape();
             if (ch >= CharacterCodes::nullCharacter && isIdentifierPart(ch, languageVersion))
             {
+                // what came since the last escape, then this one (`\u{61}x\u{62}` kept no `x`)
+                result += text.substring(start, pos);
                 pos += 3;
                 tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
                 result += scanExtendedUnicodeEscape();
@@ -2954,7 +2956,10 @@ auto Scanner::scan() -> SyntaxKind
             {
                 pos += 3;
                 tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-                tokenValue = scanExtendedUnicodeEscape() + scanIdentifierParts();
+                // the escape first, then the rest: the operands of `+` may be evaluated in either order,
+                // and the rest read first takes the escape's hex digits as identifier characters (TSLANG 147)
+                tokenValue = scanExtendedUnicodeEscape();
+                tokenValue += scanIdentifierParts();
                 return token = getIdentifierToken();
             }
 
@@ -2986,7 +2991,8 @@ auto Scanner::scan() -> SyntaxKind
                 if ((int)extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
                     pos += 3;
                     tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-                    tokenValue = S("#") + scanExtendedUnicodeEscape() + scanIdentifierParts();
+                    tokenValue = S("#") + scanExtendedUnicodeEscape(); // before the rest (TSLANG 147)
+                    tokenValue += scanIdentifierParts();
                     return token = SyntaxKind::PrivateIdentifier;
                 }
 
@@ -3538,7 +3544,8 @@ auto Scanner::scanJsDocToken() -> SyntaxKind
         {
             pos += 3;
             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-            tokenValue = scanExtendedUnicodeEscape() + scanIdentifierParts();
+            tokenValue = scanExtendedUnicodeEscape(); // before the rest (TSLANG 147)
+            tokenValue += scanIdentifierParts();
             return token = getIdentifierToken();
         }
 

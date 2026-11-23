@@ -6782,9 +6782,11 @@ class MLIRGenImpl
             }
 
             // a case compares a @value value as `===` does: two of them have no identity, and
-            // `case null:` asks whether a `T | null` holds a value
+            // `case null:` asks whether a `T | null` holds a value. A union too: cast to the case's type,
+            // `"1.50"` of a `number | string` matched `case 1.5` (TSLANG 161)
             mlir::Value condition;
-            if (MLIRTypeHelper::holdsValueType(switchValue.getType()) || MLIRTypeHelper::holdsValueType(caseValue.getType()))
+            if (MLIRTypeHelper::holdsValueType(switchValue.getType()) || MLIRTypeHelper::holdsValueType(caseValue.getType()) ||
+                isa<mlir_ts::UnionType>(switchValue.getType()))
             {
                 auto compared = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsEqualsToken, switchValue, caseValue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(compared)
@@ -11372,8 +11374,34 @@ class MLIRGenImpl
     // Whether a union's member can be compared with a value: two primitives can (a string with a
     // number converts, as it did), two references when one casts to the other; null, undefined, a
     // class against a number, never.
-    bool isComparableForEquality(mlir::Location location, mlir::Type memberType, mlir::Type valueType)
+    // Under `===` and `!==` (strict) two primitives are compared only when they are of one kind - both
+    // numbers, both strings, both booleans or both bigints: `"1.50" === 1.5` is false, where the string
+    // converted made it true (TSLANG 161). A member of another kind is simply not equal.
+    bool isComparableForEquality(mlir::Location location, mlir::Type memberType, mlir::Type valueType, bool strict = false)
     {
+        if (strict)
+        {
+            auto primitiveKind = [&](mlir::Type type) -> int {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+                {
+                    type = literalType.getElementType();
+                }
+
+                if (isPromotableNumeric(type)) return 1;
+                if (isa<mlir_ts::StringType, mlir_ts::CharType>(type)) return 2;
+                if (isa<mlir_ts::BooleanType>(type)) return 3;
+                if (isa<mlir_ts::BigIntType>(type)) return 4;
+                return 0;
+            };
+
+            auto memberKind = primitiveKind(memberType);
+            auto valueKind = primitiveKind(valueType);
+            if (memberKind && valueKind)
+            {
+                return memberKind == valueKind;
+            }
+        }
+
         auto stripLiteral = [](mlir::Type type) {
             auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
             return literalType ? literalType.getElementType() : type;
@@ -11442,6 +11470,7 @@ class MLIRGenImpl
         auto unionValue = leftUnionType ? leftExpressionValue : rightExpressionValue;
         auto value = leftUnionType ? rightExpressionValue : leftExpressionValue;
         auto valueType = value.getType();
+        auto strict = opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken;
 
         mlir::Type baseType;
         if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
@@ -11456,7 +11485,7 @@ class MLIRGenImpl
         }
 
         if (!unionIsOptional
-            && llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isComparableForEquality(location, member, valueType); }))
+            && llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isComparableForEquality(location, member, valueType, strict); }))
         {
             return mlir::success();
         }
@@ -11513,7 +11542,7 @@ class MLIRGenImpl
         ss << S("function __union_eq_") << stows(opName(opCode)) << S("<L, R>(l: L, r: R) {\n");
         for (auto member : unionType.getTypes())
         {
-            if (!isComparableForEquality(location, member, valueType))
+            if (!isComparableForEquality(location, member, valueType, strict))
             {
                 continue;
             }
@@ -18087,6 +18116,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassIndexMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 const GenContext &genContext);
+
+    void addInheritedStaticsReadingThis(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr);
 
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
                                                  ClassInfo::TypePtr newClassPtr, ClassElement classMember,

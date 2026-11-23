@@ -1506,7 +1506,7 @@ A `const` still names the class itself. Test: `00class_value_inferred.ts` (gc/rc
 Still open:
 - `this` in a static method is the class that declares the method, also when the method is called through a
   subclass (`Derived.me()` returns `Base`). In JavaScript it is `Derived`; static methods are not given the
-  class they were called through. It was already the case before this change.
+  class they were called through. It was already the case before this change. Fixed by 162.
 - `class X extends k` where `k` is a class value ("its class is known at run time only").
 
 Not fixed in the third batch (design calls):
@@ -2054,7 +2054,7 @@ Tests: `00overload_more_params.ts`, `00object_generic_members.ts` (compile, JIT,
 
 Still open, looked at: a computed property name that is not a constant in an object literal (`{ [m]: i }`) needs
 keys known at run time; an identifier starting with an extended Unicode escape (`const \u{61} = 1`) fails in the
-parser ("Hexadecimal digit expected"), though the escape inside one and in a string scans - some re-scan of the token;
+parser ("Hexadecimal digit expected"), though the escape inside one and in a string scans - some re-scan of the token (fixed by 162);
 the same non-exported class in two declarations of one namespace needs each declaration's own scope.
 
 Tests: `00generic_new_without_args.ts` (compile, JIT, rc, own).
@@ -2497,7 +2497,26 @@ Still open, looked at:
   is not given back.
 - every model: a generator that names itself with no declared type ("can't resolve name": the type of the call is
   what is being found; tsc refuses it too, TS7023). `"1.50" === 1.5` of a `number | string` member is true (the
-  text is converted), as before.
+  text is converted), as before (fixed by 162).
 
 Tests `00optional_union_compare.ts`, `00array_literal_argument.ts`, `00generator_yield_star_parameter.ts` (compile,
 JIT, rc, own).
+
+162 (leftovers of 108, 147 and 161, 2026-11-23). Fixed:
+- `this` in a static method is the class it is called through: `Derived.me()` of `Base`'s `static me() { return this; }`
+  is `Derived`, `this.label` reads Derived's static, and `new this()` makes a Derived. A static method is compiled
+  once, with `this` the class that declares it, so a subclass now gets a copy of its own of each base class static
+  method that reads `this`: the base's declaration compiled as if the subclass declared it (an override in its
+  vtable too, so a call through a `typeof Base` holding Derived reaches it; addInheritedStaticsReadingThis). Not
+  one that reads `super` (that would be the base's base), one of a generic base, one declared in another file or
+  namespace, or one the subclass declares itself: those keep the base's method, as before.
+- `const \u{61} = 1` scans: `tokenValue = scanExtendedUnicodeEscape() + scanIdentifierParts()` left the order of
+  the two calls to the compiler, and MSVC scanned the rest of the name first, which took the escape's hex digits.
+  Also, plain characters between two braced escapes in one name (`\u{61}x\u{62}`) were dropped. Still open: a
+  private name with any escape (`#\u{78}`) is not found again by `this.#x`.
+- `===` and `!==` between a union of primitives and a value (`u === 1.5` with `u: number | string`) converted the
+  member it held to the value's type first, so `"1.50" === 1.5` was true. A member of another kind is now not
+  equal (isComparableForEquality, strict), `switch` cases of a union value compare the same way, and `==` still
+  converts.
+
+Tests `00tslang_issue_108.ts`, `00tslang_issue_147.ts`, `00tslang_issue_161.ts` (compile, JIT, gc, rc, none, own).
