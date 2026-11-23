@@ -172,8 +172,9 @@ class OwnedReturnConsumptionPass
         // back even when no function here is classified as returning owned.
         if (returnsOwned.empty() && !anyDeclaredRecord)
         {
+            ownNewArrayArguments(mth, module);
             claimGlobalInitializers(mth, module);
-            holdReadOnlyNewArrays(module);
+            holdReadOnlyNewArrays(mth, module);
             releaseDiscardedTemporaries(mth, module);
             return;
         }
@@ -303,11 +304,13 @@ class OwnedReturnConsumptionPass
             op->erase();
         }
 
+        ownNewArrayArguments(mth, module);
+
         consumeConditionalResults(mth, module);
 
         claimGlobalInitializers(mth, module);
 
-        holdReadOnlyNewArrays(module);
+        holdReadOnlyNewArrays(mth, module);
 
         releaseDiscardedTemporaries(mth, module);
     }
@@ -424,6 +427,190 @@ class OwnedReturnConsumptionPass
                (mlir::isa<mlir_ts::LoadOp>(op) && op->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
     }
 
+    // A new array given straight to a call (`g([mk(1)])`) is born at count 0 (bornUncounted), and
+    // nothing else owns it: a count the callee took and gave back - `const a = p` in a loop, or a
+    // parameter it assigns, copied into an owned local - freed the array the callee still read.
+    // Under rc the caller holds it across the call too, and so gives it back after the call,
+    // which nothing did before.
+    // A literal with a spread (`f(...xs)`, `g([...xs])`) is a new array too, read out of the slot it was
+    // filled in (SPREAD_ARRAY_LITERAL_ATTR_NAME) - under rc only: own's handling (ownNewArrayArguments) is
+    // for the shapes it was written for.
+    static bool arrayMadeFor(mlir::Value value, mlir::Operation *call, bool spreadLiterals)
+    {
+        auto *definingOp = value.getDefiningOp();
+        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
+        auto isNewArray =
+            mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(definingOp) ||
+            (castOp && mlir::isa<mlir_ts::ConstArrayType>(castOp.getIn().getType()) &&
+             mlir::isa<mlir_ts::ArrayType>(value.getType())) ||
+            (spreadLiterals && mlir::isa_and_nonnull<mlir_ts::LoadOp>(definingOp) &&
+             definingOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
+        if (!isNewArray)
+        {
+            return false;
+        }
+
+        // its one use is the call, through casts
+        while (value.hasOneUse())
+        {
+            auto *user = *value.getUsers().begin();
+            if (user == call)
+            {
+                return true;
+            }
+
+            auto userCastOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+            if (!userCastOp)
+            {
+                return false;
+            }
+
+            value = userCastOp.getRes();
+        }
+
+        return false;
+    }
+
+    // -mm=own: may a new array own what it holds, so that giving it back gives its elements back too? One of
+    // elements that own nothing, or a literal that can own what it holds (holdsOnlyMovedInElements: new values
+    // moved into it, and text it is given copies of - `["x" + i, mk()]`, `[new C()]`, `["x" + i, s]`). One of
+    // strings or objects something else owns - a rest parameter's (`logParts(text)`), `[o]` of a local `o` -
+    // borrows them (spec 83), and owned it would take them over.
+    static bool ownsWhatItHolds(MLIRTypeHelper &mth, mlir::Operation *arrayOp)
+    {
+        auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(arrayOp->getResult(0).getType());
+        return arrayType &&
+               (!mth.ownsHeapMemory(arrayOp->getLoc(), arrayType.getElementType()) || holdsOnlyMovedInElements(mth, arrayOp));
+    }
+
+    // Under own nothing gave a new array given to a call back at all (`len([i, 1, 2])`, 400 bytes a call; the
+    // optimizer hid it where the array went nowhere else, and a callee returning a record that borrows it -
+    // `mh([...])` returning `{ a }` - leaked it at any level). It is a new value as `new C()` is: marked owned,
+    // it is released at the end of the block when nothing takes it (releaseDiscardedTemporaries), and moved
+    // into a callee that keeps it - when it owns what it holds (ownsWhatItHolds): nothing else gives the new
+    // values back, so every call leaked the array and what it held (the classifyArgumentArrays of the
+    // inference leaves such an array as it is).
+    // It runs once the results of the calls are settled: a call's result (`f([mk(1), mk(2)])`) is marked an
+    // owned result moved into the literal there, so before it the literal looked as if it borrowed them and
+    // was never given back.
+    void ownNewArrayArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        module.walk([&](mlir::Operation *op) {
+            if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
+                !op->getParentOfType<mlir::FunctionOpInterface>())
+            {
+                return;
+            }
+
+            llvm::SmallPtrSet<mlir::Value, 4> seen;
+            for (auto argument : own_facts::callArgs(op))
+            {
+                // a method's object: `this` of the method bound to it
+                if (auto getThisOp = argument.getDefiningOp<mlir_ts::GetThisOp>())
+                {
+                    auto *boundOp = getThisOp->getOperand(0).getDefiningOp();
+                    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+                    {
+                        argument = boundOp->getOperand(0);
+                    }
+                }
+
+                auto *definingOp = argument.getDefiningOp();
+                if (!definingOp || !mlir::isa<mlir_ts::ArrayType>(argument.getType()) || !seen.insert(argument).second ||
+                    definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) || !ownsWhatItHolds(mth, definingOp) ||
+                    !(arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
+                {
+                    continue;
+                }
+
+                copyBorrowedTextElements(mth, definingOp);
+                definingOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+        });
+    }
+
+    // -mm=own (user ruling 11-23): a `let` given a string read out of a temporary array literal
+    // (`let st: string = ["s" + i, ms(i)][1]`) holds a copy of it, made the way the literal's borrowed text
+    // is (copyBorrowedTextElements): the literal is given back at the end of its block
+    // (holdReadOnlyNewArrays), and a `let` borrowing its element could not be given another value after it
+    // (`st = [..][0]` in a loop: "cannot be assigned"), which own accepted only while the literal leaked. The
+    // copy is the local's own: it consumes it in place of the retain of its declaration. An object element
+    // stays a borrow, as out of a named array.
+    static void copyTextElementsIntoLocals(mlir::Operation *arrayOp)
+    {
+        for (auto *user : arrayOp->getResult(0).getUsers())
+        {
+            auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
+            if (!elementRefOp)
+            {
+                continue;
+            }
+
+            for (auto *refUser : elementRefOp->getUsers())
+            {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(refUser);
+                if (!loadOp || !own_facts::isCopyableString(loadOp.getType()))
+                {
+                    continue;
+                }
+
+                for (auto &use : llvm::make_early_inc_range(loadOp->getUses()))
+                {
+                    // the `let` the element reaches, through the casts that only widen it (`let st: string | null`,
+                    // an optional, a union), each the one use of the one before
+                    mlir::Value value = loadOp.getResult();
+                    auto *user = use.getOwner();
+                    while (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) &&
+                           user->getNumResults() == 1 && user->getResult(0).hasOneUse())
+                    {
+                        value = user->getResult(0);
+                        user = *value.getUsers().begin();
+                    }
+
+                    auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                    if (!varOp || varOp.getInitializer() != value || !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) ||
+                        varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) || varOp.getCaptured().value_or(false))
+                    {
+                        continue;
+                    }
+
+                    // the declaration's retain, which the copy stands in for. A declaration that took none has
+                    // nothing for a copy to consume: the `let` is left the borrow it was, which fails safe (at
+                    // worst own refuses a later assignment; nothing is freed early).
+                    mlir::Operation *retainSlot = nullptr;
+                    for (auto *slotUser : varOp.getResult().getUsers())
+                    {
+                        if (mlir::isa<mlir_ts::RetainSlotOp>(slotUser) && slotUser->getBlock() == varOp->getBlock())
+                        {
+                            retainSlot = slotUser;
+                            break;
+                        }
+                    }
+
+                    if (!retainSlot)
+                    {
+                        continue;
+                    }
+
+                    // right after the read: the widening casts, if any, are of the copy
+                    mlir::OpBuilder builder(varOp->getContext());
+                    builder.setInsertionPointAfter(loadOp);
+                    auto copy = builder.create<mlir_ts::StringCopyOp>(loadOp->getLoc(), loadOp.getType(), loadOp.getResult());
+                    copy->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(varOp->getContext()));
+                    copy->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp->getContext()));
+                    use.set(copy);
+                    varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp->getContext()));
+                    retainSlot->erase();
+                }
+            }
+        }
+    }
+
     // A new array only read where it is made - `[a, b].length`, `[a, b][i]`, `[...xs, y].length` - is born
     // uncounted (bornUncounted), holding a count of each element, and no receiver ever takes one: a local,
     // a call (which holds it, see arrayMadeFor), a field or a return each do, and give it back. Nothing gave
@@ -433,17 +620,29 @@ class OwnedReturnConsumptionPass
     // reference - qualify; any other use leaves it to whatever already handles that use. An element a `?:`
     // branch yields (`c ? [s][0] : d`) qualifies once the branch has taken a count of it for the result
     // (consumeConditionalResults, borrowsBranchTemporary), which runs first.
-    void holdReadOnlyNewArrays(mlir::ModuleOp module)
+    // Under own the same arrays leaked as well (`["k" + i, s][1]`, `for (const s of ["a" + i])`): nothing holds
+    // them, and an element read out of one is a borrow of it, as out of a local's array - a kept string is a
+    // copy, a kept object refused (OwnershipInferencePass). So the array is given back at the end of its block,
+    // as a local holding it is at the end of its scope, once it owns what it holds (ownsWhatItHolds; a literal
+    // of borrowed objects stays as it was). No count to take: own's release frees it.
+    void holdReadOnlyNewArrays(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
-        if (!compileOptions.isRefCounted())
+        if (!compileOptions.tracksOwnership())
         {
             return;
         }
 
+        auto own = compileOptions.memoryModel == MemoryModelOwn;
         llvm::SmallVector<mlir::Operation *> arrays;
         module.walk([&](mlir::Operation *op) {
             if (!isNewArray(op) || op->getNumResults() != 1 || !mlir::isa<mlir_ts::ArrayType>(op->getResult(0).getType()) ||
                 op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->use_empty() || !op->getParentOfType<mlir_ts::FuncOp>())
+            {
+                return;
+            }
+
+            // (a spread literal's slot owns what was pushed into it: own takes or copies each value pushed)
+            if (own && mlir::isa<mlir_ts::CreateArrayOp>(op) && !ownsWhatItHolds(mth, op))
             {
                 return;
             }
@@ -502,9 +701,18 @@ class OwnedReturnConsumptionPass
 
         for (auto *op : arrays)
         {
-            mlir::OpBuilder builder(op->getContext());
-            builder.setInsertionPointAfter(op);
-            builder.create<mlir_ts::RetainOp>(op->getLoc(), op->getResult(0));
+            if (own)
+            {
+                copyBorrowedTextElements(mth, op);
+                copyTextElementsIntoLocals(op);
+            }
+            else
+            {
+                mlir::OpBuilder builder(op->getContext());
+                builder.setInsertionPointAfter(op);
+                builder.create<mlir_ts::RetainOp>(op->getLoc(), op->getResult(0));
+            }
+
             op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
         }
     }
@@ -833,49 +1041,6 @@ class OwnedReturnConsumptionPass
             reads.push_back(value);
         };
 
-        // A new array given straight to a call (`g([mk(1)])`) is born at count 0 (bornUncounted), and
-        // nothing else owns it: a count the callee took and gave back - `const a = p` in a loop, or a
-        // parameter it assigns, copied into an owned local - freed the array the callee still read.
-        // Under rc the caller holds it across the call too, and so gives it back after the call,
-        // which nothing did before.
-        // A literal with a spread (`f(...xs)`, `g([...xs])`) is a new array too, read out of the slot it was
-        // filled in (SPREAD_ARRAY_LITERAL_ATTR_NAME) - under rc only: own's handling below is for the
-        // shapes it was written for.
-        auto arrayMadeFor = [](mlir::Value value, mlir::Operation *call, bool spreadLiterals) {
-            auto *definingOp = value.getDefiningOp();
-            auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
-            auto isNewArray =
-                mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(definingOp) ||
-                (castOp && mlir::isa<mlir_ts::ConstArrayType>(castOp.getIn().getType()) &&
-                 mlir::isa<mlir_ts::ArrayType>(value.getType())) ||
-                (spreadLiterals && mlir::isa_and_nonnull<mlir_ts::LoadOp>(definingOp) &&
-                 definingOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
-            if (!isNewArray)
-            {
-                return false;
-            }
-
-            // its one use is the call, through casts
-            while (value.hasOneUse())
-            {
-                auto *user = *value.getUsers().begin();
-                if (user == call)
-                {
-                    return true;
-                }
-
-                auto userCastOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
-                if (!userCastOp)
-                {
-                    return false;
-                }
-
-                value = userCastOp.getRes();
-            }
-
-            return false;
-        };
-
         llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> held;
         module.walk([&](mlir::Operation *op) {
             if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
@@ -914,31 +1079,8 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
-                // Under own nothing gave such an array back at all (`len([i, 1, 2])`, 400 bytes a call; the
-                // optimizer hid it where the array went nowhere else, and a callee returning a record that
-                // borrows it - `mh([...])` returning `{ a }` - leaked it at any level). It is a new value
-                // as `new C()` is: marked owned, it is released at the end of the block when nothing takes
-                // it (releaseDiscardedTemporaries), and moved into a callee that keeps it. Only an array of
-                // elements that own nothing: one of strings or objects - a rest parameter's
-                // (`logParts(text)`) - borrows them (spec 83), and owned it would take them over. Or a
-                // literal that can own what it holds (holdsOnlyMovedInElements: new values moved into it, and
-                // text it is given copies of - `f(["x" + i, mk()])`, `f([new C()])`, `f(["x" + i, s])`): nothing
-                // else gives the new values back, so every call leaked the array and what it held (the
-                // classifyArgumentArrays of the inference leaves such an array as it is).
-                auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(argument.getType());
-                if (compileOptions.memoryModel == MemoryModelOwn && arrayType &&
-                    (!mth.ownsHeapMemory(op->getLoc(), arrayType.getElementType()) ||
-                     holdsOnlyMovedInElements(mth, argument.getDefiningOp())) &&
-                    (arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
-                {
-                    if (auto *definingOp = argument.getDefiningOp())
-                    {
-                        copyBorrowedTextElements(mth, definingOp);
-                        definingOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
-                    }
-
-                    continue;
-                }
+                // (under own a new array given to a call is not held: it is moved into the call, or given
+                // back after it - ownNewArrayArguments, once the calls' results are settled)
 
                 // An argument read out of a slot or a place that a later argument of the same call
                 // overwrites (`f(n, (n = mk(), n))`), or out of a field or an element of an object

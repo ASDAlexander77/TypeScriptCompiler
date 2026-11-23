@@ -282,6 +282,25 @@ function main() {
 Bob Ann1
 ```
 
+An array literal no variable holds (`["k" + i, s][1]`, `[a, b].length`, `f([mk(1)])`, `for (const x
+of ["a" + i])`) is freed at the end of its block, or after the call it is given to, with what it owns. A
+`let` given a string element of one holds a copy of it, so it can be given another value later, in a
+loop too:
+
+```typescript
+let st: string = ["s" + i, name][1];   // a copy: the literal is freed at the end of the block
+for (let j = 0; j < 3; j++) {
+    st = [st + j, "x"][0];             // a copy again
+}
+```
+
+An object element of such a literal is a borrow of it, as an element of a named array is: it can be
+read while the literal lives, and keeping it past that is an error. Not freed yet, so they leak: a
+literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one that is given a local's object as well as
+new ones (`f([mk(i), o])`, `o` moved into it), and one whose object element a `?:` branch yields
+(`c ? [mk(i)][0] : null`; a string element there is copied, and its literal freed). Hold such a literal in
+a `const` first.
+
 A string passed to a parameter the callee keeps is not copied, because the callers rely on that
 fact: `new Person(p.name)` is an error. Pass a string you give up, or a fresh one
 (`new Person(p.name + "")`). String literals are constant data and are never freed or copied.
