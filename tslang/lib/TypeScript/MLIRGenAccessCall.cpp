@@ -3003,13 +3003,12 @@ namespace mlirgen
     // An @atomic class's new object, its constructor done: marked shared with everything its fields
     // hold by then (ts.MarkShared). What its constructor stored went through the field barrier
     // (markStoreIntoAtomicField) already; this catches what reached a field any other way. Under
-    // -mm=rc only, the one model that counts every block. (Under own the mark changes the counts
-    // --own-fallback=count keeps too, but the design marks there only at Thread.spawn, a worker's
-    // message and Shared.share: own rc fallback design, section 6.) Elsewhere it would only keep the
-    // object off the stack.
+    // -mm=rc, which counts every block, and -mm=own, where a block may hold extra owners
+    // (--own-fallback=count, in any module: own rc fallback design, section 6). Under gc and none it
+    // would only keep the object off the stack.
     void MLIRGenImpl::markAtomicInstanceShared(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value instance)
     {
-        if (compileOptions.isRefCounted() && classInfo && classInfo->isAtomicClass() && instance)
+        if (compileOptions.tracksOwnership() && classInfo && classInfo->isAtomicClass() && instance)
         {
             builder.create<mlir_ts::MarkSharedOp>(location, instance);
         }

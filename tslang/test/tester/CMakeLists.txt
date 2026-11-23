@@ -5943,6 +5943,12 @@ foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_sha
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# ...and a tuple whose kept retains are of a tagged union's type (a `T | null` field): refused at
+# its place, with own's error
+add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR -DERROR_AT=16:5
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_tuple_in_union_stays_error.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 # ...and each counted program run: the header word's extra owners (Defines.h, beside
 # HEAP_BLOCK_IMMORTAL) keep the object until its last owner lets go, so it prints what it prints
 # under gc. The ones that throw are also built ahead of time, with the overwrite of a holder; the
@@ -6002,6 +6008,21 @@ if(WIN32)
     add_test(NAME test-own-fallback-run-own_fallback_thread_word
              COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
                      "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_thread_word.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_thread_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+    # ...and a child that reaches the other thread only through a global @atomic object: the store
+    # into its field is the share point (the field barrier, under own as under rc)
+    add_test(NAME test-own-fallback-run-own_fallback_atomic_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_atomic_word.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_atomic_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+else()
+    add_test(NAME test-own-fallback-run-own_fallback_thread_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_thread_word_pthread.ts")
     set_tests_properties(test-own-fallback-run-own_fallback_thread_word PROPERTIES
                          PASS_REGULAR_EXPRESSION "done[.]"
                          FAIL_REGULAR_EXPRESSION "error:|assertion failed")

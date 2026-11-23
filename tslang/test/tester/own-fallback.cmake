@@ -11,7 +11,7 @@
 #                      SHARE, also that its LLVM IR under own has a share routine (`tsshr_`), one for
 #                      a closure's capture box (`tsshrbox_`), and an atomic `or` setting the shared
 #                      bit: Shared.share is not erased under own
-#   MODE=EXPECT_ERROR  still refused with the flag: `error:`
+#   MODE=EXPECT_ERROR  still refused with the flag: `error:` (with ERROR_AT, line:column, one there)
 #   MODE=SAME          the other way round: a file own accepts without the flag is accepted with it
 #                      too, and run with it (JIT) prints what it prints under -mm=gc, with no error -
 #                      the flag only ever turns an error into a count
@@ -172,6 +172,12 @@ elseif(MODE STREQUAL "EXPECT_ERROR")
     string(FIND "${out}" "error:" error)
     if(result EQUAL 0 OR error EQUAL -1)
         message(FATAL_ERROR "compiled with --own-fallback=count, expected an error (${result}):\n${out}")
+    endif()
+    if(DEFINED ERROR_AT)
+        string(FIND "${out}" ":${ERROR_AT}: error:" errorAt)
+        if(errorAt EQUAL -1)
+            message(FATAL_ERROR "no error at ${ERROR_AT}:\n${out}")
+        endif()
     endif()
 else()
     message(FATAL_ERROR "unknown MODE '${MODE}' (IR, RUN, EXPECT_ERROR or SAME)")

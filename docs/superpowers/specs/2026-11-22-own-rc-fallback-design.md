@@ -272,16 +272,30 @@ library, which shares it. **Decision (user, 2026-11-22): check at share time.**
   too. It walks what is being shared, as rc's does, and sets the existing shared bit on **every
   mortal block it reaches**, as rc's does. Marking only the counted ones would not do: a one-owner
   child of a shared counted block is reachable from both threads, and either can take a count on
-  it. It runs at `Thread.spawn` of a closure, a worker's message and `Shared.share`. The walk stops
-  at an immortal block or one already shared.
+  it. It runs at `Thread.spawn` of a closure, a worker's message and `Shared.share`, and at a store
+  into a field of an `@atomic` class and its `new` (the field barrier, as under rc). The walk stops
+  at an immortal block or one already shared. *(Built, Task 5: an array's data block is not marked
+  under own, since its header is its one owner and frees it without reading its word.)*
+- **Only share points set the bit, as under rc.** *(Controller ruling, 2026-11-23, Task 5 review.)*
+  Two threads that reach a counted object through a global, or through the mortal children of an
+  immortal keeper, with no share point between them race on its count exactly as they would under
+  rc: the walk stops at the immortal parent, and nothing marks what a global holds. Such programs
+  are not refused. Likewise a block stored into an already shared object after its share stays
+  unmarked, and a later share that reaches it may lose its bit to the other thread's plain store, as
+  under rc.
 - The release's slow path (2) tests the shared bit first. With extra owners, it does an atomic
   subtract, as in rc's `__tslang_dec_ref`. With none, the caller is the last owner and destroys the
   block (bury if WeakRefs remain). The retain kept by the fallback does the same, as `emitIncRef`
   does. The fast path `word == 0` is unchanged, since a shared block is never 0.
 - The bit is set only by the thread that holds the block before any other can reach it, the rule
   rc's design already relies on.
-- Cost: the walk at each share, in every own program, with or without the flag. Releases pay
-  nothing more. The plan measures a spawn-heavy test (the workers tests) before and after.
+- Cost: the walk at each share, in every own program, with or without the flag. A release of a
+  block that is not shared pays nothing more; a release of a shared one takes the out-of-line slow
+  path (a call, an atomic reload and a fence) where a one-owner word would free inline: +27% on a
+  probe that shares and drops 2000-node lists, about 4 ns per block (Task 5 review). Only programs
+  that share pay it. Every type descriptor under own now carries a share routine (`tsshr_`), even in
+  a program that never shares: about +1.5 KB in the default library's DLL, and part of the 1-6% more
+  compile time the workers tests showed (their run time is unchanged).
 - A weak count on a shared block stays non-atomic, as today: a module that makes WeakRefs may still
   not share their targets (spec 84).
 

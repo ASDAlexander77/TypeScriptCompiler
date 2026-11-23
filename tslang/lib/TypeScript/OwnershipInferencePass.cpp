@@ -2245,7 +2245,57 @@ namespace own_inference
             });
         };
 
-        return !borrowed(fieldBorrowRetains) && !borrowed(captureRetains) && !borrowed(mergeBorrowRetains);
+        if (borrowed(fieldBorrowRetains) || borrowed(captureRetains) || borrowed(mergeBorrowRetains))
+        {
+            return false;
+        }
+
+        // ...and each retain that would be kept (markCountedRetains), or made for a parameter that
+        // keeps the value (retainKeptCountedArguments), is of the type the retain has, not the member's:
+        // a tuple made a tagged union's payload on its way into a `T | null` field is retained as the
+        // union, which under own has nothing to go through either. Refused here, it stays own's error at
+        // its place, not a lowering failure.
+        auto uncountable = [&](mlir::Type type) {
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+            {
+                type = refType.getElementType();
+            }
+
+            return reachedThroughDescriptor(type) || mayHoldDescriptorField(type);
+        };
+
+        auto refusedRetain = false;
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (refusedRetain)
+            {
+                return;
+            }
+
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op))
+            {
+                auto unit = countedUnitOfOp(op);
+                refusedRetain = unit && group.contains(unit) && uncountable(op->getOperand(0).getType());
+                return;
+            }
+
+            if (!isCall(op))
+            {
+                return;
+            }
+
+            auto args = callArgs(op);
+            for (auto index : ownedParams(op))
+            {
+                if (static_cast<size_t>(index) < args.size() && group.contains(countedUnitOf(args[index])) &&
+                    uncountable(args[index].getType()))
+                {
+                    refusedRetain = true;
+                    return;
+                }
+            }
+        });
+
+        return !refusedRetain;
     }
 
     void OwnershipInferencePass::retainKeptCountedArguments()
