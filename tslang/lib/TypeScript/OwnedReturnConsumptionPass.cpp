@@ -2489,9 +2489,11 @@ class OwnedReturnConsumptionPass
             // back) - through elements and fields, widening and narrowing casts and an optional's value. A value a
             // conditional within `region` yields - an optional chain (`c ? [mk(i)][0]?.s : null`,
             // `[[mk(i)]][0]?.[0]`) and its conversion to `| null` - is what its branches yield, looked into the same
-            // way (a few levels deep). `readOut`: the value is an element or a field, not the literal itself.
-            std::function<bool(mlir::Value, mlir::Region *, int, bool)> readsBranchLiteral =
-                [&](mlir::Value value, mlir::Region *region, int depth, bool readOut) {
+            // way, each conditional's result once (`visited`), so the walk is linear in what it looks into.
+            // `readOut`: the value is an element or a field, not the literal itself.
+            llvm::DenseSet<std::pair<mlir::Value, unsigned>> visited;
+            std::function<bool(mlir::Value, mlir::Region *, bool)> readsBranchLiteral = [&](mlir::Value value,
+                                                                                         mlir::Region *region, bool readOut) {
                     for (;;)
                     {
                         auto peeled = narrowed(producerOf(value));
@@ -2527,7 +2529,7 @@ class OwnedReturnConsumptionPass
 
                     if (auto ifOp = mlir::dyn_cast<mlir_ts::IfOp>(definingOp))
                     {
-                        if (depth >= 4 || !region->isAncestor(ifOp->getParentRegion()))
+                        if (!region->isAncestor(ifOp->getParentRegion()) || !visited.insert({value, readOut ? 1u : 0u}).second)
                         {
                             return false;
                         }
@@ -2538,7 +2540,7 @@ class OwnedReturnConsumptionPass
                             auto innerResult = inner.empty() ? mlir_ts::ResultOp()
                                                              : mlir::dyn_cast_or_null<mlir_ts::ResultOp>(inner.back().getTerminator());
                             if (innerResult && innerResult->getNumOperands() > index &&
-                                readsBranchLiteral(innerResult->getOperand(index), region, depth + 1, readOut))
+                                readsBranchLiteral(innerResult->getOperand(index), region, readOut))
                             {
                                 return true;
                             }
@@ -2561,19 +2563,20 @@ class OwnedReturnConsumptionPass
                         auto object = propertyRefOp.getObjectRef();
                         if (!mlir::isa<mlir_ts::RefType>(object.getType()))
                         {
-                            return readsBranchLiteral(object, region, depth, true);
+                            return readsBranchLiteral(object, region, true);
                         }
 
                         place = object;
                     }
 
                     auto elementRefOp = place.getDefiningOp<mlir_ts::ElementRefOp>();
-                    return elementRefOp && readsBranchLiteral(elementRefOp->getOperand(0), region, depth, true);
+                    return elementRefOp && readsBranchLiteral(elementRefOp->getOperand(0), region, true);
                 };
             auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
                 auto value = producerOf(resultOp->getOperand(0));
+                visited.clear();
                 if (compileOptions.isRefCounted() &&
-                    readsBranchLiteral(resultOp->getOperand(0), resultOp->getParentRegion(), 0, false))
+                    readsBranchLiteral(resultOp->getOperand(0), resultOp->getParentRegion(), false))
                 {
                     return true;
                 }

@@ -53,6 +53,12 @@ function main() {
             total += e.length;
         }
 
+        // a chain of four: eight conditionals in the branch, each looked into once
+        const h = c ? [[[[mk(i)]]]][0]?.[0]?.[0]?.[0]?.s : null;
+        if (h) {
+            total += h.length;
+        }
+
         const f = c ? [{ v: mk(i) }][0]?.v : null;
         if (f) {
             total += f.x + f.s.length;
@@ -68,6 +74,6 @@ function main() {
     }
 
     print(total);
-    assert(total == 137100, "total");
+    assert(total == 137845, "total");
     print("done.");
 }
