@@ -112,9 +112,11 @@ with 42 warnings between them. No file compiles under own and not with the flag.
 mostly the shapes the flag does not reach: a borrow of a call's result, escaping closures, parameters kept
 or assigned, object literals, `any` element access, globals. The fuzzer with the flag
 (`mm_fuzz.py --jobs 4 --own-fallback run --count 400 --seed 1122000`, 694 programs checked, 367 of them
-accepted with the flag) found 9 crashes of one shape: a `let` that borrows a field, an element or a global
-and is then given a new value is counted, in 8 of them where own without the flag accepts the program, and
-the count frees what the place still holds. Of 58 generated programs that compile only with the flag,
+accepted with the flag) found 9 programs that stop with an access violation under own with the flag and
+run under rc and gc. In 8 of them a `let` that borrows a field, an element or a global and is then given a
+new value is counted, where own without the flag accepts the program and runs it. The same shape is
+counted in 2 corpus files own accepts without the flag (`00for_optional_class_condition`,
+`00tslang_issue_66`, 5 warnings; their output is unchanged). Of 58 generated programs that compile only with the flag,
 measured against rc and gc with the `leaks` command, 50 are fine, 7 leak under own (1 to 14 MB over 400
 runs of main) where rc and gc do not, and 1 fails in lowering ("ownership inference left a retain
 behind"). The flag is not ready to use until those are fixed. Windows only: there is no Linux build of the
@@ -184,7 +186,8 @@ was built under own with `--own-fallback=count`. It does not build fully: of 252
 are refused and 113 are not reached because a module they import is refused. The NRI examples all stop
 at two core modules whose exported methods keep parameters (`@keeps`, which the flag does not cover).
 What builds passes: 250 of the 525 tests run and all 250 pass (236 without the flag), with 62 places
-counted. The other refusals are kept parameters, borrows of fields stored or used after a release that
+counted. Three of those places are the shape the fuzzer found crashing (in `core/donut_first_person_camera.ts`
+and `examples/sakura_forest_ser.ts`); no test that runs them failed. The other refusals are kept parameters, borrows of fields stored or used after a release that
 the flag still refuses, and one type error the newer compiler reports in the old source.
 
 ## Performance
