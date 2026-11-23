@@ -2185,6 +2185,15 @@ namespace own_inference
                 return false;
             }
 
+            // ...nor an object returned with such a field: a caller may take the field out of its result
+            // (temporaryFieldTakeOf), which with extra owners would need to give it an owner. So a call's
+            // own result is never counted with one - in this module, or any other built with the flag -
+            // and a caller empties the field as before.
+            if (holdsDescriptorField(memberType) && returnsUnit(member))
+            {
+                return false;
+            }
+
             if (auto varOp = member.getDefiningOp<mlir_ts::VariableOp>())
             {
                 auto index = -1;
@@ -2242,6 +2251,20 @@ namespace own_inference
         };
 
         return !borrowed(fieldBorrowRetains) && !borrowed(captureRetains) && !borrowed(mergeBorrowRetains);
+    }
+
+    bool OwnershipInferencePass::returnsUnit(mlir::Value unit)
+    {
+        // the value itself, or a read of the local it is
+        if (!unit.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return isReturned(unit);
+        }
+
+        return llvm::any_of(unit.getUsers(), [&](mlir::Operation *user) {
+            auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            return loadOp && isReturned(loadOp.getResult());
+        });
     }
 
     void OwnershipInferencePass::retainKeptCountedArguments()

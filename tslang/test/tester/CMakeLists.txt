@@ -5958,6 +5958,14 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# ...and what own accepts without the flag it accepts with it, printing what gc prints: a tagged
+# union taken out of a result nothing else holds (a callee never returns a counted object with one).
+foreach(fallback_test own_fallback_take_from_fresh_union)
+    add_test(NAME test-own-fallback-same-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=SAME
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
 # A counted object is never put on the stack: its kept retain is an escape (StackPromotionPass).
 add_test(NAME test-own-fallback-ir-own_fallback_not_promoted
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=1 -DHEAP_AT=11:13

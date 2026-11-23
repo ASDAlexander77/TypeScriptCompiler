@@ -9,17 +9,25 @@
 #   MODE=RUN           run with the flag (JIT, or built ahead of time with EXE=1): exits 0, warns,
 #                      prints `done.` and no error, and prints what it prints under -mm=gc
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:`
-# Every mode also checks that the file is refused under own without the flag: each test exercises
-# the fallback, never a shape own already accepts.
+#   MODE=SAME          the other way round: a file own accepts without the flag is accepted with it
+#                      too, and run with it (JIT) prints what it prints under -mm=gc, with no error -
+#                      the flag only ever turns an error into a count
+# Every other mode also checks that the file is refused under own without the flag: each test
+# exercises the fallback, never a shape own already accepts.
 cmake_minimum_required(VERSION 3.17.3)
 
 if(NOT DEFINED MODE)
-    message(FATAL_ERROR "MODE is not set (IR, RUN or EXPECT_ERROR)")
+    message(FATAL_ERROR "MODE is not set (IR, RUN, EXPECT_ERROR or SAME)")
 endif()
 
 execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own "${FILE}"
                 OUTPUT_VARIABLE plainOut ERROR_VARIABLE plainErr RESULT_VARIABLE plainResult)
-if(plainResult EQUAL 0)
+if(MODE STREQUAL "SAME")
+    if(NOT plainResult EQUAL 0)
+        message(FATAL_ERROR "${FILE} is refused under -mm=own without --own-fallback=count:
+${plainOut}${plainErr}")
+    endif()
+elseif(plainResult EQUAL 0)
     message(FATAL_ERROR "${FILE} compiles under -mm=own without --own-fallback=count: it does not exercise the fallback")
 endif()
 
@@ -119,6 +127,22 @@ elseif(MODE STREQUAL "RUN")
     if(NOT out STREQUAL gcOut)
         message(FATAL_ERROR "counted, the program prints\n${out}\nwhere under gc it prints\n${gcOut}")
     endif()
+elseif(MODE STREQUAL "SAME")
+    execute_process(COMMAND "${TSLANG}" --emit=jit --jit-cache=false --no-default-lib -mm=gc "${FILE}"
+                    OUTPUT_VARIABLE gcOut ERROR_VARIABLE gcErr RESULT_VARIABLE gcResult)
+    execute_process(COMMAND "${TSLANG}" --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count "${FILE}"
+                    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
+    if(NOT result EQUAL 0 OR NOT gcResult EQUAL 0)
+        message(FATAL_ERROR "with --own-fallback=count (${result}) or under gc (${gcResult}) it fails:
+${out}${err}${gcOut}${gcErr}")
+    endif()
+    string(FIND "${out}${err}" "error:" error)
+    if(NOT error EQUAL -1 OR NOT out STREQUAL gcOut)
+        message(FATAL_ERROR "with --own-fallback=count it prints
+${out}${err}
+where under gc it prints
+${gcOut}")
+    endif()
 elseif(MODE STREQUAL "EXPECT_ERROR")
     execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own --own-fallback=count "${FILE}"
                     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
@@ -128,5 +152,5 @@ elseif(MODE STREQUAL "EXPECT_ERROR")
         message(FATAL_ERROR "compiled with --own-fallback=count, expected an error (${result}):\n${out}")
     endif()
 else()
-    message(FATAL_ERROR "unknown MODE '${MODE}' (IR, RUN or EXPECT_ERROR)")
+    message(FATAL_ERROR "unknown MODE '${MODE}' (IR, RUN, EXPECT_ERROR or SAME)")
 endif()

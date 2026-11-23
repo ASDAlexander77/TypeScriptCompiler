@@ -33,9 +33,22 @@ namespace own_inference
             return reachedThroughDescriptor(optionalType.getElementType());
         }
 
-        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        // a record held inline (a tuple, a @value value), or the storage of a class or object instance
+        // (resultHoldsDescriptorField): the same fields canCountRetainOf walks
+        MLIRTypeHelper mth(type.getContext(), CompileOptions());
+        return llvm::any_of(mth.getOwnershipFieldTypes(type), [](mlir::Type fieldType) { return reachedThroughDescriptor(fieldType); });
+    }
+
+    bool OwnershipInferencePass::holdsDescriptorField(mlir::Type objectType)
+    {
+        if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(objectType))
         {
-            return llvm::any_of(tupleType.getFields(), [](mlir_ts::FieldInfo field) { return reachedThroughDescriptor(field.type); });
+            return reachedThroughDescriptor(classType.getStorageType());
+        }
+
+        if (auto objType = mlir::dyn_cast<mlir_ts::ObjectType>(objectType))
+        {
+            return reachedThroughDescriptor(objType.getStorageType());
         }
 
         return false;
@@ -1227,12 +1240,17 @@ namespace own_inference
             // owner. `new`'s own object made here has no other owner: its field is emptied as before,
             // and the object may still go on the stack (StackPromotionPass). A value reached only
             // through a type descriptor cannot be given an owner under own (a tagged union's payload,
-            // a closure): with the flag, a take of one out of an object that may be counted is no
-            // take - the read stays a borrow, refused (TakeOutOfField empties it in a build without).
+            // a closure): a take of one out of an object this function counts is no take - the read
+            // stays a borrow, refused; out of any other, TakeOutOfField empties the field.
             auto takeObject = take.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
             auto takeFieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
             auto byTakeOp = mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType>(takeObject.getType()) && !isNewMadeHere(takeObject);
-            auto uncountable = byTakeOp && countsFallback && reachedThroughDescriptor(takeFieldType);
+            // (only an object this function counts: one a callee returns is never counted with such a
+            // field - countedGroup - and one that is not counted has no other owner)
+            auto takeSlotRead = takeObject.getDefiningOp<mlir_ts::LoadOp>();
+            auto countedObject = countedValues.contains(countedUnitOf(takeObject)) ||
+                                 (takeSlotRead && countedValues.contains(takeSlotRead.getReference()));
+            auto uncountable = byTakeOp && countedObject && reachedThroughDescriptor(takeFieldType);
             if (kept || letKept || usedAfter || uncountable)
             {
                 take = {};
