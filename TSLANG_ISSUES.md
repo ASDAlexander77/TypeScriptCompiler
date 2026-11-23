@@ -2770,3 +2770,23 @@ Still open, looked at:
 
 Tests `00tslang_issue_171.ts` (compile, JIT, gc, rc, none, own); `00tslang_issue_170.ts` checks `a === o`, `u === o` and
 `<L>a` again.
+
+172 (older items looked at again, 2026-11-23). Fixed:
+- A module `const` naming a class (`const k = B;`) failed the whole module with "failed to legalize operation
+  'ts.ClassRef'", even unused: a module variable is a global, and a class's name can't be stored in one. It holds
+  the class's value, as `let k = B` does (a local `const` still names the class itself), so `new k()` works. `class D
+  extends k` is the clear error for a class value ("its class is known at run time only"); naming the class through a
+  module `const` at compile time would need the name kept as an alias of the class.
+- A `var` used before its declaration in a function (`x = 7; var x = one();`, 1384): "can't resolve name: x". It is
+  declared before the body with the type its initializer gives, as a `var` read by an earlier function already was.
+  Not under -mm=own, which refuses a variable declared without a value that is given one later.
+
+Looked at, still open:
+- -mm=own: `typeof a === "string"` of a `const a` holding the `any` a call returned (171): the IR own's inference sees
+  is the box, an unbox in the branch and one release, the same as a cast in a branch, which compiles; the narrowing's
+  own shape is refused inside the inference ("a value takes a second reference"). A `let` works.
+- A generic arrow returning a generic interface given to a typed `const` (`const f: <p>(a: p) => W<p> = <p>(a: p): W<p>
+  => ({ a })`, 1188): "can't find type by name: p".
+- A namespace `var` declared in two `for` headers read by a function of the namespace (1392): "can't resolve name".
+
+Tests `00tslang_issue_172.ts` (gc, rc, none).

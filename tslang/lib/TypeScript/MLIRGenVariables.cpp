@@ -1150,12 +1150,16 @@ namespace mlirgen
                 return std::make_tuple(instantiatedValue.getType(), instantiatedValue, TypeProvided::No);
             }
 
-            // `let k = C`: the class's value (a `const` keeps the name of the class itself)
+            // `let k = C`: the class's value (a local `const` keeps the name of the class itself; a module one is a
+            // global, which a class's name can't be stored in: "failed to legalize operation 'ts.ClassRef'",
+            // TSLANG 172)
+            auto isLocalConst = genContext.funcOp
+                && (varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef
+                    || (item->internalFlags & InternalFlags::ForceConst) == InternalFlags::ForceConst
+                    || (item->internalFlags & InternalFlags::ForceConstRef) == InternalFlags::ForceConstRef);
             if (auto initValue = std::get<1>(typeAndInit);
-                initValue && std::get<2>(typeAndInit) == TypeProvided::No
-                && varClass.type != VariableType::Const && varClass.type != VariableType::ConstRef
-                && (item->internalFlags & InternalFlags::ForceConst) != InternalFlags::ForceConst
-                && (item->internalFlags & InternalFlags::ForceConstRef) != InternalFlags::ForceConstRef
+                initValue && std::get<2>(typeAndInit) == TypeProvided::No && !isLocalConst
+                && varClass.type != VariableType::External && !declarationMode
                 && initValue.getDefiningOp<mlir_ts::ClassRefOp>())
             {
                 auto classValue = classRefAsClassValue(location, initValue, genContext);
@@ -1866,8 +1870,46 @@ namespace mlirgen
                     continue;
                 }
 
-                if ((declarationList->flags & (NodeFlags::Let | NodeFlags::Const)) == NodeFlags::None
-                    || (declarationList->flags & NodeFlags::Using) == NodeFlags::Using)
+                // a `var` used before its declaration (`x = 7; var x = one();`): declared before the body, as a `var`
+                // is, with the type its initializer gives; it was "can't resolve name: x" (TSLANG 172). Not under
+                // -mm=own, which refuses a variable declared without a value that is given one later.
+                if ((declarationList->flags & (NodeFlags::Let | NodeFlags::Const | NodeFlags::Using)) == NodeFlags::None)
+                {
+                    if (compileOptions.memoryModel == MemoryModelOwn)
+                    {
+                        continue;
+                    }
+
+                    for (auto declaration : declarationList->declarations)
+                    {
+                        if (declaration->name != SyntaxKind::Identifier || !declaration->initializer)
+                        {
+                            continue;
+                        }
+
+                        auto name = declaration->name.as<Identifier>()->escapedText;
+                        auto usedBefore = false;
+                        for (size_t earlier = 0; earlier < index && !usedBefore; earlier++)
+                        {
+                            ts::VisitorAST names([&](ts::Node inner) {
+                                if (inner == SyntaxKind::Identifier && inner.as<Identifier>()->escapedText == name)
+                                {
+                                    usedBefore = true;
+                                }
+                            });
+                            names.visit(statements[earlier]);
+                        }
+
+                        if (usedBefore)
+                        {
+                            forwardReferenced.insert(MLIRHelper::getName(declaration->name));
+                        }
+                    }
+
+                    continue;
+                }
+
+                if ((declarationList->flags & NodeFlags::Using) == NodeFlags::Using)
                 {
                     continue;
                 }

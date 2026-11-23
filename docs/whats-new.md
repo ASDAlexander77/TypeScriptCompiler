@@ -1,5 +1,6 @@
 # What's new
 
+- A module `const` can name a class (`const k = B; new k()`); a `var` can be used before its declaration in a function (`x = 7; var x = one();`)
 - A generic class can be given to a constructor type without type arguments (`make(Box, 4)`); `object` holds its value in a box under gc and none too, so `<C>a` of an `any` taken from an `object` works in every model but own
 - Under -mm=rc an `object` holds its value in a box, as `any` does: a class object kept only as an `object` is freed with its fields; `let n: object | null = null; n === null` is true in every model
 - Under -mm=rc and -mm=own an `unknown` variable owns the value it holds, as `any` does: a value assigned to one later is kept (rc read it freed, own leaked the old one)
