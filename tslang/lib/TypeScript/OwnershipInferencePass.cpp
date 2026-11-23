@@ -4,6 +4,11 @@
 #include "OwnershipInferencePass.h"
 #include "TypeScript/TypeScriptPassContext.h"
 
+#include "mlir/IR/Diagnostics.h"
+
+#include <optional>
+#include <thread>
+
 #define DEBUG_TYPE "own"
 
 namespace own_inference
@@ -197,6 +202,52 @@ namespace own_inference
         // what the real run may do that the dry run did not: only where the dry run failed, so a
         // function today's analysis accepts is decided as it was
         localLetCandidates.clear();
+        countedValues.clear();
+        countedOrder.clear();
+        dryRunDiagnostics.clear();
+        dryRunCapture.clear();
+        countedErrors.clear();
+        countedAt.clear();
+        failureSignalled = false;
+        uncountedErrors = 0;
+
+        // --own-fallback=count: what the report sites emit is seen here first. In the dry run it is
+        // recorded and swallowed; in the real run an error about a counted value becomes a note of
+        // its warning, and any other stays an error. Only this thread's: the pass runs on the
+        // module's functions at once, and a handler is the context's.
+        std::optional<mlir::ScopedDiagnosticHandler> fallbackHandler;
+        if (countsFallback)
+        {
+            auto thread = std::this_thread::get_id();
+            fallbackHandler.emplace(&getContext(), [this, thread](mlir::Diagnostic &diag) -> mlir::LogicalResult {
+                if (std::this_thread::get_id() != thread || diag.getSeverity() != mlir::DiagnosticSeverity::Error)
+                {
+                    return mlir::failure();
+                }
+
+                RecordedDiagnostic recorded{diag.getLocation(), diag.str(), {}};
+                for (auto &note : diag.getNotes())
+                {
+                    recorded.notes.push_back({note.getLocation(), note.str()});
+                }
+
+                if (dryRun)
+                {
+                    dryRunCapture.push_back(std::move(recorded));
+                    return mlir::success();
+                }
+
+                auto found = countedAt.find(diag.getLocation());
+                if (found != countedAt.end())
+                {
+                    countedErrors.try_emplace(found->second, std::move(recorded));
+                    return mlir::success();
+                }
+
+                ++uncountedErrors;
+                return mlir::failure();
+            });
+        }
 
         // the dry run (spec 22.3): does today's analysis pass as it is?
         {
@@ -205,13 +256,28 @@ namespace own_inference
             failures = 0;
             auto passed = analyze(toErase);
             dryRun = false;
+            // (what a report signalled under the flag is not this function's failure: the real run decides)
+            failureSignalled = false;
             // The copies are judged with the dry run's facts still set: a store into a borrowing
             // closure's box, or a borrowing field's, is a borrow only by its
             // `__own_capture_borrow`. They are taken off after, before the real run sets its own.
             // makeStringCopies erases only retains, which the dry run sets no attribute on.
             if (!passed)
             {
+                // the values the reports name, counted where they can be (the copies leave their
+                // retains alone)
+                if (countsFallback)
+                {
+                    countRefusedValues(toErase);
+                }
+
                 makeStringCopies(toErase);
+                if (!countedValues.empty())
+                {
+                    retainKeptCountedArguments();
+                    indexCountedLocations();
+                }
+
                 splitBorrowingLets();
                 // (after the copies, which read the dry run's erased retains)
                 joinViewRetainPairs(getFunction());
@@ -236,6 +302,30 @@ namespace own_inference
         {
             releaseCellReads();
         }
+
+        if (!countsFallback)
+        {
+            return;
+        }
+
+        markCountedRetains();
+        warnCounted();
+        // an error nobody counted, or a failure no counted value's error explains
+        if (uncountedErrors > 0 || (failureSignalled && countedErrors.empty()))
+        {
+            PassWrapper::signalPassFailure();
+        }
+    }
+
+    void OwnershipInferencePass::signalPassFailure()
+    {
+        if (countsFallback)
+        {
+            failureSignalled = true;
+            return;
+        }
+
+        PassWrapper::signalPassFailure();
     }
 
     // Does nothing `value` gives - its own value, a field read out of it, a call's result that may be it - leave
@@ -590,6 +680,7 @@ namespace own_inference
                    !movedHandleReleases.contains(op);
         });
         toErase.insert(movedHandleReleases.begin(), movedHandleReleases.end());
+        keepCountedOps(toErase);
         placeEdgeReleases();
         // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
         dropUnboxedRecordCounts(toErase);
@@ -613,6 +704,12 @@ namespace own_inference
             auto notSelected = builder.create<mlir::arith::SelectOp>(selectOp.getLoc(), selectOp.getCondition(),
                                                                       selectOp.getFalseValue(), selectOp.getTrueValue());
             builder.create<mlir_ts::ReleaseOp>(selectOp.getLoc(), notSelected.getResult());
+        }
+
+        // (what the steps after keepCountedOps put in, too)
+        if (!countedValues.empty())
+        {
+            toErase.remove_if([&](mlir::Operation *op) { return touchesCounted(op); });
         }
 
         for (auto *op : toErase)
@@ -702,6 +799,12 @@ namespace own_inference
             // An overwrite of a field or an element that holds one is still a drop: the old handle
             // may be the last, and its payload goes with it.
             if (touchesHandle(op) && !mlir::isa<mlir_ts::ReleaseSlotOp>(op))
+            {
+                return;
+            }
+
+            // ...nor a counted value's (--own-fallback=count): rc's, and they stay
+            if (!dryRun && touchesCounted(op))
             {
                 return;
             }
@@ -984,6 +1087,12 @@ namespace own_inference
 
         for (auto read : ops.placeReads)
         {
+            // a counted read keeps rc's ops: nothing to decide
+            if (!dryRun && read->getNumResults() == 1 && countedValues.contains(countedUnitOf(read->getResult(0))))
+            {
+                continue;
+            }
+
             checkPlaceRead(read, toErase);
         }
 
@@ -1192,7 +1301,8 @@ namespace own_inference
             {
                 // a handle given to a callee that keeps it is a counted copy (spec 23.2)
                 if (static_cast<size_t>(index) >= args.size() || holdsNoBlock(args[index]) ||
-                    isImmortalLiteral(args[index]) || isHandle(args[index]))
+                    isImmortalLiteral(args[index]) || isHandle(args[index]) ||
+                    (!dryRun && countedValues.contains(countedUnitOf(args[index]))))
                 {
                     continue;
                 }
@@ -1308,7 +1418,9 @@ namespace own_inference
         if (dryRun)
         {
             ++failures;
-            return false;
+            // with --own-fallback=count the dry run's report is emitted and recorded (dryRunCapture),
+            // never shown: what it names may be counted
+            return countsFallback;
         }
 
         return true;
@@ -1338,13 +1450,29 @@ namespace own_inference
 
         for (auto *retain : retains)
         {
+            // a counted value keeps its retains (countRefusedValues)
+            if (touchesCounted(retain))
+            {
+                continue;
+            }
+
             copyForRetain(retain);
         }
 
         for (auto [read, call] : callCopies)
         {
             auto value = read->getResult(0);
-            if (!llvm::is_contained(call->getOperands(), value))
+            // a counted read is given a count of its own, as a handle is (--own-fallback=count), through
+            // the view the call is given too; any other read that cannot be copied stays the dry run's
+            // error
+            auto counted = countedValues.contains(countedUnitOf(value)) &&
+                           llvm::any_of(call->getOperands(), [&](mlir::Value operand) { return rootOf(operand) == value; });
+            if (!counted && !llvm::is_contained(call->getOperands(), value))
+            {
+                continue;
+            }
+
+            if (countsFallback && !counted && !isHandle(value) && !isCopyableValueAt(call, value.getType()))
             {
                 continue;
             }
@@ -1353,7 +1481,7 @@ namespace own_inference
             if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(call))
             {
                 mlir::OpBuilder builder(storeOp);
-                if (isHandle(value))
+                if (isHandle(value) || counted)
                 {
                     builder.create<mlir_ts::RetainOp>(storeOp->getLoc(), value);
                     continue;
@@ -1367,12 +1495,13 @@ namespace own_inference
             // a callee that keeps it takes the copy; else it is released after the call
             auto args = callArgs(call);
             auto kept = llvm::any_of(ownedParams(call), [&](int32_t index) {
-                return static_cast<size_t>(index) < args.size() && args[index] == value;
+                return static_cast<size_t>(index) < args.size() && (args[index] == value || (counted && rootOf(args[index]) == value));
             });
 
             mlir::OpBuilder builder(call);
-            // a handle: a count of its own for the call, given back after it (spec 50)
-            if (isHandle(value))
+            // a handle: a count of its own for the call, given back after it (spec 50); a counted value
+            // the same
+            if (isHandle(value) || counted)
             {
                 builder.create<mlir_ts::RetainOp>(call->getLoc(), value);
                 if (!kept)
@@ -1636,11 +1765,484 @@ namespace own_inference
         return true;
     }
 
+    mlir::Value OwnershipInferencePass::countedUnitOf(mlir::Value value)
+    {
+        if (!value)
+        {
+            return {};
+        }
+
+        auto root = rootOf(value);
+        if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>())
+            {
+                return varOp.getResult();
+            }
+        }
+
+        return root;
+    }
+
+    mlir::Value OwnershipInferencePass::countedUnitOfOp(mlir::Operation *op)
+    {
+        if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(op))
+        {
+            return countedUnitOf(op->getOperand(0));
+        }
+
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(op))
+        {
+            return retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>() ? retainSlotOp.getSlot() : mlir::Value();
+        }
+
+        if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+        {
+            return releaseSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>() ? releaseSlotOp.getSlot() : mlir::Value();
+        }
+
+        return {};
+    }
+
+    bool OwnershipInferencePass::touchesCounted(mlir::Operation *op)
+    {
+        if (countedValues.empty())
+        {
+            return false;
+        }
+
+        auto unit = countedUnitOfOp(op);
+        return unit && countedValues.contains(unit);
+    }
+
+    bool OwnershipInferencePass::countable(mlir::Value unit)
+    {
+        auto *def = unit ? unit.getDefiningOp() : nullptr;
+        // a result that borrows a parameter, or a record of borrows: the caller gives back nothing rc's
+        // return retained for it
+        if (!def || returnsBorrowOf >= 0 || !returnsRecordOf.empty())
+        {
+            return false;
+        }
+
+        // A root born owning one share under rc and under own: a `new` of a class (rc writes its count
+        // as one, LowerToLLVM's NewOpLowering) and a fresh call's result (rc's callee retains it for the
+        // return). A read of a place: no share under either. Anything else - a block rc makes at zero
+        // whose first owner's retain own erases (`[...]`, `"a" + i`) - stays an error.
+        auto bornRoot = [&](mlir::Value root) {
+            auto *rootDef = root.getDefiningOp();
+            if (!rootDef || isHandle(root) || !ownsHeap(root))
+            {
+                return false;
+            }
+
+            if (auto newOp = mlir::dyn_cast<mlir_ts::NewOp>(rootDef))
+            {
+                return newOp->hasAttr(OWNED_RESULT_ATTR_NAME) && !newOp.getStackAlloc().value_or(false);
+            }
+
+            if (isCall(rootDef))
+            {
+                return isFresh(root);
+            }
+
+            return mlir::isa<mlir_ts::LoadOp>(rootDef) && placeReadOf(root) == rootDef;
+        };
+
+        // A read of a place kept as a borrow past its retains. rc reads a place where it takes it, but
+        // the signature pass (TSLANG 47) reads a field in place of the local just moved into it, and
+        // that read stands for the local's value further on: it is counted with the value stored there
+        // (fieldReadPartner), whose own release holds the block to the end of its scope, as rc's does.
+        // Any other read only where nothing may free what it reads before its last use. A store's
+        // release of the old value right after a retain of the read is that store's, as under rc.
+        auto readCountable = [&](mlir::Value root) {
+            if (auto partner = fieldReadPartner(root))
+            {
+                return countedValues.contains(partner) || countable(partner);
+            }
+
+            auto *read = root.getDefiningOp();
+            mlir::Operation *last = read;
+            auto sameBlock = true;
+            forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+                if (user->getBlock() != read->getBlock())
+                {
+                    sameBlock = false;
+                    return;
+                }
+
+                last = last->isBeforeInBlock(user) ? user : last;
+            });
+
+            if (!sameBlock)
+            {
+                return false;
+            }
+
+            llvm::SmallPtrSet<mlir::Operation *, 16> dropping(drops.begin(), drops.end());
+            // (a call it is lent to is given a count of its own for the call: callCopies)
+            llvm::SmallPtrSet<mlir::Operation *, 4> lentTo;
+            for (auto [lent, call] : callCopies)
+            {
+                if (lent == read)
+                {
+                    lentTo.insert(call);
+                }
+            }
+
+            for (auto *op = read->getNextNode(); op && op != last->getNextNode(); op = op->getNextNode())
+            {
+                auto *previous = op->getPrevNode();
+                auto retainedBefore = (mlir::isa<mlir_ts::ReleaseSlotOp>(op) && previous &&
+                                       mlir::isa<mlir_ts::RetainOp>(previous) && rootOf(previous->getOperand(0)) == root) ||
+                                      (lentTo.contains(op) && op == last);
+                if ((dropping.contains(op) || isCall(op)) && !retainedBefore)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(def))
+        {
+            auto type = mlir::cast<mlir_ts::RefType>(varOp.getType()).getElementType();
+            if (varOp.getCaptured().value_or(false) || isCellVariable(varOp.getResult()) || isHandle(varOp.getResult()) ||
+                !ownsHeap(def->getLoc(), type) || isCopyableValueAt(def, type))
+            {
+                return false;
+            }
+
+            // a parameter: borrowed, or kept and released at the exits (releaseKeptParamsAtExits)
+            auto index = -1;
+            if (isParameterSlot(varOp, index))
+            {
+                return true;
+            }
+
+            // an owning local: rc's retain of the slot, or the value it consumes, is the local's share
+            auto init = varOp.getInitializer();
+            if (!isOwningVariable(varOp) || !init)
+            {
+                return false;
+            }
+
+            auto initUnit = countedUnitOf(init);
+            if (auto initVar = initUnit.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                auto initIndex = -1;
+                return isParameterSlot(initVar, initIndex) || isOwningVariable(initVar);
+            }
+
+            return bornRoot(initUnit);
+        }
+
+        if (isCopyableValueAt(def, unit.getType()) || !bornRoot(unit))
+        {
+            return false;
+        }
+
+        return !mlir::isa<mlir_ts::LoadOp>(def) || readCountable(unit);
+    }
+
+    mlir::Value OwnershipInferencePass::fieldReadPartner(mlir::Value read)
+    {
+        // `h.node = n; ...n...` as the signature pass leaves it: the store of `n`, then right after it
+        // the read of the same field that later uses of `n` read
+        auto loadOp = read.getDefiningOp<mlir_ts::LoadOp>();
+        auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        if (!refOp)
+        {
+            return {};
+        }
+
+        // the same object: one value, or reads of one local (`h.node` twice reads `h` twice)
+        auto sameObject = [](mlir::Value first, mlir::Value second) {
+            auto firstLoad = first.getDefiningOp<mlir_ts::LoadOp>();
+            auto secondLoad = second.getDefiningOp<mlir_ts::LoadOp>();
+            return first == second || (firstLoad && secondLoad && firstLoad.getReference() == secondLoad.getReference() &&
+                                       firstLoad.getReference().getDefiningOp<mlir_ts::VariableOp>());
+        };
+
+        for (auto *op = refOp->getPrevNode(); op; op = op->getPrevNode())
+        {
+            auto variableRead = mlir::isa<mlir_ts::LoadOp>(op) && op->getOperand(0).getDefiningOp<mlir_ts::VariableOp>();
+            if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::CastOp, mlir_ts::ConstantOp>(op) || variableRead)
+            {
+                continue;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+            auto storedRef = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+            if (!storedRef || !sameObject(storedRef.getObjectRef(), refOp.getObjectRef()) ||
+                storedRef.getPosition() != refOp.getPosition())
+            {
+                return {};
+            }
+
+            // only a value own takes its place for: one the analysis can count (a slot's read is the slot)
+            auto stored = countedUnitOf(storeOp.getValue());
+            return stored.getDefiningOp<mlir_ts::LoadOp>() ? mlir::Value() : stored;
+        }
+
+        return {};
+    }
+
+    void OwnershipInferencePass::countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased)
+    {
+        // what the dry run reported, by the location it reported it at
+        llvm::DenseMap<mlir::Location, const RecordedDiagnostic *> reportedAt;
+        for (auto &recorded : dryRunCapture)
+        {
+            reportedAt.try_emplace(recorded.loc, &recorded);
+        }
+
+        if (reportedAt.empty())
+        {
+            return;
+        }
+
+        // the values each report concerns: those an op it was reported at names
+        llvm::DenseMap<mlir::Value, const RecordedDiagnostic *> reportOf;
+        getFunction()->walk([&](mlir::Operation *op) {
+            auto found = reportedAt.find(op->getLoc());
+            if (found == reportedAt.end())
+            {
+                return;
+            }
+
+            if (auto unit = countedUnitOfOp(op))
+            {
+                reportOf.try_emplace(unit, found->second);
+            }
+
+            for (auto operand : op->getOperands())
+            {
+                reportOf.try_emplace(countedUnitOf(operand), found->second);
+            }
+        });
+
+        // The retains the dry run could not erase (the set makeStringCopies walks), and the reads it
+        // lent to a call that may free them (callCopies). A string the copy is made for stays a copy.
+        llvm::SetVector<mlir::Value> refused;
+        llvm::SmallVector<mlir::Operation *> retains;
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) && !erased.contains(op) &&
+                !captureRetains.contains(op) && !fieldBorrowRetains.contains(op) && !touchesHandle(op))
+            {
+                retains.push_back(op);
+            }
+        });
+
+        for (auto *retain : retains)
+        {
+            if (auto unit = countedUnitOfOp(retain))
+            {
+                refused.insert(unit);
+            }
+        }
+
+        for (auto [read, call] : callCopies)
+        {
+            if (!isCopyableValueAt(call, read->getResult(0).getType()) && !isHandle(read->getResult(0)))
+            {
+                refused.insert(countedUnitOf(read->getResult(0)));
+            }
+        }
+
+        auto count = [&](mlir::Value unit) {
+            if (countedValues.insert(unit).second)
+            {
+                countedOrder.push_back(unit);
+            }
+        };
+
+        for (auto unit : refused)
+        {
+            auto found = reportOf.find(unit);
+            if (!unit || found == reportOf.end() || countedValues.contains(unit) || !countable(unit))
+            {
+                continue;
+            }
+
+            count(unit);
+            dryRunDiagnostics.try_emplace(unit, *found->second);
+        }
+
+        // A local and the value it was declared from are one block: counted together, else the move
+        // of the value into the local, or of the local's value on, is erased under one of them.
+        // Warned once, for the one reported.
+        for (size_t i = 0, size = countedOrder.size(); i < size; ++i)
+        {
+            auto unit = countedOrder[i];
+            if (auto varOp = unit.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                if (auto init = varOp.getInitializer())
+                {
+                    countedValues.insert(countedUnitOf(init));
+                }
+
+                continue;
+            }
+
+            // a field read the signature pass made in place of a local's value: that value too
+            if (auto partner = fieldReadPartner(unit))
+            {
+                countedValues.insert(partner);
+            }
+
+            for (auto *user : unit.getUsers())
+            {
+                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                if (varOp && varOp.getInitializer() == unit && isOwningVariable(varOp))
+                {
+                    countedValues.insert(varOp.getResult());
+                }
+            }
+        }
+    }
+
+    void OwnershipInferencePass::retainKeptCountedArguments()
+    {
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (!isCall(op))
+            {
+                return;
+            }
+
+            auto args = callArgs(op);
+            for (auto index : ownedParams(op))
+            {
+                if (static_cast<size_t>(index) >= args.size() || !countedValues.contains(countedUnitOf(args[index])))
+                {
+                    continue;
+                }
+
+                // given a count for the call already (callCopies)
+                auto arg = args[index];
+                auto given = false;
+                for (auto *prev = op->getPrevNode(); prev && mlir::isa<mlir_ts::RetainOp>(prev); prev = prev->getPrevNode())
+                {
+                    given = given || prev->getOperand(0) == arg;
+                }
+
+                if (!given)
+                {
+                    mlir::OpBuilder builder(op);
+                    builder.create<mlir_ts::RetainOp>(op->getLoc(), arg);
+                }
+            }
+        });
+    }
+
+    void OwnershipInferencePass::indexCountedLocations()
+    {
+        // only where the dry run reported, at an op that names a counted value: the real run's error
+        // there is that value's (`a value that borrows 'current'` of the global a counted field read
+        // is read through); an error anywhere else stays an error
+        llvm::DenseSet<mlir::Location> reported;
+        for (auto &recorded : dryRunCapture)
+        {
+            reported.insert(recorded.loc);
+        }
+
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (!reported.contains(op->getLoc()))
+            {
+                return;
+            }
+
+            if (auto unit = countedUnitOfOp(op); unit && countedValues.contains(unit))
+            {
+                countedAt.try_emplace(op->getLoc(), unit);
+            }
+
+            for (auto operand : op->getOperands())
+            {
+                auto unit = countedUnitOf(operand);
+                if (countedValues.contains(unit))
+                {
+                    countedAt.try_emplace(op->getLoc(), unit);
+                }
+            }
+        });
+    }
+
+    void OwnershipInferencePass::keepCountedOps(llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        if (countedValues.empty())
+        {
+            return;
+        }
+
+        auto counted = [&](mlir::Value slot) {
+            return countedValues.contains(slot.getDefiningOp<mlir_ts::VariableOp>() ? slot : countedUnitOf(slot));
+        };
+
+        // rc's releases stay where it placed them: none on the edges a move did not take, and no slot
+        // emptied after a move
+        llvm::erase_if(edgeReleases, [&](EdgeRelease &edge) { return counted(edge.slot); });
+        llvm::erase_if(slotClears, [&](SlotClear &clear) { return counted(clear.slot); });
+        // ...nor a release of the value a select of a counted one did not take: rc's releases stay
+        selectMoves.remove_if([&](mlir::Operation *op) {
+            auto selectOp = mlir::cast<mlir::arith::SelectOp>(op);
+            return counted(selectOp.getTrueValue()) || counted(selectOp.getFalseValue());
+        });
+        toErase.remove_if([&](mlir::Operation *op) { return touchesCounted(op); });
+    }
+
+    void OwnershipInferencePass::markCountedRetains()
+    {
+        if (countedValues.empty())
+        {
+            return;
+        }
+
+        auto unit = mlir::UnitAttr::get(&getContext());
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) && touchesCounted(op))
+            {
+                op->setAttr(OWN_COUNTED_ATTR_NAME, unit);
+            }
+        });
+    }
+
+    void OwnershipInferencePass::warnCounted()
+    {
+        for (auto unit : countedOrder)
+        {
+            const RecordedDiagnostic *recorded = nullptr;
+            if (auto found = dryRunDiagnostics.find(unit); found != dryRunDiagnostics.end())
+            {
+                recorded = &found->second;
+            }
+            else if (auto found = countedErrors.find(unit); found != countedErrors.end())
+            {
+                recorded = &found->second;
+            }
+
+            auto loc = recorded ? recorded->loc : unit.getLoc();
+            auto diag = mlir::emitWarning(loc, "-mm=own counts this object here (--own-fallback=count); a cycle through "
+                                               "it is never freed");
+            if (!recorded)
+            {
+                continue;
+            }
+
+            diag.attachNote(recorded->loc) << recorded->message;
+            for (auto &[noteLoc, message] : recorded->notes)
+            {
+                diag.attachNote(noteLoc) << message;
+            }
+        }
+    }
+
 } // namespace own_inference
 
 #undef DEBUG_TYPE
 
-std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipInferencePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipInferencePass(bool countsFallback)
 {
-    return std::make_unique<own_inference::OwnershipInferencePass>();
+    return std::make_unique<own_inference::OwnershipInferencePass>(countsFallback);
 }

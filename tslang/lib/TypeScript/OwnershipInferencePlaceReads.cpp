@@ -1300,6 +1300,14 @@ namespace own_inference
                     {
                         callCopies.push_back({read, drop});
                     }
+                    // ...and, with --own-fallback=count, a read that cannot be copied: given a count
+                    // of its own for the call, as a handle is, when the repair counts it
+                    else if (dryRun && countsFallback && use.op == drop && !copiesInto(drop, result) &&
+                             !mlir::isa<mlir_ts::InvokeOp>(drop) &&
+                             llvm::count_if(drop->getOperands(), [&](mlir::Value operand) { return rootOf(operand) == result; }) == 1)
+                    {
+                        callCopies.push_back({read, drop});
+                    }
 
                     // a @weak field's read given to the call that may free it (spec 93)
                     if (auto derefOp = mlir::dyn_cast<mlir_ts::WeakRefDerefOp>(read);

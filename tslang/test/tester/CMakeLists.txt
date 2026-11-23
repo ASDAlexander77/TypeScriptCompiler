@@ -5896,6 +5896,22 @@ add_test(NAME test-own-string-copy-in-store-block
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
+# -mm=own --own-fallback=count: what inference refuses keeps rc's count, with a warning. Inference
+# only so far: the IR is read (a kept retain marked `__own_counted`, the warning). A shape that has
+# nothing to keep stays an error with the flag.
+foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_fallback_fresh_second_owner
+                      own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
+                      own_fallback_generator)
+    add_test(NAME test-own-fallback-ir-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+add_test(NAME test-own-fallback-ir-own_fallback_result_borrow_stays_error
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_result_borrow_stays_error.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+
 # A local declared in a generator's loop gives back what the last turn stored in its field. The
 # program means the same under every model; no run can see the leak, so the IR is read.
 foreach(loop_local_mm rc none gc)

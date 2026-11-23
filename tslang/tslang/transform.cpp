@@ -186,9 +186,9 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.addPass(mlir::typescript::createOwnershipSignaturePass(
                 compileOptions.isExecutable || compileOptions.isJit,
                 linkedByOthers ? SHARED_LIB_OWN_OBJECT_FACTS + typescript::moduleSymbolSuffix(moduleFile) : ""));
-            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
+            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass(compileOptions.ownCountsFallback()));
             // an `await`'s continuation and a `for await` body, outlined by the async lowering
-            pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
+            pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass(compileOptions.ownCountsFallback()));
         }
 
         // What this module promises importers about its parameters, whether or not it promotes

@@ -76,6 +76,16 @@ class OwnershipInferencePass
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OwnershipInferencePass)
 
+    explicit OwnershipInferencePass(bool countsFallback = false) : countsFallback(countsFallback)
+    {
+    }
+
+    OwnershipInferencePass(const OwnershipInferencePass &other)
+        : mlir::PassWrapper<OwnershipInferencePass, mlir::InterfacePass<mlir::FunctionOpInterface>>(other),
+          countsFallback(other.countsFallback)
+    {
+    }
+
     void runOnOperation() override;
 
     mlir::FunctionOpInterface getFunction();
@@ -167,8 +177,74 @@ class OwnershipInferencePass
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::StringAttr>> dryRunAttrs;
 
     // Whether a report is to be emitted: not under `quietly`'s trial, and not in the dry run, which
-    // only counts it.
+    // only counts it - or, with --own-fallback=count, records it (dryRunCapture).
     bool reporting();
+
+    // --own-fallback=count (own rc fallback design, section 3): where the dry run fails, a value it
+    // reports keeps every retain and release rc placed for it, and is counted at run time from then
+    // on. The invariant this protects: rc's IR is balanced, and every erasure own makes is balanced
+    // (a second owner's retain with the releases it pairs with, a move with the source's releases).
+    // A counted value keeps its ops as rc placed them, so its owners beyond the first are counted
+    // (the word is rc's count minus one: own's first owner holds an implicit share) and the block
+    // lives at least as long as own's analysis assumes, never shorter - every fact derived
+    // elsewhere stays true.
+    bool countsFallback = false;
+
+    // A diagnostic a report site emitted, kept to be the counted value's warning's notes.
+    struct RecordedDiagnostic
+    {
+        mlir::Location loc;
+        std::string message;
+        llvm::SmallVector<std::pair<mlir::Location, std::string>> notes;
+    };
+
+    // The counted values of this function: each the unit countedUnitOf gives - the root of a value,
+    // or the slot of a local or a parameter whose reads it is - in the order they were found.
+    llvm::DenseSet<mlir::Value> countedValues;
+    llvm::SmallVector<mlir::Value> countedOrder;
+    // the error each counted value's dry run would have reported (the warning's notes)
+    llvm::DenseMap<mlir::Value, RecordedDiagnostic> dryRunDiagnostics;
+    // what the dry run's report sites emitted, in order, swallowed (the flag only)
+    llvm::SmallVector<RecordedDiagnostic> dryRunCapture;
+    // an error the real run raised on a counted value: a note of its warning, not an error
+    llvm::DenseMap<mlir::Value, RecordedDiagnostic> countedErrors;
+    // the counted value an op at a location concerns (an op that names it, or its retain)
+    llvm::DenseMap<mlir::Location, mlir::Value> countedAt;
+    // with the flag, failure is decided after the real run: signalled, and errors left as errors
+    bool failureSignalled = false;
+    unsigned uncountedErrors = 0;
+
+    // The flag's own: what a site's failure says is decided after the real run (countsFallback).
+    void signalPassFailure();
+
+    // The unit a value is counted as: its root, or the slot of a local or a parameter it is read from.
+    mlir::Value countedUnitOf(mlir::Value value);
+    // ...of what a retain or a release (a local's slot's too) acquires or gives back, or null.
+    mlir::Value countedUnitOfOp(mlir::Operation *op);
+    // A retain or a release of a counted value (a slot's too).
+    bool touchesCounted(mlir::Operation *op);
+    // Can `unit` keep rc's ops as they are, its count balanced? Values born owning one share under
+    // both models (a `new`, a fresh call's result), reads of a place and borrowed parameters (none
+    // under either), owning locals (rc's slot retain is the local's share), and parameters this
+    // function keeps (released at its exits, the share the caller moved in). Anything else stays an
+    // error.
+    bool countable(mlir::Value unit);
+    // The value stored into a field right before `read` reads it again: the signature pass's read of
+    // the field in place of a local moved into it (TSLANG 47), or null.
+    mlir::Value fieldReadPartner(mlir::Value read);
+    // After a failed dry run: the values its leftover retains and lent reads belong to, which its
+    // reports name, counted (the repair, runOnFunction).
+    void countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased);
+    // A call that keeps a counted value's argument takes one owner of it: a retain of its own before
+    // the call (rc's callee retains for what it keeps; own's erases that).
+    void retainKeptCountedArguments();
+    // The locations the dry run reported at whose ops name a counted value (countedAt).
+    void indexCountedLocations();
+    // The real run: every op of a counted value stays, its retains marked OWN_COUNTED_ATTR_NAME.
+    void keepCountedOps(llvm::SetVector<mlir::Operation *> &toErase);
+    void markCountedRetains();
+    // One warning per counted value, its recorded error and notes as notes.
+    void warnCounted();
 
     // `op->setAttr(name, unit)`, undone after the dry run when the op did not have it
     void setAttrTracked(mlir::Operation *op, llvm::StringRef name);

@@ -977,6 +977,12 @@ namespace own_inference
 
     bool OwnershipInferencePass::checkValueMoves(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
+        // a counted value (--own-fallback=count) keeps rc's ops: no move of it is checked or erased
+        if (!dryRun && countedValues.contains(countedUnitOf(value)))
+        {
+            return false;
+        }
+
         // Nothing to move: a number owns no block, and a string literal is the immortal global,
         // which any number of places may hold. Under --opt, CSE merges identical literals before
         // this pass, so one such value is routinely stored into several places. A read out of a

@@ -66,6 +66,11 @@
 // array and not them.
 #define OWN_SHALLOW_RELEASE_ATTR_NAME "__own_shallow_release"
 
+// -mm=own --own-fallback=count only, set by OwnershipInferencePass for the lowering. On a
+// `ts.Retain` / `ts.RetainSlot` inference kept: the object is counted from then on, an owner beyond
+// the first (own rc fallback design, section 3). A retain left behind without it is an error.
+#define OWN_COUNTED_ATTR_NAME "__own_counted"
+
 // Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
 // instead of by retaining. The slot still releases at every scope exit - that release is what
 // gives the consumed reference back - so the pair is still balanced, but there is no
