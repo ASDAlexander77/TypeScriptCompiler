@@ -2390,10 +2390,11 @@ foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issues_92_124-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_92_124.ts")
     tslang_add_test(NAME test-compile-00tslang_issues_92_124-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issues_92_124.ts")
 endforeach()
-# TSLANG_ISSUES 108 (static `this` is the class called through), 147 (a name starting with `\u{61}`) and
-# 161 (`"1.50" === 1.5` of a `number | string` is false)
+# TSLANG_ISSUES 108 (static `this` is the class called through), 147 (a name starting with `\u{61}`),
+# 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
+# 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()

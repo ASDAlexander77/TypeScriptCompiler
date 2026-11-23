@@ -2520,3 +2520,30 @@ JIT, rc, own).
   converts.
 
 Tests `00tslang_issue_108.ts`, `00tslang_issue_147.ts`, `00tslang_issue_161.ts` (compile, JIT, gc, rc, none, own).
+
+163 (leftovers of 133 and 114, and three looked at, 2026-11-23). Fixed:
+- A rest parameter typed as a tuple (`fn(...args: [string, number])`) is called with separate arguments
+  (`fn("a", 1)`): they make the tuple, each as its element's type, and a tuple spread in (`fn(...t)`) is passed
+  as it is. A wrong count says how many the rest parameter takes. It failed with "'ts.CreateArray' op result #0
+  must be ...".
+- `arguments` in a function with a rest parameter is the other arguments followed by the rest's elements, and in
+  one with a destructured parameter that parameter's argument. `arguments` is now held by a local of its own: read
+  as a temporary (`for (const v of arguments)`), the array leaked under -mm=own (300 MB for 2M calls) and, with a
+  rest parameter, under rc, where a spread literal read as a temporary is never given back (`for (const v of
+  [...xs])` leaks the same way, open). Not in a loop's own condition (`i < arguments.length`), which has no scope
+  to give a local back: there it stays a temporary, as before.
+
+Looked at, still open:
+- 112 (`typeof options.label === "string"` of a union of two object types left an `unrealized_conversion_cast`):
+  `{ label: string; alias: string } | { label: object; alias?: string }` has no tag - both are laid out as
+  pointers - so nothing at run time says which one a value is, and `typeof options.label` can't be answered. The
+  fix is a tag for a union of object types whose fields of one name differ in type, and a per-member conversion
+  where a property of the union is read.
+- 148 (`const a = { get self(): any { return a; } }`): every function in an initializer that reads the variable
+  being declared fails ("can't resolve name: a"), with a written type too
+  (`const a: { m(): number } = { m() { return a.v; } }`). Untyped, tsc refuses most of these as well (TS7022);
+  with a type written, the variable has to be declared before its initializer is evaluated.
+- 103 (`Hello2 = Hello1`, a field given an enum, "operand does not dominate"): the field is typed as the enum's
+  member type, not the enum object, so `f.Hello2.World1` doesn't resolve either; `const h = Hello1` works.
+
+Tests `00tslang_issue_133.ts`, `00tslang_issue_114.ts` (compile, JIT, gc, rc, none, own).
