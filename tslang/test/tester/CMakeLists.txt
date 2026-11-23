@@ -5978,6 +5978,39 @@ foreach(fallback_test own_fallback_move_overwrite own_fallback_unwind own_fallba
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib" "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# A counted object and its one-owner child, counted by two threads at once: the share routine (built
+# under own too, SHARE) marks every block the thread's start reaches, so their counts change
+# atomically. Run by the JIT and built ahead of time; each run races 20 times. The thread is started
+# as Thread.spawn starts one, by the C runtime on Windows and pthread_create elsewhere.
+if(WIN32)
+    set(fallback_thread_test "own_fallback_thread")
+else()
+    set(fallback_thread_test "own_fallback_thread_pthread")
+endif()
+add_test(NAME test-own-fallback-run-own_fallback_thread
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DSHARE=1
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_thread_test}.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+add_test(NAME test-own-fallback-run-exe-own_fallback_thread
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DEXE=1
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib" "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_thread_test}.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+# ...and the child's header word after each race, own only: its shared bit alone, no extra owner left
+# over (a count lost to the other thread) and no allocator's word (a child freed while held)
+if(WIN32)
+    add_test(NAME test-own-fallback-run-own_fallback_thread_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_thread_word.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_thread_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+endif()
+# A block shared on one thread, without the flag: the share routine marks it, and its one owner's
+# release still destroys it, once - each shape, and a pop through ts.TakeOutOfField
+foreach(share_mm gc own)
+    tslang_add_test(NAME test-jit-${share_mm}-own_share_release COMMAND test-runner -jit -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_share_release.ts")
+    tslang_add_test(NAME test-compile-${share_mm}-own_share_release COMMAND test-runner -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_share_release.ts")
+endforeach()
 # The release under own tests the header word against 0 first (one owner: free at once), with or
 # without the flag; an array gives its elements back through it on pop, splice, a shorter length and
 # its own release.

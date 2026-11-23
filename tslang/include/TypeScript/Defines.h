@@ -754,7 +754,7 @@
 #define TYPE_DESCR_RETAIN 3
 // Address of the type's share routine (`Shared.share`, OwnershipRoutineLogic::getOrCreateShareRoutine),
 // on the same terms again: it sets the shared bit of every block a value whose type is only known
-// at run time reaches. Null under every model but `rc`.
+// at run time reaches. Null under every model but `rc` and `own`.
 #define TYPE_DESCR_SHARE 4
 // For a function type, the address of the adapter that calls a function of the type held in an
 // `any` - `(box: any, args: any[]) => any`, made when the function is boxed (user ruling 11-18,

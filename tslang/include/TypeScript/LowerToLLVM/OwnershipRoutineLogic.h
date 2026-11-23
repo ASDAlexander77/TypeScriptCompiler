@@ -730,13 +730,24 @@ class OwnershipRoutineLogic
     // also what ends the walk on a cycle. An immortal block is left alone, and has to be: a
     // literal's header may be in read-only memory.
     //
-    // Only `rc` keeps counts on every block; under the other models the op is erased.
+    // `rc` keeps counts on every block. Under `own` a block holds a count only of the extra owners
+    // --own-fallback=count kept (own rc fallback design, section 6), in this module or in another, so
+    // whether a block is counted is not known here: every mortal block reached is marked, a one-owner
+    // child of a counted block too, since either thread can take a count on it. A shared block with no
+    // extra owner is still destroyed by its one owner's release (emitOwnReleaseSlowPath). An array's
+    // data block is not marked under own: its header is its only owner, and frees it without reading
+    // its word (buildArrayBody).
+    // Under gc and none the op is erased.
+    bool sharesBlocks()
+    {
+        return compileOptions.isRefCounted() || compileOptions.memoryModel == MemoryModelOwn;
+    }
 
     // Symbol name of the share routine for `type`, generating it if needed; empty when the type
     // owns no heap memory. Like release, it takes the storage holding a value.
     std::string getOrCreateShareRoutine(mlir::Type type)
     {
-        if (!compileOptions.isRefCounted() || !ownsHeapMemory(type))
+        if (!sharesBlocks() || !ownsHeapMemory(type))
         {
             return {};
         }
@@ -777,7 +788,7 @@ class OwnershipRoutineLogic
     // `ref<tuple<..>>`, as the box's release routine is.
     std::string getOrCreateCaptureBoxShareRoutine(mlir_ts::RefType captureRefType)
     {
-        if (!compileOptions.isRefCounted())
+        if (!sharesBlocks())
         {
             return {};
         }
@@ -1078,7 +1089,9 @@ class OwnershipRoutineLogic
             auto subtracted = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
             auto newWord = rewriter.create<LLVM::SelectOp>(loc, stuck, word, subtracted);
             rewriter.create<LLVM::StoreOp>(loc, newWord, blockPtr);
-            auto lastToTombstone = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newWord,
+            // (a tombstone of a shared block keeps its shared bit: emitFreeOrBury)
+            auto lastToTombstone = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq,
+                                                                 emitWithoutSharedBit(loc, llvmIndexType, newWord),
                                                                  emitConstantIndex(loc, llvmIndexType, deadBit()));
             emitIfTrueBlock(lastToTombstone, [&]() { emitFreeBlock(target); });
         });
@@ -3080,14 +3093,16 @@ class OwnershipRoutineLogic
         }
 
         // the header, then its data block, then the elements [0, length) - each only when the one
-        // before it was not shared already
+        // before it was not shared already. Under own the data block is not counted (its header is
+        // its one owner, and frees it with itself), so it is not marked: the header's mark is what
+        // stops a second walk
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
             auto header = layout.headerForRead(arrayType, slotPtr);
             emitMarkBlockShared(header, [&]() {
                 auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, layout.dataAddress(arrayType, header));
-                emitMarkBlockShared(dataValue, [&]() {
+                auto shareElements = [&]() {
                     auto elementRoutine = getOrCreateShareRoutine(arrayType.getElementType());
                     if (elementRoutine.empty())
                     {
@@ -3104,7 +3119,16 @@ class OwnershipRoutineLogic
                                                       FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
                                                       ValueRange{elementPtr});
                     });
-                });
+                };
+
+                if (compileOptions.isRefCounted())
+                {
+                    emitMarkBlockShared(dataValue, shareElements);
+                }
+                else
+                {
+                    shareElements();
+                }
             });
             return;
         }

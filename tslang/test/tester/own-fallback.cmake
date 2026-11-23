@@ -7,7 +7,10 @@
 #                      line:column of a `new`), also that StackPromotionPass keeps that object on the
 #                      heap because it is counted (--stack-promotion-report)
 #   MODE=RUN           run with the flag (JIT, or built ahead of time with EXE=1): exits 0, warns,
-#                      prints `done.` and no error, and prints what it prints under -mm=gc
+#                      prints `done.` and no error, and prints what it prints under -mm=gc; with
+#                      SHARE, also that its LLVM IR under own has a share routine (`tsshr_`), one for
+#                      a closure's capture box (`tsshrbox_`), and an atomic `or` setting the shared
+#                      bit: Shared.share is not erased under own
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:`
 #   MODE=SAME          the other way round: a file own accepts without the flag is accepted with it
 #                      too, and run with it (JIT) prints what it prints under -mm=gc, with no error -
@@ -126,6 +129,25 @@ elseif(MODE STREQUAL "RUN")
     endif()
     if(NOT out STREQUAL gcOut)
         message(FATAL_ERROR "counted, the program prints\n${out}\nwhere under gc it prints\n${gcOut}")
+    endif()
+    if(SHARE)
+        get_filename_component(llName "${FILE}" NAME_WE)
+        set(llFile "${CMAKE_CURRENT_BINARY_DIR}/${llName}.own-fallback.ll")
+        file(REMOVE "${llFile}")
+        execute_process(COMMAND "${TSLANG}" --emit=llvm --no-default-lib -mm=own --own-fallback=count "${FILE}" -o "${llFile}"
+                        OUTPUT_VARIABLE llvmOut ERROR_VARIABLE llvmErr RESULT_VARIABLE result)
+        if(NOT result EQUAL 0 OR NOT EXISTS "${llFile}")
+            message(FATAL_ERROR "tslang --emit=llvm failed (${result}):\n${llvmOut}${llvmErr}")
+        endif()
+        file(READ "${llFile}" llvmOut)
+        # (nothing else under own sets a bit with an atomic `or`); and a closure's capture box has one
+        # of its own (`tsshrbox_`), which is how the walk reaches what the thread's function captured
+        string(FIND "${llvmOut}" "define internal void @tsshr_" share)
+        string(FIND "${llvmOut}" "define internal void @tsshrbox_" shareBox)
+        string(FIND "${llvmOut}" "atomicrmw or" mark)
+        if(share EQUAL -1 OR shareBox EQUAL -1 OR mark EQUAL -1)
+            message(FATAL_ERROR "no share routine setting the shared bit under -mm=own (${share}, box ${shareBox}, mark ${mark}):\n${llvmOut}")
+        endif()
     endif()
 elseif(MODE STREQUAL "SAME")
     execute_process(COMMAND "${TSLANG}" --emit=jit --jit-cache=false --no-default-lib -mm=gc "${FILE}"

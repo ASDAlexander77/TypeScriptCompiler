@@ -503,7 +503,7 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
                     !MLIRTypeHelper::isSharedHandleType(descriptorType)
                 ? std::string()
                 : orl.getOrCreateRetainRoutine(descriptorType);
-        // empty but under rc, the one model that counts every block
+        // empty but under rc and own (OwnershipRoutineLogic::sharesBlocks)
         auto shareRoutineName = orl.getOrCreateShareRoutine(descriptorType);
 
         // a function type's adapter for calls through `any` (TYPE_DESCR_CALL), when MLIRGen made one and it is
@@ -595,7 +595,8 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
 };
 
 // `Shared.share(v)`: the share routine of v's type (OwnershipRoutineLogic::getOrCreateShareRoutine)
-// under rc; nothing under the models that do not count every block.
+// under rc, and under own, where a block may hold extra owners (--own-fallback=count, in any module);
+// nothing under gc and none.
 class MarkSharedOpLowering : public TsLlvmPattern<mlir_ts::MarkSharedOp>
 {
   public:
@@ -604,9 +605,9 @@ class MarkSharedOpLowering : public TsLlvmPattern<mlir_ts::MarkSharedOp>
     LogicalResult matchAndRewrite(mlir_ts::MarkSharedOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        if (orl.sharesBlocks())
         {
-            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitShareValue(op.getValue().getType(), transformed.getValue());
         }
 
