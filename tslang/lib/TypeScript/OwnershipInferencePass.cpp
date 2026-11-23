@@ -2213,7 +2213,22 @@ namespace own_inference
             });
         }
 
-        return true;
+        // A value something borrows - an array literal's or a rest argument's element, a capture of a
+        // closure or a literal's box, a value boxed in an `any` and cast back, a store into a borrowing
+        // field, a `let` borrowing a merge (classifyClosures, classifyLiteralCaptures,
+        // classifyStateBoxes, classifyBorrowingFields, classifyArgumentArrays,
+        // classifyLocalBorrowingArrays, classifyBorrowingBoxes, borrowsThroughMerge): rc's retain for
+        // the borrower goes, and the borrower's release is shallow or none. Counted, the retain would be
+        // kept (keepCountedOps) and nothing would give it back - a leak. Its ops are not whole, so it
+        // is not counted: it stays an error. (The view's report, classifyArrayViews, has no subject.)
+        auto borrowed = [&](const llvm::DenseSet<mlir::Operation *> &retains) {
+            return llvm::any_of(retains, [&](mlir::Operation *retain) {
+                auto unit = countedUnitOfOp(retain);
+                return unit && group.contains(unit);
+            });
+        };
+
+        return !borrowed(fieldBorrowRetains) && !borrowed(captureRetains) && !borrowed(mergeBorrowRetains);
     }
 
     void OwnershipInferencePass::retainKeptCountedArguments()

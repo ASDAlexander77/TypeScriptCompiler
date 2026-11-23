@@ -3,7 +3,9 @@
 #   MODE=IR            compiled to --emit=mlir-affine with the flag: compiles, warns, and keeps at least
 #                      one retain marked `__own_counted` - exactly COUNTED of them when it is given (a
 #                      retain too few frees the object early); with FUNC, RELEASED and RELEASES, also
-#                      exactly RELEASES releases naming RELEASED in function FUNC
+#                      exactly RELEASES releases naming RELEASED in function FUNC; with HEAP_AT (the
+#                      line:column of a `new`), also that StackPromotionPass keeps that object on the
+#                      heap because it is counted (--stack-promotion-report)
 #   MODE=RUN           run with the flag (JIT, or built ahead of time with EXE=1): exits 0, warns,
 #                      prints `done.` and no error, and prints what it prints under -mm=gc
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:`
@@ -22,7 +24,11 @@ if(plainResult EQUAL 0)
 endif()
 
 if(MODE STREQUAL "IR")
-    execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own --own-fallback=count "${FILE}"
+    set(report)
+    if(DEFINED HEAP_AT)
+        set(report --stack-promotion-report)
+    endif()
+    execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own --own-fallback=count ${report} "${FILE}"
                     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
     # the IR is printed to stderr, with the diagnostics
     string(APPEND out "${err}")
@@ -40,6 +46,12 @@ if(MODE STREQUAL "IR")
     endif()
     if(DEFINED COUNTED AND NOT markedCount EQUAL COUNTED)
         message(FATAL_ERROR "${markedCount} retains marked __own_counted, expected ${COUNTED}:\n${out}")
+    endif()
+    if(DEFINED HEAP_AT)
+        string(FIND "${out}" ":${HEAP_AT}: remark: stack-promotion: heap: counted" heap)
+        if(heap EQUAL -1)
+            message(FATAL_ERROR "the object made at ${HEAP_AT} is not kept on the heap as counted:\n${out}")
+        endif()
     endif()
     # the releases rc placed stay, and none is added but a kept parameter's at the exits: in function
     # FUNC, exactly RELEASES `ts.Release` / `ts.ReleaseSlot` whose line names RELEASED (`@Node`)

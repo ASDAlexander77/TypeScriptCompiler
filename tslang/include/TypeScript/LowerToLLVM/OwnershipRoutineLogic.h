@@ -639,22 +639,46 @@ class OwnershipRoutineLogic
     }
 
     // ts.TakeOutOfField: the pointer the field at `fieldPtr` holds goes to another owner right before
-    // the object at `objectPtr` (never null: the field was read through it) is released. A mortal
-    // object is freed by that release, so its field is emptied. An immortal one keeps the field,
-    // and what the field holds, which two places hold from then on, is made immortal.
+    // the object at `objectPtr` (never null: the field was read through it) is released. What that
+    // release does decides it, from the object's header word:
+    // - immortal: it is not freed. It keeps the field, and what the field holds, which two places
+    //   hold from then on, is made immortal;
+    // - extra owners (--own-fallback=count, maybe in another module): the release takes one of them
+    //   and the object stays, with its field, for the owners left. What the field holds is held by
+    //   the field and by the place it is handed to: it gains an extra owner;
+    // - no extra owner (0, or WeakRefs only): the release destroys the object - and a tombstone's
+    //   fields are released too - so its field is emptied and the release frees nothing of the value.
+    // A shared object's word is read plainly, as emitCountLoad's are: an owner, this one, holds it,
+    // so other threads can only take extra owners away, and a release that turns out to be the last
+    // gives the kept field's value back, which its extra owner pays for.
     void emitTakeOutOfField(mlir::Value objectPtr, mlir::Value fieldPtr)
     {
         TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
         auto loc = op->getLoc();
 
-        auto isMortal = emitIsMortal(objectPtr);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, objectPtr, llvmIndexType);
+        auto word = emitCountLoad(loc, llvmIndexType, blockPtr);
+        auto isImmortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, word,
+                                                        emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        auto extra = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, extraOwnersMask()));
+        auto hasExtra = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, extra, emitConstantIndex(loc, llvmIndexType, 0));
+
         auto *currentBlock = rewriter.getInsertionBlock();
         auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
         auto *mortalBlock = rewriter.createBlock(continuationBlock);
+        auto *countedBlock = rewriter.createBlock(continuationBlock);
         auto *immortalBlock = rewriter.createBlock(continuationBlock);
+        auto *notImmortalBlock = rewriter.createBlock(continuationBlock);
 
         rewriter.setInsertionPointToEnd(mortalBlock);
         rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), fieldPtr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(countedBlock);
+        emitExtraIncRef(rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), fieldPtr));
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToEnd(immortalBlock);
@@ -662,8 +686,12 @@ class OwnershipRoutineLogic
         emitMarkImmortalIfMortal(held);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
+        // (immortal is all ones: its extra-owner bits are set too, so it is told apart first)
+        rewriter.setInsertionPointToEnd(notImmortalBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, hasExtra, countedBlock, mortalBlock);
+
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<LLVM::CondBrOp>(loc, isMortal, mortalBlock, immortalBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, isImmortal, immortalBlock, notImmortalBlock);
         rewriter.setInsertionPointToStart(continuationBlock);
     }
 
@@ -986,7 +1014,11 @@ class OwnershipRoutineLogic
     }
 
     // a WeakRef made or copied: one more weak count, unless the target is immortal. A count that
-    // would overflow into the extra owners makes the target immortal instead (Defines.h)
+    // would overflow into the extra owners makes a live target immortal instead (Defines.h). A
+    // tombstone (the dead bit) must not be: immortal reads as alive (emitWeakTargetAlive), and its
+    // fields are released already. Its full count sticks instead - neither this nor emitWeakDecRef
+    // changes it again - so the tombstone is never freed (a leak of its block, never a WeakRef left
+    // to a freed one).
     void emitWeakIncRef(mlir::Value target)
     {
         TypeConverterHelper tch(typeConverter);
@@ -997,14 +1029,18 @@ class OwnershipRoutineLogic
             auto mask = emitConstantIndex(loc, llvmIndexType, weakCountMask());
             auto count = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, mask);
             auto full = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, count, mask);
+            auto dead = emitHasDeadBit(loc, llvmIndexType, word);
             auto added = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
-            auto newWord = rewriter.create<LLVM::SelectOp>(
-                loc, full, emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL), added);
+            auto overflown = rewriter.create<LLVM::SelectOp>(
+                loc, dead, word, emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL));
+            auto newWord = rewriter.create<LLVM::SelectOp>(loc, full, overflown, added);
             rewriter.create<LLVM::StoreOp>(loc, newWord, blockPtr);
         });
     }
 
-    // a WeakRef gone: one weak count less; the last one to a tombstone frees its block
+    // a WeakRef gone: one weak count less; the last one to a tombstone frees its block. A tombstone
+    // whose count is full keeps it (emitWeakIncRef: the count stuck there may be short of the
+    // WeakRefs left)
     void emitWeakDecRef(mlir::Value target)
     {
         TypeConverterHelper tch(typeConverter);
@@ -1012,12 +1048,25 @@ class OwnershipRoutineLogic
         auto loc = op->getLoc();
         auto llvmIndexType = tch.convertType(th.getIndexType());
         emitIfMortalWord(target, [&](mlir::Value word, mlir::Value blockPtr) {
-            auto newWord = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
+            auto mask = emitConstantIndex(loc, llvmIndexType, weakCountMask());
+            auto count = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, mask);
+            auto full = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, count, mask);
+            auto stuck = rewriter.create<LLVM::AndOp>(loc, full.getType(), full, emitHasDeadBit(loc, llvmIndexType, word));
+            auto subtracted = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, word, emitConstantIndex(loc, llvmIndexType, 1));
+            auto newWord = rewriter.create<LLVM::SelectOp>(loc, stuck, word, subtracted);
             rewriter.create<LLVM::StoreOp>(loc, newWord, blockPtr);
             auto lastToTombstone = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newWord,
                                                                  emitConstantIndex(loc, llvmIndexType, deadBit()));
             emitIfTrueBlock(lastToTombstone, [&]() { emitFreeBlock(target); });
         });
+    }
+
+    // has `word` (mortal) the dead bit: a tombstone kept for WeakRefs
+    mlir::Value emitHasDeadBit(mlir::Location loc, mlir::Type llvmIndexType, mlir::Value word)
+    {
+        auto deadMask = emitConstantIndex(loc, llvmIndexType, deadBit());
+        auto deadPart = rewriter.create<LLVM::AndOp>(loc, llvmIndexType, word, deadMask);
+        return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, deadPart, emitConstantIndex(loc, llvmIndexType, 0));
     }
 
     // `then` when `condition` holds
@@ -1354,6 +1403,8 @@ class OwnershipRoutineLogic
 
             auto helper = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter,
                 loc, helperName, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+            // one call per kept retain, never inlined: only programs with counted values reach it
+            setOutOfLine(helper, /*cold=*/false);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
@@ -1429,11 +1480,30 @@ class OwnershipRoutineLogic
                                       ValueRange{payloadPtr});
     }
 
+    // `noinline` (and `cold`) on a count helper: LLVM would otherwise inline it at every call site
+    static void setOutOfLine(LLVM::LLVMFuncOp helper, bool cold)
+    {
+        auto *context = helper.getContext();
+        llvm::SmallVector<mlir::Attribute> passthrough;
+        if (auto existing = helper.getPassthroughAttr())
+        {
+            passthrough.append(existing.begin(), existing.end());
+        }
+
+        passthrough.push_back(mlir::StringAttr::get(context, "noinline"));
+        if (cold)
+        {
+            passthrough.push_back(mlir::StringAttr::get(context, "cold"));
+        }
+
+        helper.setPassthroughAttr(mlir::ArrayAttr::get(context, passthrough));
+    }
+
     // An own release of the block `payloadPtr` addresses (not null): should the caller destroy it
     // now? The word 0 - one owner, no WeakRef - is the common case, and is tested here, inline: it is
-    // the last owner. Every other word goes to one helper (emitOwnReleaseSlowPath): an immortal block
-    // is never the last; one with extra owners loses one and is not; one with none - WeakRefs only,
-    // or shared - is.
+    // the last owner. An immortal block is never the last, also tested inline. Every other word goes
+    // to one helper, called out of line (emitOwnReleaseSlowPath): one with extra owners loses one and
+    // is not the last; one with none - WeakRefs only, or shared - is.
     mlir::Value emitOwnReleaseIsLast(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
@@ -1448,6 +1518,7 @@ class OwnershipRoutineLogic
         auto *mergeBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
         auto isLast = mergeBlock->addArgument(boolType, loc);
         auto *slowBlock = rewriter.createBlock(mergeBlock);
+        auto *notOneOwnerBlock = rewriter.createBlock(mergeBlock);
 
         rewriter.setInsertionPointToEnd(slowBlock);
         auto slowIsLast = emitOwnReleaseSlowPath(payloadPtr);
@@ -1459,7 +1530,15 @@ class OwnershipRoutineLogic
         auto isOneOwner = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, word,
                                                         emitConstantIndex(loc, llvmIndexType, 0));
         auto yes = rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 1));
-        rewriter.create<LLVM::CondBrOp>(loc, isOneOwner, mergeBlock, ValueRange{yes}, slowBlock, ValueRange{});
+        rewriter.create<LLVM::CondBrOp>(loc, isOneOwner, mergeBlock, ValueRange{yes}, notOneOwnerBlock, ValueRange{});
+
+        // an immortal block (a literal, a keeper's, a stack object) is never the last: also told here,
+        // so that only the counted, weakly referred and shared words call the helper
+        rewriter.setInsertionPointToEnd(notOneOwnerBlock);
+        auto isImmortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, word,
+                                                        emitConstantIndex(loc, llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        auto no = rewriter.create<LLVM::ConstantOp>(loc, boolType, rewriter.getIntegerAttr(boolType, 0));
+        rewriter.create<LLVM::CondBrOp>(loc, isImmortal, mergeBlock, ValueRange{no}, slowBlock, ValueRange{});
 
         rewriter.setInsertionPointToStart(mergeBlock);
         return isLast;
@@ -1487,6 +1566,9 @@ class OwnershipRoutineLogic
 
             auto helper = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter,
                 loc, helperName, th.getFunctionType(boolType, {th.getPtrType()}), LLVM::Linkage::Internal);
+            // a counted, weakly referred or shared word (emitOwnReleaseIsLast tells 0 and immortal
+            // inline): rare, so one call, kept out of every release
+            setOutOfLine(helper, /*cold=*/true);
 
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
@@ -2666,7 +2748,15 @@ class OwnershipRoutineLogic
     }
 
     // An interface value's `this` gets an extra owner (a retain --own-fallback=count kept), unless the
-    // interface is empty (a null vtable)
+    // interface is empty (a null vtable). Unlike rc (interfaceThisIsPlainBlock) this does not ask the
+    // descriptor whether `this` is a block counted the plain way: under own descriptors have no retain
+    // routine to compare with. It need not. An interface value is made only by ts.NewInterface, whose
+    // `this` is a class instance, an object block (an object literal, a tuple or `any` boxed into one:
+    // MLIRGenCast's castTupleToInterface and the "cloned object" path), or null (the null vtable, or a
+    // null `this`, which emitExtraIncRef skips): each a block with an own header word. MLIRGen refuses
+    // the rest: a @value class, a @cpp class, an array, a string, a function. (A Shared<T> handle cast
+    // to an interface is no ts.NewInterface: it lowers to an invalid cast and reads garbage under
+    // every model - a miscompile of its own, not a `this` this reaches.)
     void retainInterfaceThisExtraOwner(mlir::Type type, mlir::Value slotPtr)
     {
         TypeHelper th(rewriter);

@@ -414,7 +414,47 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return reason;
         }
 
+        if (counted(walk))
+        {
+            return "counted";
+        }
+
         return loopCarried(site, walk) ? "loop-carried" : "";
+    }
+
+    // -mm=own --own-fallback=count (own rc fallback design, section 4): a value inference left a
+    // retain of (`__own_counted`) has owners it counts at run time, and a promoted object is
+    // immortal, which discards them - a kept retain is an escape. So is a value stored into a local
+    // a counted value is stored into too: the two are counted together (one group).
+    static bool counted(const stack_escape::StackEscapeFacts::Walk &walk)
+    {
+        auto hasCountedRetain = [](mlir::Value value) {
+            return llvm::any_of(value.getUsers(), [](mlir::Operation *user) {
+                return isa<mlir_ts::RetainOp>(user) && user->hasAttr(OWN_COUNTED_ATTR_NAME);
+            });
+        };
+
+        if (llvm::any_of(walk.aliases, hasCountedRetain))
+        {
+            return true;
+        }
+
+        return llvm::any_of(walk.slots, [&](mlir::Operation *slot) {
+            return llvm::any_of(slot->getResult(0).getUsers(), [&](mlir::Operation *user) {
+                if (isa<mlir_ts::RetainSlotOp>(user))
+                {
+                    return user->hasAttr(OWN_COUNTED_ATTR_NAME);
+                }
+
+                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    return hasCountedRetain(loadOp.getResult());
+                }
+
+                auto storeOp = dyn_cast<mlir_ts::StoreOp>(user);
+                return storeOp && storeOp.getReference() == slot->getResult(0) && hasCountedRetain(storeOp.getValue());
+            });
+        });
     }
 
     // One stack slot per site, reused by every iteration of a loop around it: the object of one

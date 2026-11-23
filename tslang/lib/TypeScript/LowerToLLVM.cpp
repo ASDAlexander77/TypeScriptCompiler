@@ -1036,8 +1036,9 @@ class MarkImmortalCellOpLowering : public TsLlvmPattern<mlir_ts::MarkImmortalCel
 };
 
 // -mm=own: a field's value handed over to the place that holds its object, right before that place
-// releases the object (TypeScriptOps.td). A mortal object's field is emptied; an immortal one keeps
-// it, and what it holds is made immortal.
+// releases the object (TypeScriptOps.td). An object that release frees has its field emptied; an
+// immortal one keeps it, and what it holds is made immortal; one with extra owners keeps it, and
+// what it holds gains an extra owner (OwnershipRoutineLogic::emitTakeOutOfField).
 class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
 {
   public:
