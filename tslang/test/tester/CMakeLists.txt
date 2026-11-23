@@ -5584,7 +5584,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_rest_keeps_declared own_interface_getter_let own_callback_assigns_capture
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
-                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union own_param_borrowed_or_moved own_param_borrowing_let own_param_element_then_borrow own_field_taken_through_copy own_moved_then_continue own_param_moved_then_borrow_in_loop)
+                 own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union own_param_borrowed_or_moved own_param_borrowing_let own_param_element_then_borrow own_field_taken_through_copy own_moved_then_continue own_param_moved_then_borrow_in_loop
+                 own_literal_temp_indexed own_literal_temp_argument own_literal_temp_let_reassigned own_literal_temp_reads)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -5638,6 +5639,36 @@ foreach(other_global_mm own rc gc none)
     tslang_add_test(NAME test-jit-${other_global_mm}-own_global_argument_other_global COMMAND test-runner -jit -mm=${other_global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_argument_other_global.ts")
     tslang_add_test(NAME test-compile-${other_global_mm}-own_global_argument_other_global COMMAND test-runner -mm=${other_global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_argument_other_global.ts")
 endforeach()
+
+# An array literal no local holds - indexed, given to a call, read by `.length`, a `for...of` or a spread -
+# is given back at the end of its block under own (it leaked before); the same programs under rc and gc.
+# A string element a `let` is given is a copy (user ruling 11-23); an object element is a borrow.
+foreach(literal_temp_mm rc gc)
+    foreach(literal_temp_test own_literal_temp_indexed own_literal_temp_argument own_literal_temp_let_reassigned own_literal_temp_reads)
+        tslang_add_test(NAME test-jit-${literal_temp_mm}-${literal_temp_test} COMMAND test-runner -jit -mm=${literal_temp_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${literal_temp_test}.ts")
+    endforeach()
+endforeach()
+# ...the IR: a `ts.Release` of the literals no local holds (none before) - of the string literals and of
+# the object literal in the indexed program, of `[mk(9), mk(i + 1)]` in the call program (only
+# `[ms(i), "a" + i]` was released before).
+add_test(NAME test-own-literal-temp-indexed-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_indexed.ts")
+set_tests_properties(test-own-literal-temp-indexed-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]string>[)]"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+add_test(NAME test-own-literal-temp-indexed-object-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_indexed.ts")
+set_tests_properties(test-own-literal-temp-indexed-object-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+add_test(NAME test-own-literal-temp-argument-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_argument.ts")
+set_tests_properties(test-own-literal-temp-argument-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 
 # A global whose one store runs in a loop is mortal (spec 25): its stores are not marked, so each
 # releases the value before it, which an immortal header would leak. The `if` arm's store runs once.
@@ -6009,7 +6040,8 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
-                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted)
+                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted
+                      own_fallback_literal_temp_counted)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
@@ -6981,7 +7013,8 @@ set(own_error_cases
     "own_err_readonly_reassigned|:11:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
     "own_err_readonly_captured|:12:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
     "own_err_readonly_global|:10:11: error: 'i' borrows 'gl.inner' but is used here after it may be released or overwritten"
-    "own_err_readonly_redeclared|:7:11: error: 'i' borrows 'b.inner' but is used here after it may be released or overwritten")
+    "own_err_readonly_redeclared|:7:11: error: 'i' borrows 'b.inner' but is used here after it may be released or overwritten"
+    "own_err_literal_temp_object_kept|:21:11: error: 'o' borrows an element but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

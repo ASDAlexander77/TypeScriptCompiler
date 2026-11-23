@@ -50,7 +50,8 @@
 #       The same measure for generated programs (as the leaks command makes them), only those own
 #       accepts with --own-fallback=count and refuses without it: each one exercises the fallback.
 #       Each leaking program goes to DIR/leaks/s<seed>/original.ts. Exits 1 when own leaks or fails
-#       to run. --avoid literal-temp keeps out a leak own has without the flag (own-readiness.md).
+#       to run. (--avoid literal-temp keeps out array literals no local holds, a leak own had without the
+#       flag until it was fixed; it is not needed.)
 #
 #   mm_fuzz.py leaks [--own-fallback] FILE.ts ...
 #       Measure the given programs instead (no generating, no minimizing): gc, rc and own, each main
@@ -277,7 +278,7 @@ AVOIDABLE = {
     "arg-assign": "an assignment inside an argument list, f(n, (n = mk(1), m))",
     "globals": "the module-level G, HG, GS and GA",
     "literal-temp": "an array literal no local holds: indexed ([a, b][1]) or given to a call (f([mk(1)])), "
-                    "which own leaks without the flag too",
+                    "which own leaked until it was fixed",
 }
 
 TYPE_NAME = {"N": "N", "V": "V", "NA": "N[]", "IX": "IX", "IY": "IY", "IG": "IG",

@@ -124,8 +124,12 @@ and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fi
 - The 7 leaks are not the flag's: five of them (043, 152, 184, 290, 304) leak the same under own without
   the flag once their counted lines are removed, and all seven are flat with the flag once one shape is
   replaced - an array literal no local holds,
-  indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). Own leaks that array without the flag, in
-  the release from before this branch too (v0.0-pre-alpha134). It is an own bug, not fixed here.
+  indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). That was an own leak, with or without the
+  flag (v0.0-pre-alpha134 too), and it is fixed (own-literal-temp-leak): such a literal is given back at
+  the end of its block, or after the call, with what it owns, and all seven are flat with the flag as they
+  are. A string element a `let` is given is a copy; an object element stays a borrow (see
+  own-memory-model.md, Strings). Still leaking: a literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one
+  given a local's or a counted object besides new ones (`f([mk(i), o])`).
 
 The re-runs found two more and they are fixed too: a local declared from a counted local (`const n16 =
 n15`) is counted with it, and a string a keeping call is given its copy for is not counted (own
@@ -134,8 +138,10 @@ accepts that program).
 Now (`mm_fuzz.py --jobs 4 run --own-fallback --count 400`, seeds 1122000, 1123000, 1124000, 1125000 and
 1126000): 689 to 699 programs checked per seed, 366 to 381 accepted by own with the flag, no failure.
 The programs own accepts only with the flag (`--own-fallback leaks --avoid literal-temp --flag-only`),
-against rc and gc: 55, 58, 67, 73 and 65 on those seeds, none growing beyond rc; without `--avoid`, the
-leaks that show are the own leak above. On the same seeds, no generated program own accepts without
+against rc and gc: 55, 58, 67, 73 and 65 on those seeds, none growing beyond rc. Without `--avoid`, after
+the literal fix: 58 on seed 1122000, none growing (7 leaked before it), and 62 on seed 1123000, one
+growing (1123352, +44.5 MB, +87.5 before): a literal no local holds that holds a new object and a counted
+one (`f([mk(i), GA[0]])`), which is still not given back; the same literal in a local is. On the same seeds, no generated program own accepts without
 the flag is refused or counted with it. The corpus: 882 with the flag, as before; no file lost, and no
 file own accepts gets a count. On a heap that faults at a use after free or a double free (every
 block on its own pages, freed pages never reused; 2026-11-23): the 35 programs of the flag's run
