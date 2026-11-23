@@ -51,6 +51,16 @@ function main() {
     if (typeof m === "string") text = m;
     assert(text == "m7");
 
+    // null as an `object` is the null pointer (it was the address of a slot holding null)
+    let n: object | null = null;
+    assert(n === null);
+    assert(!n);
+
+    // an `unknown` compares as the `any` it holds
+    const ax: any = new B(5);
+    const ux: unknown = ax;
+    assert(ax === ux);
+
     const a: A = { f: B };
     const r = new a.f(3);
     const b = <B>r;

@@ -1478,6 +1478,47 @@ namespace mlirgen
             return *folded;
         }
 
+        // an `unknown` is the `any` box it holds, compared as one: on the right of an `any` it was boxed again, so
+        // `a === u` of the same box was false (TSLANG 169)
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue)
+        {
+            for (auto *operand : {&leftExpressionValue, &rightExpressionValue})
+            {
+                if (isa<mlir_ts::UnknownType>((*operand).getType()))
+                {
+                    *operand = builder.create<mlir_ts::CastOp>(location, getAnyType(), *operand);
+                }
+            }
+        }
+
+        // under -mm=rc an `object` is an `any` box (MLIRGenImpl::cast): compared as `any`, so by what the boxes
+        // hold (`<object>c === c` is true; two boxes of one class object are the same object). Against null or
+        // undefined it stays the pointer's test.
+        if (compileOptions.isRefCounted()
+            && (opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+                || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue
+            && !isNullish(leftExpressionValue) && !isNullish(rightExpressionValue))
+        {
+            auto isObjectOfAny = [](mlir::Type t) {
+                auto objectType = dyn_cast<mlir_ts::ObjectType>(t);
+                return objectType && isa<mlir_ts::AnyType>(objectType.getStorageType());
+            };
+
+            // a union or an optional holding one is compared member by member (binaryOpLogicForUnions)
+            auto isUnionOrOptional = [](mlir::Type t) { return isa<mlir_ts::UnionType, mlir_ts::OptionalType>(t); };
+            if ((isObjectOfAny(leftExpressionValue.getType()) || isObjectOfAny(rightExpressionValue.getType()))
+                && !isUnionOrOptional(leftExpressionValue.getType()) && !isUnionOrOptional(rightExpressionValue.getType()))
+            {
+                CAST_A(leftAny, location, getAnyType(), leftExpressionValue, genContext);
+                CAST_A(rightAny, location, getAnyType(), rightExpressionValue, genContext);
+                leftExpressionValue = leftAny;
+                rightExpressionValue = rightAny;
+            }
+        }
+
         if (auto folded = foldLiteralCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;
@@ -3918,6 +3959,16 @@ namespace mlirgen
 
         builder.create<mlir_ts::StoreOp>(location, tupleValue, valueAddr);
         auto objValue = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
+
+        // the block is fresh and carries its one reference to whoever takes it, as `new C()`'s does
+        // (markFreshBlockOwned): a `const` holding it took none, so the block was counted 0 and freed by the
+        // first retain and release another holder made (`takeAny(user)`, a box of it; TSLANG 169)
+        if (compileOptions.isRefCounted())
+        {
+            builder.create<mlir_ts::RetainOp>(location, objValue);
+            objValue->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+
         return V(objValue);
     }
 

@@ -2719,11 +2719,6 @@ value stored into one after its declaration was not kept:
   (generatingStaticNewCtorForClass).
 
 Still open, looked at:
-- -mm=rc: a class object whose last reference is an `object` is freed without its fields (165). An `object` value
-  says nothing of what it is: a class object (`<object>c`, the same pointer) and an object literal's block (165's
-  `<object>{...}`) look alike to its release. Either `object` keeps a class object in something that says so (a
-  box, as `any` does, or a block holding the reference), or a class object given to `object` is refused under rc:
-  a design call.
 - A generic class given to a constructor type straight from an instantiation expression (`make(Box<number>, 3)`):
   "Can't find class Box". The function is instantiated for `Box<number>` before the argument makes that class; the
   same class named first (`const k = Box<number>; make(k, 3)`) or given as the type argument (`make<Box<number>>(...)`)
@@ -2732,3 +2727,27 @@ Still open, looked at:
   takes a second reference" (a `let` works).
 
 Tests `00tslang_issue_169.ts` (compile, JIT, gc, rc, none, own).
+
+170 (the -mm=rc `object` left open by 165 and 169, 2026-11-23; USER RULING: under -mm=rc a class object given to
+`object` is kept in a box). Fixed:
+- -mm=rc: a class object whose last reference is an `object` was freed without its fields (165; 72 MB at 1M). An
+  `object` said nothing of what it pointed at. Under rc an `object` is now an `any` box: a value given to one is
+  boxed (a class object, an object literal, an array...), `any` and `unknown` are that box either way, its release
+  is the box's, which frees the class object with its fields, and `===` with an `object` compares as `any` (by what
+  the boxes hold: `<object>c === c`). Flat at 5.4 MB at 1M and 3M for a class object, an `object[]`, an `object`
+  field, `object | string` and a boxed literal with run-time strings. gc, none and own keep the pointer.
+- null or undefined as an `object` (`let n: object | null = null`) was the address of a stack slot holding null, so
+  `n === null` was false in every model, and -mm=rc counted the slot (a crash): it is the null pointer.
+- `a === u` of an `any` and an `unknown` holding the same box was false: the `unknown` was boxed again. An `unknown`
+  is compared as the `any` it is.
+- -mm=rc: an object literal with methods held by a `const` (`const user = { ..., sayHi() {...} }`) was freed by the
+  first retain and release another holder made: `takeAny(user)` (a box of it) gave its block back, and `user` read freed
+  memory (00bound_method_wider_callback.ts crashed once an `object` was a box). The block was made with a count of 0,
+  and a `const` takes the reference a fresh value carries; it now carries one, as `new C()`'s does (a `let` took a
+  reference of its own, which is why it worked). Flat at 3M with `const`, `let`, a returned literal and one given straight
+  to a call.
+
+Still open: under gc and none, an `any` taken from an `object` holds the `object` (`typeof` its tag "object"), so
+`o === a` is false and `<L>a` throws "Can't cast from any type"; under rc both work.
+
+Tests `00tslang_issue_170.ts` (gc, rc, none); `00tslang_issue_169.ts` checks the null and `unknown` comparisons in every model.

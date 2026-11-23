@@ -994,6 +994,40 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // Under -mm=rc an `object` is an `any` box (USER RULING 2026-11-23): its release then frees what the box
+        // holds by the box's tag, a class object with its fields. A bare `object` said nothing of what it pointed
+        // at, and a class object whose last reference was one was freed without its fields (165). `any` and
+        // `unknown` are that box already, both ways; null and undefined stay a null pointer.
+        if (compileOptions.isRefCounted())
+        {
+            auto isObjectOfAny = [](mlir::Type t) {
+                auto objectType = dyn_cast<mlir_ts::ObjectType>(t);
+                return objectType && isa<mlir_ts::AnyType>(objectType.getStorageType());
+            };
+
+            if ((isObjectOfAny(type) && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(valueType))
+                || (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) && isObjectOfAny(valueType)))
+            {
+                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+            }
+
+            if (isObjectOfAny(type) && !isObjectOfAny(valueType)
+                && !isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
+            {
+                CAST_A(boxed, location, getAnyType(), value, genContext);
+                auto objectValue = builder.create<mlir_ts::CastOp>(location, type, boxed);
+                // the box is fresh: the `object` carries its reference to whoever takes it
+                if (auto *boxOp = boxed.getDefiningOp(); boxOp && boxOp->hasAttr(OWNED_RESULT_ATTR_NAME)
+                    && !boxOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
+                {
+                    boxOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                    objectValue->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                return V(objectValue);
+            }
+        }
+
         // a generic function given as `any` (`g(r => r)` with `g(a: any)`): nothing gives its untyped
         // parameters types, so they are `any` (TSLANG 106); boxed generic, the box held the address of a
         // function never made ('llvm.mlir.addressof' op must reference a global)
@@ -1143,7 +1177,7 @@ namespace mlirgen
         // known), so the block takes no reference to what they hold: it is freed alone (TSLANG 165)
         if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type); objectType
             && isa<mlir_ts::AnyType>(objectType.getStorageType()) && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(valueType)
-            && compileOptions.memoryModel != MemoryModelOwn)
+            && compileOptions.memoryModel != MemoryModelOwn && !compileOptions.isRefCounted())
         {
             auto tupleType = mth.convertConstTupleTypeToTupleType(valueType);
             CAST_A(tuple, location, tupleType, value, genContext);

@@ -1,5 +1,6 @@
 # What's new
 
+- Under -mm=rc an `object` holds its value in a box, as `any` does: a class object kept only as an `object` is freed with its fields; `let n: object | null = null; n === null` is true in every model
 - Under -mm=rc and -mm=own an `unknown` variable owns the value it holds, as `any` does: a value assigned to one later is kept (rc read it freed, own leaked the old one)
 - A class can be given to a generic constructor type (`make<T>(ctor: new (n: number) => T, n)` called as `make(Banana, 3)`); a typed local whose initializer has a method or arrow reading it (`const c: I = { m() { return c.v; } }`) compiles; under -mm=own a module `let u: unknown = 7.5` compiles
 - Type guards can be passed as callbacks (`xs.filter(isDefined)`) or stored as functions returning boolean; a function taking a number can be given integers through a callback (`[1, -2, 3].filter(pos)`); narrowing `x?: number | string` with `typeof` no longer warns "casting from optional (undefined) value"; an object with accessors given to a type literal says to use an interface
