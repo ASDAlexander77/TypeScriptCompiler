@@ -1451,13 +1451,15 @@ namespace mlirgen
                         continue;
                     }
 
-                    if (genContext.funcOp || genContext.dummyRun)
+                    // outside a function (a namespace's or an imported module's declarations, or a dummy run): the
+                    // assignment is the code's, which runs it (generateModuleInitCode, isRepeatedVarStatement). It was
+                    // a second global: "redefinition of symbol named 'C.p'" (TSLANG 174)
+                    if (!genContext.funcOp)
                     {
-                        if (!genContext.funcOp)
-                        {
-                            // a dummy run of the module's statements: the assignment is the real run's
-                            continue;
-                        }
+                        continue;
+                    }
+
+                    {
 
                         NodeFactory nf(NodeFactoryFlags::None);
                         auto identifier = nf.createIdentifier(stows(MLIRHelper::getName(item->name)));
@@ -1951,6 +1953,79 @@ namespace mlirgen
                     declarationList->flags &= ~(NodeFlags::Let | NodeFlags::Const);
                     statement->internalFlags |= InternalFlags::HoistedLexical;
                     collectNames();
+                }
+            }
+
+            // what a hoisted declaration's value reads is declared before it too: its type is that value's
+            // (`const f = () => g(); const n = 5; const g = () => n;` - g's type needs n; it was "can't resolve name:
+            // g", TSLANG 174)
+            for (auto changed = true; changed;)
+            {
+                changed = false;
+                for (auto statement : statements)
+                {
+                    if (statement != SyntaxKind::VariableStatement
+                        || (statement->internalFlags & InternalFlags::HoistedLexical) == InternalFlags::HoistedLexical)
+                    {
+                        continue;
+                    }
+
+                    auto declarationList = statement.as<VariableStatement>()->declarationList;
+                    if ((declarationList->flags & (NodeFlags::Let | NodeFlags::Const)) == NodeFlags::None
+                        || (declarationList->flags & NodeFlags::Using) == NodeFlags::Using)
+                    {
+                        continue;
+                    }
+
+                    auto readByHoisted = false;
+                    for (auto declaration : declarationList->declarations)
+                    {
+                        if (declaration->name != SyntaxKind::Identifier || !declaration->initializer)
+                        {
+                            continue;
+                        }
+
+                        auto name = declaration->name.as<Identifier>()->escapedText;
+                        for (auto hoisted : statements)
+                        {
+                            if (readByHoisted || hoisted == statement || hoisted != SyntaxKind::VariableStatement
+                                || (hoisted->internalFlags & InternalFlags::HoistedLexical) != InternalFlags::HoistedLexical)
+                            {
+                                continue;
+                            }
+
+                            ts::VisitorAST names([&](ts::Node inner) {
+                                if (inner == SyntaxKind::Identifier && inner.as<Identifier>()->escapedText == name)
+                                {
+                                    readByHoisted = true;
+                                }
+                            });
+                            // the value of a function: its type is the function's, read off what it reads
+                            for (auto hoistedDeclaration : hoisted.as<VariableStatement>()->declarationList->declarations)
+                            {
+                                if (hoistedDeclaration->initializer == SyntaxKind::ArrowFunction
+                                    || hoistedDeclaration->initializer == SyntaxKind::FunctionExpression)
+                                {
+                                    names.visit(hoistedDeclaration->initializer);
+                                }
+                            }
+                        }
+                    }
+
+                    if (readByHoisted)
+                    {
+                        declarationList->flags &= ~(NodeFlags::Let | NodeFlags::Const);
+                        statement->internalFlags |= InternalFlags::HoistedLexical;
+                        for (auto declaration : declarationList->declarations)
+                        {
+                            if (declaration->name == SyntaxKind::Identifier)
+                            {
+                                forwardReferenced.insert(MLIRHelper::getName(declaration->name));
+                            }
+                        }
+
+                        changed = true;
+                    }
                 }
             }
         }

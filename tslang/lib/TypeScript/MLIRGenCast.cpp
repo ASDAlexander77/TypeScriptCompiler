@@ -388,9 +388,41 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
         ArrayRef<mlir_ts::FieldInfo> fields, ArrayRef<mlir::Value> values, const GenContext &genContext)
     {
-        SmallVector<mlir::Value, 4> operands;
-        auto newInstanceOfClass = NewClassInstance(location, classType, operands, genContext);
-        // TODO: assign fields to values
+        // An object literal given a class's type sets the fields; no constructor of the class runs for it. One
+        // with no parameters to give still does, as before (its field initializers). One that needs arguments
+        // (`constructor(public x: number, public y: number)`) was called with none, and the failure was not seen:
+        // the compiler crashed (TSLANG 174).
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        auto constructorNeedsArguments = false;
+        if (classInfo && !classInfo->isValue)
+        {
+            if (auto *constructorInfo = classInfo->findMethod(CONSTRUCTOR_NAME); constructorInfo && constructorInfo->funcType)
+            {
+                auto inputs = constructorInfo->funcType.getInputs();
+                constructorNeedsArguments = inputs.size() > 1 && llvm::any_of(inputs.drop_front(), [](mlir::Type type) {
+                    return !isa<mlir_ts::OptionalType>(type);
+                });
+            }
+        }
+
+        mlir::Value newInstanceOfClass;
+        if (constructorNeedsArguments)
+        {
+            newInstanceOfClass = NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext);
+            if (!newInstanceOfClass)
+            {
+                return mlir::failure();
+            }
+
+            markAtomicInstanceShared(location, classInfo, newInstanceOfClass);
+        }
+        else
+        {
+            SmallVector<mlir::Value, 4> operands;
+            auto newInstance = NewClassInstance(location, classType, operands, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(newInstance)
+            newInstanceOfClass = V(newInstance);
+        }
         
         auto valueIndex = 0;
         for (auto fieldInfo : fields)

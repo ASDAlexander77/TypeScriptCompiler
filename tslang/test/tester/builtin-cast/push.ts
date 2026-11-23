@@ -2,6 +2,8 @@
 // was a null value, which went on to the op's builder.
 function main() {
     let h: (() => number)[] = [];
-    h.push(() => 1);
+    // a function value, not an arrow written as the item (which takes the element's type)
+    const f = () => 1;
+    h.push(f);
     print(h.length);
 }

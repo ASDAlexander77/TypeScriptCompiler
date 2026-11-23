@@ -2263,6 +2263,27 @@ namespace mlirgen
             inferObjectLiteralArgumentReceivers(location, funcResult, callExpression->arguments, argumentReceivers, genContext);
         }
 
+        // `fs.push(() => i)`, `fs.unshift(...)` of a `(() => number)[]`: a function written as the item takes its
+        // types from the array's element, as one assigned to an element does. Made on its own, it returned the
+        // `s32` of its integer, and was refused as `() => s32` (TSLANG 174)
+        if (auto thisSymbolRefOp = funcResult.getDefiningOp<mlir_ts::ThisSymbolRefOp>();
+            thisSymbolRefOp && mth.isBuiltinFunctionType(funcResult) && argumentReceivers.empty())
+        {
+            auto calleeName = thisSymbolRefOp->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(thisSymbolRefOp.getThisVal().getType());
+            if (calleeName && arrayType && mth.isAnyFunctionType(arrayType.getElementType())
+                && (calleeName.getValue() == "__array_push" || calleeName.getValue() == "__array_unshift"))
+            {
+                for (auto argument : callExpression->arguments)
+                {
+                    argumentReceivers.push_back(
+                        argument == SyntaxKind::ArrowFunction || argument == SyntaxKind::FunctionExpression
+                            ? arrayType.getElementType()
+                            : mlir::Type());
+                }
+            }
+        }
+
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, operandsFuncType, genContext, offsetArgs,
                                          noReceiverTypesForGenericCall, argumentReceivers)))
         {

@@ -2810,3 +2810,39 @@ Looked at, still open:
   that borrows 'a' cannot be stored" (the function value may keep a parameter), as the untyped form is.
 
 Tests `00tslang_issue_173.ts` (gc, rc, none).
+
+174 (the quick items of the open-item inventory, 2026-11-23). Every "still open" list above was checked again against
+the build: a repro of each item was run. Fixed:
+- A closure reading a `const` declared after it whose value reads another `const` declared later (`const f = () =>
+  g(); const k = 5; const g = () => k;`, 144): "can't resolve name: g". g was declared before the body (an earlier
+  function reads it) with the type of its value, which needs k: what a declaration made before the body reads is
+  declared before it too. Under -mm=own it is own's clear error for a closure's capture.
+- A namespace `var` declared again (`var p: A.P; var p = {...}`, `var n = 1; var n = 7;` in a namespace, 118):
+  "redefinition of symbol named 'C.p'". The second, with a value, is an assignment, which the namespace's code runs
+  (isRepeatedVarStatement), as the module's code does for the module's.
+- An object literal given a class whose constructor takes arguments (`class Point { constructor(public x: number,
+  public y: number) {} }`, `const p: Point = { x: 0, y: 0 }`): the compiler crashed. The literal sets the fields; the
+  constructor, which was called with no arguments and failed unseen, is not called for it (one with no parameters
+  still is, as before).
+- A function pushed into an array of functions (`fs.push(() => i)`, `fs.unshift(...)` of a `(() => number)[]`):
+  "can't assign '() => s32' to '() => number'". It takes its types from the array's element, as one assigned to an
+  element does.
+
+Checked again and working now (the lists above can be read as closed for these): 49 and 54 (-mm=own), 90, 92, 93
+(JSX is a clear error, per the ruling), 97, 100, 101, 105, 106, 109 (`this` arrow before `super()`), 115, 116, 118
+(an untyped generic `var`), 119, 120, 123, 131 (`Object.keys` of an `any`), 134 (an arrow given to a call-signature
+type), 135, 136, 138/139, 142 (`AsyncGenerator`, with the default library), 166 (-mm=own).
+
+Not quick after all, still open:
+- A module `const a = () => b()` in a root that has top-level code, read by a function (109/142): the root's code runs
+  in a function of its own, where an arrow `const` stays a local of it and is not the module function its name means.
+- `var [a, b] = t` in a block read after it (118): the names of a pattern need their types before the body.
+- `push` on an array no variable holds (`Object.keys(o).push("z")`, `mk().push(3)`, 131): it needs a reference to
+  the array, and under rc and own the array's count.
+- `typeof` of an `unknown` or `any` holding an integer literal is "s32" (168): integer literals are s32 (ruling).
+- Not reached in this batch: `for (var x in this)` in a method (102), an interface extending `Tag<...>` beside a
+  function `Tag` (134), a callable interface given an arrow (140), `m(f = () => () => this)` (145), a namespace
+  function named as the merged class's method (145), a getter returning itself (148), a generator typed as the
+  program's own iterator interface with integer yields (153).
+
+Tests `00tslang_issue_174.ts` (gc, rc, none).
