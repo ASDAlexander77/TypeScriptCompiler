@@ -3047,8 +3047,44 @@ class MLIRGenImpl
         }
 
         genContextWithNameReceiver.isExportVarReceiver = variableDeclarationInfo.isExport;
+        genContextWithNameReceiver.globalWrittenType = mlir::Type();
 
-        if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
+        // a type written for it: the name is the global of that type while its initializer is generated, so a
+        // function there can read it (`const a: { v: number; m(): number } = { v: 5, m() { return a.v; } }`). Given
+        // up after: the name is registered as it ends up (registerVariable). TSLANG 148.
+        VariableDeclarationDOM::TypePtr provisional;
+        if (genContext.globalWrittenType && !mth.isNoneType(genContext.globalWrittenType))
+        {
+            provisional = std::make_shared<VariableDeclarationDOM>(variableDeclarationInfo.fullName,
+                                                                   genContext.globalWrittenType, location);
+            if (!variableDeclarationInfo.isConst)
+            {
+                provisional->setReadWriteAccess();
+            }
+
+            if (variableDeclarationInfo.isFullName)
+            {
+                fullNameGlobalsMap.insert(variableDeclarationInfo.fullName, provisional);
+            }
+            else if (!getGlobalsMap().count(variableDeclarationInfo.variableName))
+            {
+                getGlobalsMap().insert({variableDeclarationInfo.variableName, provisional});
+            }
+        }
+
+        auto typeAndInit = variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver);
+
+        if (provisional && !variableDeclarationInfo.isFullName)
+        {
+            auto &globals = getGlobalsMap();
+            auto it = globals.find(variableDeclarationInfo.variableName);
+            if (it != globals.end() && it->second == provisional)
+            {
+                globals.erase(it);
+            }
+        }
+
+        if (mlir::failed(typeAndInit))
         {
             return mlir::failure();
         }
@@ -3080,6 +3116,18 @@ class MLIRGenImpl
         {
             //variableDeclarationInfo.initial = builder.create<mlir_ts::UndefOp>(location, variableDeclarationInfo.type);
             variableDeclarationInfo.initial = builder.create<mlir_ts::DefaultOp>(location, variableDeclarationInfo.type);
+        }
+
+        // An `unknown` global is the `any` box its initializer makes (`let u: unknown = 7`), which is given back at
+        // the end of the statement: an `unknown` owns nothing, as a local does not (counting it as an owner broke a
+        // construct signature's `unknown` result, which is no box). A global outlives every statement, so it takes a
+        // reference of its own: under -mm=rc it was read as freed memory ("Can't cast from any type"). TSLANG 166.
+        if (compileOptions.tracksOwnership() && compileOptions.memoryModel != MemoryModelOwn
+            && isa<mlir_ts::UnknownType>(variableDeclarationInfo.type)
+            && variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>()
+            && isa<mlir_ts::AnyType>(variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>().getIn().getType()))
+        {
+            builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>().getIn());
         }
 
         // A handle global (own spec 23.1) takes over the reference its initializer carries, through

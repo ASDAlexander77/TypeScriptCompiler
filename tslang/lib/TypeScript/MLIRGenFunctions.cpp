@@ -1611,6 +1611,27 @@ namespace mlirgen
                 }
             }
         }
+        // ...and an async one (`async function* g(): AsyncGenerator<number> { yield 1; }`): next() only, its
+        // result typed by T, as above (TSLANG 166; it was "can't assign '() => {value:s32, ...}'")
+        else if (auto declaredType = functionLikeDeclarationBaseAST->type;
+                 declaredType && declaredType == SyntaxKind::TypeReference && hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::AsyncKeyword))
+        {
+            auto typeReference = declaredType.as<TypeReferenceNode>();
+            if (typeReference->typeName == SyntaxKind::Identifier && typeReference->typeArguments.size() >= 1)
+            {
+                auto typeName = MLIRHelper::getName(typeReference->typeName.as<Identifier>());
+                if (typeName == "AsyncGenerator" || typeName == "AsyncIterator" || typeName == "AsyncIterable" ||
+                    typeName == "AsyncIterableIterator")
+                {
+                    NodeArray<TypeElement> members;
+                    members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("value")), undefined,
+                                                                 typeReference->typeArguments.front()));
+                    members.push_back(nf.createPropertySignature(undefined, nf.createIdentifier(S("done")), undefined,
+                                                                 nf.createToken(SyntaxKind::BooleanKeyword).as<TypeNode>()));
+                    nextResultType = nf.createTypeLiteralNode(members);
+                }
+            }
+        }
 
         // create method next in object
         auto nextMethodDecl =

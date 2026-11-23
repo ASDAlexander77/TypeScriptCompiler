@@ -1115,9 +1115,22 @@ namespace mlirgen
                 addGlobalConstructor(location, fullInitGlobalFuncName, /*afterGlobals=*/true);
             }
         }
-        else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
+        else
         {
-            return mlir::failure();
+            // a module variable with a type written is that type in its own initializer: a function there may
+            // read it (`const a: { m(): number } = { m() { return a.v; } }`, TSLANG 148)
+            GenContext declarationGenContext(genContext);
+            declarationGenContext.globalWrittenType = mlir::Type();
+            if (!genContext.funcOp && !declarationMode && item->type && item->initializer
+                && item->name == SyntaxKind::Identifier)
+            {
+                declarationGenContext.globalWrittenType = getType(item->type, genContext);
+            }
+
+            if (mlir::failed(processDeclaration(item, valClassItem, initFunc, declarationGenContext, true)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();

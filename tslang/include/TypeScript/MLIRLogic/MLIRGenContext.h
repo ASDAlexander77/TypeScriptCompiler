@@ -289,6 +289,9 @@ struct GenContext
     std::shared_ptr<WithScope> withScope;
     mlir::StringRef receiverName;
     bool isGlobalVarReceiver = false;
+    // the type written for the module variable whose initializer is next generated (`const a: T = { m() { return
+    // a.v; } }`): the name is that type while the initializer is generated (createGlobalVariableInitialization)
+    mlir::Type globalWrittenType;
     // set while generating the initializer of an exported var/let - lets a
     // nested object-literal's method-like properties (processObjectFunctionLike)
     // know they must be forced to public/external linkage, since their
