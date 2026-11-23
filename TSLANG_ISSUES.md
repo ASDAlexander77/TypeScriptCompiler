@@ -2701,3 +2701,34 @@ Still open, looked at:
 
 Tests `00tslang_issue_168.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_168_self.ts` (gc, rc, none),
 crash-errors `const_declared_first_assigned.ts`.
+
+169 (the `unknown` left open by 166 and 168, 2026-11-23). Fixed: an `unknown` owns the `any` box it holds, under rc
+and own, as `any` does (ownsHeapMemory; its retain, release and share routines are `any`'s). It owned nothing, so a
+value stored into one after its declaration was not kept:
+- -mm=rc read it freed: a module `let g: unknown` assigned in one function and read in another after other
+  allocations crashed.
+- -mm=own leaked the box it replaced (160 MB at 3M assignments; a local `unknown` in a loop the same). Now flat at
+  5 MB in both models.
+- A box made for `unknown` is fresh: the cast to `unknown` carries its reference to the store (MLIRGenCast), and
+  -mm=own sees `any` and `unknown` as one box both ways (isView), so `<B>u` of an `unknown` const borrows as of an
+  `any` one. 166's -mm=rc retain on an `unknown` global's initializer and 168's -mm=own special case for it are gone
+  (moveIntoGlobals follows the cast).
+- A class given to a construct signature with no result type (`f: { new(x: number) }` of `{ f: B }`, which returns
+  `unknown`) went through a wrapper returning B's object as it is, typed `unknown` with no box, which an owner of
+  `unknown` would release as a box: the wrapper returns the field's `unknown` (or `any`), so the object is boxed
+  (generatingStaticNewCtorForClass).
+
+Still open, looked at:
+- -mm=rc: a class object whose last reference is an `object` is freed without its fields (165). An `object` value
+  says nothing of what it is: a class object (`<object>c`, the same pointer) and an object literal's block (165's
+  `<object>{...}`) look alike to its release. Either `object` keeps a class object in something that says so (a
+  box, as `any` does, or a block holding the reference), or a class object given to `object` is refused under rc:
+  a design call.
+- A generic class given to a constructor type straight from an instantiation expression (`make(Box<number>, 3)`):
+  "Can't find class Box". The function is instantiated for `Box<number>` before the argument makes that class; the
+  same class named first (`const k = Box<number>; make(k, 3)`) or given as the type argument (`make<Box<number>>(...)`)
+  works. `make(Box, 3)` (the class's own type parameters from the constructor type) is not inferred.
+- -mm=own: `typeof a === "string"` of a `const` holding an `any` (or `unknown`) a function returned is "a value
+  takes a second reference" (a `let` works).
+
+Tests `00tslang_issue_169.ts` (compile, JIT, gc, rc, none, own).

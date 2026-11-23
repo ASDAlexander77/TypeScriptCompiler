@@ -816,15 +816,27 @@ namespace mlirgen
         return V(ifOp.getResults().front());
     }
 
-    ValueOrLogicalResult MLIRGenImpl::generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext)
+    ValueOrLogicalResult MLIRGenImpl::generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, mlir::Type fieldType, const GenContext &genContext)
     {
         if (auto classConstrMethodInfo = classInfo->findMethod(CONSTRUCTOR_NAME))
         {
+            // a construct signature with no result type written (`f: { new(x: number) }`) returns `unknown`: the made
+            // object is boxed into it, as any value given to `unknown` is, which is what owns it (TSLANG 169)
+            mlir::Type resultType = classInfo->classType;
+            std::string ownerName = classInfo->fullName.str();
+            if (auto fieldFuncType = dyn_cast_or_null<mlir_ts::FunctionType>(fieldType);
+                fieldFuncType && fieldFuncType.getNumResults() == 1
+                && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(fieldFuncType.getResult(0)))
+            {
+                resultType = fieldFuncType.getResult(0);
+                ownerName += isa<mlir_ts::AnyType>(resultType) ? ".any" : ".unknown";
+            }
+
             auto funcWithReturnClass = getFunctionType(
                 classConstrMethodInfo->funcType.getInputs().slice(1) /*to remove this*/, 
-                {classInfo->classType}, 
+                {resultType}, 
                 classConstrMethodInfo->funcType.isVarArg());
-            auto foundNewCtoreStaticMethodFullName = generateSynthMethodToCallNewCtor(location, classInfo, classInfo->fullName, posIndex, funcWithReturnClass, 0, genContext);
+            auto foundNewCtoreStaticMethodFullName = generateSynthMethodToCallNewCtor(location, classInfo, ownerName, posIndex, funcWithReturnClass, 0, genContext);
             if (foundNewCtoreStaticMethodFullName.empty())
             {
                 return mlir::failure();
@@ -870,7 +882,7 @@ namespace mlirgen
                 // TODO: generate method wrapper for calling new/ctor method
                 if (fieldInfo.id == newCtorAttr)
                 {
-                    auto newCtorSymbOp = generatingStaticNewCtorForClass(location, classInfo, posIndex, genContext);
+                    auto newCtorSymbOp = generatingStaticNewCtorForClass(location, classInfo, posIndex, fieldInfo.type, genContext);
                     EXIT_IF_FAILED_OR_NO_VALUE(newCtorSymbOp)
                     values.push_back(newCtorSymbOp);
                     continue;
@@ -1303,7 +1315,17 @@ namespace mlirgen
         if (isa<mlir_ts::UnknownType>(type) && !isa<mlir_ts::AnyType>(valueType))
         {
             CAST_A(boxed, location, getAnyType(), value, genContext);
-            return V(builder.create<mlir_ts::CastOp>(location, type, boxed));
+            auto unknownValue = builder.create<mlir_ts::CastOp>(location, type, boxed);
+            // a box made here is fresh: the `unknown` is that box, and carries its reference to whoever takes it,
+            // as the box would (`u = "a" + i` stores it as `a = ...` of an `any` does; TSLANG 168)
+            if (auto *boxOp = boxed.getDefiningOp(); boxOp && boxOp->hasAttr(OWNED_RESULT_ATTR_NAME)
+                && !boxOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
+            {
+                boxOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                unknownValue->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+            }
+
+            return V(unknownValue);
         }
 
         if (isa<mlir_ts::UnknownType>(valueType) && !isa<mlir_ts::AnyType>(type))

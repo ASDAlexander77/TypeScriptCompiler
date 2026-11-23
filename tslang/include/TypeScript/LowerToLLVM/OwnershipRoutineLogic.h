@@ -772,7 +772,7 @@ class OwnershipRoutineLogic
     static bool isPlainBlockType(mlir::Type type)
     {
         return isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::SharedType>(type) ||
-               isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type);
+               isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type) || isa<mlir_ts::UnknownType>(type);
     }
 
     std::string getRetainRoutineName(mlir::Type type)
@@ -2231,8 +2231,8 @@ class OwnershipRoutineLogic
         }
 
         // an "any" box owns its own block, and its payload's type is only known through the
-        // tag
-        if (isa<mlir_ts::AnyType>(type))
+        // tag (`unknown` is the same box)
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
         {
             auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitIfLastReference(boxValue, [&]() {
@@ -2397,7 +2397,7 @@ class OwnershipRoutineLogic
         // each of these is a reference to a block of its own: string, class and object
         // instances, a Shared<T> handle, and an "any" box
         if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::SharedType>(type) ||
-            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
+            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type) || isa<mlir_ts::UnknownType>(type))
         {
             emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr));
             return;
@@ -2802,7 +2802,7 @@ class OwnershipRoutineLogic
             return;
         }
 
-        if (isa<mlir_ts::AnyType>(type))
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
         {
             auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitMarkBlockShared(boxValue, [&]() {
