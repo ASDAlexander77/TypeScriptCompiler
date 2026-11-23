@@ -297,7 +297,9 @@ for (let j = 0; j < 3; j++) {
 An object element of such a literal is a borrow of it, as an element of a named array is: it can be
 read while the literal lives, and keeping it past that is an error. Not freed yet, so they leak: a
 literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one that is given a local's object as well as
-new ones (`f([mk(i), o])`, `o` moved into it). Hold such a literal in a `const` first.
+new ones (`f([mk(i), o])`, `o` moved into it), and one whose object element a `?:` branch yields
+(`c ? [mk(i)][0] : null`; a string element there is copied, and its literal freed). Hold such a literal in
+a `const` first.
 
 A string passed to a parameter the callee keeps is not copied, because the callers rely on that
 fact: `new Person(p.name)` is an error. Pass a string you give up, or a fresh one

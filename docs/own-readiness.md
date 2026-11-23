@@ -129,7 +129,8 @@ and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fi
   the end of its block, or after the call, with what it owns, and all seven are flat with the flag as they
   are. A string element a `let` is given is a copy; an object element stays a borrow (see
   own-memory-model.md, Strings). Still leaking: a literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one
-  given a local's or a counted object besides new ones (`f([mk(i), o])`).
+  given a local's or a counted object besides new ones (`f([mk(i), o])`), and one whose object element a
+  `?:` branch yields (`c ? [mk(i)][0] : null`).
 
 The re-runs found two more and they are fixed too: a local declared from a counted local (`const n16 =
 n15`) is counted with it, and a string a keeping call is given its copy for is not counted (own

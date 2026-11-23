@@ -561,14 +561,27 @@ class OwnedReturnConsumptionPass
 
                 for (auto &use : llvm::make_early_inc_range(loadOp->getUses()))
                 {
-                    auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(use.getOwner());
-                    if (!varOp || varOp.getInitializer() != loadOp.getResult() || !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) ||
+                    // the `let` the element reaches, through the casts that only widen it (`let st: string | null`,
+                    // an optional, a union), each the one use of the one before
+                    mlir::Value value = loadOp.getResult();
+                    auto *user = use.getOwner();
+                    while (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) &&
+                           user->getNumResults() == 1 && user->getResult(0).hasOneUse())
+                    {
+                        value = user->getResult(0);
+                        user = *value.getUsers().begin();
+                    }
+
+                    auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                    if (!varOp || varOp.getInitializer() != value || !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) ||
                         varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) || varOp.getCaptured().value_or(false))
                     {
                         continue;
                     }
 
-                    // the declaration's retain, which the copy stands in for
+                    // the declaration's retain, which the copy stands in for. A declaration that took none has
+                    // nothing for a copy to consume: the `let` is left the borrow it was, which fails safe (at
+                    // worst own refuses a later assignment; nothing is freed early).
                     mlir::Operation *retainSlot = nullptr;
                     for (auto *slotUser : varOp.getResult().getUsers())
                     {
@@ -584,8 +597,10 @@ class OwnedReturnConsumptionPass
                         continue;
                     }
 
-                    mlir::OpBuilder builder(varOp);
-                    auto copy = builder.create<mlir_ts::StringCopyOp>(varOp->getLoc(), loadOp.getType(), loadOp.getResult());
+                    // right after the read: the widening casts, if any, are of the copy
+                    mlir::OpBuilder builder(varOp->getContext());
+                    builder.setInsertionPointAfter(loadOp);
+                    auto copy = builder.create<mlir_ts::StringCopyOp>(loadOp->getLoc(), loadOp.getType(), loadOp.getResult());
                     copy->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(varOp->getContext()));
                     copy->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp->getContext()));
                     use.set(copy);
