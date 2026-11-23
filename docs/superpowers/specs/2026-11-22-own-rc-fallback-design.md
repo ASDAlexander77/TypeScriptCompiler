@@ -191,13 +191,16 @@ retains it.
 - A refusal with no rc op to keep, such as a value rc hands to two consuming declarations with no
   retain (the comment in `OwnershipInferencePass::decideRetains`), stays an error.
 
-**The word is rc's count minus one.** rc's allocation writes 0 into the word, and its first owner
-takes a retain. Own's word counts owners beyond the first, so for each counted value the kept
-retains must come to rc's minus exactly one. A value rc creates at count 0 in this function (a
-`new`, an `__owned_result` temporary) keeps its first owner's retain erased, as own does today. A
-value that arrives already owning a count (a call's result, a kept parameter) keeps all of its
-retains. Keeping one too many leaks the block silently, so Task 3 of the plan checks the balance
-for each counted value in a debug build. Its tests watch for leaks, not only output.
+**The word is rc's count minus one.** Own's word counts owners beyond the first, so for each counted
+value the kept rc ops must leave the word at rc's count minus one. *(Corrected 2026-11-23 from Task 2,
+reviewed: the first text said a `new` is born at rc count 0 and its first owner's retain stays erased.
+That is wrong.)* Under rc a `ts.New` with `__owned_result` stores 1 into the header
+(`LowerToLLVM.cpp`, the `New` lowering), so a `new`, like a call's result, arrives holding its own
+count and keeps **all** of its rc retains. A kept parameter keeps all its retains and gets a release
+at the function's exits for the share the caller moved in. A local declared from a literal, which
+rc creates at count 0, is not counted and stays an error. Keeping one too many leaks the block
+silently, so the tests check the exact number of retains **and** releases kept (`own-fallback.cmake`),
+and Task 3's tests watch for leaks, not only output.
 
 **How the real run knows.** *(My call.)* The dry run records each failing value with the diagnostic
 it would have reported: the error and its notes. `reporting()` today only counts failures. The
