@@ -5724,15 +5724,15 @@ set_tests_properties(test-own-literal-temp-argument-released
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # ...a literal nested in one (`[[mk(i)], [mk(2)]][0][0]`), moved into it; one given a local's object as well as
 # new ones, or only locals' objects and read (`g([mk(i + 4), o])`, `[o].length`); one whose element a conditional
-# expression's branch yields (`c ? [mk(i)][0] : null`), held past the conditional. The same programs under rc and
-# gc (the nested conditional under gc only: rc crashes on it, before as after).
+# expression's branch yields (`c ? [mk(i)][0] : null`, also nested in another literal), held past the conditional.
+# The same programs under rc and gc.
 foreach(literal_temp_mm rc gc)
     foreach(literal_temp_test own_literal_temp_nested own_literal_temp_mixed own_literal_temp_conditional own_literal_temp_conditional_other
-                              own_literal_temp_conditional_sibling own_literal_temp_conditional_try own_literal_temp_merge_borrow)
+                              own_literal_temp_conditional_sibling own_literal_temp_conditional_try own_literal_temp_merge_borrow
+                              own_literal_temp_conditional_nested)
         tslang_add_test(NAME test-jit-${literal_temp_mm}-${literal_temp_test} COMMAND test-runner -jit -mm=${literal_temp_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${literal_temp_test}.ts")
     endforeach()
 endforeach()
-tslang_add_test(NAME test-jit-gc-own_literal_temp_conditional_nested COMMAND test-runner -jit -mm=gc "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_conditional_nested.ts")
 # ...the IR: a `ts.Release` of the outer literal of arrays, of a literal holding a local's object, of the literal a
 # conditional yields as an optional (none of each before)
 add_test(NAME test-own-literal-temp-nested-released

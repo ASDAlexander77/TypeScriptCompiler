@@ -1,7 +1,8 @@
 // -mm=own: an element of an array literal nested in another that a conditional expression's branch yields
 // (`c ? [[mk(i)]][0][0] : null`): the outer literal is held past the conditional, as for a flat one
 // (own_literal_temp_conditional), and given back at the end of the block with the inner one and what it holds. It
-// leaked every evaluation before. (Not run under -mm=rc: rc crashes on this shape, before this change as after.)
+// leaked every evaluation before. The same program under rc (where the branch retains the element before the outer
+// literal is given back, see rc_conditional_nested_literal) and gc.
 class N {
     x: number;
     constructor(x: number) {
