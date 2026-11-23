@@ -106,6 +106,20 @@ After spec 94 (a `let` reassigned from other locals borrows each value, a list w
 
 After spec 95 (`return` inside `using`, a parameter's `let` after `??=` or `||=`, a `?:` of literals given to an interface or held by a `const`, a kept parameter in a returned literal): 758 of 944 compile under own (`00array7`, `00using_unwind_outer_locals`, and five more from the corpus growing and from other fixes on main: `00generator6`, `00owned_unions`, `00safe_cast_bug`, `00string_union_elements`, `00tslang_issues_92_124`). No file went the other way.
 
+Measured on 2026-11-23 with `--own-fallback=count` (branch `own-rc-fallback` at `69390f91`, a corpus of
+1072 files): of 1032 files that compile under gc, 863 compile under own and 882 with the flag, 19 more,
+with 42 warnings between them. No file compiles under own and not with the flag. The 150 still refused are
+mostly the shapes the flag does not reach: a borrow of a call's result, escaping closures, parameters kept
+or assigned, object literals, `any` element access, globals. The fuzzer with the flag
+(`mm_fuzz.py --jobs 4 --own-fallback run --count 400 --seed 1122000`, 694 programs checked, 367 of them
+accepted with the flag) found 9 crashes of one shape: a `let` that borrows a field, an element or a global
+and is then given a new value is counted, in 8 of them where own without the flag accepts the program, and
+the count frees what the place still holds. Of 58 generated programs that compile only with the flag,
+measured against rc and gc with the `leaks` command, 50 are fine, 7 leak under own (1 to 14 MB over 400
+runs of main) where rc and gc do not, and 1 fails in lowering ("ownership inference left a retain
+behind"). The flag is not ready to use until those are fixed. Windows only: there is no Linux build of the
+branch.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -164,6 +178,14 @@ its 525 tests under own, as under gc and rc.
 
 That is the realistic cost of a port today: the program works, and a noticeable share of it is
 rewritten to say who owns what.
+
+On 2026-11-23 the source from before the port (`9d3aa31`, with only the later MSVC build fix for NRI)
+was built under own with `--own-fallback=count`. It does not build fully: of 252 TypeScript modules, 14
+are refused and 113 are not reached because a module they import is refused. The NRI examples all stop
+at two core modules whose exported methods keep parameters (`@keeps`, which the flag does not cover).
+What builds passes: 250 of the 525 tests run and all 250 pass (236 without the flag), with 62 places
+counted. The other refusals are kept parameters, borrows of fields stored or used after a release that
+the flag still refuses, and one type error the newer compiler reports in the old source.
 
 ## Performance
 

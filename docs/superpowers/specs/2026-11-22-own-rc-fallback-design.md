@@ -282,7 +282,8 @@ library, which shares it. **Decision (user, 2026-11-22): check at share time.**
   rc: the walk stops at the immortal parent, and nothing marks what a global holds. Such programs
   are not refused. Likewise a block stored into an already shared object after its share stays
   unmarked, and a later share that reaches it may lose its bit to the other thread's plain store, as
-  under rc.
+  under rc. The `@atomic` field barrier sees only a store `obj.field = v`: a push into an array held
+  by a field of an `@atomic` object is not a share point, the same as under rc.
 - The release's slow path (2) tests the shared bit first. With extra owners, it does an atomic
   subtract, as in rc's `__tslang_dec_ref`. With none, the caller is the last owner and destroys the
   block (bury if WeakRefs remain). The retain kept by the fallback does the same, as `emitIncRef`
@@ -291,8 +292,9 @@ library, which shares it. **Decision (user, 2026-11-22): check at share time.**
   rc's design already relies on.
 - Cost: the walk at each share, in every own program, with or without the flag. A release of a
   block that is not shared pays nothing more; a release of a shared one takes the out-of-line slow
-  path (a call, an atomic reload and a fence) where a one-owner word would free inline: +27% on a
-  probe that shares and drops 2000-node lists, about 4 ns per block (Task 5 review). Only programs
+  path (a call, an atomic reload and a fence) where a one-owner word would free inline. On a probe
+  that shares and drops 2000-node lists, the share walk and the releases together cost +27%, about
+  4 ns per block (Task 5 review); that figure is not the release slow path alone. Only programs
   that share pay it. Every type descriptor under own now carries a share routine (`tsshr_`), even in
   a program that never shares: about +1.5 KB in the default library's DLL, and part of the 1-6% more
   compile time the workers tests showed (their run time is unchanged).
