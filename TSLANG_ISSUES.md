@@ -2760,6 +2760,8 @@ Tests `00tslang_issue_170.ts` (gc, rc, none); `00tslang_issue_169.ts` checks the
   arguments come from the constructor type's parameters (inferClassTypeFromConstructorArguments, as `new Box(4)`
   takes them from its arguments), and the class given is that specialization (castToClassValue). It was "Can't find
   class Box". `make(Box<number>, 3)` already worked (169's note was about `make(Box, 3)`).
+- Under --di, `const k = Box<number>` (a `const` naming a class, an interface, a namespace or a type) had a debug record of
+  a reference with nothing to lower to: "failed to legalize operation 'ts.ClassRef'". It has none now.
 
 Still open, looked at:
 - -mm=own: `typeof a === "string"` of a `const a` holding the `any` a call returned is "a value takes a second
