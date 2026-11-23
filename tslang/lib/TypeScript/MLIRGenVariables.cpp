@@ -257,7 +257,13 @@ namespace mlirgen
                 && !variableDeclarationInfo.storage
                 && !isa<mlir_ts::NeverType>(variableDeclarationInfo.initial.getType())
                 && !mth.isGenericType(variableDeclarationInfo.initial.getType())
-                && !mth.isAnyFunctionType(variableDeclarationInfo.initial.getType()))
+                && !mth.isAnyFunctionType(variableDeclarationInfo.initial.getType())
+                // a name of a class, an interface, a namespace or a type (`const k = Box<number>`) has no run-time
+                // value to show: its reference has nothing to lower to (TSLANG 171, --di)
+                && !variableDeclarationInfo.initial.getDefiningOp<mlir_ts::ClassRefOp>()
+                && !variableDeclarationInfo.initial.getDefiningOp<mlir_ts::InterfaceRefOp>()
+                && !variableDeclarationInfo.initial.getDefiningOp<mlir_ts::NamespaceRefOp>()
+                && !variableDeclarationInfo.initial.getDefiningOp<mlir_ts::TypeRefOp>())
             {
                 // to show const values
                 MLIRDebugInfoHelper mti(builder, debugScope);
