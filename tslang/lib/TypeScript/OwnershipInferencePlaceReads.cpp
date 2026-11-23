@@ -54,12 +54,11 @@ namespace own_inference
         return false;
     }
 
-    bool OwnershipInferencePass::classMayHoldDescriptorField(mlir_ts::ClassType classType)
+    bool OwnershipInferencePass::classMayHoldDescriptorField(mlir::ModuleOp module, mlir_ts::ClassType classType)
     {
         // the class, and each class of this module it extends or that extends it, at any depth
         // (CLASS_BASES_ATTR_NAME): its object may be any of the subclasses, its fields include the bases'
         llvm::SmallVector<mlir_ts::ClassType> related{classType};
-        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
         auto bases = module ? module->getAttrOfType<mlir::ArrayAttr>(CLASS_BASES_ATTR_NAME) : mlir::ArrayAttr();
         auto known = [&](mlir_ts::ClassType type) {
             return llvm::any_of(related, [&](mlir_ts::ClassType seen) { return seen.getName() == type.getName(); });
@@ -89,12 +88,40 @@ namespace own_inference
         return llvm::any_of(related, [](mlir_ts::ClassType type) { return holdsDescriptorField(type); });
     }
 
+    DescriptorObjectsAnalysis::DescriptorObjectsAnalysis(mlir::Operation *moduleOp)
+    {
+        // any op's result, or the place it refers to, of a class (with its bases and subclasses) or an
+        // object that may have such a field. Run from a module pass, while no function pass changes the
+        // bodies it walks
+        auto module = mlir::cast<mlir::ModuleOp>(moduleOp);
+        module->walk([&](mlir::Operation *op) {
+            for (auto result : op->getResultTypes())
+            {
+                auto resultType = result;
+                if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(resultType))
+                {
+                    resultType = refType.getElementType();
+                }
+
+                auto classType = mlir::dyn_cast<mlir_ts::ClassType>(resultType);
+                if ((classType && OwnershipInferencePass::classMayHoldDescriptorField(module, classType)) ||
+                    (mlir::isa<mlir_ts::ObjectType>(resultType) && OwnershipInferencePass::holdsDescriptorField(resultType)))
+                {
+                    held = true;
+                    return mlir::WalkResult::interrupt();
+                }
+            }
+
+            return mlir::WalkResult::advance();
+        });
+    }
+
     bool OwnershipInferencePass::mayHoldDescriptorField(mlir::Type typeIn)
     {
         auto type = MLIRTypeHelper::stripValueType(typeIn);
         if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
         {
-            return classMayHoldDescriptorField(classType);
+            return classMayHoldDescriptorField(getFunction()->getParentOfType<mlir::ModuleOp>(), classType);
         }
 
         if (mlir::isa<mlir_ts::ObjectType>(type))
@@ -128,31 +155,15 @@ namespace own_inference
             return false;
         }
 
+        // Never a walk of the module from here (DescriptorObjectsAnalysis): only the answer
+        // OwnershipModuleFactsPass computed before the function passes started
         if (!moduleHoldsDescriptorObjects)
         {
-            auto found = false;
             auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
-            module->walk([&](mlir::Operation *op) {
-                for (auto result : op->getResultTypes())
-                {
-                    auto resultType = result;
-                    if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(resultType))
-                    {
-                        resultType = refType.getElementType();
-                    }
-
-                    auto classType = mlir::dyn_cast<mlir_ts::ClassType>(resultType);
-                    if ((classType && classMayHoldDescriptorField(classType)) ||
-                        (mlir::isa<mlir_ts::ObjectType>(resultType) && holdsDescriptorField(resultType)))
-                    {
-                        found = true;
-                        return mlir::WalkResult::interrupt();
-                    }
-                }
-
-                return mlir::WalkResult::advance();
-            });
-            moduleHoldsDescriptorObjects = found;
+            auto fact = module ? getCachedParentAnalysis<DescriptorObjectsAnalysis>(module) : std::nullopt;
+            // not computed (the pass run without OwnershipModuleFactsPass before it): any object may,
+            // and nothing hidden is counted
+            moduleHoldsDescriptorObjects = fact ? fact->get().held : true;
         }
 
         return *moduleHoldsDescriptorObjects;

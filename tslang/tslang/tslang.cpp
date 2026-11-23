@@ -189,7 +189,7 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
 cl::opt<bool> atomicRCOpt("atomic-rc", cl::desc("-mm=rc: change reference counts with atomic operations, so objects can be shared between threads"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
-cl::opt<OwnFallback> ownFallbackOpt("own-fallback", cl::desc("-mm=own: where inference cannot prove a move or a borrow, report an error (error) or keep rc's count for that object, with a warning (count)"),
+cl::opt<OwnFallback> ownFallbackOpt("own-fallback", cl::desc("-mm=own: where inference cannot prove a move or a borrow, report an error (error) or keep rc's count for that object, with a warning (count); ignored under every other -mm"),
                                     cl::values(clEnumValN(OwnFallback::Error, "error", "report an error (default)")),
                                     cl::values(clEnumValN(OwnFallback::Count, "count", "keep rc's count for that object, with a warning")),
                                     cl::init(OwnFallback::Error), cl::cat(TypeScriptCompilerCategory));

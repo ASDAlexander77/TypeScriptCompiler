@@ -37,6 +37,10 @@ std::unique_ptr<mlir::Pass> createOwnershipVerifierPass();
 /// warning.
 std::unique_ptr<mlir::Pass> createOwnershipInferencePass(bool countsFallback = false);
 
+/// --own-fallback=count only: what OwnershipInferencePass asks of the whole module, computed once
+/// before its function passes run on several threads, which only read it. Changes nothing.
+std::unique_ptr<mlir::Pass> createOwnershipModuleFactsPass();
+
 /// The callee facts -mm=own infers across the module - a parameter the callee keeps, a result that
 /// borrows an argument, a callee that destroys nothing its caller can reach - pinned on each call it
 /// resolves. Runs just before OwnershipInferencePass, under own only. `executable`: the module is

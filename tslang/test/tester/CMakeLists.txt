@@ -5929,9 +5929,10 @@ endforeach()
 # at the place of one that is, and refusals beyond tier 1: a closure that escapes with what it
 # captured still used (user ruling 11-13), a parameter its exported function's callers cannot be told
 # it keeps; and a value whose rc ops a site commits as a borrow: a view of an array read after a
-# possible free, an element of an array literal that borrows it; and a tagged union's payload taken
-# out of a result that may be counted (nothing gives it an owner under own), and a @value value whose
-# object has a closure field (a count of the value would be one of the object)
+# possible free, an element of an array literal that borrows it; and an object with a tagged union's
+# field, which is never counted (nothing gives the payload an owner under own), so its second owner
+# stays an error, and a @value value whose object has a closure field (a count of the value would be
+# one of the object)
 foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
                       own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
                       own/own_err_param_kept_exported own/own_fallback_view_stays_error
@@ -5968,7 +5969,9 @@ endforeach()
 # HEAP_BLOCK_IMMORTAL) keep the object until its last owner lets go, so it prints what it prints
 # under gc. The ones that throw are also built ahead of time, with the overwrite of a holder; the
 # WeakRef to a counted object goes when its last owner does; a counted parameter kept twice and
-# then thrown through gives its share back on the unwind.
+# then thrown through gives its share back on the unwind (a throw with no `finally` of its own); a
+# counted object an array lets go of by pop, splice, a shorter length or its release stays with its
+# other owner.
 foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_fallback_fresh_second_owner
                       own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
                       own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
@@ -5976,7 +5979,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
-                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local)
+                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"

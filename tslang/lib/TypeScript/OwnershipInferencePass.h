@@ -49,6 +49,22 @@ using namespace own_facts;
 // an `any` box of a value it only borrows, to be cast back and read (classifyBorrowingBoxes, spec 92)
 #define OWN_BORROWING_BOX_ATTR_NAME "__own_borrowing_box"
 
+// --own-fallback=count: may an object this module makes or names have a field
+// reachedThroughDescriptor (mayHoldDescriptorField's answer for an interface, `any`, `unknown` or
+// Opaque, which hide which object they refer to). A module analysis, computed by
+// OwnershipModuleFactsPass before the function passes start and only read by them
+// (getCachedParentAnalysis): they run on the module's functions at once, on several threads, and a
+// walk of the module from one of them reads the bodies the others are changing (the access
+// violation accessorFiller had, #867).
+struct DescriptorObjectsAnalysis
+{
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DescriptorObjectsAnalysis)
+
+    explicit DescriptorObjectsAnalysis(mlir::Operation *module);
+
+    bool held = false;
+};
+
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
 //
@@ -156,6 +172,9 @@ class OwnershipInferencePass
     void stripFacts();
 
   private:
+    // computes the module's answer with the same class and object tests
+    friend struct DescriptorObjectsAnalysis;
+
     mlir::DominanceInfo *dominance = nullptr;
 
     // What in this function may destroy a value held by a field or an element: an overwrite of a
@@ -267,8 +286,8 @@ class OwnershipInferencePass
     // class (its storage, its bases' and the module's subclasses'), an object; an interface, `any`,
     // `unknown` or Opaque when any object the module makes or names may (it hides which)
     bool mayHoldDescriptorField(mlir::Type type);
-    bool classMayHoldDescriptorField(mlir_ts::ClassType classType);
-    // ...computed once per function, when first asked
+    static bool classMayHoldDescriptorField(mlir::ModuleOp module, mlir_ts::ClassType classType);
+    // ...DescriptorObjectsAnalysis's answer, read once per function, when first asked
     std::optional<bool> moduleHoldsDescriptorObjects;
     // what a value of this type holds is reached only through a type descriptor (a tagged union's
     // payload, a closure): under own nothing can give it an owner, so it is never counted

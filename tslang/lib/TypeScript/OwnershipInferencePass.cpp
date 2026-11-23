@@ -2585,6 +2585,20 @@ namespace own_inference
         }
     }
 
+    // What OwnershipInferencePass asks of the whole module, computed here, where nothing changes it,
+    // and kept for the function passes after it to read (DescriptorObjectsAnalysis). It changes nothing.
+    struct OwnershipModuleFactsPass
+        : public mlir::PassWrapper<OwnershipModuleFactsPass, mlir::OperationPass<mlir::ModuleOp>>
+    {
+        MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OwnershipModuleFactsPass)
+
+        void runOnOperation() override
+        {
+            getAnalysis<DescriptorObjectsAnalysis>();
+            markAllAnalysesPreserved();
+        }
+    };
+
 } // namespace own_inference
 
 #undef DEBUG_TYPE
@@ -2592,4 +2606,9 @@ namespace own_inference
 std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipInferencePass(bool countsFallback)
 {
     return std::make_unique<own_inference::OwnershipInferencePass>(countsFallback);
+}
+
+std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipModuleFactsPass()
+{
+    return std::make_unique<own_inference::OwnershipModuleFactsPass>();
 }
