@@ -13020,21 +13020,53 @@ class MLIRGenImpl
 
                     operands.pop_back_n(toIndex - fromIndex);
 
-                    auto packed = !varArgOperands.empty() || isa<mlir_ts::ArrayType>(varArgsType);
-
-                    // the data block about to be filled releases every element when it dies; without
-                    // this, `a.concat(["x"])` handed the callee an array nobody held, and its first
-                    // `for (const item of other)` freed it (§9.21, as for an array literal)
-                    if (packed)
+                    // a rest parameter typed as a tuple (`...args: [string, number]`): the arguments make the
+                    // tuple, each as its element's type (TSLANG 133), where an array of them failed to verify
+                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(varArgsType))
                     {
-                        mlirGenRetainCaptured(location, varArgOperands);
-                    }
+                        // a tuple spread in (`fn(...t)`): the tuple, as the parameter's
+                        if (varArgOperands.size() == 1 && isa<mlir_ts::TupleType>(varArgOperands.front().getType()))
+                        {
+                            CAST_A(castTuple, location, tupleType, varArgOperands.front(), genContext);
+                            operands.push_back(castTuple);
+                        }
+                        else if (varArgOperands.size() != tupleType.size())
+                        {
+                            emitError(location) << "expected " << tupleType.size() << " arguments for the rest parameter, but got "
+                                                << varArgOperands.size();
+                            return mlir::failure();
+                        }
+                        else
+                        {
+                            SmallVector<mlir::Value> elements;
+                            for (auto [index, element] : llvm::enumerate(varArgOperands))
+                            {
+                                auto fieldType = tupleType.getFieldInfo(index).type;
+                                CAST_A(castElement, location, fieldType, element, genContext);
+                                elements.push_back(castElement);
+                            }
 
-                    // create array
-                    auto array = !packed
-                        ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
-                        : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
-                    operands.push_back(array);
+                            operands.push_back(builder.create<mlir_ts::CreateTupleOp>(location, tupleType, elements));
+                        }
+                    }
+                    else
+                    {
+                        auto packed = !varArgOperands.empty() || isa<mlir_ts::ArrayType>(varArgsType);
+
+                        // the data block about to be filled releases every element when it dies; without
+                        // this, `a.concat(["x"])` handed the callee an array nobody held, and its first
+                        // `for (const item of other)` freed it (§9.21, as for an array literal)
+                        if (packed)
+                        {
+                            mlirGenRetainCaptured(location, varArgOperands);
+                        }
+
+                        // create array
+                        auto array = !packed
+                            ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
+                            : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
+                        operands.push_back(array);
+                    }
 
                     LLVM_DEBUG(for (auto& ops : varArgOperands) llvm::dbgs() << "\t value = " << ops << "\n";);
                 }
@@ -13596,6 +13628,8 @@ class MLIRGenImpl
         auto i = 0; // we need to shift in case of 'this'
         auto lastArgIndex = argFuncTypes.size() - 1;
         mlir::Type varArgType;
+        // a rest parameter typed as a tuple: each argument is its element's (TSLANG 133)
+        auto varArgTuple = isVarArg ? dyn_cast<mlir_ts::TupleType>(argFuncTypes.back()) : mlir_ts::TupleType();
         if (isVarArg)
         {
             auto lastType = argFuncTypes.back();
@@ -13622,7 +13656,23 @@ class MLIRGenImpl
                 break;
             }
 
-            if (isVarArg && i >= lastArgIndex)
+            if (varArgTuple && i >= lastArgIndex)
+            {
+                // the tuple itself, spread or prepared already, or an element of it
+                if (i == lastArgIndex && lastArgIndex == operands.size() - 1 && value.getType() == varArgTuple)
+                {
+                    break;
+                }
+
+                auto element = i - lastArgIndex;
+                if (element >= varArgTuple.size())
+                {
+                    break;
+                }
+
+                argTypeDestFuncType = varArgTuple.getFieldInfo(element).type;
+            }
+            else if (isVarArg && i >= lastArgIndex)
             {
                 argTypeDestFuncType = varArgType;
 
@@ -21554,6 +21604,8 @@ class MLIRGenImpl
     llvm::DenseMap<const void *, Expression> arrayIsArrayRewrites;
     // the arrows a call is made of where they are written (GenContext::immediatelyCalledIn)
     llvm::SmallPtrSet<const void *, 8> immediatelyCalledArrows;
+    // names the locals that hold `arguments` with a rest parameter apart (mlirGenArguments)
+    int argumentsLocals = 0;
 
     // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
     // were refused does not go on to the defaults (`any`), which would only be refused again

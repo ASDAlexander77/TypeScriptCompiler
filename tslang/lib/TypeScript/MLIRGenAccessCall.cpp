@@ -3286,6 +3286,15 @@ namespace mlirgen
     {
         auto count = operandsProcessingInfo.restCount();
 
+        // a tuple spread into a rest parameter typed as a tuple (`fn(...t)` of `fn(...args: [string, number])`): the
+        // tuple itself is the parameter (TSLANG 133)
+        if (operandsProcessingInfo.hasType && count == 1 && operandsProcessingInfo.lastArgIndex >= 0 &&
+            isa<mlir_ts::TupleType>(operandsProcessingInfo.parameters.back().type) && isa<mlir_ts::TupleType>(source.getType()))
+        {
+            operandsProcessingInfo.addOperandAndMoveToNextParameter(source);
+            return mlir::success();
+        }
+
         if (hasIterator(location, source, genContext))
         {
             // treat it as <???>.next().value structure

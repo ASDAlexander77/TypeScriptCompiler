@@ -3970,6 +3970,7 @@ namespace mlirgen
         }
 
         SmallVector<mlir::Value, 4> values;
+        mlir::Value restArguments;
         for (auto &param : genContext.bodyFuncProto->getParams())
         {
             // a method's object is not one of its arguments
@@ -3978,15 +3979,23 @@ namespace mlirgen
                 continue;
             }
 
-            if (param->getIsMultiArgsParam() || param->getBindingPattern())
-            {
-                emitError(location) << "'arguments' of a function with a rest or destructured parameter is not supported";
-                return mlir::failure();
-            }
-
+            // a destructured parameter is the argument under the name the compiler gave it; a rest parameter's
+            // elements are the arguments after the others (TSLANG 114)
             auto result = mlirGen(location, param->getName(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
+            if (param->getIsMultiArgsParam())
+            {
+                if (!isa<mlir_ts::ArrayType>(value.getType()))
+                {
+                    emitError(location) << "'arguments' of a function whose rest parameter is not an array is not supported";
+                    return mlir::failure();
+                }
+
+                restArguments = value;
+                continue;
+            }
+
             if (!isa<mlir_ts::AnyType>(value.getType()))
             {
                 CAST(value, location, getAnyType(), value, genContext);
@@ -3995,9 +4004,58 @@ namespace mlirgen
             values.push_back(value);
         }
 
-        // the array releases what it holds when it dies (as a rest parameter's array does)
-        mlirGenRetainCaptured(location, values);
-        return V(builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values));
+        mlir::Value argumentsArray;
+        if (restArguments)
+        {
+            // [...the others, ...rest], as an array literal with a spread is made: each element of the rest is
+            // pushed, boxed as it goes in (a copy of the rest as an `any[]` first was never given back)
+            SmallVector<ArrayElement> elements;
+            for (auto value : values)
+            {
+                elements.push_back({value, false, false});
+            }
+
+            elements.push_back({restArguments, true, true});
+
+            struct ArrayInfo arrayInfo{};
+            arrayInfo.arrayElementType = getAnyType();
+            auto result = createDynamicArrayFromArrayLiteral(location, elements, arrayInfo, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            argumentsArray = V(result);
+        }
+        else
+        {
+            // the array releases what it holds when it dies (as a rest parameter's array does)
+            mlirGenRetainCaptured(location, values);
+            argumentsArray = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values);
+        }
+
+        // held by a local of its own: read as a temporary (`for (const v of arguments)`), a spread literal was
+        // never given back under rc, and the array under -mm=own; one a local holds is
+        // ...but not in a region of a loop itself (`i < arguments.length`): that has no scope of its own, and the
+        // local would be given back by the function's, which the region does not dominate. There it stays a
+        // temporary, as it was
+        auto *regionOwner = builder.getInsertionBlock() ? builder.getInsertionBlock()->getParentOp() : nullptr;
+        if (mlir::isa_and_nonnull<mlir_ts::ForOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp>(regionOwner))
+        {
+            return argumentsArray;
+        }
+
+        auto name = ".arguments" + std::to_string(argumentsLocals++);
+        GenContext localGenContext(genContext);
+        localGenContext.allocateVarsOutsideOfOperation = false;
+        localGenContext.allocateScopeOwnedVarsOutsideOfOperation = false;
+        if (!registerVariable(
+                location, name, false, VariableType::Const,
+                [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                    return {argumentsArray.getType(), argumentsArray, TypeProvided::Yes};
+                },
+                localGenContext, /*showWarnings=*/false, /*forceLocalVar=*/true))
+        {
+            return mlir::failure();
+        }
+
+        return resolveIdentifier(location, name, genContext);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
