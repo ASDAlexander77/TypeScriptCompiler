@@ -159,6 +159,21 @@ class CastLogicHelper
             return in;
         }
 
+        // under -mm=rc an `object` is an `any` box (MLIRGenImpl::cast boxes into it): either way it is the same box
+        if (compileOptions.isRefCounted())
+        {
+            auto isObjectOfAny = [](mlir::Type t) {
+                auto objectType = dyn_cast<mlir_ts::ObjectType>(t);
+                return objectType && isa<mlir_ts::AnyType>(objectType.getStorageType());
+            };
+
+            if ((isa<mlir_ts::AnyType, mlir_ts::UnknownType>(inType) && isObjectOfAny(resType))
+                || (isObjectOfAny(inType) && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(resType)))
+            {
+                return in;
+            }
+        }
+
         // a class value is its storage tuple, and the value of a base class is laid out as its subclass's
         if (isa<mlir_ts::ClassValueType>(inType) || isa<mlir_ts::ClassValueType>(resType))
         {
@@ -314,6 +329,13 @@ class CastLogicHelper
                 if (isa<mlir_ts::ObjectType, mlir_ts::ClassType>(inType))
                 {
                     return in;
+                }
+
+                // null (and undefined) as an `object` is the null pointer: it was the address of a stack slot
+                // holding null, so `let n: object | null = null; n === null` was false (TSLANG 169)
+                if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(inType))
+                {
+                    return rewriter.create<LLVM::ZeroOp>(loc, resLLVMType);
                 }
 
                 return castToOpaqueType(in, inLLVMType);

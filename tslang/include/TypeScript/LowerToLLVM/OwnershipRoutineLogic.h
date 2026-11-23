@@ -769,6 +769,13 @@ class OwnershipRoutineLogic
     // retain slot with this routine, that `this` is such a block (interfaceThisIsPlainBlock).
     static constexpr const char *PLAIN_BLOCK_RETAIN_ROUTINE = "__tslang_retain_block_slot";
 
+    // under -mm=rc an `object` is an `any` box (MLIRGenImpl::cast boxes into it): released and shared as one
+    bool isBoxedObject(mlir::Type type)
+    {
+        auto objectType = dyn_cast<mlir_ts::ObjectType>(type);
+        return compileOptions.isRefCounted() && objectType && isa<mlir_ts::AnyType>(objectType.getStorageType());
+    }
+
     static bool isPlainBlockType(mlir::Type type)
     {
         return isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::SharedType>(type) ||
@@ -2181,7 +2188,7 @@ class OwnershipRoutineLogic
         }
 
         // a class or object reference owns the instance block
-        if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type))
+        if ((isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type)) && !isBoxedObject(type))
         {
             auto storageType = isa<mlir_ts::ClassType>(type) ? cast<mlir_ts::ClassType>(type).getStorageType()
                                                              : cast<mlir_ts::ObjectType>(type).getStorageType();
@@ -2231,8 +2238,8 @@ class OwnershipRoutineLogic
         }
 
         // an "any" box owns its own block, and its payload's type is only known through the
-        // tag (`unknown` is the same box)
-        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
+        // tag (`unknown` is the same box, and under -mm=rc an `object` too)
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) || isBoxedObject(type))
         {
             auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitIfLastReference(boxValue, [&]() {
@@ -2785,7 +2792,7 @@ class OwnershipRoutineLogic
             return;
         }
 
-        if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type))
+        if ((isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type)) && !isBoxedObject(type))
         {
             auto storageType = isa<mlir_ts::ClassType>(type) ? cast<mlir_ts::ClassType>(type).getStorageType()
                                                              : cast<mlir_ts::ObjectType>(type).getStorageType();
@@ -2802,7 +2809,7 @@ class OwnershipRoutineLogic
             return;
         }
 
-        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type))
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type) || isBoxedObject(type))
         {
             auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
             emitMarkBlockShared(boxValue, [&]() {
