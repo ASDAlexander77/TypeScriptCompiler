@@ -240,7 +240,7 @@ namespace own_inference
                 auto found = countedAt.find(diag.getLocation());
                 if (found != countedAt.end())
                 {
-                    countedErrors.try_emplace(found->second, std::move(recorded));
+                    countedErrors.push_back({found->second, std::move(recorded)});
                     return mlir::success();
                 }
 
@@ -1856,9 +1856,10 @@ namespace own_inference
         // Any other read only where nothing may free what it reads before its last use. A store's
         // release of the old value right after a retain of the read is that store's, as under rc.
         auto readCountable = [&](mlir::Value root) {
-            if (auto partner = fieldReadPartner(root))
+            // (the partner is in the read's group: countedGroup)
+            if (fieldReadPartner(root))
             {
-                return countedValues.contains(partner) || countable(partner);
+                return true;
             }
 
             auto *read = root.getDefiningOp();
@@ -1921,21 +1922,9 @@ namespace own_inference
                 return true;
             }
 
-            // an owning local: rc's retain of the slot, or the value it consumes, is the local's share
-            auto init = varOp.getInitializer();
-            if (!isOwningVariable(varOp) || !init)
-            {
-                return false;
-            }
-
-            auto initUnit = countedUnitOf(init);
-            if (auto initVar = initUnit.getDefiningOp<mlir_ts::VariableOp>())
-            {
-                auto initIndex = -1;
-                return isParameterSlot(initVar, initIndex) || isOwningVariable(initVar);
-            }
-
-            return bornRoot(initUnit);
+            // an owning local declared with a value: rc's retain of the slot, or the value it consumes,
+            // is the local's share (what it is given is in its group: countedGroup)
+            return isOwningVariable(varOp) && varOp.getInitializer();
         }
 
         if (isCopyableValueAt(def, unit.getType()) || !bornRoot(unit))
@@ -2051,56 +2040,92 @@ namespace own_inference
             }
         }
 
-        auto count = [&](mlir::Value unit) {
-            if (countedValues.insert(unit).second)
-            {
-                countedOrder.push_back(unit);
-            }
-        };
-
         for (auto unit : refused)
         {
             auto found = reportOf.find(unit);
-            if (!unit || found == reportOf.end() || countedValues.contains(unit) || !countable(unit))
+            if (!unit || found == reportOf.end() || countedValues.contains(unit))
             {
                 continue;
             }
 
-            count(unit);
+            // counted with its group, or not at all; warned once, for the value reported
+            llvm::SetVector<mlir::Value> group;
+            if (!countedGroup(unit, group))
+            {
+                continue;
+            }
+
+            countedValues.insert(group.begin(), group.end());
+            countedOrder.push_back(unit);
             dryRunDiagnostics.try_emplace(unit, *found->second);
         }
+    }
 
-        // A local and the value it was declared from are one block: counted together, else the move
-        // of the value into the local, or of the local's value on, is erased under one of them.
-        // Warned once, for the one reported.
-        for (size_t i = 0, size = countedOrder.size(); i < size; ++i)
-        {
-            auto unit = countedOrder[i];
-            if (auto varOp = unit.getDefiningOp<mlir_ts::VariableOp>())
+    bool OwnershipInferencePass::countedGroup(mlir::Value unit, llvm::SetVector<mlir::Value> &group)
+    {
+        // The values one block's rc ops pass between in this function: a local and each value it is
+        // declared from or assigned, a value and each local declared from it, a field read the
+        // signature pass made in place of a local's value and that value. They keep rc's ops together
+        // or not at all: a local counted alone keeps a release of a value own let it borrow, a value
+        // counted alone may be moved into a local own then erases the release of.
+        auto add = [&](mlir::Value value) {
+            if (value && !holdsNoBlock(value) && !isConstantData(value) && !isImmortalLiteral(value))
             {
-                if (auto init = varOp.getInitializer())
+                group.insert(countedUnitOf(value));
+            }
+        };
+
+        group.insert(unit);
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            auto member = group[i];
+            if (!countable(member))
+            {
+                return false;
+            }
+
+            if (auto varOp = member.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                auto index = -1;
+                if (!isParameterSlot(varOp, index))
                 {
-                    countedValues.insert(countedUnitOf(init));
+                    add(varOp.getInitializer());
+                }
+
+                for (auto *user : member.getUsers())
+                {
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == member)
+                    {
+                        add(storeOp.getValue());
+                    }
                 }
 
                 continue;
             }
 
-            // a field read the signature pass made in place of a local's value: that value too
-            if (auto partner = fieldReadPartner(unit))
+            if (auto partner = fieldReadPartner(member))
             {
-                countedValues.insert(partner);
+                group.insert(partner);
             }
 
-            for (auto *user : unit.getUsers())
-            {
+            forEachUse(member, [&](mlir::Operation *user, mlir::Value used) {
                 auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
-                if (varOp && varOp.getInitializer() == unit && isOwningVariable(varOp))
+                if (varOp && varOp.getInitializer() == used && isOwningVariable(varOp))
                 {
-                    countedValues.insert(varOp.getResult());
+                    group.insert(varOp.getResult());
                 }
-            }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                                 : mlir_ts::VariableOp();
+                if (slot && isOwningVariable(slot))
+                {
+                    group.insert(slot.getResult());
+                }
+            });
         }
+
+        return true;
     }
 
     void OwnershipInferencePass::retainKeptCountedArguments()
@@ -2119,12 +2144,13 @@ namespace own_inference
                     continue;
                 }
 
-                // given a count for the call already (callCopies)
+                // given a count for the call already (callCopies: a retain of the read the argument is a
+                // view of)
                 auto arg = args[index];
                 auto given = false;
                 for (auto *prev = op->getPrevNode(); prev && mlir::isa<mlir_ts::RetainOp>(prev); prev = prev->getPrevNode())
                 {
-                    given = given || prev->getOperand(0) == arg;
+                    given = given || rootOf(prev->getOperand(0)) == rootOf(arg);
                 }
 
                 if (!given)
@@ -2212,28 +2238,34 @@ namespace own_inference
     {
         for (auto unit : countedOrder)
         {
-            const RecordedDiagnostic *recorded = nullptr;
+            // the dry run's error, then each the real run raised there in its place (not one already said)
+            llvm::SmallVector<const RecordedDiagnostic *> recorded;
             if (auto found = dryRunDiagnostics.find(unit); found != dryRunDiagnostics.end())
             {
-                recorded = &found->second;
-            }
-            else if (auto found = countedErrors.find(unit); found != countedErrors.end())
-            {
-                recorded = &found->second;
+                recorded.push_back(&found->second);
             }
 
-            auto loc = recorded ? recorded->loc : unit.getLoc();
+            for (auto &[countedUnit, error] : countedErrors)
+            {
+                auto said = llvm::any_of(recorded, [&](const RecordedDiagnostic *other) {
+                    return other->loc == error.loc && other->message == error.message;
+                });
+                if (countedUnit == unit && !said)
+                {
+                    recorded.push_back(&error);
+                }
+            }
+
+            auto loc = recorded.empty() ? unit.getLoc() : recorded.front()->loc;
             auto diag = mlir::emitWarning(loc, "-mm=own counts this object here (--own-fallback=count); a cycle through "
                                                "it is never freed");
-            if (!recorded)
+            for (auto *error : recorded)
             {
-                continue;
-            }
-
-            diag.attachNote(recorded->loc) << recorded->message;
-            for (auto &[noteLoc, message] : recorded->notes)
-            {
-                diag.attachNote(noteLoc) << message;
+                diag.attachNote(error->loc) << error->message;
+                for (auto &[noteLoc, message] : error->notes)
+                {
+                    diag.attachNote(noteLoc) << message;
+                }
             }
         }
     }

@@ -5897,13 +5897,17 @@ add_test(NAME test-own-string-copy-in-store-block
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
 # -mm=own --own-fallback=count: what inference refuses keeps rc's count, with a warning. Inference
-# only so far: the IR is read (a kept retain marked `__own_counted`, the warning). A shape that has
+# only so far: the IR is read (the warning, and how many retains are kept marked `__own_counted`:
+# each test's count is rc's for its object, and one too few frees it early). A shape that has
 # nothing to keep stays an error with the flag.
-foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_fallback_fresh_second_owner
-                      own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
-                      own_fallback_generator)
+foreach(fallback_case own_fallback_second_owner:2 own_fallback_move_overwrite:2 own_fallback_fresh_second_owner:2
+                      own_fallback_call_second_owner:2 own_fallback_swap:3 own_fallback_global_lent:1
+                      own_fallback_unwind:2 own_fallback_generator:2 own_fallback_kept_lent:1)
+    string(REPLACE ":" ";" fallback_case "${fallback_case}")
+    list(GET fallback_case 0 fallback_test)
+    list(GET fallback_case 1 fallback_counted)
     add_test(NAME test-own-fallback-ir-${fallback_test}
-             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=${fallback_counted}
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()

@@ -206,8 +206,9 @@ class OwnershipInferencePass
     llvm::DenseMap<mlir::Value, RecordedDiagnostic> dryRunDiagnostics;
     // what the dry run's report sites emitted, in order, swallowed (the flag only)
     llvm::SmallVector<RecordedDiagnostic> dryRunCapture;
-    // an error the real run raised on a counted value: a note of its warning, not an error
-    llvm::DenseMap<mlir::Value, RecordedDiagnostic> countedErrors;
+    // the errors the real run raised where a counted value's was reported: notes of its warning, not
+    // errors, in order
+    llvm::SmallVector<std::pair<mlir::Value, RecordedDiagnostic>> countedErrors;
     // the counted value an op at a location concerns (an op that names it, or its retain)
     llvm::DenseMap<mlir::Location, mlir::Value> countedAt;
     // with the flag, failure is decided after the real run: signalled, and errors left as errors
@@ -229,6 +230,9 @@ class OwnershipInferencePass
     // function keeps (released at its exits, the share the caller moved in). Anything else stays an
     // error.
     bool countable(mlir::Value unit);
+    // `unit` and every value its block's rc ops pass between in this function (countedGroup's note), all
+    // countable, into `group`; false when one is not.
+    bool countedGroup(mlir::Value unit, llvm::SetVector<mlir::Value> &group);
     // The value stored into a field right before `read` reads it again: the signature pass's read of
     // the field in place of a local moved into it (TSLANG 47), or null.
     mlir::Value fieldReadPartner(mlir::Value read);

@@ -1251,6 +1251,14 @@ namespace own_inference
             {
                 callCopies.push_back({read, kept});
             }
+            // ...and, with --own-fallback=count, a read that cannot be copied given to a call that keeps
+            // it: a count of its own for the callee, as a handle's, when the repair counts it
+            else if (dryRun && countsFallback && kept && isCall(kept) && !copiesInto(kept, result) &&
+                     !mlir::isa<mlir_ts::InvokeOp>(kept) &&
+                     llvm::count_if(kept->getOperands(), [&](mlir::Value operand) { return rootOf(operand) == result; }) == 1)
+            {
+                callCopies.push_back({read, kept});
+            }
 
             // ...and one stored into a place rc does not retain it for, as a yield's record field
             // (`if (c) yield v` of a string `v` the generator's state holds): the place takes a copy,

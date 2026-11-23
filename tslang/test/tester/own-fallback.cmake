@@ -1,7 +1,8 @@
 # -mm=own --own-fallback=count (own rc fallback design): a value inference cannot prove keeps rc's
 # count, with a warning where own would have reported its error.
 #   MODE=IR            compiled to --emit=mlir-affine with the flag: compiles, warns, and keeps at least
-#                      one retain marked `__own_counted`
+#                      one retain marked `__own_counted` - exactly COUNTED of them when it is given (a
+#                      retain too few frees the object early)
 #   MODE=RUN           run with the flag (JIT): prints `done.` and no error
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:`
 # Every mode also checks that the file is refused under own without the flag: each test exercises
@@ -30,9 +31,13 @@ if(MODE STREQUAL "IR")
     if(warning EQUAL -1)
         message(FATAL_ERROR "no fallback warning:\n${out}")
     endif()
-    string(FIND "${out}" "__own_counted" marked)
-    if(marked EQUAL -1)
+    string(REGEX MATCHALL "__own_counted" marked "${out}")
+    list(LENGTH marked markedCount)
+    if(markedCount EQUAL 0)
         message(FATAL_ERROR "no retain marked __own_counted:\n${out}")
+    endif()
+    if(DEFINED COUNTED AND NOT markedCount EQUAL COUNTED)
+        message(FATAL_ERROR "${markedCount} retains marked __own_counted, expected ${COUNTED}:\n${out}")
     endif()
 elseif(MODE STREQUAL "RUN")
     execute_process(COMMAND "${TSLANG}" --emit=jit -mm=own --own-fallback=count "${FILE}"
