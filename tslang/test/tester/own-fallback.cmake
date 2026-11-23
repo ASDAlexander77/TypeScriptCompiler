@@ -4,7 +4,8 @@
 #                      one retain marked `__own_counted` - exactly COUNTED of them when it is given (a
 #                      retain too few frees the object early); with FUNC, RELEASED and RELEASES, also
 #                      exactly RELEASES releases naming RELEASED in function FUNC
-#   MODE=RUN           run with the flag (JIT): prints `done.` and no error
+#   MODE=RUN           run with the flag (JIT, or built ahead of time with EXE=1): exits 0, warns,
+#                      prints `done.` and no error, and prints what it prints under -mm=gc
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:`
 # Every mode also checks that the file is refused under own without the flag: each test exercises
 # the fallback, never a shape own already accepts.
@@ -61,19 +62,50 @@ if(MODE STREQUAL "IR")
         endif()
     endif()
 elseif(MODE STREQUAL "RUN")
-    execute_process(COMMAND "${TSLANG}" --emit=jit -mm=own --own-fallback=count "${FILE}"
-                    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
-    string(APPEND out "${err}")
+    # what the program prints under gc is what it must print counted
+    execute_process(COMMAND "${TSLANG}" --emit=jit --jit-cache=false --no-default-lib -mm=gc "${FILE}"
+                    OUTPUT_VARIABLE gcOut ERROR_VARIABLE gcErr RESULT_VARIABLE gcResult)
+    if(NOT gcResult EQUAL 0)
+        message(FATAL_ERROR "tslang -mm=gc failed (${gcResult}):\n${gcOut}${gcErr}")
+    endif()
+    # EXE: built ahead of time, against this build's runtime (TSLANG_LIB), and run, rather than run
+    # by the JIT
+    if(EXE)
+        get_filename_component(exeName "${FILE}" NAME_WE)
+        set(exeFile "${CMAKE_CURRENT_BINARY_DIR}/${exeName}.own-fallback.exe")
+        file(REMOVE "${exeFile}")
+        execute_process(COMMAND "${TSLANG}" --emit=exe --no-default-lib -mm=own --own-fallback=count
+                                "--tslang-lib-path=${TSLANG_LIB}" "${FILE}" -o "${exeFile}"
+                        OUTPUT_VARIABLE buildOut ERROR_VARIABLE buildErr RESULT_VARIABLE result)
+        set(warnings "${buildOut}${buildErr}")
+        if(NOT result EQUAL 0)
+            message(FATAL_ERROR "tslang failed (${result}):\n${warnings}")
+        endif()
+        execute_process(COMMAND "${exeFile}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
+    else()
+        # compiled every run (no JIT cache): a program loaded from the cache is not compiled, and
+        # gives no warning
+        execute_process(COMMAND "${TSLANG}" --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count "${FILE}"
+                        OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
+        set(warnings "${err}")
+    endif()
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "tslang failed (${result}):\n${out}")
+        message(FATAL_ERROR "the counted program failed (${result}):\n${out}${err}")
+    endif()
+    string(FIND "${warnings}" "warning: -mm=own counts this object here (--own-fallback=count)" warning)
+    if(warning EQUAL -1)
+        message(FATAL_ERROR "no fallback warning:\n${warnings}")
     endif()
     string(FIND "${out}" "done." done)
     if(done EQUAL -1)
-        message(FATAL_ERROR "the program did not finish (no `done.`):\n${out}")
+        message(FATAL_ERROR "the program did not finish (no `done.`):\n${out}${err}")
     endif()
-    string(FIND "${out}" "error:" error)
+    string(FIND "${out}${err}" "error:" error)
     if(NOT error EQUAL -1)
-        message(FATAL_ERROR "an error was reported:\n${out}")
+        message(FATAL_ERROR "an error was reported:\n${out}${err}")
+    endif()
+    if(NOT out STREQUAL gcOut)
+        message(FATAL_ERROR "counted, the program prints\n${out}\nwhere under gc it prints\n${gcOut}")
     endif()
 elseif(MODE STREQUAL "EXPECT_ERROR")
     execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own --own-fallback=count "${FILE}"

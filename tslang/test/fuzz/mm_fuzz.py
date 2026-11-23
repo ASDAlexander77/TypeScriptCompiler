@@ -46,12 +46,19 @@
 #       out). Each leak is measured twice, minimized and written to DIR/leaks/<seed>-rc-leak/ with
 #       repeated.ts, the program as measured; DIR/leaks.md lists them.
 #
+#   mm_fuzz.py leaks [--own-fallback] FILE.ts ...
+#       Measure the given programs instead (no generating, no minimizing): gc, rc and own, each main
+#       run L and H times. A program's own growth beyond rc's (and gc's) is a leak own keeps: with
+#       --own-fallback, a retain --own-fallback=count kept one too many shows here, where output
+#       equal to gc's does not. Exits 1 when own leaks or fails to run.
+#
 #   mm_fuzz.py show [--seed S] [--extended]
 #       Print one generated program (--extended: as the leaks command makes it).
 #
 # The compiler defaults to the build tree beside this checkout (windows-msbuild-2026-release on
 # Windows, ninja/release on Linux); --tslang, --tslang-lib-path and --gc-lib-path override it.
-# Every compile uses --emit=exe --opt --opt_level=3 --no-default-lib.
+# Every compile uses --emit=exe --opt --opt_level=3 --no-default-lib. --own-fallback (before or
+# after the command) adds --own-fallback=count to every own compile.
 #
 # On Linux, MALLOC_PERTURB_ is set for the runs: glibc then fills freed memory, so a stale read
 # gives a wrong number even when churn did not win the block, and a double free aborts.
@@ -93,8 +100,9 @@ def default_paths():
 
 
 class Toolchain:
-    def __init__(self, tslang, lib_path, gc_lib_path):
+    def __init__(self, tslang, lib_path, gc_lib_path, own_fallback=False):
         self.tslang = os.path.abspath(tslang)
+        self.own_fallback = own_fallback
         self.lib_path = os.path.abspath(lib_path)
         self.gc_lib_path = os.path.abspath(gc_lib_path)
         for p in (self.tslang, self.lib_path, self.gc_lib_path):
@@ -109,6 +117,8 @@ class Toolchain:
         cmd = [self.tslang, "--emit=exe", "--opt", "--opt_level=3", "--no-default-lib",
                "-mm=" + mm, "--tslang-lib-path=" + self.lib_path,
                "--gc-lib-path=" + self.gc_lib_path, src, "-o", exe]
+        if mm == "own" and self.own_fallback:
+            cmd.insert(-3, "--own-fallback=count")
         try:
             p = subprocess.run(cmd, cwd=os.path.dirname(exe), capture_output=True,
                                timeout=COMPILE_TIMEOUT)
@@ -1275,7 +1285,52 @@ class LeakMinimizer(Minimizer):
         return lines
 
 
+def cmd_leak_files(args, tc):
+    """The leaks command given files: each one's own growth against rc's and gc's."""
+    out = os.path.abspath(args.out)
+    work_root = os.path.join(out, "work")
+    rows = []
+    bad = []
+
+    def one(path):
+        text = open(path, encoding="utf-8").read()
+        rep = repeated_main(text)
+        name = os.path.splitext(os.path.basename(path))[0]
+        if rep is None:
+            rows.append((name, "no main", "", "", ""))
+            bad.append(name)
+            return
+        work = os.path.join(work_root, name)
+        res = {mm: leak_measure(tc, rep, work, mm, args.low, args.high) for mm in MODELS}
+        own = res["own"]
+        base = max([res[mm].growth for mm in ("gc", "rc") if res[mm].status == "ok"] + [0])
+        if own.status != "ok":
+            verdict = "OWN " + own.status
+        elif own.growth >= LEAK_MIN_BYTES and own.growth > 4 * base + LEAK_MIN_BYTES // 2:
+            verdict = "OWN LEAK"
+        else:
+            verdict = "ok"
+        rows.append((name, res["gc"].summary(), res["rc"].summary(), own.summary(), verdict))
+        if verdict != "ok":
+            bad.append(name)
+        if not args.keep_work:
+            shutil.rmtree(work, ignore_errors=True)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
+        list(ex.map(one, args.files))
+    rows.sort()
+    print("own%s, main run %d then %d times; growth of the peak between the two" %
+          (" --own-fallback=count" if tc.own_fallback else "", args.low, args.high))
+    print("| program | gc | rc | own | verdict |")
+    print("|---|---|---|---|---|")
+    for r in rows:
+        print("| %s |" % " | ".join(r))
+    return 1 if bad else 0
+
+
 def cmd_leaks(args, tc, recheck):
+    if args.files:
+        return cmd_leak_files(args, tc)
     out = os.path.abspath(args.out)
     work_root = os.path.join(out, "work")
     fail_dir = os.path.join(out, "leaks")
@@ -1530,6 +1585,8 @@ def main():
     ap.add_argument("--tslang", default=tslang)
     ap.add_argument("--tslang-lib-path", default=lib)
     ap.add_argument("--gc-lib-path", default=gclib)
+    ap.add_argument("--own-fallback", action="store_true",
+                    help="compile every own program with --own-fallback=count")
     ap.add_argument("--recheck-tslang", action="append", default=[],
                     help="label=path/to/tslang[,lib-path]: also run each minimized repro with this compiler")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
@@ -1563,6 +1620,9 @@ def main():
     lk.add_argument("--keep-work", action="store_true")
     lk.add_argument("--objects-only", action="store_true",
                     help="the run command's programs, without strings, string arrays and function values that return strings")
+    lk.add_argument("--own-fallback", dest="own_fallback_here", action="store_true",
+                    help="as the option before the command")
+    lk.add_argument("files", nargs="*", help="programs to measure instead of generated ones")
     rp = sub.add_parser("report")
     rp.add_argument("dirs", nargs="+", help="output folders of earlier runs")
     args = ap.parse_args()
@@ -1570,13 +1630,14 @@ def main():
     if args.cmd == "show":
         sys.stdout.write(Gen(args.seed, avoid=args.avoid, extended=args.extended).program())
         return 0
-    tc = Toolchain(args.tslang, args.tslang_lib_path, args.gc_lib_path)
+    own_fallback = args.own_fallback or getattr(args, "own_fallback_here", False)
+    tc = Toolchain(args.tslang, args.tslang_lib_path, args.gc_lib_path, own_fallback)
     recheck = []
     for spec in args.recheck_tslang:
         label, _, rest = spec.partition("=")
         exe, _, libp = rest.partition(",")
         libp = libp or os.path.join(os.path.dirname(os.path.dirname(exe)), "lib")
-        recheck.append((label, Toolchain(exe, libp, args.gc_lib_path)))
+        recheck.append((label, Toolchain(exe, libp, args.gc_lib_path, own_fallback)))
     return {"run": cmd_run, "replay": cmd_replay, "minimize": cmd_minimize,
             "report": cmd_report, "leaks": cmd_leaks}[args.cmd](args, tc, recheck)
 

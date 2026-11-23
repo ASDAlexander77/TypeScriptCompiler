@@ -5938,6 +5938,38 @@ foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_sha
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# ...and each counted program run: the header word's extra owners (Defines.h, beside
+# HEAP_BLOCK_IMMORTAL) keep the object until its last owner lets go, so it prints what it prints
+# under gc. The ones that throw are also built ahead of time, with the overwrite of a holder; the
+# WeakRef to a counted object goes when its last owner does; a counted parameter kept twice and
+# then thrown through gives its share back on the unwind.
+foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_fallback_fresh_second_owner
+                      own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
+                      own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
+                      own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
+                      own_fallback_unwind_kept_param)
+    add_test(NAME test-own-fallback-run-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+foreach(fallback_test own_fallback_move_overwrite own_fallback_unwind own_fallback_unwind_kept_param)
+    add_test(NAME test-own-fallback-run-exe-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DEXE=1
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib" "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# The release under own tests the header word against 0 first (one owner: free at once), with or
+# without the flag; an array gives its elements back through it on pop, splice, a shorter length and
+# its own release.
+foreach(array_release_mm gc rc own)
+    tslang_add_test(NAME test-jit-${array_release_mm}-own_fallback_array_release COMMAND test-runner -jit -mm=${array_release_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts")
+    tslang_add_test(NAME test-compile-${array_release_mm}-own_fallback_array_release COMMAND test-runner -mm=${array_release_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts")
+endforeach()
+add_test(NAME test-own-release-shape
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-release-shape.cmake")
 
 # A local declared in a generator's loop gives back what the last turn stored in its field. The
 # program means the same under every model; no run can see the leak, so the IR is read.

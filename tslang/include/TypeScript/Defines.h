@@ -697,12 +697,31 @@
 // word's top bit, so the value depends on the word size: 1 << (bits - 1).
 
 // Under -mm=own a class object's header word holds no count of its own (one owner frees it), so it
-// holds the number of WeakRef<T>s to the object instead (own spec 84): the low bits up to the dead
-// bit, 1 << (bits - 2). An object freed while WeakRefs remain releases its fields and keeps its block
+// holds the number of WeakRef<T>s to the object instead (own spec 84): the low half of the bits below
+// the dead bit, 1 << (bits - 2) (the table below). An object freed while WeakRefs remain releases its fields and keeps its block
 // as a tombstone, its word the count with the dead bit set; WeakRef.deref() gives undefined for it,
 // and the last WeakRef to go frees the block (the word is then the dead bit alone). Immortal still
 // means every bit set, tested first. OwnershipRoutineLogic::emitWeakIncRef, emitWeakDecRef,
 // emitFreeOrBury.
+//
+// The word under own, whole (own rc fallback design, section 1):
+//
+//   | 64-bit word | 32-bit word | meaning                                                      |
+//   | all set     | all set     | HEAP_BLOCK_IMMORTAL, tested first                            |
+//   | 63          | 31          | shared bit (atomic changes, set by the share routine)        |
+//   | 62          | 30          | dead bit: a tombstone kept for WeakRefs                      |
+//   | 31-61       | 15-29       | extra owners: owners beyond the first, kept by               |
+//   |             |             | --own-fallback=count (a `__own_counted` retain adds one)     |
+//   | 0-30        | 0-14        | weak count                                                   |
+//
+// So 0 is one owner and no WeakRef - every block but a counted or weakly referred one - and a
+// release under own tests `word == 0` first and frees; any other word takes the slow path: immortal
+// is left alone, extra owners lose one, and with none the caller was the last owner (it destroys the
+// block, and buries it while WeakRefs remain). It is rc's count minus one: rc's first owner is
+// own's implicit one. An increment that would overflow either count makes the block immortal
+// instead (a leak, never a double free). OwnershipRoutineLogic::emitExtraIncRef,
+// emitOwnReleaseIsLast. The two counts split what is below the dead bit in equal halves:
+#define OWN_EXTRA_OWNERS_SHIFT(bits) (((bits) - 2) / 2)
 
 // Runtime type descriptor.
 //

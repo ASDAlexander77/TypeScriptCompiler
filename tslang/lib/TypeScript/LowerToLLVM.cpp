@@ -562,10 +562,25 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
         auto counted = MLIRTypeHelper::isSharedHandleType(op.getReference().getType());
 
         // Under own, ownership inference erased every retain it could prove, and reported the
-        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        // rest; one that reaches here was neither, and erasing it would ship a double free. Unless
+        // --own-fallback=count kept it (`__own_counted`): one more owner in the header word.
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
-            return op.emitError("ownership inference left a retain behind");
+            if (!op->hasAttr(OWN_COUNTED_ATTR_NAME))
+            {
+                return op.emitError("ownership inference left a retain behind");
+            }
+
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            if (!orl.emitCountedRetainValue(op.getReference().getType(), transformed.getReference()))
+            {
+                return op.emitError("-mm=own cannot count a value of type ")
+                       << op.getReference().getType()
+                       << " yet (--own-fallback=count): its payload is reached through a type descriptor";
+            }
+
+            rewriter.eraseOp(op);
+            return mlir::success();
         }
 
         if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
@@ -803,17 +818,40 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
             MLIRTypeHelper::isSharedHandleType(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType());
 
         // Under own, ownership inference erased every retain it could prove, and reported the
-        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        // rest; one that reaches here was neither, and erasing it would ship a double free. Unless
+        // --own-fallback=count kept it (`__own_counted`): one more owner of the value the slot holds.
+        auto ownCounted = false;
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
-            return op.emitError("ownership inference left a retain behind");
+            if (!op->hasAttr(OWN_COUNTED_ATTR_NAME))
+            {
+                return op.emitError("ownership inference left a retain behind");
+            }
+
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            auto elementType = cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType();
+            if (!orl.canCountRetainOf(elementType))
+            {
+                return op.emitError("-mm=own cannot count a value of type ")
+                       << elementType << " yet (--own-fallback=count): its payload is reached through a type descriptor";
+            }
+
+            ownCounted = true;
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted) ||
+            ownCounted)
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             auto retainSlot = [&]() {
-                orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+                auto elementType = cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType();
+                if (ownCounted)
+                {
+                    orl.emitCountedRetainSlot(elementType, transformed.getSlot());
+                    return;
+                }
+
+                orl.emitRetainSlot(elementType, transformed.getSlot());
             };
 
             // an interface's field filled by a getter has no slot: the getter gives its result owned
