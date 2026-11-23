@@ -1038,7 +1038,7 @@ class MarkImmortalCellOpLowering : public TsLlvmPattern<mlir_ts::MarkImmortalCel
 // -mm=own: a field's value handed over to the place that holds its object, right before that place
 // releases the object (TypeScriptOps.td). An object that release frees has its field emptied; an
 // immortal one keeps it, and what it holds is made immortal; one with extra owners keeps it, and
-// what it holds gains an extra owner (OwnershipRoutineLogic::emitTakeOutOfField).
+// what it holds gains an owner (OwnershipRoutineLogic::emitTakeOutOfField). Any field type.
 class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
 {
   public:
@@ -1050,13 +1050,8 @@ class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
         {
             auto fieldType = cast<mlir_ts::RefType>(op.getField().getType()).getElementType();
-            if (!isa<LLVM::LLVMPointerType>(getTypeConverter()->convertType(fieldType)))
-            {
-                return op.emitError("-mm=own cannot take a value of this type out of a field");
-            }
-
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitTakeOutOfField(transformed.getObject(), transformed.getField());
+            orl.emitTakeOutOfField(transformed.getObject(), transformed.getField(), fieldType);
         }
 
         rewriter.eraseOp(op);

@@ -261,6 +261,11 @@ class OwnershipInferencePass
     // `unit` and every value its block's rc ops pass between in this function (countedGroup's note), all
     // countable, into `group`; false when one is not.
     bool countedGroup(mlir::Value unit, llvm::SetVector<mlir::Value> &group);
+    // `new`'s own object made in this function and not counted here (a field take empties it plainly)
+    bool isNewMadeHere(mlir::Value object);
+    // what a value of this type holds is reached only through a type descriptor (a tagged union's
+    // payload, a closure): under own nothing can give it an owner, so it is never counted
+    static bool reachedThroughDescriptor(mlir::Type type);
     // The value stored into a field right before `read` reads it again: the signature pass's read of
     // the field in place of a local moved into it (TSLANG 47), or null.
     mlir::Value fieldReadPartner(mlir::Value read);

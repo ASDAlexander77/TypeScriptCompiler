@@ -8,36 +8,64 @@
 namespace own_inference
 {
 
-    // Is a field of this type one pointer to a block, which ts.TakeOutOfField can hand over: an object,
-    // a string, an array, or an object that may be null or undefined (no tag)
-    static bool isHeldAsPointer(mlir::Type type)
+    // Is what a value of this type holds reached only through a type descriptor - a tagged union's
+    // payload, a closure's capture box - which under own has no retain routine to give it an owner
+    // (OwnershipRoutineLogic::canCountRetainOf, which this follows)
+    bool OwnershipInferencePass::reachedThroughDescriptor(mlir::Type typeIn)
     {
-        if (mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType, mlir_ts::StringType, mlir_ts::ArrayType>(type))
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+        if (mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type))
         {
             return true;
         }
 
-        auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type);
-        if (!unionType)
+        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+        {
+            auto loc = mlir::UnknownLoc::get(unionType.getContext());
+            MLIRTypeHelper mth(unionType.getContext(), CompileOptions());
+            mlir::Type baseType;
+            return mth.isUnionTypeNeedsTag(loc, unionType, baseType) ? own_facts::ownsHeap(loc, unionType)
+                                                                     : reachedThroughDescriptor(baseType);
+        }
+
+        if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return reachedThroughDescriptor(optionalType.getElementType());
+        }
+
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return llvm::any_of(tupleType.getFields(), [](mlir_ts::FieldInfo field) { return reachedThroughDescriptor(field.type); });
+        }
+
+        return false;
+    }
+
+    bool OwnershipInferencePass::isNewMadeHere(mlir::Value object)
+    {
+        // `new`'s own object, in this function, and not counted here: nothing else may hold it
+        auto isNew = [](mlir::Value value) { return value && value.getDefiningOp<mlir_ts::NewOp>(); };
+        if (countedValues.contains(countedUnitOf(object)))
         {
             return false;
         }
 
-        auto objects = 0;
-        for (auto member : unionType.getTypes())
+        auto slotRead = object.getDefiningOp<mlir_ts::LoadOp>();
+        auto slot = slotRead ? slotRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!slot)
         {
-            if (mlir::isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
-            {
-                continue;
-            }
-
-            if (!mlir::isa<mlir_ts::ClassType>(member) || ++objects > 1)
-            {
-                return false;
-            }
+            return isNew(object);
         }
 
-        return objects == 1;
+        if (countedValues.contains(slot.getResult()) || (slot.getInitializer() && !isNew(slot.getInitializer())))
+        {
+            return false;
+        }
+
+        return llvm::all_of(slot->getUsers(), [&](mlir::Operation *user) {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            return !storeOp || storeOp.getReference() != slot.getResult() || isNew(storeOp.getValue());
+        });
     }
 
     mlir::Operation *OwnershipInferencePass::placeReadOf(mlir::Value value)
@@ -1192,7 +1220,20 @@ namespace own_inference
             auto usedAfter = llvm::any_of(uses, [&](auto &use) {
                 return use.op != take.taker && use.op != take.retain && reachableAfter(take.taker, use.op, use.kills);
             });
-            if (kept || letKept || usedAfter)
+            // A call's own result, or `new`'s counted here, may still have owners besides this one:
+            // a value counted (--own-fallback=count, here or in the callee's module) has extra
+            // owners, and its field is theirs too. ts.TakeOutOfField, in every own build, empties the
+            // field only of an object its release frees, and otherwise gives what the field holds an
+            // owner. `new`'s own object made here has no other owner: its field is emptied as before,
+            // and the object may still go on the stack (StackPromotionPass). A value reached only
+            // through a type descriptor cannot be given an owner under own (a tagged union's payload,
+            // a closure): with the flag, a take of one out of an object that may be counted is no
+            // take - the read stays a borrow, refused (TakeOutOfField empties it in a build without).
+            auto takeObject = take.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
+            auto takeFieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
+            auto byTakeOp = mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType>(takeObject.getType()) && !isNewMadeHere(takeObject);
+            auto uncountable = byTakeOp && countsFallback && reachedThroughDescriptor(takeFieldType);
+            if (kept || letKept || usedAfter || uncountable)
             {
                 take = {};
                 kept = walk();
@@ -1204,47 +1245,13 @@ namespace own_inference
                     // (right after the read: rc's retain of it is erased with the bookkeeping)
                     auto *at = take.emptyAtRead ? read->getNextNode() : take.release;
                     mlir::OpBuilder builder(at);
-                    auto fieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
-                    // A call's own result, or `new`'s, may still have owners besides this one: a value
-                    // counted (--own-fallback=count, here or in the callee's module) has extra owners,
-                    // and its field is theirs too. ts.TakeOutOfField empties the field only of an
-                    // object its release frees, and otherwise gives what the field holds an extra
-                    // owner. (A field whose value is not one pointer is emptied, as before.) `new`'s own
-                    // object made here has no other owner unless this function counts it: its field
-                    // is emptied as before, and the object may still go on the stack (StackPromotionPass).
-                    auto object = take.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
-                    auto madeByNew = [&]() {
-                        auto isNew = [](mlir::Value value) { return value && value.getDefiningOp<mlir_ts::NewOp>(); };
-                        if (countedValues.contains(countedUnitOf(object)))
-                        {
-                            return false;
-                        }
-
-                        auto slotRead = object.getDefiningOp<mlir_ts::LoadOp>();
-                        auto slot = slotRead ? slotRead.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-                        if (!slot)
-                        {
-                            return isNew(object);
-                        }
-
-                        if (countedValues.contains(slot.getResult()) || (slot.getInitializer() && !isNew(slot.getInitializer())))
-                        {
-                            return false;
-                        }
-
-                        return llvm::all_of(slot->getUsers(), [&](mlir::Operation *user) {
-                            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-                            return !storeOp || storeOp.getReference() != slot.getResult() || isNew(storeOp.getValue());
-                        });
-                    };
-                    if (mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType>(object.getType()) && isHeldAsPointer(fieldType) &&
-                        !madeByNew())
+                    if (byTakeOp)
                     {
-                        builder.create<mlir_ts::TakeOutOfFieldOp>(at->getLoc(), object, take.field);
+                        builder.create<mlir_ts::TakeOutOfFieldOp>(at->getLoc(), takeObject, take.field);
                     }
                     else
                     {
-                        auto empty = builder.create<mlir_ts::DefaultOp>(at->getLoc(), fieldType);
+                        auto empty = builder.create<mlir_ts::DefaultOp>(at->getLoc(), takeFieldType);
                         builder.create<mlir_ts::StoreOp>(at->getLoc(), empty, take.field);
                     }
                 }

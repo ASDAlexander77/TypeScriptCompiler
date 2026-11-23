@@ -8,7 +8,7 @@ class Node {
 
 function pick(n: number) {
     let best: Node = new Node(-1);
-    let v = new Node(n);
+    let v = new Node(n); // HEAP_AT=11:13 (CMakeLists.txt) names this `new`: keep it on line 11
     best = v;
     for (let i = 0; i < 3; i++) {
         best = new Node(n + i);

@@ -2172,6 +2172,19 @@ namespace own_inference
                 return false;
             }
 
+            // a tagged union's payload, a closure: the counted retain under own has nothing to go
+            // through (OwnershipRoutineLogic::canCountRetainOf), so it stays an error here, at its place
+            auto memberType = member.getType();
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(memberType); refType && member.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                memberType = refType.getElementType();
+            }
+
+            if (reachedThroughDescriptor(memberType))
+            {
+                return false;
+            }
+
             if (auto varOp = member.getDefiningOp<mlir_ts::VariableOp>())
             {
                 auto index = -1;

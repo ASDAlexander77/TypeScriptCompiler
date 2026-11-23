@@ -5929,11 +5929,12 @@ endforeach()
 # at the place of one that is, and refusals beyond tier 1: a closure that escapes with what it
 # captured still used (user ruling 11-13), a parameter its exported function's callers cannot be told
 # it keeps; and a value whose rc ops a site commits as a borrow: a view of an array read after a
-# possible free, an element of an array literal that borrows it
+# possible free, an element of an array literal that borrows it; and a tagged union's payload taken
+# out of a result that may be counted (nothing gives it an owner under own)
 foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
                       own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
                       own/own_err_param_kept_exported own/own_fallback_view_stays_error
-                      own/own_fallback_borrowed_element_stays_error)
+                      own/own_fallback_borrowed_element_stays_error own/own_fallback_take_from_result_union_stays_error)
     get_filename_component(fallback_name "${fallback_test}" NAME)
     add_test(NAME test-own-fallback-ir-${fallback_name}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
@@ -5949,7 +5950,8 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
                       own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
                       own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
-                      own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result own_fallback_not_promoted
+                      own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
+                      own_fallback_take_from_result_iface own_fallback_not_promoted
                       own_fallback_keeper)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
@@ -5978,6 +5980,16 @@ add_test(NAME test-own-release-shape
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-release-shape.cmake")
+# A field taken out of a call's own result is a ts.TakeOutOfField without the flag too: a callee built
+# with it may return a counted object. The IR has the op; the program runs under gc and own.
+add_test(NAME test-own-take-out-shape
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-take-out-shape.cmake")
+foreach(take_mm gc own)
+    tslang_add_test(NAME test-jit-${take_mm}-own_take_from_result COMMAND test-runner -jit -mm=${take_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts")
+    tslang_add_test(NAME test-compile-${take_mm}-own_take_from_result COMMAND test-runner -mm=${take_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts")
+endforeach()
 # A full weak count on a tombstone stays: no WeakRef overflow makes it immortal (alive to deref()),
 # none takes it down under a WeakRef left to it. Read as LLVM IR, 64-bit and wasm32; run under gc and
 # own (rc has no WeakRef).

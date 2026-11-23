@@ -638,25 +638,39 @@ class OwnershipRoutineLogic
         });
     }
 
-    // ts.TakeOutOfField: the pointer the field at `fieldPtr` holds goes to another owner right before
-    // the object at `objectPtr` (never null: the field was read through it) is released. What that
-    // release does decides it, from the object's header word:
+    // ts.TakeOutOfField: what the field at `fieldPtr` (of `fieldType`) holds goes to another owner right
+    // before the object at `objectPtr` (never null: the field was read through it) is released. What
+    // that release does decides it, from the object's header word:
     // - immortal: it is not freed. It keeps the field, and what the field holds, which two places
-    //   hold from then on, is made immortal;
-    // - extra owners (--own-fallback=count, maybe in another module): the release takes one of them
+    //   hold from then on, is made immortal (one pointer to a block, as before), or gains an owner
+    //   the field never gives back (any other value, a handle, a WeakRef);
+    // - extra owners (--own-fallback=count, in this module or another): the release takes one of them
     //   and the object stays, with its field, for the owners left. What the field holds is held by
-    //   the field and by the place it is handed to: it gains an extra owner;
+    //   the field and by the place it is handed to: it gains an owner (a counted retain);
     // - no extra owner (0, or WeakRefs only): the release destroys the object - and a tombstone's
     //   fields are released too - so its field is emptied and the release frees nothing of the value.
     // A shared object's word is read plainly, as emitCountLoad's are: an owner, this one, holds it,
     // so other threads can only take extra owners away, and a release that turns out to be the last
     // gives the kept field's value back, which its extra owner pays for.
-    void emitTakeOutOfField(mlir::Value objectPtr, mlir::Value fieldPtr)
+    // A value whose blocks are reached only through a type descriptor (a tagged union's payload, a
+    // closure: canCountRetainOf) cannot be given an owner under own: its field is emptied, as before.
+    // OwnershipInferencePass does not take one out of an object that may be counted with
+    // --own-fallback=count; without the flag the object is counted only by another module's result.
+    void emitTakeOutOfField(mlir::Value objectPtr, mlir::Value fieldPtr, mlir::Type fieldType)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
         LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
         auto loc = op->getLoc();
+
+        auto llvmFieldType = tch.convertType(fieldType);
+        auto onePointer = isa<LLVM::LLVMPointerType>(llvmFieldType);
+        auto emptyField = [&]() { rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, llvmFieldType), fieldPtr); };
+        if (!canCountRetainOf(fieldType))
+        {
+            emptyField();
+            return;
+        }
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, objectPtr, llvmIndexType);
@@ -674,16 +688,25 @@ class OwnershipRoutineLogic
         auto *notImmortalBlock = rewriter.createBlock(continuationBlock);
 
         rewriter.setInsertionPointToEnd(mortalBlock);
-        rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), fieldPtr);
+        emptyField();
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
+        // (a counted retain of the field's type: an extra owner of a block, a handle's rc count, a
+        // WeakRef's weak count, each of the blocks an optional, an untagged union or a record holds)
         rewriter.setInsertionPointToEnd(countedBlock);
-        emitExtraIncRef(rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), fieldPtr));
+        emitCountedRetainSlot(fieldType, fieldPtr);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToEnd(immortalBlock);
-        auto held = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), fieldPtr);
-        emitMarkImmortalIfMortal(held);
+        if (onePointer && !MLIRTypeHelper::isSharedHandleType(fieldType) && !MLIRTypeHelper::isWeakRefType(fieldType))
+        {
+            emitMarkImmortalIfMortal(rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), fieldPtr));
+        }
+        else
+        {
+            emitCountedRetainSlot(fieldType, fieldPtr);
+        }
+
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         // (immortal is all ones: its extra-owner bits are set too, so it is told apart first)

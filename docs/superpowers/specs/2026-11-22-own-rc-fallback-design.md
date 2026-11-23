@@ -227,9 +227,17 @@ fact derived elsewhere stays true.
 
 ### 4. Ops that assume a block dies at its release
 
-- **`TakeOutOfField`**: lowering empties the field only when the object's word is 0 (it will be
-  freed). When the object has extra owners, its field stays and what it holds gains one extra owner
-  (it is now held by the field and by the place it was handed to). The immortal case is unchanged.
+- **`TakeOutOfField`**: lowering empties the field only when the object has no extra owners (it will
+  be destroyed: word 0, or WeakRefs only). When the object has extra owners, its field stays and what
+  it holds gains one owner (it is now held by the field and by the place it was handed to), through
+  the field type's counted retain. The immortal case is unchanged. *(Amended 2026-11-23, Task 4 review.)*
+  A field taken out of a call's own result is a `TakeOutOfField` too, **in every own build, with or
+  without the flag**, as every own release honors extra owners: a callee built with the flag (another
+  module) can return a counted object to a caller built without it. This is the one place the IR
+  before lowering changes without the flag; its cost is a header load and two branches per such take.
+  A field whose value is reached only through a type descriptor (a tagged union's payload, a closure)
+  cannot be given an owner under own: such a value is never counted, and with the flag a take of one
+  out of an object that may be counted is refused; without the flag it is emptied as before.
 - **Stack promotion**: a value with a marked retain, or reachable from one, is not promoted. A kept
   retain is an escape.
 - **Keepers / `MakeImmortal`**: unchanged. Marking a counted block immortal discards its counts,
