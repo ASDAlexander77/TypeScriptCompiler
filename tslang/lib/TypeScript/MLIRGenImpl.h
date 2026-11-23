@@ -285,6 +285,7 @@ class MLIRGenImpl
                           bool skipCode = false);
 
     bool hasGlobalCode(NodeArray<Statement> statements);
+    bool isRepeatedVarStatement(Statement statement);
 
     bool hasGlobalInitialization(NodeArray<Statement> statements);
 

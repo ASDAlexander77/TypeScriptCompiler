@@ -1,5 +1,6 @@
 # What's new
 
+- An object literal can be given a class whose constructor takes parameter properties (`const p: Point = { x: 0, y: 0 }`); a namespace `var` can be declared again; `fs.push(() => i)` into a `(() => number)[]`; closures may read `const`s declared after them in any order
 - A typed `const` can hold a generic arrow (`const f: <p>(a: p) => p = <p>(a: p): p => a`); a namespace's functions see a `var` declared in a `for` or `if` of the namespace; a class can extend a module `const` set from a class (`const k = B; class D extends k {}`)
 - A module `const` can name a class (`const k = B; new k()`); a `var` can be used before its declaration in a function (`x = 7; var x = one();`)
 - A generic class can be given to a constructor type without type arguments (`make(Box, 4)`); `object` holds its value in a box under gc and none too, so `<C>a` of an `any` taken from an `object` works in every model but own

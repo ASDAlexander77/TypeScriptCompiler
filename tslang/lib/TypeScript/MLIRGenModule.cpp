@@ -1598,6 +1598,39 @@ namespace mlirgen
         return notResolved;
     }
 
+    // `var v = 1; ... var v = 2;` outside a function: the second declaration, an assignment to the first, which
+    // the code runs (mlirGen(VariableDeclarationList) leaves it to the code)
+    bool MLIRGenImpl::isRepeatedVarStatement(Statement statement)
+    {
+        if (statement != SyntaxKind::VariableStatement)
+        {
+            return false;
+        }
+
+        auto declarationList = statement.as<VariableStatement>()->declarationList;
+        if ((declarationList->flags & (NodeFlags::Let | NodeFlags::Const | NodeFlags::Using | NodeFlags::Ambient)) != NodeFlags::None)
+        {
+            return false;
+        }
+
+        auto any = false;
+        for (auto declaration : declarationList->declarations)
+        {
+            if (declaration->name != SyntaxKind::Identifier || !declaration->initializer)
+            {
+                continue;
+            }
+
+            auto found = moduleVarFirstDeclaration.find(concatFullNamespaceName(MLIRHelper::getName(declaration->name)));
+            if (found != moduleVarFirstDeclaration.end() && found->second != declaration->pos.pos)
+            {
+                any = true;
+            }
+        }
+
+        return any;
+    }
+
     bool MLIRGenImpl::hasGlobalCode(NodeArray<Statement> statements) {
         // `var v = 1; var v = 2;`: the second is an assignment to the first, which has to run somewhere - the
         // module's code (see mlirGen(VariableDeclarationList))
@@ -1814,7 +1847,7 @@ namespace mlirgen
             [&](mlir::Location location, const GenContext &genContext) {
                 for (auto &statement : statements)
                 {
-                    if (isCodeStatment(statement) && failed(mlirGen(statement, genContext)))
+                    if ((isCodeStatment(statement) || isRepeatedVarStatement(statement)) && failed(mlirGen(statement, genContext)))
                     {
                         emitError(loc(statement), "failed statement");
                         return mlir::failure();
