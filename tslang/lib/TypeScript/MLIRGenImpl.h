@@ -5481,6 +5481,16 @@ class MLIRGenImpl
             }
         }
 
+        // a class of a union of interfaces it is none of (`v instanceof A` of `IA | IB`): the payload is an
+        // interface's `{vtable, this}`, converted as an interface is (castFromSourceSpecialCases)
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(exprType);
+            unionType && isa<mlir_ts::ClassType>(safeType) && !llvm::is_contained(unionType.getTypes(), safeType)
+            && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::InterfaceType>(member); }))
+        {
+            auto result = cast(location, safeType, exprValue, genContext);
+            return result.failed_or_no_value() ? mlir::Value() : V(result);
+        }
+
         if (isa<mlir_ts::UnionType>(exprType))
         {
             return isa<mlir_ts::UnionType>(safeType)
@@ -5594,7 +5604,12 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+                    // (castToNarrowedType says how a class of a union of interfaces is read)
+                    castedValue = castToNarrowedType(location, exprValue, safeType, genContext);
+                    if (!castedValue)
+                    {
+                        return mlir::failure();
+                    }
                 }
             }
             else
@@ -8160,7 +8175,10 @@ class MLIRGenImpl
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
-            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassType>(member); });
+            // an interface too (`IA | IB`): what it holds may be an instance, which its vtable answers
+            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) {
+                return isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(member);
+            });
         }
 
         return false;
@@ -8204,12 +8222,22 @@ class MLIRGenImpl
         }
 
         auto unionType = mlir::cast<mlir_ts::UnionType>(value.getType());
-        auto classMember = *llvm::find_if(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassType>(member); });
+        auto classMemberIt = llvm::find_if(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassType>(member); });
+        auto classMember = classMemberIt != unionType.getTypes().end() ? *classMemberIt : mlir::Type();
+        // every interface is held alike, `{vtable, this}`: read as the first, its vtable answers for the one it is
+        auto interfaceMemberIt = llvm::find_if(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::InterfaceType>(member); });
+        auto interfaceMember = interfaceMemberIt != unionType.getTypes().end() ? *interfaceMemberIt : mlir::Type();
 
         // `C | null` needs no tag: it is the class's pointer, null when it holds null
         mlir::Type baseType;
         if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
         {
+            if (!classMember)
+            {
+                return mlirGenInstanceOfInterface(
+                    location, builder.create<mlir_ts::GetValueFromUnionOp>(location, interfaceMember, value), classRefVal, genContext);
+            }
+
             auto isSet = cast(location, getBooleanType(), value, genContext);
             if (isSet.failed_or_no_value())
             {
@@ -8222,15 +8250,40 @@ class MLIRGenImpl
                 notInstance);
         }
 
-        // a tagged union: a class is in it when its tag says so, and the payload is its pointer
+        // a tagged union: a class is in it when its tag says so, and the payload is its pointer; an interface
+        // likewise, the payload its `{vtable, this}`
         auto typeOfValue = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), value);
-        auto classStrConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("class"));
-        auto isClass = builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, classStrConst,
-                                                                builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+        auto tagIs = [&](StringRef name) {
+            auto nameConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+            return builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, nameConst,
+                                                            builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+        };
+
+        auto askInterface = [&](mlir::Type) -> ValueOrLogicalResult {
+            if (!interfaceMember)
+            {
+                return notInstance(mlir::Type());
+            }
+
+            return mclh.conditionalValue(
+                tagIs("interface"),
+                [&]() {
+                    return mlirGenInstanceOfInterface(
+                        location, builder.create<mlir_ts::GetValueFromUnionOp>(location, interfaceMember, value), classRefVal,
+                        genContext);
+                },
+                notInstance);
+        };
+
+        if (!classMember)
+        {
+            return askInterface(mlir::Type());
+        }
+
         return mclh.conditionalValue(
-            isClass,
+            tagIs("class"),
             [&]() { return askInstance(builder.create<mlir_ts::GetValueFromUnionOp>(location, classMember, value).getResult()); },
-            notInstance);
+            askInterface);
     }
 
     // Asks `thisPtrValue` whether it is a `classRefVal` through slot `instanceOfSlot` of `vtablePtr`:
@@ -19021,6 +19074,8 @@ class MLIRGenImpl
                                   bool ownAdapterRefused = false);
 
     mlir::Type interfaceMemberFitting(mlir_ts::UnionType unionType, mlir::Type valueType);
+    // the first shape of the union an object literal is, its missing fields optional
+    mlir::Type tupleMemberFitting(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type valueType);
 
     mlir::LogicalResult emitSignatureAdapterBody(mlir::Location location, mlir::Value callee, mlir::ValueRange leading,
                                                  mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
@@ -19276,6 +19331,11 @@ class MLIRGenImpl
                                                 StringRef name, CallExpression callExpression, const GenContext &genContext);
     // the method values read through the union's first member (property access), waiting for their call
     llvm::DenseMap<mlir::Value, std::pair<mlir::Value, std::string>> unionMethodAccesses;
+    // `o.name` of a tagged union of object shapes, classes or interfaces (`{kind, size} | {r, kind}`): the field of
+    // the member the value holds, asked of the tag (a class of instanceof). No value when it doesn't apply: a member
+    // of another kind, a method, or the field and the fields before it alike in every member (read as the first)
+    ValueOrLogicalResult mlirGenUnionFieldRead(mlir::Location location, mlir::Value unionValue, StringRef name,
+                                               const GenContext &genContext);
     // `new c(args)` for `c: typeof A | typeof B`: the class the union's tag names, made as above
     ValueOrLogicalResult NewClassInstanceFromClassValueUnion(mlir::Location location, mlir::Value classValues,
                                                              NodeArray<Expression> arguments, const GenContext &genContext);

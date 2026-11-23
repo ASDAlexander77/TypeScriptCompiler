@@ -2394,10 +2394,21 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
+endforeach()
+# TSLANG_ISSUES 112 (shapes whose same-named fields differ in type): rc and own can't keep an `object` made of a
+# value yet (00tslang_issue_112.ts says why)
+foreach(issues_mm gc none)
+    tslang_add_test(NAME test-jit-00tslang_issue_112-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_112.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_112-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_112.ts")
+endforeach()
+# a union of interfaces: instanceof, the class it narrows to, `<IB>v` (own refuses the narrowing, as for one interface)
+foreach(issues_mm gc rc none)
+    tslang_add_test(NAME test-jit-00union_interfaces_instanceof-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_interfaces_instanceof.ts")
+    tslang_add_test(NAME test-compile-00union_interfaces_instanceof-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_interfaces_instanceof.ts")
 endforeach()
 # ...and what stays refused, with an error that says why instead of a verifier failure or "failed statement"
 add_test(NAME test-compile-new-function-error

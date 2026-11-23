@@ -6663,6 +6663,181 @@ genContext);
         return callOf(0);
     }
 
+    ValueOrLogicalResult MLIRGenImpl::mlirGenUnionFieldRead(mlir::Location location, mlir::Value unionValue,
+                                                            StringRef name, const GenContext &genContext)
+    {
+        auto unionType = dyn_cast<mlir_ts::UnionType>(unionValue.getType());
+        if (!unionType)
+        {
+            return mlir::Value();
+        }
+
+        mlir::Type baseType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+        {
+            return mlir::Value();
+        }
+
+        // the members a value may be: shapes and interfaces told apart by the tag, classes by instanceof
+        // (every class has the same layout id), a subclass before its bases
+        SmallVector<mlir::Type> members;
+        auto depthOf = [&](mlir::Type type) {
+            auto depth = 0;
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                for (auto info = getClassInfoByFullName(classType.getName().getValue());
+                     info && !info->baseClasses.empty(); info = info->baseClasses.front())
+                {
+                    depth++;
+                }
+            }
+
+            return depth;
+        };
+
+        for (auto member : unionType.getTypes())
+        {
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+            {
+                continue;
+            }
+
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(member))
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                if (!classInfo || classInfo->isValue || classInfo->isCppVTable)
+                {
+                    return mlir::Value();
+                }
+            }
+            else if (!isa<mlir_ts::TupleType, mlir_ts::InterfaceType>(member))
+            {
+                return mlir::Value();
+            }
+
+            members.push_back(member);
+        }
+
+        if (members.size() < 2)
+        {
+            return mlir::Value();
+        }
+
+        // shapes alike up to the field (`{kind: "a", n} | {kind: "b", s}` reading `kind`) are read as the first,
+        // whichever the value is
+        auto nameAttr = builder.getStringAttr(name);
+        auto alikeUpToField = [&]() {
+            auto first = dyn_cast<mlir_ts::TupleType>(members.front());
+            if (!first)
+            {
+                return false;
+            }
+
+            auto index = first.getIndex(nameAttr);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            for (auto member : members)
+            {
+                auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+                if (!tuple || tuple.getIndex(nameAttr) != index)
+                {
+                    return false;
+                }
+
+                for (auto fieldIndex = 0; fieldIndex <= index; fieldIndex++)
+                {
+                    auto type = mth.stripLiteralType(tuple.getFields()[fieldIndex].type);
+                    if (type != mth.stripLiteralType(first.getFields()[fieldIndex].type))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        };
+
+        if (alikeUpToField())
+        {
+            return mlir::Value();
+        }
+
+        std::stable_sort(members.begin(), members.end(),
+                         [&](mlir::Type a, mlir::Type b) { return depthOf(a) > depthOf(b); });
+
+        // the field's type in each member: a field every member has, not a method
+        SmallVector<mlir::Type> fieldTypes;
+        for (auto member : members)
+        {
+            auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, member, unionValue);
+            auto fieldType = evaluateProperty(location, memberValue, name.str(), genContext);
+            if (!fieldType || isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(fieldType))
+            {
+                return mlir::Value();
+            }
+
+            fieldTypes.push_back(fieldType);
+        }
+
+        auto resultType = mth.getUnionTypeWithMerge(location, fieldTypes);
+
+        auto holdsMember = [&](mlir::Type member) -> ValueOrLogicalResult {
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(member))
+            {
+                auto object = builder.create<mlir_ts::GetValueFromUnionOp>(location, classType, unionValue);
+                auto thisPtr = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), object);
+                auto classRef = builder.create<mlir_ts::ClassRefOp>(
+                    location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
+                return mlirGenInstanceOfOpaque(location, thisPtr, classRef, genContext);
+            }
+
+            auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), unionValue);
+            return V(builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag, mlir::TypeAttr::get(member)));
+        };
+
+        auto readOfMember = [&](mlir::Type member) -> ValueOrLogicalResult {
+            auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, member, unionValue);
+            auto value = mlirGenPropertyAccessExpression(location, memberValue, name, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(value)
+            if (V(value).getType() == resultType)
+            {
+                return value;
+            }
+
+            return cast(location, resultType, V(value), genContext);
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> readOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == members.size())
+            {
+                return readOfMember(members[index]);
+            }
+
+            auto holds = holdsMember(members[index]);
+            EXIT_IF_FAILED_OR_NO_VALUE(holds)
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, V(holds), true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = readOfMember(members[index]);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = readOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return readOf(0);
+    }
+
     mlir::LogicalResult MLIRGenImpl::checkOverrideResultFacts(mlir::Location location, ClassInfo::TypePtr classInfo,
                                                               ClassMethodMemberInfo &member)
     {

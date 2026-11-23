@@ -2769,6 +2769,48 @@ namespace mlirgen
         return mlir::Type();
     }
 
+    mlir::Type MLIRGenImpl::tupleMemberFitting(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type valueType)
+    {
+        llvm::ArrayRef<mlir_ts::FieldInfo> valueFields;
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(valueType))
+        {
+            valueFields = tupleType.getFields();
+        }
+        else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
+        {
+            valueFields = constTupleType.getFields();
+        }
+        else
+        {
+            return mlir::Type();
+        }
+
+        for (auto member : unionType.getTypes())
+        {
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(member);
+            if (!tupleType)
+            {
+                continue;
+            }
+
+            // every field the value has is the member's, of a type it can be given; every other is optional
+            auto fits = llvm::all_of(valueFields, [&](const mlir_ts::FieldInfo &field) {
+                auto index = tupleType.getIndex(field.id);
+                return index >= 0 && mth.canCastFromTo(location, field.type, tupleType.getFields()[index].type);
+            });
+            fits = fits && llvm::all_of(tupleType.getFields(), [&](const mlir_ts::FieldInfo &field) {
+                return isa<mlir_ts::OptionalType>(field.type)
+                    || llvm::any_of(valueFields, [&](const mlir_ts::FieldInfo &valueField) { return valueField.id == field.id; });
+            });
+            if (fits)
+            {
+                return member;
+            }
+        }
+
+        return mlir::Type();
+    }
+
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
@@ -2787,6 +2829,14 @@ namespace mlirgen
                             CAST(value, location, subType, value, genContext);
                             return V(builder.create<mlir_ts::CastOp>(location, type, value));
                         }
+                    }
+
+                    // an object literal given to a union of shapes, without an optional field of the one it is
+                    // (`{ label: o }` for `{ label: string; alias: string } | { label: object; alias?: string }`)
+                    if (auto memberType = tupleMemberFitting(location, unionType, valueType))
+                    {
+                        CAST(value, location, memberType, value, genContext);
+                        return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
 
                     // an object literal, a tuple or a class object given to a union of interfaces
@@ -2992,6 +3042,39 @@ namespace mlirgen
                     }))
                 {
                     return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, value));
+                }
+
+                // a class, or an interface, of a union of interfaces (`v` of `IA | IB` after `v instanceof A`, or
+                // `<IB>v`): every interface is held alike, `{vtable, this}`, read as the first and converted as an
+                // interface is - read as the class, the vtable was taken for the object (TSLANG 112)
+                if (isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(type))
+                {
+                    mlir::Type interfaceMember;
+                    auto onlyInterfaces = llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+                        {
+                            return true;
+                        }
+
+                        if (isa<mlir_ts::InterfaceType>(member))
+                        {
+                            interfaceMember = interfaceMember ? interfaceMember : member;
+                            return true;
+                        }
+
+                        return false;
+                    });
+                    // one of them (`<IB>v`) is the payload as it is
+                    if (onlyInterfaces && interfaceMember && llvm::is_contained(unionType.getTypes(), type))
+                    {
+                        return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, value));
+                    }
+
+                    if (onlyInterfaces && interfaceMember)
+                    {
+                        auto interfaceValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, interfaceMember, value);
+                        return cast(location, type, interfaceValue, genContext);
+                    }
                 }
 
                 if (auto result = castFromNullableUnion(location, type, value, unionType, genContext))

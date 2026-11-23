@@ -2642,8 +2642,64 @@ class MLIRTypeHelper
         }
 
         auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
+
+        // shapes with the same field names merge into one (tupleMergeType), stored as the largest and read as the
+        // merged shape: right only while each field is stored alike in every member. `{ label: string } |
+        // { label: object }` merges `label` into `object | string`, stored with a tag of its own - neither
+        // member's field - so the shapes stay a union, told apart by its tag (TSLANG 112)
+        if (auto mergedTuple = dyn_cast<mlir_ts::TupleType>(storeType); mergedTuple && !mergedShapesStoredAlike(location, unionType, mergedTuple))
+        {
+            baseType = unionType;
+            return true;
+        }
+
         baseType = storeType;
         return isa<mlir_ts::UnionType>(storeType);
+    }
+
+    // the type a field of `type` is stored as: a literal as its type, a union without a tag as its base
+    mlir::Type fieldStorageType(mlir::Location location, mlir::Type type)
+    {
+        type = stripLiteralType(type);
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            mlir::Type baseType;
+            if (!isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                return stripLiteralType(baseType);
+            }
+        }
+
+        return type;
+    }
+
+    bool mergedShapesStoredAlike(mlir::Location location, mlir_ts::UnionType unionType, mlir_ts::TupleType mergedTuple)
+    {
+        auto mergedFields = mergedTuple.getFields();
+        for (auto member : unionType.getTypes())
+        {
+            auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+            if (!tuple)
+            {
+                continue;
+            }
+
+            auto fields = tuple.getFields();
+            if (fields.size() != mergedFields.size())
+            {
+                return false;
+            }
+
+            for (auto [field, mergedField] : llvm::zip(fields, mergedFields))
+            {
+                if (fieldStorageType(location, field.type) != fieldStorageType(location, mergedField.type))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     ExtendsResult appendInferTypeToContext(mlir::Location location, mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
