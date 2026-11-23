@@ -5527,6 +5527,7 @@ class MLIRGenImpl
             {
                 return builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
             }
+
         }
 
         // a class of a union of interfaces it is none of (`v instanceof A` of `IA | IB`): the payload is an
@@ -5674,6 +5675,19 @@ class MLIRGenImpl
 
                 return addSafeCastStatement(location, parameterName, exprValue, newSafeType, false, nullptr, genContext);
             }
+        }
+        // `typeof x === "number"` of an `x?: number | string`: the test says there is a value, so the union is
+        // taken out of the optional as it is and narrowed. Cast whole, it warned "casting from optional (undefined)
+        // value", with no location (TSLANG 167)
+        else if (auto optType = dyn_cast<mlir_ts::OptionalType>(exprValue.getType());
+                 optType && !inverse && isa<mlir_ts::UnionType>(optType.getElementType())
+                 && !isa<mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::OpaqueType>(safeType)
+                 // not one holding null (`v?: Hit | null` of a @value Hit, narrowed by `!== null`): read as before
+                 && llvm::none_of(mlir::cast<mlir_ts::UnionType>(optType.getElementType()).getTypes(),
+                                  [](mlir::Type member) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member); }))
+        {
+            auto unionValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), exprValue);
+            return addSafeCastStatement(location, parameterName, unionValue, safeType, false, nullptr, genContext);
         }
         else
         {
