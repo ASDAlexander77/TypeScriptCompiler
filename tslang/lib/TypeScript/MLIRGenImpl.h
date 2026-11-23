@@ -3118,18 +3118,6 @@ class MLIRGenImpl
             variableDeclarationInfo.initial = builder.create<mlir_ts::DefaultOp>(location, variableDeclarationInfo.type);
         }
 
-        // An `unknown` global is the `any` box its initializer makes (`let u: unknown = 7`), which is given back at
-        // the end of the statement: an `unknown` owns nothing, as a local does not (counting it as an owner broke a
-        // construct signature's `unknown` result, which is no box). A global outlives every statement, so it takes a
-        // reference of its own: under -mm=rc it was read as freed memory ("Can't cast from any type"). TSLANG 166.
-        if (compileOptions.tracksOwnership() && compileOptions.memoryModel != MemoryModelOwn
-            && isa<mlir_ts::UnknownType>(variableDeclarationInfo.type)
-            && variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>()
-            && isa<mlir_ts::AnyType>(variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>().getIn().getType()))
-        {
-            builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>().getIn());
-        }
-
         // A handle global (own spec 23.1) takes over the reference its initializer carries, through
         // a view of its type as well (`let g: Shared<T> | null = mk()`): OwnedReturnConsumptionPass
         // claims it (claimHandleGlobalInitializers), once a call's result is known to carry one.
@@ -19103,7 +19091,7 @@ class MLIRGenImpl
     ValueOrLogicalResult castInterfaceToString(mlir::Location location, mlir::Value value,
         mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 
-    ValueOrLogicalResult generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext);
+    ValueOrLogicalResult generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, mlir::Type fieldType, const GenContext &genContext);
 
     ValueOrLogicalResult castClassToTuple(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext);

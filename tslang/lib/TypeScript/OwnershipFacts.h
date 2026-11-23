@@ -437,6 +437,13 @@ inline bool isView(mlir::Operation *op)
     };
     auto in = castOp.getIn().getType();
     auto out = castOp.getType();
+    // `unknown` is the `any` box itself, seen either way (the cast lowers to nothing)
+    if ((mlir::isa<mlir_ts::AnyType>(in) && mlir::isa<mlir_ts::UnknownType>(out)) ||
+        (mlir::isa<mlir_ts::UnknownType>(in) && mlir::isa<mlir_ts::AnyType>(out)))
+    {
+        return true;
+    }
+
     auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
                           (isStringOrArray(out) && holdsAsIs(in, out, true));
     // ...or text seen as other text, each one pointer: a string, or a union of strings and string

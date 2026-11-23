@@ -4664,6 +4664,13 @@ protected:
             return true;
         }
 
+        // `unknown` is the box `any` is (MLIRGenImpl::cast boxes into it), and owns it the same way: a value stored
+        // into one after its declaration was not kept (TSLANG 168)
+        if (isa<mlir_ts::UnknownType>(type))
+        {
+            return true;
+        }
+
         // A WeakRef (own spec 84) owns one weak count of its target, which its release gives back
         if (isa<mlir_ts::WeakRefType>(type))
         {
