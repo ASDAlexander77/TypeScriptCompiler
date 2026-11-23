@@ -112,8 +112,17 @@ namespace own_inference
             return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return mayHoldDescriptorField(member); });
         }
 
-        // what hides the object it refers to: any object of the module may be behind it. (A record held
-        // inline is walked by reachedThroughDescriptor; a string, an array, a number hold no fields.)
+        // a record held inline (a tuple, a @value value): what each of its fields may hold. Its fields
+        // reached through a descriptor are reachedThroughDescriptor's, which stops at a class; a class
+        // field is an object the record's count gives an owner too, so its own fields are asked here
+        MLIRTypeHelper mth(type.getContext(), CompileOptions());
+        if (auto fields = mth.getOwnershipFieldTypes(type); !fields.empty())
+        {
+            return llvm::any_of(fields, [&](mlir::Type fieldType) { return mayHoldDescriptorField(fieldType); });
+        }
+
+        // what hides the object it refers to: any object of the module may be behind it. (A string, an
+        // array, a number hold no fields.)
         if (!mlir::isa<mlir_ts::InterfaceType, mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type))
         {
             return false;

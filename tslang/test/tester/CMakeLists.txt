@@ -5930,12 +5930,13 @@ endforeach()
 # captured still used (user ruling 11-13), a parameter its exported function's callers cannot be told
 # it keeps; and a value whose rc ops a site commits as a borrow: a view of an array read after a
 # possible free, an element of an array literal that borrows it; and a tagged union's payload taken
-# out of a result that may be counted (nothing gives it an owner under own)
+# out of a result that may be counted (nothing gives it an owner under own), and a @value value whose
+# object has a closure field (a count of the value would be one of the object)
 foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
                       own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
                       own/own_err_param_kept_exported own/own_fallback_view_stays_error
                       own/own_fallback_borrowed_element_stays_error own/own_fallback_take_from_result_union_stays_error
-                      own/own_fallback_take_through_id_stays_error)
+                      own/own_fallback_take_through_id_stays_error own/own_fallback_value_closure_stays_error)
     get_filename_component(fallback_name "${fallback_test}" NAME)
     add_test(NAME test-own-fallback-ir-${fallback_name}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
