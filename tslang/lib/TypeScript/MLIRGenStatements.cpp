@@ -1573,6 +1573,44 @@ namespace mlirgen
             return false;
         }
 
+        // a class's instance (`for (var x in this)` in a method): its fields, its bases' first, as the type has them -
+        // methods are the prototype's, which for...in does not walk. It was read as an array ("Class member
+        // 'length' can't be found", TSLANG 175).
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+        {
+            std::function<void(mlir::Type)> collect = [&](mlir::Type storage) {
+                auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(storage);
+                if (!classStorageType)
+                {
+                    return;
+                }
+
+                for (auto &field : classStorageType.getFields())
+                {
+                    if (isa<mlir_ts::ClassStorageType>(field.type))
+                    {
+                        collect(field.type);
+                        continue;
+                    }
+
+                    auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                    if (!name || name.getValue().starts_with("."))
+                    {
+                        continue;
+                    }
+
+                    auto key = name.getValue().str();
+                    if (std::find(keys.begin(), keys.end(), key) == keys.end())
+                    {
+                        keys.push_back(key);
+                    }
+                }
+            };
+
+            collect(classType.getStorageType());
+            return true;
+        }
+
         ArrayRef<mlir_ts::FieldInfo> fields;
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {

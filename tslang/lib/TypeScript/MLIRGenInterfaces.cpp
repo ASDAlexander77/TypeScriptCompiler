@@ -1285,6 +1285,36 @@ namespace mlirgen
             EXIT_IF_FAILED_OR_NO_VALUE(result);
             auto ifaceType = V(result);
 
+            // ...and where the function, given the type arguments, is a function value (`function Tag<T>(x: T): T`):
+            // the base is still the type of that name, when it has one ("interface cannot extend type: (p0: K) => K",
+            // TSLANG 175)
+            if (ifaceType && mth.isAnyFunctionType(ifaceType.getType())
+                && (extendsType->expression == SyntaxKind::Identifier || extendsType->expression == SyntaxKind::PropertyAccessExpression))
+            {
+                auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+                NodeFactory nf(NodeFactoryFlags::None);
+                Node typeName = extendsType->expression;
+                if (extendsType->expression == SyntaxKind::PropertyAccessExpression)
+                {
+                    auto access = extendsType->expression.as<PropertyAccessExpression>();
+                    typeName = nf.createQualifiedName(access->expression.as<Node>(), access->name.as<Identifier>());
+                }
+
+                auto typeReference = nf.createTypeReferenceNode(typeName, extendsType->typeArguments);
+                typeReference->pos = extendsType->pos;
+                typeReference->_end = extendsType->_end;
+                auto baseTypeByName = getType(typeReference, genContext);
+                if (genContext.postponedMessages)
+                {
+                    rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+                }
+
+                if (baseTypeByName && !mth.isAnyFunctionType(baseTypeByName))
+                {
+                    ifaceType = builder.create<mlir_ts::TypeRefOp>(loc(extendsType), baseTypeByName);
+                }
+            }
+
             // `interface TagClass extends Tag<Self, Type>` where a generic function is named `Tag` too: the name
             // as a value is the function, which gives no value here; the base is the type of that name. A null
             // value's type was read (a crash).

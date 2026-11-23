@@ -2532,6 +2532,14 @@ namespace mlirgen
                 return getValueTypeOfInterfaceIfLaidOut(interfaceInfo);
             }
 
+            // `interface Cb { (x: number): number }` (and `extends Function`, an interface of nothing): one call
+            // signature and nothing else is the function type, as `{ (x: number): number }` is. As an interface, a
+            // function given to it was "invalid cast from (p0: number) => number to Cb" (TSLANG 175).
+            if (auto callType = callSignatureOnlyType(interfaceInfo))
+            {
+                return callType;
+            }
+
             return interfaceInfo->interfaceType;
         }
 

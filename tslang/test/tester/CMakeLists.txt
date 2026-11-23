@@ -2402,7 +2402,7 @@ endforeach()
 # TSLANG_ISSUES 112 (shapes whose same-named fields differ in type) and 165 (`<Shape>` of an `any`, `<object>` of
 # an object literal): not under own (the test files say why)
 foreach(issues_mm gc rc none)
-    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174)
+    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174 00tslang_issue_175)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()

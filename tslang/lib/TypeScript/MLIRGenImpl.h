@@ -18229,6 +18229,10 @@ class MLIRGenImpl
 
             assert(accessorIndex >= 0);
 
+            // one made while its getter's body was discovered (mlirGenFunctionPrototype) is what it is now
+            newClassPtr->accessors[accessorIndex].isVirtual |= isVirtual;
+            newClassPtr->accessors[accessorIndex].isAbstract |= isAbstract;
+
             if (classMember == SyntaxKind::GetAccessor)
             {
                 newClassPtr->accessors[accessorIndex].get = makeFunctionEntry(funcOp);
@@ -18494,6 +18498,41 @@ class MLIRGenImpl
     // declaration that took it (`intersect(): Hit | null` of an interface `Hit.thing` refers to) would
     // disagree with one that took it later. Not known yet, the declaration fails and is retried in
     // the next discovery pass, as for a @value class (getValueTypeOfClassIfLaidOut).
+    // An interface of one call signature and nothing else, with what it extends: that signature's function type
+    // (as for a type literal, `{ (x: number): number }`). Null for anything else, or an interface not done yet.
+    mlir::Type callSignatureOnlyType(InterfaceInfo::TypePtr interfaceInfo)
+    {
+        mlir::Type callType;
+        std::function<bool(InterfaceInfo::TypePtr)> walk = [&](InterfaceInfo::TypePtr info) {
+            if (!info || !info->membersResolved || !info->fields.empty() || !info->accessors.empty()
+                || !info->indexes.empty() || info->hasNew || info->isValue || !info->typeParamsWithArgs.empty())
+            {
+                return false;
+            }
+
+            for (auto &method : info->methods)
+            {
+                if (method.name != CALL_FIELD_NAME || callType || !method.funcType || method.genericSignature)
+                {
+                    return false;
+                }
+
+                // without the `this` an interface's method takes first
+                auto funcType = method.funcType;
+                if (funcType.getNumInputs() == 0 || !isa<mlir_ts::OpaqueType>(funcType.getInput(0)))
+                {
+                    return false;
+                }
+
+                callType = getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+            }
+
+            return llvm::all_of(info->extends, [&](auto &extent) { return walk(std::get<1>(extent)); });
+        };
+
+        return walk(interfaceInfo) && callType ? callType : mlir::Type();
+    }
+
     mlir::Type getValueTypeOfInterfaceIfLaidOut(InterfaceInfo::TypePtr interfaceInfo)
     {
         llvm::SmallPtrSet<InterfaceInfo *, 4> visited;
