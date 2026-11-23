@@ -1,7 +1,9 @@
 // -mm=rc: a conditional expression whose branch yields a field of an object read out of an array literal's element
-// (`c ? [mk(i)][0].s : null`, `c ? ([mk(i)][0] as N).s : null`): the branch retains it for the conditional's
-// result before the literal is given back at the end of the branch (a use after free before). The same program
-// under gc. Not under own, which refuses both (a borrow of the element used after the literal may be released).
+// (`c ? [mk(i)][0].s : null`, `c ? ([mk(i)][0] as N).s : null`, an optional chain `c ? [mk(i)][0]?.s : null`), or
+// an optional chain given to a call (`take(c ? [[mk(i)]][0]?.[0] : null)`): the branch retains it for the
+// conditional's result before the literal is given back at the end of the branch (a use after free before). The
+// same program under gc. Not under own, which refuses these (a borrow of the element used after the literal may be
+// released, or given on).
 class N {
     x: number;
     s: string;
@@ -49,10 +51,18 @@ function main() {
             total += g.length;
         }
 
+        const h = c ? [mk(i)][0]?.s : null;
+        if (h) {
+            total += h.length;
+        }
+
+        total += takes(c ? [mk(i)][0]?.s : null);
+        total += take(c ? [[mk(i)]][0]?.[0] : null);
+
         churn();
     }
 
     print(total);
-    assert(total == 1490, "total");
+    assert(total == 43525, "total");
     print("done.");
 }

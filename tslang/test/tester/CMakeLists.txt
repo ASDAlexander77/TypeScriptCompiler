@@ -5527,14 +5527,17 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
 # A conditional's branch yielding an element of an array literal nested in another (`c ? [[mk(i)]][0][0] :
-# null`), or a field read out of an element (`c ? [{ v: mk(i) }][0].v : null`), also past a cast that only
-# narrows (`!`, `as N`, `<N>`), retains it for the result before the literal is given back at the end of the
-# branch, as for a flat literal; under rc it was freed first (an access violation, or a read of freed memory).
-# The same programs under gc and own; `c ? [mk(i)][0].s : null`, which own refuses, under rc and gc only.
-foreach(conditional_literal_test conditional_nested_literal conditional_literal_field conditional_element_field)
+# null`), a field read out of an element (`c ? [{ v: mk(i) }][0].v : null`), also past a cast that only narrows
+# (`!`, `as N`, `<N>`), an optional chain out of a literal (`c ? [[mk(i)]][0]?.[0] : null`), or an element of a
+# literal of mixed elements, a tuple (`c ? [mk(i), "x"][0] : null`), retains it for the result before the literal
+# (or what the tuple holds) is given back at the end of the branch, as for a flat literal; under rc it was freed
+# first (an access violation, or a read of freed memory). The same programs under gc and own; the shapes own
+# refuses (`c ? [mk(i)][0].s : null`, a tuple literal holding a value it owns) under rc and gc only.
+foreach(conditional_literal_test conditional_nested_literal conditional_literal_field conditional_optional_chain
+                                 conditional_element_field conditional_tuple_literal)
     string(REPLACE "_" "-" conditional_literal_name "${conditional_literal_test}")
     set(conditional_literal_models rc gc own)
-    if(conditional_literal_test STREQUAL "conditional_element_field")
+    if(conditional_literal_test STREQUAL "conditional_element_field" OR conditional_literal_test STREQUAL "conditional_tuple_literal")
         set(conditional_literal_models rc gc)
     endif()
     foreach(conditional_literal_mm ${conditional_literal_models})
@@ -5543,22 +5546,29 @@ foreach(conditional_literal_test conditional_nested_literal conditional_literal_
     endforeach()
 endforeach()
 # ...the IR: the branch's retain of what it yields right before the release of the literal (none before): of
-# the element before the outer literal's release, of the field before the release of the literal holding it.
+# the element before the outer literal's release, of the field or the chain's value before the release of the
+# literal holding it, of a tuple's element before the release of the `mk(i)` the branch made.
 add_test(NAME test-rc-conditional-nested-literal-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_nested_literal.ts")
 set_tests_properties(test-rc-conditional-nested-literal-retained
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]union<!ts[.]class<@N[^\n]*\n *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]array<"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
-foreach(conditional_field_test conditional_literal_field conditional_element_field)
+foreach(conditional_field_test conditional_literal_field conditional_element_field conditional_optional_chain)
     string(REPLACE "_" "-" conditional_field_name "${conditional_field_test}")
     add_test(NAME test-rc-${conditional_field_name}-retained
              COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                      "${PROJECT_SOURCE_DIR}/test/tester/own/rc_${conditional_field_test}.ts")
     set_tests_properties(test-rc-${conditional_field_name}-retained
-                         PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]union<[^\n]*\n( *\"ts[.]Release\"[^\n]*\n)* *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
+                         PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.](union|optional)<[^\n]*\n( *\"ts[.]Release\"[^\n]*\n)* *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 endforeach()
+add_test(NAME test-rc-conditional-tuple-literal-retained
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_tuple_literal.ts")
+set_tests_properties(test-rc-conditional-tuple-literal-retained
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]union<[^\n]*\n *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # Under rc, a call through an interface carries the result its implementation retained: no
 # `ts.CallIndirect` returning a C through an interface slot is left without `__owned_result`
 # (`__owned_result_named` alone only says it initialises a `const`).

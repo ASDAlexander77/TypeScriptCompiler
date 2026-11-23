@@ -2484,48 +2484,98 @@ class OwnedReturnConsumptionPass
 
                 return value;
             };
-            auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
-                auto value = producerOf(resultOp->getOperand(0));
-                // (through widening and narrowing casts alike)
-                auto read = value;
-                for (auto peeled = narrowed(read); peeled != read; peeled = narrowed(read))
-                {
-                    read = producerOf(peeled);
-                }
-
-                if (auto loadOp = read.getDefiningOp<mlir_ts::LoadOp>(); loadOp && compileOptions.isRefCounted())
-                {
-                    // the place read, walked down through fields and elements to the array it is in
-                    auto place = loadOp.getReference();
-                    while (place)
+            // Under rc, whether a value is read out of a literal made in `region` - an array literal, or the tuple a
+            // literal of mixed elements is (`c ? [mk(i), "x"][0] : null`, whose element is the +1 the branch gives
+            // back) - through elements and fields, widening and narrowing casts and an optional's value. A value a
+            // conditional within `region` yields - an optional chain (`c ? [mk(i)][0]?.s : null`,
+            // `[[mk(i)]][0]?.[0]`) and its conversion to `| null` - is what its branches yield, looked into the same
+            // way (a few levels deep). `readOut`: the value is an element or a field, not the literal itself.
+            std::function<bool(mlir::Value, mlir::Region *, int, bool)> readsBranchLiteral =
+                [&](mlir::Value value, mlir::Region *region, int depth, bool readOut) {
+                    for (;;)
                     {
-                        if (auto propertyRefOp = place.getDefiningOp<mlir_ts::PropertyRefOp>())
+                        auto peeled = narrowed(producerOf(value));
+                        if (auto valueOp = peeled.getDefiningOp<mlir_ts::ValueOp>())
                         {
-                            // a field of a value held in place (a tuple element), or of an object read out
-                            auto object = narrowed(propertyRefOp.getObjectRef());
-                            auto objectRead = object.getDefiningOp<mlir_ts::LoadOp>();
-                            place = mlir::isa<mlir_ts::RefType>(object.getType()) ? object
-                                    : objectRead                                 ? objectRead.getReference()
-                                                                                 : mlir::Value();
-                            continue;
+                            peeled = valueOp.getIn();
+                        }
+                        else if (auto extractPropertyOp = peeled.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+                        {
+                            peeled = extractPropertyOp.getObject();
+                            readOut = true;
                         }
 
-                        auto elementRefOp = place.getDefiningOp<mlir_ts::ElementRefOp>();
-                        if (!elementRefOp)
+                        if (peeled == value)
                         {
                             break;
                         }
 
-                        auto array = narrowed(elementRefOp->getOperand(0));
-                        auto *arrayOp = array.getDefiningOp();
-                        if (arrayOp && isNewArray(arrayOp) && arrayOp->getParentRegion() == resultOp->getParentRegion())
+                        value = peeled;
+                    }
+
+                    auto *definingOp = value.getDefiningOp();
+                    if (!definingOp)
+                    {
+                        return false;
+                    }
+
+                    if (readOut && (isNewArray(definingOp) || mlir::isa<mlir_ts::CreateTupleOp>(definingOp)) &&
+                        definingOp->getParentRegion() == region)
+                    {
+                        return true;
+                    }
+
+                    if (auto ifOp = mlir::dyn_cast<mlir_ts::IfOp>(definingOp))
+                    {
+                        if (depth >= 4 || !region->isAncestor(ifOp->getParentRegion()))
                         {
-                            return true;
+                            return false;
                         }
 
-                        auto arrayRead = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(arrayOp);
-                        place = arrayRead ? arrayRead.getReference() : mlir::Value();
+                        auto index = mlir::cast<mlir::OpResult>(value).getResultNumber();
+                        for (auto &inner : ifOp->getRegions())
+                        {
+                            auto innerResult = inner.empty() ? mlir_ts::ResultOp()
+                                                             : mlir::dyn_cast_or_null<mlir_ts::ResultOp>(inner.back().getTerminator());
+                            if (innerResult && innerResult->getNumOperands() > index &&
+                                readsBranchLiteral(innerResult->getOperand(index), region, depth + 1, readOut))
+                            {
+                                return true;
+                            }
+                        }
+
+                        return false;
                     }
+
+                    auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(definingOp);
+                    if (!loadOp)
+                    {
+                        return false;
+                    }
+
+                    // the place read: a field of a value held in place (a tuple element) is in the same place; a
+                    // field of an object, an element of an array, is read out of that object or array
+                    auto place = loadOp.getReference();
+                    while (auto propertyRefOp = place.getDefiningOp<mlir_ts::PropertyRefOp>())
+                    {
+                        auto object = propertyRefOp.getObjectRef();
+                        if (!mlir::isa<mlir_ts::RefType>(object.getType()))
+                        {
+                            return readsBranchLiteral(object, region, depth, true);
+                        }
+
+                        place = object;
+                    }
+
+                    auto elementRefOp = place.getDefiningOp<mlir_ts::ElementRefOp>();
+                    return elementRefOp && readsBranchLiteral(elementRefOp->getOperand(0), region, depth, true);
+                };
+            auto borrowsBranchTemporary = [&](mlir_ts::ResultOp resultOp) {
+                auto value = producerOf(resultOp->getOperand(0));
+                if (compileOptions.isRefCounted() &&
+                    readsBranchLiteral(resultOp->getOperand(0), resultOp->getParentRegion(), 0, false))
+                {
+                    return true;
                 }
 
                 while (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
