@@ -701,8 +701,13 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             return false;
         }
 
+        // -mm=own: a merge's value (a block argument) is made again where control enters its block - the
+        // literal a conditional expression's branch holds past it (OwnedReturnConsumptionPass's
+        // holdPastConditional), merged with undefined, in a loop around a `try`
         auto *definingOp = value.getDefiningOp();
-        if (!definingOp)
+        auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+        auto *argumentBlock = argument && compileOptions.memoryModel == MemoryModelOwn ? argument.getOwner() : nullptr;
+        if (!definingOp && !argumentBlock)
         {
             return true;
         }
@@ -712,7 +717,7 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         while (!worklist.empty())
         {
             auto *block = worklist.pop_back_val();
-            if (!visited.insert(block).second)
+            if (!visited.insert(block).second || block == argumentBlock)
             {
                 continue;
             }

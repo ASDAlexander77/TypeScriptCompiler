@@ -128,9 +128,10 @@ and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fi
   flag (v0.0-pre-alpha134 too), and it is fixed (own-literal-temp-leak): such a literal is given back at
   the end of its block, or after the call, with what it owns, and all seven are flat with the flag as they
   are. A string element a `let` is given is a copy; an object element stays a borrow (see
-  own-memory-model.md, Strings). Still leaking: a literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one
-  given a local's or a counted object besides new ones (`f([mk(i), o])`), and one whose object element a
-  `?:` branch yields (`c ? [mk(i)][0] : null`).
+  own-memory-model.md, Strings). The shapes that still leaked after that are freed too
+  (own-literal-temp-leak, Task 9): a literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), one given a
+  local's or a counted object besides new ones (`f([mk(i), o])`, fuzz 1123352 with the flag), and one whose
+  element a `?:` branch yields (`c ? [mk(i)][0] : null`, held past the conditional).
 
 The re-runs found two more and they are fixed too: a local declared from a counted local (`const n16 =
 n15`) is counted with it, and a string a keeping call is given its copy for is not counted (own
