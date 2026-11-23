@@ -425,7 +425,8 @@ w.ts:9:5: note: a value that borrows 'h.node' cannot be stored, returned or capt
 
 Without the flag (or with `--own-fallback=error`, the default) the same program is the error in the
 note. There is one warning for each place the compiler counts, and no summary. No option turns
-these warnings into errors; leave the flag out for that.
+these warnings into errors; leave the flag out for that. Like every warning, they are printed when the
+file is compiled: `--nowarn` hides them, and a JIT run the JIT cache serves without compiling prints none.
 
 A program `-mm=own` accepts without the flag is decided the same way with it: nothing in it is
 counted. A `let` that borrows a field or an element and is then given a new value, which own
@@ -486,10 +487,12 @@ under rc.
 **Limits.**
 
 - A cycle through counted objects is never freed, as under rc and as with `Shared<T>`.
-- A subclass defined in another module, with a tagged-union or closure field, whose object this
-  module counts under its base class's type: this module cannot see that field.
-- A module built without the flag empties such a field when it takes it out of a call's result,
-  even when another module counted the object.
+- An object of a class defined in another module, with a tagged-union or closure field, that this
+  module counts while it sees the object only as something else: a base class, an interface, `any`,
+  `unknown` or `Opaque`. The compiler tells whether an object may have such a field from the classes
+  of this module only.
+- Such a field taken out of a call's result is emptied, by a module built with the flag or without
+  it, even when the object has other owners: they read the field as empty later (never freed memory).
 
 ## Decorators
 

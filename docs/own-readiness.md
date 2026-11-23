@@ -111,7 +111,7 @@ Measured on 2026-11-23 with `--own-fallback=count` (branch `own-rc-fallback` at 
 with 42 warnings between them. No file compiles under own and not with the flag. The 150 still refused are
 mostly the shapes the flag does not reach: a borrow of a call's result, escaping closures, parameters kept
 or assigned, object literals, `any` element access, globals. The fuzzer with the flag first found 9 programs that stop with an access violation under own with the flag
-and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fixes of 2026-11-23 (Task 7):
+and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fixes of 2026-11-23:
 
 - A `let` that borrows a field or an element and is then given a new value, which own repairs (its new
   values go into a holder), is repaired with the flag too, not counted: that was 8 of the 9 crashes, and
@@ -137,7 +137,12 @@ The programs own accepts only with the flag (`--own-fallback leaks --avoid liter
 against rc and gc: 55, 58, 67, 73 and 65 on those seeds, none growing beyond rc; without `--avoid`, the
 leaks that show are the own leak above. On the same seeds, no generated program own accepts without
 the flag is refused or counted with it. The corpus: 882 with the flag, as before; no file lost, and no
-file own accepts gets a count. Windows only: there is no Linux build of the branch.
+file own accepts gets a count. On a heap that faults at a use after free or a double free (every
+block on its own pages, freed pages never reused; 2026-11-23): the 35 programs of the flag's run
+tests and the share and thread tests, and the 28 programs of 200 generated ones that the flag
+counts, each built ahead of time at -O0 and -O3, all ran without a fault and printed what gc
+prints. Windows only: the Linux legs run on CI, where glibc reports double frees the Windows heap
+hides.
 
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
@@ -205,7 +210,7 @@ at two core modules whose exported methods keep parameters (`@keeps`, which the 
 What builds passes: 250 of the 525 tests run and all 250 pass (236 without the flag), with 62 places
 counted. Three of those places were the shape the fuzzer found crashing (in `core/donut_first_person_camera.ts`
 and `examples/sakura_forest_ser.ts`); no test that runs them failed. That shape is no longer counted
-(Task 7); the native_ts_graphics figures have not been measured again. The other refusals are kept parameters, borrows of fields stored or used after a release that
+(since 2026-11-23); the native_ts_graphics figures have not been measured again. The other refusals are kept parameters, borrows of fields stored or used after a release that
 the flag still refuses, and one type error the newer compiler reports in the old source.
 
 ## Performance

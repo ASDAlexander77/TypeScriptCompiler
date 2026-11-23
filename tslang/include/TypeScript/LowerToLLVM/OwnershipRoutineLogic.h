@@ -654,8 +654,12 @@ class OwnershipRoutineLogic
     // gives the kept field's value back, which its extra owner pays for.
     // A value whose blocks are reached only through a type descriptor (a tagged union's payload, a
     // closure: canCountRetainOf) cannot be given an owner under own: its field is emptied, as before.
-    // OwnershipInferencePass does not take one out of an object that may be counted with
-    // --own-fallback=count; without the flag the object is counted only by another module's result.
+    // With --own-fallback=count OwnershipInferencePass never counts an object that may have such a
+    // field (mayHoldDescriptorField), so no take is refused for it. That test sees this module's
+    // classes only: an object of another module's class reached here through an interface, `any`,
+    // `unknown` or a base class can be counted, and its field is then emptied under its other owners
+    // (a null read later, never a use after free). Without the flag the object is counted only by
+    // another module's result.
     void emitTakeOutOfField(mlir::Value objectPtr, mlir::Value fieldPtr, mlir::Type fieldType)
     {
         TypeHelper th(rewriter);

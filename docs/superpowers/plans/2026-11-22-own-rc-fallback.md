@@ -21,7 +21,7 @@ numbers below refer to it).
 ## Global Constraints
 
 - Releases honor the count **always under own**, with or without the flag (spec "Decisions taken").
-- Without `--own-fallback=count`, own accepts and refuses exactly what it does today, and the IR before lowering is unchanged, with one exception (Task 4 review ruling): a field taken out of a call's own result is a `ts.TakeOutOfField` in every own build, since a callee built with the flag can return a counted object (spec section 4).
+- Without `--own-fallback=count`, own accepts and refuses exactly what it does today, and the IR before lowering is unchanged, with two exceptions: a field taken out of a call's own result is a `ts.TakeOutOfField` in every own build, since a callee built with the flag can return a counted object (Task 4 review ruling, spec section 4); and an `@atomic` class's `new` and field stores emit `ts.MarkShared` under own, its instances no longer stack promoted (Task 5, spec section 6).
 - Flag: `--own-fallback=error|count`, default `error`.
 - The unit counted is a refused value with **all** its rc ops (spec 3). A site that cannot leave them whole stays an error.
 - Values own copies today (strings, `any`, `@copies` arrays) stay copied (spec 3).

@@ -1,7 +1,7 @@
 // -mm=own --own-fallback=count: a field of a tagged union (`Node | string`) taken out of a call's own
 // result that another owner also holds. Under own nothing can give a tagged union's payload an owner
-// (it is reached through a type descriptor, which has no retain routine under own), so the take is
-// refused for an object that may be counted, and the program stays an error with the flag.
+// (it is reached through a type descriptor, which has no retain routine under own), so an object that
+// may have such a field (Box) is never counted: its second owner (`last`) stays an error with the flag.
 class Node { constructor(public v: number) {} }
 class Box { node: Node | string = "x"; }
 let last: Box | null = null;

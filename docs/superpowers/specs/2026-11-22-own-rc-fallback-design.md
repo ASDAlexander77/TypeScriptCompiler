@@ -35,7 +35,8 @@ warning, so a program that does not use it compiles as before.
   of the tier 1 errors below. The object involved is counted, the program runs correctly, and a
   warning says where.
 - Without the flag, own reports exactly what it reports today: same errors, same accepted programs,
-  and the same erased retains (the IR before lowering is unchanged).
+  and the same erased retains (the IR before lowering is unchanged, but for the two places sections
+  4 and 6 name: a field taken out of a call's result, and an `@atomic` class).
 - Own's release keeps its cost: a block with one owner is freed by a release that tests a single
   word against zero.
 - Measurable gain: the corpus files accepted under own with the flag rise from the current figure
@@ -61,6 +62,9 @@ warning, so a program that does not use it compiles as before.
   fact other functions and modules rely on (frees nothing, fresh result, borrow of a field) sound
   without re-deriving it.
 - A silent fallback: every counted place is a warning, and a warning can be made an error.
+  *(Deviation, 2026-11-23 final review: no option makes these warnings errors; the user docs say to
+  leave the flag out for that. `--nowarn` hides them, and a JIT run served by the JIT cache prints
+  none, as for every warning.)*
 - Measurable slowdown of the ray tracer under own without the flag.
 
 ## Constraints found in the code
@@ -258,11 +262,18 @@ fact derived elsewhere stays true.
   the field type's counted retain. The immortal case is unchanged. *(Amended 2026-11-23, Task 4 review.)*
   A field taken out of a call's own result is a `TakeOutOfField` too, **in every own build, with or
   without the flag**, as every own release honors extra owners: a callee built with the flag (another
-  module) can return a counted object to a caller built without it. This is the one place the IR
-  before lowering changes without the flag; its cost is a header load and two branches per such take.
+  module) can return a counted object to a caller built without it. This is one of the two places the
+  IR before lowering changes without the flag (the other is the `@atomic` class of section 6); its
+  cost is a header load and two branches per such take.
   A field whose value is reached only through a type descriptor (a tagged union's payload, a closure)
-  cannot be given an owner under own: such a value is never counted, and with the flag a take of one
-  out of an object that may be counted is refused; without the flag it is emptied as before.
+  cannot be given an owner under own: such a value is never counted, and with the flag neither is an
+  object that may have such a field (`mayHoldDescriptorField`), so nothing refuses the take: the field
+  is emptied, as without the flag. *(Amended 2026-11-23, final review: rounds 1-2 refused the take;
+  round 3 replaced that with the rule on the object.)*
+  Known limit: that rule sees this module's classes only. An object of another module's class with
+  such a field, seen here as a base class, an interface, `any`, `unknown` or `Opaque`, can be
+  counted; its field taken out of a call's result is then emptied under its other owners (they read
+  it as empty later, never freed memory). Exporting the fact with the module's facts is a follow-up.
 - **Stack promotion**: a value with a marked retain, or reachable from one, is not promoted. A kept
   retain is an escape.
 - **Keepers / `MakeImmortal`**: unchanged. Marking a counted block immortal discards its counts,
@@ -309,6 +320,9 @@ library, which shares it. **Decision (user, 2026-11-22): check at share time.**
   unmarked, and a later share that reaches it may lose its bit to the other thread's plain store, as
   under rc. The `@atomic` field barrier sees only a store `obj.field = v`: a push into an array held
   by a field of an `@atomic` object is not a share point, the same as under rc.
+- Without the flag this changes the IR before lowering under own (the second such place, beside the
+  take of section 4): an `@atomic` class's `new` and every store into its fields emit `ts.MarkShared`,
+  and its instances are no longer stack promoted.
 - The release's slow path (2) tests the shared bit first. With extra owners, it does an atomic
   subtract, as in rc's `__tslang_dec_ref`. With none, the caller is the last owner and destroys the
   block (bury if WeakRefs remain). The retain kept by the fallback does the same, as `emitIncRef`
