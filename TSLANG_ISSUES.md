@@ -2610,3 +2610,34 @@ Still open, looked at:
 
 Tests `00tslang_issue_165.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_165_any.ts` and
 `00tslang_issue_112.ts` (gc, rc, none), crash-errors `class_field_enum_itself.ts`.
+
+166 (leftovers of 142, 148, 153 and 165, 2026-11-23). Fixed:
+- 148: a module variable with a type written is that type while its own initializer is generated, so a method or
+  arrow there can read it (`const a: { v: number; m(): number } = { v: 5, m() { return a.v + 1; } }`, a `let` of an
+  interface type the same): it was "can't resolve name: a". The name is registered as the global of the written
+  type for that time (GenContext::globalWrittenType, createGlobalVariableInitialization) and given up after; the
+  variable is registered as it ends up, as before. Untyped it stays an error (tsc's TS7022 too).
+- -mm=rc: a module variable of type `unknown` given a value (`let u: unknown = 7`) was read as freed memory ("Can't
+  cast from any type"): its initializer's `any` box was given back at the end of the statement, and an `unknown`
+  owns nothing. The global takes a reference of its own to the box (a local still does not: it is read within
+  the statement's scope; counting every `unknown` as an owner broke a construct signature's `unknown` result).
+- `async function* g(): AsyncGenerator<number> { yield 1; }` (also AsyncIterator, AsyncIterable,
+  AsyncIterableIterator): next()'s result is typed by T, as a sync generator's is, so an integer literal is yielded
+  as a number. It was "can't assign '() => {value:s32, done:boolean}'".
+- Looked at again, no longer failing: `for (const v of [...xs])` (rc and own flat at 1M and 3M), `x == "a"` of an
+  `x?: number | string` (it crashed in lowering; a warning with no location is left), `static y = this`,
+  `(Foo as any) = null`.
+
+Still open, looked at:
+- 148 for a local: `const a: T = { m() { return a.v; } }` in a function is "can't resolve name: a". Declared first
+  (`let a: T; a = { ... }`) it is refused as an object literal whose methods capture the function's variables
+  copied to a type literal; with an interface type that works.
+- A type literal's accessors (`type T = { get foo(): number; set foo(v: number | string) }`) are a field `foo`: an
+  object literal's or a class's accessors given to it are "field "foo" can't be found". A copy of a class object
+  could not call its setter anyway; an interface keeps the object.
+- -mm=own: a module variable of type `unknown` with a value is refused ("the initializer of global 'u' takes a
+  second reference"); an arrow in a typed module `const` reading another of its fields (`who: () => self.name`)
+  is "a value that borrows a field is used here after it may be released".
+- -mm=rc: a class object whose last reference is an `object` is freed without its fields (165).
+
+Tests `00tslang_issue_166.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_166_unknown.ts` (gc, rc, none).
