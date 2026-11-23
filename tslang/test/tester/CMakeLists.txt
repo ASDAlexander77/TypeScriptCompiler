@@ -5934,7 +5934,8 @@ endforeach()
 foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
                       own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
                       own/own_err_param_kept_exported own/own_fallback_view_stays_error
-                      own/own_fallback_borrowed_element_stays_error own/own_fallback_take_from_result_union_stays_error)
+                      own/own_fallback_borrowed_element_stays_error own/own_fallback_take_from_result_union_stays_error
+                      own/own_fallback_take_through_id_stays_error)
     get_filename_component(fallback_name "${fallback_test}" NAME)
     add_test(NAME test-own-fallback-ir-${fallback_name}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
@@ -5951,7 +5952,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
                       own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
                       own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
-                      own_fallback_take_from_result_iface own_fallback_not_promoted
+                      own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN

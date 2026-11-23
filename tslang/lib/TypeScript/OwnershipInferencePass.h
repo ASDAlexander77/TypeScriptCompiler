@@ -263,8 +263,13 @@ class OwnershipInferencePass
     bool countedGroup(mlir::Value unit, llvm::SetVector<mlir::Value> &group);
     // `new`'s own object made in this function and not counted here (a field take empties it plainly)
     bool isNewMadeHere(mlir::Value object);
-    // is the counted unit (a value, or a local's slot) given back by a return of this function
-    bool returnsUnit(mlir::Value unit);
+    // May an object a value of this static type refers to have a field reachedThroughDescriptor: a
+    // class (its storage, its bases' and the module's subclasses'), an object; an interface, `any`,
+    // `unknown` or Opaque when any object the module makes or names may (it hides which)
+    bool mayHoldDescriptorField(mlir::Type type);
+    bool classMayHoldDescriptorField(mlir_ts::ClassType classType);
+    // ...computed once per function, when first asked
+    std::optional<bool> moduleHoldsDescriptorObjects;
     // what a value of this type holds is reached only through a type descriptor (a tagged union's
     // payload, a closure): under own nothing can give it an owner, so it is never counted
     static bool reachedThroughDescriptor(mlir::Type type);

@@ -204,6 +204,7 @@ namespace own_inference
         localLetCandidates.clear();
         countedValues.clear();
         countedOrder.clear();
+        moduleHoldsDescriptorObjects.reset();
         dryRunDiagnostics.clear();
         dryRunCapture.clear();
         countedErrors.clear();
@@ -2180,16 +2181,10 @@ namespace own_inference
                 memberType = refType.getElementType();
             }
 
-            if (reachedThroughDescriptor(memberType))
-            {
-                return false;
-            }
-
-            // ...nor an object returned with such a field: a caller may take the field out of its result
-            // (temporaryFieldTakeOf), which with extra owners would need to give it an owner. So a call's
-            // own result is never counted with one - in this module, or any other built with the flag -
-            // and a caller empties the field as before.
-            if (holdsDescriptorField(memberType) && returnsUnit(member))
+            // ...nor an object that may have a field of one: a counted object can reach any take of a
+            // field out of it (a call's result, through any function), and a take cannot give such a
+            // field's value an owner. So no counted object has one, and every take may empty it.
+            if (reachedThroughDescriptor(memberType) || mayHoldDescriptorField(memberType))
             {
                 return false;
             }
@@ -2251,20 +2246,6 @@ namespace own_inference
         };
 
         return !borrowed(fieldBorrowRetains) && !borrowed(captureRetains) && !borrowed(mergeBorrowRetains);
-    }
-
-    bool OwnershipInferencePass::returnsUnit(mlir::Value unit)
-    {
-        // the value itself, or a read of the local it is
-        if (!unit.getDefiningOp<mlir_ts::VariableOp>())
-        {
-            return isReturned(unit);
-        }
-
-        return llvm::any_of(unit.getUsers(), [&](mlir::Operation *user) {
-            auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
-            return loadOp && isReturned(loadOp.getResult());
-        });
     }
 
     void OwnershipInferencePass::retainKeptCountedArguments()

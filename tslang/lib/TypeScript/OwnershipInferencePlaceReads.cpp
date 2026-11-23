@@ -54,6 +54,101 @@ namespace own_inference
         return false;
     }
 
+    bool OwnershipInferencePass::classMayHoldDescriptorField(mlir_ts::ClassType classType)
+    {
+        // the class, and each class of this module it extends or that extends it, at any depth
+        // (CLASS_BASES_ATTR_NAME): its object may be any of the subclasses, its fields include the bases'
+        llvm::SmallVector<mlir_ts::ClassType> related{classType};
+        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+        auto bases = module ? module->getAttrOfType<mlir::ArrayAttr>(CLASS_BASES_ATTR_NAME) : mlir::ArrayAttr();
+        auto known = [&](mlir_ts::ClassType type) {
+            return llvm::any_of(related, [&](mlir_ts::ClassType seen) { return seen.getName() == type.getName(); });
+        };
+        for (size_t i = 0; bases && i < related.size(); ++i)
+        {
+            for (auto entry : bases.getAsRange<mlir::ArrayAttr>())
+            {
+                auto sub = mlir::dyn_cast<mlir_ts::ClassType>(mlir::cast<mlir::TypeAttr>(entry[0]).getValue());
+                auto base = mlir::dyn_cast<mlir_ts::ClassType>(mlir::cast<mlir::TypeAttr>(entry[1]).getValue());
+                if (!sub || !base)
+                {
+                    continue;
+                }
+
+                if (base.getName() == related[i].getName() && !known(sub))
+                {
+                    related.push_back(sub);
+                }
+                else if (sub.getName() == related[i].getName() && !known(base))
+                {
+                    related.push_back(base);
+                }
+            }
+        }
+
+        return llvm::any_of(related, [](mlir_ts::ClassType type) { return holdsDescriptorField(type); });
+    }
+
+    bool OwnershipInferencePass::mayHoldDescriptorField(mlir::Type typeIn)
+    {
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+        if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
+        {
+            return classMayHoldDescriptorField(classType);
+        }
+
+        if (mlir::isa<mlir_ts::ObjectType>(type))
+        {
+            return holdsDescriptorField(type);
+        }
+
+        if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return mayHoldDescriptorField(optionalType.getElementType());
+        }
+
+        if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return mayHoldDescriptorField(member); });
+        }
+
+        // what hides the object it refers to: any object of the module may be behind it. (A record held
+        // inline is walked by reachedThroughDescriptor; a string, an array, a number hold no fields.)
+        if (!mlir::isa<mlir_ts::InterfaceType, mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type))
+        {
+            return false;
+        }
+
+        if (!moduleHoldsDescriptorObjects)
+        {
+            auto found = false;
+            auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+            module->walk([&](mlir::Operation *op) {
+                for (auto result : op->getResultTypes())
+                {
+                    auto resultType = result;
+                    if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(resultType))
+                    {
+                        resultType = refType.getElementType();
+                    }
+
+                    auto classType = mlir::dyn_cast<mlir_ts::ClassType>(resultType);
+                    if ((classType && classMayHoldDescriptorField(classType)) ||
+                        (mlir::isa<mlir_ts::ObjectType>(resultType) && holdsDescriptorField(resultType)))
+                    {
+                        found = true;
+                        return mlir::WalkResult::interrupt();
+                    }
+                }
+
+                return mlir::WalkResult::advance();
+            });
+            moduleHoldsDescriptorObjects = found;
+        }
+
+        return *moduleHoldsDescriptorObjects;
+    }
+
     bool OwnershipInferencePass::isNewMadeHere(mlir::Value object)
     {
         // `new`'s own object, in this function, and not counted here: nothing else may hold it
@@ -1240,18 +1335,12 @@ namespace own_inference
             // owner. `new`'s own object made here has no other owner: its field is emptied as before,
             // and the object may still go on the stack (StackPromotionPass). A value reached only
             // through a type descriptor cannot be given an owner under own (a tagged union's payload,
-            // a closure): a take of one out of an object this function counts is no take - the read
-            // stays a borrow, refused; out of any other, TakeOutOfField empties the field.
+            // a closure): no counted object has a field of one (countedGroup, mayHoldDescriptorField),
+            // so TakeOutOfField empties it.
             auto takeObject = take.field.getDefiningOp<mlir_ts::PropertyRefOp>().getObjectRef();
             auto takeFieldType = mlir::cast<mlir_ts::RefType>(take.field.getType()).getElementType();
             auto byTakeOp = mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType>(takeObject.getType()) && !isNewMadeHere(takeObject);
-            // (only an object this function counts: one a callee returns is never counted with such a
-            // field - countedGroup - and one that is not counted has no other owner)
-            auto takeSlotRead = takeObject.getDefiningOp<mlir_ts::LoadOp>();
-            auto countedObject = countedValues.contains(countedUnitOf(takeObject)) ||
-                                 (takeSlotRead && countedValues.contains(takeSlotRead.getReference()));
-            auto uncountable = byTakeOp && countedObject && reachedThroughDescriptor(takeFieldType);
-            if (kept || letKept || usedAfter || uncountable)
+            if (kept || letKept || usedAfter)
             {
                 take = {};
                 kept = walk();
