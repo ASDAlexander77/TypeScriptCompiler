@@ -2790,3 +2790,23 @@ Looked at, still open:
 - A namespace `var` declared in two `for` headers read by a function of the namespace (1392): "can't resolve name".
 
 Tests `00tslang_issue_172.ts` (gc, rc, none).
+
+173 (172's open items, 2026-11-23). Fixed:
+- A generic function given to a function type whose parameter is `any`: a typed `const` holding a generic arrow
+  (`const f: <p>(a: p) => W<p> = <p>(a: p): W<p> => ({ a })`, 1188, whose type is erased to `(a: any) => W<any>`)
+  and `const g: (a: any) => any = id` failed with "can't find type by name: p". A type parameter inferred as `any`
+  was left to the instantiation, which never gave it one; it is now `any`.
+- A namespace `var` declared in a block of the namespace's code (`for (var i = 0; ...)`, `if (c) { var k = 1; }`,
+  1392) and read by a function of the namespace: "can't resolve name: i". The namespace's declarations were
+  generated before its code, which declares those variables. When they fail, the code is generated first and they
+  are tried again (once: the code's function is not generated twice).
+- `class D extends k` where `k` is a module `const` set from a class (`const k = B`): the const is a constant global
+  set from that class, so the base is the class itself, known at compile time. A const given a subclass through
+  its type (`const k: typeof B = C`) is still the clear error for a class value.
+
+Looked at, still open:
+- -mm=own: `typeof a === "string"` of a `const a` holding the `any` a call returned (171, 172).
+- -mm=own: the typed `const` holding a generic arrow that stores its parameter (`({ a })`) is refused: "a value
+  that borrows 'a' cannot be stored" (the function value may keep a parameter), as the untyped form is.
+
+Tests `00tslang_issue_173.ts` (gc, rc, none).
