@@ -240,10 +240,25 @@ namespace mlirgen
                         continue;
                     }
                     
+                    // an object with accessors given to a type literal's `get foo()` / `set foo(v)`, which is a field:
+                    // a copy of it could not call the setter (TSLANG 167)
+                    if (auto fieldName = dyn_cast<mlir::StringAttr>(fieldInfo.id);
+                        fieldName
+                        && (srcTupleType.getIndex(MLIRHelper::TupleFieldName((llvm::Twine("get_") + fieldName.getValue()).str(), builder.getContext())) >= 0
+                            || srcTupleType.getIndex(MLIRHelper::TupleFieldName((llvm::Twine("set_") + fieldName.getValue()).str(), builder.getContext())) >= 0))
+                    {
+                        emitError(location) << "an object whose '" << fieldName.getValue()
+                                            << "' is an accessor can't be given to a type literal, where '"
+                                            << fieldName.getValue()
+                                            << "' is a field its accessors would not be called through: declare the "
+                                               "type as an interface";
+                        return mlir::failure();
+                    }
+
                     emitError(location)
                         << "field " << fieldInfo.id << " can't be found in tuple '" << to_print(srcTupleType) << "'";
                     return mlir::failure();
-                }                
+                }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
                 // TODO: implement conditional
@@ -861,10 +876,22 @@ namespace mlirgen
                     continue;
                 }
 
+                // a class object with accessors given to a type literal's `get foo()` / `set foo(v)`, which is a
+                // field: a copy of it could not call the setter (TSLANG 167)
+                if (auto fieldName = dyn_cast<mlir::StringAttr>(fieldInfo.id);
+                    fieldName && classInfo->getAccessorIndex(fieldName.getValue()) >= 0)
+                {
+                    emitError(location) << "'" << classInfo->name << "' can't be given to a type literal, where its accessor '"
+                                        << fieldName.getValue()
+                                        << "' is a field its accessors would not be called through: declare the type as "
+                                           "an interface, or give the class itself";
+                    return mlir::failure();
+                }
+
                 emitError(location)
                     << "field " << fieldInfo.id << " can't be found in class '" << classInfo->fullName << "'";
                 return mlir::failure();
-            }                
+            }
 
             MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
             // TODO: implemenet conditional
@@ -3363,6 +3390,12 @@ namespace mlirgen
             return true;
         }
 
+        // a type guard (`v is T`) is a boolean to whoever calls it as a function value (`xs.filter(isDefined)`)
+        if (isa<mlir_ts::TypePredicateType>(from) && isa<mlir_ts::BooleanType>(to))
+        {
+            return true;
+        }
+
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(to))
         {
             return optionalType.getElementType() == from;
@@ -3399,10 +3432,17 @@ namespace mlirgen
             return false;
         }
 
+        // ...each the same, or an integer the caller gives where the function takes a number (`[1, 2].filter(pos)`
+        // of a `pos(v: number)`: the literal's elements are s32), which the adapter converts (TSLANG 167)
         auto common = std::min(srcInputs.size(), destInputs.size());
-        if (!llvm::equal(srcInputs.take_front(common), destInputs.take_front(common)))
+        for (auto index = size_t(0); index < common; index++)
         {
-            return false;
+            auto srcInput = srcInputs[index];
+            auto destInput = destInputs[index];
+            if (srcInput != destInput && !(isa<mlir_ts::NumberType>(srcInput) && isa<mlir::IntegerType>(destInput)))
+            {
+                return false;
+            }
         }
 
         for (auto extra : srcInputs.drop_front(common))
@@ -3984,9 +4024,21 @@ namespace mlirgen
             {
                 // test fun types
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                // a type guard given as a function returning boolean (`const p: (v: T) => boolean = isDef`) is taken
+                // for a match, but its result is not a boolean: called through `p`, "'ts.Call' op result type
+                // mismatch" (TSLANG 167)
+                auto guardAsBoolean = false;
+                if (auto srcFuncType = mth.GetFunctionType(valueType), destFuncType = mth.GetFunctionType(type);
+                    srcFuncType && destFuncType && srcFuncType.getNumResults() == 1 && destFuncType.getNumResults() == 1
+                    && isa<mlir_ts::TypePredicateType>(srcFuncType.getResult(0))
+                    && isa<mlir_ts::BooleanType>(destFuncType.getResult(0)))
+                {
+                    guardAsBoolean = true;
+                }
+
                 // fewer parameters, more optional ones, a result given as `void` (`let f: () => void = n`) or
                 // widened (`() => string` as `() => string | number`): adaptableSignature
-                if (test.result == MatchResultType::NotMatchArgCount
+                if (guardAsBoolean || test.result == MatchResultType::NotMatchArgCount
                     || test.result == MatchResultType::NotMatchResultCount
                     || test.result == MatchResultType::NotMatchResult)
                 {

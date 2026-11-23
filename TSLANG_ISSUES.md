@@ -2641,3 +2641,33 @@ Still open, looked at:
 - -mm=rc: a class object whose last reference is an `object` is freed without its fields (165).
 
 Tests `00tslang_issue_166.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_166_unknown.ts` (gc, rc, none).
+
+167 (leftovers of 136, 142 and 166, 2026-11-23). Fixed:
+- Narrowing an optional union (`typeof x === "number"`, `v instanceof A` of an `x?: number | string`, `v?: A | B`)
+  went through a cast of the whole optional, which warned "casting from optional (undefined) value" with no
+  location (`<unknown>:0`), the narrowed value read as the union's default where it had none. The test says there is
+  a value: the union is taken out of the optional as it is and narrowed (addSafeCastStatement). `x == "a"` of such
+  an `x` (the `___union_eq_*` helper) no longer warns either.
+- A type guard given as a function value: `xs.filter(isDefined)` was "can't assign '(p0: number | undefined) =>
+  number' to '(p0: number | undefined, p1: number) => boolean'", and `const p: (v: T) => boolean = isDef` compiled
+  but a call through `p` failed ("'ts.Call' op result type mismatch"): the guard's result (`v is T`, a
+  TypePredicateType) is a boolean to the adapter now (resultWidensTo), and one is made for a guard given as a
+  function returning boolean.
+- 136: a function taking a number given where integers are passed (`[1, -2, 3].filter(pos)` of `pos(v: number)`,
+  the literal's elements s32): "can't assign '(p0: number) => boolean' to '(p0: s32, p1: number) => boolean'". The
+  adapter converts the argument (adaptableSignature).
+- An object or a class object with accessors given to a type literal's accessors (`type T = { get foo(): number;
+  set foo(v: number) }`), which are a field: an error that says so and points at an interface ("an object whose
+  'foo' is an accessor can't be given to a type literal ..."), instead of "field "foo" can't be found". A copy of
+  it could not call the setter (`t.foo = 3` would not reach it); an interface's accessors are called.
+- Looked at again, no longer failing: an object literal's generic method (`{ id<T>(v: T) { return v; } }`), a
+  class declared in two blocks of one function under one name, `await` in a `try`/`finally` of an async function.
+
+Still open, looked at:
+- A constructor type as a parameter (`make(Banana, 3)` of `make<T>(ctor: new (n: number) => T, n)`): "'new' on a
+  value of type 'new (p0: number) => any' is not supported: it is not a class" (a clear error).
+- 148 for a local, a module `unknown` under -mm=own, and -mm=rc's class object freed through `object` without its
+  fields, as 166 says.
+
+Tests `00tslang_issue_167.ts` (compile, JIT, gc, rc, none, own), crash-errors `type_literal_accessor_object.ts`,
+`type_literal_accessor_class.ts`.

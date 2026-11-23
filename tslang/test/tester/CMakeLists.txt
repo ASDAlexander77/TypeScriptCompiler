@@ -2394,7 +2394,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -4562,6 +4562,10 @@ set(crash_error_cases
     "class_value_to_union_no_member.ts|class_value_to_union_no_member\\.ts:5:1: error: type 'Store' can't be given for 'A \\| B': it is none of the union's types"
     # a field given an enum itself (TSLANG 103, 165): typed as one of its members, `f.Hello2.World2` did not resolve
     "class_field_enum_itself.ts|class_field_enum_itself\\.ts:2:11: error: field 'Hello2' can't hold the enum 'Hello1' itself"
+    # an object or a class object with accessors given to a type literal's accessors, which are a field: a copy would
+    # not call the setter (TSLANG 167; it was "field "foo" can't be found")
+    "type_literal_accessor_object.ts|type_literal_accessor_object\\.ts:4:18: error: an object whose 'foo' is an accessor can't be given to a type literal"
+    "type_literal_accessor_class.ts|type_literal_accessor_class\\.ts:3:32: error: 'C' can't be given to a type literal, where its accessor 'foo' is a field"
     # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
     # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
     "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export =' is not supported"
