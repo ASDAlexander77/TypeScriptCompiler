@@ -1471,7 +1471,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
         auto isTaggedUnion = [&](mlir::Type type) {
             auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type);
             return unionType && MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions).isUnionTypeNeedsTag(loc, unionType)
-                && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType);
+                && !MLIRTypeHelper::isTaglessUnion(unionType, op);
         };
 
         if (isTaggedUnion(op.getIn().getType()))
@@ -4060,7 +4060,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
         // shapes told apart by their first field have no tag: the value is the member's bytes, in the largest's room
         if (mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getType()))
-            && MLIRTypeHelper::isFirstFieldDiscriminatedUnion(cast<mlir_ts::UnionType>(op.getType())))
+            && MLIRTypeHelper::isTaglessUnion(cast<mlir_ts::UnionType>(op.getType()), op))
         {
             auto casted = castLogic.castLLVMTypes(in, in.getType(), resType, resType, /*sizesMayDiffer=*/true);
             if (!casted)
@@ -4121,7 +4121,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
 
         bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()));
         // shapes told apart by their first field have no tag: the value is the member's bytes
-        if (needTag && MLIRTypeHelper::isFirstFieldDiscriminatedUnion(cast<mlir_ts::UnionType>(op.getIn().getType())))
+        if (needTag && MLIRTypeHelper::isTaglessUnion(cast<mlir_ts::UnionType>(op.getIn().getType()), op))
         {
             CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
             auto valueType = tch.convertType(op.getType());
@@ -4191,6 +4191,26 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
             // the tag of the member its first field names: that member's descriptor, null when it names none
             DiscriminatedUnionLogic dul(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
             auto index = dul.memberIndexOfValue(unionType, transformed.getIn());
+
+            TypeHelper th(rewriter);
+            TypeOfOpHelper toh(rewriter);
+            auto tagType = tch.convertType(op.getType());
+            mlir::Value tag = rewriter.create<LLVM::ZeroOp>(loc, tagType);
+            for (auto [memberIndex, member] : llvm::enumerate(unionType.getTypes()))
+            {
+                auto descriptor = rewriter.create<mlir_ts::DialectCastOp>(loc, tagType, toh.typeDescriptorValue(loc, member));
+                auto thisIndex = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)memberIndex));
+                auto isMember = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, index, thisIndex);
+                tag = rewriter.create<LLVM::SelectOp>(loc, isMember, descriptor, tag);
+            }
+
+            rewriter.replaceOp(op, ValueRange{tag});
+        }
+        else if (needTag && MLIRTypeHelper::isClassesOnlyUnion(unionType, op))
+        {
+            // the tag of the class the object says it is (null's when it is null)
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            auto index = orl.classUnionMemberIndex(unionType, transformed.getIn());
 
             TypeHelper th(rewriter);
             TypeOfOpHelper toh(rewriter);
@@ -9820,6 +9840,12 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         MLIRTypeHelper mth(m.getContext(), compileOptions);
 
         bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
+
+        // a union of classes is the object's pointer alone: the class is asked of the object
+        if (needTag && MLIRTypeHelper::isClassesOnlyUnion(type, m.getOperation()))
+        {
+            return mlir::Type(th.getPtrType());
+        }
 
         // With a tag, the value field is padding-free storage as large as the largest member
         // (packed words plus a byte tail, see getUnionStorageType), not that member's struct

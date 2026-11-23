@@ -158,6 +158,11 @@
 // routine of the base (OwnershipRoutineLogic) compares an object's vtable with each subclass's and
 // releases the fields of the class it is, not only the base's (rc and own).
 #define CLASS_BASES_ATTR_NAME "ts.class_bases"
+// The classes the module knows (its own and those it imports or declares) whose objects can't say which class they
+// are: a @cpp class (a C++ vtable), a @value or a static one (no RTTI). A union of classes is stored as the object's
+// pointer alone, the class asked of the object (`.instanceOf`), unless one of these is among them (user ruling
+// 2026-11-23).
+#define CLASSES_WITHOUT_RTTI_ATTR_NAME "ts.classes_without_rtti"
 
 // Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
 // `captured = true` only because that is how a variable asks to be allocated in the heap, and

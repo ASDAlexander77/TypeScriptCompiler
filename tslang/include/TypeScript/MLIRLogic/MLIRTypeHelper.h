@@ -2715,6 +2715,50 @@ class MLIRTypeHelper
         return true;
     }
 
+    // A union of classes, null perhaps among them (`A | B | null`), every one able to say which it is: stored as the
+    // object's pointer alone, the class asked of the object (`.instanceOf`) where the tag is read (user ruling
+    // 2026-11-23). Not one with a class of CLASSES_WITHOUT_RTTI_ATTR_NAME in it. MLIRGen still sees a tagged union.
+    static bool isClassesOnlyUnion(mlir_ts::UnionType unionType, mlir::Operation *inModule)
+    {
+        auto module = inModule ? (mlir::isa<mlir::ModuleOp>(inModule) ? mlir::cast<mlir::ModuleOp>(inModule)
+                                                                     : inModule->getParentOfType<mlir::ModuleOp>())
+                               : mlir::ModuleOp();
+        auto withoutRtti = module ? module->getAttrOfType<mlir::ArrayAttr>(CLASSES_WITHOUT_RTTI_ATTR_NAME) : mlir::ArrayAttr();
+
+        auto classes = 0;
+        for (auto member : unionType.getTypes())
+        {
+            if (isa<mlir_ts::NullType>(member))
+            {
+                continue;
+            }
+
+            auto classType = dyn_cast<mlir_ts::ClassType>(member);
+            if (!classType)
+            {
+                return false;
+            }
+
+            if (withoutRtti && llvm::any_of(withoutRtti, [&](mlir::Attribute attr) {
+                    auto other = dyn_cast<mlir_ts::ClassType>(mlir::cast<mlir::TypeAttr>(attr).getValue());
+                    return other && other.getName() == classType.getName();
+                }))
+            {
+                return false;
+            }
+
+            classes++;
+        }
+
+        return classes >= 2;
+    }
+
+    // stored without a tag of its own (isFirstFieldDiscriminatedUnion, isClassesOnlyUnion)
+    static bool isTaglessUnion(mlir_ts::UnionType unionType, mlir::Operation *inModule)
+    {
+        return isFirstFieldDiscriminatedUnion(unionType) || isClassesOnlyUnion(unionType, inModule);
+    }
+
     // the type a field of `type` is stored as: a literal as its type, a union without a tag as its base
     mlir::Type fieldStorageType(mlir::Location location, mlir::Type type)
     {

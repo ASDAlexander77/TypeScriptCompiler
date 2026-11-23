@@ -1382,12 +1382,148 @@ class OwnershipRoutineLogic
         rewriter.setInsertionPointToStart(continuationBlock);
     }
 
+  public:
+    // The member of a union of classes (MLIRTypeHelper::isClassesOnlyUnion) the object `objectValue` is, as an
+    // i32: null's when it is null, else the first class - a subclass before its bases - its `.instanceOf` says
+    // it is one of (getOrCreateClassUnionMemberRoutine).
+    mlir::Value classUnionMemberIndex(mlir_ts::UnionType unionType, mlir::Value objectValue)
+    {
+        auto loc = op->getLoc();
+        auto name = getOrCreateClassUnionMemberRoutine(unionType);
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        auto funcOp = LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name);
+        auto callOp = rewriter.create<LLVM::CallOp>(loc, funcOp, ValueRange{objectValue});
+        return callOp.getResult();
+    }
+
+    std::string getOrCreateClassUnionMemberRoutine(mlir_ts::UnionType unionType)
+    {
+        std::stringstream nameStream;
+        nameStream << "tsunm_" << MLIRHelper::hashOfType(unionType);
+        auto name = nameStream.str();
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (LLVMGlobalsIndex::lookupOwnSymbolAs<LLVM::LLVMFuncOp>(compileOptions, parentModule, name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto i32Type = th.getI32Type();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = LLVMGlobalsIndex::createSymbol<LLVM::LLVMFuncOp>(compileOptions, rewriter,
+            loc, name, th.getFunctionType(i32Type, {ptrTy}), LLVM::Linkage::Internal);
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        auto object = entryBlock->getArgument(0);
+
+        auto indexOf = [&](mlir::Type type) {
+            auto types = unionType.getTypes();
+            auto it = llvm::find(types, type);
+            return it == types.end() ? -1 : (int32_t)(it - types.begin());
+        };
+
+        auto returnIndex = [&](int32_t index) {
+            auto value = rewriter.create<LLVM::ConstantOp>(loc, i32Type, rewriter.getI32IntegerAttr(index));
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{value});
+        };
+
+        // a subclass before its bases: an object of C extending B is a B too
+        llvm::SmallVector<mlir_ts::ClassType> classes;
+        for (auto member : unionType.getTypes())
+        {
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(member))
+            {
+                classes.push_back(classType);
+            }
+        }
+
+        // (how many bases each has, CLASS_BASES_ATTR_NAME)
+        auto bases = parentModule->getAttrOfType<mlir::ArrayAttr>(CLASS_BASES_ATTR_NAME);
+        auto depthOf = [&](mlir_ts::ClassType classType) {
+            auto depth = 0;
+            for (auto found = true; found && bases && depth < 64;)
+            {
+                found = false;
+                for (auto entry : bases.getAsRange<mlir::ArrayAttr>())
+                {
+                    auto sub = dyn_cast<mlir_ts::ClassType>(cast<mlir::TypeAttr>(entry[0]).getValue());
+                    auto base = dyn_cast<mlir_ts::ClassType>(cast<mlir::TypeAttr>(entry[1]).getValue());
+                    if (sub && base && sub.getName() == classType.getName())
+                    {
+                        classType = base;
+                        depth++;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            return depth;
+        };
+        std::stable_sort(classes.begin(), classes.end(),
+                         [&](mlir_ts::ClassType a, mlir_ts::ClassType b) { return depthOf(a) > depthOf(b); });
+
+        // null: null's index, or none
+        rewriter.setInsertionPointToStart(entryBlock);
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrTy);
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, object, nullPtr);
+        auto *nullBlock = rewriter.createBlock(&funcOp.getBody(), funcOp.getBody().end());
+        rewriter.setInsertionPointToEnd(nullBlock);
+        returnIndex(indexOf(mlir_ts::NullType::get(rewriter.getContext())));
+
+        auto *askBlock = rewriter.createBlock(&funcOp.getBody(), funcOp.getBody().end());
+        rewriter.setInsertionPointToEnd(entryBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, isNull, nullBlock, askBlock);
+
+        // each class asked in turn through the object's vtable: its `.instanceOf` (CLASS_VTABLE_INSTANCEOF_SLOT)
+        // given the class's rtti, its full name (mlirGenCustomRTTI)
+        auto *current = askBlock;
+        for (auto classType : classes)
+        {
+            rewriter.setInsertionPointToEnd(current);
+            auto vtable = rewriter.create<LLVM::LoadOp>(loc, ptrTy, object);
+            auto slot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, ptrTy, vtable,
+                                                     ArrayRef<LLVM::GEPArg>{CLASS_VTABLE_INSTANCEOF_SLOT});
+            auto instanceOf = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slot);
+            auto rtti = ch.getOrCreateGlobalString(classType.getName().getValue().str());
+            mlir::SmallVector<mlir::Value> ops{instanceOf, object, rtti};
+            auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{th.getLLVMBoolType()}, ops);
+            callOp.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+            callOp.setOpBundleSizes({});
+
+            auto *foundBlock = rewriter.createBlock(&funcOp.getBody(), funcOp.getBody().end());
+            rewriter.setInsertionPointToEnd(foundBlock);
+            returnIndex(indexOf(classType));
+
+            auto *nextBlock = rewriter.createBlock(&funcOp.getBody(), funcOp.getBody().end());
+            rewriter.setInsertionPointToEnd(current);
+            rewriter.create<LLVM::CondBrOp>(loc, callOp.getResult(), foundBlock, nextBlock);
+            current = nextBlock;
+        }
+
+        // none says so (a class this module was never told of): the first, as a field of the union was read
+        rewriter.setInsertionPointToEnd(current);
+        returnIndex(indexOf(classes.front()));
+
+        dropDebugLocations(funcOp);
+        return name;
+    }
+
+  private:
     // Shapes told apart by their first field have no tag (DiscriminatedUnionLogic): `body` of the member the
-    // field at `slotPtr` names, the value being that member's bytes there. False for any other union.
+    // field at `slotPtr` names, the value being that member's bytes there; a union of classes likewise, of the
+    // class the object says it is (classUnionMemberIndex). False for any other union.
     bool forDiscriminatedMember(mlir::Location loc, mlir_ts::UnionType unionType, mlir::Value slotPtr,
                                 llvm::function_ref<void(mlir::Type)> body)
     {
-        if (!MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+        auto classes = MLIRTypeHelper::isClassesOnlyUnion(unionType, op);
+        if (!classes && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
         {
             return false;
         }
@@ -1395,11 +1531,18 @@ class OwnershipRoutineLogic
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
         DiscriminatedUnionLogic dul(op, rewriter, tch, loc, compileOptions);
-        auto index = dul.memberIndex(unionType, slotPtr);
+        auto index = classes
+            ? classUnionMemberIndex(unionType, rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), slotPtr).getResult())
+            : dul.memberIndex(unionType, slotPtr);
         for (auto [memberIndex, member] : llvm::enumerate(unionType.getTypes()))
         {
             auto thisIndex = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr((int32_t)memberIndex));
             auto isMember = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, index, thisIndex);
+            if (isa<mlir_ts::NullType>(member))
+            {
+                continue;
+            }
+
             emitIfTrue(isMember, [&]() { body(member); });
         }
 

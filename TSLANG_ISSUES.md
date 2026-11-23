@@ -2547,3 +2547,33 @@ Looked at, still open:
   member type, not the enum object, so `f.Hello2.World1` doesn't resolve either; `const h = Hello1` works.
 
 Tests `00tslang_issue_133.ts`, `00tslang_issue_114.ts` (compile, JIT, gc, rc, none, own).
+
+164 (112 and unions of object shapes, 2026-11-23). USER RULING: keep a tag where nothing else tells the members
+apart; none where the first field or the class does. Fixed:
+- A field of a tagged union of shapes, classes or interfaces is read from the member the value holds (the tag; a
+  class asked by instanceof). It was read as the first member: a field at another position read garbage silently
+  (`s.kind` of `{ size; kind: "sq" } | { r; name; kind: "ci" }` printed null).
+- 112: shapes with the same field names whose fields are stored differently (`label: string` vs `label: object`)
+  were merged into one shape stored as neither; they stay a tagged union. An object literal without an optional
+  field goes to the member it fits.
+- `v instanceof A` of `IA | IB` asks the interface it holds (it said false), the narrowed class is that interface's
+  object, `<IB>v` is the interface (the compiler crashed).
+- No tag where the data tells: shapes whose first field, of one name and type in each, is a literal of its own are
+  stored as the largest shape (DiscriminatedUnionLogic reads the field); a union of classes (null perhaps among
+  them) is the object's pointer, the class asked of `.instanceOf` (tsunm_ routine), unless a @cpp, @value or static
+  class is in it (CLASSES_WITHOUT_RTTI_ATTR_NAME). A layout change: the default library is built again
+  (`DataView.source` is `ArrayBuffer | SharedArrayBuffer`; an old library's `DataView..size` clashes at link).
+
+Still open:
+- `<object>v` of a class or an object literal is the address of a stack slot holding the value
+  (CastLogicHelper::castToOpaqueType): kept past its function under rc or own (`return l` of `object | string`) it
+  crashes. 00tslang_issue_112.ts runs under gc and none for that.
+- -mm=own: an object field read through a union of shapes can't be returned (a value merged from branches); an
+  object literal without an optional field given to a union of shapes is refused (its fields borrowed from the
+  literal's record); an interface narrowed to a class is refused ("kept here"), as for one interface.
+- A subclass object given to a union of its bases (`return new Big()` for `Sq | Ci`, Big extends Ci) is refused:
+  "none of the union's types".
+- `<Shape>a` of an `any` holding a union of shapes: "can't be stored".
+
+Tests `00union_shape_reads.ts`, `00union_first_field_tag.ts`, `00union_classes_no_tag.ts` (gc, rc, none, own),
+`00union_interfaces_instanceof.ts` (gc, rc, none), `00tslang_issue_112.ts` (gc, none).
