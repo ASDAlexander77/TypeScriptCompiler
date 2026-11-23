@@ -2671,3 +2671,33 @@ Still open, looked at:
 
 Tests `00tslang_issue_167.ts` (compile, JIT, gc, rc, none, own), crash-errors `type_literal_accessor_object.ts`,
 `type_literal_accessor_class.ts`.
+
+168 (leftovers of 148, 166 and 167, 2026-11-23). Fixed:
+- A class given to a generic constructor type (`make(Banana, 3)` of `make<T>(ctor: new (n: number) => T, n)`,
+  `create<T>(c: new () => T)`, `T extends Animal`): T is the class's instance type (inferType). With T known, the
+  parameter is the class value `typeof Banana` (getConstructorType), which `new ctor(n)` makes one of, a subclass
+  too. It was "'new' on a value of type 'new (p0: number) => any' is not supported: it is not a class". An object
+  given for it (`make(new Banana(1), 3)`) is an error, as before.
+- 148 for a local: a local with a type written whose initializer has a function reading it (`const c: I = { m() {
+  return c.v + 1; } }`, an arrow field `next: () => n.name`) is declared first and then given its initializer, so
+  the function captures the variable. It was "can't resolve name: c". A function declaring the name itself (a
+  parameter, a local) reads its own and changes nothing. Such a `const` refuses another assignment ("can't assign
+  to 'c': it is a constant"). A type literal's type still says to use an interface (the object's methods would
+  lose what they capture). Under -mm=own it is refused, as `let c: I; c = { ... }` is: the object would hold a
+  closure that holds the object. Under -mm=rc that cycle is never freed (166 MB at 3M), as for the declared form.
+- -mm=own: a module variable of type `unknown` with a value (`let u: unknown = 7.5`, `= "a" + 1`, `= { a: 1 }`)
+  was "the initializer of global 'u' takes a second reference". The initializer takes its `any` box once and gives
+  it back once; the two cancel and the box moves into the global (moveIntoGlobals).
+
+Still open, looked at:
+- An `unknown` variable owns nothing, under rc and own, so a value stored into one after its declaration (`u = "x"
+  + i`) is not kept: under -mm=rc the box is given back at the end of the statement's scope and the variable reads
+  freed memory (a module `let u: unknown;` assigned in one function and read in another after other allocations
+  crashes); under -mm=own the old box is never given back (160 MB at 3M assignments). `any` is fine in both.
+  Counting `unknown` as an owner needs the one value that is no box handled first: a class given to a construct
+  signature with no return type (`f: { new(x: number) }` of `{ f: B }`, newWithSpread.ts) returns B's object as
+  `unknown` as it is, with no adapter that boxes it.
+- `typeof` of an `unknown` or `any` holding an integer literal is "s32" (integer literals are s32), not "number".
+
+Tests `00tslang_issue_168.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_168_self.ts` (gc, rc, none),
+crash-errors `const_declared_first_assigned.ts`.

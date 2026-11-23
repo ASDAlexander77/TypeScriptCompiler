@@ -9505,6 +9505,17 @@ class MLIRGenImpl
                                           genContext);
         }
 
+        // a `const` declared before its initializer (TSLANG 148 for a local) is a variable assigned once
+        if (leftExpression == SyntaxKind::Identifier)
+        {
+            auto name = MLIRHelper::getName(leftExpression.as<Identifier>());
+            if (auto declared = symbolTable.lookup(name); declared.second && declared.second->getConstAssignedOnce())
+            {
+                emitError(location) << "can't assign to '" << name << "': it is a constant";
+                return mlir::failure();
+            }
+        }
+
         auto result = leftExpression == SyntaxKind::PropertyAccessExpression
             ? mlirGenAssignedPropertyAccess(leftExpression.as<PropertyAccessExpression>(), genContext)
             : mlirGen(leftExpression, genContext);

@@ -360,6 +360,43 @@ namespace own_signature
                     continue;
                 }
 
+                // a fresh `any` box the initializer takes once and gives back once, its one other use its cast to
+                // `unknown`, the global's value (`let u: unknown = 7`): the take and the give-back cancel, and the
+                // box moves into the global
+                if (retained == 1 && releasedOnce == 1 && released && isFresh(value) &&
+                    mlir::isa<mlir_ts::UnknownType>(globalOp.getType()))
+                {
+                    mlir_ts::ReleaseOp releaseOp;
+                    auto movesThroughView = true;
+                    for (auto &use : value.getUses())
+                    {
+                        auto *user = use.getOwner();
+                        if (user == retainOp.getOperation())
+                        {
+                            continue;
+                        }
+
+                        if (auto userReleaseOp = mlir::dyn_cast<mlir_ts::ReleaseOp>(user))
+                        {
+                            releaseOp = userReleaseOp;
+                            continue;
+                        }
+
+                        // `any` seen as `unknown` is the same box (the cast lowers to nothing)
+                        auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                        auto isUnknownOfAny = castOp && mlir::isa<mlir_ts::AnyType>(castOp.getIn().getType()) &&
+                                              mlir::isa<mlir_ts::UnknownType>(castOp.getType());
+                        movesThroughView = movesThroughView && isUnknownOfAny && movesIntoResult(castOp.getResult());
+                    }
+
+                    if (releaseOp && movesThroughView)
+                    {
+                        releaseOp.erase();
+                        retainOp.erase();
+                        continue;
+                    }
+                }
+
                 retainOp.emitError("the initializer of global '")
                     << globalOp.getSymName() << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
                 signalPassFailure();
