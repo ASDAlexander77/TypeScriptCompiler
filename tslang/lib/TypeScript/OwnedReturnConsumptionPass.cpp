@@ -362,12 +362,15 @@ class OwnedReturnConsumptionPass
     // value is a local's own (`[o].length`, `[o][0].x`): an owning `let`, or a `const` folded into the value it was
     // given (OWNED_RESULT_NAMED_ATTR_NAME), which neither borrowing array takes - unless it is given to a call
     // (`g([o])`, borrowed by classifyArgumentArrays).
+    // (The same value given more than once, `f([mk(2), o, o])`, takes a retain each time: plain own refuses the second
+    // owner, and --own-fallback=count keeps each retain, which the literal's release gives back one by one.)
     static bool isTakenElement(mlir_ts::CreateArrayOp arrayOp, mlir::Value element)
     {
-        return llvm::count(arrayOp->getOperands(), element) == 1 &&
-               llvm::any_of(element.getUsers(), [&](mlir::Operation *user) {
-                   return mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp);
-               });
+        auto retains = llvm::count_if(element.getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp);
+        });
+        auto given = llvm::count(arrayOp->getOperands(), element);
+        return retains > 0 && retains >= given;
     }
 
     static bool isLocalsOwn(mlir::Value element)
@@ -921,6 +924,56 @@ class OwnedReturnConsumptionPass
         return true;
     }
 
+    // Does `value` stay in `block` but for its terminator? Seen through the casts that only widen it, and through a
+    // conditional expression in `block` (or in a statement of it) whose branch yields it: that conditional's result
+    // is the value then. `leaves` is set when `block`'s terminator takes it; false for any other terminator.
+    static bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
+    {
+        if (depth > 64)
+        {
+            return false;
+        }
+
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
+            {
+                if (!leavesBlockBy(user->getResult(0), block, leaves, depth + 1))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!user->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                continue;
+            }
+
+            if (user == block->getTerminator())
+            {
+                leaves = true;
+                continue;
+            }
+
+            auto handedOn = handedOnByConditional(user, value);
+            if (handedOn.empty() || !block->findAncestorOpInBlock(*user->getParentOp()))
+            {
+                return false;
+            }
+
+            for (auto result : handedOn)
+            {
+                if (!leavesBlockBy(result, block, leaves, depth + 1))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
     // Is a literal only read, but for an element its block - a branch of a conditional expression - yields? (seen
     // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
     // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
@@ -935,14 +988,37 @@ class OwnedReturnConsumptionPass
 
         auto *resultOp = op->getBlock()->getTerminator();
         levels = 1;
-        for (auto conditional = ifOp; llvm::any_of(conditional->getResults(), [&](mlir::Value result) { return leavesUncounted(result); });)
+        for (auto conditional = ifOp;;)
         {
-            auto outer = conditionalOf(conditional->getBlock());
-            auto *outerResultOp = conditional->getBlock()->getTerminator();
-            if (!outer || levels >= 4 ||
-                !llvm::all_of(conditional->getResults(), [&](mlir::Value result) { return leavesOnlyBy(result, outerResultOp); }))
+            // where the conditional's results go on to leave its block: by its block's own terminator only - another
+            // conditional's branch reading it (`const q = d ? o : null`, `o ? o : null`) hands it on to that one's
+            // result, in the same block. Any other way out (a loop's condition, a `return`) and it is not held.
+            auto leaves = false;
+            auto other = false;
+            for (auto result : conditional->getResults())
+            {
+                if (!leavesBlockBy(result, conditional->getBlock(), leaves))
+                {
+                    other = true;
+                }
+            }
+
+            if (other)
             {
                 return false;
+            }
+
+            // held to the end of the block the outermost conditional around it is in (threading the literal out is
+            // one result per level): through a branch that hands the result on, and any other around it too
+            auto outer = conditionalOf(conditional->getBlock());
+            if (!outer)
+            {
+                if (leaves)
+                {
+                    return false;
+                }
+
+                break;
             }
 
             conditional = outer;
@@ -2987,9 +3063,9 @@ class OwnedReturnConsumptionPass
                 }
 
                 // `n = b ? h : h2` stores what the branch hands on
-                if (auto handedOn = handedOnByConditional(user))
+                if (auto handedOn = handedOnByConditional(user, value); !handedOn.empty())
                 {
-                    values.push_back(handedOn);
+                    values.append(handedOn.begin(), handedOn.end());
                     continue;
                 }
 
@@ -3101,9 +3177,9 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
-                if (auto handedOn = handedOnByConditional(user))
+                if (auto handedOn = handedOnByConditional(user, value); !handedOn.empty())
                 {
-                    values.push_back(handedOn);
+                    values.append(handedOn.begin(), handedOn.end());
                     continue;
                 }
 
@@ -3143,8 +3219,8 @@ class OwnedReturnConsumptionPass
             auto value = values.pop_back_val();
             for (auto *user : value.getUsers())
             {
-                auto handedOn = handedOnByConditional(user);
-                if ((user->hasTrait<mlir::OpTrait::IsTerminator>() && !handedOn) || !runsWithinBlock(user, block))
+                auto handedOn = handedOnByConditional(user, value);
+                if ((user->hasTrait<mlir::OpTrait::IsTerminator>() && handedOn.empty()) || !runsWithinBlock(user, block))
                 {
                     return false;
                 }
@@ -3160,27 +3236,34 @@ class OwnedReturnConsumptionPass
                     return false;
                 }
 
-                if (handedOn)
-                {
-                    values.push_back(handedOn);
-                }
+                values.append(handedOn.begin(), handedOn.end());
             }
         }
 
         return true;
     }
 
-    // The value a branch of a conditional expression hands on: the result of the `ts.If` whose
-    // branch this `ts.Result` ends, when that `ts.If` has the one result. None for any other user.
-    static mlir::Value handedOnByConditional(mlir::Operation *user)
+    // What a branch of a conditional expression hands `value` on as: the result of the `ts.If` whose branch this
+    // `ts.Result` ends, at each position the branch yields `value` in - a conditional may yield more than one value
+    // (holdPastConditional adds the literal its branch holds). None for any other user.
+    static llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
     {
-        if (!mlir::isa<mlir_ts::ResultOp>(user) || user->getNumOperands() != 1)
+        llvm::SmallVector<mlir::Value, 1> handedOn;
+        auto ifOp = mlir::isa<mlir_ts::ResultOp>(user) ? mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp()) : mlir_ts::IfOp();
+        if (!ifOp || ifOp.getNumResults() != user->getNumOperands())
         {
-            return mlir::Value();
+            return handedOn;
         }
 
-        auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp());
-        return ifOp && ifOp.getNumResults() == 1 ? ifOp.getResult(0) : mlir::Value();
+        for (auto &operand : user->getOpOperands())
+        {
+            if (operand.get() == value)
+            {
+                handedOn.push_back(ifOp.getResult(operand.getOperandNumber()));
+            }
+        }
+
+        return handedOn;
     }
 
     // Where the stretch of `op`'s block that a release of it may cover ends: at the first op after
@@ -3316,7 +3399,7 @@ class OwnedReturnConsumptionPass
             }
 
             // `yield b ? h : h2` stores what the branch hands on
-            if (auto handedOn = handedOnByConditional(user); handedOn && escapesThroughStore(handedOn))
+            if (llvm::any_of(handedOnByConditional(user, value), [](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
             {
                 return true;
             }

@@ -305,7 +305,11 @@ read while the literal lives, and keeping it past that is an error. The same hol
   freeing it gives the count back;
 - a literal whose element a `?:` branch yields (`const o = c ? [mk(i)][0] : null`): it is held past the
   conditional, as a `const` before it would be, and freed at the end of the block the conditional is
-  in. `o` borrows it, so it can be read in that block but not stored, returned or captured.
+  in (the outermost one, when it is inside another's branch), and on the way to a `catch` of the same
+  function. `o` borrows it, so it can be read in that block - by another conditional too
+  (`d ? o : null`) - but not stored, returned or captured. When the other branch makes a new object
+  (`c ? [mk(i)][0] : mk(2)`), the result would own its value on one path and borrow it on the other:
+  that is refused, as before.
 
 A string passed to a parameter the callee keeps is not copied, because the callers rely on that
 fact: `new Person(p.name)` is an error. Pass a string you give up, or a fresh one

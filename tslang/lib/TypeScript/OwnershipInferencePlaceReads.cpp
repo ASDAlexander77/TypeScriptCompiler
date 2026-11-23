@@ -819,7 +819,8 @@ namespace own_inference
             }
             else if (kind == Chain::Owned)
             {
-                // An owned value handed on to a merge whose every way in brings a new value or none (isFreshMerge)
+                // An owned value handed on to a merge whose every way in brings that same value (through its views) or
+                // no block at all - null, undefined (mergeOfOwnerOrNone)
                 // lasts as long as the merge: its ends are the merge's. A literal held past the conditional
                 // expression that reads an element out of it (`c ? [mk(i)][0] : null`, OwnedReturnConsumptionPass's
                 // holdPastConditional) is merged so with an undefined from the other branch, and given back at
