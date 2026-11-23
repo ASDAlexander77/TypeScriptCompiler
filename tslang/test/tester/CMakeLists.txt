@@ -5585,7 +5585,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_param_capture_copies own_swap_local_field own_closure_keeps_param own_chain_returns_this own_callback_fewer_params
                  own_optional_literal_result own_merge_moves_local own_global_merge_initializer own_merge_of_constants
                  own_moved_some_paths_break own_literal_let_fields own_select_two_locals own_literal_array_union_fields own_record_nested_tuple own_global_record_assigned own_borrowing_record_let_field own_record_literal_nested_pushed own_value_record_returned_let own_method_value_moves own_method_value_reassigned own_subclass_fields_released own_try_let_borrows own_switch_narrowed_param own_logical_assignment own_subclass_fields_freed own_array_view_borrows own_any_round_trip own_opaque_borrows own_ternary_subclasses_to_base own_new_through_value_union own_param_borrowed_or_moved own_param_borrowing_let own_param_element_then_borrow own_field_taken_through_copy own_moved_then_continue own_param_moved_then_borrow_in_loop
-                 own_literal_temp_indexed own_literal_temp_argument own_literal_temp_let_reassigned own_literal_temp_reads)
+                 own_literal_temp_indexed own_literal_temp_argument own_literal_temp_let_reassigned own_literal_temp_reads
+                 own_literal_temp_nested own_literal_temp_mixed own_literal_temp_conditional own_literal_temp_conditional_nested)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -5668,6 +5669,42 @@ add_test(NAME test-own-literal-temp-argument-released
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_argument.ts")
 set_tests_properties(test-own-literal-temp-argument-released
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...a literal nested in one (`[[mk(i)], [mk(2)]][0][0]`), moved into it; one given a local's object as well as
+# new ones, or only locals' objects and read (`g([mk(i + 4), o])`, `[o].length`); one whose element a conditional
+# expression's branch yields (`c ? [mk(i)][0] : null`), held past the conditional. The same programs under rc and
+# gc (the nested conditional under gc only: rc crashes on it, before as after).
+foreach(literal_temp_mm rc gc)
+    foreach(literal_temp_test own_literal_temp_nested own_literal_temp_mixed own_literal_temp_conditional)
+        tslang_add_test(NAME test-jit-${literal_temp_mm}-${literal_temp_test} COMMAND test-runner -jit -mm=${literal_temp_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${literal_temp_test}.ts")
+    endforeach()
+endforeach()
+tslang_add_test(NAME test-jit-gc-own_literal_temp_conditional_nested COMMAND test-runner -jit -mm=gc "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_conditional_nested.ts")
+# ...the IR: a `ts.Release` of the outer literal of arrays, of a literal holding a local's object, of the literal a
+# conditional yields as an optional (none of each before)
+add_test(NAME test-own-literal-temp-nested-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_nested.ts")
+set_tests_properties(test-own-literal-temp-nested-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+add_test(NAME test-own-literal-temp-mixed-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_mixed.ts")
+set_tests_properties(test-own-literal-temp-mixed-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+add_test(NAME test-own-literal-temp-conditional-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_conditional.ts")
+set_tests_properties(test-own-literal-temp-conditional-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]optional<!ts[.]array<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+add_test(NAME test-own-literal-temp-conditional-nested-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_literal_temp_conditional_nested.ts")
+set_tests_properties(test-own-literal-temp-conditional-nested-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]optional<!ts[.]array<!ts[.]array<!ts[.]class<@N"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 
 # A global whose one store runs in a loop is mortal (spec 25): its stores are not marked, so each
@@ -6041,7 +6078,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
                       own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted
-                      own_fallback_literal_temp_counted)
+                      own_fallback_literal_temp_counted own_fallback_literal_temp_mixed_counted)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
