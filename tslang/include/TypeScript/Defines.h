@@ -66,6 +66,11 @@
 // array and not them.
 #define OWN_SHALLOW_RELEASE_ATTR_NAME "__own_shallow_release"
 
+// -mm=own --own-fallback=count only, set by OwnershipInferencePass for the lowering. On a
+// `ts.Retain` / `ts.RetainSlot` inference kept: the object is counted from then on, an owner beyond
+// the first (own rc fallback design, section 3). A retain left behind without it is an error.
+#define OWN_COUNTED_ATTR_NAME "__own_counted"
+
 // Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
 // instead of by retaining. The slot still releases at every scope exit - that release is what
 // gives the consumed reference back - so the pair is still balanced, but there is no
@@ -697,12 +702,31 @@
 // word's top bit, so the value depends on the word size: 1 << (bits - 1).
 
 // Under -mm=own a class object's header word holds no count of its own (one owner frees it), so it
-// holds the number of WeakRef<T>s to the object instead (own spec 84): the low bits up to the dead
-// bit, 1 << (bits - 2). An object freed while WeakRefs remain releases its fields and keeps its block
+// holds the number of WeakRef<T>s to the object instead (own spec 84): the low half of the bits below
+// the dead bit, 1 << (bits - 2) (the table below). An object freed while WeakRefs remain releases its fields and keeps its block
 // as a tombstone, its word the count with the dead bit set; WeakRef.deref() gives undefined for it,
 // and the last WeakRef to go frees the block (the word is then the dead bit alone). Immortal still
 // means every bit set, tested first. OwnershipRoutineLogic::emitWeakIncRef, emitWeakDecRef,
 // emitFreeOrBury.
+//
+// The word under own, whole (own rc fallback design, section 1):
+//
+//   | 64-bit word | 32-bit word | meaning                                                      |
+//   | all set     | all set     | HEAP_BLOCK_IMMORTAL, tested first                            |
+//   | 63          | 31          | shared bit (atomic changes, set by the share routine)        |
+//   | 62          | 30          | dead bit: a tombstone kept for WeakRefs                      |
+//   | 31-61       | 15-29       | extra owners: owners beyond the first, kept by               |
+//   |             |             | --own-fallback=count (a `__own_counted` retain adds one)     |
+//   | 0-30        | 0-14        | weak count                                                   |
+//
+// So 0 is one owner and no WeakRef - every block but a counted or weakly referred one - and a
+// release under own tests `word == 0` first and frees; any other word takes the slow path: immortal
+// is left alone, extra owners lose one, and with none the caller was the last owner (it destroys the
+// block, and buries it while WeakRefs remain). It is rc's count minus one: rc's first owner is
+// own's implicit one. An increment that would overflow either count makes the block immortal
+// instead (a leak, never a double free). OwnershipRoutineLogic::emitExtraIncRef,
+// emitOwnReleaseIsLast. The two counts split what is below the dead bit in equal halves:
+#define OWN_EXTRA_OWNERS_SHIFT(bits) (((bits) - 2) / 2)
 
 // Runtime type descriptor.
 //
@@ -735,7 +759,7 @@
 #define TYPE_DESCR_RETAIN 3
 // Address of the type's share routine (`Shared.share`, OwnershipRoutineLogic::getOrCreateShareRoutine),
 // on the same terms again: it sets the shared bit of every block a value whose type is only known
-// at run time reaches. Null under every model but `rc`.
+// at run time reaches. Null under every model but `rc` and `own`.
 #define TYPE_DESCR_SHARE 4
 // For a function type, the address of the adapter that calls a function of the type held in an
 // `any` - `(box: any, args: any[]) => any`, made when the function is boxed (user ruling 11-18,

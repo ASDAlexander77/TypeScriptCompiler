@@ -5926,6 +5926,197 @@ add_test(NAME test-own-string-copy-in-store-block
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
+# -mm=own --own-fallback=count: what inference refuses keeps rc's count, with a warning. Inference
+# only so far: the IR is read - the warning, how many retains are kept marked `__own_counted`, and
+# how many releases of the counted type the function under test makes (each test's counts are rc's
+# for its object; one retain too few, or a release erased or added, frees it early or leaks it).
+# Each case is test:retains:function:type:releases ("-" for no release check).
+foreach(fallback_case own_fallback_second_owner:2:link:@Node:3 own_fallback_move_overwrite:2:main:@Node:4
+                      own_fallback_fresh_second_owner:2:main:@Node:3 own_fallback_call_second_owner:2:main:@Node:3
+                      own_fallback_swap:3:swap:@Node:3 own_fallback_global_lent:1:main:@Node:2
+                      own_fallback_unwind:2:link:@Node:4 own_fallback_generator:2:-:-:-
+                      own_fallback_kept_lent:1:main:@Node:1 own_fallback_kept_call_twice:2:main:@Node:1
+                      own_fallback_kept_twice_one_call:3:main:@Node:2
+                      own_fallback_string_second_owner:2:link:ts.string:3)
+    string(REPLACE ":" ";" fallback_case "${fallback_case}")
+    list(GET fallback_case 0 fallback_test)
+    list(GET fallback_case 1 fallback_counted)
+    list(GET fallback_case 2 fallback_func)
+    list(GET fallback_case 3 fallback_released)
+    list(GET fallback_case 4 fallback_releases)
+    set(fallback_release_check)
+    if(NOT fallback_func STREQUAL "-")
+        set(fallback_release_check -DFUNC=${fallback_func} -DRELEASED=${fallback_released} -DRELEASES=${fallback_releases})
+    endif()
+    add_test(NAME test-own-fallback-ir-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=${fallback_counted}
+                     ${fallback_release_check}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# ...and what stays an error with the flag: a shape with nothing to keep (a borrow of a call's
+# result), a refusal by design (a Shared<T> in an owning union), an error about a value not counted
+# at the place of one that is, and refusals beyond tier 1: a closure that escapes with what it
+# captured still used (user ruling 11-13), a parameter its exported function's callers cannot be told
+# it keeps; and a value whose rc ops a site commits as a borrow: a view of an array read after a
+# possible free, an element of an array literal that borrows it; and an object with a tagged union's
+# field, which is never counted (nothing gives the payload an owner under own), so its second owner
+# stays an error, and a @value value whose object has a closure field (a count of the value would be
+# one of the object)
+foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_shared_union_owned
+                      own/own_fallback_uncounted_error_same_place tests/own_escaping_capture_used_after_error
+                      own/own_err_param_kept_exported own/own_fallback_view_stays_error
+                      own/own_fallback_borrowed_element_stays_error own/own_fallback_take_from_result_union_stays_error
+                      own/own_fallback_take_through_id_stays_error own/own_fallback_value_closure_stays_error)
+    get_filename_component(fallback_name "${fallback_test}" NAME)
+    add_test(NAME test-own-fallback-ir-${fallback_name}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# ...and a tuple whose kept retains are of a tagged union's type (a `T | null` field): refused at
+# its place, with own's error
+add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR -DERROR_AT=16:5
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_tuple_in_union_stays_error.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+# ...and a value put into a field of a record built by value (the record's retain is erased, its
+# release goes through the field), and a captured `const` given a parameter's value (a group with a
+# captured local is not counted; was a lowering failure at <unknown>), and a read whose store's release the dry run gave to
+# another value's erased retain (`p.v = p.v` twice): own's errors, at their places
+foreach(fallback_case own_fallback_record_field_stays_error:15:20 own_fallback_captured_let_stays_error:17:15
+                      own_fallback_self_assign_stays_error:13:5)
+    string(REPLACE ":" ";" fallback_case "${fallback_case}")
+    list(GET fallback_case 0 fallback_test)
+    list(GET fallback_case 1 fallback_line)
+    list(GET fallback_case 2 fallback_column)
+    add_test(NAME test-own-fallback-ir-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR -DERROR_AT=${fallback_line}:${fallback_column}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# ...and each counted program run: the header word's extra owners (Defines.h, beside
+# HEAP_BLOCK_IMMORTAL) keep the object until its last owner lets go, so it prints what it prints
+# under gc. The ones that throw are also built ahead of time, with the overwrite of a holder; the
+# WeakRef to a counted object goes when its last owner does; a counted parameter kept twice and
+# then thrown through gives its share back on the unwind (a throw with no `finally` of its own); a
+# counted object an array lets go of by pop, splice, a shorter length or its release stays with its
+# other owner.
+foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_fallback_fresh_second_owner
+                      own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
+                      own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
+                      own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
+                      own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
+                      own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
+                      own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
+                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted)
+    add_test(NAME test-own-fallback-run-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# ...and what own accepts without the flag it accepts with it, printing what gc prints: a tagged
+# union taken out of a result nothing else holds (a callee never returns a counted object with one).
+# A `let` own repairs (its fresh values into a holder, TSLANG 66) is not counted either: counted and
+# split, its block was freed while the array still held it (fuzz 1122083).
+foreach(fallback_test own_fallback_take_from_fresh_union own_fallback_let_holder_same own_fallback_local_let_walk_same
+                      own_fallback_kept_string_copy_same)
+    add_test(NAME test-own-fallback-same-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=SAME
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# A counted object is never put on the stack: its kept retain is an escape (StackPromotionPass).
+add_test(NAME test-own-fallback-ir-own_fallback_not_promoted
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=1 -DHEAP_AT=11:13
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_not_promoted.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+foreach(fallback_test own_fallback_move_overwrite own_fallback_unwind own_fallback_unwind_kept_param)
+    add_test(NAME test-own-fallback-run-exe-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DEXE=1
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib" "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
+# A counted object and its one-owner child, counted by two threads at once: the share routine (built
+# under own too, SHARE) marks every block the thread's start reaches, so their counts change
+# atomically. Run by the JIT and built ahead of time; each run races 20 times. The thread is started
+# as Thread.spawn starts one, by the C runtime on Windows and pthread_create elsewhere.
+if(WIN32)
+    set(fallback_thread_test "own_fallback_thread")
+else()
+    set(fallback_thread_test "own_fallback_thread_pthread")
+endif()
+add_test(NAME test-own-fallback-run-own_fallback_thread
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DSHARE=1
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_thread_test}.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+add_test(NAME test-own-fallback-run-exe-own_fallback_thread
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN -DEXE=1
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib" "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_thread_test}.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+# ...and the child's header word after each race, own only: its shared bit alone, no extra owner left
+# over (a count lost to the other thread) and no allocator's word (a child freed while held)
+if(WIN32)
+    add_test(NAME test-own-fallback-run-own_fallback_thread_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_thread_word.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_thread_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+    # ...and a child that reaches the other thread only through a global @atomic object: the store
+    # into its field is the share point (the field barrier, under own as under rc)
+    add_test(NAME test-own-fallback-run-own_fallback_atomic_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_atomic_word.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_atomic_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+else()
+    add_test(NAME test-own-fallback-run-own_fallback_thread_word
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own --own-fallback=count
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_thread_word_pthread.ts")
+    set_tests_properties(test-own-fallback-run-own_fallback_thread_word PROPERTIES
+                         PASS_REGULAR_EXPRESSION "done[.]"
+                         FAIL_REGULAR_EXPRESSION "error:|assertion failed")
+endif()
+# A block shared on one thread, without the flag: the share routine marks it, and its one owner's
+# release still destroys it, once - each shape, and a pop through ts.TakeOutOfField
+foreach(share_mm gc own)
+    tslang_add_test(NAME test-jit-${share_mm}-own_share_release COMMAND test-runner -jit -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_share_release.ts")
+    tslang_add_test(NAME test-compile-${share_mm}-own_share_release COMMAND test-runner -mm=${share_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_share_release.ts")
+endforeach()
+# The release under own tests the header word against 0 first (one owner: free at once), with or
+# without the flag; an array gives its elements back through it on pop, splice, a shorter length and
+# its own release.
+foreach(array_release_mm gc rc own)
+    tslang_add_test(NAME test-jit-${array_release_mm}-own_fallback_array_release COMMAND test-runner -jit -mm=${array_release_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts")
+    tslang_add_test(NAME test-compile-${array_release_mm}-own_fallback_array_release COMMAND test-runner -mm=${array_release_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts")
+endforeach()
+add_test(NAME test-own-release-shape
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_array_release.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-release-shape.cmake")
+# A field taken out of a call's own result is a ts.TakeOutOfField without the flag too: a callee built
+# with it may return a counted object. The IR has the op; the program runs under gc and own.
+add_test(NAME test-own-take-out-shape
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-take-out-shape.cmake")
+foreach(take_mm gc own)
+    tslang_add_test(NAME test-jit-${take_mm}-own_take_from_result COMMAND test-runner -jit -mm=${take_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts")
+    tslang_add_test(NAME test-compile-${take_mm}-own_take_from_result COMMAND test-runner -mm=${take_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_take_from_result.ts")
+endforeach()
+# A full weak count on a tombstone stays: no WeakRef overflow makes it immortal (alive to deref()),
+# none takes it down under a WeakRef left to it. Read as LLVM IR, 64-bit and wasm32; run under gc and
+# own (rc has no WeakRef).
+add_test(NAME test-own-weak-count-shape
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_count_saturates.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-weak-count-shape.cmake")
+foreach(weak_count_mm gc own)
+    tslang_add_test(NAME test-jit-${weak_count_mm}-own_weak_count_saturates COMMAND test-runner -jit -mm=${weak_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_weak_count_saturates.ts")
+endforeach()
+
 # A local declared in a generator's loop gives back what the last turn stored in its field. The
 # program means the same under every model; no run can see the leak, so the IR is read.
 foreach(loop_local_mm rc none gc)

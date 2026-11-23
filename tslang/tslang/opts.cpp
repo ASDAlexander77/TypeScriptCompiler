@@ -18,6 +18,7 @@ extern cl::opt<std::string> inputFilename;
 extern cl::opt<enum Action> emitAction;
 extern cl::opt<enum MemoryModel> memoryModelOpt;
 extern cl::opt<bool> atomicRCOpt;
+extern cl::opt<OwnFallback> ownFallbackOpt;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
@@ -49,6 +50,7 @@ CompileOptions prepareOptions()
     compileOptions.isJit = emitAction.getValue() == Action::RunJIT;
     compileOptions.memoryModel = memoryModelOpt.getValue();
     compileOptions.atomicRC = atomicRCOpt.getValue();
+    compileOptions.ownFallback = ownFallbackOpt.getValue();
     compileOptions.enableBuiltins = enableBuiltins.getValue();
     compileOptions.noDefaultLib = noDefaultLib.getValue();
     compileOptions.disableWarnings = disableWarnings.getValue();

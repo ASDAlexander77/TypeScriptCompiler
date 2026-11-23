@@ -754,7 +754,8 @@ def TypeScript_TakeOutOfFieldOp : TypeScript_Op<"TakeOutOfField"> {
     A mortal `object` is freed by that release, so its field is emptied here and the release frees
     nothing of the value. An immortal `object` (one an append-only global keeps, MakeImmortal)
     is not freed: it keeps its field, and the value, which two places hold from then on, is made
-    immortal too.
+    immortal too. An `object` with extra owners (--own-fallback=count) is not freed either: the
+    release takes one of them, `object` keeps its field, and the value gains an extra owner.
 
     Only OwnershipInferencePass makes it; under the other models it is never there.
   }];

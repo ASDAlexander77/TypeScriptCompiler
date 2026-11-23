@@ -373,6 +373,7 @@ class JitUnitBuilder
            << " fast-math=" << compileOptions.enableFastMath << " gctors-as-method=" << compileOptions.appendGCtorsToMethod
            << " embed-declarations=" << compileOptions.embedExportDeclarations
            << " verify-ownership=" << verifyOwnership.getValue() << " own-skip-inference=" << ownSkipInference.getValue()
+           << " own-fallback=" << static_cast<int>(compileOptions.ownFallback)
            << " no-stack-promotion=" << noStackPromotion.getValue()
            << " stack-promotion-max-object=" << stackPromotionMaxObject.getValue()
            << " stack-promotion-max-frame=" << stackPromotionMaxFrame.getValue()

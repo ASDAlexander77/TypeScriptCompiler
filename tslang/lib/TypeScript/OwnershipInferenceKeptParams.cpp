@@ -57,12 +57,32 @@ namespace own_inference
         exitReleases.clear();
         auto f = getFunction();
         auto attr = f->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_PARAMS_RELEASED_ATTR_NAME);
-        if (!attr)
+        llvm::SmallVector<int32_t> released;
+        if (attr)
         {
-            return;
+            released.append(attr.asArrayRef().begin(), attr.asArrayRef().end());
         }
 
-        for (auto index : attr.asArrayRef())
+        // A counted parameter this function keeps (--own-fallback=count): rc's caller held a share for
+        // the call and gave it back after; own's caller moved that share in, so the body gives it back
+        // at its exits, and keeps rc's retains for the places it stored it in. Not in the dry run, which
+        // counts nothing yet.
+        if (!dryRun)
+        {
+            for (auto unit : countedValues)
+            {
+                auto varOp = unit.getDefiningOp<mlir_ts::VariableOp>();
+                auto index = -1;
+                if (varOp && isParameterSlot(varOp, index) && !llvm::is_contained(released, index))
+                {
+                    released.push_back(index);
+                }
+            }
+
+            llvm::sort(released.begin() + (attr ? attr.size() : 0), released.end());
+        }
+
+        for (auto index : released)
         {
             auto varOp = parameterSlot(index);
             if (!varOp || !llvm::is_contained(ownedParams(f), index))

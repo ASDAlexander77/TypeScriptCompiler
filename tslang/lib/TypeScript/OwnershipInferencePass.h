@@ -49,6 +49,22 @@ using namespace own_facts;
 // an `any` box of a value it only borrows, to be cast back and read (classifyBorrowingBoxes, spec 92)
 #define OWN_BORROWING_BOX_ATTR_NAME "__own_borrowing_box"
 
+// --own-fallback=count: may an object this module makes or names have a field
+// reachedThroughDescriptor (mayHoldDescriptorField's answer for an interface, `any`, `unknown` or
+// Opaque, which hide which object they refer to). A module analysis, computed by
+// OwnershipModuleFactsPass before the function passes start and only read by them
+// (getCachedParentAnalysis): they run on the module's functions at once, on several threads, and a
+// walk of the module from one of them reads the bodies the others are changing (the access
+// violation accessorFiller had, #867).
+struct DescriptorObjectsAnalysis
+{
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DescriptorObjectsAnalysis)
+
+    explicit DescriptorObjectsAnalysis(mlir::Operation *module);
+
+    bool held = false;
+};
+
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
 //
@@ -75,6 +91,16 @@ class OwnershipInferencePass
 {
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OwnershipInferencePass)
+
+    explicit OwnershipInferencePass(bool countsFallback = false) : countsFallback(countsFallback)
+    {
+    }
+
+    OwnershipInferencePass(const OwnershipInferencePass &other)
+        : mlir::PassWrapper<OwnershipInferencePass, mlir::InterfacePass<mlir::FunctionOpInterface>>(other),
+          countsFallback(other.countsFallback)
+    {
+    }
 
     void runOnOperation() override;
 
@@ -146,6 +172,9 @@ class OwnershipInferencePass
     void stripFacts();
 
   private:
+    // computes the module's answer with the same class and object tests
+    friend struct DescriptorObjectsAnalysis;
+
     mlir::DominanceInfo *dominance = nullptr;
 
     // What in this function may destroy a value held by a field or an element: an overwrite of a
@@ -167,8 +196,118 @@ class OwnershipInferencePass
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::StringAttr>> dryRunAttrs;
 
     // Whether a report is to be emitted: not under `quietly`'s trial, and not in the dry run, which
-    // only counts it.
+    // only counts it - or, with --own-fallback=count, records it (dryRunCapture).
     bool reporting();
+
+    // --own-fallback=count (own rc fallback design, section 3): where the dry run fails, a value it
+    // reports keeps every retain and release rc placed for it, and is counted at run time from then
+    // on. The invariant this protects: rc's IR is balanced, and every erasure own makes is balanced
+    // (a second owner's retain with the releases it pairs with, a move with the source's releases).
+    // A counted value keeps its ops as rc placed them, so its owners beyond the first are counted
+    // (the word is rc's count minus one: own's first owner holds an implicit share) and the block
+    // lives at least as long as own's analysis assumes, never shorter - every fact derived
+    // elsewhere stays true.
+    bool countsFallback = false;
+
+    // A diagnostic a report site emitted, kept to be the counted value's warning's notes.
+    struct RecordedDiagnostic
+    {
+        mlir::Location loc;
+        std::string message;
+        llvm::SmallVector<std::pair<mlir::Location, std::string>> notes;
+    };
+
+    // The counted values of this function: each the unit countedUnitOf gives - the root of a value,
+    // or the slot of a local or a parameter whose reads it is - in the order they were found.
+    llvm::DenseSet<mlir::Value> countedValues;
+    llvm::SmallVector<mlir::Value> countedOrder;
+    // the error each counted value's dry run would have reported (the warning's notes)
+    llvm::DenseMap<mlir::Value, RecordedDiagnostic> dryRunDiagnostics;
+    // what the dry run's report sites emitted, in order, swallowed (the flag only), each with the
+    // value it concerns (reportSubject at its `reporting()`), or null
+    llvm::SmallVector<std::pair<mlir::Value, RecordedDiagnostic>> dryRunCapture;
+    // the errors the real run raised about a counted value: notes of its warning, not errors, in order
+    llvm::SmallVector<std::pair<mlir::Value, RecordedDiagnostic>> countedErrors;
+
+    // The value the check running now is about (SubjectScope), given to the report a `reporting()`
+    // arms: an error is linked to a value only so, never by where it is. A report outside a check
+    // that names its value, one a site emits without `reporting()`, and one beyond what the fallback
+    // counts (reportingUncounted, disarmReport) concern no value: they stay errors.
+    mlir::Value reportSubject;
+    mlir::Value armedSubject;
+    struct SubjectScope
+    {
+        OwnershipInferencePass &pass;
+        mlir::Value saved;
+        SubjectScope(OwnershipInferencePass &pass, mlir::Value subject) : pass(pass), saved(pass.reportSubject)
+        {
+            pass.reportSubject = subject;
+        }
+        ~SubjectScope()
+        {
+            pass.reportSubject = saved;
+        }
+    };
+    // `reporting()` for a refusal the fallback does not count (beyond tier 1: closures that escape,
+    // parameters the callers cannot be told about)
+    bool reportingUncounted();
+    void disarmReport()
+    {
+        armedSubject = {};
+    }
+    // with the flag, failure is decided after the real run: signalled, and errors left as errors
+    bool failureSignalled = false;
+    unsigned uncountedErrors = 0;
+    // while non-zero, a report refuses a shape by design (collectOwnershipOps' walk, the rest takes,
+    // the share checks, a getter's read): never counted, never a counted value's note
+    unsigned refusingByDesign = 0;
+
+    // The flag's own: what a site's failure says is decided after the real run (countsFallback).
+    void signalPassFailure();
+
+    // The unit a value is counted as: its root, or the slot of a local or a parameter it is read from.
+    mlir::Value countedUnitOf(mlir::Value value);
+    // ...of what a retain or a release (a local's slot's too) acquires or gives back, or null.
+    mlir::Value countedUnitOfOp(mlir::Operation *op);
+    // A retain or a release of a counted value (a slot's too).
+    bool touchesCounted(mlir::Operation *op);
+    // Can `unit` keep rc's ops as they are, its count balanced? Values born owning one share under
+    // both models (a `new`, a fresh call's result), reads of a place and borrowed parameters (none
+    // under either), owning locals (rc's slot retain is the local's share), and parameters this
+    // function keeps (released at its exits, the share the caller moved in). Anything else stays an
+    // error.
+    bool countable(mlir::Value unit);
+    // `unit` and every value its block's rc ops pass between in this function (countedGroup's note), all
+    // countable, into `group`; false when one is not.
+    bool countedGroup(mlir::Value unit, llvm::SetVector<mlir::Value> &group);
+    // `new`'s own object made in this function and not counted here (a field take empties it plainly)
+    bool isNewMadeHere(mlir::Value object);
+    // May an object a value of this static type refers to have a field reachedThroughDescriptor: a
+    // class (its storage, its bases' and the module's subclasses'), an object; an interface, `any`,
+    // `unknown` or Opaque when any object the module makes or names may (it hides which)
+    bool mayHoldDescriptorField(mlir::Type type);
+    static bool classMayHoldDescriptorField(mlir::ModuleOp module, mlir_ts::ClassType classType);
+    // ...DescriptorObjectsAnalysis's answer, read once per function, when first asked
+    std::optional<bool> moduleHoldsDescriptorObjects;
+    // what a value of this type holds is reached only through a type descriptor (a tagged union's
+    // payload, a closure): under own nothing can give it an owner, so it is never counted
+    static bool reachedThroughDescriptor(mlir::Type type);
+    // does an object of this type (a class or object instance) have a field reachedThroughDescriptor
+    static bool holdsDescriptorField(mlir::Type objectType);
+    // The value stored into a field right before `read` reads it again: the signature pass's read of
+    // the field in place of a local moved into it (TSLANG 47), or null.
+    mlir::Value fieldReadPartner(mlir::Value read);
+    // After a failed dry run: the values its leftover retains and lent reads belong to, which its
+    // reports name, counted (the repair, runOnFunction).
+    void countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased);
+    // A call that keeps a counted value's argument takes one owner of it: a retain of its own before
+    // the call (rc's callee retains for what it keeps; own's erases that).
+    void retainKeptCountedArguments();
+    // The real run: every op of a counted value stays, its retains marked OWN_COUNTED_ATTR_NAME.
+    void keepCountedOps(llvm::SetVector<mlir::Operation *> &toErase);
+    void markCountedRetains();
+    // One warning per counted value, its recorded error and notes as notes.
+    void warnCounted();
 
     // `op->setAttr(name, unit)`, undone after the dry run when the op did not have it
     void setAttrTracked(mlir::Operation *op, llvm::StringRef name);
@@ -182,6 +321,10 @@ class OwnershipInferencePass
     // `let` borrows the holder's value: it then holds only borrows (borrowsOnly).
     llvm::SetVector<mlir::Operation *> splitLetCandidates;
     void splitBorrowingLets();
+    // Would splitBorrowingLets split `varOp`? Its fresh assignments into `fresh`, the releases at its
+    // ways out into `exits`.
+    bool splitsLet(mlir_ts::VariableOp varOp, llvm::SmallVectorImpl<mlir_ts::StoreOp> &fresh,
+                   llvm::SmallVectorImpl<mlir::Operation *> &exits);
     // The checks of a split `let`'s borrows of its holder's values: none outlives the holder's value
     // nor escapes.
     void checkLetHolders(llvm::SetVector<mlir::Operation *> &toErase);

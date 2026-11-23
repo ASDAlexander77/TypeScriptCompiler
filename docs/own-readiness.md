@@ -106,6 +106,44 @@ After spec 94 (a `let` reassigned from other locals borrows each value, a list w
 
 After spec 95 (`return` inside `using`, a parameter's `let` after `??=` or `||=`, a `?:` of literals given to an interface or held by a `const`, a kept parameter in a returned literal): 758 of 944 compile under own (`00array7`, `00using_unwind_outer_locals`, and five more from the corpus growing and from other fixes on main: `00generator6`, `00owned_unions`, `00safe_cast_bug`, `00string_union_elements`, `00tslang_issues_92_124`). No file went the other way.
 
+Measured on 2026-11-23 with `--own-fallback=count` (branch `own-rc-fallback` at `69390f91`, a corpus of
+1072 files): of 1032 files that compile under gc, 863 compile under own and 882 with the flag, 19 more,
+with 42 warnings between them. No file compiles under own and not with the flag. The 150 still refused are
+mostly the shapes the flag does not reach: a borrow of a call's result, escaping closures, parameters kept
+or assigned, object literals, `any` element access, globals. The fuzzer with the flag first found 9 programs that stop with an access violation under own with the flag
+and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fixes of 2026-11-23:
+
+- A `let` that borrows a field or an element and is then given a new value, which own repairs (its new
+  values go into a holder), is repaired with the flag too, not counted: that was 8 of the 9 crashes, and
+  the 5 warnings in `00for_optional_class_condition` and `00tslang_issue_66` are gone. No corpus file own
+  accepts gets a count with the flag.
+- Three shapes whose rc operations cannot be kept whole stay errors with the flag: a value put into a
+  field of an object literal (rc counts it with a retain of the whole literal), a store whose release of
+  the field's old value another value's decision took (`p.v = p.v; p.v = p.v`), and a captured `const`
+  given a counted value in a loop (was the lowering failure, now own's error at its place).
+- The 7 leaks are not the flag's: five of them (043, 152, 184, 290, 304) leak the same under own without
+  the flag once their counted lines are removed, and all seven are flat with the flag once one shape is
+  replaced - an array literal no local holds,
+  indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). Own leaks that array without the flag, in
+  the release from before this branch too (v0.0-pre-alpha134). It is an own bug, not fixed here.
+
+The re-runs found two more and they are fixed too: a local declared from a counted local (`const n16 =
+n15`) is counted with it, and a string a keeping call is given its copy for is not counted (own
+accepts that program).
+
+Now (`mm_fuzz.py --jobs 4 run --own-fallback --count 400`, seeds 1122000, 1123000, 1124000, 1125000 and
+1126000): 689 to 699 programs checked per seed, 366 to 381 accepted by own with the flag, no failure.
+The programs own accepts only with the flag (`--own-fallback leaks --avoid literal-temp --flag-only`),
+against rc and gc: 55, 58, 67, 73 and 65 on those seeds, none growing beyond rc; without `--avoid`, the
+leaks that show are the own leak above. On the same seeds, no generated program own accepts without
+the flag is refused or counted with it. The corpus: 882 with the flag, as before; no file lost, and no
+file own accepts gets a count. On a heap that faults at a use after free or a double free (every
+block on its own pages, freed pages never reused; 2026-11-23): the 35 programs of the flag's run
+tests and the share and thread tests, and the 28 programs of 200 generated ones that the flag
+counts, each built ahead of time at -O0 and -O3, all ran without a fault and printed what gc
+prints. Windows only: the Linux legs run on CI, where glibc reports double frees the Windows heap
+hides.
+
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
 analysis being more careful than the program needs.
@@ -164,6 +202,16 @@ its 525 tests under own, as under gc and rc.
 
 That is the realistic cost of a port today: the program works, and a noticeable share of it is
 rewritten to say who owns what.
+
+On 2026-11-23 the source from before the port (`9d3aa31`, with only the later MSVC build fix for NRI)
+was built under own with `--own-fallback=count`. It does not build fully: of 252 TypeScript modules, 14
+are refused and 113 are not reached because a module they import is refused. The NRI examples all stop
+at two core modules whose exported methods keep parameters (`@keeps`, which the flag does not cover).
+What builds passes: 250 of the 525 tests run and all 250 pass (236 without the flag), with 62 places
+counted. Three of those places were the shape the fuzzer found crashing (in `core/donut_first_person_camera.ts`
+and `examples/sakura_forest_ser.ts`); no test that runs them failed. That shape is no longer counted
+(since 2026-11-23); the native_ts_graphics figures have not been measured again. The other refusals are kept parameters, borrows of fields stored or used after a release that
+the flag still refuses, and one type error the newer compiler reports in the old source.
 
 ## Performance
 

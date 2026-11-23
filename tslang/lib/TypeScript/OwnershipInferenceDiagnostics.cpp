@@ -344,8 +344,13 @@ namespace own_inference
             value = retainedValue(op);
         }
 
+        // a shape beyond tier 1 (a parameter its callers cannot be told about, a closure that escapes,
+        // a method read through an interface) is not a counted value's report
+        auto subject = armedSubject;
+        disarmReport();
         if (!value || !reportShapeOfSecondReference(op, rootOf(value), name))
         {
+            armedSubject = subject;
             auto diag = op->emitError(name == "this value" ? std::string("a value") : ("'" + name + "'").str())
                         << " takes a second reference; -mm=own cannot prove a move or a borrow here yet";
             noteLostFacts(diag);
@@ -1016,7 +1021,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportEscapingCellNotOwned(mlir::Operation *capture, mlir::Operation *escape, llvm::StringRef why)
     {
-        if (!reporting())
+        if (!reportingUncounted())
         {
             return;
         }
@@ -1030,7 +1035,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportUsedAfterEscapingCapture(mlir::Operation *use, mlir::Operation *capture, llvm::StringRef name)
     {
-        if (!reporting())
+        if (!reportingUncounted())
         {
             return;
         }
@@ -1047,7 +1052,7 @@ namespace own_inference
     void OwnershipInferencePass::reportClosureOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef closure,
                                llvm::StringRef captured)
     {
-        if (!reporting())
+        if (!reportingUncounted())
         {
             return;
         }
@@ -1060,7 +1065,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportCaptureNotOwned(mlir::Operation *op, llvm::StringRef captured)
     {
-        if (!reporting())
+        if (!reportingUncounted())
         {
             return;
         }
@@ -1071,7 +1076,7 @@ namespace own_inference
 
     void OwnershipInferencePass::reportCapturedParamAssigned(mlir::Operation *op, llvm::StringRef name)
     {
-        if (!reporting())
+        if (!reportingUncounted())
         {
             return;
         }

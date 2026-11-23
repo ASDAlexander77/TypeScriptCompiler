@@ -3,7 +3,8 @@
 `-mm=own` frees memory the way Rust does: every heap block has exactly one owner, and the
 compiler works out at compile time where each block is freed. There is no collector and no
 reference count at run time. When the compiler cannot prove a single owner, it rejects the
-program instead of compiling it with a leak or a double free.
+program instead of compiling it with a leak or a double free. With `--own-fallback=count` it counts
+that one object instead, with a warning ([Counted fallback](#counted-fallback---own-fallbackcount)).
 
 ```bash
 tslang --emit=exe -mm=own hello.ts
@@ -18,6 +19,7 @@ about it, and `Shared<T>` gives opt-in shared ownership.
 - [Strings](#strings)
 - [Closures](#closures)
 - [Shared ownership: `Shared<T>`](#shared-ownership-sharedt)
+- [Counted fallback: `--own-fallback=count`](#counted-fallback---own-fallbackcount)
 - [Decorators](#decorators)
   - [`@keeps`](#keeps) - the parameters a function keeps
   - [`@lends`](#lends) - the arguments a result borrows
@@ -247,6 +249,18 @@ The usual ways out are the Rust ones: move instead of borrowing (give the value 
 fresh value (`new`, a copy), keep the borrow shorter than its owner, mark the field `readonly`,
 or share the object with [`Shared<T>`](#shared-ownership-sharedt).
 
+**A warning in place of the error.** With `--own-fallback=count`, some of these errors become a
+warning: the compiler keeps a reference count for that one object instead (see
+[Counted fallback](#counted-fallback---own-fallbackcount)). The warning names the place, and its
+note is the error it replaces:
+
+```text
+w.ts:9:5: warning: -mm=own counts this object here (--own-fallback=count); a cycle through it is never freed
+    g.node = n;     // a second owner: counted
+    ^
+w.ts:9:5: note: a value that borrows 'h.node' cannot be stored, returned or captured
+```
+
 ## Strings
 
 A string is immutable, so a copy cannot be told apart from sharing. Where the compiler cannot
@@ -377,6 +391,108 @@ function main() {
 ```text
 1 2
 ```
+
+## Counted fallback: `--own-fallback=count`
+
+Where the compiler cannot prove a move or a borrow, `-mm=own` reports an error. With
+`--own-fallback=count` it keeps `-mm=rc`'s reference count for the object involved instead, and
+says so with a warning. That object is counted from then on: each owner beyond the first adds one
+to a count in its header, and the last owner to let go frees it. Everything else in the program
+keeps its single owner and pays nothing.
+
+```typescript
+class Node { constructor(public value: number) {} }
+class Holder { node: Node; }
+
+function main() {
+    const h = new Holder();
+    const g = new Holder();
+    const n = new Node(1);
+    h.node = n;     // the Node moves into h
+    g.node = n;     // a second owner: counted
+    g.node.value = 2;
+    print(h.node.value, g.node.value);
+}
+```
+
+```text
+w.ts:9:5: warning: -mm=own counts this object here (--own-fallback=count); a cycle through it is never freed
+    g.node = n;     // a second owner: counted
+    ^
+w.ts:9:5: note: a value that borrows 'h.node' cannot be stored, returned or captured
+2 2
+```
+
+Without the flag (or with `--own-fallback=error`, the default) the same program is the error in the
+note. There is one warning for each place the compiler counts, and no summary. No option turns
+these warnings into errors; leave the flag out for that. Like every warning, they are printed when the
+file is compiled: `--nowarn` hides them, and a JIT run the JIT cache serves without compiling prints none.
+
+A program `-mm=own` accepts without the flag is decided the same way with it: nothing in it is
+counted. A `let` that borrows a field or an element and is then given a new value, which own
+repairs (its new values go into a holder of their own), is repaired with the flag too.
+
+**What it covers.** The errors of inference where rc would keep a retain: a second owner, a value
+used after it was moved, a borrow stored, returned or captured, an element's borrow stored (a swap
+through a local, `let t = a[i]; a[i] = a[j]; a[j] = t`, compiles with two warnings), and a field
+read lent to a call that may free it. Values `-mm=own` already copies (strings, `any`, arrays in
+`@copies` functions) are still copied, not counted.
+
+**What is still an error.**
+
+- A borrow used after its owner let go where no variable holds a count of its own
+  (`const first = h.node; h.node = new Node(1); print(first.value)`), and a borrow of a call's
+  result: rc takes that count inside the callee.
+- A closure that escapes and whose captured variable is still used.
+- A local given a literal and then a second owner.
+- An object that may have a field held through a type descriptor: a tagged union (`Node | string`)
+  or a closure. Such a field cannot be given a second owner under own.
+- A value put into a field of an object literal built by value (`f({ v: n, items: [n] })` after
+  the array took `n`): rc counts that field with a retain of the whole literal, which own does not
+  keep.
+- A value whose store gives back the field's old value with a release another value's decision
+  already took (`p.v = p.v; p.v = p.v`), and a captured `const` given a counted value in a loop.
+  These are refused at their place, with own's error.
+- Everything that is not an inference error: errors that point at `Shared<T>` (`new Map<string,
+  Node>()`, `new Array<Node>()`, `filter` over class instances, `reduce` with no initial value),
+  a missing `@keeps` or `@lends` on an exported function, parameters assigned or kept where the
+  callers cannot give them up, a value read out of a global and lent to a call that may replace the
+  global, element access of `any`, and the other errors of this page.
+
+**Every own build honors a count.** A release under `-mm=own` tests the header word against 0
+(one owner: free it), then for an immortal block (do nothing), then for extra owners (one fewer),
+with or without the flag. A field taken out of a call's result does the same test before it
+empties the field. So modules built with the flag, modules built without it and the default library
+mix freely: a module that never counts still releases a counted object correctly.
+
+**Threads.** A counted object reached from two threads needs its count changed atomically. As under
+rc, the compiler marks what crosses at the points where it is shared: `Shared.share`,
+`Thread.spawn` of a closure, a worker and its messages, and a store into a field of an `@atomic`
+class and its `new`. These mark every block they reach, and a counted block so marked changes its
+count atomically. Two threads that reach a counted object through a global, with no share point
+between them, race on its count, as they would under rc; such a program is not rejected. The
+`@atomic` store sees `obj.field = v` only, not a push into an array held by an `@atomic` object, as
+under rc.
+
+**What it costs.**
+
+- A release of a block with one owner is a test of one word, as before.
+- A release of a shared block (one that crossed a share point) takes an out-of-line path with an
+  atomic operation: about 4 ns more per block, +27% on a probe that shares and drops lists of 2000
+  nodes (the share walk and the releases together).
+- Every type carries a share routine (`tsshr_...`), also in a program that never shares: about
+  1.5 KB in the default library's DLL.
+- A field taken out of a call's result costs a header load and two branches.
+
+**Limits.**
+
+- A cycle through counted objects is never freed, as under rc and as with `Shared<T>`.
+- An object of a class defined in another module, with a tagged-union or closure field, that this
+  module counts while it sees the object only as something else: a base class, an interface, `any`,
+  `unknown` or `Opaque`. The compiler tells whether an object may have such a field from the classes
+  of this module only.
+- Such a field taken out of a call's result is emptied, by a module built with the flag or without
+  it, even when the object has other owners: they read the field as empty later (never freed memory).
 
 ## Decorators
 
@@ -851,6 +967,8 @@ tslang --emit=exe -mm=own --own-facts=camera.obj --obj=camera.obj main.ts -o mai
 A shared library built under `-mm=own` carries the same facts, which an importer reads from the
 loaded library. A module built under another memory model is unknown to `-mm=own`, and objects
 that cross from it are never freed (see [Mixing modules](memory-models.md#mixing-modules)).
+Modules built with and without `--own-fallback=count` mix freely: every own release honors a
+count ([Counted fallback](#counted-fallback---own-fallbackcount)).
 
 ## Code for one memory model
 
@@ -976,7 +1094,8 @@ a reference gives it back on every path out of a function.
   ordinary field; under rc it is an error.
 - `Shared<T>` cycles are never freed; break them with a `WeakRef` where one side only refers back.
 - There are no lifetime annotations: a borrow that the compiler cannot follow is an error, even
-  when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`.
+  when the program would be correct. The fix is usually a move, a fresh value or `Shared<T>`; for
+  some of these errors, `--own-fallback=count` counts the object instead.
 
 The ray tracer benchmark ([tslang/benchmarks/raytrace](../tslang/benchmarks/raytrace/README.md))
 compiles under `-mm=own`; its timings against the other memory models are in the

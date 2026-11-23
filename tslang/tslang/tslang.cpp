@@ -189,6 +189,10 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
 cl::opt<bool> atomicRCOpt("atomic-rc", cl::desc("-mm=rc: change reference counts with atomic operations, so objects can be shared between threads"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<OwnFallback> ownFallbackOpt("own-fallback", cl::desc("-mm=own: where inference cannot prove a move or a borrow, report an error (error) or keep rc's count for that object, with a warning (count); ignored under every other -mm"),
+                                    cl::values(clEnumValN(OwnFallback::Error, "error", "report an error (default)")),
+                                    cl::values(clEnumValN(OwnFallback::Count, "count", "keep rc's count for that object, with a warning")),
+                                    cl::init(OwnFallback::Error), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> noStackPromotion("no-stack-promotion", cl::desc("Keep every allocation on the heap; by default one that provably never outlives its function goes on the stack"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<unsigned> stackPromotionMaxObject("stack-promotion-max-object", cl::desc("The most bytes one object may take on the stack"), cl::init(256), cl::cat(TypeScriptCompilerCategory));
 cl::opt<unsigned> stackPromotionMaxFrame("stack-promotion-max-frame", cl::desc("The most bytes one function may put on the stack through promotion"), cl::init(4096), cl::cat(TypeScriptCompilerCategory));

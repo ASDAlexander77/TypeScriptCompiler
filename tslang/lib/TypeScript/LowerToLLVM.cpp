@@ -503,7 +503,7 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
                     !MLIRTypeHelper::isSharedHandleType(descriptorType)
                 ? std::string()
                 : orl.getOrCreateRetainRoutine(descriptorType);
-        // empty but under rc, the one model that counts every block
+        // empty but under rc and own (OwnershipRoutineLogic::sharesBlocks)
         auto shareRoutineName = orl.getOrCreateShareRoutine(descriptorType);
 
         // a function type's adapter for calls through `any` (TYPE_DESCR_CALL), when MLIRGen made one and it is
@@ -562,10 +562,25 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
         auto counted = MLIRTypeHelper::isSharedHandleType(op.getReference().getType());
 
         // Under own, ownership inference erased every retain it could prove, and reported the
-        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        // rest; one that reaches here was neither, and erasing it would ship a double free. Unless
+        // --own-fallback=count kept it (`__own_counted`): one more owner in the header word.
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
-            return op.emitError("ownership inference left a retain behind");
+            if (!op->hasAttr(OWN_COUNTED_ATTR_NAME))
+            {
+                return op.emitError("ownership inference left a retain behind");
+            }
+
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            if (!orl.emitCountedRetainValue(op.getReference().getType(), transformed.getReference()))
+            {
+                return op.emitError("-mm=own cannot count a value of type ")
+                       << op.getReference().getType()
+                       << " yet (--own-fallback=count): its payload is reached through a type descriptor";
+            }
+
+            rewriter.eraseOp(op);
+            return mlir::success();
         }
 
         if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
@@ -580,7 +595,8 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
 };
 
 // `Shared.share(v)`: the share routine of v's type (OwnershipRoutineLogic::getOrCreateShareRoutine)
-// under rc; nothing under the models that do not count every block.
+// under rc, and under own, where a block may hold extra owners (--own-fallback=count, in any module);
+// nothing under gc and none.
 class MarkSharedOpLowering : public TsLlvmPattern<mlir_ts::MarkSharedOp>
 {
   public:
@@ -589,9 +605,9 @@ class MarkSharedOpLowering : public TsLlvmPattern<mlir_ts::MarkSharedOp>
     LogicalResult matchAndRewrite(mlir_ts::MarkSharedOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        if (orl.sharesBlocks())
         {
-            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitShareValue(op.getValue().getType(), transformed.getValue());
         }
 
@@ -803,17 +819,40 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
             MLIRTypeHelper::isSharedHandleType(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType());
 
         // Under own, ownership inference erased every retain it could prove, and reported the
-        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        // rest; one that reaches here was neither, and erasing it would ship a double free. Unless
+        // --own-fallback=count kept it (`__own_counted`): one more owner of the value the slot holds.
+        auto ownCounted = false;
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
-            return op.emitError("ownership inference left a retain behind");
+            if (!op->hasAttr(OWN_COUNTED_ATTR_NAME))
+            {
+                return op.emitError("ownership inference left a retain behind");
+            }
+
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            auto elementType = cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType();
+            if (!orl.canCountRetainOf(elementType))
+            {
+                return op.emitError("-mm=own cannot count a value of type ")
+                       << elementType << " yet (--own-fallback=count): its payload is reached through a type descriptor";
+            }
+
+            ownCounted = true;
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted) ||
+            ownCounted)
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             auto retainSlot = [&]() {
-                orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+                auto elementType = cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType();
+                if (ownCounted)
+                {
+                    orl.emitCountedRetainSlot(elementType, transformed.getSlot());
+                    return;
+                }
+
+                orl.emitRetainSlot(elementType, transformed.getSlot());
             };
 
             // an interface's field filled by a getter has no slot: the getter gives its result owned
@@ -998,8 +1037,9 @@ class MarkImmortalCellOpLowering : public TsLlvmPattern<mlir_ts::MarkImmortalCel
 };
 
 // -mm=own: a field's value handed over to the place that holds its object, right before that place
-// releases the object (TypeScriptOps.td). A mortal object's field is emptied; an immortal one keeps
-// it, and what it holds is made immortal.
+// releases the object (TypeScriptOps.td). An object that release frees has its field emptied; an
+// immortal one keeps it, and what it holds is made immortal; one with extra owners keeps it, and
+// what it holds gains an owner (OwnershipRoutineLogic::emitTakeOutOfField). Any field type.
 class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
 {
   public:
@@ -1011,13 +1051,8 @@ class TakeOutOfFieldOpLowering : public TsLlvmPattern<mlir_ts::TakeOutOfFieldOp>
         if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
         {
             auto fieldType = cast<mlir_ts::RefType>(op.getField().getType()).getElementType();
-            if (!isa<LLVM::LLVMPointerType>(getTypeConverter()->convertType(fieldType)))
-            {
-                return op.emitError("-mm=own cannot take a value of this type out of a field");
-            }
-
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitTakeOutOfField(transformed.getObject(), transformed.getField());
+            orl.emitTakeOutOfField(transformed.getObject(), transformed.getField(), fieldType);
         }
 
         rewriter.eraseOp(op);

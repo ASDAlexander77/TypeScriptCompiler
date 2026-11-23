@@ -8925,11 +8925,12 @@ class MLIRGenImpl
 
     // The field barrier of an @atomic class: a store through a field of an object whose static type is
     // an @atomic class (or extends one) marks the value shared before it lands (ts.MarkShared), so
-    // nothing another thread can reach through the object is counted plainly. Under -mm=rc only. A
-    // store through a type that is not @atomic - a base class of one - is not seen.
+    // nothing another thread can reach through the object is counted plainly. Under -mm=rc and -mm=own
+    // (where a block may hold extra owners: own rc fallback design, section 6). A store through a type
+    // that is not @atomic - a base class of one - is not seen.
     void markStoreIntoAtomicField(mlir::Location location, mlir::Value storeReference, mlir::Value savingValue)
     {
-        if (!compileOptions.isRefCounted())
+        if (!compileOptions.tracksOwnership())
         {
             return;
         }
