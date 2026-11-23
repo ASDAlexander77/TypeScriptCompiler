@@ -2074,9 +2074,15 @@ namespace own_inference
             }
         }
 
-        classifyLocalBorrowingLets();
-        repairedLets.insert(localBorrowingLets.begin(), localBorrowingLets.end());
-        localBorrowingLets.clear();
+        {
+            // (analyze's dominance is gone with its call: this one is asked for here)
+            mlir::DominanceInfo dominanceInfo(getFunction());
+            dominance = &dominanceInfo;
+            auto dominanceGone = llvm::make_scope_exit([&]() { dominance = nullptr; });
+            classifyLocalBorrowingLets();
+            repairedLets.insert(localBorrowingLets.begin(), localBorrowingLets.end());
+            localBorrowingLets.clear();
+        }
 
         // The retains the dry run could not erase (the set makeStringCopies walks), the reads it lent
         // to a call that may free them (callCopies), and a value reported that a call keeps (rc gives
@@ -2131,7 +2137,18 @@ namespace own_inference
             auto args = callArgs(op);
             for (auto index : ownedParams(op))
             {
-                if (static_cast<size_t>(index) < args.size() && reportOf.count(countedUnitOf(args[index])))
+                if (static_cast<size_t>(index) >= args.size() || !reportOf.count(countedUnitOf(args[index])))
+                {
+                    continue;
+                }
+
+                // (a value the repair copies for that call - a string, `any`: callCopies - is given its
+                // copy as without the flag, never a count)
+                auto copied = llvm::any_of(callCopies, [&](auto &copy) {
+                    return copy.second == op && rootOf(copy.first->getResult(0)) == rootOf(args[index]) &&
+                           isCopyableValueAt(op, copy.first->getResult(0).getType());
+                });
+                if (!copied)
                 {
                     refused.insert(countedUnitOf(args[index]));
                 }
@@ -2265,6 +2282,31 @@ namespace own_inference
                     {
                         add(storeOp.getValue());
                     }
+
+                    // ...and each local declared from or given a read of it (`const n16 = n15`): rc
+                    // retains for that local and releases it, and own may erase the one and keep the
+                    // other as a move out of the counted local, which it no longer is
+                    auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                    if (!loadOp || loadOp.getReference() != member)
+                    {
+                        continue;
+                    }
+
+                    forEachUse(loadOp.getResult(), [&](mlir::Operation *readUser, mlir::Value used) {
+                        auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(readUser);
+                        if (varOp && varOp.getInitializer() == used && isOwningVariable(varOp))
+                        {
+                            group.insert(varOp.getResult());
+                        }
+
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(readUser);
+                        auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                                         : mlir_ts::VariableOp();
+                        if (slot && slot.getResult() != member && isOwningVariable(slot))
+                        {
+                            group.insert(slot.getResult());
+                        }
+                    });
                 }
 
                 continue;

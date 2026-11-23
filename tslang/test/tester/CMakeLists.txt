@@ -5976,7 +5976,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
-                      own_fallback_fuzz_1122304)
+                      own_fallback_fuzz_1122304 own_fallback_let_from_counted_local)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
@@ -5986,7 +5986,8 @@ endforeach()
 # union taken out of a result nothing else holds (a callee never returns a counted object with one).
 # A `let` own repairs (its fresh values into a holder, TSLANG 66) is not counted either: counted and
 # split, its block was freed while the array still held it (fuzz 1122083).
-foreach(fallback_test own_fallback_take_from_fresh_union own_fallback_let_holder_same)
+foreach(fallback_test own_fallback_take_from_fresh_union own_fallback_let_holder_same own_fallback_local_let_walk_same
+                      own_fallback_kept_string_copy_same)
     add_test(NAME test-own-fallback-same-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=SAME
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"

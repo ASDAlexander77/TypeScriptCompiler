@@ -205,6 +205,11 @@ retains it.
   the second store's release) is not counted: kept, its retain would stand while the release stays
   erased, and the first store's release - which the erased retain held up - frees what the field
   still holds.
+- A counted local's group holds each local declared from or given a read of it (`const n16 = n15`):
+  rc retains for that local and releases it, and own could erase the one as a move out of the counted
+  local and keep the other.
+- A value given to a call that keeps it, for which the repair makes a copy (`callCopies`: a string,
+  `any`), gets its copy as without the flag, never a count.
 - After the real run, a retain left that no count keeps (an error taken for a counted value's note,
   about another value's retain, such as a captured `const` given a counted parameter) is an error at
   its place, the one recorded there, not a lowering failure.

@@ -126,12 +126,17 @@ and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fi
   indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). Own leaks that array without the flag, in
   the release from before this branch too (v0.0-pre-alpha134). It is an own bug, not fixed here.
 
-Now (`mm_fuzz.py --jobs 4 run --own-fallback --count 400`): seed 1122000, 695 programs checked, 366
-accepted by own with the flag, no failure; seed 1123000, 696 checked, 373 accepted, no failure. The
-programs own accepts only with the flag (`--own-fallback leaks --flag-only`), against rc and gc: 57 of
-seeds 1122000-1122399, 7 of them the own leak above; with `--avoid literal-temp`, 55 (seed 1122000) and
-58 (seed 1123000), none growing beyond rc. The corpus: 882 with the flag, as before; no file lost. Windows
-only: there is no Linux build of the branch.
+The re-runs found two more and they are fixed too: a local declared from a counted local (`const n16 =
+n15`) is counted with it, and a string a keeping call is given its copy for is not counted (own
+accepts that program).
+
+Now (`mm_fuzz.py --jobs 4 run --own-fallback --count 400`, seeds 1122000, 1123000, 1124000, 1125000 and
+1126000): 689 to 699 programs checked per seed, 366 to 381 accepted by own with the flag, no failure.
+The programs own accepts only with the flag (`--own-fallback leaks --avoid literal-temp --flag-only`),
+against rc and gc: 55, 58, 67, 73 and 65 on those seeds, none growing beyond rc; without `--avoid`, the
+leaks that show are the own leak above. On the same seeds, no generated program own accepts without
+the flag is refused or counted with it. The corpus: 882 with the flag, as before; no file lost, and no
+file own accepts gets a count. Windows only: there is no Linux build of the branch.
 
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
