@@ -985,6 +985,8 @@ struct ClassInfo
     mlir::Operation *processingModule = nullptr;
     // and the declaration it was reached from
     ClassLikeDeclaration processingDeclaration;
+    // ...and the file that declaration is in (addInheritedStaticsReadingThis)
+    std::string processingFile;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
