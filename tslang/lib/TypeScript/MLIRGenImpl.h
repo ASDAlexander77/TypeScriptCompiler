@@ -19118,6 +19118,8 @@ class MLIRGenImpl
                                             InterfaceInfo::TypePtr interfaceInfo, mlir::Value value,
                                             const GenContext &genContext);
 
+    ValueOrLogicalResult castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType, mlir::Value value,
+                                                const GenContext &genContext);
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
 
