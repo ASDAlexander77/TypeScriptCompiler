@@ -994,11 +994,12 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        // Under -mm=rc an `object` is an `any` box (USER RULING 2026-11-23): its release then frees what the box
+        // In every model but -mm=own an `object` is an `any` box (USER RULING 2026-11-23 for rc; gc and none follow it so
+        // that `object` reads the same everywhere): under rc its release then frees what the box
         // holds by the box's tag, a class object with its fields. A bare `object` said nothing of what it pointed
         // at, and a class object whose last reference was one was freed without its fields (165). `any` and
         // `unknown` are that box already, both ways; null and undefined stay a null pointer.
-        if (compileOptions.isRefCounted())
+        if (compileOptions.memoryModel != MemoryModelOwn)
         {
             auto isObjectOfAny = [](mlir::Type t) {
                 auto objectType = dyn_cast<mlir_ts::ObjectType>(t);
@@ -1169,22 +1170,6 @@ namespace mlirgen
         {
             CAST_A(classValue, location, mlir_ts::ClassValueType::get(valueType), value, genContext);
             return cast(location, type, classValue, genContext, disableStrictNullCheck);
-        }
-
-        // an object literal as `object` (`<object>{}`): a block of its own. It was the address of a stack slot
-        // holding the literal (castToOpaqueType), which outlived its function when returned, and which -mm=rc
-        // counted as a heap block (`id(o)` crashed). Nothing reads an `object`'s fields back (its type is not
-        // known), so the block takes no reference to what they hold: it is freed alone (TSLANG 165)
-        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type); objectType
-            && isa<mlir_ts::AnyType>(objectType.getStorageType()) && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(valueType)
-            && compileOptions.memoryModel != MemoryModelOwn && !compileOptions.isRefCounted())
-        {
-            auto tupleType = mth.convertConstTupleTypeToTupleType(valueType);
-            CAST_A(tuple, location, tupleType, value, genContext);
-            auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
-            builder.create<mlir_ts::StoreOp>(location, tuple, valueAddr);
-            auto record = builder.create<mlir_ts::CastOp>(location, mlir_ts::ObjectType::get(tupleType), valueAddr);
-            return V(builder.create<mlir_ts::CastOp>(location, type, record));
         }
 
         // a class value as a condition (`if (k)`): it always names a class, so it is true; with `| null` or

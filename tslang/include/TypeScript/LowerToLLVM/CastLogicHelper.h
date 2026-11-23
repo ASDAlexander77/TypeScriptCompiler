@@ -159,8 +159,8 @@ class CastLogicHelper
             return in;
         }
 
-        // under -mm=rc an `object` is an `any` box (MLIRGenImpl::cast boxes into it): either way it is the same box
-        if (compileOptions.isRefCounted())
+        // in every model but -mm=own an `object` is an `any` box (MLIRGenImpl::cast boxes into it): either way it is the same box
+        if (compileOptions.memoryModel != MemoryModelOwn)
         {
             auto isObjectOfAny = [](mlir::Type t) {
                 auto objectType = dyn_cast<mlir_ts::ObjectType>(t);

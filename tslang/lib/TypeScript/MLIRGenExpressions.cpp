@@ -1493,10 +1493,10 @@ namespace mlirgen
             }
         }
 
-        // under -mm=rc an `object` is an `any` box (MLIRGenImpl::cast): compared as `any`, so by what the boxes
+        // in every model but -mm=own an `object` is an `any` box (MLIRGenImpl::cast): compared as `any`, so by what the boxes
         // hold (`<object>c === c` is true; two boxes of one class object are the same object). Against null or
         // undefined it stays the pointer's test.
-        if (compileOptions.isRefCounted()
+        if (compileOptions.memoryModel != MemoryModelOwn
             && (opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
                 || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
             && leftExpressionValue && rightExpressionValue

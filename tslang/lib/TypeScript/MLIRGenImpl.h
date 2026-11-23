@@ -1951,7 +1951,8 @@ class MLIRGenImpl
     mlir_ts::ClassType inferClassTypeFromConstructorArguments(mlir::Location location,
                                                               GenericClassInfo::TypePtr genericClassInfo,
                                                               NodeArray<Expression> arguments,
-                                                              const GenContext &genContext);
+                                                              const GenContext &genContext,
+                                                              ArrayRef<mlir::Type> knownArgumentTypes = {});
 
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
