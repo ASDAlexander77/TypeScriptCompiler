@@ -337,17 +337,131 @@ class OwnedReturnConsumptionPass
                });
     }
 
-    static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op)
+    // ...or, under -mm=own, a literal nested in it (`[[mk(i)], [mk(2)]]`): a new array no one else uses - the outer
+    // literal and the retains it took of it - that can own what it holds itself. It moves into the outer one as a
+    // call's result does, and goes with it (claimNestedLiterals); before, the outer literal looked as if it
+    // borrowed it, and neither was ever given back.
+    static bool isNestedLiteral(MLIRTypeHelper &mth, mlir_ts::CreateArrayOp arrayOp, mlir::Value element)
     {
-        auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
-        if (!arrayOp || arrayOp->getNumOperands() == 0)
+        auto innerOp = element.getDefiningOp<mlir_ts::CreateArrayOp>();
+        return innerOp && !innerOp->hasAttr(OWNED_RESULT_ATTR_NAME) && innerOp->getBlock() == arrayOp->getBlock() &&
+               llvm::count(arrayOp->getOperands(), element) == 1 &&
+               llvm::all_of(element.getUsers(), [&](mlir::Operation *user) {
+                   return user == arrayOp.getOperation() ||
+                          (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp));
+               }) &&
+               holdsWhatItIsGiven(mth, innerOp, /*givenToCall=*/false);
+    }
+
+    // ...or, under -mm=own, a value something else had, which the literal took a retain of (`[mk(i + 4), o]` of a local
+    // `o`, `[mk(i), GA[0]]`). A literal that does not borrow takes every item it is given (callGivenAgain): the
+    // inference moves the value in (`o`'s own release goes), counts it with --own-fallback=count (the retain stays,
+    // and the literal's release gives that count back), or refuses the program - never leaves it a borrow, which
+    // only a borrowing array does (classifyArgumentArrays, classifyLocalBorrowingArrays). Those take a literal with
+    // no new value in it, so one holding such a value is owned only with a new value beside it, or when each taken
+    // value is a local's own (`[o].length`, `[o][0].x`): an owning `let`, or a `const` folded into the value it was
+    // given (OWNED_RESULT_NAMED_ATTR_NAME), which neither borrowing array takes - unless it is given to a call
+    // (`g([o])`, borrowed by classifyArgumentArrays).
+    // (The same value given more than once, `f([mk(2), o, o])`, takes a retain each time: plain own refuses the second
+    // owner, and --own-fallback=count keeps each retain, which the literal's release gives back one by one.)
+    static bool isTakenElement(mlir_ts::CreateArrayOp arrayOp, mlir::Value element)
+    {
+        auto retains = llvm::count_if(element.getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp);
+        });
+        auto given = llvm::count(arrayOp->getOperands(), element);
+        return retains > 0 && retains >= given;
+    }
+
+    static bool isLocalsOwn(mlir::Value element)
+    {
+        auto *definingOp = element.getDefiningOp();
+        if (!definingOp)
         {
             return false;
         }
 
-        return llvm::all_of(arrayOp->getOperands(), [&](mlir::Value element) {
-            return !mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isMovedIn(arrayOp, element) || isBorrowedText(element);
-        });
+        if (definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+        {
+            return true;
+        }
+
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(definingOp);
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && !varOp.getCaptured().value_or(false);
+    }
+
+    static bool holdsWhatItIsGiven(MLIRTypeHelper &mth, mlir_ts::CreateArrayOp arrayOp, bool givenToCall)
+    {
+        if (arrayOp->getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto anyNew = false;
+        auto allTakenAreLocals = true;
+        for (auto element : arrayOp->getOperands())
+        {
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
+            {
+                continue;
+            }
+
+            if (isMovedIn(arrayOp, element) || isNestedLiteral(mth, arrayOp, element))
+            {
+                anyNew = true;
+                continue;
+            }
+
+            if (!isTakenElement(arrayOp, element))
+            {
+                return false;
+            }
+
+            allTakenAreLocals = allTakenAreLocals && isLocalsOwn(element);
+        }
+
+        return anyNew || (allTakenAreLocals && !givenToCall);
+    }
+
+    static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op, bool givenToCall)
+    {
+        auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
+        return arrayOp && holdsWhatItIsGiven(mth, arrayOp, givenToCall);
+    }
+
+    // The literals nested in one about to be owned (isNestedLiteral), innermost first: each is a new value moved into
+    // the one holding it - marked so, its text copied as its holder's is, and the retains its holder took of it gone,
+    // as for a call's result (runOnOperation's toErase)
+    void claimNestedLiterals(MLIRTypeHelper &mth, mlir::Operation *op)
+    {
+        auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
+        if (!arrayOp)
+        {
+            return;
+        }
+
+        for (auto element : arrayOp->getOperands())
+        {
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element) || isMovedIn(arrayOp, element) ||
+                !isNestedLiteral(mth, arrayOp, element))
+            {
+                continue;
+            }
+
+            auto *innerOp = element.getDefiningOp();
+            claimNestedLiterals(mth, innerOp);
+            copyBorrowedTextElements(mth, innerOp);
+            innerOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            innerOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            for (auto *user : llvm::make_early_inc_range(element.getUsers()))
+            {
+                if (mlir::isa<mlir_ts::RetainOp>(user))
+                {
+                    user->erase();
+                }
+            }
+        }
     }
 
     // ...the copies: the retain the literal took of each such element becomes the copy it holds
@@ -476,11 +590,11 @@ class OwnedReturnConsumptionPass
     // moved into it, and text it is given copies of - `["x" + i, mk()]`, `[new C()]`, `["x" + i, s]`). One of
     // strings or objects something else owns - a rest parameter's (`logParts(text)`), `[o]` of a local `o` -
     // borrows them (spec 83), and owned it would take them over.
-    static bool ownsWhatItHolds(MLIRTypeHelper &mth, mlir::Operation *arrayOp)
+    static bool ownsWhatItHolds(MLIRTypeHelper &mth, mlir::Operation *arrayOp, bool givenToCall)
     {
         auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(arrayOp->getResult(0).getType());
         return arrayType &&
-               (!mth.ownsHeapMemory(arrayOp->getLoc(), arrayType.getElementType()) || holdsOnlyMovedInElements(mth, arrayOp));
+               (!mth.ownsHeapMemory(arrayOp->getLoc(), arrayType.getElementType()) || holdsOnlyMovedInElements(mth, arrayOp, givenToCall));
     }
 
     // Under own nothing gave a new array given to a call back at all (`len([i, 1, 2])`, 400 bytes a call; the
@@ -522,12 +636,13 @@ class OwnedReturnConsumptionPass
 
                 auto *definingOp = argument.getDefiningOp();
                 if (!definingOp || !mlir::isa<mlir_ts::ArrayType>(argument.getType()) || !seen.insert(argument).second ||
-                    definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) || !ownsWhatItHolds(mth, definingOp) ||
+                    definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) || !ownsWhatItHolds(mth, definingOp, /*givenToCall=*/true) ||
                     !(arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
                 {
                     continue;
                 }
 
+                claimNestedLiterals(mth, definingOp);
                 copyBorrowedTextElements(mth, definingOp);
                 definingOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -541,12 +656,19 @@ class OwnedReturnConsumptionPass
     // (`st = [..][0]` in a loop: "cannot be assigned"), which own accepted only while the literal leaked. The
     // copy is the local's own: it consumes it in place of the retain of its declaration. An object element
     // stays a borrow, as out of a named array.
+    // (an element of a literal nested in it, `[["s" + i]][0][0]`, read through the inner literal read out of it, the
+    // same)
     static void copyTextElementsIntoLocals(mlir::Operation *arrayOp)
     {
-        for (auto *user : arrayOp->getResult(0).getUsers())
+        copyTextElementsIntoLocals(arrayOp->getResult(0));
+    }
+
+    static void copyTextElementsIntoLocals(mlir::Value array)
+    {
+        for (auto *user : array.getUsers())
         {
             auto elementRefOp = mlir::dyn_cast<mlir_ts::ElementRefOp>(user);
-            if (!elementRefOp)
+            if (!elementRefOp || elementRefOp->getOperand(0) != array)
             {
                 continue;
             }
@@ -554,6 +676,12 @@ class OwnedReturnConsumptionPass
             for (auto *refUser : elementRefOp->getUsers())
             {
                 auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(refUser);
+                if (loadOp && mlir::isa<mlir_ts::ArrayType>(loadOp.getType()))
+                {
+                    copyTextElementsIntoLocals(loadOp.getResult());
+                    continue;
+                }
+
                 if (!loadOp || !own_facts::isCopyableString(loadOp.getType()))
                 {
                     continue;
@@ -634,6 +762,7 @@ class OwnedReturnConsumptionPass
 
         auto own = compileOptions.memoryModel == MemoryModelOwn;
         llvm::SmallVector<mlir::Operation *> arrays;
+        llvm::SmallVector<std::pair<mlir::Operation *, int>> yieldedArrays;
         module.walk([&](mlir::Operation *op) {
             if (!isNewArray(op) || op->getNumResults() != 1 || !mlir::isa<mlir_ts::ArrayType>(op->getResult(0).getType()) ||
                 op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->use_empty() || !op->getParentOfType<mlir_ts::FuncOp>())
@@ -642,7 +771,7 @@ class OwnedReturnConsumptionPass
             }
 
             // (a spread literal's slot owns what was pushed into it: own takes or copies each value pushed)
-            if (own && mlir::isa<mlir_ts::CreateArrayOp>(op) && !ownsWhatItHolds(mth, op))
+            if (own && mlir::isa<mlir_ts::CreateArrayOp>(op) && !ownsWhatItHolds(mth, op, /*givenToCall=*/false))
             {
                 return;
             }
@@ -684,9 +813,24 @@ class OwnedReturnConsumptionPass
                 return false;
             };
 
-            auto elementLeavesBlock = [&](mlir::Operation *elementRef) {
-                return llvm::any_of(elementRef->getUsers(),
-                                    [&](mlir::Operation *read) { return read->getNumResults() == 1 && leavesUncounted(read->getResult(0)); });
+            // (an element of a nested literal, `c ? [[mk(i)]][0][0] : null`, read through the inner literal: the same)
+            std::function<bool(mlir::Operation *)> elementLeavesBlock = [&](mlir::Operation *elementRef) {
+                return llvm::any_of(elementRef->getUsers(), [&](mlir::Operation *read) {
+                    if (read->getNumResults() != 1)
+                    {
+                        return false;
+                    }
+
+                    if (leavesUncounted(read->getResult(0)))
+                    {
+                        return true;
+                    }
+
+                    return own && mlir::isa<mlir_ts::LoadOp>(read) && mlir::isa<mlir_ts::ArrayType>(read->getResult(0).getType()) &&
+                           llvm::any_of(read->getResult(0).getUsers(), [&](mlir::Operation *innerUser) {
+                               return mlir::isa<mlir_ts::ElementRefOp>(innerUser) && elementLeavesBlock(innerUser);
+                           });
+                });
             };
 
             auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
@@ -696,6 +840,14 @@ class OwnedReturnConsumptionPass
             if (onlyRead)
             {
                 arrays.push_back(op);
+                return;
+            }
+
+            // -mm=own: an element a conditional expression's branch yields (`c ? [mk(i)][0] : null`) - only
+            // that one way out, the branch's own `ts.Result`
+            if (auto levels = 0; own && mlir::isa<mlir_ts::CreateArrayOp>(op) && yieldedByBranch(op, leavesUncounted, levels))
+            {
+                yieldedArrays.push_back({op, levels});
             }
         });
 
@@ -703,6 +855,7 @@ class OwnedReturnConsumptionPass
         {
             if (own)
             {
+                claimNestedLiterals(mth, op);
                 copyBorrowedTextElements(mth, op);
                 copyTextElementsIntoLocals(op);
             }
@@ -715,6 +868,274 @@ class OwnedReturnConsumptionPass
 
             op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
         }
+
+        for (auto [op, levels] : yieldedArrays)
+        {
+            claimNestedLiterals(mth, op);
+            copyBorrowedTextElements(mth, op);
+            holdPastConditional(op, levels);
+        }
+    }
+
+    // The conditional a branch block's `ts.Result` yields to, when it is a plain one: values for each of its results
+    // from both branches, not yet settled as owned (consumeConditionalResults)
+    static mlir_ts::IfOp conditionalOf(mlir::Block *block)
+    {
+        auto resultOp = mlir::dyn_cast<mlir_ts::ResultOp>(block->getTerminator());
+        auto ifOp = resultOp ? mlir::dyn_cast<mlir_ts::IfOp>(resultOp->getParentOp()) : mlir_ts::IfOp();
+        if (!ifOp || ifOp->getNumResults() == 0 || ifOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+        {
+            return {};
+        }
+
+        for (auto &region : ifOp->getRegions())
+        {
+            if (region.empty() || !mlir::isa<mlir_ts::ResultOp>(region.back().getTerminator()) ||
+                region.back().getTerminator()->getNumOperands() != ifOp->getNumResults())
+            {
+                return {};
+            }
+        }
+
+        return ifOp;
+    }
+
+    // Does `value` leave its block by `resultOp` only, if at all? (seen through the casts that only widen it)
+    static bool leavesOnlyBy(mlir::Value value, mlir::Operation *resultOp)
+    {
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
+            {
+                if (!leavesOnlyBy(user->getResult(0), resultOp))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (user->hasTrait<mlir::OpTrait::IsTerminator>() && user != resultOp)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Does `value` stay in `block` but for its terminator? Seen through the casts that only widen it, and through a
+    // conditional expression in `block` (or in a statement of it) whose branch yields it: that conditional's result
+    // is the value then. `leaves` is set when `block`'s terminator takes it; false for any other terminator.
+    static bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
+    {
+        if (depth > 64)
+        {
+            return false;
+        }
+
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
+            {
+                if (!leavesBlockBy(user->getResult(0), block, leaves, depth + 1))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!user->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                continue;
+            }
+
+            if (user == block->getTerminator())
+            {
+                leaves = true;
+                continue;
+            }
+
+            auto handedOn = handedOnByConditional(user, value);
+            if (handedOn.empty() || !block->findAncestorOpInBlock(*user->getParentOp()))
+            {
+                return false;
+            }
+
+            for (auto result : handedOn)
+            {
+                if (!leavesBlockBy(result, block, leaves, depth + 1))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+    // Is a literal only read, but for an element its block - a branch of a conditional expression - yields? (seen
+    // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
+    // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
+    // to the end of the block the outermost one is in.
+    static bool yieldedByBranch(mlir::Operation *op, const std::function<bool(mlir::Value)> &leavesUncounted, int &levels)
+    {
+        auto ifOp = conditionalOf(op->getBlock());
+        if (!ifOp || !op->getParentOfType<mlir_ts::FuncOp>())
+        {
+            return false;
+        }
+
+        auto *resultOp = op->getBlock()->getTerminator();
+        levels = 1;
+        for (auto conditional = ifOp;;)
+        {
+            // where the conditional's results go on to leave its block: by its block's own terminator only - another
+            // conditional's branch reading it (`const q = d ? o : null`, `o ? o : null`) hands it on to that one's
+            // result, in the same block. Any other way out (a loop's condition, a `return`) and it is not held.
+            auto leaves = false;
+            auto other = false;
+            for (auto result : conditional->getResults())
+            {
+                if (!leavesBlockBy(result, conditional->getBlock(), leaves))
+                {
+                    other = true;
+                }
+            }
+
+            if (other)
+            {
+                return false;
+            }
+
+            // held to the end of the block the outermost conditional around it is in (threading the literal out is
+            // one result per level): through a branch that hands the result on, and any other around it too
+            auto outer = conditionalOf(conditional->getBlock());
+            if (!outer)
+            {
+                if (leaves)
+                {
+                    return false;
+                }
+
+                break;
+            }
+
+            conditional = outer;
+            levels++;
+        }
+
+        auto leavesOnlyByResult = [&](mlir::Value value) { return leavesOnlyBy(value, resultOp); };
+        // each element read out of it, and out of a literal nested in it (`c ? [[mk(i)]][0][0] : null`): one that
+        // leaves, leaves by that way only
+        auto yields = false;
+        std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value array, bool outermost) {
+            for (auto *user : array.getUsers())
+            {
+                if (mlir::isa<mlir_ts::LengthOfOp>(user))
+                {
+                    continue;
+                }
+
+                if (!mlir::isa<mlir_ts::ElementRefOp>(user) || user->getOperand(0) != array)
+                {
+                    if (outermost)
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                for (auto *read : user->getUsers())
+                {
+                    if (read->getNumResults() != 1)
+                    {
+                        continue;
+                    }
+
+                    auto value = read->getResult(0);
+                    if (mlir::isa<mlir_ts::LoadOp>(read) && mlir::isa<mlir_ts::ArrayType>(value.getType()) &&
+                        !readsLeaveOnlyByResult(value, false))
+                    {
+                        return false;
+                    }
+
+                    if (!leavesUncounted(value))
+                    {
+                        continue;
+                    }
+
+                    if (!leavesOnlyByResult(value))
+                    {
+                        return false;
+                    }
+
+                    yields = true;
+                }
+            }
+
+            return true;
+        };
+
+        return readsLeaveOnlyByResult(op->getResult(0), true) && yields;
+    }
+
+    // ...which is held past the conditional expression, as a named array would be (`const t = [mk(i)]; c ? t[0] :
+    // null`): the element read out of it borrows it, as out of a local's array, and so must not be freed at the end
+    // of the branch, which the conditional's result outlives. The `ts.If` yields the literal as well, as an optional
+    // (undefined from a branch that made none), and that result is a new value of the block the conditional is in,
+    // given back at its end (releaseDiscardedTemporaries) - where the borrow ends. Before, the literal and what it
+    // held were never given back. (A borrow of it can't be stored, returned or captured: own refuses those.) A
+    // conditional whose result a branch of another yields (yieldedByBranch's `levels`) yields it on the same way.
+    void holdPastConditional(mlir::Operation *op, int levels)
+    {
+        auto location = op->getLoc();
+        auto heldType = mlir_ts::OptionalType::get(op->getResult(0).getType());
+        mlir::Value held = op->getResult(0);
+        auto *heldBlock = op->getBlock();
+        mlir::OpBuilder builder(op->getContext());
+        for (auto level = 0; level < levels; level++)
+        {
+            auto *resultOp = heldBlock->getTerminator();
+            auto ifOp = mlir::cast<mlir_ts::IfOp>(resultOp->getParentOp());
+
+            llvm::SmallVector<mlir::Type> resultTypes(ifOp->getResultTypes());
+            resultTypes.push_back(heldType);
+
+            builder.setInsertionPoint(ifOp);
+            auto newIfOp = builder.create<mlir_ts::IfOp>(ifOp.getLoc(), resultTypes, ifOp.getCondition(), /*withElseRegion=*/true);
+            newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
+            newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
+            newIfOp->setAttrs(ifOp->getAttrs());
+            for (auto [index, result] : llvm::enumerate(ifOp->getResults()))
+            {
+                result.replaceAllUsesWith(newIfOp->getResult(index));
+            }
+
+            ifOp->erase();
+
+            for (auto &region : newIfOp->getRegions())
+            {
+                auto *terminator = region.back().getTerminator();
+                builder.setInsertionPoint(terminator);
+                mlir::Value yielded = terminator != resultOp ? builder.create<mlir_ts::OptionalUndefOp>(location, heldType).getResult()
+                                      : level == 0       ? builder.create<mlir_ts::OptionalValueOp>(location, heldType, held).getResult()
+                                                         : held;
+                terminator->insertOperands(terminator->getNumOperands(), yielded);
+            }
+
+            held = newIfOp->getResult(newIfOp->getNumResults() - 1);
+            heldBlock = newIfOp->getBlock();
+        }
+
+        // the literal moves into the result; what holds the result is a new value, released at the end of its block
+        op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+        op->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+
+        builder.setInsertionPointAfter(held.getDefiningOp());
+        auto holder = builder.create<mlir_ts::CastOp>(location, heldType, held);
+        holder->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
     }
 
     // A `yield` hands its `{ value, done }` record to the caller the way a `return` does, with a
@@ -2642,9 +3063,9 @@ class OwnedReturnConsumptionPass
                 }
 
                 // `n = b ? h : h2` stores what the branch hands on
-                if (auto handedOn = handedOnByConditional(user))
+                if (auto handedOn = handedOnByConditional(user, value); !handedOn.empty())
                 {
-                    values.push_back(handedOn);
+                    values.append(handedOn.begin(), handedOn.end());
                     continue;
                 }
 
@@ -2756,9 +3177,9 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
-                if (auto handedOn = handedOnByConditional(user))
+                if (auto handedOn = handedOnByConditional(user, value); !handedOn.empty())
                 {
-                    values.push_back(handedOn);
+                    values.append(handedOn.begin(), handedOn.end());
                     continue;
                 }
 
@@ -2798,8 +3219,8 @@ class OwnedReturnConsumptionPass
             auto value = values.pop_back_val();
             for (auto *user : value.getUsers())
             {
-                auto handedOn = handedOnByConditional(user);
-                if ((user->hasTrait<mlir::OpTrait::IsTerminator>() && !handedOn) || !runsWithinBlock(user, block))
+                auto handedOn = handedOnByConditional(user, value);
+                if ((user->hasTrait<mlir::OpTrait::IsTerminator>() && handedOn.empty()) || !runsWithinBlock(user, block))
                 {
                     return false;
                 }
@@ -2815,27 +3236,34 @@ class OwnedReturnConsumptionPass
                     return false;
                 }
 
-                if (handedOn)
-                {
-                    values.push_back(handedOn);
-                }
+                values.append(handedOn.begin(), handedOn.end());
             }
         }
 
         return true;
     }
 
-    // The value a branch of a conditional expression hands on: the result of the `ts.If` whose
-    // branch this `ts.Result` ends, when that `ts.If` has the one result. None for any other user.
-    static mlir::Value handedOnByConditional(mlir::Operation *user)
+    // What a branch of a conditional expression hands `value` on as: the result of the `ts.If` whose branch this
+    // `ts.Result` ends, at each position the branch yields `value` in - a conditional may yield more than one value
+    // (holdPastConditional adds the literal its branch holds). None for any other user.
+    static llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
     {
-        if (!mlir::isa<mlir_ts::ResultOp>(user) || user->getNumOperands() != 1)
+        llvm::SmallVector<mlir::Value, 1> handedOn;
+        auto ifOp = mlir::isa<mlir_ts::ResultOp>(user) ? mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp()) : mlir_ts::IfOp();
+        if (!ifOp || ifOp.getNumResults() != user->getNumOperands())
         {
-            return mlir::Value();
+            return handedOn;
         }
 
-        auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp());
-        return ifOp && ifOp.getNumResults() == 1 ? ifOp.getResult(0) : mlir::Value();
+        for (auto &operand : user->getOpOperands())
+        {
+            if (operand.get() == value)
+            {
+                handedOn.push_back(ifOp.getResult(operand.getOperandNumber()));
+            }
+        }
+
+        return handedOn;
     }
 
     // Where the stretch of `op`'s block that a release of it may cover ends: at the first op after
@@ -2971,7 +3399,7 @@ class OwnedReturnConsumptionPass
             }
 
             // `yield b ? h : h2` stores what the branch hands on
-            if (auto handedOn = handedOnByConditional(user); handedOn && escapesThroughStore(handedOn))
+            if (llvm::any_of(handedOnByConditional(user, value), [](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
             {
                 return true;
             }

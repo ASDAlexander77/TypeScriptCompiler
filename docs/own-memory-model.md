@@ -295,11 +295,21 @@ for (let j = 0; j < 3; j++) {
 ```
 
 An object element of such a literal is a borrow of it, as an element of a named array is: it can be
-read while the literal lives, and keeping it past that is an error. Not freed yet, so they leak: a
-literal nested in another (`[[mk(i)], [mk(2)]][0][0]`), and one that is given a local's object as well as
-new ones (`f([mk(i), o])`, `o` moved into it), and one whose object element a `?:` branch yields
-(`c ? [mk(i)][0] : null`; a string element there is copied, and its literal freed). Hold such a literal in
-a `const` first.
+read while the literal lives, and keeping it past that is an error. The same holds for:
+- a literal nested in another (`[[mk(i)], [mk(2)]][0][0]`): it moves into the outer one and is freed
+  with it;
+- a literal given a local's object as well as new ones (`f([mk(i), o])`), or only locals' objects and
+  read (`[o].length`): the local's object moves into it (using `o` afterwards is an error) and is freed
+  with it. A literal of locals given straight to a call (`f([o])`) still borrows them;
+- with `--own-fallback=count`, a literal given a new object and a counted one (`f([mk(i), GA[0]])`):
+  freeing it gives the count back;
+- a literal whose element a `?:` branch yields (`const o = c ? [mk(i)][0] : null`): it is held past the
+  conditional, as a `const` before it would be, and freed at the end of the block the conditional is
+  in (the outermost one, when it is inside another's branch), and on the way to a `catch` of the same
+  function. `o` borrows it, so it can be read in that block - by another conditional too
+  (`d ? o : null`) - but not stored, returned or captured. When the other branch makes a new object
+  (`c ? [mk(i)][0] : mk(2)`), the result would own its value on one path and borrow it on the other:
+  that is refused, as before.
 
 A string passed to a parameter the callee keeps is not copied, because the callers rely on that
 fact: `new Person(p.name)` is an error. Pass a string you give up, or a fresh one

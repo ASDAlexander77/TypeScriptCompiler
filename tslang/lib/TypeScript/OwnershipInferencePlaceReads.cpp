@@ -702,6 +702,60 @@ namespace own_inference
         return chain;
     }
 
+    // Does every way into the merge `argument` bring `owner` (seen through its views) or no block at all - null,
+    // undefined? Not across a loop, as isFreshMerge.
+    static bool mergeOfOwnerOrNone(mlir::BlockArgument argument, mlir::Value owner)
+    {
+        auto *block = argument.getOwner();
+        if (block->isEntryBlock() || block->hasNoPredecessors())
+        {
+            return false;
+        }
+
+        mlir::DominanceInfo dominance(block->getParentOp());
+        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+        {
+            if (dominance.dominates(block, *predecessor))
+            {
+                return false;
+            }
+
+            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+            if (!branchOp)
+            {
+                return false;
+            }
+
+            auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+            if (argument.getArgNumber() < operands.getProducedOperandCount())
+            {
+                return false;
+            }
+
+            auto incoming = operands[argument.getArgNumber()];
+            if (!incoming)
+            {
+                return false;
+            }
+
+            auto constant = incoming;
+            while (auto castOp = constant.getDefiningOp<mlir_ts::CastOp>())
+            {
+                constant = castOp.getIn();
+            }
+
+            if (constant.getDefiningOp<mlir_ts::NullOp>() || constant.getDefiningOp<mlir_ts::UndefOp>() ||
+                constant.getDefiningOp<mlir_ts::OptionalUndefOp>() || rootOf(incoming) == rootOf(owner))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     llvm::SmallVector<mlir::Operation *> OwnershipInferencePass::rootEnds(const Chain &chain)
     {
         llvm::SmallVector<mlir::Operation *> ends;
@@ -765,12 +819,44 @@ namespace own_inference
             }
             else if (kind == Chain::Owned)
             {
-                forEachUse(root, [&](mlir::Operation *use, mlir::Value used) {
-                    if (mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(use) || !isBorrow(use, used))
+                // An owned value handed on to a merge whose every way in brings that same value (through its views) or
+                // no block at all - null, undefined (mergeOfOwnerOrNone)
+                // lasts as long as the merge: its ends are the merge's. A literal held past the conditional
+                // expression that reads an element out of it (`c ? [mk(i)][0] : null`, OwnedReturnConsumptionPass's
+                // holdPastConditional) is merged so with an undefined from the other branch, and given back at
+                // the end of the block the conditional is in - before, the branch it was handed on by was taken
+                // for its end, and the element read out of it for used after it.
+                llvm::SmallVector<mlir::Value> owners{root};
+                llvm::DenseSet<mlir::Value> seenOwners;
+                while (!owners.empty())
+                {
+                    auto owner = owners.pop_back_val();
+                    if (!seenOwners.insert(owner).second)
                     {
-                        ends.push_back(use);
+                        continue;
                     }
-                });
+
+                    forEachUse(owner, [&](mlir::Operation *use, mlir::Value used) {
+                        if (!mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(use) && !isBorrow(use, used))
+                        {
+                            auto merged = mergedValuesOf(use, used);
+                            if (!merged.empty() && mlir::isa<mlir::BranchOpInterface>(use) &&
+                                llvm::all_of(merged, [&](mlir::Value value) {
+                                    auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+                                    return argument && mergeOfOwnerOrNone(argument, owner);
+                                }))
+                            {
+                                owners.append(merged.begin(), merged.end());
+                                return;
+                            }
+                        }
+
+                        if (mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(use) || !isBorrow(use, used))
+                        {
+                            ends.push_back(use);
+                        }
+                    });
+                }
             }
             else if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
             {
