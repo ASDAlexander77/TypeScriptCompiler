@@ -725,6 +725,25 @@ namespace mlirgen
             }
         }
 
+        // A getter with a declared type that reads itself (`get p(): number { return this.p; }`): it is known as its
+        // class's accessor while its body is discovered, as a method is ("Class member 'p' can't be found", TSLANG
+        // 175). addAccessor registers it as what it is.
+        if (detectReturnType && functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
+            && functionLikeDeclarationBaseAST->type && funcType && funcType.getNumResults() > 0
+            && !mth.isNoneType(funcType.getResult(0)))
+        {
+            auto classType = genContext.thisType ? dyn_cast<mlir_ts::ClassType>(genContext.thisType) : mlir_ts::ClassType();
+            auto classInfo = classType ? getClassInfoByFullName(classType.getName().getValue()) : ClassInfo::TypePtr();
+            auto propertyName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+            auto isStatic = hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::StaticKeyword);
+            if (classInfo && !propertyName.empty() && classInfo->getAccessorIndexExact(propertyName, isStatic) < 0)
+            {
+                classInfo->accessors.push_back({propertyName, FunctionEntry{fullName.str(), funcType, std::string()}, {},
+                                                isStatic, false, false, mlir_ts::AccessLevel::Public,
+                                                mlir_ts::AccessLevel::Public});
+            }
+        }
+
         if (detectReturnType)
         {
             // register function to be able to call it if used in recursive call

@@ -2846,3 +2846,27 @@ Not quick after all, still open:
   program's own iterator interface with integer yields (153).
 
 Tests `00tslang_issue_174.ts` (gc, rc, none).
+
+175 (the quick items 174 did not reach, 2026-11-23). Fixed:
+- A getter that reads itself (`get p(): number { return this.p; }`, 148): "Class member 'p' can't be found". A
+  getter with a declared type is known as its class's accessor while its body is discovered, as a generator method
+  is (mlirGenFunctionPrototype); addAccessor then registers it as what it is (virtual, abstract).
+- An interface of one call signature (`interface Cb extends Function { (x: number): number }`, 140): a function given
+  to it was "invalid cast from (p0: number) => number to Cb". With nothing else in it or what it extends, it is that
+  function type, as the type literal `{ (x: number): number }` is (callSignatureOnlyType).
+- An interface extending a generic interface beside a function of that name (`interface K extends Tag<K, number>`
+  with `function Tag<T>(x: T): T`, 134): "interface cannot extend type: (p0: K) => K". The name given type arguments
+  as a value is the function; the base is the type of the name.
+- `for (var x in this)` in a method (102): "Class member 'length' can't be found". A class instance's keys are its
+  fields, its bases' first, known from its type, as an object literal's are; methods are not walked.
+
+Still open:
+- `m(f = () => () => this)` (145): "'ts.Load' op using value defined outside the region"; `function g(a = 5, f = ()
+  => () => a)` crashes the compiler. An arrow inside an arrow of a parameter's default captures what the function
+  has not made yet.
+- A namespace function named as an instance method of the class it merges with (`C.foo`, 145): both are the symbol
+  `C.foo`.
+- A generator typed as the program's own iterator interface (`function* g(): It<number>`) with integer yields
+  (153): next()'s result type is given for Generator, Iterator, Iterable and IterableIterator only.
+
+Tests `00tslang_issue_175.ts` (gc, rc, none).
