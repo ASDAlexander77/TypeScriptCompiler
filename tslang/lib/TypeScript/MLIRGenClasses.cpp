@@ -2572,6 +2572,28 @@ namespace mlirgen
             newClassPtr->hasInitializers = true;
         }
 
+        // `Hello2 = Hello1`: an enum named as a value is its members at compile time, with nothing at run time a
+        // field could hold, as for a `let` (the field was typed as a member, and `f.Hello2.World1` did not
+        // resolve; TSLANG 103, 165)
+        if (auto enumType = dyn_cast_or_null<mlir_ts::EnumType>(type); enumType && init && !propertyDeclaration->type)
+        {
+            auto wholeEnum = false;
+            evaluate(
+                propertyDeclaration->initializer,
+                [&](mlir::Value value) {
+                    auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+                    wholeEnum = constantOp && isa<mlir::DictionaryAttr>(constantOp.getValue());
+                },
+                genContext);
+            if (wholeEnum)
+            {
+                emitError(location) << "field '" << MLIRHelper::getName(propertyDeclaration->name)
+                                    << "' can't hold the enum '" << enumType.getName().getValue()
+                                    << "' itself: use its members, or a 'const' outside the class";
+                return mlir::failure();
+            }
+        }
+
         auto hasType = !!propertyDeclaration->type;
 
         // `id = 5` over Base's `id: number`: typed as Base's field, as TypeScript has it, not as the

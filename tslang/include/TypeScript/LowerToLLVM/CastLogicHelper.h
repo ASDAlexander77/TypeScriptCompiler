@@ -309,6 +309,13 @@ class CastLogicHelper
         {
             if (isa<mlir_ts::AnyType>(obj.getStorageType()))
             {
+                // an object of a known shape, and a class object, is already the block's pointer: it was the
+                // address of a stack slot holding it, which -mm=rc counted and a return left dangling (TSLANG 165)
+                if (isa<mlir_ts::ObjectType, mlir_ts::ClassType>(inType))
+                {
+                    return in;
+                }
+
                 return castToOpaqueType(in, inLLVMType);
             }
         }

@@ -2394,16 +2394,18 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
 endforeach()
-# TSLANG_ISSUES 112 (shapes whose same-named fields differ in type): rc and own can't keep an `object` made of a
-# value yet (00tslang_issue_112.ts says why)
-foreach(issues_mm gc none)
-    tslang_add_test(NAME test-jit-00tslang_issue_112-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_112.ts")
-    tslang_add_test(NAME test-compile-00tslang_issue_112-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_112.ts")
+# TSLANG_ISSUES 112 (shapes whose same-named fields differ in type) and 165 (`<Shape>` of an `any`, `<object>` of
+# an object literal): not under own (the test files say why)
+foreach(issues_mm gc rc none)
+    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any)
+        tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
+        tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
+    endforeach()
 endforeach()
 # a union of interfaces: instanceof, the class it narrows to, `<IB>v` (own refuses the narrowing, as for one interface)
 foreach(issues_mm gc rc none)
@@ -4558,6 +4560,8 @@ set(crash_error_cases
     # only when the module was verified ("module verification error", strictBestCommonSupertype.ts)
     "class_to_union_no_member.ts|class_to_union_no_member\\.ts:3:19: error: type 'C' can't be given for 'number \\| string': it is none of the union's types"
     "class_value_to_union_no_member.ts|class_value_to_union_no_member\\.ts:5:1: error: type 'Store' can't be given for 'A \\| B': it is none of the union's types"
+    # a field given an enum itself (TSLANG 103, 165): typed as one of its members, `f.Hello2.World2` did not resolve
+    "class_field_enum_itself.ts|class_field_enum_itself\\.ts:2:11: error: field 'Hello2' can't hold the enum 'Hello1' itself"
     # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
     # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
     "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export =' is not supported"

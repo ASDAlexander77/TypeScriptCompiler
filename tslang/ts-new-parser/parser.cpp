@@ -1615,7 +1615,8 @@ struct Parser
     auto parsePrivateIdentifier() -> Node
     {
         auto pos = getNodePos();
-        auto node = factory.createPrivateIdentifier(internIdentifier(scanner.getTokenText()));
+        // the scanned value, escapes read (`#\u{78}` is `#x`), not the source text (TSLANG 165)
+        auto node = factory.createPrivateIdentifier(internIdentifier(scanner.getTokenValue()));
         nextToken();
         return finishNode(node, pos);
     }

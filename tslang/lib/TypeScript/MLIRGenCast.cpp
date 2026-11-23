@@ -1098,6 +1098,22 @@ namespace mlirgen
             return cast(location, type, classValue, genContext, disableStrictNullCheck);
         }
 
+        // an object literal as `object` (`<object>{}`): a block of its own. It was the address of a stack slot
+        // holding the literal (castToOpaqueType), which outlived its function when returned, and which -mm=rc
+        // counted as a heap block (`id(o)` crashed). Nothing reads an `object`'s fields back (its type is not
+        // known), so the block takes no reference to what they hold: it is freed alone (TSLANG 165)
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type); objectType
+            && isa<mlir_ts::AnyType>(objectType.getStorageType()) && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(valueType)
+            && compileOptions.memoryModel != MemoryModelOwn)
+        {
+            auto tupleType = mth.convertConstTupleTypeToTupleType(valueType);
+            CAST_A(tuple, location, tupleType, value, genContext);
+            auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+            builder.create<mlir_ts::StoreOp>(location, tuple, valueAddr);
+            auto record = builder.create<mlir_ts::CastOp>(location, mlir_ts::ObjectType::get(tupleType), valueAddr);
+            return V(builder.create<mlir_ts::CastOp>(location, type, record));
+        }
+
         // a class value as a condition (`if (k)`): it always names a class, so it is true; with `| null` or
         // `| undefined`, true when it holds one. It was an invalid cast of its four pointers to a boolean,
         // and of a union of them "not supported"
@@ -2821,6 +2837,35 @@ namespace mlirgen
                 auto types = unionType.getTypes();
                 if (std::find(types.begin(), types.end(), valueType) == types.end())
                 {
+                    // a subclass object given to a union of its bases (`new Big()` for `Sq | Ci`, Big extends
+                    // Ci): the nearest base the union has, its instanceof asking the object's own class (TSLANG 165)
+                    if (auto valueClassType = dyn_cast<mlir_ts::ClassType>(valueType))
+                    {
+                        if (auto classInfo = getClassInfoByFullName(valueClassType.getName().getValue()))
+                        {
+                            llvm::SmallVector<ClassInfo::TypePtr> level{classInfo};
+                            while (!level.empty())
+                            {
+                                llvm::SmallVector<ClassInfo::TypePtr> next;
+                                for (auto &info : level)
+                                {
+                                    for (auto &base : info->baseClasses)
+                                    {
+                                        if (std::find(types.begin(), types.end(), base->classType) != types.end())
+                                        {
+                                            CAST(value, location, base->classType, value, genContext);
+                                            return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                                        }
+
+                                        next.push_back(base);
+                                    }
+                                }
+
+                                level = std::move(next);
+                            }
+                        }
+                    }
+
                     // find which type we can cast to
                     for (auto subType : types)
                     {
@@ -3201,6 +3246,15 @@ namespace mlirgen
             if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
             {
                 return castAnyToTuple(location, type, value, genContext);
+            }
+
+            // a union of object shapes (`<Shape>a`): the shape whose layout the box's tuple has, the last
+            // one checked as one tuple is (TSLANG 165; it was "can't be stored")
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type); unionType && !genContext.allowPartialResolve
+                && unionType.getTypes().size() > 1
+                && llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::TupleType>(member); }))
+            {
+                return castAnyToUnionOfTuples(location, unionType, value, genContext);
             }
         }
 
@@ -4663,6 +4717,45 @@ namespace mlirgen
         EXIT_IF_FAILED(checked)
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType,
+                                                             mlir::Value value, const GenContext &genContext)
+    {
+        auto members = unionType.getTypes();
+
+        auto asMember = [&](mlir::Type member) -> ValueOrLogicalResult {
+            auto memberValue = builder.create<mlir_ts::CastOp>(location, member, value);
+            return cast(location, unionType, memberValue, genContext);
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == members.size())
+            {
+                auto checked = castAnyToTuple(location, members[index], value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(checked)
+                return cast(location, unionType, V(checked), genContext);
+            }
+
+            auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), value,
+                                                                    mlir::TypeAttr::get(members[index]));
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{unionType}, holds, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = asMember(members[index]);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = castOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return castOf(0);
     }
 
     ValueOrLogicalResult MLIRGenImpl::castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)

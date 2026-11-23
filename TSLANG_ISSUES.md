@@ -2577,3 +2577,36 @@ Still open:
 
 Tests `00union_shape_reads.ts`, `00union_first_field_tag.ts`, `00union_classes_no_tag.ts` (gc, rc, none, own),
 `00union_interfaces_instanceof.ts` (gc, rc, none), `00tslang_issue_112.ts` (gc, none).
+
+165 (leftovers of 103, 162 and 164, 2026-11-23). Fixed:
+- A subclass object given to a union of its bases (`return new Big()` for `Sq | Ci`, Big extends Ci) is the
+  nearest base the union has; `instanceof` asks the object's own class. It was "none of the union's types".
+- `<Shape>a` of an `any` holding a member of a union of object shapes is the shape whose layout the box's tuple has
+  (ts.IsTupleOfLayout, one shape after another; the last is checked as `<{...}>a` is, and throws if it is none).
+  It was "'ts.Cast' op type ['!ts.any'] can't be stored". Not under -mm=own: each check reads the box again, which
+  own counts as a second reference (one shape, `<{ kind: "ci"; r: number }>a`, works there).
+- `<object>` of an object literal was the address of a stack slot holding it (CastLogicHelper::castToOpaqueType):
+  returned from its function it pointed at a dead frame, and -mm=rc counted it as a heap block (`id(o)` of
+  `<object>{}` crashed). It is a block of its own now, freed alone: an `object`'s fields are never read back,
+  so the block takes no reference to what they hold. A class object, and an `object` of a known shape, cast to
+  `object` is the same pointer (a class object was a stack slot's address too: `<object>l` returned and kept
+  read a dead frame under rc). 00tslang_issue_112.ts runs under rc too. Under -mm=own `<object>` of a literal
+  is as before (refused where it is returned: "a second reference").
+- A private name written with an escape (`#\u{78}`, `#y\u0031`) is the name it spells: the parser made it of the
+  token's source text, not of its scanned value, and `this.#x` did not find it.
+- 103: a field given an enum itself (`Hello2 = Hello1`) is an error that says so, as for a `let` ("field 'Hello2'
+  can't hold the enum 'Hello1' itself"); it was typed as one of the enum's members, and `f.Hello2.World1` was
+  "Can't resolve property".
+
+Still open, looked at:
+- 148: a function in a `const`'s initializer reading that `const`, with its type written
+  (`const a: { v: number; m(): number } = { v: 5, m() { return a.v + 1; } }`): "can't resolve name: a". The
+  variable is registered once its initializer is generated (registerVariable); a written type would let it be
+  declared first.
+- `for (const v of [...xs])` leaks the spread array under -mm=rc (163).
+- -mm=rc: a class object whose last reference is an `object` is freed without its fields (`<object>new L(i)` of
+  an `L` with a string field, kept only as `object`: 72 MB at 1M, 134 MB at 3M). Nothing in an `object` says it
+  is a class (releaseFields of `any` storage releases nothing).
+
+Tests `00tslang_issue_165.ts` (compile, JIT, gc, rc, none, own), `00tslang_issue_165_any.ts` and
+`00tslang_issue_112.ts` (gc, rc, none), crash-errors `class_field_enum_itself.ts`.
