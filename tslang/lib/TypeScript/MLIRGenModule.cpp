@@ -1803,6 +1803,12 @@ namespace mlirgen
 
         auto name = MLIRHelper::getAnonymousName(location, ".init", "");
         auto fullName = getFullNamespaceName(name);
+        // generated already: a namespace runs its code before its declarations are tried again (mlirGenNamespace)
+        if (lookupModuleSymbol(fullName))
+        {
+            return mlir::success();
+        }
+
         auto funcType = getFunctionType({}, {}, false);
         if (mlir::failed(mlirGenFunctionBody(location, name, fullName, funcType,
             [&](mlir::Location location, const GenContext &genContext) {
@@ -2196,6 +2202,16 @@ namespace mlirgen
                 }
 
                 auto result = mlirGen(statements, genContext);
+
+                // a `var` the code declares in a block (`for (var i = 0; ...)`, `if (c) { var i = 3; }`) is the
+                // namespace's, declared when the code is generated: a function of the namespace reading it failed
+                // with "can't resolve name: i" (TSLANG 173). The code goes first, then what failed is tried again.
+                if (mlir::failed(result) && !declarationMode
+                    && mlir::succeeded(generateModuleInitCode(location, statements, genContext)))
+                {
+                    result = mlirGen(statements, genContext);
+                }
+
                 clearState(statements);
                 EXIT_IF_FAILED(result)
 

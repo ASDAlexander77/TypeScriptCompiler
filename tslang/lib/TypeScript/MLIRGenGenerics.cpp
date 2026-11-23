@@ -756,9 +756,10 @@ namespace mlirgen
                 type = mlir::Type();
             }
 
-            // an `any` given (a value nothing gives types to, instantiateGenericFunctionWithAny) and a type parameter
-            // nothing gives a type are left to the instantiation, as before
-            if (!type || isa<mlir_ts::AnyType>(type))
+            // a type parameter nothing gives a type is left to the instantiation, as before. One given `any` (`const f:
+            // <p>(a: p) => p = <p>(a: p): p => a`, whose type is erased to `(a: any) => any`; `const f: (a: any) => any
+            // = id`) is `any`: left out, the instantiation failed with "can't find type by name: p" (TSLANG 173)
+            if (!type)
             {
                 continue;
             }

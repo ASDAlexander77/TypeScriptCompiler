@@ -1676,6 +1676,34 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // The class a value read from a module `const` names: the const is a constant global set from that class
+    // (`ts.ClassRef` in its initializer) and its type is that class's value. Null for anything else.
+    mlir::Type MLIRGenImpl::classOfModuleConstClassValue(mlir::Value value, mlir_ts::ClassValueType classValueType)
+    {
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+        if (!addressOfOp || addressOfOp.getOffset())
+        {
+            return mlir::Type();
+        }
+
+        auto globalOp = lookupModuleSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName());
+        if (!globalOp || !globalOp.getConstant() || globalOp.getType() != classValueType
+            || globalOp.getInitializerRegion().empty())
+        {
+            return mlir::Type();
+        }
+
+        auto classType = classValueType.getClassType();
+        auto refsTheClass = false;
+        auto refsAnother = false;
+        globalOp.getInitializerRegion().walk([&](mlir_ts::ClassRefOp classRefOp) {
+            (classRefOp.getType() == classType ? refsTheClass : refsAnother) = true;
+        });
+
+        return refsTheClass && !refsAnother ? classType : mlir::Type();
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, HeritageClause heritageClause,
                                                    SmallVector<mlir_ts::FieldInfo> &fieldInfos,
@@ -1693,6 +1721,17 @@ namespace mlirgen
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto baseValue = V(result);
                 auto baseType = baseValue.getType();
+
+                // a module `const` naming a class (`const k = B; class D extends k`) holds that class's value
+                // (TSLANG 172), set once from the class itself: the base is that class, known at compile time
+                // (TSLANG 173). A value of a subclass given to the const's type (`const k: typeof B = C`) is not.
+                if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(baseType))
+                {
+                    if (auto classType = classOfModuleConstClassValue(baseValue, classValueType))
+                    {
+                        baseType = classType;
+                    }
+                }
 
                 // only the base's type is wanted. A base named by a parameter (`class extends Base` in a
                 // mixin) is read by a load emitted here, outside the function that owns the parameter

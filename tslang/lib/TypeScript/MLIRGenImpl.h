@@ -1882,6 +1882,7 @@ class MLIRGenImpl
                                                mlir::Type receiverType, GenContext &funcGenContext);
 
     ValueOrLogicalResult classRefAsClassValue(mlir::Location location, mlir::Value value, const GenContext &genContext);
+    mlir::Type classOfModuleConstClassValue(mlir::Value value, mlir_ts::ClassValueType classValueType);
 
     ValueOrLogicalResult instantiateGenericFunctionWithAny(mlir::Location location, mlir::Value functionRefValue,
                                                            const GenContext &genContext);
