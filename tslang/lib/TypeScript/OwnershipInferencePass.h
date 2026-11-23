@@ -214,6 +214,9 @@ class OwnershipInferencePass
     // with the flag, failure is decided after the real run: signalled, and errors left as errors
     bool failureSignalled = false;
     unsigned uncountedErrors = 0;
+    // while non-zero, a report refuses a shape by design (collectOwnershipOps' walk, the rest takes,
+    // the share checks, a getter's read): never counted, never a counted value's note
+    unsigned refusingByDesign = 0;
 
     // The flag's own: what a site's failure says is decided after the real run (countsFallback).
     void signalPassFailure();

@@ -225,6 +225,18 @@ namespace own_inference
                     return mlir::failure();
                 }
 
+                // a refusal by design is no reason to count, and is never a counted value's note
+                if (refusingByDesign > 0)
+                {
+                    if (dryRun)
+                    {
+                        return mlir::success();
+                    }
+
+                    ++uncountedErrors;
+                    return mlir::failure();
+                }
+
                 RecordedDiagnostic recorded{diag.getLocation(), diag.str(), {}};
                 for (auto &note : diag.getNotes())
                 {
@@ -300,7 +312,10 @@ namespace own_inference
         llvm::SetVector<mlir::Operation *> toErase;
         if (analyze(toErase))
         {
+            // (its refusals are about a getter's value, never a count: they stay errors)
+            ++refusingByDesign;
             releaseCellReads();
+            --refusingByDesign;
         }
 
         if (!countsFallback)
@@ -613,7 +628,11 @@ namespace own_inference
         });
 
         FunctionOps ops;
+        // what the walk refuses is a shape (a handle in an owning union, a cell, `delete`, a parameter
+        // assigned, an Opaque or @weak store), never a value with a retain to keep: no count explains it
+        ++refusingByDesign;
         collectOwnershipOps(ops, toErase);
+        --refusingByDesign;
         auto proven = checkOwnershipOps(ops, toErase);
 
         Receivers slotReceivers;
@@ -635,8 +654,10 @@ namespace own_inference
         decideCells();
         checkBorrowedReads();
         checkBoundedResults();
+        ++refusingByDesign;
         checkRestTakes();
         checkCannotShare();
+        --refusingByDesign;
         checkBorrowingRecords();
         checkRecordResults();
         checkLetHolders(toErase);
@@ -1922,9 +1943,24 @@ namespace own_inference
                 return true;
             }
 
-            // an owning local declared with a value: rc's retain of the slot, or the value it consumes,
-            // is the local's share (what it is given is in its group: countedGroup)
-            return isOwningVariable(varOp) && varOp.getInitializer();
+            // an owning local declared with a value rc counts as own does: rc's retain of the slot, or
+            // the value it consumes, is the local's share (what it is assigned is in its group:
+            // countedGroup). Not one declared from a literal, which rc makes at zero (a constant
+            // array's copy) and own's first owner holds: its retain would be one too many.
+            auto init = varOp.getInitializer();
+            if (!isOwningVariable(varOp) || !init)
+            {
+                return false;
+            }
+
+            auto initUnit = countedUnitOf(init);
+            if (auto initVar = initUnit.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                auto initIndex = -1;
+                return isParameterSlot(initVar, initIndex) || isOwningVariable(initVar);
+            }
+
+            return bornRoot(initUnit);
         }
 
         if (isCopyableValueAt(def, unit.getType()) || !bornRoot(unit))
@@ -2069,7 +2105,8 @@ namespace own_inference
         // or not at all: a local counted alone keeps a release of a value own let it borrow, a value
         // counted alone may be moved into a local own then erases the release of.
         auto add = [&](mlir::Value value) {
-            if (value && !holdsNoBlock(value) && !isConstantData(value) && !isImmortalLiteral(value))
+            // (a literal is not skipped: it is no root rc and own count alike, so its group is refused)
+            if (value && !holdsNoBlock(value))
             {
                 group.insert(countedUnitOf(value));
             }

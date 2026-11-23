@@ -5911,10 +5911,14 @@ foreach(fallback_case own_fallback_second_owner:2 own_fallback_move_overwrite:2 
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
-add_test(NAME test-own-fallback-ir-own_fallback_result_borrow_stays_error
-         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_result_borrow_stays_error.ts"
-                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+# ...and a refusal by design, raised where a retain is kept for another value at the same place: a
+# Shared<T> in an owning union is never counted away
+foreach(fallback_test own_fallback_result_borrow_stays_error own_err_shared_union_owned)
+    add_test(NAME test-own-fallback-ir-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
 
 # A local declared in a generator's loop gives back what the last turn stored in its field. The
 # program means the same under every model; no run can see the leak, so the IR is read.
