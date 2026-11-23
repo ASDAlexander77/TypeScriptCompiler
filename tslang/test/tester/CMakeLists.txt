@@ -2394,7 +2394,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -2402,7 +2402,7 @@ endforeach()
 # TSLANG_ISSUES 112 (shapes whose same-named fields differ in type) and 165 (`<Shape>` of an `any`, `<object>` of
 # an object literal): not under own (the test files say why)
 foreach(issues_mm gc rc none)
-    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown)
+    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -4566,6 +4566,8 @@ set(crash_error_cases
     # not call the setter (TSLANG 167; it was "field "foo" can't be found")
     "type_literal_accessor_object.ts|type_literal_accessor_object\\.ts:4:18: error: an object whose 'foo' is an accessor can't be given to a type literal"
     "type_literal_accessor_class.ts|type_literal_accessor_class\\.ts:3:32: error: 'C' can't be given to a type literal, where its accessor 'foo' is a field"
+    # a `const` declared before its initializer, a function in which reads it (TSLANG 148, 168): assigned once
+    "const_declared_first_assigned.ts|const_declared_first_assigned\\.ts:4:5: error: can't assign to 'c': it is a constant"
     # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
     # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
     "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export =' is not supported"

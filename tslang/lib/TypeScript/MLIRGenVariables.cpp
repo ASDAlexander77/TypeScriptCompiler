@@ -7,6 +7,131 @@ namespace typescript
 namespace mlirgen
 {
 
+    // Whether a function in `initializer` (a method, accessor, arrow or function expression) reads the name
+    // `name` (`{ m() { return c.v; } }` of `const c: I = ...`). A property's own name (`o.c`, `{ c: 1 }`) is not
+    // a read of it, and neither is a function that declares the name itself (a parameter, a local, its own name:
+    // `xs.map(v => v + 1)` of `const v`), which reads its own.
+    static bool functionInInitializerReadsName(Node initializer, const std::string &name)
+    {
+        auto found = false;
+        auto functionDepth = 0;
+
+        auto isName = [&](Node node) {
+            return node == SyntaxKind::Identifier && MLIRHelper::getName(node.as<Identifier>()) == name;
+        };
+
+        // whether the function declares the name: a parameter, its own name, or a declaration anywhere in it
+        // (a nested one too: telling the scopes apart is not worth it, the variable is then declared as before)
+        auto declaresName = [&](Node functionNode) {
+            auto declares = false;
+            ts::FuncT<> visitDecl;
+            ts::ArrayFuncT<> visitDeclArray;
+            visitDecl = [&](Node node) -> Node {
+                if (declares || !node)
+                {
+                    return undefined;
+                }
+
+                switch ((SyntaxKind)node)
+                {
+                case SyntaxKind::Parameter:
+                    declares = declares || isName(node.as<ParameterDeclaration>()->name);
+                    break;
+                case SyntaxKind::VariableDeclaration:
+                    declares = declares || isName(node.as<VariableDeclaration>()->name);
+                    break;
+                case SyntaxKind::BindingElement:
+                    declares = declares || isName(node.as<BindingElement>()->name);
+                    break;
+                case SyntaxKind::FunctionDeclaration:
+                case SyntaxKind::FunctionExpression:
+                case SyntaxKind::ClassDeclaration:
+                case SyntaxKind::ClassExpression:
+                    declares = declares || isName(node.as<NamedDeclaration>()->name);
+                    break;
+                default:
+                    break;
+                }
+
+                ts::forEachChild(node, visitDecl, visitDeclArray);
+                return undefined;
+            };
+            visitDeclArray = [&](NodeArray<Node> array) -> Node {
+                for (auto node : array)
+                {
+                    visitDecl(node);
+                }
+
+                return undefined;
+            };
+
+            visitDecl(functionNode);
+            return declares;
+        };
+
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+
+        visitNode = [&](Node node) -> Node {
+            if (found || !node)
+            {
+                return undefined;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::Identifier:
+                if (functionDepth > 0 && isName(node))
+                {
+                    found = true;
+                }
+
+                return undefined;
+            case SyntaxKind::PropertyAccessExpression:
+                return visitNode(node.as<PropertyAccessExpression>()->expression);
+            case SyntaxKind::PropertyAssignment:
+                return visitNode(node.as<PropertyAssignment>()->initializer);
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::ArrowFunction:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+                if (declaresName(node))
+                {
+                    return undefined;
+                }
+
+                // what the function reads: its parameters' defaults and its body, not its own name
+                functionDepth++;
+                for (auto param : node.as<FunctionLikeDeclarationBase>()->parameters)
+                {
+                    visitNode(param->initializer);
+                }
+
+                visitNode(node.as<FunctionLikeDeclarationBase>()->body);
+                functionDepth--;
+                return undefined;
+            default:
+                break;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        visitNode(initializer);
+        return found;
+    }
+
     // `[a, ...rest] = src`: rest is a new array holding src[index..] (#477) - built as
     //   let .rest_n = .rest_src.length - index; if (.rest_n < 0) .rest_n = 0;
     //   .rest = new array(.rest_n); for (let .rest_i = 0; .rest_i < .rest_n; ++.rest_i) .rest[.rest_i] = .rest_src[.rest_i + index];
@@ -1113,6 +1238,46 @@ namespace mlirgen
                 }
 
                 addGlobalConstructor(location, fullInitGlobalFuncName, /*afterGlobals=*/true);
+            }
+        }
+        else if (genContext.funcOp && !declarationMode && item->type && item->initializer
+                 && item->name == SyntaxKind::Identifier
+                 && (varClass.type == VariableType::Const || varClass.type == VariableType::Let
+                     || varClass.type == VariableType::Var)
+                 && functionInInitializerReadsName(item->initializer, MLIRHelper::getName(item->name)))
+        {
+            // a local with a type written whose initializer has a function reading it (`const c: I = { m() {
+            // return c.v; } }`, TSLANG 148): it is declared first, as a `let` of that type, and then given the
+            // initializer, so the function captures the variable, not a value it does not have yet
+            auto writtenType = getType(item->type, genContext);
+            if (!writtenType)
+            {
+                return mlir::failure();
+            }
+
+            auto declareOnly = [&](mlir::Location, const GenContext &) {
+                return std::make_tuple(writtenType, mlir::Value(), TypeProvided::Yes);
+            };
+
+            VariableClass declaredFirstClass = varClass;
+            declaredFirstClass.type = VariableType::Let;
+            if (mlir::failed(processDeclaration(item, declaredFirstClass, declareOnly, genContext, true)))
+            {
+                return mlir::failure();
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            auto assignment = nf.createBinaryExpression(item->name, nf.createToken(SyntaxKind::EqualsToken), item->initializer);
+            auto result = mlirGen(assignment, genContext);
+            EXIT_IF_FAILED(result)
+
+            // a `const` is assigned only here
+            if (varClass.type == VariableType::Const)
+            {
+                if (auto declared = symbolTable.lookup(MLIRHelper::getName(item->name)); declared.second)
+                {
+                    declared.second->setConstAssignedOnce();
+                }
             }
         }
         else

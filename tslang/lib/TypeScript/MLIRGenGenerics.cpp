@@ -491,6 +491,27 @@ namespace mlirgen
             return;
         }
 
+        // `new (...) => T` given a class (`make(Banana, 3)`): T is the class's instance type; with T known the
+        // parameter is the class value `typeof Banana` (getConstructorType), which `new ctor(n)` makes one of
+        if (auto tempConstructType = dyn_cast<mlir_ts::ConstructFunctionType>(templateType))
+        {
+            mlir::Type instanceType;
+            if (auto classValueType = dyn_cast<mlir_ts::ClassValueType>(concreteType))
+            {
+                instanceType = classValueType.getClassType();
+            }
+            else if (isa<mlir_ts::ClassType>(concreteType))
+            {
+                instanceType = concreteType;
+            }
+
+            if (instanceType && tempConstructType.getNumResults() == 1)
+            {
+                inferType(location, tempConstructType.getResults().front(), instanceType, results, genContext);
+                return;
+            }
+        }
+
         // lambda -> lambda
         if (tryInferFunction(location, templateType, concreteType, results, genContext))
         {

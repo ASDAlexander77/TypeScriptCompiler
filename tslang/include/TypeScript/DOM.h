@@ -35,6 +35,9 @@ class VariableDeclarationDOM
     // a generator's local narrowed by a test: a view of the local's own storage, read and cast
     // to this type at each read (addSafeCastStatement)
     mlir::Type narrowedType;
+    // a `const` declared before its initializer is given (a function in it reads the const): a variable that
+    // is assigned once, by the declaration, and refuses any other assignment
+    bool constAssignedOnce = false;
 
   public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
@@ -95,6 +98,15 @@ class VariableDeclarationDOM
     void setCaptureByValue(bool value = true)
     {
         captureByValue = value;
+    }
+
+    bool getConstAssignedOnce() const
+    {
+        return constAssignedOnce;
+    }
+    void setConstAssignedOnce(bool value = true)
+    {
+        constAssignedOnce = value;
     }
 
     bool getCaptured() const
