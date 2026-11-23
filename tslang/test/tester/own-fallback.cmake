@@ -13,8 +13,8 @@
 #                      bit: Shared.share is not erased under own
 #   MODE=EXPECT_ERROR  still refused with the flag: `error:` (with ERROR_AT, line:column, one there)
 #   MODE=SAME          the other way round: a file own accepts without the flag is accepted with it
-#                      too, and run with it (JIT) prints what it prints under -mm=gc, with no error -
-#                      the flag only ever turns an error into a count
+#                      too, with no count and no warning, and run with it (JIT) prints what it prints
+#                      under -mm=gc, with no error - the flag only ever turns an error into a count
 # Every other mode also checks that the file is refused under own without the flag: each test
 # exercises the fallback, never a shape own already accepts.
 cmake_minimum_required(VERSION 3.17.3)
@@ -164,6 +164,11 @@ ${out}${err}${gcOut}${gcErr}")
 ${out}${err}
 where under gc it prints
 ${gcOut}")
+    endif()
+    # ...and decided as without the flag: what own accepts is never counted
+    string(FIND "${err}" "counts this object here (--own-fallback=count)" counted)
+    if(NOT counted EQUAL -1)
+        message(FATAL_ERROR "own accepts it without the flag, but with --own-fallback=count it counts:\n${err}")
     endif()
 elseif(MODE STREQUAL "EXPECT_ERROR")
     execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own --own-fallback=count "${FILE}"

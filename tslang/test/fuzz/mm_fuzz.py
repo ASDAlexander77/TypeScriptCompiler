@@ -24,7 +24,7 @@
 #       original, each model's output and info.json. With --recheck-tslang, each minimized repro
 #       is also run with a second compiler (main when fuzzing a branch, or the other way round)
 #       and info.json says whether it fails there too. --avoid stops generating a shape whose
-#       bug is already known and would hide the rest (arg-assign, globals).
+#       bug is already known and would hide the rest (arg-assign, globals, literal-temp).
 #
 #   mm_fuzz.py replay FILE.ts|DIR ...
 #       Check existing programs (the seeds/ folder by default), without generating or minimizing.
@@ -46,6 +46,12 @@
 #       out). Each leak is measured twice, minimized and written to DIR/leaks/<seed>-rc-leak/ with
 #       repeated.ts, the program as measured; DIR/leaks.md lists them.
 #
+#   mm_fuzz.py --own-fallback leaks --flag-only [--count N] [--seed S]
+#       The same measure for generated programs (as the leaks command makes them), only those own
+#       accepts with --own-fallback=count and refuses without it: each one exercises the fallback.
+#       Each leaking program goes to DIR/leaks/s<seed>/original.ts. Exits 1 when own leaks or fails
+#       to run. --avoid literal-temp keeps out a leak own has without the flag (own-readiness.md).
+#
 #   mm_fuzz.py leaks [--own-fallback] FILE.ts ...
 #       Measure the given programs instead (no generating, no minimizing): gc, rc and own, each main
 #       run L and H times. A program's own growth beyond rc's (and gc's) is a leak own keeps: with
@@ -57,8 +63,8 @@
 #
 # The compiler defaults to the build tree beside this checkout (windows-msbuild-2026-release on
 # Windows, ninja/release on Linux); --tslang, --tslang-lib-path and --gc-lib-path override it.
-# Every compile uses --emit=exe --opt --opt_level=3 --no-default-lib. --own-fallback (before or
-# after the command) adds --own-fallback=count to every own compile.
+# Every compile uses --emit=exe --opt --opt_level=3 --no-default-lib. --own-fallback (before the
+# command, or after run, replay, minimize or leaks) adds --own-fallback=count to every own compile.
 #
 # On Linux, MALLOC_PERTURB_ is set for the runs: glibc then fills freed memory, so a stale read
 # gives a wrong number even when churn did not win the block, and a double free aborts.
@@ -270,6 +276,8 @@ EXTENDED_HEADER = [
 AVOIDABLE = {
     "arg-assign": "an assignment inside an argument list, f(n, (n = mk(1), m))",
     "globals": "the module-level G, HG, GS and GA",
+    "literal-temp": "an array literal no local holds: indexed ([a, b][1]) or given to a call (f([mk(1)])), "
+                    "which own leaks without the flag too",
 }
 
 TYPE_NAME = {"N": "N", "V": "V", "NA": "N[]", "IX": "IX", "IY": "IY", "IG": "IG",
@@ -486,6 +494,8 @@ class Gen:
                                                  self.expr(ctx, "S", 0.5, depth + 1)),
                     lambda: "[%s, %s][%d]" % (self.expr(ctx, "S", 0.6, depth + 1), self.expr(ctx, "S", 0.6, depth + 1),
                                               self.r.randint(0, 1))]
+            if "literal-temp" in self.avoid:
+                opts.pop()
             if alias:
                 opts.append(lambda: self.pick(vs).name)
             ts = ctx.vars(lambda v: v.ty == "T")
@@ -536,6 +546,12 @@ class Gen:
             owners = [e for t, e in names if t in ("N", "IX", "IY")]
             if owners:
                 return self.pick(owners) + ".v"
+        if ty in ("NA", "SA") and "literal-temp" in self.avoid:
+            # a local holds it: one in scope, or the one a helper fills and returns
+            held = ctx.vars(lambda v: v.ty == ty)
+            if held:
+                return self.pick(held).name
+            return ("mna(%d)" if ty == "NA" else "msa(%d)") % self.k()
         if c < 0.55 and "arg-assign" not in self.avoid:
             assignable = ctx.vars(lambda v: v.ty == ty and v.mutable)
             hs = ctx.vars(lambda v: v.ty == "H")
@@ -774,6 +790,10 @@ class Gen:
 
     def program(self):
         lines = list(HEADER) + (EXTENDED_HEADER if self.extended else [])
+        if "literal-temp" in self.avoid:
+            lines += ["@noinline function mna(i: number): N[] { const a: N[] = [mk(i)]; return a; }"]
+            if self.extended:
+                lines += ["@noinline function msa(i: number): string[] { const a: string[] = [ms(i)]; return a; }"]
         lines += self.gen_globals()
         if self.chance(0.5):
             lines += self.gen_reducer()
@@ -1285,6 +1305,89 @@ class LeakMinimizer(Minimizer):
         return lines
 
 
+def own_leak_row(tc, text, name, work, low, high):
+    """One program's (name, gc, rc, own, verdict) row: own's growth against rc's and gc's."""
+    rep = repeated_main(text)
+    if rep is None:
+        return (name, "no main", "", "", "")
+    res = {mm: leak_measure(tc, rep, work, mm, low, high) for mm in MODELS}
+    own = res["own"]
+    base = max([res[mm].growth for mm in ("gc", "rc") if res[mm].status == "ok"] + [0])
+    if own.status != "ok":
+        verdict = "OWN " + own.status
+    elif own.growth >= LEAK_MIN_BYTES and own.growth > 4 * base + LEAK_MIN_BYTES // 2:
+        verdict = "OWN LEAK"
+    else:
+        verdict = "ok"
+    return (name, res["gc"].summary(), res["rc"].summary(), own.summary(), verdict)
+
+
+def own_accepts(tc, text, work, own_fallback):
+    """Does own accept the program (inference only: --emit=mlir-affine), with or without
+    --own-fallback=count?"""
+    os.makedirs(work, exist_ok=True)
+    src = os.path.join(work, "accept.ts")
+    with open(src, "w", newline="\n") as f:
+        f.write(text)
+    cmd = [tc.tslang, "--emit=mlir-affine", "--no-default-lib", "-mm=own", src,
+           "-o", os.path.join(work, "accept.mlir")]
+    if own_fallback:
+        cmd.insert(3, "--own-fallback=count")
+    try:
+        p = subprocess.run(cmd, cwd=work, capture_output=True, timeout=COMPILE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return False
+    return p.returncode == 0
+
+
+def print_leak_rows(tc, args, rows):
+    rows.sort()
+    print("own%s, main run %d then %d times; growth of the peak between the two" %
+          (" --own-fallback=count" if tc.own_fallback else "", args.low, args.high))
+    print("| program | gc | rc | own | verdict |")
+    print("|---|---|---|---|---|")
+    for r in rows:
+        print("| %s |" % " | ".join(r))
+
+
+def cmd_leak_flag_only(args, tc):
+    """leaks --own-fallback --flag-only: the generated (extended) programs own accepts only with
+    --own-fallback=count, each one's own growth against rc's and gc's."""
+    out = os.path.abspath(args.out)
+    work_root = os.path.join(out, "work")
+    rows = []
+    stats = Stats()
+
+    def one(seed):
+        text = Gen(seed, avoid=args.avoid, extended=not args.objects_only).program()
+        name = "s%d" % seed
+        work = os.path.join(work_root, name)
+        if own_accepts(tc, text, work, False):
+            stats.add("plain-own-accepts")
+        elif not own_accepts(tc, text, work, True):
+            stats.add("flag-refuses")
+        else:
+            stats.add("flag-only")
+            row = own_leak_row(tc, text, name, work, args.low, args.high)
+            rows.append(row)
+            if row[4] != "ok":
+                stats.add(row[4].replace(" ", "-"))
+                d = os.path.join(out, "leaks", name)
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "original.ts"), "w", newline="\n") as f:
+                    f.write(text)
+        if not args.keep_work:
+            shutil.rmtree(work, ignore_errors=True)
+
+    t0 = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
+        list(ex.map(one, range(args.seed, args.seed + args.count)))
+    print_leak_rows(tc, args, rows)
+    print("seeds %d-%d, %.0fs: %s" % (args.seed, args.seed + args.count - 1, time.time() - t0,
+                                      " ".join("%s=%d" % kv for kv in sorted(stats.counts.items()))))
+    return 1 if any(r[4] != "ok" for r in rows) else 0
+
+
 def cmd_leak_files(args, tc):
     """The leaks command given files: each one's own growth against rc's and gc's."""
     out = os.path.abspath(args.out)
@@ -1294,43 +1397,28 @@ def cmd_leak_files(args, tc):
 
     def one(path):
         text = open(path, encoding="utf-8").read()
-        rep = repeated_main(text)
         name = os.path.splitext(os.path.basename(path))[0]
-        if rep is None:
-            rows.append((name, "no main", "", "", ""))
-            bad.append(name)
-            return
         work = os.path.join(work_root, name)
-        res = {mm: leak_measure(tc, rep, work, mm, args.low, args.high) for mm in MODELS}
-        own = res["own"]
-        base = max([res[mm].growth for mm in ("gc", "rc") if res[mm].status == "ok"] + [0])
-        if own.status != "ok":
-            verdict = "OWN " + own.status
-        elif own.growth >= LEAK_MIN_BYTES and own.growth > 4 * base + LEAK_MIN_BYTES // 2:
-            verdict = "OWN LEAK"
-        else:
-            verdict = "ok"
-        rows.append((name, res["gc"].summary(), res["rc"].summary(), own.summary(), verdict))
-        if verdict != "ok":
+        row = own_leak_row(tc, text, name, work, args.low, args.high)
+        rows.append(row)
+        if row[4] != "ok":
             bad.append(name)
         if not args.keep_work:
             shutil.rmtree(work, ignore_errors=True)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
         list(ex.map(one, args.files))
-    rows.sort()
-    print("own%s, main run %d then %d times; growth of the peak between the two" %
-          (" --own-fallback=count" if tc.own_fallback else "", args.low, args.high))
-    print("| program | gc | rc | own | verdict |")
-    print("|---|---|---|---|---|")
-    for r in rows:
-        print("| %s |" % " | ".join(r))
+    print_leak_rows(tc, args, rows)
     return 1 if bad else 0
 
 
 def cmd_leaks(args, tc, recheck):
     if args.files:
         return cmd_leak_files(args, tc)
+    if args.flag_only:
+        if not tc.own_fallback:
+            sys.exit("leaks --flag-only measures own with --own-fallback=count: give --own-fallback too")
+        return cmd_leak_flag_only(args, tc)
     out = os.path.abspath(args.out)
     work_root = os.path.join(out, "work")
     fail_dir = os.path.join(out, "leaks")
@@ -1608,6 +1696,9 @@ def main():
     m = sub.add_parser("minimize")
     m.add_argument("file")
     m.add_argument("--model", choices=("rc", "own"), required=True)
+    for cmd in (r, p, m):
+        cmd.add_argument("--own-fallback", dest="own_fallback_here", action="store_true",
+                         help="as the option before the command")
     s = sub.add_parser("show")
     s.add_argument("--seed", type=int, default=1)
     s.add_argument("--extended", action="store_true", help="the program the leaks command makes of the seed")
@@ -1622,6 +1713,9 @@ def main():
                     help="the run command's programs, without strings, string arrays and function values that return strings")
     lk.add_argument("--own-fallback", dest="own_fallback_here", action="store_true",
                     help="as the option before the command")
+    lk.add_argument("--flag-only", action="store_true",
+                    help="with --own-fallback: measure own (with the flag) against rc and gc on the generated "
+                         "programs own accepts only with --own-fallback=count")
     lk.add_argument("files", nargs="*", help="programs to measure instead of generated ones")
     rp = sub.add_parser("report")
     rp.add_argument("dirs", nargs="+", help="output folders of earlier runs")

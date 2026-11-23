@@ -427,6 +427,10 @@ Without the flag (or with `--own-fallback=error`, the default) the same program 
 note. There is one warning for each place the compiler counts, and no summary. No option turns
 these warnings into errors; leave the flag out for that.
 
+A program `-mm=own` accepts without the flag is decided the same way with it: nothing in it is
+counted. A `let` that borrows a field or an element and is then given a new value, which own
+repairs (its new values go into a holder of their own), is repaired with the flag too.
+
 **What it covers.** The errors of inference where rc would keep a retain: a second owner, a value
 used after it was moved, a borrow stored, returned or captured, an element's borrow stored (a swap
 through a local, `let t = a[i]; a[i] = a[j]; a[j] = t`, compiles with two warnings), and a field
@@ -442,6 +446,12 @@ read lent to a call that may free it. Values `-mm=own` already copies (strings, 
 - A local given a literal and then a second owner.
 - An object that may have a field held through a type descriptor: a tagged union (`Node | string`)
   or a closure. Such a field cannot be given a second owner under own.
+- A value put into a field of an object literal built by value (`f({ v: n, items: [n] })` after
+  the array took `n`): rc counts that field with a retain of the whole literal, which own does not
+  keep.
+- A value whose store gives back the field's old value with a release another value's decision
+  already took (`p.v = p.v; p.v = p.v`), and a captured `const` given a counted value in a loop.
+  These are refused at their place, with own's error.
 - Everything that is not an inference error: errors that point at `Shared<T>` (`new Map<string,
   Node>()`, `new Array<Node>()`, `filter` over class instances, `reduce` with no initial value),
   a missing `@keeps` or `@lends` on an exported function, parameters assigned or kept where the

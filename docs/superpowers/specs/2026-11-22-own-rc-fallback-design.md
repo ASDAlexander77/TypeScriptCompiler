@@ -190,6 +190,24 @@ retains it.
   "63 for sure".
 - A refusal with no rc op to keep, such as a value rc hands to two consuming declarations with no
   retain (the comment in `OwnershipInferencePass::decideRetains`), stays an error.
+- *(Added 2026-11-23, Task 7, after the fuzzer.)* A report a repair resolves is never counted: a
+  `let` the repair reshapes - its fresh values into a holder (`splitBorrowingLets`, TSLANG 66), or each
+  value it is given a borrow (`classifyLocalBorrowingLets`) - is decided as without the flag. Counted
+  and reshaped, its rc ops were not whole and the place it borrowed from was freed under it. The two
+  repairs also leave a counted `let` alone, in case the guess made after the dry run misses.
+- A value put into a field of a record held by value (a tuple local or box, `{ v: n, items: [n] }`) is
+  not counted when rc gives the store no retain of its own (the literal's fields): rc takes that
+  field's count with a retain of the whole record, which own erases while the record's release still
+  goes through the field. An assignment to the field afterwards (`a.item = x`) has its own retain and
+  is counted as any field store.
+- A value whose store into a place (rc's retain, release of the old value, store) has that release
+  erased by the dry run for another value (`p.v = p.v; p.v = p.v`: the first read's retain goes with
+  the second store's release) is not counted: kept, its retain would stand while the release stays
+  erased, and the first store's release - which the erased retain held up - frees what the field
+  still holds.
+- After the real run, a retain left that no count keeps (an error taken for a counted value's note,
+  about another value's retain, such as a captured `const` given a counted parameter) is an error at
+  its place, the one recorded there, not a lowering failure.
 
 **The word is rc's count minus one.** Own's word counts owners beyond the first, so for each counted
 value the kept rc ops must leave the word at rc's count minus one. *(Corrected 2026-11-23 from Task 2,
@@ -305,9 +323,9 @@ library, which shares it. **Decision (user, 2026-11-22): check at share time.**
 
 | Tier | Refusals | What the fallback needs |
 | --- | --- | --- |
-| 1 (this design) | Inference errors where the dry run leaves a retain or a lent field read: a second owner, use after move, a borrow stored, returned or captured, an element borrow stored, a global lent to a call that may release it | Keep the retain (3) |
+| 1 (this design) | Inference errors where the dry run leaves a retain or a lent field read: a second owner, use after move, a borrow stored, returned or captured, an element borrow stored | Keep the retain (3) |
 | 2 (next design) | A borrow used after its owner let go, where MLIRGen under own elides the local (`const first = h.node`); closures that escape and are still used (cells) | MLIRGen keeps rc's local and `RetainSlot` for the shape, so inference can erase it or keep it; counted cells |
-| 3 (out of scope) | MLIRGen and signature-pass errors; by-design refusals pointing at `Shared<T>`; missing `@keeps`/`@lends` on exported functions | Each its own design |
+| 3 (out of scope) | MLIRGen and signature-pass errors, including a global lent to a call that may release it (`OwnershipSignatureGlobals.cpp` reports it before inference: corrected 2026-11-23, Task 6/7); by-design refusals pointing at `Shared<T>`; missing `@keeps`/`@lends` on exported functions | Each its own design |
 
 Tier 2 fixes the string case of the same shape as well, which is refused today.
 
@@ -320,14 +338,14 @@ files, 1032 compile under gc, **863 under own, 169 refused**. By the first error
 | 21 | `'X' is used here after its value was moved` | 1 |
 | 26 | `... borrows (a field / an element / a captured variable / 'X') and cannot be stored, returned or captured` (7 wordings) | 1 |
 | 7 | `... borrows the result of 'X' and cannot be stored, returned or captured` | 2: no retain in the caller (below) |
-| 5 | `a value read out of the global 'X' is lent to a call that may release or overwrite it` | 1 |
+| 5 | `a value read out of the global 'X' is lent to a call that may release or overwrite it` | 3: the signature pass reports it (first listed as 1) |
 | 4 | `a value takes a second reference; -mm=own cannot prove a move or a borrow here yet` | 1 |
 | 28 | `... borrows 'X' but is used here after it may be released or overwritten` (4 wordings) | 1 where the borrow is a lent field read or has a retain; 2 where MLIRGen elided the local |
 | 4 | `'X' borrows the result of 'X' but is used here after ...` | 2 |
 | 9 | closures: `captured by a closure that escapes, and is still used`, `cannot move 'X' into it` | 2 |
 | 65 | everything else: 30 messages - parameters assigned or kept, `@keeps`-shaped, object literals, `any` element access, globals' initializers, function values of another type, `Object.keys` | 3, mostly |
 
-So on the first error tier 1 reaches **at most 56 files, and up to 84** if the 28 borrow-after-release
+So on the first error tier 1 reaches **at most 51 files, and up to 79** (56 and 84 as first counted, with the 5 global-lent files) if the 28 borrow-after-release
 files all have a retain. These are upper bounds. Some report sites erase what they report (3, the
 audit), and a file whose first error falls back may still be refused by a later one. The plan
 measures the real figure with an inference-only prototype before any change to the release.

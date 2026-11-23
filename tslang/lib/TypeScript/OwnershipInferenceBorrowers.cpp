@@ -431,8 +431,9 @@ namespace own_inference
 
         llvm::SmallVector<mlir_ts::VariableOp> candidates;
         getFunction()->walk([&](mlir_ts::VariableOp varOp) {
+            // (--own-fallback=count: a counted `let` keeps all of rc's ops, never a borrower's)
             if (!localLetCandidates.contains(varOp) || !varOp.getInitializer() || !isOwningVariable(varOp) ||
-                varOp.getCaptured().value_or(false))
+                varOp.getCaptured().value_or(false) || countedValues.contains(varOp.getResult()))
             {
                 return;
             }
@@ -640,6 +641,57 @@ namespace own_inference
         return nullptr;
     }
 
+    bool OwnershipInferencePass::splitsLet(mlir_ts::VariableOp varOp, llvm::SmallVectorImpl<mlir_ts::StoreOp> &fresh,
+                                           llvm::SmallVectorImpl<mlir::Operation *> &exits)
+    {
+        auto slot = varOp.getResult();
+        if (!varOp.getInitializer() || !letBorrows(varOp.getInitializer()) || varOp.getCaptured().value_or(false))
+        {
+            return false;
+        }
+
+        for (auto *user : slot.getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(user))
+            {
+                continue;
+            }
+
+            // the release of its old value before an assignment, or of its last at a way out
+            if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+            {
+                auto next = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(user->getNextNode());
+                if (!next || next.getReference() != slot)
+                {
+                    exits.push_back(user);
+                }
+
+                continue;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (!storeOp || storeOp.getReference() != slot)
+            {
+                return false;
+            }
+
+            if (letBorrows(storeOp.getValue()))
+            {
+                continue;
+            }
+
+            auto release = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
+            if (!release || release->getOperand(0) != slot)
+            {
+                return false;
+            }
+
+            fresh.push_back(storeOp);
+        }
+
+        return !fresh.empty();
+    }
+
     void OwnershipInferencePass::splitBorrowingLets()
     {
         // `let dir = this.dir; if (turn) dir = rotate(dir); this.dir = normalize(dir);` (TSLANG 66): each
@@ -649,56 +701,16 @@ namespace own_inference
         {
             auto varOp = mlir::cast<mlir_ts::VariableOp>(candidate);
             auto slot = varOp.getResult();
-            if (!varOp.getInitializer() || !letBorrows(varOp.getInitializer()) || varOp.getCaptured().value_or(false))
+            // (--own-fallback=count: a counted `let` keeps all of rc's ops - the releases of its
+            // assignments too - so it is not split; countRefusedValues counts none the split resolves)
+            if (countedValues.contains(slot))
             {
                 continue;
             }
 
             llvm::SmallVector<mlir_ts::StoreOp> fresh;
             llvm::SmallVector<mlir::Operation *> exits;
-            auto splits = true;
-            for (auto *user : slot.getUsers())
-            {
-                if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(user))
-                {
-                    continue;
-                }
-
-                // the release of its old value before an assignment, or of its last at a way out
-                if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
-                {
-                    auto next = mlir::dyn_cast_or_null<mlir_ts::StoreOp>(user->getNextNode());
-                    if (!next || next.getReference() != slot)
-                    {
-                        exits.push_back(user);
-                    }
-
-                    continue;
-                }
-
-                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-                if (!storeOp || storeOp.getReference() != slot)
-                {
-                    splits = false;
-                    break;
-                }
-
-                if (letBorrows(storeOp.getValue()))
-                {
-                    continue;
-                }
-
-                auto release = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
-                if (!release || release->getOperand(0) != slot)
-                {
-                    splits = false;
-                    break;
-                }
-
-                fresh.push_back(storeOp);
-            }
-
-            if (!splits || fresh.empty())
+            if (!splitsLet(varOp, fresh, exits))
             {
                 continue;
             }

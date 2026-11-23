@@ -5949,6 +5949,21 @@ add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR -DERROR_AT=16:5
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_tuple_in_union_stays_error.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+# ...and a value put into a field of a record built by value (the record's retain is erased, its
+# release goes through the field), and a captured `const` given a counted parameter (its retain no count
+# keeps; was a lowering failure at <unknown>), and a read whose store's release the dry run gave to
+# another value's erased retain (`p.v = p.v` twice): own's errors, at their places
+foreach(fallback_case own_fallback_record_field_stays_error:15:20 own_fallback_captured_let_stays_error:16:15
+                      own_fallback_self_assign_stays_error:13:5)
+    string(REPLACE ":" ";" fallback_case "${fallback_case}")
+    list(GET fallback_case 0 fallback_test)
+    list(GET fallback_case 1 fallback_line)
+    list(GET fallback_case 2 fallback_column)
+    add_test(NAME test-own-fallback-ir-${fallback_test}
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR -DERROR_AT=${fallback_line}:${fallback_column}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+endforeach()
 # ...and each counted program run: the header word's extra owners (Defines.h, beside
 # HEAP_BLOCK_IMMORTAL) keep the object until its last owner lets go, so it prints what it prints
 # under gc. The ones that throw are also built ahead of time, with the overwrite of a holder; the
@@ -5960,7 +5975,8 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
                       own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
-                      own_fallback_keeper)
+                      own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
+                      own_fallback_fuzz_1122304)
     add_test(NAME test-own-fallback-run-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=RUN
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"
@@ -5968,7 +5984,9 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
 endforeach()
 # ...and what own accepts without the flag it accepts with it, printing what gc prints: a tagged
 # union taken out of a result nothing else holds (a callee never returns a counted object with one).
-foreach(fallback_test own_fallback_take_from_fresh_union)
+# A `let` own repairs (its fresh values into a holder, TSLANG 66) is not counted either: counted and
+# split, its block was freed while the array still held it (fuzz 1122083).
+foreach(fallback_test own_fallback_take_from_fresh_union own_fallback_let_holder_same)
     add_test(NAME test-own-fallback-same-${fallback_test}
              COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=SAME
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/${fallback_test}.ts"

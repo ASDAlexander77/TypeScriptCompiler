@@ -330,6 +330,7 @@ namespace own_inference
 
         markCountedRetains();
         warnCounted();
+        refuseUnkeptRetains();
         // an error nobody counted, or a failure no counted value's error explains
         if (uncountedErrors > 0 || (failureSignalled && countedErrors.empty()))
         {
@@ -2053,6 +2054,30 @@ namespace own_inference
             return;
         }
 
+        // The `let`s the repair gives another shape, which plain own accepts in that shape: its fresh
+        // values into a holder (splitBorrowingLets), or each value it is given a borrow of its owner
+        // (classifyLocalBorrowingLets, as the real run will, asked now with the dry run's facts). A report
+        // the repair resolves is never counted, so the flag decides such a `let` as plain own does.
+        // Counted and reshaped too, its rc ops would no longer be whole (the holder takes the releases
+        // of its assignments, a borrower's retains go) and its block would be freed while the place it
+        // was read from still holds it. Where the guess misses, the two repairs leave a counted `let`
+        // alone, and one that is reshaped but still refused is reported again, about a value nobody
+        // counted.
+        llvm::SmallPtrSet<mlir::Operation *, 4> repairedLets;
+        for (auto *candidate : splitLetCandidates)
+        {
+            llvm::SmallVector<mlir_ts::StoreOp> fresh;
+            llvm::SmallVector<mlir::Operation *> exits;
+            if (splitsLet(mlir::cast<mlir_ts::VariableOp>(candidate), fresh, exits))
+            {
+                repairedLets.insert(candidate);
+            }
+        }
+
+        classifyLocalBorrowingLets();
+        repairedLets.insert(localBorrowingLets.begin(), localBorrowingLets.end());
+        localBorrowingLets.clear();
+
         // The retains the dry run could not erase (the set makeStringCopies walks), the reads it lent
         // to a call that may free them (callCopies), and a value reported that a call keeps (rc gives
         // a keeping call no retain: retainKeptCountedArguments makes one for each). A string gets its
@@ -2128,6 +2153,16 @@ namespace own_inference
                 continue;
             }
 
+            // a `let` the repair reshapes is what plain own repairs: never counted (repairedLets)
+            auto repaired = llvm::any_of(group, [&](mlir::Value member) {
+                auto *def = member.getDefiningOp();
+                return def && repairedLets.contains(def);
+            });
+            if (repaired)
+            {
+                continue;
+            }
+
             const RecordedDiagnostic *report = nullptr;
             for (auto member : group)
             {
@@ -2139,6 +2174,33 @@ namespace own_inference
             }
 
             if (!report)
+            {
+                continue;
+            }
+
+            // A store of a member whose release of the place's old value (rc's, right after the
+            // member's retain) the dry run erased as part of another value's move or borrow (`p.v =
+            // p.v; p.v = p.v`: the first read's retain is erased with the second store's release).
+            // Counted, the member keeps its retain but that release stays erased, and the release of
+            // the first store - which rc's erased retain held up - frees the block the field still
+            // holds. Not counted: the error stays.
+            auto claimed = false;
+            getFunction()->walk([&](mlir::Operation *op) {
+                if (claimed || !mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) || erased.contains(op))
+                {
+                    return;
+                }
+
+                // rc's store into a place: the retain of the value, the release of the place's old
+                // value, the store
+                auto unit = countedUnitOfOp(op);
+                auto release = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(op->getNextNode());
+                auto storeOp = release ? mlir::dyn_cast_or_null<mlir_ts::StoreOp>(release->getNextNode()) : mlir_ts::StoreOp();
+                claimed = unit && group.contains(unit) && storeOp && storeOp.getReference() == release.getSlot() &&
+                          !release.getSlot().getDefiningOp<mlir_ts::VariableOp>() && countedUnitOf(storeOp.getValue()) == unit &&
+                          erased.contains(release);
+            });
+            if (claimed)
             {
                 continue;
             }
@@ -2248,6 +2310,78 @@ namespace own_inference
         if (borrowed(fieldBorrowRetains) || borrowed(captureRetains) || borrowed(mergeBorrowRetains))
         {
             return false;
+        }
+
+        // A value put into a field of a record held by value (`{ v: n, items: [n] }` built in a local
+        // or a box, a tuple): rc takes that field's count with a retain of the whole record when it is
+        // boxed or copied, not with a retain of the value, and own erases that retain while the
+        // record's release still goes through its fields. The member's ops are not whole, so it is
+        // not counted: it stays an error.
+        auto intoRecord = [&](mlir::Value value) {
+            auto found = false;
+            forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+                if (mlir::isa<mlir_ts::CreateTupleOp, mlir_ts::InsertPropertyOp>(user))
+                {
+                    found = true;
+                    return;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                auto refOp = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                                                   : mlir_ts::PropertyRefOp();
+                if (!refOp || !mlir::isa<mlir_ts::RefType, mlir_ts::ValueRefType>(refOp.getObjectRef().getType()))
+                {
+                    return;
+                }
+
+                // (a closure's capture box is not a record: what it captures is counted through the
+                // capture's own ops, captureRetains)
+                if (auto *boxDef = refOp.getObjectRef().getDefiningOp(); boxDef && boxDef->hasAttr(CAPTURE_BOX_ATTR_NAME))
+                {
+                    return;
+                }
+
+                // (a store with a retain of its own, as an assignment to the field after the record
+                // is made has - `a.item = x` - takes its count as any field store does)
+                for (auto *prev = storeOp->getPrevNode(); prev; prev = prev->getPrevNode())
+                {
+                    if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::ReleaseOp>(prev))
+                    {
+                        continue;
+                    }
+
+                    if (mlir::isa<mlir_ts::RetainOp>(prev) && rootOf(prev->getOperand(0)) == rootOf(used))
+                    {
+                        return;
+                    }
+
+                    break;
+                }
+
+                found = true;
+            });
+            return found;
+        };
+
+        for (auto member : group)
+        {
+            if (!member.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                if (intoRecord(member))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            for (auto *user : member.getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user); loadOp && intoRecord(loadOp.getResult()))
+                {
+                    return false;
+                }
+            }
         }
 
         // ...and each retain that would be kept (markCountedRetains), or made for a parameter that
@@ -2371,6 +2505,73 @@ namespace own_inference
             {
                 op->setAttr(OWN_COUNTED_ATTR_NAME, unit);
             }
+        });
+    }
+
+    void OwnershipInferencePass::refuseUnkeptRetains()
+    {
+        if (countedValues.empty())
+        {
+            return;
+        }
+
+        // A retain the real run neither erased nor kept for a counted value: an error it raised was taken
+        // for a counted value's note (its subject is in a counted group), but the retain it was about is
+        // another value's - a captured `let` given a counted parameter in a loop (`const n8 = p2` with
+        // `() => n8...`). Nothing counts that one, so its ops are not whole, and the lowering would stop
+        // at it with no place to show. The error it stands for stays an error, at its place: the one
+        // recorded there. (A handle's retains are rc's: RetainOpLowering.)
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (!mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) || op->hasAttr(OWN_COUNTED_ATTR_NAME))
+            {
+                return;
+            }
+
+            auto type = op->getOperand(0).getType();
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type); refType && mlir::isa<mlir_ts::RetainSlotOp>(op))
+            {
+                type = refType.getElementType();
+            }
+
+            if (MLIRTypeHelper::isSharedHandleType(type))
+            {
+                return;
+            }
+
+            // (the same place: a location may be wrapped - a name, a call site - around its line and column)
+            auto place = [](mlir::Location loc) {
+                auto fileLoc = loc->findInstanceOf<mlir::FileLineColLoc>();
+                return fileLoc ? std::make_tuple(fileLoc.getFilename().str(), fileLoc.getLine(), fileLoc.getColumn())
+                               : std::make_tuple(std::string(), 0u, 0u);
+            };
+
+            const RecordedDiagnostic *recorded = nullptr;
+            for (auto &[unit, error] : countedErrors)
+            {
+                if (error.loc == op->getLoc() || (std::get<1>(place(error.loc)) != 0 && place(error.loc) == place(op->getLoc())))
+                {
+                    recorded = &error;
+                    break;
+                }
+            }
+
+            // Only a retain an error was taken away from: one the real run reported at its place and
+            // gave to a counted value. (A retain later passes take out - a capture's in a closure a
+            // thread starts - is left alone, as without counts.)
+            if (!recorded)
+            {
+                return;
+            }
+
+            // (a refusal: the handler passes it on, as an error nobody counted)
+            ++refusingByDesign;
+            auto diag = mlir::emitError(recorded->loc, recorded->message);
+            for (auto &[noteLoc, note] : recorded->notes)
+            {
+                diag.attachNote(noteLoc) << note;
+            }
+
+            --refusingByDesign;
         });
     }
 

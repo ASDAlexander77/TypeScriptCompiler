@@ -110,17 +110,28 @@ Measured on 2026-11-23 with `--own-fallback=count` (branch `own-rc-fallback` at 
 1072 files): of 1032 files that compile under gc, 863 compile under own and 882 with the flag, 19 more,
 with 42 warnings between them. No file compiles under own and not with the flag. The 150 still refused are
 mostly the shapes the flag does not reach: a borrow of a call's result, escaping closures, parameters kept
-or assigned, object literals, `any` element access, globals. The fuzzer with the flag
-(`mm_fuzz.py --jobs 4 --own-fallback run --count 400 --seed 1122000`, 694 programs checked, 367 of them
-accepted with the flag) found 9 programs that stop with an access violation under own with the flag and
-run under rc and gc. In 8 of them a `let` that borrows a field, an element or a global and is then given a
-new value is counted, where own without the flag accepts the program and runs it. The same shape is
-counted in 2 corpus files own accepts without the flag (`00for_optional_class_condition`,
-`00tslang_issue_66`, 5 warnings; their output is unchanged). Of 58 generated programs that compile only with the flag,
-measured against rc and gc with the `leaks` command, 50 are fine, 7 leak under own (1 to 14 MB over 400
-runs of main) where rc and gc do not, and 1 fails in lowering ("ownership inference left a retain
-behind"). The flag is not ready to use until those are fixed. Windows only: there is no Linux build of the
-branch.
+or assigned, object literals, `any` element access, globals. The fuzzer with the flag first found 9 programs that stop with an access violation under own with the flag
+and run under rc and gc, 7 that leak, and 1 that fails in lowering. After the fixes of 2026-11-23 (Task 7):
+
+- A `let` that borrows a field or an element and is then given a new value, which own repairs (its new
+  values go into a holder), is repaired with the flag too, not counted: that was 8 of the 9 crashes, and
+  the 5 warnings in `00for_optional_class_condition` and `00tslang_issue_66` are gone. No corpus file own
+  accepts gets a count with the flag.
+- Three shapes whose rc operations cannot be kept whole stay errors with the flag: a value put into a
+  field of an object literal (rc counts it with a retain of the whole literal), a store whose release of
+  the field's old value another value's decision took (`p.v = p.v; p.v = p.v`), and a captured `const`
+  given a counted value in a loop (was the lowering failure, now own's error at its place).
+- The 7 leaks are not the flag's: each leaks the same under own without the flag once its counted line is
+  removed, and each is flat with the flag once one shape is replaced - an array literal no local holds,
+  indexed (`[a, b][1]`) or given to a call (`f([mk(1)])`). Own leaks that array without the flag, in
+  the release from before this branch too (v0.0-pre-alpha134). It is an own bug, not fixed here.
+
+Now (`mm_fuzz.py --jobs 4 run --own-fallback --count 400`): seed 1122000, 695 programs checked, 366
+accepted by own with the flag, no failure; seed 1123000, 696 checked, 373 accepted, no failure. The
+programs own accepts only with the flag (`--own-fallback leaks --flag-only`), against rc and gc: 57 of
+seeds 1122000-1122399, 7 of them the own leak above; with `--avoid literal-temp`, 55 (seed 1122000) and
+58 (seed 1123000), none growing beyond rc. The corpus: 882 with the flag, as before; no file lost. Windows
+only: there is no Linux build of the branch.
 
 About 50 of the 175 say in the message that the compiler cannot prove something yet. The rest are
 the model's rules; some of those are the single-owner design working as intended, and some are the
@@ -186,8 +197,9 @@ was built under own with `--own-fallback=count`. It does not build fully: of 252
 are refused and 113 are not reached because a module they import is refused. The NRI examples all stop
 at two core modules whose exported methods keep parameters (`@keeps`, which the flag does not cover).
 What builds passes: 250 of the 525 tests run and all 250 pass (236 without the flag), with 62 places
-counted. Three of those places are the shape the fuzzer found crashing (in `core/donut_first_person_camera.ts`
-and `examples/sakura_forest_ser.ts`); no test that runs them failed. The other refusals are kept parameters, borrows of fields stored or used after a release that
+counted. Three of those places were the shape the fuzzer found crashing (in `core/donut_first_person_camera.ts`
+and `examples/sakura_forest_ser.ts`); no test that runs them failed. That shape is no longer counted
+(Task 7); the native_ts_graphics figures have not been measured again. The other refusals are kept parameters, borrows of fields stored or used after a release that
 the flag still refuses, and one type error the newer compiler reports in the old source.
 
 ## Performance

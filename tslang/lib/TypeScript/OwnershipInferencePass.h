@@ -289,6 +289,9 @@ class OwnershipInferencePass
     void markCountedRetains();
     // One warning per counted value, its recorded error and notes as notes.
     void warnCounted();
+    // With counted values: a retain left behind that no count keeps is an error at its place, not a
+    // lowering failure.
+    void refuseUnkeptRetains();
 
     // `op->setAttr(name, unit)`, undone after the dry run when the op did not have it
     void setAttrTracked(mlir::Operation *op, llvm::StringRef name);
@@ -302,6 +305,10 @@ class OwnershipInferencePass
     // `let` borrows the holder's value: it then holds only borrows (borrowsOnly).
     llvm::SetVector<mlir::Operation *> splitLetCandidates;
     void splitBorrowingLets();
+    // Would splitBorrowingLets split `varOp`? Its fresh assignments into `fresh`, the releases at its
+    // ways out into `exits`.
+    bool splitsLet(mlir_ts::VariableOp varOp, llvm::SmallVectorImpl<mlir_ts::StoreOp> &fresh,
+                   llvm::SmallVectorImpl<mlir::Operation *> &exits);
     // The checks of a split `let`'s borrows of its holder's values: none outlives the holder's value
     // nor escapes.
     void checkLetHolders(llvm::SetVector<mlir::Operation *> &toErase);
