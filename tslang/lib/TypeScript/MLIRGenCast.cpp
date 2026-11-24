@@ -1997,7 +1997,7 @@ namespace mlirgen
         }
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___iterator_values";
+        auto funcName = ".iterator_values";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {
@@ -2059,8 +2059,8 @@ namespace mlirgen
         auto ownModel = compileOptions.memoryModel == MemoryModelOwn;
         auto ownsCopy = !isString && ownModel;
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = isString ? (ownModel ? "___string_values_owned" : "___string_values")
-                                 : ownsCopy ? "___array_values_owned" : "___array_values";
+        auto funcName = isString ? (ownModel ? ".string_values_owned" : ".string_values")
+                                 : ownsCopy ? ".array_values_owned" : ".array_values";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {
@@ -4412,7 +4412,7 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___unbox";
+        auto funcName = ".unbox";
 
         // we need to remove current implementation as we have different implementation per union type
         removeGenericFunctionMap(funcName);
@@ -4685,7 +4685,7 @@ namespace mlirgen
         collectClasses(rootNamespace);
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___unbox_interface";
+        auto funcName = ".unbox_interface";
 
         // the classes asked differ from one interface to another
         removeGenericFunctionMap(funcName);
@@ -4793,7 +4793,7 @@ namespace mlirgen
                                                      const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___check_tuple";
+        auto funcName = ".check_tuple";
 
         // the message names the type
         removeGenericFunctionMap(funcName);
@@ -4890,7 +4890,7 @@ namespace mlirgen
             if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(location, unionType.getTypes())))
             {
                 // info, we add "_" extra as scanner append "_" in front of "__";
-                auto funcName = "___cast";
+                auto funcName = ".cast";
 
                 // we need to remove current implementation as we have different implementation per union type
                 removeGenericFunctionMap(funcName);
@@ -5569,8 +5569,8 @@ namespace mlirgen
 
         mlir::OpBuilder::InsertionGuard insertionGuard(builder);
 
-        // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "_" + name;
+        // a helper is named with a "." (helperSourceName), a name no program can write
+        auto funcName = "." + name.substr(2);
         auto funcRef = resolveIdentifier(location, funcName, adapterGenContext);
         if (!funcRef)
         {
@@ -5668,7 +5668,7 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGenAnyCheckFunction(mlir::Location location, mlir::Value value, const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___any_check_function";
+        auto funcName = ".any_check_function";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {
@@ -5751,7 +5751,7 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(argumentsResult)
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___any_invoke";
+        auto funcName = ".any_invoke";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {
@@ -6300,8 +6300,8 @@ namespace mlirgen
         MLIRValueGuard<bool> declarationModeGuard(declarationMode);
         declarationMode = false;
 
-        // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "_" + name;
+        // a helper is named with a "." (helperSourceName), a name no program can write
+        auto funcName = "." + name.substr(2);
         auto funcRef = resolveIdentifier(location, funcName, adapterGenContext);
         if (!funcRef)
         {
@@ -6384,7 +6384,7 @@ namespace mlirgen
         CAST_A(keyValue, location, getAnyType(), key, genContext);
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___any_key";
+        auto funcName = ".any_key";
         auto funcRef = resolveIdentifier(location, funcName, genContext);
         if (!funcRef)
         {

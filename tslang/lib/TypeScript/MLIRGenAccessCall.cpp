@@ -1885,7 +1885,7 @@ namespace mlirgen
                                             const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___array_reduce";
+        auto funcName = ".array_reduce";
 
         if (!existGenericFunctionMap(funcName))
         {
@@ -4203,7 +4203,7 @@ namespace mlirgen
                     if (spreadValue.getType() != dictionary.getType())
                     {
                         // ("_" in front of "__", as the scanner puts it)
-                        auto convertName = "___dictionary_assign_values";
+                        auto convertName = ".dictionary_assign_values";
                         auto convert = resolveIdentifier(spreadLocation, convertName, genContext);
                         if (!convert)
                         {

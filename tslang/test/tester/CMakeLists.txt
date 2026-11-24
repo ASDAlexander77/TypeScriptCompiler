@@ -2402,7 +2402,7 @@ endforeach()
 # TSLANG_ISSUES 112 (shapes whose same-named fields differ in type) and 165 (`<Shape>` of an `any`, `<object>` of
 # an object literal): not under own (the test files say why)
 foreach(issues_mm gc rc none)
-    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174 00tslang_issue_175)
+    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174 00tslang_issue_175 00tslang_issue_177)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -6717,7 +6717,7 @@ set(own_error_cases
     "own_err_borrowed_result_escapes|could return a borrow or keep a parameter, but it is used other than by a call"
     "own_err_borrowed_result_family|an override in its class family disagrees"
     "own_err_param_kept_used|:19:11: error: '[^']*' is used here after its value was moved"
-    "own_err_any_unboxed_outlives|:11:11: error: '[^']*' borrows the result of '___unbox<!ts[.]class<C, !ts[.]class_storage<C>>>' but is used here after it may be released or overwritten"
+    "own_err_any_unboxed_outlives|:11:11: error: '[^']*' borrows a call's result but is used here after it may be released or overwritten"
     "own_err_param_kept_loop|:19:9: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_mixed_return|:13:28: error: '[^']*' is used here after its value was moved"

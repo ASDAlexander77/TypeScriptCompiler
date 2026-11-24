@@ -1592,7 +1592,7 @@ namespace mlirgen
 
         if (name == SyntaxKind::Identifier)
         {
-            return place(nf.createIdentifier(name.as<Identifier>()->escapedText), name);
+            return place(nf.createIdentifier(stows(MLIRHelper::getName(name.as<Identifier>()))), name);
         }
 
         auto withDefault = [&](Expression target, Expression initializer, Node from) -> Expression {
@@ -1618,7 +1618,7 @@ namespace mlirgen
                 else if (!element->propertyName && element->name == SyntaxKind::Identifier)
                 {
                     properties.push_back(place(nf.createShorthandPropertyAssignment(
-                        place(nf.createIdentifier(element->name.as<Identifier>()->escapedText), element->name),
+                        place(nf.createIdentifier(stows(MLIRHelper::getName(element->name.as<Identifier>()))), element->name),
                         element->initializer), element));
                 }
                 else

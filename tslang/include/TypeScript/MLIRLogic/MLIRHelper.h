@@ -121,12 +121,28 @@ inline bool isTrue(ExtendsResult val)
 class MLIRHelper
 {
   public:
+    // A name as it is written: the parser escapes one that starts with `__` (`__p` is kept as `___p`, as
+    // TypeScript's escapedText is), and the compiler makes identifiers again from the names it read, which the
+    // parser's factory escapes once more. Read as written, `__p` is `__p` wherever it is declared or used (a
+    // field was declared as `___p` and read as `__p`, and `keyof` gave `"___p"`). The compiler's own helpers
+    // are named with a `.` (parsePartialStatements).
+    template <typename T> static std::string unescapedName(const T &escapedText)
+    {
+        auto nameValue = convertWideToUTF8(escapedText);
+        if (nameValue.size() >= 3 && nameValue[0] == '_' && nameValue[1] == '_' && nameValue[2] == '_')
+        {
+            nameValue.erase(0, 1);
+        }
+
+        return nameValue;
+    }
+
     static std::string getName(ts::Identifier identifier)
     {
         std::string nameValue;
         if (identifier)
         {
-            nameValue = convertWideToUTF8(identifier->escapedText);
+            nameValue = unescapedName(identifier->escapedText);
             assert(nameValue.size() > 0);
         }
 
@@ -138,7 +154,7 @@ class MLIRHelper
         std::string nameValue;
         if (identifier)
         {
-            nameValue = convertWideToUTF8(identifier->escapedText);
+            nameValue = unescapedName(identifier->escapedText);
             assert(nameValue.size() > 0);
         }
 
