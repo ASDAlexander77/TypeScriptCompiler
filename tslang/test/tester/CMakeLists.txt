@@ -5732,6 +5732,13 @@ add_test(NAME test-own-literal-argument-no-values-ir
 set_tests_properties(test-own-literal-argument-no-values-ir
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]CreateArray\"[(]%[0-9]+[)] {__owned_result} : [(]!ts[.]optional<!ts[.]class<@N"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=own: an empty array literal given to a call is a new empty array, moved into a callee that keeps it (`new
+# Order(i, [])`) and given back after one that does not (`ln([])`); it was given back after both, a double free (the
+# DefaultLib test worker_objects on wasm). The same program under gc and rc.
+foreach(empty_kept_mm gc rc own)
+    tslang_add_test(NAME test-jit-${empty_kept_mm}-own-empty-literal-kept-arg COMMAND test-runner -jit -mm=${empty_kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_empty_literal_kept_arg.ts")
+    tslang_add_test(NAME test-compile-${empty_kept_mm}-own-empty-literal-kept-arg COMMAND test-runner -mm=${empty_kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_empty_literal_kept_arg.ts")
+endforeach()
 # -mm=rc: a conditional yielding a new array in a module with no function returning a heap value (`const xs: number[]
 # = c ? [i] : []`, a let, the assignment form, strings, nested arrays) is settled as anywhere else (it leaked every
 # evaluation). Every model. IR: the conditional is an owned result its local takes over.

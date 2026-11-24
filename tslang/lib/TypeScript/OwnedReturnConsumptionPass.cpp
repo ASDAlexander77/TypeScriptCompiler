@@ -465,11 +465,11 @@ class OwnedReturnConsumptionPass
 
     static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op, bool givenToCall)
     {
-        // `f([])`: the empty constant array, copied to the heap where it is cast to an array - it holds nothing
-        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(op);
-        if (auto constArrayType = castOp ? mlir::dyn_cast<mlir_ts::ConstArrayType>(castOp.getIn().getType()) : mlir_ts::ConstArrayType())
+        // `f([])`: an empty array holds nothing (the empty constant array cast to an array is made one first,
+        // ownNewArrayArguments)
+        if (mlir::isa_and_nonnull<mlir_ts::NewEmptyArrayOp>(op))
         {
-            return constArrayType.getSize() == 0;
+            return true;
         }
 
         auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
@@ -681,6 +681,28 @@ class OwnedReturnConsumptionPass
                 }
 
                 auto *definingOp = argument.getDefiningOp();
+
+                // `f([])`: the empty constant array cast to an array - a copy made on the heap there - is the new empty
+                // array it is (ts.NewEmptyArray), which the inference moves into a callee that keeps it (`new
+                // Order(-1, [])`, the constructor storing it) and gives back after one that does not (`ln([])`, which
+                // leaked it). Marked owned as the cast it was, it was given back after a keeping callee as well, which
+                // then freed it again (DefaultLib worker_objects under -mm=own on wasm: "free" of a freed block)
+                if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
+                    castOp && !castOp->hasAttr(OWNED_RESULT_ATTR_NAME) && mlir::isa<mlir_ts::ArrayType>(argument.getType()) &&
+                    arrayMadeFor(argument, op, false))
+                {
+                    auto constArrayType = mlir::dyn_cast<mlir_ts::ConstArrayType>(castOp.getIn().getType());
+                    if (constArrayType && constArrayType.getSize() == 0)
+                    {
+                        mlir::OpBuilder builder(castOp);
+                        auto emptyOp = builder.create<mlir_ts::NewEmptyArrayOp>(castOp->getLoc(), argument.getType());
+                        castOp->getResult(0).replaceAllUsesWith(emptyOp.getResult());
+                        castOp->erase();
+                        argument = emptyOp.getResult();
+                        definingOp = emptyOp;
+                    }
+                }
+
                 if (!definingOp || !mlir::isa<mlir_ts::ArrayType>(argument.getType()) || !seen.insert(argument).second ||
                     definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) || !ownsWhatItHolds(mth, definingOp, /*givenToCall=*/true) ||
                     !(arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
