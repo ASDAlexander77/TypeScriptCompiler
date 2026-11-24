@@ -2826,7 +2826,8 @@ class OwnedReturnConsumptionPass
     // which owns it and gives it back when the scope ends; the pattern's value borrows the slot. Only a new value is the
     // slot's to own - a call's result, a new object, a fresh string, as settled here, once calls are marked: it moves in.
     // A default that borrows (`p = e`, a field, a literal's element) is not stored: what the region yields is that
-    // value, as before, and the slot stays empty.
+    // value, as before, and the slot stays empty. (An array pattern's element default is the else branch of the bounds
+    // test, a `ts.If`: MLIRGenImpl::processDeclarationArrayBindingPatternSubPath.)
     void settleOwnPatternDefaults(mlir::ModuleOp module)
     {
         if (compileOptions.memoryModel != MemoryModelOwn)
@@ -2838,7 +2839,8 @@ class OwnedReturnConsumptionPass
         module.walk([&](mlir_ts::StoreOp storeOp) {
             auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
             if (varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
-                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp, mlir_ts::ParamOptionalOp>(storeOp->getParentOp()))
+                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp, mlir_ts::ParamOptionalOp, mlir_ts::IfOp>(
+                    storeOp->getParentOp()))
             {
                 stores.push_back(storeOp);
             }
@@ -2851,9 +2853,17 @@ class OwnedReturnConsumptionPass
             auto yielded = resultOp->getOperand(index);
             auto slotType = mlir::cast<mlir_ts::RefType>(slot.getType()).getElementType();
             auto produced = yielded;
-            while (auto castOp = produced.getDefiningOp<mlir_ts::CastOp>())
+            while (true)
             {
-                if (!mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                // (an element of an array of `T | undefined`: the default wrapped as an optional, `ts.OptionalValue`)
+                if (auto optionalValueOp = produced.getDefiningOp<mlir_ts::OptionalValueOp>())
+                {
+                    produced = optionalValueOp.getIn();
+                    continue;
+                }
+
+                auto castOp = produced.getDefiningOp<mlir_ts::CastOp>();
+                if (!castOp || !mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
                 {
                     break;
                 }

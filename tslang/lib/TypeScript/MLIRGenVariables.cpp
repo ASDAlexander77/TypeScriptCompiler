@@ -726,6 +726,11 @@ namespace mlirgen
                         }
                     }
 
+                    // -mm=own: a default that makes a new value is held by a slot of the scope, as an object pattern's is
+                    // (optionalValueOrDefault); the element read borrows the slot or the source's element. A new value
+                    // merged with a borrow of the element had no owner: own refused the pattern.
+                    auto defaultSlot = defaultValue ? ownPatternDefaultSlot(location, valueType, genContext) : mlir::Value();
+
                     auto result = conditionalValue(location, inBoundsValue,
                         [&]() {
                             // TODO: unify it with ElementAccess
@@ -747,7 +752,19 @@ namespace mlirgen
                             if (defaultValue)
                             {
                                 auto value = makeDefault(elementType);
-                                return value ? ValueOrLogicalResult(value) : ValueOrLogicalResult(mlir::failure());
+                                if (!value)
+                                {
+                                    return ValueOrLogicalResult(mlir::failure());
+                                }
+
+                                // (kept only for a new value: settleOwnPatternDefaults)
+                                if (defaultSlot && value.getType() == valueType)
+                                {
+                                    builder.create<mlir_ts::StoreOp>(location, value, defaultSlot);
+                                    value = builder.create<mlir_ts::LoadOp>(location, valueType, defaultSlot);
+                                }
+
+                                return ValueOrLogicalResult(value);
                             }
 
                             return ValueOrLogicalResult(V(builder.create<mlir_ts::DefaultOp>(location, elementType)));

@@ -5623,6 +5623,13 @@ endforeach()
 add_test(NAME test-compile-own-pattern-default-in-expression-error COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_pattern_default_in_expression_error.ts")
 set_tests_properties(test-compile-own-pattern-default-in-expression-error PROPERTIES PASS_REGULAR_EXPRESSION "a value that borrows 'r.p' cannot be stored, returned or captured"
                                                                                    FAIL_REGULAR_EXPRESSION "does not dominate|Stack dump|Assertion failed")
+# -mm=own: an array pattern's element default that makes a new value (`const [a = mk(1)] = xs`; `(N | null)[]`,
+# `(N | undefined)[]`, in a `try`, a nested pattern of a field, a destructured parameter) is held by a slot, as an
+# object pattern's is (own refused these once the default was applied); the same program under rc and gc.
+foreach(array_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${array_default_mm}-own-array-pattern-default-new-value COMMAND test-runner -jit -mm=${array_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_pattern_default_new_value.ts")
+    tslang_add_test(NAME test-compile-${array_default_mm}-own-array-pattern-default-new-value COMMAND test-runner -mm=${array_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_pattern_default_new_value.ts")
+endforeach()
 # A pattern's default that is a local (`const e = mk(i + 1); const { p = e } = r`) gives the local back at the end of
 # its block under rc and own (it leaked): the default hands it on as the value-or-default's result. A named record,
 # a `let`, an array pattern under every model; a record literal source and the assignment form under gc and rc.

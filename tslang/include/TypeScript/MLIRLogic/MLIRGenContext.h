@@ -136,6 +136,7 @@ struct GenContext
         generatorSwitchOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
         allocateScopeOwnedVarsOutsideOfOperation = false;
+        bindingParamPatterns = false;
     }
 
     void clearReceiverTypes()
@@ -219,6 +220,10 @@ struct GenContext
     // a catch clause's variable is being declared: the landing pad writes it, not an initializer, so it
     // starts with nothing in it (MLIRGenImpl::adjustLocalVariableType)
     bool declaringCatchVariable = false;
+    // a function's prologue is destructuring a parameter (`function f([a = mk(1)]: N[])`): no scope owns anything yet
+    // (ownedVars is null), and -mm=own's slot for a pattern default that makes a new value is the frame's, given back
+    // at the function's exit (MLIRGenImpl::ownPatternDefaultSlot, mlirGenFunctionBody)
+    bool bindingParamPatterns = false;
     bool forceDiscover = false;
     bool discoverParamsOnly = false;
     bool insertIntoParentScope = false;

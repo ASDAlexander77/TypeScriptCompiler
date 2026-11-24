@@ -4939,8 +4939,9 @@ class MLIRGenImpl
     // settleOwnPatternDefaults takes such a slot out again.
     mlir::Value ownPatternDefaultSlot(mlir::Location location, mlir::Type dataType, const GenContext &genContext)
     {
-        if (compileOptions.memoryModel != MemoryModelOwn || !genContext.ownedVars || genContext.generatorSwitchOperation ||
-            !mth.ownsHeapMemory(location, dataType))
+        // (a destructured parameter's default: the frame's, listed when the prologue is done, mlirGenFunctionBody)
+        if (compileOptions.memoryModel != MemoryModelOwn || !(genContext.ownedVars || genContext.bindingParamPatterns) ||
+            genContext.generatorSwitchOperation || !mth.ownsHeapMemory(location, dataType))
         {
             return mlir::Value();
         }
@@ -4960,7 +4961,11 @@ class MLIRGenImpl
         varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
         varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
         varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
-        genContext.ownedVars->push_back(defaultSlot);
+        if (genContext.ownedVars)
+        {
+            genContext.ownedVars->push_back(defaultSlot);
+        }
+
         return defaultSlot;
     }
 

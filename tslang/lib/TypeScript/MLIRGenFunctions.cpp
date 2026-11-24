@@ -2623,11 +2623,13 @@ namespace mlirgen
                 assert(val);
                 auto initFunc = [&](mlir::Location, const GenContext &) { return std::make_tuple(val.getType(), val, TypeProvided::No); };
 
+                GenContext bindingGenContext(genContext);
+                bindingGenContext.bindingParamPatterns = true;
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
                 {
                     auto arrayBindingPattern = bindingPattern.as<ArrayBindingPattern>();
                     if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableType::Let,
-                                                               initFunc, genContext)))
+                                                               initFunc, bindingGenContext)))
                     {
                         return mlir::failure();
                     }
@@ -2636,7 +2638,7 @@ namespace mlirgen
                 {
                     auto objectBindingPattern = bindingPattern.as<ObjectBindingPattern>();
                     if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableType::Let,
-                                                                initFunc, genContext)))
+                                                                initFunc, bindingGenContext)))
                     {
                         return mlir::failure();
                     }
@@ -2898,8 +2900,10 @@ namespace mlirgen
             {
                 paramCells->push_back(prologueOp.getResult(0));
             }
-            // ...and the slot owning a parameter's default value (processOptionalParam), given back at exit
-            else if (isa<mlir_ts::VariableOp>(prologueOp) && prologueOp.hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME))
+            // ...and the slot owning a parameter's default value (processOptionalParam), or, under own, a default in a
+            // destructured parameter (ownPatternDefaultSlot), given back at exit
+            else if (isa<mlir_ts::VariableOp>(prologueOp) &&
+                     (prologueOp.hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME) || prologueOp.hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME)))
             {
                 paramCells->push_back(prologueOp.getResult(0));
             }
