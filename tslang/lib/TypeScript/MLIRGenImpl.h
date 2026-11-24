@@ -5503,15 +5503,14 @@ class MLIRGenImpl
                 auto resultIdent = nf.createIdentifier(stows(".yc" + site));
                 auto delegateName = MLIRHelper::getName(delegateExpression.as<Identifier>());
                 // a return() of this generator calls the delegate's return() first, when it has one; a throw() is
-                // handed to its throw() (TSLANG 186, 184 for a delegate made there), for elements that own nothing:
+                // handed to its throw() (TSLANG 186, 184 for a delegate made there; of strings and objects too, 187):
                 // the resume check puts its result in `.yc` and sets `.ys`, and the step's next() is then not called
                 auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
                 auto resumable = !!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable);
                 auto hasReturn = delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
                                                   delegateInfo->findMethod("return"));
                 auto handsThrow = resumable && delegateInfo &&
-                                  (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw")) &&
-                                  !mth.ownsHeapMemory(loc(yieldExpressionAST), iteratorElementType(delegateInterface));
+                                  (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw"));
                 auto resultName = ".yc" + site;
                 auto skipName = ".ys" + site;
                 if (resumable && (hasReturn || handsThrow))
@@ -5628,7 +5627,7 @@ class MLIRGenImpl
                 auto hasThrow = delegateInfo && (delegateInfo->findField(builder.getStringAttr("throw")) ||
                                                  delegateInfo->findMethod("throw"));
                 if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) &&
-                    (hasReturn || (hasThrow && !mth.ownsHeapMemory(loc(yieldExpressionAST), elementType))))
+                    (hasReturn || hasThrow))
                 {
                     delegateGenContext.yieldStarDelegate = delegateName.c_str();
                     delegateGenContext.yieldStarHasReturn = hasReturn;
@@ -5636,15 +5635,13 @@ class MLIRGenImpl
 
                 // ...and a throw() of it is handed to the delegate's throw(), when it has one (TSLANG 184, as 183 for
                 // the other models): the resume check puts its result in `.yc` and sets `.ys`, and the step's next()
-                // is then not called. Only for elements that own nothing (a number, a boolean), as the generator's
-                // return() under -mm=own: of strings or objects, the step's result would be one of two calls' - "a
-                // value is merged from several branches" - and the delegate's throw() is not called (it throws at the
-                // yield, as before)
+                // is then not called. Of strings and objects too (TSLANG 187): the delegate's optional `throw` is read
+                // out unchecked once tested (UncheckedNonNull), so its result is the call's, which is fresh as a
+                // `next()` is (OwnershipSignaturePass)
                 auto skipName = ".ys" + site;
                 auto resultName = ".yc" + site;
                 auto skipIdent = nf.createIdentifier(stows(skipName));
-                auto handsThrow = delegateGenContext.yieldStarDelegate && !mth.ownsHeapMemory(loc(yieldExpressionAST), elementType) &&
-                                  hasThrow;
+                auto handsThrow = delegateGenContext.yieldStarDelegate && hasThrow;
                 if (handsThrow)
                 {
                     delegateGenContext.yieldStarResult = resultName.c_str();
@@ -13038,6 +13035,14 @@ class MLIRGenImpl
             // an optional field (`fn?: () => int`) loads as optional<fn>: bound when present, undefined when not
             if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
             {
+                // ...read out unchecked under a `!` the compiler wrote where it checked it is there
+                // (UncheckedNonNull): the bound method itself, not one of it and undefined, which -mm=own can't
+                // follow the object of
+                if (uncheckedOptionalMember)
+                {
+                    return bindThis(builder.create<mlir_ts::ValueOp>(location, optionalType.getElementType(), value));
+                }
+
                 auto optionalValue = value;
                 auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), optionalValue);
                 MLIRCodeLogicHelper mclh(builder, location, compileOptions);
@@ -13068,6 +13073,10 @@ class MLIRGenImpl
 
     // the last OWNED_READ_ID_ATTR_NAME given
     int ownedReads = 0;
+
+    // set while the operand of a `!` marked UncheckedNonNull is generated: an optional interface method is read
+    // as the method (InterfaceFieldAccess)
+    bool uncheckedOptionalMember = false;
 
     // The result type of a call of the generic interface method `signature` for its type arguments: given,
     // or inferred from the arguments. Null when they can't be had: the call's result stays `any`.

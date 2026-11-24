@@ -3170,9 +3170,19 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
     {
+        auto unchecked = !!(nonNullExpression->internalFlags & InternalFlags::UncheckedNonNull);
+        MLIRValueGuard<bool> uncheckedGuard(uncheckedOptionalMember, unchecked || uncheckedOptionalMember);
         auto result = mlirGen(nonNullExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+
+        if (unchecked)
+        {
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+            {
+                return V(builder.create<mlir_ts::ValueOp>(loc(nonNullExpression), optionalType.getElementType(), value));
+            }
+        }
 
         // `n!` of a `number | null` (a union with a tag, one member and null) is that member, read out
         // unchecked - the way a narrowing reads it. Left a union, it was cast to the member as any

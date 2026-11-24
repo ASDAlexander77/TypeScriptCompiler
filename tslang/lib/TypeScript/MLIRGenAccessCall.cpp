@@ -3152,12 +3152,16 @@ namespace mlirgen
         // a function that reads `arguments` called by its name: given the count of the arguments, `undefined` for
         // the parameters left out before it (mlirGenParameters, TSLANG 186). More arguments than parameters are put
         // after it, refused as before.
-        if (auto symbolRefOp = mlir::dyn_cast_or_null<mlir_ts::SymbolRefOp>(calleeOp))
+        // (a method by its symbol too - direct, through the vtable or static, TSLANG 187: a bound method's `this` is
+        // not one of the operands, so the position is one less)
+        if (calleeName && mlir::isa<mlir_ts::SymbolRefOp, mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
+                                    mlir_ts::VirtualSymbolRefOp>(calleeOp))
         {
-            auto counting = functionsCountingArguments.find(symbolRefOp.getIdentifier());
-            if (counting != functionsCountingArguments.end())
+            auto counting = functionsCountingArguments.find(calleeName.getValue());
+            auto bound = isa<mlir_ts::BoundFunctionType>(funcRefValue.getType());
+            if (counting != functionsCountingArguments.end() && (!bound || counting->second > 0))
             {
-                auto countPosition = counting->second;
+                auto countPosition = bound ? counting->second - 1 : counting->second;
                 auto given = operands.size();
                 auto countValue = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                                       builder.getI32IntegerAttr((int)given));

@@ -3136,3 +3136,24 @@ Looked at, still open:
 
 Tests `00arguments_length_given.ts` (cases added), `00generator_yield_star_throw_only.ts` and
 `00generator_yield_star_throw_param.ts` (gc, rc, own).
+
+187 (2026-11-24). Fixed:
+- `arguments.length` of an `undefined` given in a class's methods, static methods and constructors, and in generic
+  functions, as 186 did for plain functions: they take the count parameter too, and a call by the method's symbol
+  (direct, through the vtable, static, `new`) gives it. An override with or without `arguments`, or with fewer
+  parameters, is adapted to the slot it overrides, as one with more optional parameters is.
+- -mm=own: throw() at a `yield*` of strings is handed to the delegate's throw() (184/186 did elements that own
+  nothing), for a delegate made there, one a parameter holds and one whose type has throw() only. The delegate's
+  optional `throw`, once its `if` has tested it, is read out unchecked (InternalFlags::UncheckedNonNull,
+  uncheckedOptionalMember): a call of the optional method gave the call's result or a default, "a value is merged
+  from several branches". Its result is fresh as an iterator's `next()` is (OwnershipSignaturePass: a generator's own
+  `throw` returns what its `next` gives; any other is reached through calls the pass can't all see).
+
+Looked at, still open:
+- -mm=own: a generator's `throw()` leaks the exception it is given (`.thrown` is not given back with the generator):
+  `g.throw!("x" + i)` in a loop grows the heap, with or without a `yield*` (the compiler before 187 too).
+- -mm=own: a `yield*` of a Generator of objects is refused, as before ("a value that borrows a field cannot be
+  stored").
+- `arguments` read through a function value (`const f = obj.m; f(1, undefined)`): the count is not given, as before.
+
+Tests `00arguments_length_methods.ts` and `00generator_yield_star_throw_strings.ts` (gc, rc, own).

@@ -596,6 +596,10 @@ enum class InternalFlags : number
     // handler, and a resume lands in one copy only - the yield was skipped, and the rest of the finally ran from the
     // wrong place
     YieldInFinally = 1 << 23,
+    // a `!` the compiler writes where it has checked the value is there (a delegate's `throw` in mlirGenYieldStar's
+    // resume check): an optional is read out unchecked, so a call of an optional method is a call, not one of a call
+    // and a default
+    UncheckedNonNull = 1 << 24,
     // a variable of a generator's body that is a local of next(), not a variable of the generator: no yield
     // stands in its block, and it does not live past it (mlirGenYieldStar's exchange of the delegate, -mm=own)
     StackLocal = 1 << 25,

@@ -334,7 +334,14 @@ namespace own_signature
                                   llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) {
                                       return isGeneratorNext(callee) || forwardsGeneratorNext(callee);
                                   });
-            if (((isIteratorNext(call.op) && (!call.callees.viaInterface || generatorsOnly)) || makesGeneratorState(call.op)) &&
+            // ...and an iterator's `throw()`, as its `next()` (TSLANG 187): a generator's own returns what its `next`
+            // gives or throws (isGeneratorThrow), and any other is reached through calls this pass can't all see, so
+            // it may not return a borrow either. Through a closed interface only when every member is a generator's
+            auto generatorThrowsOnly = call.callees.viaInterface && call.callees.known && !call.callees.funcs.empty() &&
+                                       llvm::all_of(call.callees.funcs, [](mlir_ts::FuncOp callee) { return isGeneratorThrow(callee); });
+            if (((isIteratorNext(call.op) && (!call.callees.viaInterface || generatorsOnly)) ||
+                 (isIteratorNext(call.op, "throw") && (!call.callees.viaInterface || generatorThrowsOnly)) ||
+                 makesGeneratorState(call.op)) &&
                 !isRecordResult(call.op))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
