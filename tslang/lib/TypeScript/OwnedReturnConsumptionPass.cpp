@@ -67,7 +67,6 @@ class OwnedReturnConsumptionPass
     {
         auto module = getOperation();
         MLIRTypeHelper mth(module->getContext(), compileOptions);
-        handsOnThroughDefaults = compileOptions.tracksOwnership();
 
         copyEscapingStringViews(module);
 
@@ -997,7 +996,7 @@ class OwnedReturnConsumptionPass
     // Does `value` stay in `block` but for its terminator? Seen through the casts that only widen it, and through a
     // conditional expression in `block` (or in a statement of it) whose branch yields it: that conditional's result
     // is the value then. `leaves` is set when `block`'s terminator takes it; false for any other terminator.
-    static bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
+    bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
     {
         if (depth > 64)
         {
@@ -1080,7 +1079,7 @@ class OwnedReturnConsumptionPass
     // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
     // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
     // to the end of the block the outermost one is in.
-    static bool yieldedByBranch(mlir::Operation *op, const std::function<bool(mlir::Value)> &leavesUncounted, int &levels)
+    bool yieldedByBranch(mlir::Operation *op, const std::function<bool(mlir::Value)> &leavesUncounted, int &levels)
     {
         auto ifOp = conditionalOf(op->getBlock());
         if (!ifOp || !op->getParentOfType<mlir_ts::FuncOp>())
@@ -3562,7 +3561,7 @@ class OwnedReturnConsumptionPass
     // at the end of the `if`, and `finally { let n = mk(); for (..) { use(n); n = mk(); } }` at the
     // end of the loop body; the local then read a freed block. Such a value is left with no one to
     // give it back - a leak - which is the side the whole arc keeps the uncertain case on.
-    static bool storedIntoUnownedLocalOutside(mlir::Operation *op)
+    bool storedIntoUnownedLocalOutside(mlir::Operation *op)
     {
         llvm::SmallVector<mlir::Value> values{op->getResult(0)};
         while (!values.empty())
@@ -3621,7 +3620,7 @@ class OwnedReturnConsumptionPass
     // - what is loaded from a local of the block it is stored into: every use of that local is a load or a
     //   store, or the local is one it can't follow.
     // A store anywhere else, or a terminator handing it on otherwise (a loop's), is a use it can't follow.
-    static mlir::Operation *lastUseInBlock(mlir::Operation *op)
+    mlir::Operation *lastUseInBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         mlir::Operation *last = op;
@@ -3760,17 +3759,15 @@ class OwnedReturnConsumptionPass
     // What a branch of a conditional expression hands `value` on as: the result of the `ts.If` whose branch this
     // `ts.Result` ends, at each position the branch yields `value` in - a conditional may yield more than one value
     // (holdPastConditional adds the literal its branch holds). None for any other user.
-    // (under rc and own also the default of a value-or-default - `const { p = e } = r` hands `e` on as the op's result -
-    // set for the module being run: gc and none keep their IR)
-    static inline thread_local bool handsOnThroughDefaults = false;
-
-    static llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
+    // (under rc and own also the default of a value-or-default - `const { p = e } = r` hands `e` on as the op's result;
+    // gc and none keep their IR)
+    llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
     {
         llvm::SmallVector<mlir::Value, 1> handedOn;
         auto *conditional = mlir::isa<mlir_ts::ResultOp>(user) ? user->getParentOp() : nullptr;
         if (!conditional ||
             !(mlir::isa<mlir_ts::IfOp>(conditional) ||
-              (handsOnThroughDefaults && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(conditional))) ||
+              (compileOptions.tracksOwnership() && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(conditional))) ||
             conditional->getNumResults() != user->getNumOperands())
         {
             return handedOn;
@@ -3899,7 +3896,7 @@ class OwnedReturnConsumptionPass
     // was born with, and a release before the yield would free what the caller reads. Any store
     // is treated that way, rather than telling the record apart from a place that does count.
     // Under rc the record takes a reference of its own (retainYieldedRecords).
-    static bool escapesThroughStore(mlir::Value value)
+    bool escapesThroughStore(mlir::Value value)
     {
         for (auto *user : value.getUsers())
         {
@@ -3920,7 +3917,7 @@ class OwnedReturnConsumptionPass
             }
 
             // `yield b ? h : h2` stores what the branch hands on
-            if (llvm::any_of(handedOnByConditional(user, value), [](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
+            if (llvm::any_of(handedOnByConditional(user, value), [&](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
             {
                 return true;
             }
