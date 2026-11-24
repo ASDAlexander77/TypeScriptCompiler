@@ -356,9 +356,82 @@ class MLIRGenImpl
                     work.push_back(callee.getKey());
                 }
             }
+
+            // a method called through its class may be a subclass's override of it (`w.boom()` of a `W` holding a
+            // `V`, TSLANG 185): those of the functions known to throw or to call others are walked too
+            for (auto &overrider : ownOverridesOf(name))
+            {
+                work.push_back(overrider);
+            }
         }
 
         return std::string();
+    }
+
+    // -mm=own: the functions of functionsThrowingObjects and uncaughtCalls that override the method `name`
+    // (`<class>.<method>`): the same method of a class that derives from that class
+    SmallVector<StringRef> ownOverridesOf(StringRef name)
+    {
+        SmallVector<StringRef> overriders;
+        auto dot = name.rfind('.');
+        if (dot == StringRef::npos || dot == 0)
+        {
+            return overriders;
+        }
+
+        auto className = name.take_front(dot);
+        auto methodName = name.drop_front(dot);
+        if (!getClassInfoByFullName(className))
+        {
+            return overriders;
+        }
+
+        auto derivesFrom = [&](StringRef derivedName) {
+            SmallVector<ClassInfo::TypePtr> work;
+            if (auto derived = getClassInfoByFullName(derivedName))
+            {
+                work.append(derived->baseClasses.begin(), derived->baseClasses.end());
+            }
+
+            llvm::SmallPtrSet<ClassInfo *, 8> visited;
+            while (!work.empty())
+            {
+                auto base = work.pop_back_val();
+                if (!base || !visited.insert(base.get()).second)
+                {
+                    continue;
+                }
+
+                if (base->fullName == className)
+                {
+                    return true;
+                }
+
+                work.append(base->baseClasses.begin(), base->baseClasses.end());
+            }
+
+            return false;
+        };
+
+        auto consider = [&](StringRef candidate) {
+            if (candidate != name && candidate.ends_with(methodName) &&
+                derivesFrom(candidate.drop_back(methodName.size())))
+            {
+                overriders.push_back(candidate);
+            }
+        };
+
+        for (auto &entry : functionsThrowingObjects)
+        {
+            consider(entry.getKey());
+        }
+
+        for (auto &entry : uncaughtCalls)
+        {
+            consider(entry.getKey());
+        }
+
+        return overriders;
     }
 
     std::string ownThrownThroughYieldingFinallyMessage(StringRef function, StringRef thrownType)

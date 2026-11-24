@@ -3093,3 +3093,20 @@ Looked at, still open:
 - A delegate whose type has `throw` but not `return` is not handed the exception (the library's Generator has both).
 
 Tests `00generic_arrow_through_generic.ts` (gc, rc; tuple cases added), `00generator_yield_star_throw.ts` (own added).
+
+185 (181's leftover, 2026-11-24). Fixed:
+- -mm=own: a method overridden in a subclass that throws an object, called through the base class in a try whose
+  finally yields (`w.boom()` of a `W` holding a `V` whose `boom` throws): it stopped at run time ("cannot copy an
+  'any' that holds an object"). The method a call names is followed together with its overrides
+  (ownOverridesOf: the same method of each class deriving from the class the call goes through, among the functions
+  known to throw or to call others), so the call is the error a throw there is.
+
+Looked at, still open:
+- -mm=own: throw() at a `yield*` of strings or objects (184). The step's result is a call of the delegate's optional
+  `throw` or a default; reading the method unchecked once the `if` has seen it makes the call direct, but own then
+  still takes the result for a second reference (the call's freshness through the interface is not established).
+  Not done; the yield* throws at the yield there, as before.
+- -mm=own: a call of a function value (`f()` of a variable) that throws an object through a yielding finally still
+  stops at run time: which function it is is known at run time only.
+
+Tests diagnostic-location `generator_override_throwing_object_through_yielding_finally_own.ts`.
