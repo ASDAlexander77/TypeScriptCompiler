@@ -3144,23 +3144,29 @@ namespace mlirgen
         // -mm=own: a call of a function that throws an object out of itself is a throw of it (mlirGen(ThrowStatement)):
         // through a finally block that yields it is the clear error that throw is (it stopped at run time), and the
         // caller throws it out of itself too where no catch clause of its own is around the call
-        if (compileOptions.memoryModel == MemoryModelOwn)
+        // (a function by its name, `f()`, or a method of a class by its own, `w.boom()` - ts.ThisSymbolRef - and
+        // through its virtual table: the method of the class the call names)
+        auto *calleeOp = funcRefValue.getDefiningOp();
+        auto calleeName = calleeOp ? calleeOp->getAttrOfType<mlir::FlatSymbolRefAttr>("identifier") : mlir::FlatSymbolRefAttr();
+        if (compileOptions.memoryModel == MemoryModelOwn && calleeName &&
+            mlir::isa<mlir_ts::SymbolRefOp, mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
+                      mlir_ts::VirtualSymbolRefOp>(calleeOp))
         {
-            if (auto symbolRefOp = funcRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+            auto callee = calleeName.getValue();
             {
                 // (a call of a function the callee is generated before: what it throws is known later, so the calls
                 // out of a function are remembered, and walked when a call is in such a try)
                 if (!genContext.throwCaughtInFunction && genContext.funcOp)
                 {
-                    uncaughtCalls[mlir_ts::FuncOp(genContext.funcOp).getName()].insert(symbolRefOp.getIdentifier());
+                    uncaughtCalls[mlir_ts::FuncOp(genContext.funcOp).getName()].insert(callee);
                 }
 
                 if (!genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
                 {
-                    auto thrownType = ownThrownObjectType(symbolRefOp.getIdentifier());
+                    auto thrownType = ownThrownObjectType(callee);
                     if (!thrownType.empty())
                     {
-                        emitError(location) << ownThrownThroughYieldingFinallyMessage(symbolRefOp.getIdentifier(), thrownType);
+                        emitError(location) << ownThrownThroughYieldingFinallyMessage(callee, thrownType);
                         return mlir::failure();
                     }
 
@@ -3168,7 +3174,7 @@ namespace mlirgen
                     // (checkOwnCallsThroughYieldingFinally)
                     if (!genContext.dummyRun)
                     {
-                        pendingOwnYieldingFinallyCalls.push_back({symbolRefOp.getIdentifier().str(), location});
+                        pendingOwnYieldingFinallyCalls.push_back({callee.str(), location});
                     }
                 }
             }

@@ -3004,3 +3004,24 @@ Looked at, still open:
 
 Tests `00own_partial_moves_any_narrowing.ts` (gc, rc, own), diagnostic-location
 `generator_call_throwing_object_through_yielding_finally_own.ts`.
+
+181 (-mm=own items 180 left: 164 and methods through a yielding finally, 2026-11-24). Fixed:
+- A field read through a union of object shapes, returned (`function getBox(s: Sq | Ci): Box { return s.box; }`,
+  164): "a value is merged from several branches". The field is read in a branch for each shape, out of the member the
+  union holds (ts.GetValueFromUnionOp, ts.ExtractProperty of it), and that read was not seen as a part of the
+  argument: borrowedParam follows both now, so the function returns a borrow of its argument, as with one shape. Its
+  callers read the result and may not store it, as for one shape.
+- A method, in a try whose finally yields, that throws an object out of itself (`try { yield 1; w.boom(); } finally
+  { yield 2; }`): it stopped at run time. Methods are followed as functions are (180): the method a call names
+  (ts.ThisSymbolRef, a static's ts.SymbolRef, a virtual one by the class the call goes through).
+
+Looked at, still open:
+- -mm=own: a method overridden in a subclass that throws an object, called through the base class in such a try, is
+  not seen (the base's method is the one followed); a call of a function value either.
+- -mm=own: `for (const s of this.items) yield s` in a generator method (158): the loop keeps the field's array in the
+  generator's state across its yields, a borrow of a field stored. Reading the field again at each step
+  (`for (let i ...) yield this.items[i]`, which works) would not be JavaScript's for-of when the field is assigned
+  during the loop: a ruling is needed.
+
+Tests `00own_union_shape_field_borrow.ts` (gc, rc, own), diagnostic-location
+`generator_method_throwing_object_through_yielding_finally_own.ts`.

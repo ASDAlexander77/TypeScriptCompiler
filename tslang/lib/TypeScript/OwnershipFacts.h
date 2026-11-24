@@ -2809,6 +2809,19 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
         return borrowedParam(unboxOp.getIn(), depth + 1);
     }
 
+    // the member a union of object shapes holds, read out of it, and a field of that member: the union's (`s.box` of
+    // a `Sq | Ci`, read in a branch for each shape, TSLANG 164)
+    if (auto unionValueOp = mlir::dyn_cast_or_null<mlir_ts::GetValueFromUnionOp>(def))
+    {
+        return borrowedParam(unionValueOp->getOperand(0), depth + 1);
+    }
+
+    if (auto extractOp = mlir::dyn_cast_or_null<mlir_ts::ExtractPropertyOp>(def);
+        extractOp && extractOp->getOperand(0).getDefiningOp<mlir_ts::GetValueFromUnionOp>())
+    {
+        return borrowedParam(extractOp->getOperand(0), depth + 1);
+    }
+
     // a field, an element, a field through an interface: the argument's block holds them. A
     // handle's payload is any handle's, no parameter's.
     if (auto place = placeBase(value); place && place.kind != PlaceKind::SharedValue)

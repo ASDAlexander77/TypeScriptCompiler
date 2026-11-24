@@ -1408,6 +1408,9 @@ tslang_add_test(NAME test-jit-own-00-generator-throw-through-yielding-finally CO
 tslang_add_test(NAME test-jit-00-own-partial-moves-any-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-jit-rc-00-own-partial-moves-any-narrowing COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-jit-own-own-moved-on-two-of-three-paths COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_moved_on_two_of_three_paths.ts")
+tslang_add_test(NAME test-jit-00-own-union-shape-field-borrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
+tslang_add_test(NAME test-jit-rc-00-own-union-shape-field-borrow COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
+tslang_add_test(NAME test-jit-own-00-own-union-shape-field-borrow COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
 tslang_add_test(NAME test-jit-own-00-own-partial-moves-any-narrowing COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-compile-own-00-own-partial-moves-any-narrowing COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-jit-00-iterable-string-for-of COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterable_string_for_of.ts")
@@ -4401,6 +4404,15 @@ add_test(NAME test-compile-diagnostic-location-generator-call-throwing-object-th
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-call-throwing-object-through-yielding-finally-own.obj")
 set_tests_properties(test-compile-diagnostic-location-generator-call-throwing-object-through-yielding-finally-own
                      PROPERTIES PASS_REGULAR_EXPRESSION "generator_call_throwing_object_through_yielding_finally_own\\.ts:10:9: error: -mm=own: 'viaMid' throws an object of type 'Failure', and thrown through a finally block that yields it is not supported"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# -mm=own: a method so called is checked too (TSLANG 181)
+add_test(NAME test-compile-diagnostic-location-generator-method-throwing-object-through-yielding-finally-own
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generator_method_throwing_object_through_yielding_finally_own.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-method-throwing-object-through-yielding-finally-own.obj")
+set_tests_properties(test-compile-diagnostic-location-generator-method-throwing-object-through-yielding-finally-own
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generator_method_throwing_object_through_yielding_finally_own\\.ts:16:9: error: -mm=own: 'W[.]boom' throws an object of type 'Failure'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # -mm=own: an object sent by next() is an error at the yield that reads it, pointing at Shared<T>.
