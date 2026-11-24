@@ -508,7 +508,7 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
         bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
-        Expression defaultValue, const GenContext &genContext)
+        Expression defaultValue, bool bindsName, const GenContext &genContext)
     {
         // An element's default (`const [a = mk(1), b = mk(2)] = [mk(i)]`) is its value where the element is missing - past
         // the end of the source, or undefined there - as in TypeScript. It was not applied: an element past the end of a
@@ -726,6 +726,16 @@ namespace mlirgen
                         }
                     }
 
+                    // (without a default, an element past the end is undefined: a name bound to an element of a reference
+                    // type is `T | undefined` - readsUndefinedPastEnd; it read as null. Not where a literal has the element,
+                    // nor for an inner pattern, which reads the element on)
+                    auto createArrayOfInit = literalOf(init);
+                    if (!defaultValue && !isDotDotDot && bindsName && readsUndefinedPastEnd(valueType) &&
+                        !(createArrayOfInit && static_cast<unsigned>(index) < createArrayOfInit->getNumOperands()))
+                    {
+                        valueType = mlir_ts::OptionalType::get(valueType);
+                    }
+
                     // -mm=own: a default that makes a new value is held by a slot of the scope, as an object pattern's is
                     // (optionalValueOrDefault); the element read borrows the slot or the source's element. A new value
                     // merged with a borrow of the element had no owner: own refused the pattern.
@@ -765,6 +775,11 @@ namespace mlirgen
                                 }
 
                                 return ValueOrLogicalResult(value);
+                            }
+
+                            if (isa<mlir_ts::OptionalType>(elementType))
+                            {
+                                return ValueOrLogicalResult(V(builder.create<mlir_ts::OptionalUndefOp>(location, elementType)));
                             }
 
                             return ValueOrLogicalResult(V(builder.create<mlir_ts::DefaultOp>(location, elementType)));
@@ -933,7 +948,7 @@ namespace mlirgen
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
                 auto result = processDeclarationArrayBindingPatternSubPath(
                     location, index, type, init, !!arrayBindingElement->dotDotDotToken, isIterator, isSourceArrayLike, arrayLikeLengthValue, arrayLikeElementType,
-                    arrayBindingElement->initializer, genContext);
+                    arrayBindingElement->initializer, arrayBindingElement->name == SyntaxKind::Identifier, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 

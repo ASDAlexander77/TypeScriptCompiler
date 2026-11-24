@@ -1,8 +1,8 @@
 // A `const` read out of an element keeps what it read alive when the element is given a new value.
 // Folded, the const was the read itself and held no reference of its own: under rc the overwrite
 // freed the block it still read. Allocations of the same size reuse anything freed before each
-// read. A destructuring past the end of an array gives the element type's default (null for a
-// reference), not whatever follows the array's data.
+// read. A destructuring past the end of an array gives undefined for a reference (== null) and the
+// element type's default for a number or a string, not whatever follows the array's data.
 class C {
     constructor(public x: number) {}
 }
@@ -49,7 +49,7 @@ function pastTheEnd() {
     const [a, b, c] = pair;
     let [d, e, f] = pair;
     assert(a.x == 1 && b.x == 2 && d.x == 1 && e.x == 2, "in bounds");
-    assert(c == null && f == null, "a class element past the end is null");
+    assert(c === undefined && f === undefined, "a class element past the end is undefined");
 
     const words: string[] = ["a", "b"];
     const [w0, w1, w2] = words;

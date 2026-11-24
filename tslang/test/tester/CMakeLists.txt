@@ -5648,6 +5648,25 @@ foreach(past_end_mm gc rc own)
     tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
     tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
 endforeach()
+# USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
+# name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
+# parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
+# undefined to a target that can hold it (own refuses that shape, as before). IR: the past-end branch yields an
+# undefined `N | undefined`.
+foreach(past_end_undefined_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${past_end_undefined_mm}-destructuring-past-end-undefined COMMAND test-runner -jit -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+    tslang_add_test(NAME test-compile-${past_end_undefined_mm}-destructuring-past-end-undefined COMMAND test-runner -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+endforeach()
+foreach(past_end_undefined_mm gc rc none)
+    tslang_add_test(NAME test-jit-${past_end_undefined_mm}-destructuring-past-end-undefined-assign COMMAND test-runner -jit -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined_assign.ts")
+    tslang_add_test(NAME test-compile-${past_end_undefined_mm}-destructuring-past-end-undefined-assign COMMAND test-runner -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined_assign.ts")
+endforeach()
+add_test(NAME test-destructuring-past-end-undefined-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=gc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+set_tests_properties(test-destructuring-past-end-undefined-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]OptionalUndef\"[(][)] : [(][)] -> !ts[.]optional<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 foreach(past_end_mm gc rc)
     tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")
     tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")

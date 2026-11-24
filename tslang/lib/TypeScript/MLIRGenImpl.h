@@ -2202,12 +2202,25 @@ class MLIRGenImpl
         }
 
         // A value read out of an element, through any casts: what `a[0]` is in `const c = a[0]`, and
-        // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if).
+        // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if; of a reference
+        // type, `T | undefined`, the element wrapped as an optional: readsUndefinedPastEnd).
         static bool readsElement(mlir::Value value)
         {
-            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            while (value)
             {
-                value = castOp.getIn();
+                if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                    continue;
+                }
+
+                if (auto optionalValueOp = value.getDefiningOp<mlir_ts::OptionalValueOp>())
+                {
+                    value = optionalValueOp.getIn();
+                    continue;
+                }
+
+                break;
             }
 
             if (auto ifOp = value ? value.getDefiningOp<mlir_ts::IfOp>() : mlir_ts::IfOp())
@@ -3523,7 +3536,24 @@ class MLIRGenImpl
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
         bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
-        Expression defaultValue, const GenContext &genContext);
+        Expression defaultValue, bool bindsName, const GenContext &genContext);
+
+    // An element of an array value past its end is undefined (`const [a, b] = [mk(5)] as N[]`: b, as node has it).
+    // A reference element type (a class, an interface, an object, an array, a tuple, a union with one of those or
+    // null) is read as `T | undefined` then - its own type has only null for "nothing", and the element read as null.
+    // A primitive one (number, boolean, string, a union of those) keeps its type and reads as its type's default: the
+    // variable could not hold undefined.
+    static bool readsUndefinedPastEnd(mlir::Type elementType)
+    {
+        if (isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ObjectType, mlir_ts::ArrayType, mlir_ts::TupleType,
+                mlir_ts::NullType>(elementType))
+        {
+            return true;
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(elementType);
+        return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type type) { return readsUndefinedPastEnd(type); });
+    }
 
     mlir::LogicalResult processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
                                                VariableClass varClass,
@@ -10145,6 +10175,51 @@ class MLIRGenImpl
                     }
 
                     if (mlir::failed(saveTo(rightValue)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    continue;
+                }
+
+                // An element past the end is undefined (as node has it): a target that can hold undefined (`let b: N |
+                // undefined; [a, b] = xs`) is given undefined there, not null - the element is read as `T | undefined`
+                // behind a bounds test (readsUndefinedPastEnd). A target that cannot hold it keeps the read below.
+                auto targetHoldsUndefined = [&]() {
+                    if (!leftExpressionValue || !readsUndefinedPastEnd(elementType))
+                    {
+                        return false;
+                    }
+
+                    auto targetType = leftExpressionValue.getType();
+                    if (isa<mlir_ts::OptionalType>(targetType))
+                    {
+                        return true;
+                    }
+
+                    auto unionType = dyn_cast<mlir_ts::UnionType>(targetType);
+                    return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type type) {
+                               return isa<mlir_ts::UndefinedType, mlir_ts::OptionalType>(type);
+                           });
+                };
+                if (!defaultValue && targetHoldsUndefined())
+                {
+                    auto lengthValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), rightExpressionValue);
+                    auto boundValue = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), mth.getIndexAttrValue(index));
+                    auto inBounds = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                        builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), lengthValue, boundValue));
+                    auto optionalType = mlir_ts::OptionalType::get(elementType);
+                    auto conditional = conditionalValue(location, inBounds,
+                        [&]() -> ValueOrLogicalResult {
+                            auto element = readElement();
+                            CAST_A(optionalElement, location, optionalType, element, genContext);
+                            return ValueOrLogicalResult(optionalElement);
+                        },
+                        [&](mlir::Type trueValueType) {
+                            return ValueOrLogicalResult(V(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType)));
+                        });
+                    EXIT_IF_FAILED_OR_NO_VALUE(conditional)
+                    if (mlir::failed(saveTo(V(conditional))))
                     {
                         return mlir::failure();
                     }
