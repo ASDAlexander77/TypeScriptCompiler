@@ -5730,6 +5730,12 @@ foreach(loose_nullish_mm gc rc own none)
     tslang_add_test(NAME test-jit-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -jit -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
     tslang_add_test(NAME test-compile-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
 endforeach()
+# -mm=own: a `let` a pattern binds with a default, given another value later (`let { p = mk(1) } = r; p = mk(3)`), is
+# split into a holder as a `let` given a field read is (it was refused); the same program under gc and rc.
+foreach(let_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -jit -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
+    tslang_add_test(NAME test-compile-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives

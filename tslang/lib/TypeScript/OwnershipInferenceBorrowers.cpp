@@ -264,10 +264,84 @@ namespace own_inference
     {
         // a read of a place or of a parameter - or of a split `let`'s holder (TSLANG 66)
         auto root = rootOf(value);
+
+        // ...or a pattern's default over one (`let { p = mk(1) } = r`), lowered to the merge of its two arms: the
+        // optional's value (a place read) and the read of the pattern-default slot (MLIRGenImpl::optionalValueOrDefault)
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root))
+        {
+            return mergeOfPatternDefault(argument, 0);
+        }
+
         auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();
         auto slot = rootLoad ? rootLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
         int index = -1;
         return placeReadOf(root) || (slot && (isParameterSlot(slot, index) || slot->hasAttr(OWN_LET_HOLDER_ATTR_NAME)));
+    }
+
+    // A merge (a block argument) of a pattern's default and what it defaults (`let { p = mk(1) } = r`): each
+    // incoming value a borrow (letBorrows, through `ts.Value` of an optional) or the read of a pattern-default slot,
+    // and at least one such read.
+    bool OwnershipInferencePass::mergeOfPatternDefault(mlir::BlockArgument argument, unsigned depth)
+    {
+        auto *block = argument.getOwner();
+        if (block->isEntryBlock() || block->hasNoPredecessors() || depth > 4)
+        {
+            return false;
+        }
+
+        auto slotRead = false;
+        for (auto predecessor = block->pred_begin(); predecessor != block->pred_end(); ++predecessor)
+        {
+            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>((*predecessor)->getTerminator());
+            if (!branchOp)
+            {
+                return false;
+            }
+
+            auto operands = branchOp.getSuccessorOperands(predecessor.getSuccessorIndex());
+            if (argument.getArgNumber() < operands.getProducedOperandCount())
+            {
+                return false;
+            }
+
+            auto incoming = operands[argument.getArgNumber()];
+            if (!incoming)
+            {
+                return false;
+            }
+
+            auto value = rootOf(incoming);
+            if (auto valueOp = value.getDefiningOp<mlir_ts::ValueOp>())
+            {
+                value = rootOf(valueOp->getOperand(0));
+            }
+
+            auto load = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto slot = load ? load.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (slot && slot->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME))
+            {
+                slotRead = true;
+                continue;
+            }
+
+            if (auto nested = mlir::dyn_cast<mlir::BlockArgument>(value))
+            {
+                if (!mergeOfPatternDefault(nested, depth + 1))
+                {
+                    return false;
+                }
+
+                slotRead = true;
+                continue;
+            }
+
+            if (!letBorrows(value))
+            {
+                return false;
+            }
+        }
+
+        return slotRead;
     }
 
     bool OwnershipInferencePass::borrowsOnly(mlir_ts::VariableOp varOp)

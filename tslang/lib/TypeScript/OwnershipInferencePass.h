@@ -464,6 +464,7 @@ class OwnershipInferencePass
     bool borrowsOnly(mlir_ts::VariableOp varOp);
     // Is `value` a read a `let` given it only borrows (borrowsOnly)?
     bool letBorrows(mlir::Value value);
+    bool mergeOfPatternDefault(mlir::BlockArgument argument, unsigned depth);
     // The `let` (borrowsOnly) that `user` assigns `value` to - the store itself, or rc's retain right
     // before it - or null.
     mlir_ts::VariableOp borrowingAssignmentOf(mlir::Operation *user, mlir::Value value);
