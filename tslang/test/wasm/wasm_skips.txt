@@ -18,4 +18,3 @@ json.ts none                    # (default library) builds a 100000-character st
 00global_interface_initializer.ts own # asserts "a field read" (native own: the same assert)
 00let_without_initializer_owns.ts own # copies an `any` holding an object, which -mm=own refuses at run time by design (native own: the same assert)
 00generator_yield_in_finally_values.ts own # a string or an object returned through a finally that yields, and a yield* of a Generator<T>, are errors under -mm=own yet (TSLANG 153)
-00generator_yield_star_throw.ts own # throw() at a yield* is not handed to the delegate under -mm=own yet: thrown at the yield (TSLANG 183, done in 184)
