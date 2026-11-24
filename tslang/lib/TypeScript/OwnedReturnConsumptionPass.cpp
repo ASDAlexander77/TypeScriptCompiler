@@ -402,12 +402,23 @@ class OwnedReturnConsumptionPass
 
         auto anyNew = false;
         auto allTakenAreLocals = true;
+        // (`po([undefined])`, `[null]`: elements that are no value at all, so nothing to own or to borrow - such a
+        // literal given to a call was never given back, own leaked it every call)
+        auto onlyNoValues = true;
         for (auto element : arrayOp->getOperands())
         {
-            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
+            if (isNoValue(element))
             {
                 continue;
             }
+
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
+            {
+                onlyNoValues = onlyNoValues && !isBorrowedText(element);
+                continue;
+            }
+
+            onlyNoValues = false;
 
             if (isMovedIn(arrayOp, element) || isNestedLiteral(mth, arrayOp, element))
             {
@@ -423,11 +434,37 @@ class OwnedReturnConsumptionPass
             allTakenAreLocals = allTakenAreLocals && isLocalsOwn(element);
         }
 
-        return anyNew || (allTakenAreLocals && !givenToCall);
+        return anyNew || onlyNoValues || (allTakenAreLocals && !givenToCall);
+    }
+
+    // undefined or null, through the casts and the optional that only widen it
+    static bool isNoValue(mlir::Value value)
+    {
+        for (auto *op = value.getDefiningOp(); op; op = op->getNumOperands() == 1 ? op->getOperand(0).getDefiningOp() : nullptr)
+        {
+            if (mlir::isa<mlir_ts::OptionalUndefOp, mlir_ts::UndefOp, mlir_ts::NullOp>(op))
+            {
+                return true;
+            }
+
+            if (!mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp>(op))
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op, bool givenToCall)
     {
+        // `f([])`: the empty constant array, copied to the heap where it is cast to an array - it holds nothing
+        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(op);
+        if (auto constArrayType = castOp ? mlir::dyn_cast<mlir_ts::ConstArrayType>(castOp.getIn().getType()) : mlir_ts::ConstArrayType())
+        {
+            return constArrayType.getSize() == 0;
+        }
+
         auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
         return arrayOp && holdsWhatItIsGiven(mth, arrayOp, givenToCall);
     }

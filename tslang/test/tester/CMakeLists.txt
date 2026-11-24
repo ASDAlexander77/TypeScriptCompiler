@@ -5699,6 +5699,18 @@ foreach(arg_place_mm gc rc none)
     tslang_add_test(NAME test-jit-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -jit -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
     tslang_add_test(NAME test-compile-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
 endforeach()
+# -mm=own: an array literal holding no value at all (`[undefined]`, `[null]`, `[]`) given straight to a call is owned
+# and given back after it (it leaked every call); the same program under gc and rc. IR: the literal is an owned result.
+foreach(no_values_mm gc rc own)
+    tslang_add_test(NAME test-jit-${no_values_mm}-own-literal-argument-no-values COMMAND test-runner -jit -mm=${no_values_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+    tslang_add_test(NAME test-compile-${no_values_mm}-own-literal-argument-no-values COMMAND test-runner -mm=${no_values_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+endforeach()
+add_test(NAME test-own-literal-argument-no-values-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+set_tests_properties(test-own-literal-argument-no-values-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]CreateArray\"[(]%[0-9]+[)] {__owned_result} : [(]!ts[.]optional<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
