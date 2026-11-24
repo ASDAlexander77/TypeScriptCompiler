@@ -598,6 +598,77 @@ namespace mlirgen
         };
         auto staticPrefix = staticTwin() ? std::string(STATIC_NAME) + "_" : std::string();
 
+        // A method of a class merged with a namespace that has a function of the same name (`class C { foo() }` and
+        // `namespace C { export function foo() }`): both were the symbol `C.foo` ("redefinition of symbol named
+        // 'C.foo'"). The namespace's function keeps it, which is how its namespace finds it; the method is named
+        // with a `.` (TSLANG 178).
+        auto namespaceTwin = [&]() {
+            if (signatureDeclarationBaseAST != SyntaxKind::MethodDeclaration
+                || signatureDeclarationBaseAST->parent != SyntaxKind::ClassDeclaration)
+            {
+                return false;
+            }
+
+            if (!namespaceTwinMethods)
+            {
+                // (the parents of statements are not kept: the source file is looked through once, by name)
+                llvm::StringSet<> methods;
+                llvm::StringSet<> namespaceFunctions;
+                if (sourceFile)
+                {
+                    ts::VisitorAST visitor([&](ts::Node node) {
+                        if (node == SyntaxKind::ClassDeclaration && node.as<ClassDeclaration>()->name)
+                        {
+                            auto className = MLIRHelper::getName(node.as<ClassDeclaration>()->name);
+                            for (auto member : node.as<ClassDeclaration>()->members)
+                            {
+                                if (member == SyntaxKind::MethodDeclaration && member->name)
+                                {
+                                    methods.insert(className + "." + MLIRHelper::getName(member->name));
+                                }
+                            }
+                        }
+                        else if (node == SyntaxKind::ModuleDeclaration
+                                 && node.as<ModuleDeclaration>()->body == SyntaxKind::ModuleBlock)
+                        {
+                            auto namespaceName = MLIRHelper::getName(node.as<ModuleDeclaration>()->name);
+                            for (auto inner : node.as<ModuleDeclaration>()->body.as<ModuleBlock>()->statements)
+                            {
+                                if (inner == SyntaxKind::FunctionDeclaration && inner.as<FunctionDeclaration>()->name)
+                                {
+                                    namespaceFunctions.insert(namespaceName + "."
+                                                              + MLIRHelper::getName(inner.as<FunctionDeclaration>()->name));
+                                }
+                            }
+                        }
+                    });
+                    visitor.visit(sourceFile);
+                }
+
+                namespaceTwinMethods.emplace();
+                for (auto &method : methods)
+                {
+                    if (namespaceFunctions.contains(method.getKey()))
+                    {
+                        namespaceTwinMethods->insert(method.getKey());
+                    }
+                }
+            }
+
+            auto classDeclaration = signatureDeclarationBaseAST->parent.as<ClassDeclaration>();
+            if (!classDeclaration->name || namespaceTwinMethods->empty())
+            {
+                return false;
+            }
+
+            return namespaceTwinMethods->contains(MLIRHelper::getName(classDeclaration->name) + "."
+                                                  + MLIRHelper::getName(signatureDeclarationBaseAST->name));
+        };
+        if (namespaceTwin())
+        {
+            staticPrefix = "." + staticPrefix;
+        }
+
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
             if (!objectOwnerName.empty())
@@ -1626,6 +1697,26 @@ namespace mlirgen
                         nextParameters.push_back(nf.createParameterDeclaration(
                             undefined, undefined, nf.createIdentifier(S(GENERATOR_SENT_NAME)),
                             nf.createToken(SyntaxKind::QuestionToken), typeReference->typeArguments[2]));
+                    }
+                }
+                // a program's own iterator interface (`interface It<T> { next(): { value: T; done: boolean } }`,
+                // `function* g(): It<number>`): next() returns what the interface's next() does, so `yield 1` is a
+                // number there too (TSLANG 178; it was "can't assign '() => {value:s32, ...}'")
+                else if (genContext)
+                {
+                    auto declared = getType(declaredType, *genContext);
+                    if (auto interfaceType = dyn_cast_or_null<mlir_ts::InterfaceType>(declared))
+                    {
+                        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                        if (interfaceInfo && interfaceInfo->findMethod(ITERATOR_NEXT))
+                        {
+                            Node nextName = nf.createStringLiteral(S(ITERATOR_NEXT));
+                            auto nextType = nf.createIndexedAccessTypeNode(declaredType, nf.createLiteralTypeNode(nextName));
+                            NodeArray<TypeNode> returnTypeArguments;
+                            returnTypeArguments.push_back(nextType);
+                            nextResultType =
+                                nf.createTypeReferenceNode(nf.createIdentifier(S("ReturnType")), returnTypeArguments);
+                        }
                     }
                 }
             }

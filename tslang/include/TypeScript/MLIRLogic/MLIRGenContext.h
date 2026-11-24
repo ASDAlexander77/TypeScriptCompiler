@@ -235,6 +235,9 @@ struct GenContext
     // module level (generateGlobalEntryCode): its variables are still the module's, and an
     // exported one is exported (#448). A function nested in them has a funcOp of its own.
     mlir_ts::FuncOp rootStatementsFuncOp;
+    // A `const` of such a statement whose value is a function (`const a = () => b()`): it is the module's, a
+    // global named by it, as it is with no top-level code beside it, so the module's functions call it by name.
+    bool rootFunctionConst = false;
     FunctionPrototypeDOM::TypePtr funcProto;
     // the prototype of the function whose body is generated: its parameters are `arguments`
     FunctionPrototypeDOM::TypePtr bodyFuncProto;

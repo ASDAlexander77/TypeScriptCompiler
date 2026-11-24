@@ -1802,7 +1802,12 @@ namespace mlirgen
                             }
                         }
 
-                        if (failed(mlirGen(statement, rootGenContext)))
+                        GenContext statementGenContext(rootGenContext);
+                        statementGenContext.rootFunctionConst =
+                            isVariableStatement
+                            && (statement.as<VariableStatement>()->declarationList->flags & NodeFlags::Const) == NodeFlags::Const
+                            && !hasModifier(statement, SyntaxKind::ExportKeyword);
+                        if (failed(mlirGen(statement, statementGenContext)))
                         {
                             emitError(loc(statement), "failed statement");
                             return mlir::failure();

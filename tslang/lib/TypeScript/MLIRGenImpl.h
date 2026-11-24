@@ -2078,6 +2078,12 @@ class MLIRGenImpl
                 scope = VariableScope::Global;
             }
 
+            if (genContext.rootFunctionConst && genContext.funcOp
+                && genContext.funcOp == genContext.rootStatementsFuncOp && varClass_ == VariableType::Const)
+            {
+                scope = VariableScope::Global;
+            }
+
             if (forceLocalVar)
             {
                 scope = VariableScope::Local;
@@ -21936,6 +21942,10 @@ class MLIRGenImpl
     // helper to get line number
     Parser parser;
     ts::SourceFile sourceFile;
+
+    // `Class.method` names of the source file whose class has a namespace of its name with a function of the
+    // method's name (getNameOfFunction), found once
+    std::optional<llvm::StringSet<>> namespaceTwinMethods;
 
     bool declarationMode;
 

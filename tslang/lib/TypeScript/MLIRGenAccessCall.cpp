@@ -1320,6 +1320,24 @@ namespace mlirgen
         // object its instance one, when it has both
         auto throughClass = thisValue && thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
         auto methodIndex = classInfo->getMethodIndex(name, throughClass);
+        // `C.foo` of `class C { foo() }` and `namespace C { export function foo() }`: the namespace's function, not
+        // the instance method (TSLANG 178)
+        if (methodIndex >= 0 && throughClass && !isSuperClass && !classInfo->methods[methodIndex].isStatic)
+        {
+            if (auto namespaceInfo = getNamespaceByFullName(classInfo->fullName))
+            {
+                GenContext partialGenContext(genContext);
+                partialGenContext.allowPartialResolve = true;
+                auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+                auto namespaceRef = builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
+                auto member = mlirGenPropertyAccessExpression(location, namespaceRef, name, partialGenContext);
+                if (!member.failed_or_no_value())
+                {
+                    return V(member);
+                }
+            }
+        }
+
         if (methodIndex >= 0)
         {
             return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext,
@@ -2018,6 +2036,14 @@ namespace mlirgen
         auto generate = [&]() -> ValueOrLogicalResult {
             MLIRCodeLogic mcl(builder, compileOptions);
             auto arrayRef = mcl.GetReferenceFromValue(location, thisValue);
+            if (!arrayRef && !thisValue.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                // an array a call made (`Object.keys(o).push("z")`): it has no place of its own, so it is
+                // given one for the call; the array grows there and the call's result is the same
+                arrayRef = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(arrayType), thisValue,
+                                                               builder.getBoolAttr(false), builder.getIndexAttr(0));
+            }
+
             if (!arrayRef)
             {
                 emitError(location) << "Can't get reference of the array, ensure const array is not used";

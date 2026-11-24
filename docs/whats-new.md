@@ -1,5 +1,6 @@
 # What's new
 
+- A destructuring `var` in a block is the function's (`{ var [a, b] = t; } a + b`); `Object.keys(o).push("z")` and other changes to an array a call made; a class method and a function of its namespace can share a name; a generator can be typed by a program's own iterator interface; a module arrow const can call a later one beside top-level code
 - Names that start with `__` work as declared (`class A { __p = 7 }`, `o.__p`, `keyof A`); the compiler's own helpers are named with a `.`, so a program's `__unbox` is its own. The default library must be rebuilt with this compiler (its `__` symbols are no longer escaped)
 - Each iteration of `for (let i ...)` keeps its own `i` for the closures made in it even when the body assigns `i` (0 1 2, not 3 3 3); a closure in a parameter's default value can read an earlier parameter
 - An interface of one call signature takes a function (`interface Cb { (x: number): number }`); a getter can read itself; `for (var x in this)` walks a class's fields; an interface can extend a generic interface that a function shares its name with
