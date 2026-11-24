@@ -1510,9 +1510,16 @@ class OwnedReturnConsumptionPass
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getSymName();
             funcOp.walk([&](mlir::Operation *op) {
-                if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp>(op))
+                // (`a.length = n` too: a shorter array gives back the elements it drops)
+                if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
                 {
                     writtenKinds[name].insert("E");
+                }
+
+                // `delete`: what it frees takes every place in it along
+                if (mlir::isa<mlir_ts::DeleteOp>(op))
+                {
+                    writtenKinds[name].insert("*");
                 }
 
                 if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
@@ -1689,6 +1696,10 @@ class OwnedReturnConsumptionPass
             const llvm::StringSet<> *kinds = &moduleKinds;
             if (!callee.empty() && !assignsAny.contains(callee))
             {
+                // A callee with no body here writes nothing - as for the globals (assigns). That holds because
+                // the default library's mutating array methods are generic: instantiated in this module, their
+                // bodies are walked like any function here. A non-generic library function that wrote into an
+                // array or an object it is given would be missed.
                 auto it = writtenKinds.find(callee);
                 if (it == writtenKinds.end())
                 {

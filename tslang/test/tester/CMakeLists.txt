@@ -5789,6 +5789,18 @@ add_test(NAME test-rc-argument-place-aliased-ir
 set_tests_properties(test-rc-argument-place-aliased-ir
                      PROPERTIES PASS_REGULAR_EXPRESSION "identifier = @gw2}>[^\n]*\n[^\n]*\"ts[.]PropertyRef\"[^\n]*\n[^\n]*\"ts[.]Load\"[^\n]*\n *\"ts[.]Retain\""
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...and an argument read out of an array a callee shortens through another name (`a.length = 0`): an element write.
+# IR: the element read is held.
+foreach(arg_set_length_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_set_length_mm}-rc-argument-place-set-length COMMAND test-runner -jit -mm=${arg_set_length_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+    tslang_add_test(NAME test-compile-${arg_set_length_mm}-rc-argument-place-set-length COMMAND test-runner -mm=${arg_set_length_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+endforeach()
+add_test(NAME test-rc-argument-place-set-length-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+set_tests_properties(test-rc-argument-place-set-length-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]ElementRef\"[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[^\n]*-> !ts[.]class<@N[^\n]*\n *\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives

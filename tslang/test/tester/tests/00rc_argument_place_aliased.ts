@@ -196,6 +196,15 @@ function x21(): number {
     }
     return total;
 }
+// an array put into another, given with it to a callee that shortens it (`a.length = 0` drops the element)
+function f4(p: N, a: N[]): number { a.length = 0; let t: number = 0; churn(); t += p.x + (p.s == "n" + p.x ? 0 : 1000000); return t; }
+function z04(): number {
+    let total: number = 0;
+    for (let i = 0; i < 300; i++) {
+        const arr: N[] = [mk(i)]; const al = [arr]; total += f4(arr[0], al[0]);
+    }
+    return total;
+}
 function main() {
     G = new H();
     GA.length = 0;
@@ -222,12 +231,13 @@ function main() {
     totals.push(x19());
     totals.push(x20());
     totals.push(x21());
+    totals.push(z04());
     let sum: number = 0;
     for (const t of totals) {
         sum += t;
     }
 
     print(sum);
-    assert(sum == 941850, "total");
+    assert(sum == 986700, "total");
     print("done.");
 }
