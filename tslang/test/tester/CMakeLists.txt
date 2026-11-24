@@ -765,6 +765,11 @@ tslang_add_test(NAME test-compile-00-class-accessor-implements-field COMMAND tes
 tslang_add_test(NAME test-compile-00-class-cast-undeclared-interface-dispatch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_undeclared_interface_dispatch.ts")
 tslang_add_test(NAME test-compile-00-class-redeclared-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_redeclared_field.ts")
 tslang_add_test(NAME test-compile-00-assign-string-number COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assign_string_number.ts")
+tslang_add_test(NAME test-compile-00-union-member-assign COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_assign.ts")
+tslang_add_test(NAME test-jit-00-union-member-assign COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_assign.ts")
+tslang_add_test(NAME test-compile-rc-00-union-member-assign COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_assign.ts")
+tslang_add_test(NAME test-compile-own-00-union-member-assign COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_assign.ts")
+tslang_add_test(NAME test-compile-none-00-union-member-assign COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_assign.ts")
 tslang_add_test(NAME test-compile-00-object-literal-contextual-lambda COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-own-00-object-literal-contextual-lambda COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_literal_contextual_lambda.ts")
 tslang_add_test(NAME test-compile-00-interface-field-getter-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_field_getter_owned.ts")
@@ -2564,6 +2569,55 @@ add_test(NAME test-compile-argument-string-literal-union-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_string_literal_union_error.ts")
 set_tests_properties(test-compile-argument-string-literal-union-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type '\"maybe\"' is not assignable to parameter of type '\"no\" . \"yes\"'"
                                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...and a union with a member no member of the type it is given to takes: a string taken for a class crashed
+add_test(NAME test-compile-argument-union-member-to-class-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_union_member_to_class_error.ts")
+set_tests_properties(test-compile-argument-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type 'string . null' is not assignable to parameter of type 'N . null . undefined'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-rc-argument-union-member-to-class-error
+         COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_union_member_to_class_error.ts")
+set_tests_properties(test-compile-rc-argument-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type 'string . null' is not assignable to parameter of type 'N . null . undefined'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-argument-union-member-to-class-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_union_member_to_class_error.ts")
+set_tests_properties(test-compile-own-argument-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type 'string . null' is not assignable to parameter of type 'N . null . undefined'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-none-argument-union-member-to-class-error
+         COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/argument_union_member_to_class_error.ts")
+set_tests_properties(test-compile-none-argument-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "argument of type 'string . null' is not assignable to parameter of type 'N . null . undefined'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-assign-union-member-to-class-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_union_member_to_class_error.ts")
+set_tests_properties(test-compile-assign-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'string . null' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-rc-assign-union-member-to-class-error
+         COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_union_member_to_class_error.ts")
+set_tests_properties(test-compile-rc-assign-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'string . null' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-assign-union-member-to-class-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_union_member_to_class_error.ts")
+set_tests_properties(test-compile-own-assign-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'string . null' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-none-assign-union-member-to-class-error
+         COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/assign_union_member_to_class_error.ts")
+set_tests_properties(test-compile-none-assign-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'string . null' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-declare-union-member-to-class-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_union_member_to_class_error.ts")
+set_tests_properties(test-compile-declare-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'null . number' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-rc-declare-union-member-to-class-error
+         COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_union_member_to_class_error.ts")
+set_tests_properties(test-compile-rc-declare-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'null . number' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-declare-union-member-to-class-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_union_member_to_class_error.ts")
+set_tests_properties(test-compile-own-declare-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'null . number' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-none-declare-union-member-to-class-error
+         COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_union_member_to_class_error.ts")
+set_tests_properties(test-compile-none-declare-union-member-to-class-error PROPERTIES PASS_REGULAR_EXPRESSION "type 'null . number' is not assignable to type 'N . null'"
+                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...a class extending a class value known at run time only is an error
 add_test(NAME test-compile-mixin-runtime-base-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/mixin_runtime_base_error.ts")

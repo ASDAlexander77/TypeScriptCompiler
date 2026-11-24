@@ -3764,11 +3764,10 @@ class MLIRGenImpl
     }
 
     // a string given where a number is wanted, a number where a string is, or a boolean and either of
-    // them (checkStringNumberAssignment)
+    // them (checkStringNumberAssignment), or a union with a member no member of the type it is given
+    // to takes (isUnionMemberMismatch)
     bool isStringNumberMismatch(mlir::Type valueType, mlir::Type destType, const GenContext &genContext)
     {
-        auto from = stringOrNumber(valueType);
-        auto to = stringOrNumber(destType);
         // a partial resolve may stand in a call's first overload for the one it will pick (an @cpp
         // class's `write(s32)` for `write(string)`): the full pass checks the one picked
         if (untypedParametersInScope(genContext) || genContext.allowPartialResolve)
@@ -3776,8 +3775,110 @@ class MLIRGenImpl
             return false;
         }
 
+        auto from = stringOrNumber(valueType);
+        auto to = stringOrNumber(destType);
         return (from != StringOrNumber::Neither && to != StringOrNumber::Neither && from != to)
-               || isStringLiteralMismatch(valueType, destType);
+               || isStringLiteralMismatch(valueType, destType) || isUnionMemberMismatch(valueType, destType);
+    }
+
+    // one type, not a union, given to another where the cast would take one for the other: a
+    // primitive given to an object (a class, an interface, an array, a tuple, a function) - "invalid
+    // cast from string to N" - or a class or an interface given to a number (verifyCastCompatibility).
+    // A string, a number and a boolean given to one another are converted at run time.
+    bool isObjectMemberMismatch(mlir::Type valueType, mlir::Type destType)
+    {
+        auto isPrimitive = [&](mlir::Type type) {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+            {
+                type = literalType.getElementType();
+            }
+
+            return stringOrNumber(type) != StringOrNumber::Neither || isa<mlir_ts::BigIntType>(type);
+        };
+
+        auto isObject = [&](mlir::Type type) {
+            return isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ArrayType, mlir_ts::ConstArrayType,
+                       mlir_ts::TupleType, mlir_ts::ConstTupleType>(type)
+                   || mth.isAnyFunctionType(type);
+        };
+
+        if (isPrimitive(valueType) && isObject(destType))
+        {
+            return true;
+        }
+
+        return isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(valueType)
+               && (stringOrNumber(destType) == StringOrNumber::Number || isa<mlir_ts::BigIntType>(destType));
+    }
+
+    // the members of a union, an optional's value and `undefined`, unions in it flattened
+    static void unionMembersOf(mlir::Type type, llvm::SmallVectorImpl<mlir::Type> &members)
+    {
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            unionMembersOf(optionalType.getElementType(), members);
+            members.push_back(mlir_ts::UndefinedType::get(type.getContext()));
+            return;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            for (auto member : unionType.getTypes())
+            {
+                unionMembersOf(member, members);
+            }
+
+            return;
+        }
+
+        members.push_back(type);
+    }
+
+    // `ok(v ?? null)` with `v: string | undefined` for `ok(n: N | null)`: TypeScript rejects it (TS2345),
+    // `string` being assignable to no member of `N | null`. The cast took the string's pointer for an
+    // N, and reading `n.s` crashed. A union given is checked a member at a time: each one, but `null`
+    // and `undefined`, has to go to a member of the type it is given to that does not take it for
+    // something it is not (isObjectMemberMismatch). A type given `any`, `unknown` or an opaque pointer
+    // takes anything; `as N` and `<N>x` are casts and are not checked here. A string member given to
+    // a number is left to the run-time conversion, as TypeScript may have narrowed the union
+    // (`let x: string | number = 1; const n: number = x;`).
+    bool isUnionMemberMismatch(mlir::Type valueType, mlir::Type destType)
+    {
+        if (!isa<mlir_ts::UnionType, mlir_ts::OptionalType>(valueType))
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::Type> given;
+        unionMembersOf(valueType, given);
+        llvm::SmallVector<mlir::Type> allowed;
+        unionMembersOf(destType, allowed);
+
+        if (llvm::any_of(allowed, [](mlir::Type member) {
+                return isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(member);
+            }))
+        {
+            return false;
+        }
+
+        auto isMissing = [](mlir::Type type) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(type); };
+        for (auto member : given)
+        {
+            if (isMissing(member) || isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::NeverType>(member))
+            {
+                continue;
+            }
+
+            auto goesToOne = llvm::any_of(allowed, [&](mlir::Type allowedMember) {
+                return allowedMember == member || (!isMissing(allowedMember) && !isObjectMemberMismatch(member, allowedMember));
+            });
+            if (!goesToOne)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The string literals a type allows when it allows only string literals (`"no" | "yes"`, with
@@ -3853,7 +3954,8 @@ class MLIRGenImpl
 
     // `x = "1"` with `x: number`, `let s: string = 5`: TypeScript rejects them (TS2322). Converted,
     // they hid a mistake - "x" became 0. So does `n = flag` with `n: number` (it became 1) and
-    // `flag = 5`. A union, `any` or an enum on either side is left to the cast.
+    // `flag = 5`. `any` or an enum on either side is left to the cast; a union given is checked a
+    // member at a time (isUnionMemberMismatch).
     mlir::LogicalResult checkStringNumberAssignment(mlir::Location location, mlir::Type valueType, mlir::Type destType,
                                                     const GenContext &genContext)
     {
