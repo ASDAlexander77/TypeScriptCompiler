@@ -1,5 +1,6 @@
 # What's new
 
+- A function with parameters of different types can be given to `(...args: A) => T` (`A` is inferred as a tuple, `[number, string]`); under -mm=own, throw() of a generator paused in a `yield*` of numbers is handed to the delegate too
 - `arguments.length` counts the arguments given, not the parameters declared; a generic arrow can be given to a generic parameter (`wrap(<T>(x: T) => x)`), and a function to `(...args: A) => T`; throw() of a generator paused in a `yield*` is handed to the delegate's throw(), which may catch it and go on yielding
 - -mm=own: `for (const s of this.items) yield s` works in a generator method: the field is read again at each step (a field assigned during the loop is followed, unlike JavaScript's for-of)
 - -mm=own: a field read through a union of object shapes can be returned as a borrow of the argument (`getBox(s: Sq | Ci) { return s.box; }`); a method that throws an object through a `finally` that yields is a compile error at the call

@@ -1422,6 +1422,8 @@ tslang_add_test(NAME test-compile-00-generic-arrow-through-generic COMMAND test-
 tslang_add_test(NAME test-jit-00-generator-yield-star-throw COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw.ts")
 tslang_add_test(NAME test-jit-rc-00-generator-yield-star-throw COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw.ts")
 tslang_add_test(NAME test-compile-00-generator-yield-star-throw COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw.ts")
+tslang_add_test(NAME test-jit-own-00-generator-yield-star-throw COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw.ts")
+tslang_add_test(NAME test-compile-own-00-generator-yield-star-throw COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw.ts")
 tslang_add_test(NAME test-jit-00-own-union-shape-field-borrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
 tslang_add_test(NAME test-jit-rc-00-own-union-shape-field-borrow COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
 tslang_add_test(NAME test-jit-own-00-own-union-shape-field-borrow COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_union_shape_field_borrow.ts")
