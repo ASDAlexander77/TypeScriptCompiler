@@ -6371,10 +6371,33 @@ class MLIRGenImpl
             present = members.size() == 1 ? members.front() : getUnionType(members);
         }
 
-        // `!=`: present where true
+        // `!=`: present where true - and, for a @value record whose null is a niche of its own (`Hit | null |
+        // undefined`), not null either, narrowed again from the value just read as `c !== null` narrows a union: its
+        // fields are read so (own refused a borrow of `this` stored in a `Hit` read as `Hit | null`). A class's null
+        // stays in it, its reads are the same either way, and a second narrowing of a field read (`h.v`) was taken
+        // for a store of the borrow
         if (inverse)
         {
-            return addSafeCastStatement(val, present, false, nullptr, genContext);
+            if (mlir::failed(addSafeCastStatement(val, present, false, nullptr, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(present);
+                unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); }) &&
+                llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ValueType>(member); }))
+            {
+                SmallVector<mlir::Type> members;
+                llvm::copy_if(unionType.getTypes(), std::back_inserter(members),
+                              [](mlir::Type member) { return !isa<mlir_ts::NullType>(member); });
+                if (!members.empty())
+                {
+                    return addSafeCastStatement(val, members.size() == 1 ? members.front() : getUnionType(members), false,
+                                                nullptr, genContext);
+                }
+            }
+
+            return mlir::success();
         }
 
         // `==`: present where false
