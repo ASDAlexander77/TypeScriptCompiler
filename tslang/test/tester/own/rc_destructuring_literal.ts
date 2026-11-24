@@ -1,8 +1,9 @@
-// -mm=rc: array destructuring with defaults (`const [a = mk(1)] = [mk(i)]`) reads each element of the array literal
-// through a conditional that yields it or the default; that conditional handing the element on kept the literal
-// from being given back, so every evaluation leaked it and what it holds (main too). It is now given back at the
-// end of its block, after the locals took their counts. Objects, strings, numbers, a nested pattern, a hole. The
-// same program under gc and own (own leaks these too: a follow-up).
+// -mm=rc, -mm=own: array destructuring with defaults (`const [a = mk(1)] = [mk(i)]`) reads each element of the array
+// literal through a conditional that yields it or the default; that conditional handing the element on kept the
+// literal from being given back, so every evaluation leaked it and what it holds (main too, under rc and own). It is
+// now given back at the end of its block, after the locals took their counts (under own the locals borrow the
+// elements, as out of a named array; a string element a `let` is given is a copy). Objects, strings, numbers, a
+// nested pattern, a hole, `let`s given new values. The same program under gc.
 class N {
     x: number;
     s: string;
@@ -53,10 +54,23 @@ function main() {
         const [e = mk(1), , f = mk(3)] = [mk(i), mk(2), mk(4)];
         total += e.x + f.x;
 
+        let [g = mk(1), h] = [mk(i), mk(i + 1)];
+        total += g.x + h.x;
+        g = mk(2);
+        total += g.x;
+
+        let [t = "q"] = ["s" + i];
+        total += t.length;
+        t = "t" + i;
+        total += t.length;
+
+        const [[k = mk(1)] = []] = [[mk(i)]];
+        total += k.x;
+
         churn();
     }
 
     print(total);
-    assert(total == 406960, "total");
+    assert(total == 650540, "total");
     print("done.");
 }

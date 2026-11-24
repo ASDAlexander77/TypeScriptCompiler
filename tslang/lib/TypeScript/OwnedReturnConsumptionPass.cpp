@@ -787,18 +787,23 @@ class OwnedReturnConsumptionPass
             // way: it leaves only if that does (borrowsBranchTemporary has the enclosing branch retain it when it
             // goes on to that branch's `ts.Result`; under own, yieldedByBranch holds the literal past it). Under rc
             // for any literal: array destructuring with defaults (`const [a = 1, b = "x"] = [n, s]`) reads each
-            // element through a conditional that yields it or the default, into the local in the same block.
+            // element through a conditional that yields it or the default, into the local in the same block. Under
+            // own for any literal only when nothing then leaves the block (that destructuring): one whose element a
+            // branch yields on is left to yieldedByBranch, as before.
             auto isTruthinessTest = [](mlir::Operation *user) {
                 return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
             };
             auto chained = llvm::any_of(op->getUsers(), isTruthinessTest);
             auto followsConditionals = chained || !own;
+            // (own's destructuring: a conditional yielding the element or the default, not an optional chain's - whose
+            // optional result is read on through `ts.Value`, as a field or an element, out of what the literal holds)
+            auto destructuringOnly = false;
             std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
                 for (auto &use : value.getUses())
                 {
                     auto *user = use.getOwner();
                     if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) ||
-                        (followsConditionals && mlir::isa<mlir_ts::ValueOp>(user)))
+                        (followsConditionals && !destructuringOnly && mlir::isa<mlir_ts::ValueOp>(user)))
                     {
                         if (leavesUncounted(user->getResult(0)))
                         {
@@ -821,7 +826,9 @@ class OwnedReturnConsumptionPass
                     if (!yieldsCounted)
                     {
                         if (followsConditionals && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
-                            op->getParentRegion()->isAncestor(conditional->getParentRegion()))
+                            op->getParentRegion()->isAncestor(conditional->getParentRegion()) &&
+                            (!destructuringOnly ||
+                             !mlir::isa<mlir_ts::OptionalType>(conditional->getResult(use.getOperandNumber()).getType())))
                         {
                             if (leavesUncounted(conditional->getResult(use.getOperandNumber())))
                             {
@@ -859,10 +866,20 @@ class OwnedReturnConsumptionPass
             };
 
             // (its truthiness test too: an optional chain on the literal tests it before reading it)
-            auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
-                return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
-                       (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
-            });
+            auto readsOnly = [&]() {
+                return llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
+                    return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
+                           (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
+                });
+            };
+            auto onlyRead = readsOnly();
+            if (!onlyRead && !followsConditionals)
+            {
+                followsConditionals = destructuringOnly = true;
+                onlyRead = readsOnly();
+                followsConditionals = destructuringOnly = false;
+            }
+
             if (onlyRead)
             {
                 arrays.push_back(op);

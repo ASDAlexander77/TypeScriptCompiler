@@ -5600,6 +5600,13 @@ add_test(NAME test-rc-destructuring-literal-released
 set_tests_properties(test-rc-destructuring-literal-released
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...and under own: the literal destructured with defaults is given back at the end of its block too (none before).
+add_test(NAME test-own-destructuring-literal-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_literal.ts")
+set_tests_properties(test-own-destructuring-literal-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # Object destructuring with a default (`const { p = mk(1) } = { p: c ? mk(i) : undefined }`) under rc: the
 # value-or-default carries one reference whichever way it goes - the field's value retained before it (none
 # before), the default's taken over. The same program under gc (own refuses the record literals).
