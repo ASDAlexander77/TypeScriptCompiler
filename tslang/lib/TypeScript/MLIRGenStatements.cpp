@@ -1911,6 +1911,62 @@ namespace mlirgen
     {
         auto location = loc(forOfStatementAST);
 
+        // -mm=own: `for (const s of this.items) yield s` in a generator kept the field's array in the generator's
+        // state across its yields, a borrow of a field stored (TSLANG 158). The field is read again at each step,
+        // `for (let .i = 0; .i < this.items.length; .i++) { const s = this.items[.i]; ... }` (USER RULING 2026-11-24:
+        // own only; a field assigned during the loop is followed, which JavaScript's for-of would not).
+        if (compileOptions.memoryModel == MemoryModelOwn && genContext.allocateVarsInContextThis &&
+            !forOfStatementAST->awaitModifier)
+        {
+            auto iterated = stripParentheses(forOfStatementAST->expression);
+            auto root = iterated;
+            while (root == SyntaxKind::PropertyAccessExpression)
+            {
+                root = stripParentheses(root.as<PropertyAccessExpression>()->expression);
+            }
+
+            auto iteratedType = iterated == SyntaxKind::PropertyAccessExpression && root == SyntaxKind::ThisKeyword
+                                    ? evaluate(iterated, genContext)
+                                    : mlir::Type();
+            if (iteratedType && isa<mlir_ts::ArrayType>(iteratedType))
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                auto _i = nf.createIdentifier(S(".i"));
+                NodeArray<VariableDeclaration> declarations;
+                declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
+                auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+                auto cond = nf.createBinaryExpression(
+                    _i, nf.createToken(SyntaxKind::LessThanToken),
+                    nf.createPropertyAccessExpression(iterated, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
+                auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+                auto element = nf.createElementAccessExpression(iterated, _i);
+
+                NodeArray<ts::Statement> statements;
+                auto initializer = forOfStatementAST->initializer;
+                if (initializer == SyntaxKind::VariableDeclarationList)
+                {
+                    auto declList = initializer.as<VariableDeclarationList>();
+                    auto declared = declList->declarations.front();
+                    NodeArray<VariableDeclaration> elementDeclarations;
+                    elementDeclarations.push_back(
+                        nf.createVariableDeclaration(declared->name, undefined, declared->type, element));
+                    statements.push_back(
+                        nf.createVariableStatement(undefined, nf.createVariableDeclarationList(elementDeclarations, declList->flags)));
+                }
+                else
+                {
+                    statements.push_back(nf.createExpressionStatement(
+                        nf.createBinaryExpression(initializer.as<Expression>(), nf.createToken(SyntaxKind::EqualsToken), element)));
+                }
+
+                statements.push_back(forOfStatementAST->statement);
+                auto forStatement = nf.createForStatement(initVars, cond, incr, nf.createBlock(statements));
+                forStatement->pos = forOfStatementAST->pos;
+                forStatement->_end = forOfStatementAST->_end;
+                return mlirGen(forStatement, genContext);
+            }
+        }
+
         // the loop's label, handed back to the `for` the loop is made into: generating the iterated value or its
         // iterator can generate functions whose own loops would take it
         auto loopLabel = label;
