@@ -91,6 +91,11 @@ set(not_compilable_alone
     assign_string_literal_union_error.ts
     assign_string_to_literal_union_error.ts
     argument_string_literal_union_error.ts
+    # errors by design (test-compile-argument-union-member-to-class-error, -assign-union-member-to-class-error,
+    # -declare-union-member-to-class-error)
+    argument_union_member_to_class_error.ts
+    assign_union_member_to_class_error.ts
+    declare_union_member_to_class_error.ts
     # errors by design (test-compile-assign-boolean-to-number-error, -boolean-to-string-error,
     # -number-to-boolean-error, test-compile-argument-boolean-to-number-error)
     assign_boolean_to_number_error.ts
