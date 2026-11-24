@@ -5763,6 +5763,12 @@ foreach(kept_finally_mm gc rc own)
     tslang_add_test(NAME test-jit-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -jit -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
     tslang_add_test(NAME test-compile-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
 endforeach()
+# A concise arrow with a destructured parameter gives back what the parameter's names own (rc) and its default's slot
+# (own) before it returns (they leaked; the ownership verifier refused it); every model.
+foreach(concise_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -jit -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
+    tslang_add_test(NAME test-compile-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
