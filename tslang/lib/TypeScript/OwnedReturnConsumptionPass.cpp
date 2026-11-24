@@ -1439,7 +1439,9 @@ class OwnedReturnConsumptionPass
         llvm::StringSet<> assignsAny;
         // ...and the functions that may give a field or an element a new value, or take one out of an array
         // (`pop`, `shift`, `splice`), or give a captured local a new value through its cell: what a place
-        // in a captured local's object read may be freed by (rc, readsCapturedPlace)
+        // in a captured local's object read may be freed by (rc, readsCapturedPlace). Deliberately coarse: any
+        // store into a field or an element counts - a constructor's `this.x = ...` too - so nearly every function that
+        // makes an object "may write a place"; it is readsCapturedPlace that keeps the holds few
         llvm::StringSet<> writesPlace;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getSymName();
