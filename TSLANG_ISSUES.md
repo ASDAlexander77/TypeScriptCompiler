@@ -3025,3 +3025,19 @@ Looked at, still open:
 
 Tests `00own_union_shape_field_borrow.ts` (gc, rc, own), diagnostic-location
 `generator_method_throwing_object_through_yielding_finally_own.ts`.
+
+182 (158, USER RULING 2026-11-24). Fixed:
+- -mm=own: `for (const s of this.items) yield s` in a generator method (158): "a value that borrows a field cannot be
+  stored, returned or captured". The loop kept the field's array in the generator's state across its yields. Under
+  -mm=own, a for-of in a generator over an array field reached from `this` (`this.items`, `this.inner.words`) reads
+  the field again at each step: `for (let .i = 0; .i < this.items.length; .i++) { const s = this.items[.i]; ... }`,
+  with `break`, `continue`, a destructuring element and a loop variable declared before the loop as before. By the
+  ruling, a field assigned during the loop is followed (`this.items = [...]` in the body ends a loop over the new
+  array), which JavaScript's for-of would not do; under the other memory models the loop is as before.
+
+Looked at, still open:
+- -mm=own: an element that is an object (`for (const o of this.objs) yield o.n`), and the same loop written with an
+  index, is "a value that borrows an element cannot be stored": a generator's local is a field of its state, and a
+  borrow of an element cannot be one.
+
+Tests `00own_generator_for_of_this_field.ts` (gc, rc, own).
