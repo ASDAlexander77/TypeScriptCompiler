@@ -787,18 +787,23 @@ class OwnedReturnConsumptionPass
             // way: it leaves only if that does (borrowsBranchTemporary has the enclosing branch retain it when it
             // goes on to that branch's `ts.Result`; under own, yieldedByBranch holds the literal past it). Under rc
             // for any literal: array destructuring with defaults (`const [a = 1, b = "x"] = [n, s]`) reads each
-            // element through a conditional that yields it or the default, into the local in the same block.
+            // element through a conditional that yields it or the default, into the local in the same block. Under
+            // own for any literal only when nothing then leaves the block (that destructuring): one whose element a
+            // branch yields on is left to yieldedByBranch, as before.
             auto isTruthinessTest = [](mlir::Operation *user) {
                 return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
             };
             auto chained = llvm::any_of(op->getUsers(), isTruthinessTest);
             auto followsConditionals = chained || !own;
+            // (own's destructuring: a conditional yielding the element or the default, not an optional chain's - whose
+            // optional result is read on through `ts.Value`, as a field or an element, out of what the literal holds)
+            auto destructuringOnly = false;
             std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
                 for (auto &use : value.getUses())
                 {
                     auto *user = use.getOwner();
                     if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) ||
-                        (followsConditionals && mlir::isa<mlir_ts::ValueOp>(user)))
+                        (followsConditionals && !destructuringOnly && mlir::isa<mlir_ts::ValueOp>(user)))
                     {
                         if (leavesUncounted(user->getResult(0)))
                         {
@@ -813,15 +818,19 @@ class OwnedReturnConsumptionPass
                         continue;
                     }
 
+                    // (or a value-or-default's region, settled the same way: consumeValueOrDefaultResults)
                     auto *conditional = user->getParentOp();
-                    auto yieldsCounted = mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                    auto yieldsCounted = mlir::isa<mlir_ts::ResultOp>(user) &&
+                                         mlir::isa_and_nonnull<mlir_ts::IfOp, mlir_ts::OptionalValueOrDefaultOp>(conditional) &&
                                          conditional->hasAttr(OWNED_RESULT_ATTR_NAME) && user->getPrevNode() &&
                                          mlir::isa<mlir_ts::RetainOp>(user->getPrevNode()) &&
                                          user->getPrevNode()->getOperand(0) == user->getOperand(0);
                     if (!yieldsCounted)
                     {
                         if (followsConditionals && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
-                            op->getParentRegion()->isAncestor(conditional->getParentRegion()))
+                            op->getParentRegion()->isAncestor(conditional->getParentRegion()) &&
+                            (!destructuringOnly ||
+                             !mlir::isa<mlir_ts::OptionalType>(conditional->getResult(use.getOperandNumber()).getType())))
                         {
                             if (leavesUncounted(conditional->getResult(use.getOperandNumber())))
                             {
@@ -851,18 +860,38 @@ class OwnedReturnConsumptionPass
                         return true;
                     }
 
-                    return own && mlir::isa<mlir_ts::LoadOp>(read) && mlir::isa<mlir_ts::ArrayType>(read->getResult(0).getType()) &&
-                           llvm::any_of(read->getResult(0).getUsers(), [&](mlir::Operation *innerUser) {
-                               return mlir::isa<mlir_ts::ElementRefOp>(innerUser) && elementLeavesBlock(innerUser);
-                           });
+                    // (under an optional chain, read on through it: chainedAliases)
+                    if (!own || !mlir::isa<mlir_ts::LoadOp>(read) || !mlir::isa<mlir_ts::ArrayType>(read->getResult(0).getType()))
+                    {
+                        return false;
+                    }
+
+                    auto inner = read->getResult(0);
+                    return llvm::any_of(chained ? chainedAliases(inner, op->getBlock()) : llvm::SmallVector<mlir::Value>{inner},
+                                        [&](mlir::Value array) {
+                                            return llvm::any_of(array.getUsers(), [&](mlir::Operation *innerUser) {
+                                                return mlir::isa<mlir_ts::ElementRefOp>(innerUser) &&
+                                                       innerUser->getOperand(0) == array && elementLeavesBlock(innerUser);
+                                            });
+                                        });
                 });
             };
 
             // (its truthiness test too: an optional chain on the literal tests it before reading it)
-            auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
-                return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
-                       (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
-            });
+            auto readsOnly = [&]() {
+                return llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
+                    return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
+                           (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
+                });
+            };
+            auto onlyRead = readsOnly();
+            if (!onlyRead && !followsConditionals)
+            {
+                followsConditionals = destructuringOnly = true;
+                onlyRead = readsOnly();
+                followsConditionals = destructuringOnly = false;
+            }
+
             if (onlyRead)
             {
                 arrays.push_back(op);
@@ -1012,6 +1041,38 @@ class OwnedReturnConsumptionPass
 
         return true;
     }
+    // An inner literal read out of a literal under an optional chain (`[[mk(i)]]?.[0]?.[0]`) is read on through the
+    // chain: the chain's conditional yields it as an optional, and the next link reads `ts.Value` of that. The same
+    // array, then: `value` and what it is handed on as - through the casts that only widen it, an optional's value,
+    // and a conditional in `block` (or in a statement of it) whose branch yields it. At most 64 values are
+    // collected (each link of a chain adds a few; a 25-level chain stays well below), which bounds the walk; a chain
+    // past that is not followed further and is judged as it was before (refused or released at the branch end).
+    static llvm::SmallVector<mlir::Value> chainedAliases(mlir::Value value, mlir::Block *block)
+    {
+        llvm::SmallVector<mlir::Value> aliases{value};
+        for (size_t index = 0; index < aliases.size() && aliases.size() < 64; index++)
+        {
+            for (auto &use : aliases[index].getUses())
+            {
+                auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp, mlir_ts::ValueOp>(user))
+                {
+                    aliases.push_back(user->getResult(0));
+                    continue;
+                }
+
+                auto *conditional = user->getParentOp();
+                if (mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                    block->findAncestorOpInBlock(*conditional))
+                {
+                    aliases.push_back(conditional->getResult(use.getOperandNumber()));
+                }
+            }
+        }
+
+        return aliases;
+    }
+
     // Is a literal only read, but for an element its block - a branch of a conditional expression - yields? (seen
     // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
     // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
@@ -1072,10 +1133,20 @@ class OwnedReturnConsumptionPass
         // each element read out of it, and out of a literal nested in it (`c ? [[mk(i)]][0][0] : null`): one that
         // leaves, leaves by that way only
         auto yields = false;
-        std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value array, bool outermost) {
-            for (auto *user : array.getUsers())
+        // (a literal nested in one under an optional chain is read on through the chain: chainedAliases)
+        std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value literal, bool outermost) {
+            llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> users;
+            for (auto array : !outermost && chained ? chainedAliases(literal, op->getBlock()) : llvm::SmallVector<mlir::Value>{literal})
             {
-                if (mlir::isa<mlir_ts::LengthOfOp>(user) || (outermost && chained && isTruthinessTest(user)))
+                for (auto *user : array.getUsers())
+                {
+                    users.push_back({user, array});
+                }
+            }
+
+            for (auto [user, array] : users)
+            {
+                if (mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)))
                 {
                     continue;
                 }
@@ -2744,6 +2815,101 @@ class OwnedReturnConsumptionPass
         {
             op->erase();
         }
+
+        consumeValueOrDefaultResults(mth, module);
+    }
+
+    // The same disagreement in a default of a destructuring pattern (`const { p = mk(1) } = { p: c ? mk(i) :
+    // undefined }`): `ts.OptValueOrDefault` hands back the value the optional holds - a borrow of the field - or
+    // what its default region makes - a +1 nobody took, so every evaluation that ran the default leaked it. Under rc
+    // it is made to carry one reference whichever way it goes, as a conditional's result is: the default's +1 is
+    // its own (or, when the default reads a temporary it makes and gives back - a record literal of a new object -
+    // what it yields is retained in the region first), the optional's value is retained before the op (a retain of
+    // an undefined optional does nothing), and the op is an owned result its receiver takes over, or that is given
+    // back at the end of its block.
+    void consumeValueOrDefaultResults(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir::Operation *> toErase;
+        module.walk([&](mlir_ts::OptionalValueOrDefaultOp op) {
+            auto result = op.getResult();
+            if (op->hasAttr(OWNED_RESULT_ATTR_NAME) || !mth.ownsHeapMemory(op.getLoc(), result.getType()) ||
+                op.getDefaultValueRegion().empty())
+            {
+                return;
+            }
+
+            auto resultOp = mlir::dyn_cast_or_null<mlir_ts::ResultOp>(op.getDefaultValueRegion().back().getTerminator());
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return;
+            }
+
+            // only when the default carries a +1 (a borrowed default agrees with the borrowed value already)
+            auto produced = resultOp->getOperand(0);
+            while (auto castOp = produced.getDefiningOp<mlir_ts::CastOp>())
+            {
+                if (!mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                {
+                    break;
+                }
+
+                produced = castOp.getIn();
+            }
+
+            // ...or what it yields reads a temporary it makes (a record literal `{ p: { w = mk(1) } = { w: mk(2) } }`,
+            // a field of one): the region gives the temporary back before it ends, so what it yields is retained
+            // there first, as a conditional's branch does (consumeConditionalResults)
+            auto *region = &op.getDefaultValueRegion();
+            auto *producer = produced.getDefiningOp();
+            // (an array literal it makes too: `p = [mk(1)][0]`, given back at the end of the region by
+            // holdReadOnlyNewArrays once the region's yield is counted)
+            auto makesTemporary = [&]() {
+                auto found = false;
+                region->walk([&](mlir::Operation *inner) {
+                    if (inner->getNumResults() == 1 && inner->getParentRegion() == region &&
+                        (::typescript::mayTakeOverReference(inner->getResult(0)) || isNewArray(inner)))
+                    {
+                        found = true;
+                    }
+                });
+                return found;
+            };
+
+            if (producer && ::typescript::mayTakeOverReference(produced) && producer->getParentRegion() == region)
+            {
+                producer->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+            else if (makesTemporary())
+            {
+                mlir::OpBuilder regionBuilder(resultOp);
+                regionBuilder.create<mlir_ts::RetainOp>(resultOp->getLoc(), resultOp->getOperand(0));
+            }
+            else
+            {
+                return;
+            }
+
+            mlir::OpBuilder builder(op);
+            builder.create<mlir_ts::RetainOp>(op.getLoc(), op.getArgValue());
+
+            op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
+            {
+                op->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                toErase.append(retains.begin(), retains.end());
+            }
+        });
+
+        for (auto *op : toErase)
+        {
+            op->erase();
+        }
     }
 
   private:
@@ -3180,14 +3346,17 @@ class OwnedReturnConsumptionPass
     }
 
     // Does `user` run before control reaches the op that follows its ancestor in `block`? True
-    // for `block`'s own ops, and for ops nested in structured statements only.
-    static bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
+    // for `block`'s own ops, and for ops nested in structured statements only. Under rc and own also in the default
+    // of a value-or-default (`const { p = d ?? mk(1) } = ...`), which runs there at most once, as a branch does
+    // (gc and none keep their IR as it was).
+    bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
     {
         for (auto *op = user; op->getBlock() != block; op = op->getParentOp())
         {
             auto *parent = op->getParentOp();
-            if (!parent || !mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
-                                      mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent))
+            if (!parent || !(mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
+                                       mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent) ||
+                             (compileOptions.tracksOwnership() && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(parent))))
             {
                 return false;
             }
@@ -3364,7 +3533,7 @@ class OwnedReturnConsumptionPass
 
     struct BlockScan;
 
-    static bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
+    bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
     {
         auto *block = op->getBlock();
         auto rangeEnd = scan.releaseRangeEnd(op);

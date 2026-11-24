@@ -3,8 +3,8 @@
 // on kept it from being given back, so every evaluation leaked the literal and what it holds (+18 MB per 400 runs
 // of this loop's shape, main too, under rc and own). It is now given back at the end of its block (under own held
 // past a conditional whose branch yields the element, as for `c ? [mk(i)][0] : null`), and under rc a branch
-// yielding the element retains it first. The same program under gc. (A chain given to a call, a field read on
-// through a second `?.`, and a chain over a nested literal, which own refuses, are in rc_conditional_element_field.)
+// yielding the element retains it first; a chain over a nested literal too. The same program under gc. (A chain
+// given to a call and a field read on through a second `?.`, which own refuses, are in rc_conditional_element_field.)
 class N {
     x: number;
     s: string;
@@ -65,10 +65,21 @@ function main() {
             total += g.length;
         }
 
+        // a chain over a nested literal, held past the conditional as the unchained `c ? [[mk(i)]][0][0] : null`
+        const l = c ? [[mk(i)]]?.[0]?.[0] : null;
+        if (l) {
+            total += l.x + l.s.length;
+        }
+
+        const m = c ? [[[mk(i)]]]?.[0]?.[0]?.[0] : null;
+        if (m) {
+            total += m.x + m.s.length;
+        }
+
         churn();
     }
 
     print(total);
-    assert(total == 257645, "total");
+    assert(total == 338735, "total");
     print("done.");
 }
