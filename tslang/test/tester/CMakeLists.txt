@@ -5691,6 +5691,14 @@ foreach(past_end_mm gc rc own)
     tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
     tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
 endforeach()
+# -mm=rc: an argument read out of a field or an element of an object a closure can reach (a captured local's array, a
+# const object captured by value), given to a call that may write a place (the closure setting it, pop/shift/splice,
+# a new array for the local), is held by the caller across the call; a destructured parameter's names own what they
+# read. They read freed memory. gc and none print the same; own refuses these programs.
+foreach(arg_place_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -jit -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
+    tslang_add_test(NAME test-compile-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives

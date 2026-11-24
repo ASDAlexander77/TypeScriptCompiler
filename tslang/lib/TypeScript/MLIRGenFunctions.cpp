@@ -2705,6 +2705,15 @@ namespace mlirgen
 
                 GenContext bindingGenContext(genContext);
                 bindingGenContext.bindingParamPatterns = true;
+                // -mm=rc: a name a destructured parameter binds owns what it reads, as a local does: it borrowed the
+                // argument's element or field, which the callee may give a new value (`([o]: N[]) => { arr[0] =
+                // mk(i); o.x }`, `arr` the array given) - the store freed the block `o` read. Listed with the
+                // parameters' storage when the prologue is done (mlirGenFunctionBody), given back at exit.
+                SmallVector<mlir::Value> bindingOwned;
+                if (compileOptions.memoryModel == MemoryModelRC && !bindingGenContext.ownedVars)
+                {
+                    bindingGenContext.ownedVars = &bindingOwned;
+                }
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
                 {
                     auto arrayBindingPattern = bindingPattern.as<ArrayBindingPattern>();
@@ -2981,9 +2990,11 @@ namespace mlirgen
                 paramCells->push_back(prologueOp.getResult(0));
             }
             // ...and the slot owning a parameter's default value (processOptionalParam), or, under own, a default in a
-            // destructured parameter (ownPatternDefaultSlot), given back at exit
+            // destructured parameter (ownPatternDefaultSlot), or, under rc, a name a destructured parameter binds
+            // (mlirGenFunctionParamsBindings), given back at exit
             else if (isa<mlir_ts::VariableOp>(prologueOp) &&
-                     (prologueOp.hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME) || prologueOp.hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME)))
+                     (prologueOp.hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME) || prologueOp.hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) ||
+                      (compileOptions.memoryModel == MemoryModelRC && prologueOp.hasAttr(OWNED_LOCAL_ATTR_NAME))))
             {
                 paramCells->push_back(prologueOp.getResult(0));
             }

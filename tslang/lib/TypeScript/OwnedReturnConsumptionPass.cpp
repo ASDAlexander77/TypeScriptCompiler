@@ -1393,11 +1393,26 @@ class OwnedReturnConsumptionPass
         llvm::StringMap<llvm::StringSet<>> assigns;
         llvm::StringMap<llvm::SmallVector<mlir::StringRef>> callees;
         llvm::StringSet<> assignsAny;
+        // ...and the functions that may give a field or an element a new value, or take one out of an array
+        // (`pop`, `shift`, `splice`), or give a captured local a new value through its cell: what a place
+        // in a captured local's object read may be freed by (rc, readsCapturedPlace)
+        llvm::StringSet<> writesPlace;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getSymName();
             funcOp.walk([&](mlir::Operation *op) {
+                if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp>(op))
+                {
+                    writesPlace.insert(name);
+                }
+
                 if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
                 {
+                    auto reference = storeOp.getReference();
+                    if (own_facts::isPlace(reference) || reference.getDefiningOp<mlir_ts::LoadOp>())
+                    {
+                        writesPlace.insert(name);
+                    }
+
                     if (auto global = globalOf(storeOp.getReference(), true); !global.empty())
                     {
                         assigns[name].insert(global);
@@ -1426,6 +1441,11 @@ class OwnedReturnConsumptionPass
                 for (auto callee : entry.getValue())
                 {
                     if (assignsAny.contains(callee) && assignsAny.insert(caller).second)
+                    {
+                        changed = true;
+                    }
+
+                    if (writesPlace.contains(callee) && writesPlace.insert(caller).second)
                     {
                         changed = true;
                     }
@@ -1485,6 +1505,65 @@ class OwnedReturnConsumptionPass
 
                 inPlace = true;
                 value = place->getOperand(0);
+            }
+
+            return false;
+        };
+
+        auto mayWritePlace = [&](mlir::Operation *op) {
+            auto callee = calleeOf(op);
+            return callee.empty() || assignsAny.contains(callee) || writesPlace.contains(callee);
+        };
+
+        // Is this a read out of a field or an element of the object a captured local holds (`f(arr[0])`, `arr`
+        // captured by a closure)? A closure - the callee, or one it calls - may give that place a new value
+        // (`arr[0] = mk(i)`), take the element out (`arr.pop()`), or give the local a new value, while the
+        // callee still reads its parameter: the place's release freed the block the argument read. A `const`
+        // object a closure captures by value (`const h = new H(); () => { h.o = mk(i) }`, then `f(h.o)`) is the
+        // same object in the closure's box.
+        auto capturedByValue = [](mlir::Value object) {
+            std::function<bool(mlir::Value, int)> captured = [&](mlir::Value value, int depth) {
+                return depth < 4 && llvm::any_of(value.getUsers(), [&](mlir::Operation *user) {
+                           return mlir::isa<mlir_ts::CaptureOp>(user) ||
+                                  (mlir::isa<mlir_ts::CastOp>(user) && captured(user->getResult(0), depth + 1));
+                       });
+            };
+            return captured(object, 0);
+        };
+        auto readsCapturedPlace = [&](mlir::Value value) {
+            while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            if (!loadOp || !own_facts::isPlace(loadOp.getReference()))
+            {
+                return false;
+            }
+
+            if (auto varOp = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(own_facts::slotOfRef(loadOp.getReference())))
+            {
+                return varOp.getCaptured().value_or(false);
+            }
+
+            // the object the place is in, through places, when no slot holds it
+            auto object = loadOp.getReference();
+            for (auto depth = 0; depth < 16 && object && own_facts::isPlace(object); depth++)
+            {
+                object = object.getDefiningOp()->getOperand(0);
+                while (auto castOp = object.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    object = castOp.getIn();
+                }
+
+                if (capturedByValue(object))
+                {
+                    return true;
+                }
+
+                auto innerLoad = object.getDefiningOp<mlir_ts::LoadOp>();
+                object = innerLoad ? innerLoad.getReference() : mlir::Value();
             }
 
             return false;
@@ -1635,6 +1714,14 @@ class OwnedReturnConsumptionPass
                 // value: the object may be that global's (`f(HG)` then `g(p.n)`, `g` setting `HG.n`), and the
                 // store freed the block the argument read. Under rc the caller holds it (fuzz seed 71210).
                 if (compileOptions.isRefCounted() && readsParameterPlace(argument) && mayAssignAnyGlobal(op))
+                {
+                    held.push_back({op, argument});
+                    continue;
+                }
+
+                // Out of a field or an element of a captured local's object, to a call that may write a place
+                // (readsCapturedPlace). Under rc the caller holds it.
+                if (compileOptions.isRefCounted() && readsCapturedPlace(argument) && mayWritePlace(op))
                 {
                     held.push_back({op, argument});
                     continue;
