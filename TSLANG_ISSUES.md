@@ -3072,3 +3072,24 @@ Looked at, still open:
 
 Tests `00arguments_length_given.ts` (gc, rc, own), `00generic_arrow_through_generic.ts` (gc, rc),
 `00generator_yield_star_throw.ts` (gc, rc).
+
+184 (183's leftovers, 2026-11-24). Fixed:
+- A function whose parameters have different types given to `(...args: A) => T` (`call2((a: number, b: string) =>
+  b + a, 1, "x")`): `A` is inferred as the tuple of them, `[number, string]`, as tsc infers it (tryInferFunction),
+  and the arguments given for `...args: A` are taken as that tuple, not inferred again as an array of their union. A
+  tuple of unnamed elements extends an array whose element each element extends (`[number, string] extends
+  unknown[]`, extendsType). The adapters read the function's parameters out of a rest tuple as out of a rest array
+  (restArrayOf, expandRestArguments). Parameters of one type are an array, as before. Works in every model for a
+  function or an arrow given directly.
+- -mm=own: throw() of a generator paused in a `yield*` of a generator made there (`yield* inner()`) is handed to the
+  delegate's throw() (183 for the other models), for elements that own nothing (a number, a boolean), as the
+  generator's return() under -mm=own. The delegate is exchanged into a local of next() for the call and back, and
+  what was thrown is exchanged out of the generator's field into a local first: given from the field, the call was
+  taken for one that may overwrite the field it borrows.
+
+Looked at, still open:
+- -mm=own: throw() at a `yield*` of strings or objects throws at the yield, as before: the step's result would be one
+  of two calls' ("a value is merged from several branches"). And a delegate named by a parameter (`yield* it`).
+- A delegate whose type has `throw` but not `return` is not handed the exception (the library's Generator has both).
+
+Tests `00generic_arrow_through_generic.ts` (gc, rc; tuple cases added), `00generator_yield_star_throw.ts` (own added).

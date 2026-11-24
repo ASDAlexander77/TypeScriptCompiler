@@ -5395,6 +5395,23 @@ class MLIRGenImpl
                     delegateGenContext.yieldStarDelegate = delegateName.c_str();
                 }
 
+                // ...and a throw() of it is handed to the delegate's throw(), when it has one (TSLANG 184, as 183 for
+                // the other models): the resume check puts its result in `.yc` and sets `.ys`, and the step's next()
+                // is then not called. Only for elements that own nothing (a number, a boolean), as the generator's
+                // return() under -mm=own: of strings or objects, the step's result would be one of two calls' - "a
+                // value is merged from several branches" - and the delegate's throw() is not called (it throws at the
+                // yield, as before)
+                auto skipName = ".ys" + site;
+                auto resultName = ".yc" + site;
+                auto skipIdent = nf.createIdentifier(stows(skipName));
+                auto handsThrow = delegateGenContext.yieldStarDelegate && !mth.ownsHeapMemory(loc(yieldExpressionAST), elementType) &&
+                                  (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw"));
+                if (handsThrow)
+                {
+                    delegateGenContext.yieldStarResult = resultName.c_str();
+                    delegateGenContext.yieldStarSkipNext = skipName.c_str();
+                }
+
                 // one step, in a block of its own: the local is given back where the block ends, before the yield
                 auto step = [&](const char *localName, bool declaresResult) {
                     auto localIdent = nf.createIdentifier(stows(localName + site));
@@ -5430,8 +5447,19 @@ class MLIRGenImpl
                 loopStatements.push_back(declare(
                     _v_ident, undefined, nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("value"))),
                     NodeFlags::Const, false));
-                loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
-                loopStatements.push_back(step(".ym", false));
+                if (handsThrow)
+                {
+                    loopStatements.push_back(declare(skipIdent, undefined, nf.createToken(SyntaxKind::FalseKeyword), NodeFlags::Let, false));
+                    loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                    loopStatements.push_back(nf.createIfStatement(
+                        nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken), skipIdent), step(".ym", false),
+                        undefined));
+                }
+                else
+                {
+                    loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                    loopStatements.push_back(step(".ym", false));
+                }
 
                 NodeArray<Statement> statements;
                 statements.push_back(declare(delegateIdent, delegateOrUndefined(), yieldExpressionAST->expression, NodeFlags::Let, false));

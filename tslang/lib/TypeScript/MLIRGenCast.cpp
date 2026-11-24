@@ -3529,26 +3529,50 @@ namespace mlirgen
         return !(sameResults && srcInputs.size() == destInputs.size());
     }
 
-    // The array a function type's rest parameter is (`(...args: A) => T` with A `number[]`), null where it has none
-    static mlir_ts::ArrayType restArrayOf(mlir_ts::FunctionType funcType)
+    // What a function type's rest parameter is, an array (`(...args: A) => T` with A `number[]`) or a tuple (A
+    // `[number, string]`), null where it has none
+    static mlir::Type restArrayOf(mlir_ts::FunctionType funcType)
     {
-        return funcType && funcType.isVarArg() && !funcType.isCVarArg() && funcType.getNumInputs() > 0
-            ? dyn_cast<mlir_ts::ArrayType>(funcType.getInputs().back())
-            : mlir_ts::ArrayType();
+        if (!funcType || !funcType.isVarArg() || funcType.isCVarArg() || funcType.getNumInputs() == 0)
+        {
+            return mlir::Type();
+        }
+
+        auto rest = funcType.getInputs().back();
+        return isa<mlir_ts::ArrayType, mlir_ts::TupleType>(rest) ? rest : mlir::Type();
     }
 
-    // adaptableSignature for a function given as a type with a rest array (TSLANG 94): the parameters the function
-    // takes past the type's fixed ones are elements of the array. With the same parameters as those elements there
-    // is still an adapter to make: it reads them out of the array. `fixedCount` is the number of fixed ones.
+    // the type of the rest parameter's element at `index`: the array's element, the tuple's field (null past its end)
+    static mlir::Type restElementType(mlir::Type rest, size_t index)
+    {
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(rest))
+        {
+            return arrayType.getElementType();
+        }
+
+        auto tupleType = cast<mlir_ts::TupleType>(rest);
+        return index < tupleType.size() ? tupleType.getFieldInfo(index).type : mlir::Type();
+    }
+
+    // adaptableSignature for a function given as a type with a rest array or tuple (TSLANG 94, 184): the parameters
+    // the function takes past the type's fixed ones are elements of it. With the same parameters as those elements
+    // there is still an adapter to make: it reads them out of it. `fixedCount` is the number of fixed ones.
     static bool adaptableToRestArray(mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
                                      mlir::ArrayRef<mlir::Type> destInputs, mlir::TypeRange destResults,
-                                     mlir_ts::ArrayType restArray, bool &dropResult, size_t &fixedCount)
+                                     mlir::Type restArray, bool &dropResult, size_t &fixedCount)
     {
         fixedCount = destInputs.size() - 1;
         SmallVector<mlir::Type> destExpanded(destInputs.drop_back());
         for (auto index = fixedCount; index < srcInputs.size(); index++)
         {
-            destExpanded.push_back(restArray.getElementType());
+            auto elementType = restElementType(restArray, index - fixedCount);
+            if (!elementType)
+            {
+                dropResult = false;
+                return false;
+            }
+
+            destExpanded.push_back(elementType);
         }
 
         if (adaptableSignature(srcInputs, srcResults, destExpanded, destResults, dropResult))
@@ -3560,10 +3584,10 @@ namespace mlirgen
         return llvm::equal(srcInputs, destExpanded) && srcResults == destResults;
     }
 
-    // The arguments an adapter gives a function from the type's fixed ones and its rest array `rest`: the fixed ones,
-    // then an element of the array for each parameter the function takes past them
+    // The arguments an adapter gives a function from the type's fixed ones and its rest array or tuple `rest`: the
+    // fixed ones, then an element of it for each parameter the function takes past them
     static void expandRestArguments(mlir::OpBuilder &builder, mlir::Location location, mlir::Type structIndexType,
-                                    mlir::ValueRange fixedArgs, mlir::Value rest, mlir_ts::ArrayType restArray,
+                                    mlir::ValueRange fixedArgs, mlir::Value rest, mlir::Type restArray,
                                     size_t fixedCount, size_t srcCount, SmallVectorImpl<mlir::Value> &expandedArgs)
     {
         for (auto index = size_t(0); index < std::min((size_t)fixedArgs.size(), fixedCount); index++)
@@ -3573,11 +3597,18 @@ namespace mlirgen
 
         for (auto index = fixedCount; index < srcCount; index++)
         {
-            auto position =
-                builder.create<mlir_ts::ConstantOp>(location, structIndexType, builder.getI32IntegerAttr((int)(index - fixedCount)));
-            auto elementRef = builder.create<mlir_ts::ElementRefOp>(
-                location, mlir_ts::RefType::get(restArray.getElementType()), rest, position);
-            expandedArgs.push_back(builder.create<mlir_ts::LoadOp>(location, restArray.getElementType(), elementRef));
+            auto elementIndex = (int64_t)(index - fixedCount);
+            auto elementType = restElementType(restArray, elementIndex);
+            if (isa<mlir_ts::TupleType>(restArray))
+            {
+                expandedArgs.push_back(builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, rest,
+                                                                                  builder.getDenseI64ArrayAttr({elementIndex})));
+                continue;
+            }
+
+            auto position = builder.create<mlir_ts::ConstantOp>(location, structIndexType, builder.getI32IntegerAttr((int)elementIndex));
+            auto elementRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), rest, position);
+            expandedArgs.push_back(builder.create<mlir_ts::LoadOp>(location, elementType, elementRef));
         }
     }
 
@@ -4213,8 +4244,7 @@ namespace mlirgen
                 // `(...args: number[]) => number`, TSLANG 94)
                 auto toRestArray = false;
                 if (auto srcFuncType = mth.GetFunctionType(valueType), destFuncType = mth.GetFunctionType(type);
-                    srcFuncType && destFuncType && !srcFuncType.isVarArg() && destFuncType.isVarArg()
-                    && destFuncType.getNumInputs() > 0 && isa<mlir_ts::ArrayType>(destFuncType.getInputs().back()))
+                    srcFuncType && destFuncType && !srcFuncType.isVarArg() && restArrayOf(destFuncType))
                 {
                     toRestArray = true;
                 }

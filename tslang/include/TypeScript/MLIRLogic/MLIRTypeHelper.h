@@ -3544,6 +3544,27 @@ class MLIRTypeHelper
             }
         }
 
+        // a tuple (`[number, string]`, its elements unnamed - not an object's fields) extends an array whose element
+        // each of its elements extends (`A extends unknown[]` inferred as a tuple, TSLANG 184)
+        if (auto srcTuple = dyn_cast<mlir_ts::TupleType>(srcType))
+        {
+            auto extArray = dyn_cast<mlir_ts::ArrayType>(extendType);
+            if (extArray && srcTuple.size() > 0
+                && llvm::all_of(srcTuple.getFields(), [](mlir_ts::FieldInfo field) { return !field.id; }))
+            {
+                for (auto field : srcTuple.getFields())
+                {
+                    auto result = extendsType(location, field.type, extArray.getElementType(), typeParamsWithArgs);
+                    if (result != ExtendsResult::True)
+                    {
+                        return result;
+                    }
+                }
+
+                return ExtendsResult::True;
+            }
+        }
+
         // Special case when we have string type (widen from Literal Type)
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(extendType))
         {

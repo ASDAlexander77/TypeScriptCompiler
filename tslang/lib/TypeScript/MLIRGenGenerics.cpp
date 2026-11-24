@@ -371,13 +371,28 @@ namespace mlirgen
                 auto fixed = tempfuncType.size() - 1;
                 inferTypeFuncType(location, tempfuncType.take_front(fixed), funcType.take_front(fixed), results, genContext);
 
+                // ...a tuple of them where their types differ (`(a: number, b: string) => ...`: A `[number, string]`,
+                // TSLANG 184), as tsc infers it - an array of their union would take either at each place
+                auto restTypes = funcType.drop_front(fixed);
+                auto asTuple = restTypes.size() > 1 && llvm::any_of(restTypes, [&](mlir::Type type) { return type != restTypes.front(); });
+                if (asTuple)
+                {
+                    SmallVector<mlir_ts::FieldInfo> fields;
+                    for (auto restType : restTypes)
+                    {
+                        fields.push_back({mlir::Attribute(), restType, false, mlir_ts::AccessLevel::Public});
+                    }
+
+                    inferType(location, tempfuncType.back(), getTupleType(fields), results, genContext);
+                }
+
                 struct ArrayInfo arrayInfo{};
-                for (auto restType : funcType.drop_front(fixed))
+                for (auto restType : restTypes)
                 {
                     accumulateArrayItemType(location, restType, arrayInfo);
                 }
 
-                if (arrayInfo.accumulatedArrayElementType)
+                if (!asTuple && arrayInfo.accumulatedArrayElementType)
                 {
                     inferType(location, tempfuncType.back(), getArrayType(arrayInfo.accumulatedArrayElementType),
                               results, genContext);
@@ -1310,6 +1325,23 @@ namespace mlirgen
                     }
                     else
                     {
+                        // a rest parameter whose type parameter is a tuple already (inferred from a function given
+                        // for `(...args: A) => T`, TSLANG 184) with as many elements as there are arguments: the
+                        // arguments are cast to it at the call, not inferred again as an array of their union
+                        if (auto namedGeneric = dyn_cast<mlir_ts::NamedGenericType>(paramType))
+                        {
+                            auto found = genericTypeGenContext.typeParamsWithArgs.find(namedGeneric.getName().getValue());
+                            auto tupleType = found != genericTypeGenContext.typeParamsWithArgs.end()
+                                ? dyn_cast_or_null<mlir_ts::TupleType>(found->getValue().second)
+                                : mlir_ts::TupleType();
+                            if (tupleType && tupleType.size() == callOpsCount - paramIndex)
+                            {
+                                paramInfo->processed = true;
+                                processed++;
+                                continue;
+                            }
+                        }
+
                         struct ArrayInfo arrayInfo{};
                         for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
                         {

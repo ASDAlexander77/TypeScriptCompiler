@@ -29,5 +29,10 @@ function main() {
     assert(call2((n: number) => n + 1, 4) == 5, "call2");
     assert(kept == 1, "kept");
 
+    // parameters of different types: A is the tuple of them (TSLANG 184)
+    assert(call2((a: number, b: string) => b + a, 1, "x") == "x1", "call2 tuple");
+    assert(call2((a: string, b: number, c: boolean) => c ? a + b : a, "n", 7, true) == "n7", "call2 three");
+    assert(call({ x: (a: number, b: string) => b + a }, 2, "y") == "y2", "call tuple");
+
     print("done.");
 }
