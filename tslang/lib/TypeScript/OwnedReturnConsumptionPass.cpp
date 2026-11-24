@@ -307,6 +307,8 @@ class OwnedReturnConsumptionPass
 
         ownNewArrayArguments(mth, module);
 
+        settleOwnPatternDefaults(module);
+
         consumeConditionalResults(mth, module);
 
         claimGlobalInitializers(mth, module);
@@ -2818,6 +2820,119 @@ class OwnedReturnConsumptionPass
         }
 
         consumeValueOrDefaultResults(mth, module);
+    }
+
+    // -mm=own: a pattern's default stores what it yields into a slot of the scope (MLIRGenImpl::optionalValueOrDefault),
+    // which owns it and gives it back when the scope ends; the pattern's value borrows the slot. Only a new value is the
+    // slot's to own - a call's result, a new object, a fresh string, as settled here, once calls are marked: it moves in.
+    // A default that borrows (`p = e`, a field, a literal's element) is not stored: what the region yields is that
+    // value, as before, and the slot stays empty.
+    void settleOwnPatternDefaults(mlir::ModuleOp module)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir_ts::StoreOp> stores;
+        module.walk([&](mlir_ts::StoreOp storeOp) {
+            auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
+                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp>(storeOp->getParentOp()))
+            {
+                stores.push_back(storeOp);
+            }
+        });
+
+        // the new value a region yields, where it is made: at its own `ts.Result`, or in a branch of a conditional
+        // there (`p = e ?? mk(1)`: only the branch that makes one stores it, the other yields its borrow)
+        std::function<void(mlir::Operation *, unsigned, mlir::Value)> storeNewValue = [&](mlir::Operation *resultOp, unsigned index,
+                                                                                         mlir::Value slot) {
+            auto yielded = resultOp->getOperand(index);
+            auto slotType = mlir::cast<mlir_ts::RefType>(slot.getType()).getElementType();
+            auto produced = yielded;
+            while (auto castOp = produced.getDefiningOp<mlir_ts::CastOp>())
+            {
+                if (!mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                {
+                    break;
+                }
+
+                produced = castOp.getIn();
+            }
+
+            auto *producer = produced.getDefiningOp();
+            if (producer && ::typescript::mayTakeOverReference(produced) && yielded.getType() == slotType)
+            {
+                producer->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                mlir::OpBuilder builder(resultOp);
+                builder.create<mlir_ts::StoreOp>(resultOp->getLoc(), yielded, slot);
+                auto loadOp = builder.create<mlir_ts::LoadOp>(resultOp->getLoc(), slotType, slot);
+                resultOp->setOperand(index, loadOp.getResult());
+                return;
+            }
+
+            // (the one element of a literal made there only to read it, `p = [mk(1)][0]`: that element is the value; the
+            // literal is not made - it held the element and was never given back)
+            if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(producer); loadOp && produced == yielded)
+            {
+                auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>();
+                auto literal = elementRefOp ? elementRefOp->getOperand(0).getDefiningOp<mlir_ts::CreateArrayOp>()
+                                            : mlir_ts::CreateArrayOp();
+                if (literal && literal->getNumOperands() == 1 && literal->getParentRegion() == resultOp->getParentRegion() &&
+                    literal->getResult(0).hasOneUse() && elementRefOp->getResult(0).hasOneUse() && loadOp->getResult(0).hasOneUse() &&
+                    literal->getOperand(0).getType() == yielded.getType() && literal->getOperand(0).getDefiningOp() &&
+                    literal->getOperand(0).getDefiningOp()->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                    !literal->getOperand(0).getDefiningOp()->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+                {
+                    auto element = literal->getOperand(0);
+                    resultOp->setOperand(index, element);
+                    loadOp->erase();
+                    elementRefOp->erase();
+                    literal->erase();
+                    if (auto *elementProducer = element.getDefiningOp())
+                    {
+                        elementProducer->removeAttr(OWNED_RESULT_CONSUMED_ATTR_NAME);
+                    }
+
+                    storeNewValue(resultOp, index, slot);
+                    return;
+                }
+            }
+
+            if (auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(producer);
+                ifOp && produced == yielded && resultOp->getParentRegion()->isAncestor(ifOp->getParentRegion()))
+            {
+                auto resultIndex = mlir::cast<mlir::OpResult>(produced).getResultNumber();
+                for (auto &region : ifOp->getRegions())
+                {
+                    auto innerResult = region.empty() ? nullptr : region.back().getTerminator();
+                    if (mlir::isa_and_nonnull<mlir_ts::ResultOp>(innerResult) && innerResult->getNumOperands() > resultIndex)
+                    {
+                        storeNewValue(innerResult, resultIndex, slot);
+                    }
+                }
+            }
+        };
+
+        for (auto storeOp : stores)
+        {
+            // the store MLIRGen made at the region's end, and the read that follows it: put back to what the region
+            // yields, then stored where a new value is made
+            auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(storeOp->getNextNode());
+            auto resultOp = loadOp ? mlir::dyn_cast_or_null<mlir_ts::ResultOp>(loadOp->getNextNode()) : mlir_ts::ResultOp();
+            if (!loadOp || loadOp.getReference() != storeOp.getReference() || !resultOp ||
+                resultOp->getNumOperands() != 1 || resultOp->getOperand(0) != loadOp.getResult())
+            {
+                continue;
+            }
+
+            auto slot = storeOp.getReference();
+            resultOp->setOperand(0, storeOp.getValue());
+            loadOp->erase();
+            storeOp->erase();
+            storeNewValue(resultOp, 0, slot);
+        }
     }
 
     // The same disagreement in a default of a destructuring pattern (`const { p = mk(1) } = { p: c ? mk(i) :

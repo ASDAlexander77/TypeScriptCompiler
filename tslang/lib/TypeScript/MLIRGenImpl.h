@@ -4916,6 +4916,25 @@ class MLIRGenImpl
 
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
+        // -mm=own: a default that makes a new value (`const { p = mk(1) } = r`, `"q" + i`) is held by a slot of the scope,
+        // empty unless the default is taken, given back when the scope ends, as a local is; the value read borrows it, as
+        // it borrows the field otherwise. Nothing owned the new value: every evaluation that ran the default leaked it.
+        // A borrowed default (`p = e`) is not stored (settleOwnPatternDefaults).
+        // (rc settles the op in OwnedReturnConsumptionPass, consumeValueOrDefaultResults.)
+        mlir::Value defaultSlot;
+        if (compileOptions.memoryModel == MemoryModelOwn && genContext.ownedVars && mth.ownsHeapMemory(location, dataType))
+        {
+            defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
+                                                              builder.getBoolAttr(false), builder.getIndexAttr(0));
+            auto empty = builder.create<mlir_ts::DefaultOp>(location, dataType);
+            builder.create<mlir_ts::StoreOp>(location, empty, defaultSlot);
+            auto varOp = defaultSlot.getDefiningOp<mlir_ts::VariableOp>();
+            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
+            genContext.ownedVars->push_back(defaultSlot);
+        }
+
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
             location, dataType, value);
 
@@ -4936,6 +4955,14 @@ class MLIRGenImpl
         if (defaultValue.getType() != dataType)
         {
             CAST(defaultValue, location, dataType, defaultValue, genContext);
+        }
+
+        // (whether the default is a new value is known once calls are settled: OwnedReturnConsumptionPass,
+        // settleOwnPatternDefaults, keeps the store of one and drops it for a borrowed default)
+        if (defaultSlot)
+        {
+            builder.create<mlir_ts::StoreOp>(location, defaultValue, defaultSlot);
+            defaultValue = builder.create<mlir_ts::LoadOp>(location, dataType, defaultSlot);
         }
 
         builder.create<mlir_ts::ResultOp>(location, defaultValue);
