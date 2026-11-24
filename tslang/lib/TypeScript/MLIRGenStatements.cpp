@@ -2585,9 +2585,17 @@ namespace mlirgen
         // -mm=own: a YieldingFinally keeps what is thrown through it in an `any` (to throw it again after the finally),
         // and an `any` that holds an object can't be copied there - it stopped at run time. Said here where the
         // thrown value's type is known (an object a called function throws still stops there).
-        if (compileOptions.memoryModel == MemoryModelOwn && !genContext.throwCaughtBeforeYieldingFinally &&
-            yieldingFinallyOf(genContext) && !own_facts::isCopyableValue(exception.getType()) &&
-            mth.ownsHeapMemory(location, exception.getType()))
+        // A function that throws such an object out of itself is remembered: a call of it in such a try is the same
+        // throw (mlirGenOwnCallThrowingObject).
+        auto throwsObject = compileOptions.memoryModel == MemoryModelOwn &&
+                            !own_facts::isCopyableValue(exception.getType()) &&
+                            mth.ownsHeapMemory(location, exception.getType());
+        if (throwsObject && !genContext.throwCaughtInFunction && genContext.funcOp)
+        {
+            functionsThrowingObjects.try_emplace(mlir_ts::FuncOp(genContext.funcOp).getName(), to_print(exception.getType()));
+        }
+
+        if (throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
         {
             emitError(location) << "-mm=own: an object of type '" << to_print(exception.getType())
                                 << "' thrown through a finally block that yields is not supported: catch it inside "
@@ -3059,6 +3067,7 @@ namespace mlirgen
                                  StringRef(MLIRHelper::getName(catchClause->variableDeclaration->name)).starts_with("$fin")))
             {
                 tryBodyGenContext.throwCaughtBeforeYieldingFinally = true;
+                tryBodyGenContext.throwCaughtInFunction = true;
             }
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();

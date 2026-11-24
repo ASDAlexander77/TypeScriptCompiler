@@ -1462,9 +1462,22 @@ class OwnershipInferencePass
     };
 
     // A value moved on some paths only (TSLANG 81): its release, which the move reaches, goes on the
-    // edges into what follows the move from the paths that did not move it.
-    bool valueUnmovedEdges(mlir::Value value, mlir::Operation *definition, mlir::Operation *acquire, mlir::Operation *taker,
-                           mlir::Operation *release);
+    // edges into what follows the move from the paths that did not move it. Several moves on ways apart (`if (a)
+    // x.push(n); else if (b) y.push(n);`, TSLANG 69): what follows any of them, from the paths that moved it on none.
+    // `moves` are each move's (acquire point, taker).
+    bool valueUnmovedEdges(mlir::Value value, mlir::Operation *definition,
+                           llvm::ArrayRef<std::pair<mlir::Operation *, mlir::Operation *>> moves, mlir::Operation *release);
+    llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> movesOf(llvm::ArrayRef<mlir::Operation *> takers,
+                                                                               mlir::Value value)
+    {
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> moves;
+        for (auto *taker : takers)
+        {
+            moves.push_back({acquirePoint(taker, value), taker});
+        }
+
+        return moves;
+    }
     bool placeOnUnmovedEdges(mlir_ts::VariableOp varOp, mlir::Operation *acquire, mlir::Operation *retain,
                              mlir::Operation *taker, llvm::ArrayRef<mlir::Operation *> assignments,
                              llvm::SetVector<mlir::Operation *> &toErase);

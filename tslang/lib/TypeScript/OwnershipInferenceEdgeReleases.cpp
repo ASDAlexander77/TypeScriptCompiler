@@ -501,23 +501,39 @@ namespace own_inference
         return true;
     }
 
-    bool OwnershipInferencePass::valueUnmovedEdges(mlir::Value value, mlir::Operation *definition, mlir::Operation *acquire,
-                                                   mlir::Operation *taker, mlir::Operation *release)
+    bool OwnershipInferencePass::valueUnmovedEdges(mlir::Value value, mlir::Operation *definition,
+                                                   llvm::ArrayRef<std::pair<mlir::Operation *, mlir::Operation *>> moves,
+                                                   mlir::Operation *release)
     {
         auto &body = getFunction().getFunctionBody();
-        if (!definition || definition->getParentRegion() != &body || acquire->getParentRegion() != &body ||
+        if (!definition || moves.empty() || definition->getParentRegion() != &body ||
             release->getParentRegion() != &body || !dominance->properlyDominates(definition, release))
         {
             return false;
         }
 
-        // what follows the move, while this value is the one the definition made: the blocks the move
+        llvm::SmallPtrSet<mlir::Block *, 4> moveBlocks;
+        for (auto [acquire, taker] : moves)
+        {
+            if (acquire->getParentRegion() != &body)
+            {
+                return false;
+            }
+
+            moveBlocks.insert(acquire->getBlock());
+        }
+
+        // what follows the moves, while this value is the one the definition made: the blocks a move
         // reaches, not through the definition again (a loop's next turn makes another), and only those
         // the definition dominates - a loop's header and its exit are outside the value's life, and the
         // edges into them (a `break`) release it on their own
-        auto *moveBlock = acquire->getBlock();
         llvm::SmallPtrSet<mlir::Block *, 16> after;
-        llvm::SmallVector<mlir::Block *> work(moveBlock->getSuccessors().begin(), moveBlock->getSuccessors().end());
+        llvm::SmallVector<mlir::Block *> work;
+        for (auto *moveBlock : moveBlocks)
+        {
+            work.append(moveBlock->getSuccessors().begin(), moveBlock->getSuccessors().end());
+        }
+
         while (!work.empty())
         {
             auto *block = work.pop_back_val();
@@ -537,7 +553,9 @@ namespace own_inference
             work.append(block->getSuccessors().begin(), block->getSuccessors().end());
         }
 
-        if (!after.contains(release->getBlock()) || after.contains(moveBlock))
+        // ...and a move does not follow another
+        if (!after.contains(release->getBlock()) ||
+            llvm::any_of(moveBlocks, [&](mlir::Block *moveBlock) { return after.contains(moveBlock); }))
         {
             return false;
         }
@@ -547,14 +565,25 @@ namespace own_inference
         auto usedAfter = false;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
             auto *top = body.findAncestorOpInRegion(*user);
-            if (!top || user == release || user == taker || top == body.findAncestorOpInRegion(*taker) ||
-                mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(user))
+            if (!top || user == release || mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(user))
             {
                 return;
             }
 
+            for (auto [acquire, taker] : moves)
+            {
+                if (user == taker || top == body.findAncestorOpInRegion(*taker))
+                {
+                    return;
+                }
+            }
+
             usedAfter = usedAfter || after.contains(top->getBlock()) ||
-                        (top->getBlock() == moveBlock && acquire->isBeforeInBlock(top) && top != acquire);
+                        llvm::any_of(moves, [&](auto move) {
+                            auto *acquire = move.first;
+                            return top->getBlock() == acquire->getBlock() && acquire->isBeforeInBlock(top) &&
+                                   top != acquire;
+                        });
         });
         if (usedAfter)
         {
@@ -564,9 +593,11 @@ namespace own_inference
         // the edges into it from where the value is held and not moved
         auto handler = handlerBlocks();
         llvm::SmallVector<EdgeRelease> placed;
+        auto placedBefore = false;
         for (auto &block : body)
         {
-            if (after.contains(&block) || &block == moveBlock || !dominance->dominates(definition, block.getTerminator()))
+            if (after.contains(&block) || moveBlocks.contains(&block) ||
+                !dominance->dominates(definition, block.getTerminator()))
             {
                 continue;
             }
@@ -589,6 +620,7 @@ namespace own_inference
                         return edge.slot == value && edge.from == &block && edge.successor == index;
                     }))
                 {
+                    placedBefore = true;
                     continue;
                 }
 
@@ -596,9 +628,10 @@ namespace own_inference
             }
         }
 
+        // (the moves of one value are each asked: the first placed them)
         if (placed.empty())
         {
-            return false;
+            return placedBefore && moves.size() > 1;
         }
 
         edgeReleases.append(placed.begin(), placed.end());

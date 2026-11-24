@@ -2974,3 +2974,33 @@ Looked at, still open:
 
 Tests `00tslang_issue_179.ts` (gc, rc, none; own refuses the closures capturing `this` in default values, as it does
 `m(f = () => this)`).
+
+180 (-mm=own items of the open-item inventory: 69, 157, 169, 2026-11-24). Fixed:
+- A value moved on some ways of an `if ... else if` with no `else`, or of an `if` inside an `else` (`if (i == 0)
+  s.a.push(n); else if (i == 1) s.b.push(n);`, 69): "'n' is moved here on some paths only; -mm=own cannot release it
+  on the others yet". One move was released on the edges that did not move it (TSLANG 81), several moves only when
+  they covered every way. The release goes on the edges from the ways that moved it on none, past any of the moves
+  (valueUnmovedEdges takes every move); no move may follow another.
+- `typeof a === "string"` of a `const a` holding a call's `any`, then `print(a)` (169): "a value takes a second
+  reference". What an `any` holds read out of it (ts.Unbox), and a narrowed name's view of a value (ts.SafeCast), are
+  borrows of it while what uses them only reads (user ruling 2026-11-16: an `any` cast back borrows). A `let` read
+  through its slot already was.
+- An object thrown through a finally block that yields by a function the try calls (`try { yield 1; boom(); }
+  finally { yield 2; }`, 157, user ruling 2026-11-22): it stopped at run time ("cannot copy an 'any' that holds an
+  object"). It is the compile error a `throw` written there is (#986), at the call: "'boom' throws an object of type
+  'Failure', and thrown through a finally block that yields it is not supported". A function that throws an object
+  out of itself is remembered, and so are the calls a function makes outside a catch clause of its own; a call in
+  such a try is checked through them, again once the module is generated (the callee may be generated after it).
+  A function that catches what it throws, a try/catch inside the yielding try, and a string thrown are not refused.
+
+Looked at, still open:
+- -mm=own: a call through a method or a function value (`o.m()`, `f()` of a variable) that throws an object through
+  a yielding finally still stops at run time: only calls of functions by their name are followed.
+- -mm=own: a field read through a union of object shapes returned (`getBox(s: Sq | Ci) { return s.box; }`, 164): "a
+  value is merged from several branches". Reading the member out of the union (GetValueFromUnionOp) as a borrow of
+  the union in borrowedParam was not enough; the merge of the shapes' reads is refused before it.
+- -mm=own: `if (a) h.x = k; if (b) h.y = k;` (152) is refused as a use after a move, rightly: both may run.
+- `arguments.length` counts an optional parameter not given (`h(1)` of `h(a, b?)` is 2, JavaScript says 1, 114).
+
+Tests `00own_partial_moves_any_narrowing.ts` (gc, rc, own), diagnostic-location
+`generator_call_throwing_object_through_yielding_finally_own.ts`.

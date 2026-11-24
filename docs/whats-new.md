@@ -1,5 +1,6 @@
 # What's new
 
+- -mm=own: a value moved in some branches of an `if ... else if` with no `else` is released on the others; `typeof a === "string"` narrows a `const` holding an `any`; a call that throws an object through a `finally` that yields is a compile error, not a stop at run time
 - A closure in a closure of a parameter's default value works (`m(f = () => () => this)`), and under -mm=rc a closure made by a default value lives through the call; an exported arrow const and a const set from a later function's call work beside top-level code; a namespace declared in several blocks can have a non-exported class, function or variable of one name in each
 - A destructuring `var` in a block is the function's (`{ var [a, b] = t; } a + b`); `Object.keys(o).push("z")` and other changes to an array a call made; a class method and a function of its namespace can share a name; a generator can be typed by a program's own iterator interface; a module arrow const can call a later one beside top-level code
 - Names that start with `__` work as declared (`class A { __p = 7 }`, `o.__p`, `keyof A`); the compiler's own helpers are named with a `.`, so a program's `__unbox` is its own. The default library must be rebuilt with this compiler (its `__` symbols are no longer escaped)

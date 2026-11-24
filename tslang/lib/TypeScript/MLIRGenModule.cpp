@@ -2030,6 +2030,12 @@ namespace mlirgen
 
         notResolved += takeExcessiveInstantiationError();
 
+        // -mm=own: a call in a try whose finally yields of a function found to throw an object after the call was made
+        if (notResolved == 0)
+        {
+            notResolved += checkOwnCallsThroughYieldingFinally();
+        }
+
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();

@@ -3141,6 +3141,39 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        // -mm=own: a call of a function that throws an object out of itself is a throw of it (mlirGen(ThrowStatement)):
+        // through a finally block that yields it is the clear error that throw is (it stopped at run time), and the
+        // caller throws it out of itself too where no catch clause of its own is around the call
+        if (compileOptions.memoryModel == MemoryModelOwn)
+        {
+            if (auto symbolRefOp = funcRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                // (a call of a function the callee is generated before: what it throws is known later, so the calls
+                // out of a function are remembered, and walked when a call is in such a try)
+                if (!genContext.throwCaughtInFunction && genContext.funcOp)
+                {
+                    uncaughtCalls[mlir_ts::FuncOp(genContext.funcOp).getName()].insert(symbolRefOp.getIdentifier());
+                }
+
+                if (!genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
+                {
+                    auto thrownType = ownThrownObjectType(symbolRefOp.getIdentifier());
+                    if (!thrownType.empty())
+                    {
+                        emitError(location) << ownThrownThroughYieldingFinallyMessage(symbolRefOp.getIdentifier(), thrownType);
+                        return mlir::failure();
+                    }
+
+                    // the callee, or one it calls, may not be generated yet: asked again when the module is
+                    // (checkOwnCallsThroughYieldingFinally)
+                    if (!genContext.dummyRun)
+                    {
+                        pendingOwnYieldingFinallyCalls.push_back({symbolRefOp.getIdentifier().str(), location});
+                    }
+                }
+            }
+        }
+
         ValueOrLogicalResult value(mlir::failure());
         mlir::TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
