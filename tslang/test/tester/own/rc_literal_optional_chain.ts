@@ -1,9 +1,10 @@
-// -mm=rc: an optional chain on an array literal (`[mk(i)]?.[0]`, `c ? [mk(i)]?.[0] : null`, `?.s`, `??`, nested,
-// a string literal): the literal's truthiness test and the chain's conditionals that hand its element on kept
-// holdReadOnlyNewArrays from holding it, and nothing released it - every evaluation leaked the literal and what it
-// holds (+18 MB per 400 runs of this loop's shape, main too). It is now given back at the end of its block, and a
-// conditional's branch yielding the element retains it first. The same program under gc and own. (A chain given
-// to a call, which own refuses, is in rc_conditional_element_field.)
+// -mm=rc, -mm=own: an optional chain on an array literal (`[mk(i)]?.[0]`, `c ? [mk(i)]?.[0] : null`, `??`,
+// `?.x ?? 0`, a string literal): the literal's truthiness test and the chain's conditionals that hand its element
+// on kept it from being given back, so every evaluation leaked the literal and what it holds (+18 MB per 400 runs
+// of this loop's shape, main too, under rc and own). It is now given back at the end of its block (under own held
+// past a conditional whose branch yields the element, as for `c ? [mk(i)][0] : null`), and under rc a branch
+// yielding the element retains it first. The same program under gc. (A chain given to a call, a field read on
+// through a second `?.`, and a chain over a nested literal, which own refuses, are in rc_conditional_element_field.)
 class N {
     x: number;
     s: string;
@@ -52,11 +53,6 @@ function main() {
             total += b.x + b.s.length;
         }
 
-        const e = c ? [mk(i)]?.[0]?.s : null;
-        if (e) {
-            total += e.length;
-        }
-
         const f = d ?? [mk(i)]?.[0];
         if (f) {
             total += f.x + f.s.length;
@@ -69,15 +65,10 @@ function main() {
             total += g.length;
         }
 
-        const h = c ? [[mk(i)]]?.[0]?.[0] : null;
-        if (h) {
-            total += h.x + h.s.length;
-        }
-
         churn();
     }
 
     print(total);
-    assert(total == 298935, "total");
+    assert(total == 257645, "total");
     print("done.");
 }

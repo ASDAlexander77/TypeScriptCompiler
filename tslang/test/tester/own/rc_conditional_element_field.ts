@@ -1,9 +1,10 @@
 // -mm=rc: a conditional expression whose branch yields a field of an object read out of an array literal's element
-// (`c ? [mk(i)][0].s : null`, `c ? ([mk(i)][0] as N).s : null`, an optional chain `c ? [mk(i)][0]?.s : null`), or
-// an optional chain given to a call (`take(c ? [[mk(i)]][0]?.[0] : null)`, `take(c ? [mk(i)]?.[0] : null)`): the
-// branch retains it for the conditional's result before the literal is given back at the end of the branch (a use
-// after free before; the last one leaked the literal instead). The same program under gc. Not under own, which
-// refuses these (a borrow of the element used after the literal may be released, or given on).
+// (`c ? [mk(i)][0].s : null`, `c ? ([mk(i)][0] as N).s : null`, an optional chain `c ? [mk(i)][0]?.s : null`,
+// `c ? [mk(i)]?.[0]?.s : null`), an element read through a chain over a nested literal (`c ? [[mk(i)]]?.[0]?.[0] :
+// null`), or an optional chain given to a call (`take(c ? [mk(i)]?.[0] : null)`): the branch retains it for the
+// conditional's result before the literal is given back at the end of the branch (a use after free before, or a
+// leak of the literal). The same program under gc. Not under own, which refuses these (a borrow of the element used
+// after the literal may be released, or given on).
 class N {
     x: number;
     s: string;
@@ -60,10 +61,20 @@ function main() {
         total += take(c ? [[mk(i)]][0]?.[0] : null);
         total += take(c ? [mk(i)]?.[0] : null);
 
+        const k = c ? [mk(i)]?.[0]?.s : null;
+        if (k) {
+            total += k.length;
+        }
+
+        const l = c ? [[mk(i)]]?.[0]?.[0] : null;
+        if (l) {
+            total += l.x + l.s.length;
+        }
+
         churn();
     }
 
     print(total);
-    assert(total == 84070, "total");
+    assert(total == 125360, "total");
     print("done.");
 }

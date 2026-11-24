@@ -5574,6 +5574,14 @@ set_tests_properties(test-rc-literal-optional-chain-released
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # A branch turning an optional it made (a nested conditional's owned result, a call's) into `| null` retains the
 # value it yields before giving the optional back at the end of the branch (none before).
+# ...and under own (spec: an element borrows from the literal), given back too: a `ts.Release` of the literal, or of
+# the optional holding it past the conditional (none before).
+add_test(NAME test-own-literal-optional-chain-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_literal_optional_chain.ts")
+set_tests_properties(test-own-literal-optional-chain-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.](optional<!ts[.])?array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 add_test(NAME test-rc-conditional-owned-optional-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_owned_optional.ts")

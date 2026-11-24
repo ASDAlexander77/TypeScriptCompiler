@@ -781,15 +781,15 @@ class OwnedReturnConsumptionPass
             // end of the block, it would be freed first. Unless the branch took a count of it for the
             // `ts.If` result (consumeConditionalResults, borrowsBranchTemporary), which then carries it.
             // (seen through the casts that only widen it: `c ? [s][0] : null` yields it as `string | null`)
-            // Under rc, for an optional chain on the literal (`[mk(i)]?.[0]`: the literal's truthiness is tested), a
+            // For an optional chain on the literal (`[mk(i)]?.[0]`: the literal's truthiness is tested), a
             // conditional within the literal's block that yields the element on - the chain, and its conversion to
             // `| null` (`ts.Value` of the chain's optional) - hands it to its own result, which is followed the same
             // way: it leaves only if that does (borrowsBranchTemporary has the enclosing branch retain it when it
-            // goes on to that branch's `ts.Result`).
+            // goes on to that branch's `ts.Result`; under own, yieldedByBranch holds the literal past it).
             auto isTruthinessTest = [](mlir::Operation *user) {
                 return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
             };
-            auto chained = !own && llvm::any_of(op->getUsers(), isTruthinessTest);
+            auto chained = llvm::any_of(op->getUsers(), isTruthinessTest);
             std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
                 for (auto &use : value.getUses())
                 {
@@ -855,7 +855,7 @@ class OwnedReturnConsumptionPass
                 });
             };
 
-            // (under rc, its truthiness test too: an optional chain on the literal tests it before reading it)
+            // (its truthiness test too: an optional chain on the literal tests it before reading it)
             auto onlyRead = llvm::all_of(op->getUsers(), [&](mlir::Operation *user) {
                 return mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)) ||
                        (mlir::isa<mlir_ts::ElementRefOp>(user) && !elementLeavesBlock(user));
@@ -923,14 +923,18 @@ class OwnedReturnConsumptionPass
         return ifOp;
     }
 
-    // Does `value` leave its block by `resultOp` only, if at all? (seen through the casts that only widen it)
-    static bool leavesOnlyBy(mlir::Value value, mlir::Operation *resultOp)
+    // Does `value` leave its block by `resultOp` only, if at all? (seen through the casts that only widen it; for an
+    // element of a literal under an optional chain, `chained`, also through the chain's conditionals in that block
+    // and their conversion to `| null`, `ts.Value` of the chain's optional: their results are the value then)
+    static bool leavesOnlyBy(mlir::Value value, mlir::Operation *resultOp, bool chained = false)
     {
-        for (auto *user : value.getUsers())
+        for (auto &use : value.getUses())
         {
-            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user))
+            auto *user = use.getOwner();
+            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) ||
+                (chained && mlir::isa<mlir_ts::ValueOp>(user)))
             {
-                if (!leavesOnlyBy(user->getResult(0), resultOp))
+                if (!leavesOnlyBy(user->getResult(0), resultOp, chained))
                 {
                     return false;
                 }
@@ -940,6 +944,14 @@ class OwnedReturnConsumptionPass
 
             if (user->hasTrait<mlir::OpTrait::IsTerminator>() && user != resultOp)
             {
+                auto *conditional = user->getParentOp();
+                if (chained && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                    resultOp->getBlock()->findAncestorOpInBlock(*conditional) &&
+                    leavesOnlyBy(conditional->getResult(use.getOperandNumber()), resultOp, chained))
+                {
+                    continue;
+                }
+
                 return false;
             }
         }
@@ -1048,14 +1060,19 @@ class OwnedReturnConsumptionPass
             levels++;
         }
 
-        auto leavesOnlyByResult = [&](mlir::Value value) { return leavesOnlyBy(value, resultOp); };
+        // (an optional chain on the literal tests its truthiness first: a read)
+        auto isTruthinessTest = [](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
+        };
+        auto chained = llvm::any_of(op->getUsers(), isTruthinessTest);
+        auto leavesOnlyByResult = [&](mlir::Value value) { return leavesOnlyBy(value, resultOp, chained); };
         // each element read out of it, and out of a literal nested in it (`c ? [[mk(i)]][0][0] : null`): one that
         // leaves, leaves by that way only
         auto yields = false;
         std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value array, bool outermost) {
             for (auto *user : array.getUsers())
             {
-                if (mlir::isa<mlir_ts::LengthOfOp>(user))
+                if (mlir::isa<mlir_ts::LengthOfOp>(user) || (outermost && chained && isTruthinessTest(user)))
                 {
                     continue;
                 }
