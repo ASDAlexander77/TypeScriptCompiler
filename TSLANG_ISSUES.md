@@ -3161,3 +3161,13 @@ Looked at, still open:
 - `arguments` read through a function value (`const f = obj.m; f(1, undefined)`): the count is not given, as before.
 
 Tests `00arguments_length_methods.ts`, `00generator_yield_star_throw_strings.ts` and `00callee_non_null.ts` (gc, rc, own).
+
+188 (187's leftover, 2026-11-24). Fixed:
+- -mm=own: a generator's `next()` (or `throw()`) called by hand through Generator<T> (`const r = g.next()`,
+  `g.next().value.length`) left what it yielded unreleased: a generator of strings grew the heap with every call (the
+  compiler before 187 too; a for-of over it did not). Its `{ value, done }` is the caller's - OwnershipSignaturePass
+  takes it for fresh (isIteratorNext) - but MLIRGen marked only a plain call's result owned, so nothing gave it back.
+  The call through an interface's function-typed field `next` or `throw` returning such a record is marked owned
+  now (mlirGenCall), under -mm=own.
+
+Tests `00own_generator_next_by_hand.ts` (gc, rc, own).

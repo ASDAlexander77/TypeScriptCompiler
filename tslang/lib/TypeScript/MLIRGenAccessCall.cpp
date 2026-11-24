@@ -3289,6 +3289,36 @@ namespace mlirgen
                 }
 
                 value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext, callAttrs);
+
+                // -mm=own: an iterator's `next()` or `throw()` called through an interface's function-typed field (a
+                // Generator's `next`, called by hand) gives a `{ value, done }` its caller owns - OwnershipSignaturePass
+                // takes it for fresh, as a for-of's is (isIteratorNext) - so it is given back where nothing keeps it:
+                // what a generator of strings yielded was never freed (TSLANG 188)
+                if (compileOptions.memoryModel == MemoryModelOwn && value.value)
+                {
+                    auto boundOp = funcRefValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
+                    auto func = boundOp ? boundOp.getFunc() : mlir::Value();
+                    if (auto valueOp = func ? func.getDefiningOp<mlir_ts::ValueOp>() : mlir_ts::ValueOp())
+                    {
+                        func = valueOp.getIn();
+                    }
+
+                    auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                    auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>()
+                                        : mlir_ts::InterfaceSymbolRefOp();
+                    auto identifier = refOp ? dyn_cast<mlir::StringAttr>(refOp.getIdentifier()) : mlir::StringAttr();
+                    auto tupleType = dyn_cast<mlir_ts::TupleType>(V(value).getType());
+                    auto fieldName = [&](int index) {
+                        auto id = dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
+                        return id ? id.getValue() : StringRef();
+                    };
+                    if (identifier && (identifier.getValue() == "next" || identifier.getValue() == "throw") && tupleType &&
+                        tupleType.getFields().size() == 2 && fieldName(0) == "value" && fieldName(1) == "done" &&
+                        mth.ownsHeapMemory(location, tupleType) && V(value).getDefiningOp())
+                    {
+                        V(value).getDefiningOp()->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    }
+                }
             })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =

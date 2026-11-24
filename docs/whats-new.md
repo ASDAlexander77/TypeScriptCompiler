@@ -1,5 +1,6 @@
 # What's new
 
+- -mm=own: a generator's `next()` called by hand gives back what it yielded (a generator of strings leaked each value)
 - `arguments.length` counts an `undefined` given in methods, constructors and generic functions too; under -mm=own a `yield*` of strings hands throw() to its delegate; `f!()` of an optional function that is missing throws a TypeError (it was skipped)
 - `arguments.length` counts an `undefined` given (`h(1, undefined)` is 2) in a call by name; an optional value given to an `any` that holds nothing is `undefined`; a `yield*` hands throw() to a delegate typed with `throw` but no `return`, and under -mm=own to one a parameter holds
 - -mm=own: a method whose override throws an object, called through the base class in a `try` whose `finally` yields, is a compile error at the call, not a stop at run time
