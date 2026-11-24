@@ -1038,6 +1038,14 @@ class MLIRGenImpl
     // The scope that becomes a loop's body scope (`bodyContext`, made from the loop's context) lists the
     // storage of the loop variables' per-iteration copies as its own (GenContext::loopBodyCells), and no
     // scope nested in it lists them again. Called once its ownedVars list is in place.
+    // a `for (let i ...)` iteration's copy of `i` gives its value back to the loop's variable (GenContext::loopCopyBack)
+    void mlirGenLoopCopyBack(mlir::Location location, mlir::Value inner, mlir::Value outer)
+    {
+        auto elementType = mlir::cast<mlir_ts::RefType>(inner.getType()).getElementType();
+        auto value = builder.create<mlir_ts::LoadOp>(location, elementType, inner);
+        builder.create<mlir_ts::StoreOp>(location, value, outer);
+    }
+
     void takeLoopBodyCells(const GenContext &loopContext, GenContext &bodyContext)
     {
         if (loopContext.isLoop && loopContext.loopBodyCells && bodyContext.ownedVars)

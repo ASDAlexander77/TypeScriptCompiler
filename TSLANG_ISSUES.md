@@ -2870,3 +2870,32 @@ Still open:
   (153): next()'s result type is given for Generator, Iterator, Iterable and IterableIterator only.
 
 Tests `00tslang_issue_175.ts` (gc, rc, none).
+
+176 (larger items of the open-item inventory, first batch, 2026-11-24). Fixed:
+- A `for (let i ...)` body that assigns `i` (128): every closure made in it saw the loop's last value (3 3 3, not
+  0 1 2). The body has an `i` of its own each iteration now even when it assigns it, and gives the value back to
+  the loop's at the end of the body and at a `continue` to the loop, before the copy is given back
+  (GenContext::loopCopyBack), as ECMAScript copies the last iteration's bindings into the next. Not under -mm=own,
+  which keeps the one variable there (its capture rule refuses the copy a closure takes and the body writes).
+- A `for (let s = "a"; ...)` of a reference type (128): one copy per iteration under gc and none, the reference
+  copied as JavaScript copies it (a a a -> a aa aaa). Under rc and own a copy would be one more owner: still the
+  loop's one variable.
+- A closure in a parameter's default value that reads an earlier parameter (`function g(a = 5, f = () => a)`,
+  `f = () => () => a`, 145): the program crashed. Which parameters a closure takes as copies was decided after the
+  default values were made, so the closure there took `a` as a cell its function did not expect. It is decided
+  before them now, and a default value that assigns a parameter counts.
+
+Looked at, still open:
+- -mm=rc: a closure made in a parameter's default value is given back at the end of the default value's region, and
+  the parameter then holds what was freed (`g()` above prints 0 under rc; `m(f = () => this)` too). Who owns a
+  defaulted parameter's value is the question: the caller does not, and the function releases no parameter.
+- `m(f = () => () => this)` in a method (145): "'ts.Load' op using value defined outside the region".
+- Names that start with `__` (141): the parser keeps them escaped (`__p` is `___p`), and the compiler is not one
+  way about it - a field is declared under the escaped name, `o.__p` looks for the plain one, and an identifier the
+  compiler makes from an escaped name is escaped again (`____p`): `class A { __p = 7 }` with `o.__p` fails. The
+  compiler's own helpers are named by their escaped names (`___unbox`, `___cast`, ...). One convention (the plain
+  name, TypeScript's idText) needs those helper names and the default library's symbols looked at together.
+- A non-exported class of one name in two declarations of a namespace (140/147): "redefinition of symbol named
+  'N.C.constructor'". Each declaration's non-exported members need names of their own.
+
+Tests `00tslang_issue_176.ts` (gc, none).

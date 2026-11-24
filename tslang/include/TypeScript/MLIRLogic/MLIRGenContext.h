@@ -334,6 +334,12 @@ struct GenContext
     // the end of every iteration, and at a `break` or `continue` - as a captured local declared in it is.
     // Declared before the body's scope existed, it was listed nowhere: every iteration leaked its cell.
     llvm::SmallVector<mlir::Value> *loopBodyCells = nullptr;
+    // With it, the copies and the loop's variables they were made from (copy, variable): a body that assigns its
+    // copy gives the value back to the loop's at a `continue` to the loop and at the end of the body, so the next
+    // iteration starts from it (ECMAScript CreatePerIterationEnvironment copies the last iteration's bindings).
+    // Cleared by every loop for its own body; `loopCopyBackLabel` is the loop's label.
+    llvm::SmallVector<std::pair<mlir::Value, mlir::Value>> *loopCopyBack = nullptr;
+    std::string loopCopyBackLabel;
     // Set on the scope of a `switch` - the one its cases share - and cleared, as isLoopBodyScope
     // is, for every scope nested in it. An unlabelled `break` walking outwards stops here; a
     // `continue` passes through it to the loop.

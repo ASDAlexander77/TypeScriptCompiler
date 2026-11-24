@@ -1,5 +1,6 @@
 # What's new
 
+- Each iteration of `for (let i ...)` keeps its own `i` for the closures made in it even when the body assigns `i` (0 1 2, not 3 3 3); a closure in a parameter's default value can read an earlier parameter
 - An interface of one call signature takes a function (`interface Cb { (x: number): number }`); a getter can read itself; `for (var x in this)` walks a class's fields; an interface can extend a generic interface that a function shares its name with
 - An object literal can be given a class whose constructor takes parameter properties (`const p: Point = { x: 0, y: 0 }`); a namespace `var` can be declared again; `fs.push(() => i)` into a `(() => number)[]`; closures may read `const`s declared after them in any order
 - A typed `const` can hold a generic arrow (`const f: <p>(a: p) => p = <p>(a: p): p => a`); a namespace's functions see a `var` declared in a `for` or `if` of the namespace; a class can extend a module `const` set from a class (`const k = B; class D extends k {}`)
