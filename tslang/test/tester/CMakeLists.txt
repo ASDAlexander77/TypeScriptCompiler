@@ -5757,6 +5757,12 @@ foreach(let_default_mm gc rc own)
     tslang_add_test(NAME test-jit-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -jit -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
     tslang_add_test(NAME test-compile-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
 endforeach()
+# -mm=own: a parameter the function keeps on some paths is released at the end of a cleanup the exception leaves
+# the function from (its own `finally`), as at its returns and throws (it leaked); the same program under gc and rc.
+foreach(kept_finally_mm gc rc own)
+    tslang_add_test(NAME test-jit-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -jit -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
+    tslang_add_test(NAME test-compile-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
@@ -6479,7 +6485,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
                       own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
                       own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
-                      own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
+                      own_fallback_unwind_kept_param own_fallback_kept_param_finally own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
                       own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted

@@ -95,9 +95,12 @@ namespace own_inference
                 auto *exit = block.empty() ? nullptr : &block.back();
                 // a thrown value made of the parameter takes it with it: no release there (a leak,
                 // if it does not)
+                // ...and the end of a cleanup the exception leaves the function from (its own `finally`, no
+                // landing pad of its own after it): the kept parameter leaked on that way out (final-review M-1)
                 auto leaves = mlir::isa_and_nonnull<mlir_ts::ReturnInternalOp>(exit) ||
                               (mlir::isa_and_nonnull<mlir_ts::ThrowCallOp>(exit) &&
-                               !readsSlot(exit->getOperand(0), varOp.getResult()));
+                               !readsSlot(exit->getOperand(0), varOp.getResult())) ||
+                              (mlir::isa_and_nonnull<mlir_ts::EndCleanupOp>(exit) && exit->getNumSuccessors() == 0);
                 if (!leaves)
                 {
                     continue;
