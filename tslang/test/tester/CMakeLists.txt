@@ -5769,6 +5769,12 @@ foreach(concise_mm gc rc own none)
     tslang_add_test(NAME test-jit-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -jit -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
     tslang_add_test(NAME test-compile-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
 endforeach()
+# ...and a borrowed `N | null | undefined` (an element, a for-of variable, a field) narrowed so is a view of the borrow:
+# own accepts it (it refused it after the loose narrowing); every model.
+foreach(loose_borrowed_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -jit -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
+    tslang_add_test(NAME test-compile-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives

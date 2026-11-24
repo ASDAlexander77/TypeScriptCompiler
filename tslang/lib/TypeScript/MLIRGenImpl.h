@@ -6339,14 +6339,15 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // neither null nor undefined
+        // not undefined: an optional's value, read as `c !== undefined` reads it (a `ts.Value`, which -mm=own sees as a
+        // view of a borrow; a cast to the type without null too was taken for a store of it, and own refused a
+        // borrowed `N | null | undefined` narrowed so). A null left in it reads as null, which is all `c.x` needs.
         auto present = type;
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(present))
         {
             present = optionalType.getElementType();
         }
-
-        if (auto unionType = dyn_cast<mlir_ts::UnionType>(present))
+        else if (auto unionType = dyn_cast<mlir_ts::UnionType>(present))
         {
             SmallVector<mlir::Type> members;
             for (auto member : unionType.getTypes())
