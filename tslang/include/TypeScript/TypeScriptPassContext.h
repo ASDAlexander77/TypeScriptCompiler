@@ -135,6 +135,11 @@ struct TSContext
         catchPadIdOf.beginRun();
         finallyPadIdOf.beginRun();
         inParentTryFinallyPad.beginRun();
+        // numbered from 1 in each function: the pass runs over functions on several threads, each copy with a
+        // context of its own, so a count carried over from the functions a thread lowered before numbered a
+        // function's pads differently from one compile to the next (nondeterministic IR); only a function's own pads
+        // name each other (Win32ExceptionPass)
+        nextCatchPadId = 0;
     }
 
     // options
@@ -165,7 +170,7 @@ struct TSContext
     OpSideTable<int> catchesLeft{"catchesLeft"};
     // Windows: the id a try's catch landing pad goes by, so that the pads of a try inside that
     // catch clause can name it as the funclet they are nested in - see tagPad in TryOpLowering
-    // and ts.internal.eh_pad in Win32ExceptionPass. Ids are unique within the module.
+    // and ts.internal.eh_pad in Win32ExceptionPass. Ids are unique within the function (beginRun).
     OpSideTable<int> catchPadIdOf{"catchPadIdOf"};
     // Windows: the same for the pad a try's finally is entered through on the exceptional path,
     // and whether a try sits in that copy of its parentTryOp's finally - the one copy that runs

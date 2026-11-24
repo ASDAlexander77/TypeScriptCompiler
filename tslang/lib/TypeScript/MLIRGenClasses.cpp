@@ -2911,7 +2911,8 @@ namespace mlirgen
         }
 
         auto viewOp = builder.create<mlir_ts::SafeCastOp>(location, declaredType, castValue, loaded);
-        viewOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        // (naming the field: a reread or a write of the view takes the name from here, weakFieldNameOf)
+        viewOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getStringAttr(fieldName));
         return viewOp;
     }
 
@@ -2949,21 +2950,24 @@ namespace mlirgen
         return V(result);
     }
 
+    // The field a @weak field's view reads (weakFieldRead names it on the view): a reread or a write of the view is
+    // of the same field. It was taken from the checked read found by walking the first operand of what made the
+    // view's value, which did not always reach it - the field's name was then lost from one compile to the next
+    // (nondeterministic IR).
+    static mlir::StringAttr weakFieldNameOf(mlir::Operation *viewOp)
+    {
+        return viewOp->getAttrOfType<mlir::StringAttr>(WEAK_FIELD_VIEW_ATTR_NAME);
+    }
+
     mlir::Value MLIRGenImpl::weakFieldReread(mlir::Location location, mlir_ts::SafeCastOp viewOp, mlir::Value loaded,
                                              const GenContext &genContext)
     {
         auto weakRefType = mlir::cast<mlir_ts::WeakRefType>(loaded.getType());
         auto derefOp = builder.create<mlir_ts::WeakRefDerefOp>(location, weakRefType.getElementType(), loaded);
         derefOp.setChecked(true);
-        auto *below = viewOp->getOperand(0).getDefiningOp();
-        while (below && !mlir::isa<mlir_ts::WeakRefDerefOp>(below))
+        if (auto name = weakFieldNameOf(viewOp))
         {
-            below = below->getNumOperands() > 0 ? below->getOperand(0).getDefiningOp() : nullptr;
-        }
-
-        if (below)
-        {
-            derefOp.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(below).getWeakFieldAttr());
+            derefOp.setWeakFieldAttr(name);
         }
 
         auto castValue = weakFieldValue(location, derefOp.getResult(), viewOp.getType(), genContext);
@@ -2973,7 +2977,14 @@ namespace mlirgen
         }
 
         auto rereadOp = builder.create<mlir_ts::SafeCastOp>(location, viewOp.getType(), castValue, loaded);
-        rereadOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        if (auto name = weakFieldNameOf(viewOp))
+        {
+            rereadOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, name);
+        }
+        else
+        {
+            rereadOp->setAttr(WEAK_FIELD_VIEW_ATTR_NAME, builder.getUnitAttr());
+        }
         return rereadOp;
     }
 
@@ -3134,16 +3145,10 @@ namespace mlirgen
             return mlir::Value();
         }
 
-        auto derefOp = viewOp->getOperand(0).getDefiningOp();
-        while (derefOp && !mlir::isa<mlir_ts::WeakRefDerefOp>(derefOp))
-        {
-            derefOp = derefOp->getNumOperands() > 0 ? derefOp->getOperand(0).getDefiningOp() : nullptr;
-        }
-
         auto weakRef = builder.create<mlir_ts::WeakRefNewOp>(location, weakRefType, target, mlir::StringAttr());
-        if (derefOp)
+        if (auto name = weakFieldNameOf(viewOp))
         {
-            weakRef.setWeakFieldAttr(mlir::cast<mlir_ts::WeakRefDerefOp>(derefOp).getWeakFieldAttr());
+            weakRef.setWeakFieldAttr(name);
         }
 
         // born with no weak count: the retain the store adds is the first (as `new WeakRef(x)`)
