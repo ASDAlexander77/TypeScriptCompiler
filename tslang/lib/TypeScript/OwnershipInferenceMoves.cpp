@@ -827,6 +827,18 @@ namespace own_inference
             return isBoundForCall(user);
         }
 
+        // what an `any` holds, read out of it, and a narrowed name's view of a value (`typeof a === "string"` of a
+        // `const a` holding a call's `any`, then `print(a)`): the same block, borrowed while only read (USER RULING
+        // 2026-11-16, an `any` cast back borrows)
+        if (mlir::isa<mlir_ts::UnboxOp, mlir_ts::SafeCastOp>(user))
+        {
+            auto result = user->getResult(0);
+            return !result.use_empty() && llvm::all_of(result.getUses(), [&](mlir::OpOperand &use) {
+                auto *resultUser = use.getOwner();
+                return mlir::isa<mlir_ts::DebugVariableOp>(resultUser) || isBorrow(resultUser, use.get());
+            });
+        }
+
         // arguments are borrowed, but one the callee keeps (`__own_params`) is taken; a callee
         // with no facts that keeps one retains it, and that retain is its own error
         if (isCall(user))
@@ -1421,7 +1433,7 @@ namespace own_inference
                 if (!dominance->properlyDominates(acquire, release) &&
                     !emptyWhereNotMoved(value, definition, acquire, release) &&
                     !(definition && takers.size() > 1 && !reachableAfter(definition, release, takers)) &&
-                    !(takers.size() == 1 && valueUnmovedEdges(value, definition, acquire, taker, release)))
+                    !valueUnmovedEdges(value, definition, movesOf(takers, value), release))
                 {
                     reportMovedOnSomePaths(taker, release, name);
                     return false;

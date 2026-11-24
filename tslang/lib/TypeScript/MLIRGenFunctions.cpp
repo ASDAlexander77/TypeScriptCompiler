@@ -2024,6 +2024,8 @@ namespace mlirgen
         auto funcGenContext = GenContext(funcDeclGenContext);
         funcGenContext.clearScopeVars();
         funcGenContext.funcOp = funcOp;
+        // a catch clause around where the function is made is not around what its body throws
+        funcGenContext.throwCaughtInFunction = false;
         int funcState = 1;
         funcGenContext.state = &funcState;
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully
