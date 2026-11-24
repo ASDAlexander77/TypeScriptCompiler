@@ -5600,6 +5600,14 @@ add_test(NAME test-rc-destructuring-literal-released
 set_tests_properties(test-rc-destructuring-literal-released
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...and a chain over a nested literal (`c ? [[mk(i)]]?.[0]?.[0] : null`) is held past the conditional under own, as
+# the unchained `[[mk(i)]][0][0]`: a `ts.Release` of the optional holding the outer literal (own refused it before).
+add_test(NAME test-own-literal-optional-chain-nested-held
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_literal_optional_chain.ts")
+set_tests_properties(test-own-literal-optional-chain-nested-held
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]optional<!ts[.]array<!ts[.]array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # ...and under own: the literal destructured with defaults is given back at the end of its block too (none before).
 add_test(NAME test-own-destructuring-literal-released
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own

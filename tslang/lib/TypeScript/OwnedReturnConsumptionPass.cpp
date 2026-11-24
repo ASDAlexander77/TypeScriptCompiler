@@ -858,10 +858,20 @@ class OwnedReturnConsumptionPass
                         return true;
                     }
 
-                    return own && mlir::isa<mlir_ts::LoadOp>(read) && mlir::isa<mlir_ts::ArrayType>(read->getResult(0).getType()) &&
-                           llvm::any_of(read->getResult(0).getUsers(), [&](mlir::Operation *innerUser) {
-                               return mlir::isa<mlir_ts::ElementRefOp>(innerUser) && elementLeavesBlock(innerUser);
-                           });
+                    // (under an optional chain, read on through it: chainedAliases)
+                    if (!own || !mlir::isa<mlir_ts::LoadOp>(read) || !mlir::isa<mlir_ts::ArrayType>(read->getResult(0).getType()))
+                    {
+                        return false;
+                    }
+
+                    auto inner = read->getResult(0);
+                    return llvm::any_of(chained ? chainedAliases(inner, op->getBlock()) : llvm::SmallVector<mlir::Value>{inner},
+                                        [&](mlir::Value array) {
+                                            return llvm::any_of(array.getUsers(), [&](mlir::Operation *innerUser) {
+                                                return mlir::isa<mlir_ts::ElementRefOp>(innerUser) &&
+                                                       innerUser->getOperand(0) == array && elementLeavesBlock(innerUser);
+                                            });
+                                        });
                 });
             };
 
@@ -1029,6 +1039,36 @@ class OwnedReturnConsumptionPass
 
         return true;
     }
+    // An inner literal read out of a literal under an optional chain (`[[mk(i)]]?.[0]?.[0]`) is read on through the
+    // chain: the chain's conditional yields it as an optional, and the next link reads `ts.Value` of that. The same
+    // array, then: `value` and what it is handed on as - through the casts that only widen it, an optional's value,
+    // and a conditional in `block` (or in a statement of it) whose branch yields it.
+    static llvm::SmallVector<mlir::Value> chainedAliases(mlir::Value value, mlir::Block *block)
+    {
+        llvm::SmallVector<mlir::Value> aliases{value};
+        for (size_t index = 0; index < aliases.size() && aliases.size() < 64; index++)
+        {
+            for (auto &use : aliases[index].getUses())
+            {
+                auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp, mlir_ts::ValueOp>(user))
+                {
+                    aliases.push_back(user->getResult(0));
+                    continue;
+                }
+
+                auto *conditional = user->getParentOp();
+                if (mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                    block->findAncestorOpInBlock(*conditional))
+                {
+                    aliases.push_back(conditional->getResult(use.getOperandNumber()));
+                }
+            }
+        }
+
+        return aliases;
+    }
+
     // Is a literal only read, but for an element its block - a branch of a conditional expression - yields? (seen
     // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
     // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
@@ -1089,10 +1129,20 @@ class OwnedReturnConsumptionPass
         // each element read out of it, and out of a literal nested in it (`c ? [[mk(i)]][0][0] : null`): one that
         // leaves, leaves by that way only
         auto yields = false;
-        std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value array, bool outermost) {
-            for (auto *user : array.getUsers())
+        // (a literal nested in one under an optional chain is read on through the chain: chainedAliases)
+        std::function<bool(mlir::Value, bool)> readsLeaveOnlyByResult = [&](mlir::Value literal, bool outermost) {
+            llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> users;
+            for (auto array : !outermost && chained ? chainedAliases(literal, op->getBlock()) : llvm::SmallVector<mlir::Value>{literal})
             {
-                if (mlir::isa<mlir_ts::LengthOfOp>(user) || (outermost && chained && isTruthinessTest(user)))
+                for (auto *user : array.getUsers())
+                {
+                    users.push_back({user, array});
+                }
+            }
+
+            for (auto [user, array] : users)
+            {
+                if (mlir::isa<mlir_ts::LengthOfOp>(user) || (chained && isTruthinessTest(user)))
                 {
                     continue;
                 }
