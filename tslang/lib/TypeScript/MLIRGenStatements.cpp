@@ -91,6 +91,21 @@ namespace mlirgen
 
                 mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue}, /*atLastUse=*/true);
 
+                // ...but a slot owning a parameter's default value (-mm=rc, processOptionalParam) is given back
+                // here, as a return statement's scope exit gives it back: what follows the return is not reached
+                if (genContext.ownedVars)
+                {
+                    for (auto storage : llvm::reverse(*genContext.ownedVars))
+                    {
+                        auto varOp = storage.getDefiningOp<mlir_ts::VariableOp>();
+                        if (varOp && varOp->hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME))
+                        {
+                            builder.create<mlir_ts::ReleaseSlotOp>(loc(body), storage)
+                                ->setAttr(SCOPE_EXIT_RELEASE_ATTR_NAME, builder.getUnitAttr());
+                        }
+                    }
+                }
+
                 return mlirGenReturnValue(loc(body), resultValue, false, genContext);
             }
 

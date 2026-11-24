@@ -319,6 +319,9 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext);
+    void renameNamespaceBlockLocals(ModuleBlock block, StringRef namespaceFullName);
+    // "<namespace>|<name>" -> the block of the namespace that declared the name, not exported, first
+    llvm::StringMap<std::string> namespaceBlockNames;
 
     mlir::LogicalResult mlirGenInclude(mlir::Location location, StringRef filePath, const GenContext &genContext);
 
@@ -2079,7 +2082,8 @@ class MLIRGenImpl
             }
 
             if (genContext.rootFunctionConst && genContext.funcOp
-                && genContext.funcOp == genContext.rootStatementsFuncOp && varClass_ == VariableType::Const)
+                && genContext.funcOp == genContext.rootStatementsFuncOp
+                && (varClass_ == VariableType::Const || varClass_.isExport))
             {
                 scope = VariableScope::Global;
             }
@@ -3109,7 +3113,18 @@ class MLIRGenImpl
         if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
         {
             return mlir::failure();
-        }        
+        }
+
+        // a value of no type yet: a call of a function whose return type is not known yet (`const k = a()`, where `a`
+        // calls a function declared after it). Declared so, a function reading the global read it as `none` and was
+        // not made again ("failed to legalize operation 'ts.Cast'"): the statement is tried again once it is known.
+        // (A call of a function returning nothing is `undefined`, not this.)
+        if (variableDeclarationInfo.initial && mth.isNoneType(variableDeclarationInfo.type))
+        {
+            emitError(location) << "the type of '" << variableDeclarationInfo.variableName
+                                << "' can't be resolved from its value";
+            return mlir::failure();
+        }
 
         // `const x: never = fail()` at module level: the initializer runs (and does not come back), and the global
         // is a byte holding the place of a value that does not exist - a read of it is a `never` of its own
@@ -4931,6 +4946,24 @@ class MLIRGenImpl
 
     ValueOrLogicalResult processOptionalParam(mlir::Location location, int index, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
+        // -mm=rc: a default value that owns heap memory (a closure, `f = () => a`, `f = () => this`) is a temporary of
+        // the default value's region, given back when the region ends: the parameter held what was freed (`g()`
+        // printed 0). A function gives back none of its parameters (the caller owns what it passes), so the value is
+        // owned by a slot of the frame, empty unless the default is taken, given back at the function's exit
+        // (mlirGenFunctionBody lists it with the parameters' storage); the parameter borrows it.
+        mlir::Value defaultSlot;
+        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, dataType))
+        {
+            defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
+                                                              builder.getBoolAttr(false), builder.getIndexAttr(0));
+            auto empty = builder.create<mlir_ts::DefaultOp>(location, dataType);
+            builder.create<mlir_ts::StoreOp>(location, empty, defaultSlot);
+            auto varOp = defaultSlot.getDefiningOp<mlir_ts::VariableOp>();
+            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(DEFAULT_VALUE_SLOT_ATTR_NAME, builder.getUnitAttr());
+        }
+
         auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
             location, mlir_ts::RefType::get(dataType), value, builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
 
@@ -4951,6 +4984,23 @@ class MLIRGenImpl
         if (defaultValue.getType() != dataType)
         {
             CAST(defaultValue, location, dataType, defaultValue, genContext);
+        }
+
+        if (defaultSlot)
+        {
+            // as an awaited result's slot takes it (mlirGen(AwaitExpression)): a value that carries a reference
+            // hands it over, anything else is retained
+            if (producesOwnedReference(defaultValue))
+            {
+                consumeOwnedReference(defaultValue);
+            }
+            else
+            {
+                builder.create<mlir_ts::RetainOp>(location, defaultValue);
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, defaultValue, defaultSlot);
+            defaultValue = builder.create<mlir_ts::LoadOp>(location, dataType, defaultSlot);
         }
 
         builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
