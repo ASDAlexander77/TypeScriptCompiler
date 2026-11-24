@@ -1407,6 +1407,7 @@ tslang_add_test(NAME test-jit-rc-00-generator-throw-through-yielding-finally COM
 tslang_add_test(NAME test-jit-own-00-generator-throw-through-yielding-finally COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_throw_through_yielding_finally.ts")
 tslang_add_test(NAME test-jit-00-own-partial-moves-any-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-jit-rc-00-own-partial-moves-any-narrowing COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
+tslang_add_test(NAME test-jit-own-own-moved-on-two-of-three-paths COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_moved_on_two_of_three_paths.ts")
 tslang_add_test(NAME test-jit-own-00-own-partial-moves-any-narrowing COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-compile-own-00-own-partial-moves-any-narrowing COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_partial_moves_any_narrowing.ts")
 tslang_add_test(NAME test-jit-00-iterable-string-for-of COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterable_string_for_of.ts")
@@ -7205,7 +7206,6 @@ set(own_error_cases
     "own_err_split_let_stored|:14:9: error: 'dir' borrows 'this[.]dir' and cannot be stored, returned or captured"
     "own_err_split_let_field_overwritten|:14:16: error: 'dir' borrows 'this[.]dir' but is used here after it may be released or overwritten"
     "own_err_pushed_or_null_popped|:17:23: error: a value that borrows 'this[.]views..' is used here after it may be released or overwritten"
-    "own_err_moved_on_two_of_three_paths|:16:13: error: '[^']*' is moved here on some paths only"
     "own_err_kept_local_array_popped|:16:22: error: a value that borrows 'this[.]nodes..' is used here after it may be released or overwritten"
     "own_err_private_field_written_callback|:33:24: error: a value that borrows 'this[.]sample' is used here after it may be released or overwritten"
     "own_err_const_alias_drops|:22:11: error: a value that borrows 'meshes..[.]clusters' is used here after it may be released or overwritten"

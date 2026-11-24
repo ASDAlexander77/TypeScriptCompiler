@@ -1,5 +1,5 @@
-// TSLANG_ISSUES 69: moved by one move or another on some paths, but on a third path by none, a value
-// is still moved on some paths only.
+// TSLANG_ISSUES 69 (fixed in 180): moved by one move or another on some paths, and on a third path by none: released
+// on the edges from the third path.
 class Node2 {
     constructor(public kind: int) {}
 }
@@ -19,6 +19,10 @@ class App {
 }
 
 function main() {
-    new App().pick(3);
+    const app = new App();
+    app.pick(1);
+    app.pick(2);
+    app.pick(3);
+    assert(app.a.length == 1 && app.b.length == 1);
     print("done.");
 }
