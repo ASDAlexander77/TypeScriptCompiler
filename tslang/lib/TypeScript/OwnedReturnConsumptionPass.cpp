@@ -2934,6 +2934,35 @@ class OwnedReturnConsumptionPass
             loadOp->erase();
             storeOp->erase();
 
+            // a slot no scope exit releases - made inside an expression (a destructuring assignment in `?:`), which
+            // does not reach the scope's end (MLIRGenImpl::releaseScopeOwnedVars): taken out, the default is what it
+            // was without one
+            if (llvm::none_of(slot.getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::ReleaseSlotOp>(user); }))
+            {
+                for (auto *user : llvm::make_early_inc_range(slot.getUsers()))
+                {
+                    auto emptyStore = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (!emptyStore)
+                    {
+                        continue;
+                    }
+
+                    auto *emptyValue = emptyStore.getValue().getDefiningOp();
+                    emptyStore->erase();
+                    if (mlir::isa_and_nonnull<mlir_ts::DefaultOp>(emptyValue) && emptyValue->use_empty())
+                    {
+                        emptyValue->erase();
+                    }
+                }
+
+                if (slot.use_empty())
+                {
+                    slot.getDefiningOp()->erase();
+                }
+
+                continue;
+            }
+
             // A parameter that may be kept - stored, returned, given to a call or a new literal (`constructor(public
             // a = new C())`) - holds its default as it holds an argument: own keeps it, the default moving out with
             // it (own_param_default_kept). Only a parameter that is only read borrows the slot.

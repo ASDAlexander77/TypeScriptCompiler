@@ -1061,6 +1061,13 @@ class MLIRGenImpl
 
     // `onlyOnAttr` names the copies of a hand-written finally the releases are kept in -
     // UNWIND_ONLY_ATTR_NAME or RETURN_ONLY_ATTR_NAME - or is empty for an ordinary release
+    bool isPatternDefaultSlotOutOfReach(mlir::Value storage)
+    {
+        auto varOp = storage.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
+               !varOp->getParentRegion()->isAncestor(builder.getInsertionBlock()->getParent());
+    }
+
     void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars,
                                StringRef onlyOnAttr = {})
     {
@@ -1079,6 +1086,14 @@ class MLIRGenImpl
             }
             else if (isOwnedLocalSlot(storage))
             {
+                // (a pattern default's slot made inside an expression does not reach the scope's end:
+                // ownPatternDefaultSlot)
+                if (isPatternDefaultSlotOutOfReach(storage))
+                {
+                    continue;
+                }
+
+
                 releaseOp = builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
                 // a closure written further on may still capture it (releaseCapturedSlotsAsCells)
                 releaseOp->setAttr(SCOPE_EXIT_RELEASE_ATTR_NAME, builder.getUnitAttr());
@@ -4914,6 +4929,41 @@ class MLIRGenImpl
         return mclh.conditionalValue(condValue, trueValue, falseValue);
     }    
 
+    // -mm=own: the slot a pattern's default that makes a new value is held by (optionalValueOrDefault), a slot of the
+    // scope, released when the scope ends. Made where the scope's owned locals are: in a `try` body or a `switch` case,
+    // in front of the TryOp/SwitchOp, as an owned local is hoisted (mlirGen(VariableDeclaration)) - made in the region,
+    // it did not dominate the release on the unwind leg or at the switch's end ("operand #0 does not dominate this
+    // use"). None in a generator, whose locals are fields of the generator object kept between turns: the default is
+    // what it was before, refused where it was refused. A slot made inside an expression (a destructuring assignment in
+    // `?:`) does not dominate the scope's end either: it is not released there (releaseScopeOwnedVars), and
+    // settleOwnPatternDefaults takes such a slot out again.
+    mlir::Value ownPatternDefaultSlot(mlir::Location location, mlir::Type dataType, const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn || !genContext.ownedVars || genContext.generatorSwitchOperation ||
+            !mth.ownsHeapMemory(location, dataType))
+        {
+            return mlir::Value();
+        }
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        if ((genContext.allocateScopeOwnedVarsOutsideOfOperation || genContext.allocateVarsOutsideOfOperation) &&
+            genContext.currentOperation)
+        {
+            builder.setInsertionPoint(genContext.currentOperation);
+        }
+
+        mlir::Value defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
+                                                                      builder.getBoolAttr(false), builder.getIndexAttr(0));
+        auto empty = builder.create<mlir_ts::DefaultOp>(location, dataType);
+        builder.create<mlir_ts::StoreOp>(location, empty, defaultSlot);
+        auto varOp = defaultSlot.getDefiningOp<mlir_ts::VariableOp>();
+        varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+        varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+        varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
+        genContext.ownedVars->push_back(defaultSlot);
+        return defaultSlot;
+    }
+
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
         // -mm=own: a default that makes a new value (`const { p = mk(1) } = r`, `"q" + i`) is held by a slot of the scope,
@@ -4921,19 +4971,7 @@ class MLIRGenImpl
         // it borrows the field otherwise. Nothing owned the new value: every evaluation that ran the default leaked it.
         // A borrowed default (`p = e`) is not stored (settleOwnPatternDefaults).
         // (rc settles the op in OwnedReturnConsumptionPass, consumeValueOrDefaultResults.)
-        mlir::Value defaultSlot;
-        if (compileOptions.memoryModel == MemoryModelOwn && genContext.ownedVars && mth.ownsHeapMemory(location, dataType))
-        {
-            defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
-                                                              builder.getBoolAttr(false), builder.getIndexAttr(0));
-            auto empty = builder.create<mlir_ts::DefaultOp>(location, dataType);
-            builder.create<mlir_ts::StoreOp>(location, empty, defaultSlot);
-            auto varOp = defaultSlot.getDefiningOp<mlir_ts::VariableOp>();
-            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
-            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
-            varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
-            genContext.ownedVars->push_back(defaultSlot);
-        }
+        auto defaultSlot = ownPatternDefaultSlot(location, dataType, genContext);
 
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
             location, dataType, value);

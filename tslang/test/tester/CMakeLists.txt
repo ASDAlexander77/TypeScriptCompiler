@@ -5612,6 +5612,17 @@ add_test(NAME test-own-pattern-default-slot
 set_tests_properties(test-own-pattern-default-slot
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Store\"[(]%[0-9]+, %[0-9]+[)] : [(]!ts[.]class<@N[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[(]%[0-9]+[)] : [(]!ts[.]ref<!ts[.]class<@N[^\n]*\n *\"ts[.]Result\""
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=own: a pattern's default that makes a new value in a `try` body or a `switch` case (with a block or without one,
+# in a loop, with a throw out of the try body) has its slot made in front of the TryOp/SwitchOp, as an owned local
+# does (it failed: "operand #0 does not dominate this use"); the same program under rc and gc. Inside an expression
+# (a destructuring assignment in `?:`) own refuses it as before, with the ownership error, not that internal one.
+foreach(pattern_default_try_mm gc rc own)
+    tslang_add_test(NAME test-jit-${pattern_default_try_mm}-own-pattern-default-try-switch COMMAND test-runner -jit -mm=${pattern_default_try_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_try_switch.ts")
+    tslang_add_test(NAME test-compile-${pattern_default_try_mm}-own-pattern-default-try-switch COMMAND test-runner -mm=${pattern_default_try_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_try_switch.ts")
+endforeach()
+add_test(NAME test-compile-own-pattern-default-in-expression-error COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_pattern_default_in_expression_error.ts")
+set_tests_properties(test-compile-own-pattern-default-in-expression-error PROPERTIES PASS_REGULAR_EXPRESSION "a value that borrows 'r.p' cannot be stored, returned or captured"
+                                                                                   FAIL_REGULAR_EXPRESSION "does not dominate|Stack dump|Assertion failed")
 # A pattern's default that is a local (`const e = mk(i + 1); const { p = e } = r`) gives the local back at the end of
 # its block under rc and own (it leaked): the default hands it on as the value-or-default's result. A named record,
 # a `let`, an array pattern under every model; a record literal source and the assignment form under gc and rc.
