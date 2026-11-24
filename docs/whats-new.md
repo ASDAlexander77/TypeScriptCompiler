@@ -1,5 +1,6 @@
 # What's new
 
+- A closure in a closure of a parameter's default value works (`m(f = () => () => this)`), and under -mm=rc a closure made by a default value lives through the call; an exported arrow const and a const set from a later function's call work beside top-level code; a namespace declared in several blocks can have a non-exported class, function or variable of one name in each
 - A destructuring `var` in a block is the function's (`{ var [a, b] = t; } a + b`); `Object.keys(o).push("z")` and other changes to an array a call made; a class method and a function of its namespace can share a name; a generator can be typed by a program's own iterator interface; a module arrow const can call a later one beside top-level code
 - Names that start with `__` work as declared (`class A { __p = 7 }`, `o.__p`, `keyof A`); the compiler's own helpers are named with a `.`, so a program's `__unbox` is its own. The default library must be rebuilt with this compiler (its `__` symbols are no longer escaped)
 - Each iteration of `for (let i ...)` keeps its own `i` for the closures made in it even when the body assigns `i` (0 1 2, not 3 3 3); a closure in a parameter's default value can read an earlier parameter

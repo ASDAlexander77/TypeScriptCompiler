@@ -1805,8 +1805,7 @@ namespace mlirgen
                         GenContext statementGenContext(rootGenContext);
                         statementGenContext.rootFunctionConst =
                             isVariableStatement
-                            && (statement.as<VariableStatement>()->declarationList->flags & NodeFlags::Const) == NodeFlags::Const
-                            && !hasModifier(statement, SyntaxKind::ExportKeyword);
+                            && (statement.as<VariableStatement>()->declarationList->flags & NodeFlags::Const) == NodeFlags::Const;
                         if (failed(mlirGen(statement, statementGenContext)))
                         {
                             emitError(loc(statement), "failed statement");
@@ -2185,6 +2184,188 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // A namespace declared in several blocks (`namespace N { class C {} } namespace N { class C {} }`): what a block
+    // does not export is its own, and another block may declare that name too ("redefinition of symbol named
+    // 'N.C.constructor'", TSLANG 140/147). The namespace is one, so such a name of a later block is renamed in that
+    // block to one no program can write (`.C.<pos>`), once: its declaration and the names reading it, not a property
+    // or a member named so.
+    void MLIRGenImpl::renameNamespaceBlockLocals(ModuleBlock block, StringRef namespaceFullName)
+    {
+        // the block is named by its file and place: a file is parsed again (a library's declarations, discovery), and
+        // its blocks are then other nodes
+        auto fileName = sourceFile ? convertWideToUTF8(sourceFile->fileName) : std::string();
+        if (StringRef(fileName).ends_with(".d.ts"))
+        {
+            // declarations only, of members a library exports (its declarations file lists them without `export`)
+            return;
+        }
+
+        auto blockKey = fileName + ":" + std::to_string(block->pos.pos);
+        llvm::StringSet<> clashing;
+        for (auto &statement : block->statements)
+        {
+            // what is exported, and a declaration without a body (`declare`, an overload), is not the block's own
+            if (hasModifier(statement, SyntaxKind::ExportKeyword) || hasModifier(statement, SyntaxKind::DeclareKeyword)
+                || (statement == SyntaxKind::FunctionDeclaration && !statement.as<FunctionDeclaration>()->body))
+            {
+                continue;
+            }
+
+            SmallVector<Node> declaredNames;
+            switch ((SyntaxKind)statement)
+            {
+            case SyntaxKind::ClassDeclaration:
+                declaredNames.push_back(statement.as<ClassDeclaration>()->name);
+                break;
+            case SyntaxKind::FunctionDeclaration:
+                declaredNames.push_back(statement.as<FunctionDeclaration>()->name);
+                break;
+            case SyntaxKind::InterfaceDeclaration:
+                declaredNames.push_back(statement.as<InterfaceDeclaration>()->name);
+                break;
+            case SyntaxKind::EnumDeclaration:
+                declaredNames.push_back(statement.as<EnumDeclaration>()->name);
+                break;
+            case SyntaxKind::TypeAliasDeclaration:
+                declaredNames.push_back(statement.as<TypeAliasDeclaration>()->name);
+                break;
+            case SyntaxKind::VariableStatement:
+                for (auto declaration : statement.as<VariableStatement>()->declarationList->declarations)
+                {
+                    declaredNames.push_back(declaration->name);
+                }
+                break;
+            default:
+                break;
+            }
+
+            for (auto declaredName : declaredNames)
+            {
+                if (declaredName != SyntaxKind::Identifier)
+                {
+                    continue;
+                }
+
+                auto name = MLIRHelper::getName(declaredName);
+                auto key = (namespaceFullName + "|" + name).str();
+                auto [it, inserted] = namespaceBlockNames.try_emplace(key, blockKey);
+                if (!inserted && it->second != blockKey)
+                {
+                    clashing.insert(name);
+                }
+            }
+        }
+
+        if (clashing.empty())
+        {
+            return;
+        }
+
+        // the names a member, a property or an imported/exported name is given are not names read here
+        llvm::DenseSet<void *> memberNames;
+        auto skipName = [&](Node name) {
+            if (name)
+            {
+                memberNames.insert(static_cast<void *>(name.operator->()));
+            }
+        };
+
+        auto suffix = S(".") + stows(std::to_string(block->pos.pos));
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+        visitNode = [&](Node node) -> Node {
+            if (!node)
+            {
+                return undefined;
+            }
+
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::ObjectLiteralExpression:
+                // `{ count }`: the property keeps its name, its value is the renamed one (`{ count: .count.<pos> }`)
+                for (auto &property : node.as<ObjectLiteralExpression>()->properties)
+                {
+                    if (property != SyntaxKind::ShorthandPropertyAssignment)
+                    {
+                        continue;
+                    }
+
+                    auto shorthand = property.as<ShorthandPropertyAssignment>();
+                    auto name = MLIRHelper::getName(shorthand->name);
+                    if (!clashing.contains(name) || shorthand->objectAssignmentInitializer)
+                    {
+                        continue;
+                    }
+
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto value = nf.createIdentifier(S(".") + stows(name) + suffix);
+                    value->pos = shorthand->name->pos;
+                    value->_end = shorthand->name->_end;
+                    auto assignment = nf.createPropertyAssignment(nf.createIdentifier(stows(name)), value);
+                    assignment->pos = shorthand->pos;
+                    assignment->_end = shorthand->_end;
+                    property = assignment;
+                }
+                break;
+            case SyntaxKind::PropertyAccessExpression:
+                skipName(node.as<PropertyAccessExpression>()->name);
+                break;
+            case SyntaxKind::QualifiedName:
+                skipName(node.as<QualifiedName>()->right);
+                break;
+            case SyntaxKind::BindingElement:
+                skipName(node.as<BindingElement>()->propertyName);
+                break;
+            case SyntaxKind::PropertyAssignment:
+            case SyntaxKind::ShorthandPropertyAssignment:
+            case SyntaxKind::PropertyDeclaration:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::PropertySignature:
+            case SyntaxKind::MethodSignature:
+            case SyntaxKind::EnumMember:
+            case SyntaxKind::ImportSpecifier:
+            case SyntaxKind::ExportSpecifier:
+                skipName(node->getDeclarationName());
+                break;
+            default:
+                break;
+            }
+
+            if (node == SyntaxKind::Identifier)
+            {
+                if (!memberNames.contains(static_cast<void *>(node.operator->())))
+                {
+                    auto identifier = node.as<Identifier>();
+                    auto name = MLIRHelper::getName(identifier);
+                    if (clashing.contains(name))
+                    {
+                        identifier->escapedText = S(".") + stows(name) + suffix;
+                    }
+                }
+
+                return undefined;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        for (auto &statement : block->statements)
+        {
+            visitNode(statement);
+        }
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(moduleDeclarationAST);
@@ -2207,6 +2388,11 @@ namespace mlirgen
         // stay where they are, and its code statements run from a global constructor of their own, as an
         // imported module's do (generateModuleInitCode).
         auto body = moduleDeclarationAST->body;
+
+        if (body == SyntaxKind::ModuleBlock)
+        {
+            renameNamespaceBlockLocals(body.as<ModuleBlock>(), currentNamespace->fullName);
+        }
 
         // `@owned declare namespace N { function f(): string; }` says it of every function in it
         // (declaresOwnedResult), which finds the namespace through the parents - and the parser

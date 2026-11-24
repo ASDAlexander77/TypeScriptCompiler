@@ -2943,3 +2943,34 @@ Still open:
   defined outside the region").
 
 Tests `00tslang_issue_178.ts` (gc, rc, none).
+
+179 (the items 176-178 left open, 2026-11-24). Fixed:
+- An exported arrow const beside top-level code that a function calls (`export const f = () => 41; print(f());
+  function main() { f(); }`): "'llvm.mlir.addressof' op must reference a global". The root's code is a function of
+  its own, where the const was a local, while `main` read the module's global `f`. An exported const there is the
+  module's global, as one is without top-level code: a `let` given its value (exported, other modules read it).
+- A module const set from a call whose type is known only later (`const a = () => b(); const b = () => 10; const k =
+  a();`): a function reading `k` got it as `none` ("failed to legalize operation 'ts.Cast'"). A global whose value
+  has no type yet is not declared: the statement is tried again once the call's type is known. One that never has a
+  type (`const p = print`) is a clear error: "the type of 'p' can't be resolved from its value".
+- A closure in a closure of a parameter's default value (`m(f = () => () => this)`, `p(x = 2, f = () => () => x)` in
+  a method): "'ts.Load' op using value defined outside the region". The closures met while a default value is
+  evaluated for its type are not registered: neither its arrow nor one in it (their captures there are not what they
+  are where the value is made), and the type the arrow had there is not taken as its own (it returned the inner
+  closure as a plain function, "losing this reference").
+- -mm=rc: a closure, or another value that owns memory, made by a parameter's default value (`g(a = 5, f = () => a)`,
+  `m(f = () => this)`, `s = "x" + a`) was given back at the end of the default value: the parameter held what was
+  freed (`g()` printed 0). The value is owned by a slot of the frame, empty unless the default is taken, given back
+  at the function's exit; the parameter borrows it. (A string default leaked before; it does not now.)
+- A non-exported name declared in two blocks of one namespace (`namespace N { class C {} } namespace N { class C {}
+  }`, functions, `let`s, enums, types too, 140/147): "redefinition of symbol named 'N.C.constructor'". What a block
+  does not export is its own: such a name of a later block is renamed in that block (`.C.<pos>`, a name no program
+  can write), its declaration and the names reading it, not a property or member named so; `{ count }` keeps its key.
+
+Looked at, still open:
+- -mm=own: an exported `const s = "x" + k` beside top-level code read by `main` across a call of an exported function
+  is "a value that borrows 's' is used here after 's' is released or overwritten" (it was before this, too): the
+  const is a `let` of the module, which the call may write.
+
+Tests `00tslang_issue_179.ts` (gc, rc, none; own refuses the closures capturing `this` in default values, as it does
+`m(f = () => this)`).

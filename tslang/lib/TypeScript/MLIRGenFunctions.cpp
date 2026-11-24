@@ -1005,8 +1005,9 @@ namespace mlirgen
         // ...and an arrow or a function expression met where an expression is only evaluated for its type (a
         // parameter's default value, `bar(f = () => this)`): what it captures there is not what it captures where it
         // is generated
+        // (and one in such an arrow, met while it is discovered: `f = () => () => this`)
         auto isEvaluatedExpression = genContext.evaluatingParameterDefault && genContext.funcOp
-            && genContext.funcOp == tempFuncOp
+            && (genContext.funcOp == tempFuncOp || genContext.dummyRun)
             && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
                 || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
         auto isModuleDiscoveryExpression = (genContext.dummyRun && !genContext.funcOp
@@ -1078,6 +1079,9 @@ namespace mlirgen
                 (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
                 InternalFlags::VarsInObjectContext;
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
+            // a closure in a closure of a parameter's default value evaluated for its type (`f = () => () => this`):
+            // what it captures there is not what it captures where it is made either (isEvaluatedExpression)
+            genContextWithPassResult.evaluatingParameterDefault = genContext.evaluatingParameterDefault;
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
             genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
             genContextWithPassResult.postponedMessages = genContext.postponedMessages;
@@ -2050,7 +2054,16 @@ namespace mlirgen
         }
 
         // register function to be able to call it if used in recursive call
-        registerFunctionOp(funcProto, funcOp);
+        // (not an arrow or a function expression of a parameter's default value evaluated for its type: what it
+        // captures there is not what it captures where it is made, and the type it had there was taken as the one
+        // it has - `m(f = () => () => this)` returned the inner closure as a plain function, "losing this reference")
+        auto evaluatedDefault = genContext.evaluatingParameterDefault
+            && (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression);
+        if (!evaluatedDefault)
+        {
+            registerFunctionOp(funcProto, funcOp);
+        }
 
         // generate body
         auto resultFromBody = mlir::failure();
@@ -2882,6 +2895,11 @@ namespace mlirgen
         for (auto &prologueOp : entryBlock)
         {
             if (isa<mlir_ts::ParamOp, mlir_ts::ParamOptionalOp>(prologueOp))
+            {
+                paramCells->push_back(prologueOp.getResult(0));
+            }
+            // ...and the slot owning a parameter's default value (processOptionalParam), given back at exit
+            else if (isa<mlir_ts::VariableOp>(prologueOp) && prologueOp.hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME))
             {
                 paramCells->push_back(prologueOp.getResult(0));
             }

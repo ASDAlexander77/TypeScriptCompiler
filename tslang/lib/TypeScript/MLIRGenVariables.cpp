@@ -1419,7 +1419,9 @@ namespace mlirgen
                     variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
             }
 
-            if (itemVarClass.type == VariableType::Const && !isUsing && itemVarClass.isExport && !itemVarClass.isImport && !genContext.funcOp)
+            // (so is one beside top-level code, a global of the module there too: GenContext::rootFunctionConst)
+            if (itemVarClass.type == VariableType::Const && !isUsing && itemVarClass.isExport && !itemVarClass.isImport
+                && (!genContext.funcOp || genContext.rootFunctionConst && genContext.funcOp == genContext.rootStatementsFuncOp))
             {
                 itemVarClass.type = VariableType::Let;
             }

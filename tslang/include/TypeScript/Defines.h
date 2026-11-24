@@ -77,6 +77,8 @@
 // `ts.RetainSlot` to pair the release with. The ownership verifier reads this attribute as the
 // retain it stands in for.
 #define OWNED_LOCAL_CONSUMED_ATTR_NAME "__owned_consumed"
+// -mm=rc: the slot of the frame that owns a parameter's default value while it is taken (processOptionalParam)
+#define DEFAULT_VALUE_SLOT_ATTR_NAME "__default_value_slot"
 // the owning slot that holds the fresh values a `let` borrowing a field is given (TSLANG 66)
 #define OWN_LET_HOLDER_ATTR_NAME "__own_let_holder"
 
