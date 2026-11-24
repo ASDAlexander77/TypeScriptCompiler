@@ -67,6 +67,7 @@ class OwnedReturnConsumptionPass
     {
         auto module = getOperation();
         MLIRTypeHelper mth(module->getContext(), compileOptions);
+        handsOnThroughDefaults = compileOptions.tracksOwnership();
 
         copyEscapingStringViews(module);
 
@@ -3571,11 +3572,18 @@ class OwnedReturnConsumptionPass
     // What a branch of a conditional expression hands `value` on as: the result of the `ts.If` whose branch this
     // `ts.Result` ends, at each position the branch yields `value` in - a conditional may yield more than one value
     // (holdPastConditional adds the literal its branch holds). None for any other user.
+    // (under rc and own also the default of a value-or-default - `const { p = e } = r` hands `e` on as the op's result -
+    // set for the module being run: gc and none keep their IR)
+    static inline thread_local bool handsOnThroughDefaults = false;
+
     static llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
     {
         llvm::SmallVector<mlir::Value, 1> handedOn;
-        auto ifOp = mlir::isa<mlir_ts::ResultOp>(user) ? mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp()) : mlir_ts::IfOp();
-        if (!ifOp || ifOp.getNumResults() != user->getNumOperands())
+        auto *conditional = mlir::isa<mlir_ts::ResultOp>(user) ? user->getParentOp() : nullptr;
+        if (!conditional ||
+            !(mlir::isa<mlir_ts::IfOp>(conditional) ||
+              (handsOnThroughDefaults && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(conditional))) ||
+            conditional->getNumResults() != user->getNumOperands())
         {
             return handedOn;
         }
@@ -3584,7 +3592,7 @@ class OwnedReturnConsumptionPass
         {
             if (operand.get() == value)
             {
-                handedOn.push_back(ifOp.getResult(operand.getOperandNumber()));
+                handedOn.push_back(conditional->getResult(operand.getOperandNumber()));
             }
         }
 

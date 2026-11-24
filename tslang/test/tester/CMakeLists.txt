@@ -5586,6 +5586,17 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
+# A pattern's default that is a local (`const e = mk(i + 1); const { p = e } = r`) gives the local back at the end of
+# its block under rc and own (it leaked): the default hands it on as the value-or-default's result. A named record,
+# a `let`, an array pattern under every model; a record literal source and the assignment form under gc and rc.
+foreach(default_local_mm gc rc own)
+    tslang_add_test(NAME test-jit-${default_local_mm}-destructuring-default-local COMMAND test-runner -jit -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local.ts")
+    tslang_add_test(NAME test-compile-${default_local_mm}-destructuring-default-local COMMAND test-runner -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local.ts")
+endforeach()
+foreach(default_local_mm gc rc)
+    tslang_add_test(NAME test-jit-${default_local_mm}-destructuring-default-local-literal COMMAND test-runner -jit -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local_literal.ts")
+    tslang_add_test(NAME test-compile-${default_local_mm}-destructuring-default-local-literal COMMAND test-runner -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local_literal.ts")
+endforeach()
 # Array destructuring past the end of its source applies the element's default (`const [a = 1, b = 2] = [5]`, b was
 # 0; with objects the compiler crashed): numbers and strings under every model, objects under gc and rc (own refuses a
 # borrow of the literal's element beside a new default).
