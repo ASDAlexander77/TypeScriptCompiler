@@ -4431,6 +4431,15 @@ set_tests_properties(test-compile-diagnostic-location-generator-method-throwing-
                      PROPERTIES PASS_REGULAR_EXPRESSION "generator_method_throwing_object_through_yielding_finally_own\\.ts:16:9: error: -mm=own: 'W[.]boom' throws an object of type 'Failure'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# ...and one whose override in a subclass throws, called through the base class (TSLANG 185)
+add_test(NAME test-compile-diagnostic-location-generator-override-throwing-object-through-yielding-finally-own
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generator_override_throwing_object_through_yielding_finally_own.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generator-override-throwing-object-through-yielding-finally-own.obj")
+set_tests_properties(test-compile-diagnostic-location-generator-override-throwing-object-through-yielding-finally-own
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generator_override_throwing_object_through_yielding_finally_own\\.ts:22:9: error: -mm=own: 'W[.]boom' throws an object of type 'Failure'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # -mm=own: an object sent by next() is an error at the yield that reads it, pointing at Shared<T>.
 add_test(NAME test-compile-diagnostic-location-generator-next-object-own
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
