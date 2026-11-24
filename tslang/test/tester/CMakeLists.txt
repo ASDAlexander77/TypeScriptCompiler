@@ -4185,6 +4185,27 @@ foreach(defaultlib_collector_mode jit compile)
     set_tests_properties(test-${defaultlib_collector_mode}-gc-defaultlib-collector PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# -mm=own --own-fallback=count with the real default library: a counted node held by the library's containers (a
+# Map's value, a Set's member, array helpers) beside its two holders prints what gc prints (final-review M-5: no
+# test used the flag with the default library). Skipped when no own default library has been built.
+foreach(own_defaultlib_mode jit compile)
+    add_test(NAME test-${own_defaultlib_mode}-own-fallback-defaultlib
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${own_defaultlib_mode}"
+                     "-DEXTRA=--own-fallback=count"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DTEST=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib/own_fallback_default_lib.ts"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-fallback-defaultlib-${own_defaultlib_mode}"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${defaultlib_collector_opt}"
+                     "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-defaultlib-facts.cmake")
+    set_tests_properties(test-${own_defaultlib_mode}-own-fallback-defaultlib PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+endforeach()
+
 # -mm=own with the real default library: its facts reach the program, under the JIT as for an exe
 # (see own-defaultlib-facts.cmake). Skipped when no own default library has been built.
 foreach(own_defaultlib_mode jit compile)
