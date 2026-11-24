@@ -267,9 +267,10 @@ namespace own_inference
 
         // ...or a pattern's default over one (`let { p = mk(1) } = r`), lowered to the merge of its two arms: the
         // optional's value (a place read) and the read of the pattern-default slot (MLIRGenImpl::optionalValueOrDefault)
-        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root))
+        // (any other merge is decided below, as before)
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root); argument && mergeOfPatternDefault(argument, 0))
         {
-            return mergeOfPatternDefault(argument, 0);
+            return true;
         }
 
         auto rootLoad = root.getDefiningOp<mlir_ts::LoadOp>();

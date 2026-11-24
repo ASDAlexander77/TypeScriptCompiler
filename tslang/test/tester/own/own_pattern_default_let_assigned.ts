@@ -3,7 +3,8 @@
 // value is a merge of a borrow of the field and of the pattern-default slot, both borrows, which own did not see
 // as one. It is split as a `let` given a field read is: what it is given later goes into a holder of its own, and the
 // `let` borrows that. Also `const [a = mk(1), b = mk(2)] = [mk(i)]` (accepted since the array-default slot). The same
-// program under gc and rc.
+// program under gc and rc. A `let` given a destructured element (`const [a] = xs; let z = a; z = new N(6)`), a merge
+// that is no pattern default, is split as before (it was refused while every merge was taken for one).
 class N {
     x: number;
     s: string;
@@ -47,9 +48,16 @@ function main() {
 
         const [a = mk(1), b = mk(2)] = [mk(i)];
         total += a.x + b.x;
+
+        const xs: N[] = [mk(i), mk(i + 1)];
+        const [e] = xs;
+        let z = e;
+        total += z.x;
+        z = new N(6);
+        total += z.x;
     }
 
     print(total);
-    assert(total == 124679, "total");
+    assert(total == 171329, "total");
     print("done.");
 }
