@@ -2509,11 +2509,12 @@ class OwnedReturnConsumptionPass
             };
             // Under rc, whether a value is read out of a literal made in `region` - an array literal, or the tuple a
             // literal of mixed elements is (`c ? [mk(i), "x"][0] : null`, whose element is the +1 the branch gives
-            // back) - through elements and fields, widening and narrowing casts and an optional's value. A value a
-            // conditional within `region` yields - an optional chain (`c ? [mk(i)][0]?.s : null`,
+            // back) - through elements and fields, widening and narrowing casts and an optional's value (a read out of
+            // it); or read out of a temporary made in `region` that the branch gives back (an owned call result or
+            // conditional result). A value a conditional within `region` yields - an optional chain (`c ? [mk(i)][0]?.s : null`,
             // `[[mk(i)]][0]?.[0]`) and its conversion to `| null` - is what its branches yield, looked into the same
             // way, each conditional's result once (`visited`), so the walk is linear in what it looks into.
-            // `readOut`: the value is an element or a field, not the literal itself.
+            // `readOut`: the value is an element, a field or an optional's value, not the literal or temporary itself.
             llvm::DenseSet<std::pair<mlir::Value, unsigned>> visited;
             std::function<bool(mlir::Value, mlir::Region *, bool)> readsBranchLiteral = [&](mlir::Value value,
                                                                                          mlir::Region *region, bool readOut) {
@@ -2523,6 +2524,7 @@ class OwnedReturnConsumptionPass
                         if (auto valueOp = peeled.getDefiningOp<mlir_ts::ValueOp>())
                         {
                             peeled = valueOp.getIn();
+                            readOut = true;
                         }
                         else if (auto extractPropertyOp = peeled.getDefiningOp<mlir_ts::ExtractPropertyOp>())
                         {
@@ -2546,6 +2548,14 @@ class OwnedReturnConsumptionPass
 
                     if (readOut && (isNewArray(definingOp) || mlir::isa<mlir_ts::CreateTupleOp>(definingOp)) &&
                         definingOp->getParentRegion() == region)
+                    {
+                        return true;
+                    }
+
+                    // ...or read out of a temporary made in `region` that the branch gives back at its end: an owned
+                    // optional a call returns, or a nested conditional's owned result, turned into `| null` by
+                    // another conditional (`c ? mo(i) : null`, `c ? (b ? [mk(i)]?.[0] : undefined) : null`)
+                    if (readOut && definingOp->getParentRegion() == region && ::typescript::mayTakeOverReference(value))
                     {
                         return true;
                     }
