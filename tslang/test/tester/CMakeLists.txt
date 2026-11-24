@@ -6415,6 +6415,17 @@ foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_sha
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# ...and the fallback reading OwnershipModuleFactsPass's cached analysis (DescriptorObjectsAnalysis): an interface
+# parameter given to two fields is counted only when no class here may hold a closure (read without the cache the
+# answer is "may hold", and it would be refused), and stays an error when one does
+add_test(NAME test-own-fallback-ir-own_fallback_cached_analysis
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=2
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_cached_analysis.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+add_test(NAME test-own-fallback-ir-own_fallback_cached_analysis_held
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_cached_analysis_held.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 # ...and a tuple whose kept retains are of a tagged union's type (a `T | null` field): refused at
 # its place, with own's error
 add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
