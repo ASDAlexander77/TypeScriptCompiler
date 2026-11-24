@@ -5775,6 +5775,20 @@ foreach(loose_borrowed_mm gc rc own none)
     tslang_add_test(NAME test-jit-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -jit -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
     tslang_add_test(NAME test-compile-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
 endforeach()
+# -mm=rc: an argument read out of a place of an object another name may reach (a global, another argument's container,
+# a second const, a captured array, a parameter's object) is held across a call that may write a place of that kind
+# (the reviewer's X01-X21; rc read freed memory). gc and none the same. IR: `gw2(h.o)` after `G = h`, with `gw2` setting
+# `G.o`, holds the argument.
+foreach(arg_aliased_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_aliased_mm}-rc-argument-place-aliased COMMAND test-runner -jit -mm=${arg_aliased_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+    tslang_add_test(NAME test-compile-${arg_aliased_mm}-rc-argument-place-aliased COMMAND test-runner -mm=${arg_aliased_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+endforeach()
+add_test(NAME test-rc-argument-place-aliased-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+set_tests_properties(test-rc-argument-place-aliased-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "identifier = @gw2}>[^\n]*\n[^\n]*\"ts[.]PropertyRef\"[^\n]*\n[^\n]*\"ts[.]Load\"[^\n]*\n *\"ts[.]Retain\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
