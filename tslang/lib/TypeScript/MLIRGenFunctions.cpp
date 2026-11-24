@@ -465,6 +465,35 @@ namespace mlirgen
             }
         }
 
+        // `arguments.length` counts what the caller gave, and an `undefined` given for an optional parameter is
+        // given (`h(1, undefined)` of `h(a, b?)` is 2, TSLANG 186): the function can't tell it from one left out.
+        // So a function declaration whose body reads `arguments` and has optional parameters (not a method, not
+        // generic, not exported, no rest parameter - its array holds what is given) takes a parameter of its own
+        // after the others, ARGUMENT_COUNT_NAME, which a call by its name gives the count of its arguments
+        // (mlirGenCall); a call of it as a function value leaves it out, and the count is worked out as before
+        // (mlirGenArguments)
+        if (kind == SyntaxKind::FunctionDeclaration && parametersContextAST.as<FunctionDeclaration>()->body &&
+            parametersContextAST->typeParameters.size() == 0 && !hasModifier(parametersContextAST, SyntaxKind::ExportKeyword) &&
+            !hasModifier(parametersContextAST, SyntaxKind::DeclareKeyword) &&
+            llvm::none_of(params, [](auto &param) { return param->getIsMultiArgsParam(); }) &&
+            llvm::any_of(params, [](auto &param) { return param->getIsOptional(); }))
+        {
+            auto readsArguments = false;
+            FilterVisitorSkipFuncsAST<Identifier> argumentsVisitor(SyntaxKind::Identifier, [&](auto identifier) {
+                if (MLIRHelper::getName(identifier) == "arguments")
+                {
+                    readsArguments = true;
+                }
+            });
+            argumentsVisitor.visit(parametersContextAST.as<FunctionDeclaration>()->body);
+
+            if (readsArguments)
+            {
+                params.push_back(std::make_shared<FunctionParamDOM>(ARGUMENT_COUNT_NAME, getNumberType(),
+                                                                    loc(parametersContextAST), true, false));
+            }
+        }
+
         return {mlir::success(), isGenericTypes, params};
     }
 
@@ -1489,21 +1518,11 @@ namespace mlirgen
             return nf.createBlock(delegateStatements, false).as<Statement>();
         };
 
-        NodeArray<Statement> throwStatements;
-        throwStatements.push_back(resetMode());
-        if (genContext.yieldStarDelegate && genContext.yieldStarResult && genContext.yieldStarSkipNext && ownDelegate)
-        {
-            // -mm=own, the same in the local the delegate is exchanged into (TSLANG 184):
-            //   { ...exchange...; try { if (.yq!.throw) { .yc = .yq!.throw!(this.thrown); .ys = true; } } finally { ... } }
-            //   if (!.ys) throw this.thrown;
-            auto delegateThrow = [&]() {
-                return nf.createPropertyAccessExpression(nf.createNonNullExpression(delegateLocal()), nf.createIdentifier(S("throw")));
-            };
-            auto skipIdent = [&]() { return nf.createIdentifier(stows(std::string(genContext.yieldStarSkipNext))); };
-            // what was thrown, exchanged out of the generator's field into a local first: given from the field, the
-            // delegate's throw() - which keeps what it is given - was taken for a call that may overwrite the field it
-            // borrows (`let .yt: any = <any>0; [.yt, this.thrown] = [this.thrown, .yt];`)
-            auto thrownLocal = [&]() { return nf.createIdentifier(stows(".yt" + std::string(genContext.yieldStarDelegate))); };
+        // -mm=own: what was thrown, exchanged out of the generator's field into a local first: given from the field,
+        // the delegate's throw() - which keeps what it is given - was taken for a call that may overwrite the field it
+        // borrows (`let .yt: any = <any>0; [.yt, this.thrown] = [this.thrown, .yt];`)
+        auto thrownLocal = [&]() { return nf.createIdentifier(stows(".yt" + std::string(genContext.yieldStarDelegate))); };
+        auto exchangeThrown = [&](NodeArray<Statement> &statements) {
             NodeArray<VariableDeclaration> thrownDeclarations;
             auto thrownDeclaration = nf.createVariableDeclaration(
                 thrownLocal(), undefined, nf.createToken(SyntaxKind::AnyKeyword).as<TypeNode>(),
@@ -1517,15 +1536,28 @@ namespace mlirgen
             NodeArray<Expression> thrownValues;
             thrownValues.push_back(thisProp(GENERATOR_THROWN_NAME));
             thrownValues.push_back(thrownLocal());
+            statements.push_back(
+                nf.createVariableStatement(undefined, nf.createVariableDeclarationList(thrownDeclarations, NodeFlags::Let)));
+            statements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+                nf.createArrayLiteralExpression(thrownTargets, false), nf.createToken(SyntaxKind::EqualsToken),
+                nf.createArrayLiteralExpression(thrownValues, false))));
+        };
 
+        NodeArray<Statement> throwStatements;
+        throwStatements.push_back(resetMode());
+        if (genContext.yieldStarDelegate && genContext.yieldStarResult && genContext.yieldStarSkipNext && ownDelegate)
+        {
+            // -mm=own, the same in the local the delegate is exchanged into (TSLANG 184):
+            //   { ...exchange...; try { if (.yq!.throw) { .yc = .yq!.throw!(this.thrown); .ys = true; } } finally { ... } }
+            //   if (!.ys) throw this.thrown;
+            auto delegateThrow = [&]() {
+                return nf.createPropertyAccessExpression(nf.createNonNullExpression(delegateLocal()), nf.createIdentifier(S("throw")));
+            };
+            auto skipIdent = [&]() { return nf.createIdentifier(stows(std::string(genContext.yieldStarSkipNext))); };
             NodeArray<Expression> arguments;
             arguments.push_back(thrownLocal());
             NodeArray<Statement> handStatements;
-            handStatements.push_back(
-                nf.createVariableStatement(undefined, nf.createVariableDeclarationList(thrownDeclarations, NodeFlags::Let)));
-            handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
-                nf.createArrayLiteralExpression(thrownTargets, false), nf.createToken(SyntaxKind::EqualsToken),
-                nf.createArrayLiteralExpression(thrownValues, false))));
+            exchangeThrown(handStatements);
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
                 nf.createCallExpression(nf.createNonNullExpression(delegateThrow()), undefined, arguments))));
@@ -1546,9 +1578,16 @@ namespace mlirgen
                 return nf.createPropertyAccessExpression(nf.createIdentifier(stows(std::string(genContext.yieldStarDelegate))),
                                                          nf.createIdentifier(S("throw")));
             };
+            // (-mm=own - a delegate a parameter names, `yield* it`, TSLANG 186 - with what was thrown in a local, as above)
+            auto own = compileOptions.memoryModel == MemoryModelOwn;
             NodeArray<Expression> arguments;
-            arguments.push_back(thisProp(GENERATOR_THROWN_NAME));
+            arguments.push_back(own ? Expression(thrownLocal()) : Expression(thisProp(GENERATOR_THROWN_NAME)));
             NodeArray<Statement> handStatements;
+            if (own)
+            {
+                exchangeThrown(handStatements);
+            }
+
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
                 nf.createCallExpression(nf.createNonNullExpression(delegateThrow()), undefined, arguments))));
@@ -1569,7 +1608,8 @@ namespace mlirgen
         NodeArray<Statement> returnStatements;
         returnStatements.push_back(resetMode());
         // at the yield of a yield*: the delegate's return() first, with the same value (mlirGenYieldStar)
-        if (ownDelegate)
+        // (a delegate held for its throw() only has no return() to call, TSLANG 186)
+        if (ownDelegate && genContext.yieldStarHasReturn)
         {
             // -mm=own: in the local the delegate is exchanged into, `.yq!.return?.(this.thrown)`
             NodeArray<Expression> arguments;
@@ -1580,7 +1620,7 @@ namespace mlirgen
                 nf.createToken(SyntaxKind::QuestionDotToken), undefined, arguments)));
             returnStatements.push_back(withDelegateLocal(callStatements));
         }
-        else if (genContext.yieldStarDelegate)
+        else if (genContext.yieldStarDelegate && genContext.yieldStarHasReturn)
         {
             NodeArray<Expression> arguments;
             arguments.push_back(thisProp(GENERATOR_THROWN_NAME));

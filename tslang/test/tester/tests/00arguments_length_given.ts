@@ -1,6 +1,6 @@
 // TSLANG 183 (114): `arguments.length` counts the arguments the caller gave, as in JavaScript, not the parameters the
 // function declares: an optional parameter left out, and one with a default value left out, are not counted.
-function h(a: number, b?: number) {
+function h(a: number, b?: number): number {
     return arguments.length;
 }
 
@@ -41,6 +41,14 @@ function main() {
     assert(joined(1) == "1" && joined(1, 2) == "12", "joined");
     assert(sum(1) == 11 && sum(1, 2) == 32 && sum(1, 2, 3) == 63, "sum");
     assert(rest(1) == 1 && rest(1, 2, 3) == 3, "rest");
+
+    // an `undefined` given is given (TSLANG 186): the call by name passes the count
+    assert(h(1, undefined) == 2, "h undefined");
+    assert(d(1, undefined) == 2 && d(1, 2, undefined) == 3 && d(1, undefined, "x") == 3, "d undefined");
+    assert(words("a" + 1, undefined) == "a1undefined", "words undefined");
+    // ...through a function value it is counted as before (the count is not passed)
+    const hv: (a: number, b?: number) => number = h;
+    assert(hv(1) == 1 && hv(1, 2) == 2, "h value");
 
     // runtime strings, left out at every other call
     let t: number = 0;

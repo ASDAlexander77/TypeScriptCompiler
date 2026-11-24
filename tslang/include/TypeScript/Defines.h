@@ -236,6 +236,8 @@
 #define INFINITY_NAME "Infinity"
 #define NAN_NAME "NaN"
 #define THIS_NAME "this"
+// the parameter a function that reads `arguments` is given the count of its arguments in (TSLANG 186)
+#define ARGUMENT_COUNT_NAME ".argc"
 #define SUPER_NAME "super"
 #define STATIC_NAME "static"
 #define STATIC_CONSTRUCTOR_NAME "static_constructor"

@@ -4047,11 +4047,21 @@ namespace mlirgen
         // `h(1)` of `h(a, b?)` gave one argument, not two (TSLANG 114, 183)
         SmallVector<mlir::Value, 4> givenOptional;
         auto anyOptional = false;
+        // the count a call by the function's name gives (ARGUMENT_COUNT_NAME, TSLANG 186)
+        mlir::Value givenCount;
         for (auto &param : genContext.bodyFuncProto->getParams())
         {
             // a method's object is not one of its arguments
             if (param->getName() == THIS_NAME)
             {
+                continue;
+            }
+
+            if (param->getName() == ARGUMENT_COUNT_NAME)
+            {
+                auto result = mlirGen(location, param->getName(), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                givenCount = V(result);
                 continue;
             }
 
@@ -4127,8 +4137,8 @@ namespace mlirgen
             mlirGenRetainCaptured(location, values);
             argumentsArray = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values);
 
-            // as many as the caller gave: up to the last parameter given (an optional one given `undefined` is given,
-            // `h(1, undefined)`, as JavaScript counts it); the ones after it are left out
+            // as many as the caller gave: up to the last parameter given; the ones after it are left out (an optional
+            // one given `undefined` looks left out here: the count a call by name gives, below, counts it)
             if (anyOptional)
             {
                 auto i32Type = builder.getI32Type();
@@ -4147,6 +4157,34 @@ namespace mlirgen
                     auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{i32Type}, hasValue, true);
                     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
                     builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{atLeast});
+                    builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{count});
+                    builder.setInsertionPointAfter(ifOp);
+                    count = ifOp.getResult(0);
+                }
+
+                // ...unless the caller said how many it gave (a call by the function's name): an `undefined` given
+                // is given (`h(1, undefined)` is 2), and more than the parameters are as many as they are
+                if (givenCount && isa<mlir_ts::OptionalType>(givenCount.getType()))
+                {
+                    auto hasCount = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), givenCount);
+                    auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{i32Type}, hasCount, true);
+                    builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                    auto countNumber = builder.create<mlir_ts::ValueOp>(location, getNumberType(), givenCount);
+                    auto parameterCount = builder.create<mlir_ts::ConstantOp>(
+                        location, i32Type, builder.getI32IntegerAttr((int)givenOptional.size()));
+                    CAST_A(parameterNumber, location, getNumberType(), parameterCount, genContext);
+                    // (no more than the array holds: the arguments past the parameters are not passed)
+                    auto fewer = mlirGenBinaryValues(location, SyntaxKind::LessThanToken, countNumber, parameterNumber, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(fewer)
+                    auto pickOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{getNumberType()}, V(fewer), true);
+                    builder.setInsertionPointToStart(&pickOp.getThenRegion().front());
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{countNumber});
+                    builder.setInsertionPointToStart(&pickOp.getElseRegion().front());
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{parameterNumber});
+                    builder.setInsertionPointAfter(pickOp);
+                    mlir::Value callerCount = builder.create<mlir_ts::CastOp>(location, i32Type, pickOp.getResult(0));
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{callerCount});
                     builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
                     builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{count});
                     builder.setInsertionPointAfter(ifOp);

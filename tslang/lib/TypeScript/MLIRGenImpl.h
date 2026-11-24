@@ -322,6 +322,8 @@ class MLIRGenImpl
     void renameNamespaceBlockLocals(ModuleBlock block, StringRef namespaceFullName);
     // "<namespace>|<name>" -> the block of the namespace that declared the name, not exported, first
     llvm::StringMap<std::string> namespaceBlockNames;
+    // the functions given the count of their arguments -> the position of ARGUMENT_COUNT_NAME (TSLANG 186)
+    llvm::StringMap<unsigned> functionsCountingArguments;
     // -mm=own: the functions that throw an object out of themselves -> its type (mlirGen(ThrowStatement))
     llvm::StringMap<std::string> functionsThrowingObjects;
     // -mm=own: function -> the functions it calls outside a catch clause of its own
@@ -4331,6 +4333,12 @@ class MLIRGenImpl
             return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
         }
 
+        // a call by the function's name gives it the count of its arguments (mlirGenParameters, mlirGenCall)
+        if (!params.empty() && params.back()->getName() == ARGUMENT_COUNT_NAME)
+        {
+            functionsCountingArguments[fullName] = params.size() - 1;
+        }
+
         SmallVector<mlir::Type> argTypes;
         auto isMultiArgs = false;
 
@@ -5267,8 +5275,12 @@ class MLIRGenImpl
             if (auto delegateInterface = dyn_cast_or_null<mlir_ts::InterfaceType>(delegateType))
             {
                 auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
-                if (delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
-                                     delegateInfo->findMethod("return")))
+                // (one with `throw` and no `return` too, for its throw(), TSLANG 186)
+                auto hasReturn = delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
+                                                  delegateInfo->findMethod("return"));
+                auto hasThrow = delegateInfo && (delegateInfo->findField(builder.getStringAttr("throw")) ||
+                                                 delegateInfo->findMethod("throw"));
+                if (hasReturn || hasThrow)
                 {
                     auto delegateIdent = nf.createIdentifier(S(".yd"));
                     NodeArray<VariableDeclaration> delegateDeclarations;
@@ -5280,6 +5292,7 @@ class MLIRGenImpl
 
                     GenContext delegateGenContext(genContext);
                     delegateGenContext.yieldStarDelegate = ".yd";
+                    delegateGenContext.yieldStarHasReturn = hasReturn;
 
                     // ...and one that has `throw` too: a throw() of this generator at that yield is handed to it
                     // (TSLANG 183) - it may catch the exception and go on yielding, or finish - so the loop calls
@@ -5287,7 +5300,7 @@ class MLIRGenImpl
                     //   let .yc = .yd.next();
                     //   while (!.yc.done) { let .ys = false; yield .yc.value; if (!.ys) .yc = .yd.next(); }
                     // (the resume check: `.yc = .yd.throw!(this.thrown); .ys = true;`, mlirGenGeneratorResumeChecks)
-                    if (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw"))
+                    if (hasThrow)
                     {
                         auto resultIdent = nf.createIdentifier(S(".yc"));
                         auto skipIdent = nf.createIdentifier(S(".ys"));
@@ -5378,12 +5391,28 @@ class MLIRGenImpl
                 auto site = std::to_string(static_cast<long long>(yieldExpressionAST->pos));
                 auto resultIdent = nf.createIdentifier(stows(".yc" + site));
                 auto delegateName = MLIRHelper::getName(delegateExpression.as<Identifier>());
-                // a return() of this generator calls the delegate's return() first, when it has one
+                // a return() of this generator calls the delegate's return() first, when it has one; a throw() is
+                // handed to its throw() (TSLANG 186, 184 for a delegate made there), for elements that own nothing:
+                // the resume check puts its result in `.yc` and sets `.ys`, and the step's next() is then not called
                 auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
-                if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) && delegateInfo &&
-                    (delegateInfo->findField(builder.getStringAttr("return")) || delegateInfo->findMethod("return")))
+                auto resumable = !!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable);
+                auto hasReturn = delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
+                                                  delegateInfo->findMethod("return"));
+                auto handsThrow = resumable && delegateInfo &&
+                                  (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw")) &&
+                                  !mth.ownsHeapMemory(loc(yieldExpressionAST), iteratorElementType(delegateInterface));
+                auto resultName = ".yc" + site;
+                auto skipName = ".ys" + site;
+                if (resumable && (hasReturn || handsThrow))
                 {
                     delegateGenContext.yieldStarDelegate = delegateName.c_str();
+                    delegateGenContext.yieldStarHasReturn = hasReturn;
+                }
+
+                if (handsThrow)
+                {
+                    delegateGenContext.yieldStarResult = resultName.c_str();
+                    delegateGenContext.yieldStarSkipNext = skipName.c_str();
                 }
 
                 auto nextCall = [&]() {
@@ -5401,13 +5430,34 @@ class MLIRGenImpl
                 NodeArray<Statement> loopStatements;
                 loopStatements.push_back(
                     nf.createVariableStatement(undefined, nf.createVariableDeclarationList(valueDeclarations, NodeFlags::Const)));
-                loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+
+                auto nextStep = [&]() {
+                    return nf.createBinaryExpression(resultIdent, nf.createToken(SyntaxKind::EqualsToken), nextCall());
+                };
+                if (handsThrow)
+                {
+                    // `let .ys = false; yield .v; if (!.ys) .yc = it.next();`
+                    auto skipIdent = nf.createIdentifier(stows(skipName));
+                    NodeArray<VariableDeclaration> skipDeclarations;
+                    skipDeclarations.push_back(
+                        nf.createVariableDeclaration(skipIdent, undefined, undefined, nf.createToken(SyntaxKind::FalseKeyword)));
+                    loopStatements.push_back(
+                        nf.createVariableStatement(undefined, nf.createVariableDeclarationList(skipDeclarations, NodeFlags::Let)));
+                    loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                    loopStatements.push_back(nf.createIfStatement(
+                        nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken), skipIdent),
+                        nf.createExpressionStatement(nextStep()), undefined));
+                }
+                else
+                {
+                    loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                }
 
                 auto loop = nf.createForStatement(
                     nf.createVariableDeclarationList(resultDeclarations, NodeFlags::Let),
                     nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken),
                                                    nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("done")))),
-                    nf.createBinaryExpression(resultIdent, nf.createToken(SyntaxKind::EqualsToken), nextCall()),
+                    handsThrow ? Expression() : Expression(nextStep()),
                     nf.createBlock(loopStatements, false));
                 return mlirGen(loop, delegateGenContext);
             }
@@ -5460,12 +5510,17 @@ class MLIRGenImpl
                 auto delegateIdent = nf.createIdentifier(stows(delegateName));
                 auto resultIdent = nf.createIdentifier(stows(".yc" + site));
                 // ...and a return() of this generator calls the delegate's return() first, when it has one
-                // (mlirGenGeneratorResumeChecks)
+                // (mlirGenGeneratorResumeChecks) - and one with `throw` only is held for its throw() (TSLANG 186)
                 auto delegateInfo = getInterfaceInfoByFullName(delegateInterface.getName().getValue());
-                if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) && delegateInfo &&
-                    (delegateInfo->findField(builder.getStringAttr("return")) || delegateInfo->findMethod("return")))
+                auto hasReturn = delegateInfo && (delegateInfo->findField(builder.getStringAttr("return")) ||
+                                                  delegateInfo->findMethod("return"));
+                auto hasThrow = delegateInfo && (delegateInfo->findField(builder.getStringAttr("throw")) ||
+                                                 delegateInfo->findMethod("throw"));
+                if (!!(_yield_expr->internalFlags & InternalFlags::GeneratorResumable) &&
+                    (hasReturn || (hasThrow && !mth.ownsHeapMemory(loc(yieldExpressionAST), elementType))))
                 {
                     delegateGenContext.yieldStarDelegate = delegateName.c_str();
+                    delegateGenContext.yieldStarHasReturn = hasReturn;
                 }
 
                 // ...and a throw() of it is handed to the delegate's throw(), when it has one (TSLANG 184, as 183 for
@@ -5478,7 +5533,7 @@ class MLIRGenImpl
                 auto resultName = ".yc" + site;
                 auto skipIdent = nf.createIdentifier(stows(skipName));
                 auto handsThrow = delegateGenContext.yieldStarDelegate && !mth.ownsHeapMemory(loc(yieldExpressionAST), elementType) &&
-                                  (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw"));
+                                  hasThrow;
                 if (handsThrow)
                 {
                     delegateGenContext.yieldStarResult = resultName.c_str();

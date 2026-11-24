@@ -3114,3 +3114,25 @@ this.objs) yield o.n`, 182's leftover) stays refused, with its error. USER RULIN
 out of the array (which would empty it, unlike JavaScript).
 
 Tests diagnostic-location `generator_override_throwing_object_through_yielding_finally_own.ts`.
+
+186 (2026-11-24). Fixed:
+- `arguments.length` of `h(1, undefined)` for `h(a, b?)` was 1 (JavaScript says 2, 114/183): the function can't tell
+  an `undefined` given from a parameter left out. A function declaration whose body reads `arguments` and has optional
+  parameters (not a method, not generic, not exported, no rest parameter) takes a parameter of its own after the
+  others, `.argc` (ARGUMENT_COUNT_NAME, mlirGenParameters), and a call by its name gives it the count of its
+  arguments (mlirGenCall); the length is that count, no more than the parameters (the arguments past them are not
+  passed). Called as a function value it is left out, and the length is worked out from the parameters as before.
+- An optional value given to an `any` (`const x: any = b` of a `b?: string`): one holding nothing was boxed as the
+  type's value with no text, which crashed where it was read (`"" + x`); it is boxed as undefined now, and one holding
+  a value as that value (as an optional `any` was).
+- A `yield*` over a generator whose type has throw() but not return(): the delegate was not held, so a throw() of the
+  generator was not handed to it. It is held for its throw(), and no return() is called that the type does not have.
+- -mm=own: `yield* it` of a generator a parameter holds hands a throw() to the delegate's throw() as well (184 did a
+  delegate made there), for elements that own nothing.
+
+Looked at, still open:
+- `arguments` of a method, a generic function or one called as a function value: the length is worked out from the
+  parameters, as before (an `undefined` given counts as left out).
+
+Tests `00arguments_length_given.ts` (cases added), `00generator_yield_star_throw_only.ts` and
+`00generator_yield_star_throw_param.ts` (gc, rc, own).
