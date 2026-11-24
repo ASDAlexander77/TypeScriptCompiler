@@ -10508,7 +10508,7 @@ class MLIRGenImpl
         }
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___range_check";
+        auto funcName = ".range_check";
         if (!lookupModuleSymbol(funcName))
         {
             // see castPrimitiveTypeFromAny: the call site is the location until the call instantiates it
@@ -10659,8 +10659,8 @@ class MLIRGenImpl
 
         // the TypeError: thrown by a function made for it (the expression's value is then never read)
         auto typeError = [&](StringRef helperName, StringRef message) -> ValueOrLogicalResult {
-            // the scanner puts a "_" in front of a name starting "__"
-            auto funcName = ("_" + helperName).str();
+            // a helper is named with a "." (helperSourceName)
+            auto funcName = ("." + helperName.drop_front(2)).str();
             auto funcRef = resolveIdentifier(location, funcName, genContext);
             if (!funcRef)
             {
@@ -11353,7 +11353,7 @@ class MLIRGenImpl
                         if (mth.isUnionTypeNeedsTag(location, rightUnionType, baseTypeRight))
                         {
                             // info, we add "_" extra as scanner append "_" in front of "__";
-                            auto funcName = "___bin_op_" + opName(opCode);
+                            auto funcName = ".bin_op_" + opName(opCode);
 
                             // we need to remove current implementation as we have different implementation per union type
                             removeGenericFunctionMap(funcName);
@@ -11653,7 +11653,7 @@ class MLIRGenImpl
         }
 
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___union_eq_" + opName(opCode);
+        auto funcName = ".union_eq_" + opName(opCode);
 
         // we need to remove current implementation as we have different implementation per union type
         removeGenericFunctionMap(funcName);
@@ -21083,20 +21083,39 @@ class MLIRGenImpl
                                                     mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
+    // A helper the compiler makes from source (`function __unbox<T>(a: any): T { ... }`): its names written `__x`
+    // are `.x` (`.unbox`), a name no program can write, so a program's own `__unbox` is never the helper. Names
+    // are read as written otherwise (MLIRHelper::getName).
     mlir::LogicalResult parsePartialStatements(string src)
     {
         GenContext emptyContext{};
-        return parsePartialStatements(src, emptyContext);
+        return parsePartialStatements(src, emptyContext, true, false, false, true);
     }
 
     // `declarations`: src is a library's declarations (__decls), printed in its source order, so one
     // may name another declared after it (`interface Hit { ray: Ray }` before `Ray`). Each that fails
     // is tried again once the others are in, as a module's own statements are.
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false, bool declarations = false)
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false, bool declarations = false, bool helper = false)
     {
         Parser parser;
         // .d.ts will mark all variables as external (be careful)
         auto module = parser.parseSourceFile(file_d_ts ? S("partial.d.ts") : S("partial.ts"), src, ScriptTarget::Latest);
+
+        if (helper)
+        {
+            // `__x` is escaped by the parser as `___x`
+            ts::VisitorAST helperNames([&](ts::Node node) {
+                if (node == SyntaxKind::Identifier)
+                {
+                    auto identifier = node.as<Identifier>();
+                    if (identifier->escapedText.size() > 3 && identifier->escapedText.substr(0, 3) == S("___"))
+                    {
+                        identifier->escapedText = S(".") + identifier->escapedText.substr(3);
+                    }
+                }
+            });
+            helperNames.visit(module);
+        }
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)

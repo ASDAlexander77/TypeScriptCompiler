@@ -1,5 +1,6 @@
 # What's new
 
+- Names that start with `__` work as declared (`class A { __p = 7 }`, `o.__p`, `keyof A`); the compiler's own helpers are named with a `.`, so a program's `__unbox` is its own. The default library must be rebuilt with this compiler (its `__` symbols are no longer escaped)
 - Each iteration of `for (let i ...)` keeps its own `i` for the closures made in it even when the body assigns `i` (0 1 2, not 3 3 3); a closure in a parameter's default value can read an earlier parameter
 - An interface of one call signature takes a function (`interface Cb { (x: number): number }`); a getter can read itself; `for (var x in this)` walks a class's fields; an interface can extend a generic interface that a function shares its name with
 - An object literal can be given a class whose constructor takes parameter properties (`const p: Point = { x: 0, y: 0 }`); a namespace `var` can be declared again; `fs.push(() => i)` into a `(() => number)[]`; closures may read `const`s declared after them in any order

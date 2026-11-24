@@ -1974,7 +1974,7 @@ namespace mlirgen
         }
 
         // `__any_call_adapter(box)` of `__any_invoke` (mlirGenAnyCall): the adapter of the function the box holds
-        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___any_call_adapter"
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == ".any_call_adapter"
             && callExpression->arguments.size() == 1)
         {
             auto box = mlirGen(callExpression->arguments.front(), genContext);
@@ -1984,7 +1984,7 @@ namespace mlirgen
         }
 
         // `__any_keys_adapter(box)` of `__any_key` (mlirGenAnyKey): the keys adapter of the type of the value the box holds
-        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___any_keys_adapter"
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == ".any_keys_adapter"
             && callExpression->arguments.size() == 1)
         {
             auto box = mlirGen(callExpression->arguments.front(), genContext);
@@ -1995,7 +1995,7 @@ namespace mlirgen
 
         // `__actual_class_keys(o)` of a class's keys adapter (makeAnyKeysAdapter): the keys adapter of the
         // class `o` actually is, or null when that is the adapter asking
-        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == "___actual_class_keys"
+        if (callExpr == SyntaxKind::Identifier && MLIRHelper::getName(callExpr.as<Identifier>()) == ".actual_class_keys"
             && callExpression->arguments.size() == 1)
         {
             auto object = mlirGen(callExpression->arguments.front(), genContext);

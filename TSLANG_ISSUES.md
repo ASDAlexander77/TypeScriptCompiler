@@ -2899,3 +2899,19 @@ Looked at, still open:
   'N.C.constructor'". Each declaration's non-exported members need names of their own.
 
 Tests `00tslang_issue_176.ts` (gc, none).
+
+177 (names that start with `__`, 141 and 176; user ruling 2026-11-24: the compiler's own names use `.`, not `__`).
+Fixed:
+- A name that starts with `__` (`class A { __p = 7 }`, `o.__p`, `keyof A`, `for...in`, `{ __p } = o`): the parser keeps
+  it escaped (`___p`, TypeScript's escapedText), and the compiler was not one way about it - a field was declared as
+  `___p` and read as `__p` ("can't resolve property"), an identifier made again from the escaped name was escaped once
+  more (`____p`), and `keyof A` gave `"___p"` ("can't cast from literal type '"__p"' to '"___p"'"). A name is read
+  as written now (MLIRHelper::getName undoes the escape), wherever it is declared or used.
+- The helpers the compiler makes from source (`function __unbox<T>(a: any): T`, `__cast`, `__any_key`,
+  `__bin_op_<op>`, ...) are named with a `.` (`.unbox`, `.cast`, ...): parsePartialStatements renames the `__x`
+  names of a helper's source, a name no program can write, so a program's own `function __unbox` is not the helper.
+- The default library's `__` names (`__String`, `__is`, `__Iterator`, ...) are read as written too: their symbols are
+  `__String.split`, no longer `___String.split`, so a default library built before this does not link with it (its
+  archives are made again by this compiler, as CI does).
+
+Tests `00tslang_issue_177.ts` (gc, rc, none; it passes under own too).
