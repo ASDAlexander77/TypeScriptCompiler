@@ -1569,7 +1569,7 @@ namespace mlirgen
             // (`!` read out unchecked - the `if` checked it: a call of the optional method otherwise gives the call's
             // result or a default, "a value is merged from several branches" for elements that own memory)
             auto checkedThrow = nf.createNonNullExpression(delegateThrow());
-            checkedThrow->internalFlags |= InternalFlags::UncheckedNonNull;
+            checkedThrow->internalFlags |= InternalFlags::CalleeNonNull;
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
                 nf.createCallExpression(checkedThrow, undefined, arguments))));
@@ -1602,7 +1602,7 @@ namespace mlirgen
 
             // (read out unchecked, as above: tested by the `if` around it)
             auto checkedThrow = nf.createNonNullExpression(delegateThrow());
-            checkedThrow->internalFlags |= InternalFlags::UncheckedNonNull;
+            checkedThrow->internalFlags |= InternalFlags::CalleeNonNull;
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
                 nf.createCallExpression(checkedThrow, undefined, arguments))));

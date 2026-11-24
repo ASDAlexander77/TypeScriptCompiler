@@ -12907,6 +12907,32 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, valueType, unionValue));
     }
 
+    // `f!(x)` of an optional function (CalleeNonNull): a TypeError when it holds none, as JavaScript's calling
+    // undefined, so the call is made of the function itself (TSLANG 187)
+    mlir::LogicalResult mlirGenFunctionValuePresent(mlir::Location location, mlir::Value optional, const GenContext &genContext)
+    {
+        auto stubName = ".function_value.missing";
+        auto stubType = getFunctionType({getOpaqueType()}, {}, false);
+        if (mlir::failed(mlirGenThrowingMethodStub(location, ".missing", stubName, stubType, genContext,
+                                                   "a function that is not there is called")))
+        {
+            return mlir::failure();
+        }
+
+        auto condition = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), optional);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, condition, true);
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+
+        auto stubRef = builder.create<mlir_ts::SymbolRefOp>(location, stubType,
+                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), stubName));
+        auto nullThis = builder.create<mlir_ts::CastOp>(location, getOpaqueType(),
+                                                        builder.create<mlir_ts::NullOp>(location, getNullType()));
+        builder.create<mlir_ts::CallIndirectOp>(MLIRHelper::getCallSiteLocation(stubRef, location), stubRef,
+                                                mlir::ValueRange{nullThis});
+        return mlir::success();
+    }
+
     // `new c()` of `c: typeof A | null` (or `| undefined`): it throws when `c` holds no class, as a member
     // of a missing @value value does (mlirGenPresentValue): `.new` read out of null had no function to call
     mlir::LogicalResult mlirGenClassValuePresent(mlir::Location location, mlir::Value value, const GenContext &genContext)
@@ -13040,6 +13066,8 @@ class MLIRGenImpl
                 // follow the object of
                 if (uncheckedOptionalMember)
                 {
+                    // (the optional left for the check that it is there, mlirGen(NonNullExpression))
+                    uncheckedOptionalRead = value;
                     return bindThis(builder.create<mlir_ts::ValueOp>(location, optionalType.getElementType(), value));
                 }
 
@@ -13074,9 +13102,10 @@ class MLIRGenImpl
     // the last OWNED_READ_ID_ATTR_NAME given
     int ownedReads = 0;
 
-    // set while the operand of a `!` marked UncheckedNonNull is generated: an optional interface method is read
-    // as the method (InterfaceFieldAccess)
+    // set while the operand of a `!` marked CalleeNonNull is generated: an optional interface method is read
+    // as the method (InterfaceFieldAccess), the optional it was left in uncheckedOptionalRead to be checked
     bool uncheckedOptionalMember = false;
+    mlir::Value uncheckedOptionalRead;
 
     // The result type of a call of the generic interface method `signature` for its type arguments: given,
     // or inferred from the arguments. Null when they can't be had: the call's result stays `any`.

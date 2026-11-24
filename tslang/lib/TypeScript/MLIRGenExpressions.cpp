@@ -1856,6 +1856,12 @@ namespace mlirgen
 
         auto callExpr = callExpression->expression.as<Expression>();
 
+        // `f!(x)`: f read out checked, a TypeError where it is missing (CalleeNonNull, TSLANG 187)
+        if (callExpr == SyntaxKind::NonNullExpression)
+        {
+            callExpr->internalFlags |= InternalFlags::CalleeNonNull;
+        }
+
         // `(() => { ... })()`: an arrow called where it is written (GenContext::immediatelyCalledIn)
         {
             auto callee = callExpr;
@@ -3170,17 +3176,32 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
     {
-        auto unchecked = !!(nonNullExpression->internalFlags & InternalFlags::UncheckedNonNull);
-        MLIRValueGuard<bool> uncheckedGuard(uncheckedOptionalMember, unchecked || uncheckedOptionalMember);
+        // a callee (CalleeNonNull): an optional function read out, a missing one a TypeError (an optional interface
+        // method read so by InterfaceFieldAccess, which leaves the optional it read for the check)
+        auto callee = !!(nonNullExpression->internalFlags & InternalFlags::CalleeNonNull);
+        MLIRValueGuard<bool> uncheckedGuard(uncheckedOptionalMember, callee || uncheckedOptionalMember);
+        MLIRValueGuard<mlir::Value> readGuard(uncheckedOptionalRead, mlir::Value());
         auto result = mlirGen(nonNullExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
 
-        if (unchecked)
+        if (callee)
         {
-            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+            auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType());
+            auto checked = uncheckedOptionalRead ? uncheckedOptionalRead : optionalType ? value : mlir::Value();
+            if (checked && mth.isAnyFunctionType(optionalType ? optionalType.getElementType() : value.getType()))
             {
-                return V(builder.create<mlir_ts::ValueOp>(loc(nonNullExpression), optionalType.getElementType(), value));
+                if (mlir::failed(mlirGenFunctionValuePresent(loc(nonNullExpression), checked, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                if (optionalType)
+                {
+                    return V(builder.create<mlir_ts::ValueOp>(loc(nonNullExpression), optionalType.getElementType(), value));
+                }
+
+                return value;
             }
         }
 
