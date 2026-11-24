@@ -5586,6 +5586,19 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
+# -mm=own: a parameter's default that makes a new value (a function's, a method's, a constructor's, an arrow's, a
+# closure's) is owned by the frame's slot (#1015's, for rc) and given back at exit (it leaked); the same program under
+# rc and gc. IR: the default stores the new value into the slot and gives a read of it (none before).
+foreach(param_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${param_default_mm}-own-param-default-new-value COMMAND test-runner -jit -mm=${param_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+    tslang_add_test(NAME test-compile-${param_default_mm}-own-param-default-new-value COMMAND test-runner -mm=${param_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+endforeach()
+add_test(NAME test-own-param-default-slot
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+set_tests_properties(test-own-param-default-slot
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Store\"[(]%[0-9]+, %[0-9]+[)] : [(]!ts[.]class<@N[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[(]%[0-9]+[)] : [(]!ts[.]ref<!ts[.]class<@N[^\n]*\n *\"ts[.]DefaultValue\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # -mm=own: a pattern's default that makes a new value (`const { p = mk(1) } = r`, `e ?? mk(1)`, `[mk(1)][0]`,
 # `"q" + i`) is held by a slot of the scope and given back when the scope ends (it leaked); the same program under
 # rc and gc. IR: the default stores the new value into the slot and yields a read of it (none before).

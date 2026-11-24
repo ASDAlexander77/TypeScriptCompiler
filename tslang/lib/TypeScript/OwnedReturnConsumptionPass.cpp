@@ -2838,7 +2838,7 @@ class OwnedReturnConsumptionPass
         module.walk([&](mlir_ts::StoreOp storeOp) {
             auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
             if (varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
-                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp>(storeOp->getParentOp()))
+                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp, mlir_ts::ParamOptionalOp>(storeOp->getParentOp()))
             {
                 stores.push_back(storeOp);
             }
@@ -2919,9 +2919,11 @@ class OwnedReturnConsumptionPass
         {
             // the store MLIRGen made at the region's end, and the read that follows it: put back to what the region
             // yields, then stored where a new value is made
+            // (a parameter's default ends with `ts.ParamDefaultValue`, processOptionalParam)
             auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(storeOp->getNextNode());
-            auto resultOp = loadOp ? mlir::dyn_cast_or_null<mlir_ts::ResultOp>(loadOp->getNextNode()) : mlir_ts::ResultOp();
-            if (!loadOp || loadOp.getReference() != storeOp.getReference() || !resultOp ||
+            auto *resultOp = loadOp ? loadOp->getNextNode() : nullptr;
+            if (!loadOp || loadOp.getReference() != storeOp.getReference() ||
+                !mlir::isa_and_nonnull<mlir_ts::ResultOp, mlir_ts::ParamDefaultValueOp>(resultOp) ||
                 resultOp->getNumOperands() != 1 || resultOp->getOperand(0) != loadOp.getResult())
             {
                 continue;
@@ -2931,6 +2933,38 @@ class OwnedReturnConsumptionPass
             resultOp->setOperand(0, storeOp.getValue());
             loadOp->erase();
             storeOp->erase();
+
+            // A parameter that may be kept - stored, returned, given to a call or a new literal (`constructor(public
+            // a = new C())`) - holds its default as it holds an argument: own keeps it, the default moving out with
+            // it (own_param_default_kept). Only a parameter that is only read borrows the slot.
+            if (auto paramOptionalOp = mlir::dyn_cast<mlir_ts::ParamOptionalOp>(resultOp->getParentOp()))
+            {
+                auto mayKeep = llvm::any_of(paramOptionalOp->getResult(0).getUsers(), [&](mlir::Operation *user) {
+                    auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                    if (!readOp)
+                    {
+                        return !mlir::isa<mlir_ts::StoreOp>(user);
+                    }
+
+                    std::function<bool(mlir::Value)> handedOn = [&](mlir::Value value) {
+                        return llvm::any_of(value.getUsers(), [&](mlir::Operation *reader) {
+                            if (mlir::isa<mlir_ts::CastOp>(reader))
+                            {
+                                return handedOn(reader->getResult(0));
+                            }
+
+                            return !mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp,
+                                              mlir_ts::LogicalBinaryOp, mlir_ts::StringLengthOp>(reader);
+                        });
+                    };
+                    return handedOn(readOp.getResult());
+                });
+                if (mayKeep)
+                {
+                    continue;
+                }
+            }
+
             storeNewValue(resultOp, 0, slot);
         }
     }

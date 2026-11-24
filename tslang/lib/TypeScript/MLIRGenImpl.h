@@ -4979,8 +4979,11 @@ class MLIRGenImpl
         // printed 0). A function gives back none of its parameters (the caller owns what it passes), so the value is
         // owned by a slot of the frame, empty unless the default is taken, given back at the function's exit
         // (mlirGenFunctionBody lists it with the parameters' storage); the parameter borrows it.
+        // -mm=own the same: the slot owns a new default value, moved in (settleOwnPatternDefaults keeps the store of one
+        // and drops it for a borrowed default, which the parameter then borrows as before)
+        auto ownSlot = compileOptions.memoryModel == MemoryModelOwn;
         mlir::Value defaultSlot;
-        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, dataType))
+        if ((compileOptions.isRefCounted() || ownSlot) && mth.ownsHeapMemory(location, dataType))
         {
             defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
                                                               builder.getBoolAttr(false), builder.getIndexAttr(0));
@@ -4990,6 +4993,10 @@ class MLIRGenImpl
             varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
             varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
             varOp->setAttr(DEFAULT_VALUE_SLOT_ATTR_NAME, builder.getUnitAttr());
+            if (ownSlot)
+            {
+                varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
+            }
         }
 
         auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
@@ -5017,8 +5024,11 @@ class MLIRGenImpl
         if (defaultSlot)
         {
             // as an awaited result's slot takes it (mlirGen(AwaitExpression)): a value that carries a reference
-            // hands it over, anything else is retained
-            if (producesOwnedReference(defaultValue))
+            // hands it over, anything else is retained (own: settled later, no retain)
+            if (ownSlot)
+            {
+            }
+            else if (producesOwnedReference(defaultValue))
             {
                 consumeOwnedReference(defaultValue);
             }
