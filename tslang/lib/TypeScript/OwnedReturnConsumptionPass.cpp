@@ -169,13 +169,14 @@ class OwnedReturnConsumptionPass
         }
 
         // `new C()` is marked where it is built, so there can be discarded temporaries to give
-        // back even when no function here is classified as returning owned.
+        // back even when no function here is classified as returning owned - and conditionals and
+        // pattern defaults to settle: a module with no such function (no class, no function returning
+        // a heap value) skipped consumeConditionalResults, and `const xs: number[] = c ? [i] : []`
+        // under rc kept the branch's count of the new array and the local's own (one leaked every
+        // evaluation); settleOwnPatternDefaults, under own, never ran there either.
         if (returnsOwned.empty() && !anyDeclaredRecord)
         {
-            ownNewArrayArguments(mth, module);
-            claimGlobalInitializers(mth, module);
-            holdReadOnlyNewArrays(mth, module);
-            releaseDiscardedTemporaries(mth, module);
+            settleModuleLocalResults(mth, module);
             return;
         }
 
@@ -304,6 +305,12 @@ class OwnedReturnConsumptionPass
             op->erase();
         }
 
+        settleModuleLocalResults(mth, module);
+    }
+
+    // What settles results within a function, once calls' results are settled (or none is a call's to settle)
+    void settleModuleLocalResults(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
         ownNewArrayArguments(mth, module);
 
         settleOwnPatternDefaults(module);

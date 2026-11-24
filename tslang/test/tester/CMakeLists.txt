@@ -5711,6 +5711,19 @@ add_test(NAME test-own-literal-argument-no-values-ir
 set_tests_properties(test-own-literal-argument-no-values-ir
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]CreateArray\"[(]%[0-9]+[)] {__owned_result} : [(]!ts[.]optional<!ts[.]class<@N"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=rc: a conditional yielding a new array in a module with no function returning a heap value (`const xs: number[]
+# = c ? [i] : []`, a let, the assignment form, strings, nested arrays) is settled as anywhere else (it leaked every
+# evaluation). Every model. IR: the conditional is an owned result its local takes over.
+foreach(cond_array_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${cond_array_mm}-rc-conditional-array-no-class COMMAND test-runner -jit -mm=${cond_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+    tslang_add_test(NAME test-compile-${cond_array_mm}-rc-conditional-array-no-class COMMAND test-runner -mm=${cond_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+endforeach()
+add_test(NAME test-rc-conditional-array-no-class-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+set_tests_properties(test-rc-conditional-array-no-class-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "[}][)] {__owned_result, __owned_result_consumed} : [(]!ts[.]boolean[)] -> !ts[.]array<!ts[.]number>"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
