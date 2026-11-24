@@ -1083,16 +1083,24 @@ namespace mlirgen
         }
 
         // `any | undefined` (an optional `any` field, `{ baz?: any }`) is the `any` it holds, or undefined boxed:
-        // boxed whole it had no `typeof` name, and lowering made a box with no tag
+        // boxed whole it had no `typeof` name, and lowering made a box with no tag. So is any other optional
+        // (`b?: string` given to an `any`, TSLANG 186): the value it holds boxed, or undefined - boxed whole, one
+        // holding nothing was a string with no text, which crashed where it was read
         if (isa<mlir_ts::AnyType>(type))
         {
-            if (auto optType = dyn_cast<mlir_ts::OptionalType>(valueType); optType && isa<mlir_ts::AnyType>(optType.getElementType()))
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(valueType))
             {
                 auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
                 auto ifOp = builder.create<mlir_ts::IfOp>(location, type, hasValue, true);
 
                 builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{builder.create<mlir_ts::ValueOp>(location, type, value)});
+                mlir::Value held = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
+                if (!isa<mlir_ts::AnyType>(held.getType()))
+                {
+                    CAST(held, location, type, held, genContext);
+                }
+
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{held});
 
                 builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
                 auto undefinedValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());

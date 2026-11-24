@@ -392,6 +392,8 @@ struct GenContext
     // variable its result goes to, in place of the delegate's next(), and the flag that says next() is not called
     const char *yieldStarResult = nullptr;
     const char *yieldStarSkipNext = nullptr;
+    // ...and whether that delegate has `return` (one with `throw` only is held for its throw(), TSLANG 186)
+    bool yieldStarHasReturn = true;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

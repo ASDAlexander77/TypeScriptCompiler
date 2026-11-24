@@ -1,5 +1,6 @@
 # What's new
 
+- `arguments.length` counts an `undefined` given (`h(1, undefined)` is 2) in a call by name; an optional value given to an `any` that holds nothing is `undefined`; a `yield*` hands throw() to a delegate typed with `throw` but no `return`, and under -mm=own to one a parameter holds
 - -mm=own: a method whose override throws an object, called through the base class in a `try` whose `finally` yields, is a compile error at the call, not a stop at run time
 - A function with parameters of different types can be given to `(...args: A) => T` (`A` is inferred as a tuple, `[number, string]`); under -mm=own, throw() of a generator paused in a `yield*` of numbers is handed to the delegate too
 - `arguments.length` counts the arguments given, not the parameters declared; a generic arrow can be given to a generic parameter (`wrap(<T>(x: T) => x)`), and a function to `(...args: A) => T`; throw() of a generator paused in a `yield*` is handed to the delegate's throw(), which may catch it and go on yielding
