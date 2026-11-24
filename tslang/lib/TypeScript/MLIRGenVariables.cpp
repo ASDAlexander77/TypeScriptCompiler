@@ -2147,7 +2147,120 @@ namespace mlirgen
         {
             VariableClass letClass = varClass;
             letClass.type = VariableType::Let;
-            return mlirGen(item, letClass, genContext);
+            auto topLevel = genContext.functionTopLevelVars && genContext.functionTopLevelVars->contains(item->pos.pos);
+            if (topLevel || !item->initializer || compileOptions.memoryModel == MemoryModelOwn)
+            {
+                return mlirGen(item, letClass, genContext);
+            }
+
+            // `{ var [a, b] = t; } return a + b;`: the names are the function's, read after the block too ("can't
+            // resolve name: a"). The pattern is taken apart into `let`s of the block named `.var.a`, ...; each name
+            // is then one of the function's variables, of that `let`'s type, given its value.
+            SmallVector<Identifier> names;
+            // `{ x }`: the property is named by the name, which is renamed; it is named for the call
+            SmallVector<BindingElement> shorthands;
+            NodeFactory nf(NodeFactoryFlags::None);
+            std::function<void(Node)> collect = [&](Node pattern) {
+                SmallVector<Node> elements;
+                if (pattern == SyntaxKind::ObjectBindingPattern)
+                {
+                    for (auto element : pattern.as<ObjectBindingPattern>()->elements)
+                    {
+                        elements.push_back(element);
+                    }
+                }
+                else
+                {
+                    for (auto element : pattern.as<ArrayBindingPattern>()->elements)
+                    {
+                        elements.push_back(element);
+                    }
+                }
+
+                for (auto element : elements)
+                {
+                    if (element != SyntaxKind::BindingElement)
+                    {
+                        continue;
+                    }
+
+                    auto bindingElement = element.as<BindingElement>();
+                    auto elementName = bindingElement->name;
+                    if (elementName == SyntaxKind::Identifier)
+                    {
+                        names.push_back(elementName.as<Identifier>());
+                        if (pattern == SyntaxKind::ObjectBindingPattern && !bindingElement->propertyName)
+                        {
+                            auto propertyName = nf.createIdentifier(stows(MLIRHelper::getName(elementName)));
+                            propertyName->pos = elementName->pos;
+                            propertyName->_end = elementName->_end;
+                            bindingElement->propertyName = propertyName;
+                            shorthands.push_back(bindingElement);
+                        }
+                    }
+                    else
+                    {
+                        collect(elementName);
+                    }
+                }
+            };
+            collect(item->name);
+
+            SmallVector<string> written;
+            for (auto name : names)
+            {
+                written.push_back(name->escapedText);
+                name->escapedText = S(".var.") + stows(MLIRHelper::getName(name));
+            }
+
+            auto result = mlirGen(item, letClass, genContext);
+            SmallVector<string> innerNames;
+            for (auto [name, text] : llvm::zip(names, written))
+            {
+                innerNames.push_back(name->escapedText);
+                name->escapedText = text;
+            }
+
+            for (auto shorthand : shorthands)
+            {
+                shorthand->propertyName = undefined;
+            }
+
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+
+            for (auto [name, innerName] : llvm::zip(names, innerNames))
+            {
+                auto plainName = MLIRHelper::getName(name, stringAllocator);
+                auto inner = nf.createIdentifier(innerName);
+                inner->pos = name->pos;
+                inner->_end = name->_end;
+                if (!genContext.functionVars->contains(plainName))
+                {
+                    auto innerValue = mlirGen(inner.as<Expression>(), genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(innerValue)
+                    auto type = mth.wideStorageType(mth.stripLiteralType(V(innerValue).getType()));
+                    if (mlir::failed(declareFunctionVar(loc(name), plainName, type, false, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                auto outer = nf.createIdentifier(stows(plainName.str()));
+                auto assignment = nf.createBinaryExpression(outer, nf.createToken(SyntaxKind::EqualsToken), inner);
+                for (Node node : {Node(outer), Node(assignment)})
+                {
+                    node->pos = name->pos;
+                    node->_end = name->_end;
+                }
+
+                auto assigned = mlirGen(assignment.as<Expression>(), genContext);
+                EXIT_IF_FAILED(assigned)
+            }
+
+            return mlir::success();
         }
 
         auto name = MLIRHelper::getName(item->name, stringAllocator);

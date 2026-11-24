@@ -871,6 +871,26 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
+    // The place of the array a push, pop, shift, unshift or splice changes: an array a call made
+    // (`Object.keys(o).push("z")`) has none of its own, so it is given one for the call (it is the
+    // same array: the call's result is too). A constant array has none, and is not changed.
+    mlir::Value arrayReferenceOf(const mlir::Location &location, mlir::Value array)
+    {
+        MLIRCodeLogic mcl(builder, compileOptions);
+        if (auto reference = mcl.GetReferenceFromValue(location, array))
+        {
+            return reference;
+        }
+
+        if (!isa<mlir_ts::ArrayType>(array.getType()) || array.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return mlir::Value();
+        }
+
+        return builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(array.getType()), array,
+                                                   builder.getBoolAttr(false), builder.getIndexAttr(0));
+    }
+
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
@@ -884,7 +904,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
+        auto thisValueLoaded = arrayReferenceOf(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -908,7 +928,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
-        auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
+        auto thisValue = arrayReferenceOf(location, operands.front());
         if (!thisValue)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -940,7 +960,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
+        auto thisValueLoaded = arrayReferenceOf(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -964,7 +984,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
-        auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
+        auto thisValue = arrayReferenceOf(location, operands.front());
         if (!thisValue)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -1022,7 +1042,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
+        auto thisValueLoaded = arrayReferenceOf(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";

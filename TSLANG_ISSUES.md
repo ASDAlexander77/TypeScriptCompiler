@@ -2915,3 +2915,31 @@ Fixed:
   archives are made again by this compiler, as CI does).
 
 Tests `00tslang_issue_177.ts` (gc, rc, none; it passes under own too).
+
+178 (items of the open-item inventory: 109, 118, 131, 145, 153).
+Fixed:
+- A module arrow const calling one declared after it, beside top-level code (`const a = () => b(); const b = () =>
+  10; print(a());`, 109): the root's code is a function of its own, where the const was a local alias of an arrow
+  named by its place, while the module's functions called it by its name ("'ts.Call' op 'b' does not reference a
+  valid function"). Such a const is the module's there too (GenContext::rootFunctionConst), a function named by it.
+- A destructuring `var` in a block read after it (`if (c) { var [a, b] = t; } return a + b;`, 118): it was a `let` of
+  the block ("can't resolve name: a"). Its names are the function's variables now: the pattern is taken apart into
+  `let`s of the block named `.var.a`, ..., and each name is given its value. Not under -mm=own, which refuses a
+  variable declared without a value that is given one later.
+- push, unshift, splice, pop and shift on an array a call made (`Object.keys(o).push("z")`, `make().push(7)`, 131):
+  "Can't get reference of the array, ensure const array is not used". The array is given a place for the call.
+- A method of a class and a function of the namespace merged with it, with one name (`class C { foo() }`,
+  `namespace C { export function foo() }`, 145): both were the symbol `C.foo` ("redefinition of symbol named
+  'C.foo'"). The method is `C..foo` now, and `C.foo` through the class is the namespace's function.
+- A generator typed by a program's own iterator interface (`interface It<T> { next(): { value: T; done: boolean } }`,
+  `function* g(): It<number> { yield 1; }`, 153): "can't assign '() => {value:s32, ...}'". Its next() returns
+  `ReturnType<It<number>["next"]>`, so a yield is given the interface's value type, as for `Generator<T>`.
+Still open:
+- An exported arrow const beside top-level code that a function calls (`export const f = () => ...; print(f());
+  function main() { f(); }`): "'llvm.mlir.addressof' op must reference a global".
+- A module const set from a call whose type is known only later (`const a = () => b(); const b = () => 10; const k
+  = a();`, no top-level code): a function reading k gets it as `none` ("failed to legalize operation 'ts.Cast'").
+- `m(f = () => () => this)`: a closure in a closure of a default value reading `this` ("'ts.Load' op using value
+  defined outside the region").
+
+Tests `00tslang_issue_178.ts` (gc, rc, none).
