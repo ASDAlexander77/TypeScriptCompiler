@@ -5586,6 +5586,17 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
+# Array destructuring past the end of its source applies the element's default (`const [a = 1, b = 2] = [5]`, b was
+# 0; with objects the compiler crashed): numbers and strings under every model, objects under gc and rc (own refuses a
+# borrow of the literal's element beside a new default).
+foreach(past_end_mm gc rc own)
+    tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
+    tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
+endforeach()
+foreach(past_end_mm gc rc)
+    tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")
+    tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")
+endforeach()
 # A conditional's branch yielding an element of an array literal nested in another (`c ? [[mk(i)]][0][0] :
 # null`), a field read out of an element (`c ? [{ v: mk(i) }][0].v : null`), also past a cast that only narrows
 # (`!`, `as N`, `<N>`), an optional chain out of a literal (`c ? [[mk(i)]][0]?.[0] : null`), or an element of a
