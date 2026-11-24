@@ -5,6 +5,7 @@
 #
 #   MODE=jit     run it under the JIT
 #   MODE=compile build an exe and run it
+#   EXTRA        more options for tslang (`--own-fallback=count`: the fallback against the library)
 #
 # Every test-runner test passes --no-default-lib, so this drives tslang itself. With no default
 # library built the test prints SKIPPED and CTest reports it skipped.
@@ -60,7 +61,7 @@ set(ENV{DEFAULT_LIB_PATH} "")
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
-set(common ${OPT} -mm=own "--default-lib-path=${default_lib}" "--llvm-lib-path=${LLVM_LIB}"
+set(common ${OPT} -mm=own ${EXTRA} "--default-lib-path=${default_lib}" "--llvm-lib-path=${LLVM_LIB}"
     "--tslang-lib-path=${TSLANG_LIB}" "--gc-lib-path=${GC_LIB}")
 
 if(WIN32)
@@ -70,13 +71,19 @@ else()
 endif()
 
 if(MODE STREQUAL "jit")
-    set(command "${TSLANG}" --emit=jit ${common} "--shared-libs=${runtime}" "${TEST}")
+    # (with EXTRA, compiled each run: a cached object would compile nothing and say nothing)
+    set(jit_cache)
+    if(DEFINED EXTRA)
+        set(jit_cache --jit-cache=false)
+    endif()
+    set(command "${TSLANG}" --emit=jit ${jit_cache} ${common} "--shared-libs=${runtime}" "${TEST}")
 else()
     execute_process(COMMAND "${TSLANG}" --emit=exe ${common} "${TEST}" -o "${WORK_DIR}/test${exe_suffix}"
         OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE status)
     if(NOT status EQUAL 0)
         message(FATAL_ERROR "--emit=exe -mm=own: exit ${status}\n${out}\n${err}")
     endif()
+    set(build_log "${out}${err}")
 
     set(command "${WORK_DIR}/test${exe_suffix}")
 endif()
@@ -86,6 +93,14 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E env "${run_env}" ${command}
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE status)
 if(NOT status EQUAL 0 OR NOT out MATCHES "done\.")
     message(FATAL_ERROR "${MODE} -mm=own: exit ${status}\n${out}\n${err}")
+endif()
+
+# with --own-fallback=count, the program exercises it: a value is counted
+if(EXTRA MATCHES "own-fallback")
+    string(FIND "${build_log}${out}${err}" "counts this object here" counted)
+    if(counted EQUAL -1)
+        message(FATAL_ERROR "${MODE} -mm=own ${EXTRA}: nothing was counted\n${build_log}${out}${err}")
+    endif()
 endif()
 
 message(STATUS "${MODE} -mm=own: done.")

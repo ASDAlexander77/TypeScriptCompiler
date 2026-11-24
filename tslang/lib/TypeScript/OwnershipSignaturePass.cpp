@@ -200,7 +200,16 @@ namespace own_signature
 
         if (!stableFields.empty())
         {
-            module->setAttr(OWN_STABLE_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), stableFields.getArrayRef()));
+            // in the order of the class names and positions: writtenAfterConstruction is keyed by type pointer, and
+            // its order changed from one compile to the next (nondeterministic IR)
+            llvm::SmallVector<mlir::Attribute> sorted(stableFields.begin(), stableFields.end());
+            auto keyOf = [](mlir::Attribute entry) {
+                auto pair = mlir::cast<mlir::ArrayAttr>(entry);
+                auto storage = mlir::cast<mlir_ts::ClassStorageType>(mlir::cast<mlir::TypeAttr>(pair[0]).getValue());
+                return std::make_pair(storage.getName().getAttr().getValue(), mlir::cast<mlir::IntegerAttr>(pair[1]).getInt());
+            };
+            llvm::stable_sort(sorted, [&](mlir::Attribute a, mlir::Attribute b) { return keyOf(a) < keyOf(b); });
+            module->setAttr(OWN_STABLE_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), sorted));
         }
 
         if (auto functionsDropping = module->getAttrOfType<mlir::DictionaryAttr>(SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME))

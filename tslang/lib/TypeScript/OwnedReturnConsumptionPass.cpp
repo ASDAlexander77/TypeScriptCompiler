@@ -169,13 +169,14 @@ class OwnedReturnConsumptionPass
         }
 
         // `new C()` is marked where it is built, so there can be discarded temporaries to give
-        // back even when no function here is classified as returning owned.
+        // back even when no function here is classified as returning owned - and conditionals and
+        // pattern defaults to settle: a module with no such function (no class, no function returning
+        // a heap value) skipped consumeConditionalResults, and `const xs: number[] = c ? [i] : []`
+        // under rc kept the branch's count of the new array and the local's own (one leaked every
+        // evaluation); settleOwnPatternDefaults, under own, never ran there either.
         if (returnsOwned.empty() && !anyDeclaredRecord)
         {
-            ownNewArrayArguments(mth, module);
-            claimGlobalInitializers(mth, module);
-            holdReadOnlyNewArrays(mth, module);
-            releaseDiscardedTemporaries(mth, module);
+            settleModuleLocalResults(mth, module);
             return;
         }
 
@@ -304,6 +305,12 @@ class OwnedReturnConsumptionPass
             op->erase();
         }
 
+        settleModuleLocalResults(mth, module);
+    }
+
+    // What settles results within a function, once calls' results are settled (or none is a call's to settle)
+    void settleModuleLocalResults(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
         ownNewArrayArguments(mth, module);
 
         settleOwnPatternDefaults(module);
@@ -402,12 +409,23 @@ class OwnedReturnConsumptionPass
 
         auto anyNew = false;
         auto allTakenAreLocals = true;
+        // (`po([undefined])`, `[null]`: elements that are no value at all, so nothing to own or to borrow - such a
+        // literal given to a call was never given back, own leaked it every call)
+        auto onlyNoValues = true;
         for (auto element : arrayOp->getOperands())
         {
-            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
+            if (isNoValue(element))
             {
                 continue;
             }
+
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
+            {
+                onlyNoValues = onlyNoValues && !isBorrowedText(element);
+                continue;
+            }
+
+            onlyNoValues = false;
 
             if (isMovedIn(arrayOp, element) || isNestedLiteral(mth, arrayOp, element))
             {
@@ -423,11 +441,37 @@ class OwnedReturnConsumptionPass
             allTakenAreLocals = allTakenAreLocals && isLocalsOwn(element);
         }
 
-        return anyNew || (allTakenAreLocals && !givenToCall);
+        return anyNew || onlyNoValues || (allTakenAreLocals && !givenToCall);
+    }
+
+    // undefined or null, through the casts and the optional that only widen it
+    static bool isNoValue(mlir::Value value)
+    {
+        for (auto *op = value.getDefiningOp(); op; op = op->getNumOperands() == 1 ? op->getOperand(0).getDefiningOp() : nullptr)
+        {
+            if (mlir::isa<mlir_ts::OptionalUndefOp, mlir_ts::UndefOp, mlir_ts::NullOp>(op))
+            {
+                return true;
+            }
+
+            if (!mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp>(op))
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     static bool holdsOnlyMovedInElements(MLIRTypeHelper &mth, mlir::Operation *op, bool givenToCall)
     {
+        // `f([])`: an empty array holds nothing (the empty constant array cast to an array is made one first,
+        // ownNewArrayArguments)
+        if (mlir::isa_and_nonnull<mlir_ts::NewEmptyArrayOp>(op))
+        {
+            return true;
+        }
+
         auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
         return arrayOp && holdsWhatItIsGiven(mth, arrayOp, givenToCall);
     }
@@ -637,6 +681,28 @@ class OwnedReturnConsumptionPass
                 }
 
                 auto *definingOp = argument.getDefiningOp();
+
+                // `f([])`: the empty constant array cast to an array - a copy made on the heap there - is the new empty
+                // array it is (ts.NewEmptyArray), which the inference moves into a callee that keeps it (`new
+                // Order(-1, [])`, the constructor storing it) and gives back after one that does not (`ln([])`, which
+                // leaked it). Marked owned as the cast it was, it was given back after a keeping callee as well, which
+                // then freed it again (DefaultLib worker_objects under -mm=own on wasm: "free" of a freed block)
+                if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
+                    castOp && !castOp->hasAttr(OWNED_RESULT_ATTR_NAME) && mlir::isa<mlir_ts::ArrayType>(argument.getType()) &&
+                    arrayMadeFor(argument, op, false))
+                {
+                    auto constArrayType = mlir::dyn_cast<mlir_ts::ConstArrayType>(castOp.getIn().getType());
+                    if (constArrayType && constArrayType.getSize() == 0)
+                    {
+                        mlir::OpBuilder builder(castOp);
+                        auto emptyOp = builder.create<mlir_ts::NewEmptyArrayOp>(castOp->getLoc(), argument.getType());
+                        castOp->getResult(0).replaceAllUsesWith(emptyOp.getResult());
+                        castOp->erase();
+                        argument = emptyOp.getResult();
+                        definingOp = emptyOp;
+                    }
+                }
+
                 if (!definingOp || !mlir::isa<mlir_ts::ArrayType>(argument.getType()) || !seen.insert(argument).second ||
                     definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) || !ownsWhatItHolds(mth, definingOp, /*givenToCall=*/true) ||
                     !(arrayMadeFor(argument, op, false) || isConvertedArrayFor(argument, op)))
@@ -1393,11 +1459,121 @@ class OwnedReturnConsumptionPass
         llvm::StringMap<llvm::StringSet<>> assigns;
         llvm::StringMap<llvm::SmallVector<mlir::StringRef>> callees;
         llvm::StringSet<> assignsAny;
+        // ...and the places each function gives a new value or takes a value out of (rc, readsAliasedPlace), by kind:
+        // a field by its name ("F:" + name), an element ("E": a store, `pop`, `shift`, `splice`), a captured local's
+        // cell ("C"), anything else ("*"). Deliberately coarse - a name stands for that field of every class, an
+        // element for every array - but not the stores that only make an object: a constructor's into `this`, a
+        // function's into the object it just made, a local record's into its own slot. A function that calls through
+        // a value may run any function here: it writes what the module writes (moduleKinds).
+        llvm::StringMap<llvm::StringSet<>> writtenKinds;
+        llvm::StringSet<> moduleKinds;
+        auto fieldKindOf = [](mlir_ts::PropertyRefOp propertyRefOp) -> std::string {
+            auto type = propertyRefOp->getOperand(0).getType();
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+            {
+                type = refType.getElementType();
+            }
+
+            if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
+            {
+                type = classType.getStorageType();
+            }
+
+            mlir::Attribute id;
+            auto position = propertyRefOp.getPosition();
+            if (auto storageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(type);
+                storageType && position >= 0 && static_cast<size_t>(position) < storageType.getFields().size())
+            {
+                id = storageType.getFields()[position].id;
+            }
+            else if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type);
+                     tupleType && position >= 0 && static_cast<size_t>(position) < tupleType.getFields().size())
+            {
+                id = tupleType.getFields()[position].id;
+            }
+
+            auto name = mlir::dyn_cast_or_null<mlir::StringAttr>(id);
+            return name ? ("F:" + name.getValue()).str() : std::string("*");
+        };
+        // the object a store makes rather than changes: `this` in a constructor, a new object of this function, a
+        // local record's slot
+        auto initializes = [](mlir::Value object, mlir_ts::FuncOp funcOp) {
+            while (auto castOp = object.getDefiningOp<mlir_ts::CastOp>())
+            {
+                object = castOp.getIn();
+            }
+
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(object))
+            {
+                return argument.getArgNumber() == 0 && argument.getOwner()->isEntryBlock() &&
+                       funcOp.getSymName().ends_with(".constructor");
+            }
+
+            if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                // `this` read out of a constructor's parameter slot; or a new box's contents
+                if (loadOp.getReference().getDefiningOp<mlir_ts::NewOp>())
+                {
+                    return true;
+                }
+
+                auto *slot = loadOp.getReference().getDefiningOp();
+                auto initial = mlir::isa_and_nonnull<mlir_ts::VariableOp, mlir_ts::ParamOp>(slot) && slot->getNumOperands() > 0
+                                   ? slot->getOperand(0)
+                                   : mlir::Value();
+                auto argument = initial ? mlir::dyn_cast<mlir::BlockArgument>(initial) : mlir::BlockArgument();
+                return argument && argument.getArgNumber() == 0 && argument.getOwner()->isEntryBlock() &&
+                       funcOp.getSymName().ends_with(".constructor");
+            }
+
+            return mlir::isa_and_nonnull<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp,
+                                         mlir_ts::VariableOp>(object.getDefiningOp());
+        };
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getSymName();
             funcOp.walk([&](mlir::Operation *op) {
+                // (`a.length = n` too: a shorter array gives back the elements it drops)
+                if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
+                {
+                    writtenKinds[name].insert("E");
+                }
+
+                // `delete`: what it frees takes every place in it along
+                if (mlir::isa<mlir_ts::DeleteOp>(op))
+                {
+                    writtenKinds[name].insert("*");
+                }
+
                 if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
                 {
+                    auto reference = storeOp.getReference();
+                    if (auto propertyRefOp = reference.getDefiningOp<mlir_ts::PropertyRefOp>())
+                    {
+                        if (!initializes(propertyRefOp->getOperand(0), funcOp))
+                        {
+                            writtenKinds[name].insert(fieldKindOf(propertyRefOp));
+                        }
+                    }
+                    else if (auto elementRefOp = reference.getDefiningOp<mlir_ts::ElementRefOp>())
+                    {
+                        if (!initializes(elementRefOp->getOperand(0), funcOp))
+                        {
+                            writtenKinds[name].insert("E");
+                        }
+                    }
+                    else if (reference.getDefiningOp<mlir_ts::NewOp>())
+                    {
+                        // a new box's contents (an object literal boxed for an interface): made, not changed
+                    }
+                    else if (own_facts::isPlace(reference))
+                    {
+                        writtenKinds[name].insert("*");
+                    }
+                    else if (reference.getDefiningOp<mlir_ts::LoadOp>())
+                    {
+                        writtenKinds[name].insert("C");
+                    }
+
                     if (auto global = globalOf(storeOp.getReference(), true); !global.empty())
                     {
                         assigns[name].insert(global);
@@ -1430,6 +1606,7 @@ class OwnedReturnConsumptionPass
                         changed = true;
                     }
 
+
                     if (auto it = assigns.find(callee); it != assigns.end())
                     {
                         // copied first: `assigns[caller]` may move the entry being read
@@ -1443,6 +1620,51 @@ class OwnedReturnConsumptionPass
                         {
                             changed |= assigns[caller].insert(global).second;
                         }
+                    }
+                }
+            }
+        }
+
+        for (auto &entry : writtenKinds)
+        {
+            for (auto &kind : entry.getValue())
+            {
+                moduleKinds.insert(kind.getKey());
+            }
+        }
+
+        // a function calling through a value may run any of them
+        for (auto &entry : assignsAny)
+        {
+            for (auto &kind : moduleKinds)
+            {
+                writtenKinds[entry.getKey()].insert(kind.getKey());
+            }
+        }
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &entry : callees)
+            {
+                auto caller = entry.getKey();
+                for (auto callee : entry.getValue())
+                {
+                    auto it = writtenKinds.find(callee);
+                    if (it == writtenKinds.end())
+                    {
+                        continue;
+                    }
+
+                    llvm::SmallVector<std::string> kinds;
+                    for (auto &kind : it->getValue())
+                    {
+                        kinds.push_back(kind.getKey().str());
+                    }
+
+                    for (auto &kind : kinds)
+                    {
+                        changed |= writtenKinds[caller].insert(kind).second;
                     }
                 }
             }
@@ -1488,6 +1710,200 @@ class OwnedReturnConsumptionPass
             }
 
             return false;
+        };
+
+        // the kinds of places a call may write (writtenKinds; through a value: what any function here writes)
+        auto mayWriteKind = [&](mlir::Operation *op, llvm::StringRef kind) {
+            auto callee = calleeOf(op);
+            const llvm::StringSet<> *kinds = &moduleKinds;
+            if (!callee.empty() && !assignsAny.contains(callee))
+            {
+                // A callee with no body here writes nothing - as for the globals (assigns). That holds because
+                // the default library's mutating array methods are generic: instantiated in this module, their
+                // bodies are walked like any function here. A non-generic library function that wrote into an
+                // array or an object it is given would be missed.
+                auto it = writtenKinds.find(callee);
+                if (it == writtenKinds.end())
+                {
+                    return false;
+                }
+
+                kinds = &it->getValue();
+            }
+
+            return kinds->contains(kind) || kinds->contains("*");
+        };
+
+        // Is this a read out of a field or an element of an object some other name may reach, which the call may give
+        // a new value? `f(arr[0])` with `arr` captured by a closure that sets `arr[0]`, also stored in a global whose
+        // element the callee sets, put into another array, copied to another local that `pop`s it; `f(h.o)` with
+        // `arrh = [h]` and a closure setting `arrh[0].o`. The callee - or what it calls - frees the block the argument
+        // read while it still reads its parameter. Two facts together, both needed:
+        // - some object on the way to the place may be reached by another name: it is not one made here that never
+        //   escapes (read only through its places, its length, a comparison or this very call) - a parameter's
+        //   object, a captured local's, one read out of somewhere else, one stored or passed on;
+        // - the call may write a place of a kind on that way (writtenKinds: the field's name, an element, a captured
+        //   local's cell), a write that makes an object aside.
+        // A global's object is the global rule's (globalOf, mayAssign), not this one's.
+        std::function<bool(mlir::Value, mlir::Operation *, int)> escapes = [&](mlir::Value value, mlir::Operation *call, int depth) {
+            if (depth > 6)
+            {
+                return true;
+            }
+
+            for (auto &use : value.getUses())
+            {
+                auto *user = use.getOwner();
+                if (user == call || mlir::isa<mlir_ts::LengthOfOp, mlir_ts::LogicalBinaryOp, mlir_ts::ReleaseOp,
+                                              mlir_ts::RetainOp, mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp,
+                                              mlir_ts::ArrayShiftOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArraySpliceOp>(user))
+                {
+                    continue;
+                }
+
+                // a place in it: reading and writing it is not another name for the object
+                if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(user) && use.getOperandNumber() == 0)
+                {
+                    continue;
+                }
+
+                // a store of something else into it
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() != value)
+                {
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::CastOp>(user))
+                {
+                    if (escapes(user->getResult(0), call, depth + 1))
+                    {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        };
+        auto isFresh = [](mlir::Value value) {
+            auto *def = value.getDefiningOp();
+            return mlir::isa_and_nonnull<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(def) ||
+                   (mlir::isa_and_nonnull<mlir_ts::CastOp>(def) && mlir::isa<mlir_ts::ConstArrayType>(def->getOperand(0).getType()));
+        };
+        // may another name reach the object a value is? Not one made here that never escapes, nor a local's slot given
+        // only such values, not captured, nothing read out of it escaping. (`captured`: the object is a captured
+        // local's, whose cell a closure may give a new value)
+        auto mayBeAliased = [&](mlir::Value object, mlir::Operation *call, bool &captured) {
+            while (auto castOp = object.getDefiningOp<mlir_ts::CastOp>())
+            {
+                object = castOp.getIn();
+            }
+
+            if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                if (!varOp)
+                {
+                    // a global's, or one read out of another place (whose object is looked at in its turn)
+                    return false;
+                }
+
+                if (varOp.getCaptured().value_or(false))
+                {
+                    captured = true;
+                    return true;
+                }
+
+                if (!varOp.getInitializer() || !isFresh(varOp.getInitializer()))
+                {
+                    return true;
+                }
+
+                for (auto *user : varOp->getUsers())
+                {
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+                    {
+                        if (storeOp.getReference() == varOp.getResult() && !isFresh(storeOp.getValue()))
+                        {
+                            return true;
+                        }
+
+                        continue;
+                    }
+
+                    if (auto slotRead = mlir::dyn_cast<mlir_ts::LoadOp>(user); slotRead && escapes(slotRead.getResult(), call, 0))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            // a parameter's object: its caller's, which other names may reach
+            if (mlir::isa<mlir::BlockArgument>(object))
+            {
+                return true;
+            }
+
+            return !isFresh(object) || escapes(object, call, 0);
+        };
+        auto readsAliasedPlace = [&](mlir::Value value, mlir::Operation *call) {
+            while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            if (!loadOp || !own_facts::isPlace(loadOp.getReference()))
+            {
+                return false;
+            }
+
+            // each place on the way, and the object it is in
+            auto aliased = false;
+            auto written = false;
+            auto ref = loadOp.getReference();
+            for (auto depth = 0; depth < 16 && ref && own_facts::isPlace(ref); depth++)
+            {
+                auto *place = ref.getDefiningOp();
+                if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(place))
+                {
+                    written = written || mayWriteKind(call, fieldKindOf(propertyRefOp));
+                }
+                else if (mlir::isa<mlir_ts::ElementRefOp>(place))
+                {
+                    written = written || mayWriteKind(call, "E");
+                }
+                else
+                {
+                    written = true;
+                }
+
+                auto object = place->getOperand(0);
+                while (auto castOp = object.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    object = castOp.getIn();
+                }
+
+                // (a field of a local tuple: the place is in the slot itself)
+                if (mlir::isa_and_nonnull<mlir_ts::VariableOp>(object.getDefiningOp()))
+                {
+                    return false;
+                }
+
+                auto captured = false;
+                aliased = mayBeAliased(object, call, captured) || aliased;
+                written = written || (captured && mayWriteKind(call, "C"));
+
+                auto innerLoad = object.getDefiningOp<mlir_ts::LoadOp>();
+                ref = innerLoad ? innerLoad.getReference() : mlir::Value();
+            }
+
+            return aliased && written;
         };
 
         auto mayAssign = [&](mlir::Operation *op, mlir::StringRef global) {
@@ -1635,6 +2051,14 @@ class OwnedReturnConsumptionPass
                 // value: the object may be that global's (`f(HG)` then `g(p.n)`, `g` setting `HG.n`), and the
                 // store freed the block the argument read. Under rc the caller holds it (fuzz seed 71210).
                 if (compileOptions.isRefCounted() && readsParameterPlace(argument) && mayAssignAnyGlobal(op))
+                {
+                    held.push_back({op, argument});
+                    continue;
+                }
+
+                // Out of a field or an element of an object another name may reach, to a call that may write that
+                // place (readsAliasedPlace). Under rc the caller holds it.
+                if (compileOptions.isRefCounted() && readsAliasedPlace(argument, op))
                 {
                     held.push_back({op, argument});
                     continue;

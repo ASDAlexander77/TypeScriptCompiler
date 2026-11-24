@@ -4226,6 +4226,27 @@ foreach(defaultlib_collector_mode jit compile)
     set_tests_properties(test-${defaultlib_collector_mode}-gc-defaultlib-collector PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# -mm=own --own-fallback=count with the real default library: a counted node held by the library's containers (a
+# Map's value, a Set's member, array helpers) beside its two holders prints what gc prints (final-review M-5: no
+# test used the flag with the default library). Skipped when no own default library has been built.
+foreach(own_defaultlib_mode jit compile)
+    add_test(NAME test-${own_defaultlib_mode}-own-fallback-defaultlib
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${own_defaultlib_mode}"
+                     "-DEXTRA=--own-fallback=count"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DTEST=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib/own_fallback_default_lib.ts"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-fallback-defaultlib-${own_defaultlib_mode}"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${defaultlib_collector_opt}"
+                     "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-defaultlib-facts.cmake")
+    set_tests_properties(test-${own_defaultlib_mode}-own-fallback-defaultlib PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+endforeach()
+
 # -mm=own with the real default library: its facts reach the program, under the JIT as for an exe
 # (see own-defaultlib-facts.cmake). Skipped when no own default library has been built.
 foreach(own_defaultlib_mode jit compile)
@@ -5752,6 +5773,102 @@ foreach(past_end_mm gc rc own)
     tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
     tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
 endforeach()
+# -mm=rc: an argument read out of a field or an element of an object a closure can reach (a captured local's array, a
+# const object captured by value), given to a call that may write a place (the closure setting it, pop/shift/splice,
+# a new array for the local), is held by the caller across the call; a destructured parameter's names own what they
+# read. They read freed memory. gc and none print the same; own refuses these programs.
+foreach(arg_place_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -jit -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
+    tslang_add_test(NAME test-compile-${arg_place_mm}-rc-argument-place-overwritten COMMAND test-runner -mm=${arg_place_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_overwritten.ts")
+endforeach()
+# -mm=own: an array literal holding no value at all (`[undefined]`, `[null]`, `[]`) given straight to a call is owned
+# and given back after it (it leaked every call); the same program under gc and rc. IR: the literal is an owned result.
+foreach(no_values_mm gc rc own)
+    tslang_add_test(NAME test-jit-${no_values_mm}-own-literal-argument-no-values COMMAND test-runner -jit -mm=${no_values_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+    tslang_add_test(NAME test-compile-${no_values_mm}-own-literal-argument-no-values COMMAND test-runner -mm=${no_values_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+endforeach()
+add_test(NAME test-own-literal-argument-no-values-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_literal_argument_no_values.ts")
+set_tests_properties(test-own-literal-argument-no-values-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]CreateArray\"[(]%[0-9]+[)] {__owned_result} : [(]!ts[.]optional<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=own: an empty array literal given to a call is a new empty array, moved into a callee that keeps it (`new
+# Order(i, [])`) and given back after one that does not (`ln([])`); it was given back after both, a double free (the
+# DefaultLib test worker_objects on wasm). The same program under gc and rc.
+foreach(empty_kept_mm gc rc own)
+    tslang_add_test(NAME test-jit-${empty_kept_mm}-own-empty-literal-kept-arg COMMAND test-runner -jit -mm=${empty_kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_empty_literal_kept_arg.ts")
+    tslang_add_test(NAME test-compile-${empty_kept_mm}-own-empty-literal-kept-arg COMMAND test-runner -mm=${empty_kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_empty_literal_kept_arg.ts")
+endforeach()
+# -mm=rc: a conditional yielding a new array in a module with no function returning a heap value (`const xs: number[]
+# = c ? [i] : []`, a let, the assignment form, strings, nested arrays) is settled as anywhere else (it leaked every
+# evaluation). Every model. IR: the conditional is an owned result its local takes over.
+foreach(cond_array_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${cond_array_mm}-rc-conditional-array-no-class COMMAND test-runner -jit -mm=${cond_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+    tslang_add_test(NAME test-compile-${cond_array_mm}-rc-conditional-array-no-class COMMAND test-runner -mm=${cond_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+endforeach()
+add_test(NAME test-rc-conditional-array-no-class-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_conditional_array_no_class.ts")
+set_tests_properties(test-rc-conditional-array-no-class-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "[}][)] {__owned_result, __owned_result_consumed} : [(]!ts[.]boolean[)] -> !ts[.]array<!ts[.]number>"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# `c == null` / `c == undefined` (loose) of a value that may be undefined leaves the equal side as it is (it was
+# narrowed to null: `c == null && c === undefined` false for undefined); results match node, every model.
+foreach(loose_nullish_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -jit -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
+    tslang_add_test(NAME test-compile-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
+endforeach()
+# -mm=own: a `let` a pattern binds with a default, given another value later (`let { p = mk(1) } = r; p = mk(3)`), is
+# split into a holder as a `let` given a field read is (it was refused); the same program under gc and rc.
+foreach(let_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -jit -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
+    tslang_add_test(NAME test-compile-${let_default_mm}-own-pattern-default-let-assigned COMMAND test-runner -mm=${let_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_let_assigned.ts")
+endforeach()
+# -mm=own: a parameter the function keeps on some paths is released at the end of a cleanup the exception leaves
+# the function from (its own `finally`), as at its returns and throws (it leaked); the same program under gc and rc.
+foreach(kept_finally_mm gc rc own)
+    tslang_add_test(NAME test-jit-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -jit -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
+    tslang_add_test(NAME test-compile-${kept_finally_mm}-own-kept-param-finally-unwind COMMAND test-runner -mm=${kept_finally_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_kept_param_finally_unwind.ts")
+endforeach()
+# A concise arrow with a destructured parameter gives back what the parameter's names own (rc) and its default's slot
+# (own) before it returns (they leaked; the ownership verifier refused it); every model.
+foreach(concise_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -jit -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
+    tslang_add_test(NAME test-compile-${concise_mm}-param-pattern-concise-arrow COMMAND test-runner -mm=${concise_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00param_pattern_concise_arrow.ts")
+endforeach()
+# ...and a borrowed `N | null | undefined` (an element, a for-of variable, a field) narrowed so is a view of the borrow:
+# own accepts it (it refused it after the loose narrowing); every model.
+foreach(loose_borrowed_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -jit -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
+    tslang_add_test(NAME test-compile-${loose_borrowed_mm}-narrow-loose-nullish-borrowed COMMAND test-runner -mm=${loose_borrowed_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish_borrowed.ts")
+endforeach()
+# -mm=rc: an argument read out of a place of an object another name may reach (a global, another argument's container,
+# a second const, a captured array, a parameter's object) is held across a call that may write a place of that kind
+# (the reviewer's X01-X21; rc read freed memory). gc and none the same. IR: `gw2(h.o)` after `G = h`, with `gw2` setting
+# `G.o`, holds the argument.
+foreach(arg_aliased_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_aliased_mm}-rc-argument-place-aliased COMMAND test-runner -jit -mm=${arg_aliased_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+    tslang_add_test(NAME test-compile-${arg_aliased_mm}-rc-argument-place-aliased COMMAND test-runner -mm=${arg_aliased_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+endforeach()
+add_test(NAME test-rc-argument-place-aliased-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_aliased.ts")
+set_tests_properties(test-rc-argument-place-aliased-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "identifier = @gw2}>[^\n]*\n[^\n]*\"ts[.]PropertyRef\"[^\n]*\n[^\n]*\"ts[.]Load\"[^\n]*\n *\"ts[.]Retain\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...and an argument read out of an array a callee shortens through another name (`a.length = 0`): an element write.
+# IR: the element read is held.
+foreach(arg_set_length_mm gc rc none)
+    tslang_add_test(NAME test-jit-${arg_set_length_mm}-rc-argument-place-set-length COMMAND test-runner -jit -mm=${arg_set_length_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+    tslang_add_test(NAME test-compile-${arg_set_length_mm}-rc-argument-place-set-length COMMAND test-runner -mm=${arg_set_length_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+endforeach()
+add_test(NAME test-rc-argument-place-set-length-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_argument_place_set_length.ts")
+set_tests_properties(test-rc-argument-place-set-length-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]ElementRef\"[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[^\n]*-> !ts[.]class<@N[^\n]*\n *\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
@@ -6431,6 +6548,17 @@ foreach(fallback_test own/own_fallback_result_borrow_stays_error own/own_err_sha
                      "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/${fallback_test}.ts"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 endforeach()
+# ...and the fallback reading OwnershipModuleFactsPass's cached analysis (DescriptorObjectsAnalysis): an interface
+# parameter given to two fields is counted only when no class here may hold a closure (read without the cache the
+# answer is "may hold", and it would be refused), and stays an error when one does
+add_test(NAME test-own-fallback-ir-own_fallback_cached_analysis
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=IR -DCOUNTED=2
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_cached_analysis.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
+add_test(NAME test-own-fallback-ir-own_fallback_cached_analysis_held
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMODE=EXPECT_ERROR
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_fallback_cached_analysis_held.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-fallback.cmake")
 # ...and a tuple whose kept retains are of a tagged union's type (a `T | null` field): refused at
 # its place, with own's error
 add_test(NAME test-own-fallback-ir-own_fallback_tuple_in_union_stays_error
@@ -6463,7 +6591,7 @@ foreach(fallback_test own_fallback_second_owner own_fallback_move_overwrite own_
                       own_fallback_call_second_owner own_fallback_swap own_fallback_global_lent own_fallback_unwind
                       own_fallback_generator own_fallback_kept_lent own_fallback_kept_call_twice
                       own_fallback_kept_twice_one_call own_fallback_string_second_owner own_fallback_weak_target
-                      own_fallback_unwind_kept_param own_fallback_take_out_of_field own_fallback_take_from_result
+                      own_fallback_unwind_kept_param own_fallback_kept_param_finally own_fallback_take_out_of_field own_fallback_take_from_result
                       own_fallback_take_from_result_iface own_fallback_take_through_id own_fallback_not_promoted
                       own_fallback_keeper own_fallback_fuzz_1122184 own_fallback_fuzz_1122290
                       own_fallback_fuzz_1122304 own_fallback_let_from_counted_local own_fallback_array_counted

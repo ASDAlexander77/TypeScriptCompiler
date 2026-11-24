@@ -6432,6 +6432,109 @@ class MLIRGenImpl
         return mlir::failure();
     }    
 
+    // `val == null` / `val == undefined` (loose) of a value whose type may be undefined (an optional, a union with
+    // undefined): the equal side may be either, and is left as it is; the other side is the type without null and
+    // undefined. Fails for anything else (the strict forms, a type that cannot be undefined), which the null and
+    // undefined cases narrow as before.
+    mlir::LogicalResult checkSafeCastLooseNullish(Expression val, Expression nullishVal, bool inverse, ElseSafeCase *elseSafeCase,
+                                                  const GenContext &genContext)
+    {
+        auto expr = stripParentheses(nullishVal);
+        auto isNullish = expr == SyntaxKind::NullKeyword ||
+                         (expr == SyntaxKind::Identifier && expr.as<ts::Identifier>()->escapedText == S(UNDEFINED_NAME));
+        if (!isNullish)
+        {
+            return mlir::failure();
+        }
+
+        auto type = evaluate(val, genContext);
+        auto mayBeUndefined = [](mlir::Type type) {
+            if (isa_and_nonnull<mlir_ts::OptionalType>(type))
+            {
+                return true;
+            }
+
+            auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(type);
+            return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) {
+                       return isa<mlir_ts::UndefinedType, mlir_ts::OptionalType>(member);
+                   });
+        };
+        if (!mayBeUndefined(type))
+        {
+            return mlir::failure();
+        }
+
+        // not undefined: an optional's value, read as `c !== undefined` reads it (a `ts.Value`, which -mm=own sees as a
+        // view of a borrow; a cast to the type without null too was taken for a store of it, and own refused a
+        // borrowed `N | null | undefined` narrowed so). A null left in it reads as null, which is all `c.x` needs.
+        auto present = type;
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(present))
+        {
+            present = optionalType.getElementType();
+        }
+        else if (auto unionType = dyn_cast<mlir_ts::UnionType>(present))
+        {
+            SmallVector<mlir::Type> members;
+            for (auto member : unionType.getTypes())
+            {
+                if (auto optionalMember = dyn_cast<mlir_ts::OptionalType>(member))
+                {
+                    member = optionalMember.getElementType();
+                }
+
+                if (!isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+                {
+                    members.push_back(member);
+                }
+            }
+
+            if (members.empty())
+            {
+                return mlir::failure();
+            }
+
+            present = members.size() == 1 ? members.front() : getUnionType(members);
+        }
+
+        // `!=`: present where true - and, for a @value record whose null is a niche of its own (`Hit | null |
+        // undefined`), not null either, narrowed again from the value just read as `c !== null` narrows a union: its
+        // fields are read so (own refused a borrow of `this` stored in a `Hit` read as `Hit | null`). A class's null
+        // stays in it, its reads are the same either way, and a second narrowing of a field read (`h.v`) was taken
+        // for a store of the borrow
+        if (inverse)
+        {
+            if (mlir::failed(addSafeCastStatement(val, present, false, nullptr, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(present);
+                unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); }) &&
+                llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ValueType>(member); }))
+            {
+                SmallVector<mlir::Type> members;
+                llvm::copy_if(unionType.getTypes(), std::back_inserter(members),
+                              [](mlir::Type member) { return !isa<mlir_ts::NullType>(member); });
+                if (!members.empty())
+                {
+                    return addSafeCastStatement(val, members.size() == 1 ? members.front() : getUnionType(members), false,
+                                                nullptr, genContext);
+                }
+            }
+
+            return mlir::success();
+        }
+
+        // `==`: present where false
+        if (elseSafeCase)
+        {
+            elseSafeCase->expr = stripParenthesesAndUntangleEquals(val);
+            elseSafeCase->safeType = present;
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult checkSafeCastNull(Expression val, Expression nullVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto expr = stripParentheses(nullVal);
@@ -6955,6 +7058,22 @@ class MLIRGenImpl
 
                 auto left = stripParentheses(binExpr->left);
                 auto right = stripParentheses(binExpr->right);
+
+                // `c == null`, `c != undefined` - loose - of a value that may be undefined: equal for null and for
+                // undefined alike, so the equal side is not narrowed to null (a later `c === undefined` in the same
+                // `&&` chain was false for undefined, `c === null` true); the other side is neither
+                if (op == SyntaxKind::EqualsEqualsToken || op == SyntaxKind::ExclamationEqualsToken)
+                {
+                    if (auto result = checkSafeCastLooseNullish(left, right, inverse, elseSafeCase, genContext); mlir::succeeded(result))
+                    {
+                        return result;
+                    }
+
+                    if (auto result = checkSafeCastLooseNullish(right, left, inverse, elseSafeCase, genContext); mlir::succeeded(result))
+                    {
+                        return result;
+                    }
+                }
 
                 // TODO: refactor it
                 // typeof

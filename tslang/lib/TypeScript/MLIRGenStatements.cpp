@@ -92,13 +92,17 @@ namespace mlirgen
                 mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue}, /*atLastUse=*/true);
 
                 // ...but a slot owning a parameter's default value (-mm=rc, processOptionalParam) is given back
-                // here, as a return statement's scope exit gives it back: what follows the return is not reached
+                // here, as a return statement's scope exit gives it back: what follows the return is not reached.
+                // So are a destructured parameter's default slot (-mm=own, ownPatternDefaultSlot) and the names a
+                // destructured parameter binds (-mm=rc, mlirGenFunctionParamsBindings): `({ a, b }) => a + b`
+                // never gave them back (the ownership verifier: "some path out of the function never gives back")
                 if (genContext.ownedVars)
                 {
                     for (auto storage : llvm::reverse(*genContext.ownedVars))
                     {
                         auto varOp = storage.getDefiningOp<mlir_ts::VariableOp>();
-                        if (varOp && varOp->hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME))
+                        if (varOp && (varOp->hasAttr(DEFAULT_VALUE_SLOT_ATTR_NAME) || varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) ||
+                                      (compileOptions.memoryModel == MemoryModelRC && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))))
                         {
                             builder.create<mlir_ts::ReleaseSlotOp>(loc(body), storage)
                                 ->setAttr(SCOPE_EXIT_RELEASE_ATTR_NAME, builder.getUnitAttr());
