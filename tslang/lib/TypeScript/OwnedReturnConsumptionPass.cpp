@@ -2744,6 +2744,99 @@ class OwnedReturnConsumptionPass
         {
             op->erase();
         }
+
+        consumeValueOrDefaultResults(mth, module);
+    }
+
+    // The same disagreement in a default of a destructuring pattern (`const { p = mk(1) } = { p: c ? mk(i) :
+    // undefined }`): `ts.OptValueOrDefault` hands back the value the optional holds - a borrow of the field - or
+    // what its default region makes - a +1 nobody took, so every evaluation that ran the default leaked it. Under rc
+    // it is made to carry one reference whichever way it goes, as a conditional's result is: the default's +1 is
+    // its own (or, when the default reads a temporary it makes and gives back - a record literal of a new object -
+    // what it yields is retained in the region first), the optional's value is retained before the op (a retain of
+    // an undefined optional does nothing), and the op is an owned result its receiver takes over, or that is given
+    // back at the end of its block.
+    void consumeValueOrDefaultResults(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir::Operation *> toErase;
+        module.walk([&](mlir_ts::OptionalValueOrDefaultOp op) {
+            auto result = op.getResult();
+            if (op->hasAttr(OWNED_RESULT_ATTR_NAME) || !mth.ownsHeapMemory(op.getLoc(), result.getType()) ||
+                op.getDefaultValueRegion().empty())
+            {
+                return;
+            }
+
+            auto resultOp = mlir::dyn_cast_or_null<mlir_ts::ResultOp>(op.getDefaultValueRegion().back().getTerminator());
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return;
+            }
+
+            // only when the default carries a +1 (a borrowed default agrees with the borrowed value already)
+            auto produced = resultOp->getOperand(0);
+            while (auto castOp = produced.getDefiningOp<mlir_ts::CastOp>())
+            {
+                if (!mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                {
+                    break;
+                }
+
+                produced = castOp.getIn();
+            }
+
+            // ...or what it yields reads a temporary it makes (a record literal `{ p: { w = mk(1) } = { w: mk(2) } }`,
+            // a field of one): the region gives the temporary back before it ends, so what it yields is retained
+            // there first, as a conditional's branch does (consumeConditionalResults)
+            auto *region = &op.getDefaultValueRegion();
+            auto *producer = produced.getDefiningOp();
+            auto makesTemporary = [&]() {
+                auto found = false;
+                region->walk([&](mlir::Operation *inner) {
+                    if (inner->getNumResults() == 1 && inner->getParentRegion() == region &&
+                        ::typescript::mayTakeOverReference(inner->getResult(0)))
+                    {
+                        found = true;
+                    }
+                });
+                return found;
+            };
+
+            if (producer && ::typescript::mayTakeOverReference(produced) && producer->getParentRegion() == region)
+            {
+                producer->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+            else if (makesTemporary())
+            {
+                mlir::OpBuilder regionBuilder(resultOp);
+                regionBuilder.create<mlir_ts::RetainOp>(resultOp->getLoc(), resultOp->getOperand(0));
+            }
+            else
+            {
+                return;
+            }
+
+            mlir::OpBuilder builder(op);
+            builder.create<mlir_ts::RetainOp>(op.getLoc(), op.getArgValue());
+
+            op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
+            {
+                op->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                toErase.append(retains.begin(), retains.end());
+            }
+        });
+
+        for (auto *op : toErase)
+        {
+            op->erase();
+        }
     }
 
   private:

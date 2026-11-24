@@ -5600,6 +5600,19 @@ add_test(NAME test-rc-destructuring-literal-released
 set_tests_properties(test-rc-destructuring-literal-released
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# Object destructuring with a default (`const { p = mk(1) } = { p: c ? mk(i) : undefined }`) under rc: the
+# value-or-default carries one reference whichever way it goes - the field's value retained before it (none
+# before), the default's taken over. The same program under gc (own refuses the record literals).
+foreach(destructuring_record_mm rc gc)
+    tslang_add_test(NAME test-jit-${destructuring_record_mm}-destructuring-record COMMAND test-runner -jit -mm=${destructuring_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_record.ts")
+    tslang_add_test(NAME test-compile-${destructuring_record_mm}-destructuring-record COMMAND test-runner -mm=${destructuring_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_record.ts")
+endforeach()
+add_test(NAME test-rc-destructuring-record-retained
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_record.ts")
+set_tests_properties(test-rc-destructuring-record-retained
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]optional<[^\n]*\n *%[0-9]+ = \"ts[.]OptValueOrDefault\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 add_test(NAME test-rc-conditional-owned-optional-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_owned_optional.ts")
