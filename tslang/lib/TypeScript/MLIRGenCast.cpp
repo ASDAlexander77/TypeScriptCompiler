@@ -3879,12 +3879,13 @@ namespace mlirgen
     // (`val.something`) - given as a function type it can be adapted to (adaptableSignature): there is no function
     // of its own to name, so it goes into a box, as a closure's captures do, and an adapter bound to the box calls
     // it (the box and the adapter are again two words, as a bound function's `this` and its function are). Under
-    // -mm=own not yet (a function value in a box takes a second reference to it). Null where it is not that.
+    // -mm=own too (TSLANG 188): a function that owns nothing is boxed as it is, and a closure - whose captures the box
+    // would hold a second reference to - is refused by the own rules where it is boxed. Null where it is not that.
     mlir::Value MLIRGenImpl::functionValueAdapter(mlir::Location location, mlir::Value value, mlir::Type type,
                                                   const GenContext &genContext)
     {
         auto valueType = value.getType();
-        if (compileOptions.memoryModel == MemoryModelOwn || valueType == type
+        if (valueType == type
             || !isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(valueType)
             || !isa<mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type))
         {
@@ -3950,7 +3951,11 @@ namespace mlirgen
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
-            mlir::Location noLocation = mlir::UnknownLoc::get(builder.getContext());
+            // without --di it carries the place it is made for, so an error found in it (an own rule: a closure's
+            // captures, which the box holds a second reference to) points there, not to `<unknown>`
+            mlir::Location noLocation = compileOptions.generateDebugInfo
+                ? mlir::Location(mlir::UnknownLoc::get(builder.getContext()))
+                : stripMetadata(location);
             auto funcOp = mlir_ts::FuncOp::create(noLocation, thunkName, thunkType);
             funcOp.setPrivate();
             funcOp->setAttr("internal_linkage", builder.getUnitAttr());

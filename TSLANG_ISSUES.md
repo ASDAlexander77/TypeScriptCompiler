@@ -3168,6 +3168,23 @@ Tests `00arguments_length_methods.ts`, `00generator_yield_star_throw_strings.ts`
   compiler before 187 too; a for-of over it did not). Its `{ value, done }` is the caller's - OwnershipSignaturePass
   takes it for fresh (isIteratorNext) - but MLIRGen marked only a plain call's result owned, so nothing gave it back.
   The call through an interface's function-typed field `next` or `throw` returning such a record is marked owned
-  now (mlirGenCall), under -mm=own.
+  now (mlirGenCall), under -mm=own. Checked: a yielded string kept past the record (`last = g.next().value`,
+  `keep.push(g.next().value)`) runs and stays flat; a hand-written `next()` returning a field of its object is refused
+  at compile time, as before.
+- -mm=own: a function read at run time given as another function type (`call({ x: (n: number) => n + 1 }, 4)` for
+  `(...args: A) => T`, a callback with fewer parameters through a variable): it was refused ("a function value read at
+  run time is not given as another function type yet"). It is held by an adapter in a box as in the other models
+  (functionValueAdapter); a closure, whose captures the box would hold a second reference to, and a value the
+  adapter would carry out of its caller (`function reg(cb): H { let u: H = cb; return u; }`) are refused by the own
+  rules, now at the place the adapter is made (it had no location: `<unknown>:0`).
 
-Tests `00own_generator_next_by_hand.ts` (gc, rc, own).
+Looked at, still open:
+- -mm=own: a generator that yields objects it got from another iterator is refused in every shape - `yield*`,
+  `for (const b of inner()) yield b`, and `next()` by hand (`for (;;) { const r = it.next(); if (r.done) break; yield
+  r.value; }`): "a value that borrows a field is used here after it may be released or overwritten". The value is
+  the caller's to move, but own takes what the delegate's result holds for a borrow of the generator's state.
+- -mm=own: an adapted function value in a module `const` initializer (`const kept = call(wrap(<T>(x: T) => x), 1)`):
+  "the initializer of global 'kept' takes a second reference"; in a function it works.
+
+Tests `00own_generator_next_by_hand.ts`, `00function_value_rest_adapter.ts` (gc, rc, own), `00function_value_adapter.ts`
+(own added), diagnostic-location `own_function_value_adapter.ts` (now the escaping case).
