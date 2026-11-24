@@ -1044,6 +1044,13 @@ class OwnershipInferencePass
     // an owning local of `chain` that no closure assigns: what no call drops (dropsChain).
     static bool readsStableFieldsOfHeldRoot(mlir::Operation *read, const Chain &chain);
 
+    // Is `read` a field of a generator's state - a local of its body, the iterator a for-of keeps -
+    // read off the state its method runs on? Only the generator's own methods write such a field, and
+    // none of them runs again while one does: no call from there drops it, though through the
+    // `Generator` interface the call may be any generator's `next()`, this one's too (TSLANG 189).
+    // Not `next`, `return`, `throw`, which the interface lets anyone assign, nor the captured box.
+    static bool readsRunningGeneratorState(mlir::Operation *read);
+
     // A read out of a container is a borrow of it (spec 2.3), and so is a `let` declared from one:
     // its retain and releases go when the check passes, as for any borrowing `let` (phase 2).
     // Reports and returns false when the read is kept, or used after something that may destroy

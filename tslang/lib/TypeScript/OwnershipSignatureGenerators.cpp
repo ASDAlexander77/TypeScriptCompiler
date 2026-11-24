@@ -400,6 +400,8 @@ namespace own_signature
             }
         }
 
+        takeYieldedResultValues(module, yielded);
+
         if (yielded.empty())
         {
             return;
@@ -413,6 +415,233 @@ namespace own_signature
         }
 
         module->setAttr(OWN_YIELDED_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));
+    }
+
+    void OwnershipSignaturePass::takeYieldedResultValues(mlir::ModuleOp module,
+                                                         const llvm::MapVector<mlir::Type, llvm::SmallVector<int32_t>> &yielded)
+    {
+        // a field that only yields (findYieldedFields)
+        auto isYieldedField = [&](mlir::Value ref) {
+            auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto tupleType = propertyRefOp ? storageTupleOf(propertyRefOp->getOperand(0).getType()) : mlir_ts::TupleType();
+            auto found = tupleType ? yielded.find(tupleType) : yielded.end();
+            return found != yielded.end() && llvm::is_contained(found->second, static_cast<int32_t>(propertyRefOp.getPosition()));
+        };
+
+        // (state type, field) -> the record fields' refs, and the one field of the record that owns heap memory
+        struct RecordUses
+        {
+            llvm::SmallVector<mlir_ts::PropertyRefOp> holders;
+            int32_t heapField = -1;
+        };
+
+        llvm::MapVector<std::pair<mlir::Type, int32_t>, RecordUses> records;
+        module.walk([&](mlir_ts::PropertyRefOp propertyRefOp) {
+            auto tupleType = storageTupleOf(propertyRefOp->getOperand(0).getType());
+            auto position = static_cast<int32_t>(propertyRefOp.getPosition());
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getType());
+            auto recordType = refType ? mlir::dyn_cast<mlir_ts::TupleType>(refType.getElementType()) : mlir_ts::TupleType();
+            if (!tupleType || !recordType || fieldIndex(tupleType, ".step") < 0 || position == fieldIndex(tupleType, CAPTURED_NAME))
+            {
+                return;
+            }
+
+            auto heapField = -1;
+            for (auto [index, field] : llvm::enumerate(recordType.getFields()))
+            {
+                if (ownsHeap(propertyRefOp.getLoc(), field.type))
+                {
+                    if (heapField >= 0)
+                    {
+                        return;
+                    }
+
+                    heapField = static_cast<int32_t>(index);
+                }
+            }
+
+            if (heapField < 0)
+            {
+                return;
+            }
+
+            auto &uses = records[{tupleType, position}];
+            uses.heapField = heapField;
+            uses.holders.push_back(propertyRefOp);
+        });
+
+        for (auto &[key, uses] : records)
+        {
+            llvm::SmallVector<mlir_ts::LoadOp> reads;
+            llvm::SmallVector<mlir_ts::StoreOp> stores;
+            auto fits = true;
+            for (auto holder : uses.holders)
+            {
+                for (auto *user : holder->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::RetainSlotOp>(user))
+                    {
+                        continue;
+                    }
+
+                    // (the whole record read for nothing: MLIRGen's read of a `const` it holds)
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                    {
+                        fits &= loadOp->use_empty();
+                        continue;
+                    }
+
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == holder.getResult())
+                    {
+                        stores.push_back(storeOp);
+                        continue;
+                    }
+
+                    auto fieldRef = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                    if (!fieldRef)
+                    {
+                        fits = false;
+                        continue;
+                    }
+
+                    for (auto *fieldUser : fieldRef->getUsers())
+                    {
+                        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(fieldUser);
+                        if (!loadOp)
+                        {
+                            fits = false;
+                        }
+                        else if (static_cast<int32_t>(fieldRef.getPosition()) == uses.heapField)
+                        {
+                            reads.push_back(loadOp);
+                        }
+                    }
+                }
+            }
+
+            // a read of the value that is yielded, or kept in a field that only yields, takes it; any
+            // other borrows it, as it would anyway
+            auto taken = [&](mlir_ts::LoadOp loadOp) {
+                if (onlyIntoYield(loadOp.getResult()))
+                {
+                    return true;
+                }
+
+                auto users = llvm::make_filter_range(loadOp->getUsers(), [](mlir::Operation *user) {
+                    return !mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user);
+                });
+                auto storeOp = llvm::hasSingleElement(users) ? mlir::dyn_cast<mlir_ts::StoreOp>(*users.begin()) : mlir_ts::StoreOp();
+                return storeOp && storeOp.getValue() == loadOp.getResult() && isYieldedField(storeOp.getReference());
+            };
+
+            llvm::SmallVector<mlir_ts::LoadOp> takes;
+            llvm::copy_if(reads, std::back_inserter(takes), taken);
+            if (!fits || takes.empty() || stores.empty())
+            {
+                continue;
+            }
+
+            // MLIRGen takes the value of the record it keeps once for each it stores, and reads it for
+            // nothing else (for-of, yield*); else, from each take on, the record is stored anew before
+            // the value is read again - along the blocks a loop is made of by now, and through a
+            // yield, after which the generator goes on at any of the places it may stop
+            auto stateType = mlir::cast<mlir_ts::TupleType>(key.first);
+            auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(stateType.getFields()[key.second].id);
+            if (!id || !id.getValue().starts_with(".") || takes.size() != reads.size())
+            {
+                auto readsIn = [&](mlir::Operation *op) {
+                    auto found = false;
+                    op->walk([&](mlir_ts::LoadOp loadOp) { found |= llvm::is_contained(reads, loadOp); });
+                    return found;
+                };
+
+                // from `from` to the end of its block: 1 at a store of the record, -1 at a read of the
+                // value (one in an op's region too), 0 at neither
+                auto scan = [&](mlir::Operation *from) {
+                    for (auto *op = from; op; op = op->getNextNode())
+                    {
+                        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op); storeOp && llvm::is_contained(stores, storeOp))
+                        {
+                            return 1;
+                        }
+
+                        if (readsIn(op))
+                        {
+                            return -1;
+                        }
+                    }
+
+                    return 0;
+                };
+
+                auto takenOnce = [&](mlir_ts::LoadOp take) {
+                    // (a read in an op's region - a `try` - is followed only within its block)
+                    auto *block = take->getBlock();
+                    auto inFunction = mlir::isa<mlir::FunctionOpInterface>(block->getParentOp());
+                    auto first = scan(take->getNextNode());
+                    if (first != 0 || !inFunction)
+                    {
+                        return first == 1;
+                    }
+
+                    // A yield returns by now, and the generator goes on at a block its switch on the step
+                    // jumps to: from the way out, any of them may run next
+                    mlir::Operation *resume = nullptr;
+                    block->getParentOp()->walk([&](mlir_ts::SwitchStateInternalOp switchOp) { resume = switchOp; });
+                    llvm::SmallPtrSet<mlir::Block *, 16> seen;
+                    llvm::SmallVector<mlir::Block *> work(block->getSuccessors().begin(), block->getSuccessors().end());
+                    auto exits = block->getSuccessors().empty();
+                    while (!work.empty() || exits)
+                    {
+                        if (work.empty())
+                        {
+                            exits = false;
+                            if (resume)
+                            {
+                                work.append(resume->getSuccessors().begin(), resume->getSuccessors().end());
+                            }
+
+                            continue;
+                        }
+
+                        auto *next = work.pop_back_val();
+                        if (!seen.insert(next).second)
+                        {
+                            continue;
+                        }
+
+                        auto found = next->empty() ? 0 : scan(&next->front());
+                        if (found < 0)
+                        {
+                            return false;
+                        }
+
+                        if (found == 0)
+                        {
+                            exits |= next->getSuccessors().empty();
+                            work.append(next->getSuccessors().begin(), next->getSuccessors().end());
+                        }
+                    }
+
+                    return true;
+                };
+
+                if (!llvm::all_of(takes, takenOnce))
+                {
+                    continue;
+                }
+            }
+
+            for (auto take : takes)
+            {
+                take->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                mlir::OpBuilder builder(take->getContext());
+                builder.setInsertionPointAfter(take);
+                auto fieldType = mlir::cast<mlir_ts::RefType>(take.getReference().getType()).getElementType();
+                auto empty = builder.create<mlir_ts::DefaultOp>(take->getLoc(), fieldType);
+                builder.create<mlir_ts::StoreOp>(take->getLoc(), empty, take.getReference());
+            }
+        }
     }
 
     void OwnershipSignaturePass::findBoundedForwarders()

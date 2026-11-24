@@ -3188,3 +3188,34 @@ Looked at, still open:
 
 Tests `00own_generator_next_by_hand.ts`, `00function_value_rest_adapter.ts` (gc, rc, own), `00function_value_adapter.ts`
 (own added), diagnostic-location `own_function_value_adapter.ts` (now the escaping case).
+
+189 (188's leftover, 2026-11-24). Fixed:
+- -mm=own: a generator that yields objects it got from another iterator was refused in every shape - `yield*`,
+  `for (const b of inner()) yield b`, `next()` by hand (`for (;;) { const r = it.next(); if (r.done) break; yield
+  r.value; }`, `let r = it.next(); while (!r.done) { yield r.value; r = it.next(); }`): "a value that borrows a field
+  is used here after it may be released or overwritten". Two causes:
+  - the `{ value, done }` the iterator gave is kept in a field of the generator's state (for-of's `.c`, yield*'s
+    `.yc`, the source's `r`), and the yield gave the caller a borrow of its `value`, which the next `next()` released.
+    Such a read now moves the value out and empties the field right after it (OwnershipSignaturePass::
+    takeYieldedResultValues), when the record's one field that owns memory is read only to be yielded, or kept in a
+    field that only yields (findYieldedFields), and from each such read on the record is stored anew before its value
+    is read again: along the blocks a loop is made of by then, and from a yield on to any place the generator may go
+    on at. Other reads of the value before it is yielded borrow it, as before (`if (r.value.s.length > 3) continue`).
+  - for-of, and an iterator a generator keeps in a local (`const it = inner(k); ... it.next()`), even of numbers: the
+    `next()` through the `Generator` interface may be any generator's `next()`, this one's too, which writes this
+    generator's state fields, so own took the call for one that may release the iterator it runs on. Only a
+    generator's own methods write its state, and none runs again while one does: a field of the state read off the
+    state its method runs on is not dropped by a call (OwnershipInferencePass::readsRunningGeneratorState). Not
+    `next`, `return`, `throw`, which the interface lets anyone assign, nor the captured box.
+  Checked: values right in gc, rc and own; a caller that leaves the generator early; 1M runs of each shape stay at
+  ~50 MB under own. Refused still: a value yielded twice without a new `next()`, read again after it is yielded, or
+  kept in a global.
+
+Looked at, still open:
+- -mm=own: a for-of element kept in a `let` declared outside the loop (`let kept: Box | null = null; for (const b of
+  g) kept = b;`) in a plain function: "'b' borrows a field and cannot be stored, returned or captured"; `push` works.
+- -mm=own: a generator of objects has no `throw()` and `return()` (MLIRGenFunctions, by design: what return() keeps
+  in an `any` can't be read back out as its owner), so `g.throw!(e)` on one is "a function that is not there is called".
+
+Tests `00own_generator_objects_from_iterator.ts` (gc, rc, own), diagnostic-location
+`own_generator_value_yielded_twice.ts`.
