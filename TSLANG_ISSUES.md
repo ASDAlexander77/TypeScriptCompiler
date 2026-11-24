@@ -3041,3 +3041,34 @@ Looked at, still open:
   borrow of an element cannot be one.
 
 Tests `00own_generator_for_of_this_field.ts` (gc, rc, own).
+
+183 (114, 94, 156, 2026-11-24). Fixed:
+- `arguments.length` (114) counted the parameters the function declares, not the arguments given: `h(1)` of
+  `h(a, b?)` was 2. An optional parameter, or one with a default value, that the caller left out is not counted now
+  (mlirGenArguments: the count is worked out from the parameters given, and the `arguments` array is that long), in
+  a loop condition and a for-of over `arguments` too. A function with a rest parameter is as before.
+- A generic arrow given to a parameter typed by a type parameter (94: `wrap(<T>(x: T) => x)`, `apply(<T>(x: T) =>
+  x)`): the arrow is instantiated for `any` and its type inferred from that (resolveGenericParamFromFunctionCall). A
+  rest parameter typed by a type parameter (`(...args: A) => T`) is inferred from the function given, `A` an array
+  of its parameters' type (tryInferFunction), and a function that takes its parameters one by one can be given as a
+  function type whose rest parameter is an array: an adapter reads them out of the array (fewerParametersThunk for a
+  named function or an arrow, functionValueAdapter for one read at run time, `{ x: (n: number) => n + 1 }.x`). 94's
+  example now compiles and runs (gc, rc).
+- throw() of a generator paused in a `yield*` (156): the exception is handed to the delegate's throw(), as in
+  JavaScript. The delegate may catch it and go on yielding (the generator gives its next value), or finish (the
+  `yield*` is done and the generator goes on), or throw it on (its finally blocks run, then the generator's own try
+  statements see it). The loop over a delegate that has `throw` calls next() itself, and the resume check at its
+  yield puts what throw() gives in place of the next step (mlirGenYieldStar, mlirGenGeneratorResumeChecks).
+
+Looked at, still open:
+- `h(1, undefined)` of `h(a, b?)` gives 1 for `arguments.length` (JavaScript gives 2): an `undefined` given and one
+  left out are the same to the function.
+- A function whose parameters have different types given to `(...args: A) => T` (`call2((a: number, b: string) =>
+  b + a, 1, "x")`): `A` is inferred as `(number | string)[]`, not the tuple `[number, string]`, and the function is
+  refused.
+- -mm=own: the function given as a rest-array function type when it is read at run time (an object literal's field,
+  94's example): the own rule for adapters of such values, with that error. throw() at a `yield*` under -mm=own still
+  throws at the yield (the delegate is exchanged into a local for each call there, 156).
+
+Tests `00arguments_length_given.ts` (gc, rc, own), `00generic_arrow_through_generic.ts` (gc, rc),
+`00generator_yield_star_throw.ts` (gc, rc).

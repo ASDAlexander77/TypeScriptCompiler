@@ -341,6 +341,58 @@ namespace mlirgen
                 funcType = funcType.drop_front();
             }
 
+            // `(...args: A) => T` given `(n: number) => number` (TSLANG 94): A is the array the rest parameter holds,
+            // `number[]`, as the arguments given for a rest parameter make it - not `number`, which with those
+            // arguments' `s32[]` made A a union of both
+            auto templateIsVarArg = false;
+            if (auto tempFunc = dyn_cast<mlir_ts::FunctionType>(templateType))
+            {
+                templateIsVarArg = tempFunc.isVarArg();
+            }
+            else if (auto tempHybrid = dyn_cast<mlir_ts::HybridFunctionType>(templateType))
+            {
+                templateIsVarArg = tempHybrid.isVarArg();
+            }
+
+            // (a function with a rest parameter of its own, `(...args: number[]) => ...`, is matched as before)
+            auto concreteIsVarArg = false;
+            if (auto concreteFunc = dyn_cast<mlir_ts::FunctionType>(concreteType))
+            {
+                concreteIsVarArg = concreteFunc.isVarArg();
+            }
+            else if (auto concreteHybrid = dyn_cast<mlir_ts::HybridFunctionType>(concreteType))
+            {
+                concreteIsVarArg = concreteHybrid.isVarArg();
+            }
+
+            if (templateIsVarArg && !concreteIsVarArg && !tempfuncType.empty() &&
+                isa<mlir_ts::NamedGenericType>(tempfuncType.back()) && funcType.size() >= tempfuncType.size() - 1)
+            {
+                auto fixed = tempfuncType.size() - 1;
+                inferTypeFuncType(location, tempfuncType.take_front(fixed), funcType.take_front(fixed), results, genContext);
+
+                struct ArrayInfo arrayInfo{};
+                for (auto restType : funcType.drop_front(fixed))
+                {
+                    accumulateArrayItemType(location, restType, arrayInfo);
+                }
+
+                if (arrayInfo.accumulatedArrayElementType)
+                {
+                    inferType(location, tempfuncType.back(), getArrayType(arrayInfo.accumulatedArrayElementType),
+                              results, genContext);
+                }
+
+                auto tempfuncRetType = mth.getReturnsFromFuncRef(templateType);
+                auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
+                if (tempfuncRetType.size() > 0 && funcRetType.size() > 0)
+                {
+                    inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
+                }
+
+                return true;
+            }
+
             if (funcType.size() > 0 || tempfuncType.size() == 0)
             {
                 inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
@@ -1056,6 +1108,28 @@ namespace mlirgen
         }
 
         StringMap<mlir::Type> inferredTypes;
+
+        // a generic function given for a parameter that is a type parameter itself (`wrap<X>(x: X)` given
+        // `<T>(x: T) => x`, TSLANG 94): X is the function with `any` for its own type parameters, which it is
+        // instantiated as where it is given (a value of a type parameter can't stay generic). Its type with T
+        // in it was taken for X: "can't find type by name: T".
+        if (isa<mlir_ts::NamedGenericType>(paramType) && isGenericFunctionReference(argOp))
+        {
+            // (the instance's own type: the receiver it is made for says no result, which is found from its body)
+            auto instantiated = instantiateGenericFunctionWithAny(location, argOp, genericTypeGenContext);
+            if (instantiated && V(instantiated) && !isGenericFunctionReference(V(instantiated)))
+            {
+                inferType(location, paramType, V(instantiated).getType(), inferredTypes, genericTypeGenContext);
+                if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes,
+                                                     anyNamedGenericType, genericTypeGenContext, false, true)))
+                {
+                    return {mlir::failure(), true};
+                }
+
+                return {mlir::success(), true};
+            }
+        }
+
         inferType(location, paramType, argOp.getType(), inferredTypes, genericTypeGenContext);
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                 genericTypeGenContext, false, true)))

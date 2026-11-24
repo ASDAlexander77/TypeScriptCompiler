@@ -4043,6 +4043,10 @@ namespace mlirgen
 
         SmallVector<mlir::Value, 4> values;
         mlir::Value restArguments;
+        // what the caller gave for each optional parameter, the optional the parameter is made of (ts.ParamOpt):
+        // `h(1)` of `h(a, b?)` gave one argument, not two (TSLANG 114, 183)
+        SmallVector<mlir::Value, 4> givenOptional;
+        auto anyOptional = false;
         for (auto &param : genContext.bodyFuncProto->getParams())
         {
             // a method's object is not one of its arguments
@@ -4056,6 +4060,27 @@ namespace mlirgen
             auto result = mlirGen(location, param->getName(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
+
+            // (`b?: number` is held as the optional it is given; `b = 7` as its value, made of that optional)
+            mlir::Value given;
+            if (isa<mlir_ts::OptionalType>(value.getType()) && !param->getIsMultiArgsParam())
+            {
+                given = value;
+                anyOptional = true;
+            }
+            else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto paramOpt = loadOp.getReference().getDefiningOp<mlir_ts::ParamOptionalOp>())
+                {
+                    given = paramOpt->getOperand(0);
+                    anyOptional = true;
+                }
+            }
+
+            if (!param->getIsMultiArgsParam())
+            {
+                givenOptional.push_back(given);
+            }
             if (param->getIsMultiArgsParam())
             {
                 if (!isa<mlir_ts::ArrayType>(value.getType()))
@@ -4077,6 +4102,7 @@ namespace mlirgen
         }
 
         mlir::Value argumentsArray;
+        mlir::Value argumentsCount;
         if (restArguments)
         {
             // [...the others, ...rest], as an array literal with a spread is made: each element of the rest is
@@ -4100,6 +4126,36 @@ namespace mlirgen
             // the array releases what it holds when it dies (as a rest parameter's array does)
             mlirGenRetainCaptured(location, values);
             argumentsArray = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(getAnyType()), values);
+
+            // as many as the caller gave: up to the last parameter given (an optional one given `undefined` is given,
+            // `h(1, undefined)`, as JavaScript counts it); the ones after it are left out
+            if (anyOptional)
+            {
+                auto i32Type = builder.getI32Type();
+                mlir::Value count = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(0));
+                for (auto [index, given] : llvm::enumerate(givenOptional))
+                {
+                    auto atLeast = builder.create<mlir_ts::ConstantOp>(location, i32Type,
+                                                                       builder.getI32IntegerAttr((int)index + 1));
+                    if (!given)
+                    {
+                        count = atLeast;
+                        continue;
+                    }
+
+                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), given);
+                    auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{i32Type}, hasValue, true);
+                    builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{atLeast});
+                    builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                    builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{count});
+                    builder.setInsertionPointAfter(ifOp);
+                    count = ifOp.getResult(0);
+                }
+
+                // (set on the array's place: the local below, or a place of its own for a temporary)
+                argumentsCount = builder.create<mlir_ts::CastOp>(location, builder.getIndexType(), count);
+            }
         }
 
         // held by a local of its own: read as a temporary (`for (const v of arguments)`), a spread literal was
@@ -4110,6 +4166,15 @@ namespace mlirgen
         auto *regionOwner = builder.getInsertionBlock() ? builder.getInsertionBlock()->getParentOp() : nullptr;
         if (mlir::isa_and_nonnull<mlir_ts::ForOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp>(regionOwner))
         {
+            if (argumentsCount)
+            {
+                auto arrayRef = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(argumentsArray.getType()),
+                                                                    argumentsArray, builder.getBoolAttr(false),
+                                                                    builder.getIndexAttr(0));
+                builder.create<mlir_ts::SetLengthOfOp>(location, arrayRef, argumentsCount);
+                return V(builder.create<mlir_ts::LoadOp>(location, argumentsArray.getType(), arrayRef));
+            }
+
             return argumentsArray;
         }
 
@@ -4127,7 +4192,18 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        return resolveIdentifier(location, name, genContext);
+        auto local = resolveIdentifier(location, name, genContext);
+        if (local && argumentsCount)
+        {
+            MLIRCodeLogic mcl(builder, compileOptions);
+            if (auto localRef = mcl.GetReferenceFromValue(location, local))
+            {
+                builder.create<mlir_ts::SetLengthOfOp>(location, localRef, argumentsCount);
+                return V(builder.create<mlir_ts::LoadOp>(location, local.getType(), localRef));
+            }
+        }
+
+        return local;
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)

@@ -1449,7 +1449,30 @@ namespace mlirgen
 
         NodeArray<Statement> throwStatements;
         throwStatements.push_back(resetMode());
-        throwStatements.push_back(nf.createThrowStatement(thisProp(GENERATOR_THROWN_NAME)));
+        if (genContext.yieldStarDelegate && genContext.yieldStarResult && genContext.yieldStarSkipNext)
+        {
+            // at the yield of a yield* whose delegate has throw(): handed to it, its result the loop's next step
+            // (mlirGenYieldStar) - `if (.yd.throw) { .yc = .yd.throw!(this.thrown); .ys = true; } else throw this.thrown;`
+            auto delegateThrow = [&]() {
+                return nf.createPropertyAccessExpression(nf.createIdentifier(stows(std::string(genContext.yieldStarDelegate))),
+                                                         nf.createIdentifier(S("throw")));
+            };
+            NodeArray<Expression> arguments;
+            arguments.push_back(thisProp(GENERATOR_THROWN_NAME));
+            NodeArray<Statement> handStatements;
+            handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+                nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
+                nf.createCallExpression(nf.createNonNullExpression(delegateThrow()), undefined, arguments))));
+            handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
+                nf.createIdentifier(stows(std::string(genContext.yieldStarSkipNext))), nf.createToken(SyntaxKind::EqualsToken),
+                nf.createToken(SyntaxKind::TrueKeyword))));
+            throwStatements.push_back(nf.createIfStatement(delegateThrow(), nf.createBlock(handStatements, false),
+                                                           nf.createThrowStatement(thisProp(GENERATOR_THROWN_NAME))));
+        }
+        else
+        {
+            throwStatements.push_back(nf.createThrowStatement(thisProp(GENERATOR_THROWN_NAME)));
+        }
 
         // with the value return() was given (kept in `.thrown`)
         auto finish = nf.createReturnStatement(thisProp(GENERATOR_THROWN_NAME));

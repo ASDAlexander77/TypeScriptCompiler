@@ -3529,6 +3529,58 @@ namespace mlirgen
         return !(sameResults && srcInputs.size() == destInputs.size());
     }
 
+    // The array a function type's rest parameter is (`(...args: A) => T` with A `number[]`), null where it has none
+    static mlir_ts::ArrayType restArrayOf(mlir_ts::FunctionType funcType)
+    {
+        return funcType && funcType.isVarArg() && !funcType.isCVarArg() && funcType.getNumInputs() > 0
+            ? dyn_cast<mlir_ts::ArrayType>(funcType.getInputs().back())
+            : mlir_ts::ArrayType();
+    }
+
+    // adaptableSignature for a function given as a type with a rest array (TSLANG 94): the parameters the function
+    // takes past the type's fixed ones are elements of the array. With the same parameters as those elements there
+    // is still an adapter to make: it reads them out of the array. `fixedCount` is the number of fixed ones.
+    static bool adaptableToRestArray(mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
+                                     mlir::ArrayRef<mlir::Type> destInputs, mlir::TypeRange destResults,
+                                     mlir_ts::ArrayType restArray, bool &dropResult, size_t &fixedCount)
+    {
+        fixedCount = destInputs.size() - 1;
+        SmallVector<mlir::Type> destExpanded(destInputs.drop_back());
+        for (auto index = fixedCount; index < srcInputs.size(); index++)
+        {
+            destExpanded.push_back(restArray.getElementType());
+        }
+
+        if (adaptableSignature(srcInputs, srcResults, destExpanded, destResults, dropResult))
+        {
+            return true;
+        }
+
+        dropResult = false;
+        return llvm::equal(srcInputs, destExpanded) && srcResults == destResults;
+    }
+
+    // The arguments an adapter gives a function from the type's fixed ones and its rest array `rest`: the fixed ones,
+    // then an element of the array for each parameter the function takes past them
+    static void expandRestArguments(mlir::OpBuilder &builder, mlir::Location location, mlir::Type structIndexType,
+                                    mlir::ValueRange fixedArgs, mlir::Value rest, mlir_ts::ArrayType restArray,
+                                    size_t fixedCount, size_t srcCount, SmallVectorImpl<mlir::Value> &expandedArgs)
+    {
+        for (auto index = size_t(0); index < std::min((size_t)fixedArgs.size(), fixedCount); index++)
+        {
+            expandedArgs.push_back(fixedArgs[index]);
+        }
+
+        for (auto index = fixedCount; index < srcCount; index++)
+        {
+            auto position =
+                builder.create<mlir_ts::ConstantOp>(location, structIndexType, builder.getI32IntegerAttr((int)(index - fixedCount)));
+            auto elementRef = builder.create<mlir_ts::ElementRefOp>(
+                location, mlir_ts::RefType::get(restArray.getElementType()), rest, position);
+            expandedArgs.push_back(builder.create<mlir_ts::LoadOp>(location, restArray.getElementType(), elementRef));
+        }
+    }
+
     // The body of an adapter adaptableSignature allowed: calls `callee` with `leading` (a closure's captures, a
     // method's `this`) and then `args` - as many as the callee takes, `undefined` for its optional ones past them -
     // and returns its result as `destResults` says: as it is, widened, or dropped (released). Fails where an
@@ -3635,8 +3687,12 @@ namespace mlirgen
         auto resFuncType = mth.GetFunctionType(type);
         // a closure's own value is its function bound over the captures (a method's is bound to its object)
         auto closure = boundOp && boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME);
+        // ...or one with a rest parameter, whose array holds what the function takes after the others (`(...args: A)
+        // => T` with A an array, given `(n: number) => number`, TSLANG 94): the adapter reads them out of it
+        auto restArray = restArrayOf(resFuncType);
         if (!symbolRefOp || !inFuncType || !resFuncType || inFuncType.isVarArg() || inFuncType.isCVarArg()
-            || resFuncType.isVarArg() || resFuncType.isCVarArg() || (boundOp && (!closure || inFuncType.getInputs().empty())))
+            || (resFuncType.isVarArg() && !restArray) || resFuncType.isCVarArg()
+            || (boundOp && (!closure || inFuncType.getInputs().empty())))
         {
             return mlir::Value();
         }
@@ -3650,8 +3706,14 @@ namespace mlirgen
 
         auto inInputs = inFuncType.getInputs();
         auto srcInputs = boundOp ? inInputs.drop_front() : inInputs;
+
         bool dropResult;
-        if (!adaptableSignature(srcInputs, inFuncType.getResults(), destInputs, resFuncType.getResults(), dropResult))
+        size_t fixedCount = destInputs.size();
+        auto adaptable = restArray
+            ? adaptableToRestArray(srcInputs, inFuncType.getResults(), destInputs, resFuncType.getResults(), restArray,
+                                   dropResult, fixedCount)
+            : adaptableSignature(srcInputs, inFuncType.getResults(), destInputs, resFuncType.getResults(), dropResult);
+        if (!adaptable)
         {
             return mlir::Value();
         }
@@ -3665,7 +3727,7 @@ namespace mlirgen
         resInputs.append(destInputs.begin(), destInputs.end());
 
         auto calleeName = symbolRefOp.getIdentifier();
-        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), false);
+        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), resInputs, resFuncType.getResults(), !!restArray);
         // one for each type it is given as: the name is the type's, printed (deterministic, unlike its pointer)
         std::string typeText;
         llvm::raw_string_ostream typeStream(typeText);
@@ -3722,6 +3784,29 @@ namespace mlirgen
 
             mlir::ValueRange leading = boundOp ? mlir::ValueRange(passed).take_front(1) : mlir::ValueRange();
             mlir::ValueRange args = boundOp ? mlir::ValueRange(passed).drop_front(1) : mlir::ValueRange(passed);
+
+            // the rest array's elements, for the parameters past the others
+            SmallVector<mlir::Value> expandedArgs;
+            if (restArray)
+            {
+                auto restIndex = (boundOp ? 1u : 0u) + (unsigned)fixedCount;
+                mlir::Value rest;
+                if (restIndex < passed.size())
+                {
+                    rest = passed[restIndex];
+                }
+                else
+                {
+                    auto restParam = builder.create<mlir_ts::ParamOp>(
+                        noLocation, mlir_ts::RefType::get(restArray), entryBlock.getArgument(restIndex),
+                        builder.getBoolAttr(false), builder.getIndexAttr(restIndex + 1));
+                    rest = builder.create<mlir_ts::LoadOp>(noLocation, restArray, restParam);
+                }
+
+                expandRestArguments(builder, noLocation, mth.getStructIndexType(), args, rest, restArray, fixedCount,
+                                    srcInputs.size(), expandedArgs);
+                args = mlir::ValueRange(expandedArgs);
+            }
             if (mlir::failed(emitSignatureAdapterBody(noLocation, callee, leading, srcInputs, inFuncType.getResults(),
                                                       args, destResults,
                                                       hasResult ? entryOp.getReference() : mlir::Value(), genContext)))
@@ -3769,7 +3854,10 @@ namespace mlirgen
 
         auto srcType = mth.GetFunctionType(valueType);
         auto destType = mth.GetFunctionType(type);
-        if (!srcType || !destType || srcType.isVarArg() || srcType.isCVarArg() || destType.isVarArg() || destType.isCVarArg())
+        // a type whose rest parameter is an array the function's parameters are read out of (TSLANG 94)
+        auto restArray = restArrayOf(destType);
+        if (!srcType || !destType || srcType.isVarArg() || srcType.isCVarArg() || (destType.isVarArg() && !restArray)
+            || destType.isCVarArg())
         {
             return mlir::Value();
         }
@@ -3795,7 +3883,10 @@ namespace mlirgen
         }
 
         bool dropResult;
-        if (!adaptableSignature(srcInputs, srcType.getResults(), destInputs, destType.getResults(), dropResult))
+        size_t fixedCount = destInputs.size();
+        if (!(restArray ? adaptableToRestArray(srcInputs, srcType.getResults(), destInputs, destType.getResults(), restArray,
+                                               dropResult, fixedCount)
+                        : adaptableSignature(srcInputs, srcType.getResults(), destInputs, destType.getResults(), dropResult)))
         {
             return mlir::Value();
         }
@@ -3809,7 +3900,7 @@ namespace mlirgen
 
         SmallVector<mlir::Type> thunkInputs{boxType};
         thunkInputs.append(destInputs.begin(), destInputs.end());
-        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), false);
+        auto thunkType = mlir_ts::FunctionType::get(builder.getContext(), thunkInputs, destType.getResults(), !!restArray);
 
         // one adapter for each pair of types: the name is the types', printed (deterministic, unlike their pointers)
         std::string typesText;
@@ -3861,8 +3952,17 @@ namespace mlirgen
                 callee = builder.create<mlir_ts::GetMethodOp>(noLocation, srcType, func);
             }
 
+            mlir::ValueRange args = entryBlock.getArguments().drop_front();
+            SmallVector<mlir::Value> expandedArgs;
+            if (restArray)
+            {
+                expandRestArguments(builder, noLocation, mth.getStructIndexType(), args, args.back(), restArray, fixedCount,
+                                    srcInputs.size(), expandedArgs);
+                args = mlir::ValueRange(expandedArgs);
+            }
+
             if (mlir::failed(emitSignatureAdapterBody(noLocation, callee, leading, srcInputs, srcType.getResults(),
-                                                      entryBlock.getArguments().drop_front(), destResults,
+                                                      args, destResults,
                                                       hasResult ? entryOp.getReference() : mlir::Value(), genContext)))
             {
                 funcOp.erase();
@@ -4109,9 +4209,19 @@ namespace mlirgen
                     guardAsBoolean = true;
                 }
 
+                // ...and a function given as one whose rest parameter holds what it takes (`(n: number) => number` as
+                // `(...args: number[]) => number`, TSLANG 94)
+                auto toRestArray = false;
+                if (auto srcFuncType = mth.GetFunctionType(valueType), destFuncType = mth.GetFunctionType(type);
+                    srcFuncType && destFuncType && !srcFuncType.isVarArg() && destFuncType.isVarArg()
+                    && destFuncType.getNumInputs() > 0 && isa<mlir_ts::ArrayType>(destFuncType.getInputs().back()))
+                {
+                    toRestArray = true;
+                }
+
                 // fewer parameters, more optional ones, a result given as `void` (`let f: () => void = n`) or
                 // widened (`() => string` as `() => string | number`): adaptableSignature
-                if (guardAsBoolean || test.result == MatchResultType::NotMatchArgCount
+                if (guardAsBoolean || toRestArray || test.result == MatchResultType::NotMatchArgCount
                     || test.result == MatchResultType::NotMatchResultCount
                     || test.result == MatchResultType::NotMatchResult)
                 {
@@ -4145,9 +4255,14 @@ namespace mlirgen
                         };
 
                         bool dropResult;
-                        ownAdapterRefused = adaptableSignature(visibleInputs(valueType, srcType), srcType.getResults(),
+                        size_t fixedCount;
+                        auto restArray = restArrayOf(destType);
+                        ownAdapterRefused = (restArray && !srcType.isVarArg() ? adaptableToRestArray(visibleInputs(valueType, srcType), srcType.getResults(),
+                                                                 visibleInputs(type, destType), destType.getResults(),
+                                                                 restArray, dropResult, fixedCount)
+                                          : adaptableSignature(visibleInputs(valueType, srcType), srcType.getResults(),
                                                                visibleInputs(type, destType), destType.getResults(),
-                                                               dropResult);
+                                                               dropResult));
                     }
 
                     emitFunctionTypeMismatch(location, valueType, type, test, ownAdapterRefused);
