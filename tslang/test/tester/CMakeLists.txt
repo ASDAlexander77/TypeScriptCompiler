@@ -1435,6 +1435,11 @@ tslang_add_test(NAME test-jit-own-00-function-value-rest-adapter COMMAND test-ru
 tslang_add_test(NAME test-compile-00-function-value-rest-adapter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_rest_adapter.ts")
 tslang_add_test(NAME test-compile-own-00-function-value-rest-adapter COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_value_rest_adapter.ts")
 tslang_add_test(NAME test-compile-own-00-own-generator-next-by-hand COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_next_by_hand.ts")
+tslang_add_test(NAME test-jit-00-own-generator-objects-from-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_objects_from_iterator.ts")
+tslang_add_test(NAME test-jit-rc-00-own-generator-objects-from-iterator COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_objects_from_iterator.ts")
+tslang_add_test(NAME test-jit-own-00-own-generator-objects-from-iterator COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_objects_from_iterator.ts")
+tslang_add_test(NAME test-compile-00-own-generator-objects-from-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_objects_from_iterator.ts")
+tslang_add_test(NAME test-compile-own-00-own-generator-objects-from-iterator COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_generator_objects_from_iterator.ts")
 tslang_add_test(NAME test-compile-own-00-callee-non-null COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00callee_non_null.ts")
 tslang_add_test(NAME test-jit-00-generator-yield-star-throw-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw_strings.ts")
 tslang_add_test(NAME test-jit-rc-00-generator-yield-star-throw-strings COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_star_throw_strings.ts")
@@ -4520,6 +4525,16 @@ add_test(NAME test-compile-diagnostic-location-own-function-value-adapter
                  -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-own-function-value-adapter.obj")
 set_tests_properties(test-compile-diagnostic-location-own-function-value-adapter
                      PROPERTIES PASS_REGULAR_EXPRESSION "own_function_value_adapter\\.ts:6:16: error: a closure that escapes owns what it captures"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# Under -mm=own a yield moves the value out of the record an iterator's next() gave (TSLANG 189); yielding it a second
+# time without a new next() stays refused.
+add_test(NAME test-compile-diagnostic-location-own-generator-value-yielded-twice
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/own_generator_value_yielded_twice.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-own-generator-value-yielded-twice.obj")
+set_tests_properties(test-compile-diagnostic-location-own-generator-value-yielded-twice
+                     PROPERTIES PASS_REGULAR_EXPRESSION "own_generator_value_yielded_twice\\.ts:7:1: error: a value that borrows a field"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # `new` on a value that is no class (`any`, a namespace, `undefined`) is an error at the `new`: it failed

@@ -1048,6 +1048,56 @@ namespace own_inference
         return false;
     }
 
+    bool OwnershipInferencePass::readsRunningGeneratorState(mlir::Operation *read)
+    {
+        auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(read);
+        auto field = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto stateLoad = field ? field.getObjectRef().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        // (the state's parameter, or the local MLIRGen keeps it in, which nothing assigns)
+        auto stateRef = stateLoad ? stateLoad.getReference() : mlir::Value();
+        mlir::Value given;
+        if (auto param = stateRef ? stateRef.getDefiningOp<mlir_ts::ParamOp>() : mlir_ts::ParamOp())
+        {
+            given = param->getOperand(0);
+        }
+        else if (auto varOp = stateRef ? stateRef.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                 varOp && !varOp.getCaptured().value_or(false) && isUnassignedSlot(varOp.getResult()))
+        {
+            given = varOp.getInitializer();
+        }
+
+        auto argument = given ? mlir::dyn_cast<mlir::BlockArgument>(given) : mlir::BlockArgument();
+        if (!argument || argument.getArgNumber() != 0 || !mlir::isa<mlir::FunctionOpInterface>(argument.getOwner()->getParentOp()))
+        {
+            return false;
+        }
+
+        mlir::Type stateType = field.getObjectRef().getType();
+        if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(stateType))
+        {
+            stateType = objectType.getStorageType();
+        }
+
+        llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+        if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(stateType))
+        {
+            fields = storageType.getFields();
+        }
+        else if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(stateType))
+        {
+            fields = tupleType.getFields();
+        }
+
+        auto nameOf = [&](size_t index) {
+            auto id = index < fields.size() ? mlir::dyn_cast_or_null<mlir::StringAttr>(fields[index].id) : mlir::StringAttr();
+            return id ? id.getValue() : llvm::StringRef();
+        };
+
+        auto isState = llvm::any_of(llvm::seq<size_t>(0, fields.size()), [&](size_t index) { return nameOf(index) == ".step"; });
+        auto name = nameOf(field.getPosition());
+        return isState && !name.empty() && name != CAPTURED_NAME && name != "next" && name != "return" && name != "throw";
+    }
+
     bool OwnershipInferencePass::dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed)
     {
         if (read && drop == read)
@@ -1149,6 +1199,12 @@ namespace own_inference
             // a local's ends where it is released, assigned or moved away (rootEnds), not inside a call that
             // borrows it. Not a local a closure may assign through its cell.
             if (read && !chain.anyPlace && readsStableFieldsOfHeldRoot(read, chain))
+            {
+                return false;
+            }
+
+            // ...nor a field of a generator's state, read off the state its method runs on
+            if (read && !chain.anyPlace && readsRunningGeneratorState(read))
             {
                 return false;
             }

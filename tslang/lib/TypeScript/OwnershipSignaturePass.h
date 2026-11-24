@@ -585,6 +585,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     void findYieldedFields(mlir::ModuleOp module);
 
+    // A record a generator keeps in its state - what an iterator's `next()` gave: for-of's `.c`,
+    // yield*'s `.yc`, a `const r = it.next()` - whose one field that owns heap memory (`value`) is
+    // read only to be yielded, or kept in a field that only yields (`for (const b of it) yield b`):
+    // each read moves the value out, and the field is emptied right after it, so the record's next
+    // overwrite, or the state's release, frees nothing the caller now has (TSLANG 189). Other reads of
+    // the value borrow it. From each take on, the record is stored anew before its value is read
+    // again - through a yield, to any place the generator may go on at - so a value is never taken
+    // twice, nor read once it is the caller's (MLIRGen's own records, read only to be taken, are so).
+    void takeYieldedResultValues(mlir::ModuleOp module, const llvm::MapVector<mlir::Type, llvm::SmallVector<int32_t>> &yielded);
+
     // A function that says `@borrows` and makes no state itself, but returns what a call that has
     // a bounded result gives it (`return this.value.matchAll(expr)`): it borrows the parameters
     // the call's bounded arguments are, or are read out of.
