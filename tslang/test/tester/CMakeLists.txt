@@ -5724,6 +5724,12 @@ add_test(NAME test-rc-conditional-array-no-class-ir
 set_tests_properties(test-rc-conditional-array-no-class-ir
                      PROPERTIES PASS_REGULAR_EXPRESSION "[}][)] {__owned_result, __owned_result_consumed} : [(]!ts[.]boolean[)] -> !ts[.]array<!ts[.]number>"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# `c == null` / `c == undefined` (loose) of a value that may be undefined leaves the equal side as it is (it was
+# narrowed to null: `c == null && c === undefined` false for undefined); results match node, every model.
+foreach(loose_nullish_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -jit -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
+    tslang_add_test(NAME test-compile-${loose_nullish_mm}-narrow-loose-nullish COMMAND test-runner -mm=${loose_nullish_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrow_loose_nullish.ts")
+endforeach()
 # USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
 # name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
 # parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
