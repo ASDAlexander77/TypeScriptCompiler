@@ -329,12 +329,16 @@ namespace own_inference
         }
 
         markCountedRetains();
-        warnCounted();
-        // an error nobody counted, or a failure no counted value's error explains
+        // an error nobody counted, or a failure no counted value's error explains: the function fails, and is not
+        // built - its counts are not reported (a "counts this object here" beside an error that stays read as if the
+        // program were built, counting)
         if (uncountedErrors > 0 || (failureSignalled && countedErrors.empty()))
         {
             PassWrapper::signalPassFailure();
+            return;
         }
+
+        warnCounted();
     }
 
     void OwnershipInferencePass::signalPassFailure()
