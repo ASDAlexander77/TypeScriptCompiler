@@ -306,6 +306,8 @@ class OwnedReturnConsumptionPass
 
         ownNewArrayArguments(mth, module);
 
+        settleOwnPatternDefaults(module);
+
         consumeConditionalResults(mth, module);
 
         claimGlobalInitializers(mth, module);
@@ -994,7 +996,7 @@ class OwnedReturnConsumptionPass
     // Does `value` stay in `block` but for its terminator? Seen through the casts that only widen it, and through a
     // conditional expression in `block` (or in a statement of it) whose branch yields it: that conditional's result
     // is the value then. `leaves` is set when `block`'s terminator takes it; false for any other terminator.
-    static bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
+    bool leavesBlockBy(mlir::Value value, mlir::Block *block, bool &leaves, int depth = 0)
     {
         if (depth > 64)
         {
@@ -1077,7 +1079,7 @@ class OwnedReturnConsumptionPass
     // through the casts that only widen it). The conditional's result may be yielded on by a branch of another
     // (`c ? (d ? [mk(i)][0] : null) : null`), and so on: `levels` is how many conditionals the literal is held past,
     // to the end of the block the outermost one is in.
-    static bool yieldedByBranch(mlir::Operation *op, const std::function<bool(mlir::Value)> &leavesUncounted, int &levels)
+    bool yieldedByBranch(mlir::Operation *op, const std::function<bool(mlir::Value)> &leavesUncounted, int &levels)
     {
         auto ifOp = conditionalOf(op->getBlock());
         if (!ifOp || !op->getParentOfType<mlir_ts::FuncOp>())
@@ -2819,6 +2821,192 @@ class OwnedReturnConsumptionPass
         consumeValueOrDefaultResults(mth, module);
     }
 
+    // -mm=own: a pattern's default stores what it yields into a slot of the scope (MLIRGenImpl::optionalValueOrDefault),
+    // which owns it and gives it back when the scope ends; the pattern's value borrows the slot. Only a new value is the
+    // slot's to own - a call's result, a new object, a fresh string, as settled here, once calls are marked: it moves in.
+    // A default that borrows (`p = e`, a field, a literal's element) is not stored: what the region yields is that
+    // value, as before, and the slot stays empty. (An array pattern's element default is the else branch of the bounds
+    // test, a `ts.If`: MLIRGenImpl::processDeclarationArrayBindingPatternSubPath.)
+    void settleOwnPatternDefaults(mlir::ModuleOp module)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return;
+        }
+
+        llvm::SmallVector<mlir_ts::StoreOp> stores;
+        module.walk([&](mlir_ts::StoreOp storeOp) {
+            auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
+                mlir::isa_and_nonnull<mlir_ts::OptionalValueOrDefaultOp, mlir_ts::ParamOptionalOp, mlir_ts::IfOp>(
+                    storeOp->getParentOp()))
+            {
+                stores.push_back(storeOp);
+            }
+        });
+
+        // the new value a region yields, where it is made: at its own `ts.Result`, or in a branch of a conditional
+        // there (`p = e ?? mk(1)`: only the branch that makes one stores it, the other yields its borrow)
+        std::function<void(mlir::Operation *, unsigned, mlir::Value)> storeNewValue = [&](mlir::Operation *resultOp, unsigned index,
+                                                                                         mlir::Value slot) {
+            auto yielded = resultOp->getOperand(index);
+            auto slotType = mlir::cast<mlir_ts::RefType>(slot.getType()).getElementType();
+            auto produced = yielded;
+            while (true)
+            {
+                // (an element of an array of `T | undefined`: the default wrapped as an optional, `ts.OptionalValue`)
+                if (auto optionalValueOp = produced.getDefiningOp<mlir_ts::OptionalValueOp>())
+                {
+                    produced = optionalValueOp.getIn();
+                    continue;
+                }
+
+                auto castOp = produced.getDefiningOp<mlir_ts::CastOp>();
+                if (!castOp || !mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                {
+                    break;
+                }
+
+                produced = castOp.getIn();
+            }
+
+            auto *producer = produced.getDefiningOp();
+            if (producer && ::typescript::mayTakeOverReference(produced) && yielded.getType() == slotType)
+            {
+                producer->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                mlir::OpBuilder builder(resultOp);
+                builder.create<mlir_ts::StoreOp>(resultOp->getLoc(), yielded, slot);
+                auto loadOp = builder.create<mlir_ts::LoadOp>(resultOp->getLoc(), slotType, slot);
+                resultOp->setOperand(index, loadOp.getResult());
+                return;
+            }
+
+            // (the one element of a literal made there only to read it, `p = [mk(1)][0]`: that element is the value; the
+            // literal is not made - it held the element and was never given back)
+            if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(producer); loadOp && produced == yielded)
+            {
+                auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>();
+                auto literal = elementRefOp ? elementRefOp->getOperand(0).getDefiningOp<mlir_ts::CreateArrayOp>()
+                                            : mlir_ts::CreateArrayOp();
+                if (literal && literal->getNumOperands() == 1 && literal->getParentRegion() == resultOp->getParentRegion() &&
+                    literal->getResult(0).hasOneUse() && elementRefOp->getResult(0).hasOneUse() && loadOp->getResult(0).hasOneUse() &&
+                    literal->getOperand(0).getType() == yielded.getType() && literal->getOperand(0).getDefiningOp() &&
+                    literal->getOperand(0).getDefiningOp()->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                    !literal->getOperand(0).getDefiningOp()->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+                {
+                    auto element = literal->getOperand(0);
+                    resultOp->setOperand(index, element);
+                    loadOp->erase();
+                    elementRefOp->erase();
+                    literal->erase();
+                    if (auto *elementProducer = element.getDefiningOp())
+                    {
+                        elementProducer->removeAttr(OWNED_RESULT_CONSUMED_ATTR_NAME);
+                    }
+
+                    storeNewValue(resultOp, index, slot);
+                    return;
+                }
+            }
+
+            if (auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(producer);
+                ifOp && produced == yielded && resultOp->getParentRegion()->isAncestor(ifOp->getParentRegion()))
+            {
+                auto resultIndex = mlir::cast<mlir::OpResult>(produced).getResultNumber();
+                for (auto &region : ifOp->getRegions())
+                {
+                    auto innerResult = region.empty() ? nullptr : region.back().getTerminator();
+                    if (mlir::isa_and_nonnull<mlir_ts::ResultOp>(innerResult) && innerResult->getNumOperands() > resultIndex)
+                    {
+                        storeNewValue(innerResult, resultIndex, slot);
+                    }
+                }
+            }
+        };
+
+        for (auto storeOp : stores)
+        {
+            // the store MLIRGen made at the region's end, and the read that follows it: put back to what the region
+            // yields, then stored where a new value is made
+            // (a parameter's default ends with `ts.ParamDefaultValue`, processOptionalParam)
+            auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(storeOp->getNextNode());
+            auto *resultOp = loadOp ? loadOp->getNextNode() : nullptr;
+            if (!loadOp || loadOp.getReference() != storeOp.getReference() ||
+                !mlir::isa_and_nonnull<mlir_ts::ResultOp, mlir_ts::ParamDefaultValueOp>(resultOp) ||
+                resultOp->getNumOperands() != 1 || resultOp->getOperand(0) != loadOp.getResult())
+            {
+                continue;
+            }
+
+            auto slot = storeOp.getReference();
+            resultOp->setOperand(0, storeOp.getValue());
+            loadOp->erase();
+            storeOp->erase();
+
+            // a slot no scope exit releases - made inside an expression (a destructuring assignment in `?:`), which
+            // does not reach the scope's end (MLIRGenImpl::releaseScopeOwnedVars): taken out, the default is what it
+            // was without one
+            if (llvm::none_of(slot.getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::ReleaseSlotOp>(user); }))
+            {
+                for (auto *user : llvm::make_early_inc_range(slot.getUsers()))
+                {
+                    auto emptyStore = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (!emptyStore)
+                    {
+                        continue;
+                    }
+
+                    auto *emptyValue = emptyStore.getValue().getDefiningOp();
+                    emptyStore->erase();
+                    if (mlir::isa_and_nonnull<mlir_ts::DefaultOp>(emptyValue) && emptyValue->use_empty())
+                    {
+                        emptyValue->erase();
+                    }
+                }
+
+                if (slot.use_empty())
+                {
+                    slot.getDefiningOp()->erase();
+                }
+
+                continue;
+            }
+
+            // A parameter that may be kept - stored, returned, given to a call or a new literal (`constructor(public
+            // a = new C())`) - holds its default as it holds an argument: own keeps it, the default moving out with
+            // it (own_param_default_kept). Only a parameter that is only read borrows the slot.
+            if (auto paramOptionalOp = mlir::dyn_cast<mlir_ts::ParamOptionalOp>(resultOp->getParentOp()))
+            {
+                auto mayKeep = llvm::any_of(paramOptionalOp->getResult(0).getUsers(), [&](mlir::Operation *user) {
+                    auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                    if (!readOp)
+                    {
+                        return !mlir::isa<mlir_ts::StoreOp>(user);
+                    }
+
+                    std::function<bool(mlir::Value)> handedOn = [&](mlir::Value value) {
+                        return llvm::any_of(value.getUsers(), [&](mlir::Operation *reader) {
+                            if (mlir::isa<mlir_ts::CastOp>(reader))
+                            {
+                                return handedOn(reader->getResult(0));
+                            }
+
+                            return !mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp,
+                                              mlir_ts::LogicalBinaryOp, mlir_ts::StringLengthOp>(reader);
+                        });
+                    };
+                    return handedOn(readOp.getResult());
+                });
+                if (mayKeep)
+                {
+                    continue;
+                }
+            }
+
+            storeNewValue(resultOp, 0, slot);
+        }
+    }
+
     // The same disagreement in a default of a destructuring pattern (`const { p = mk(1) } = { p: c ? mk(i) :
     // undefined }`): `ts.OptValueOrDefault` hands back the value the optional holds - a borrow of the field - or
     // what its default region makes - a +1 nobody took, so every evaluation that ran the default leaked it. Under rc
@@ -3373,7 +3561,7 @@ class OwnedReturnConsumptionPass
     // at the end of the `if`, and `finally { let n = mk(); for (..) { use(n); n = mk(); } }` at the
     // end of the loop body; the local then read a freed block. Such a value is left with no one to
     // give it back - a leak - which is the side the whole arc keeps the uncertain case on.
-    static bool storedIntoUnownedLocalOutside(mlir::Operation *op)
+    bool storedIntoUnownedLocalOutside(mlir::Operation *op)
     {
         llvm::SmallVector<mlir::Value> values{op->getResult(0)};
         while (!values.empty())
@@ -3432,7 +3620,7 @@ class OwnedReturnConsumptionPass
     // - what is loaded from a local of the block it is stored into: every use of that local is a load or a
     //   store, or the local is one it can't follow.
     // A store anywhere else, or a terminator handing it on otherwise (a loop's), is a use it can't follow.
-    static mlir::Operation *lastUseInBlock(mlir::Operation *op)
+    mlir::Operation *lastUseInBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         mlir::Operation *last = op;
@@ -3571,11 +3759,16 @@ class OwnedReturnConsumptionPass
     // What a branch of a conditional expression hands `value` on as: the result of the `ts.If` whose branch this
     // `ts.Result` ends, at each position the branch yields `value` in - a conditional may yield more than one value
     // (holdPastConditional adds the literal its branch holds). None for any other user.
-    static llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
+    // (under rc and own also the default of a value-or-default - `const { p = e } = r` hands `e` on as the op's result;
+    // gc and none keep their IR)
+    llvm::SmallVector<mlir::Value, 1> handedOnByConditional(mlir::Operation *user, mlir::Value value)
     {
         llvm::SmallVector<mlir::Value, 1> handedOn;
-        auto ifOp = mlir::isa<mlir_ts::ResultOp>(user) ? mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp()) : mlir_ts::IfOp();
-        if (!ifOp || ifOp.getNumResults() != user->getNumOperands())
+        auto *conditional = mlir::isa<mlir_ts::ResultOp>(user) ? user->getParentOp() : nullptr;
+        if (!conditional ||
+            !(mlir::isa<mlir_ts::IfOp>(conditional) ||
+              (compileOptions.tracksOwnership() && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(conditional))) ||
+            conditional->getNumResults() != user->getNumOperands())
         {
             return handedOn;
         }
@@ -3584,7 +3777,7 @@ class OwnedReturnConsumptionPass
         {
             if (operand.get() == value)
             {
-                handedOn.push_back(ifOp.getResult(operand.getOperandNumber()));
+                handedOn.push_back(conditional->getResult(operand.getOperandNumber()));
             }
         }
 
@@ -3703,7 +3896,7 @@ class OwnedReturnConsumptionPass
     // was born with, and a release before the yield would free what the caller reads. Any store
     // is treated that way, rather than telling the record apart from a place that does count.
     // Under rc the record takes a reference of its own (retainYieldedRecords).
-    static bool escapesThroughStore(mlir::Value value)
+    bool escapesThroughStore(mlir::Value value)
     {
         for (auto *user : value.getUsers())
         {
@@ -3724,7 +3917,7 @@ class OwnedReturnConsumptionPass
             }
 
             // `yield b ? h : h2` stores what the branch hands on
-            if (llvm::any_of(handedOnByConditional(user, value), [](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
+            if (llvm::any_of(handedOnByConditional(user, value), [&](mlir::Value handedOn) { return escapesThroughStore(handedOn); }))
             {
                 return true;
             }

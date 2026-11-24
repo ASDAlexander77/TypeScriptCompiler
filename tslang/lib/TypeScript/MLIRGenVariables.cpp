@@ -507,8 +507,35 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
-        bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType, const GenContext &genContext)
+        bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
+        Expression defaultValue, bool bindsName, const GenContext &genContext)
     {
+        // An element's default (`const [a = mk(1), b = mk(2)] = [mk(i)]`) is its value where the element is missing - past
+        // the end of the source, or undefined there - as in TypeScript. It was not applied: an element past the end of a
+        // literal was undefined (the compiler crashed reading it) or the default of its type (`[a = 1, b = 2] = [5]` gave
+        // b 0). `castTo`: the element type the value must have, where the other way gives one of that type.
+        auto makeDefault = [&](mlir::Type castTo) -> mlir::Value {
+            auto result = mlirGen(defaultValue, genContext);
+            if (result.failed_or_no_value())
+            {
+                return mlir::Value();
+            }
+
+            auto value = V(result);
+            if (castTo && value.getType() != castTo)
+            {
+                auto castResult = cast(location, castTo, value, genContext);
+                if (castResult.failed_or_no_value())
+                {
+                    return mlir::Value();
+                }
+
+                value = V(castResult);
+            }
+
+            return value;
+        };
+
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, builder.getI32IntegerAttr(index));
         mlir::Value subInit =
             mlir::TypeSwitch<mlir::Type, mlir::Value>(type)
@@ -545,7 +572,7 @@ namespace mlirgen
                     // as the element of an array is; read, it was no value and the statement failed with nothing said
                     if (index >= (int)constTupleType.size())
                     {
-                        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+                        return defaultValue ? makeDefault(mlir::Type()) : V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
                     }
 
                     return cl.Tuple(constTupleType, true); 
@@ -583,7 +610,7 @@ namespace mlirgen
                     // as the element of an array is; read, it was no value and the statement failed with nothing said
                     if (index >= (int)tupleType.size())
                     {
-                        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+                        return defaultValue ? makeDefault(mlir::Type()) : V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
                     }
 
                     return cl.Tuple(tupleType, true); 
@@ -605,7 +632,8 @@ namespace mlirgen
                     // past the end: the default of the element type, null for a reference (see below)
                     if (static_cast<unsigned>(index) >= constArrayType.getSize())
                     {
-                        return V(builder.create<mlir_ts::DefaultOp>(location, constArrayType.getElementType()));
+                        return defaultValue ? makeDefault(mlir::Type())
+                                            : V(builder.create<mlir_ts::DefaultOp>(location, constArrayType.getElementType()));
                     }
 
                     // TODO: unify it with ElementAccess
@@ -632,6 +660,87 @@ namespace mlirgen
                     auto inBoundsValue = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
                         builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), lengthValue, indexValue));
 
+                    // (a literal that has the element - `[[k = mk(1)] = []] = [[mk(i)]]` - always gives it: the default
+                    // never applies, as for a constant array)
+                    // (unless the element may be undefined: `[u = 3] = [undefined]`)
+                    auto elementMayBeUndefined = [&](mlir::Type elementType) {
+                        if (isa<mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::AnyType, mlir_ts::UnknownType>(elementType))
+                        {
+                            return true;
+                        }
+
+                        auto unionType = dyn_cast<mlir_ts::UnionType>(elementType);
+                        return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type type) {
+                                   return isa<mlir_ts::UndefinedType, mlir_ts::OptionalType>(type);
+                               });
+                    };
+                    // (also an inner literal read out of an outer one: `[[b = mk(1)] = [mk(2)]] = [[mk(i)]]`)
+                    auto literalOf = [](mlir::Value value) {
+                        while (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+                        {
+                            auto elementRefOp = loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>();
+                            auto outer = elementRefOp ? elementRefOp->getOperand(0).getDefiningOp<mlir_ts::CreateArrayOp>()
+                                                      : mlir_ts::CreateArrayOp();
+                            auto indexOp = elementRefOp ? elementRefOp->getOperand(1).getDefiningOp<mlir_ts::ConstantOp>()
+                                                        : mlir_ts::ConstantOp();
+                            auto indexAttr = indexOp ? dyn_cast<mlir::IntegerAttr>(indexOp.getValue()) : mlir::IntegerAttr();
+                            if (!outer || !indexAttr || indexAttr.getInt() < 0 ||
+                                indexAttr.getInt() >= (int64_t)outer->getNumOperands())
+                            {
+                                break;
+                            }
+
+                            value = outer->getOperand(indexAttr.getInt());
+                        }
+
+                        return value.getDefiningOp<mlir_ts::CreateArrayOp>();
+                    };
+                    if (auto createArrayOp = literalOf(init);
+                        defaultValue && createArrayOp && static_cast<unsigned>(index) < createArrayOp->getNumOperands() &&
+                        !elementMayBeUndefined(arrayType.getElementType()))
+                    {
+                        // the element, read as out of a constant array: no bounds test (an inner pattern reads it on)
+                        auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                            builder.getI32IntegerAttr(index));
+                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                            location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
+                        return V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef));
+                    }
+
+                    // (with a default of another type, `const [a, b = "q"] = numbers`, the element is of both)
+                    mlir::Type valueType = arrayType.getElementType();
+                    if (defaultValue)
+                    {
+                        if (auto defaultType = evaluate(defaultValue, genContext))
+                        {
+                            defaultType = mth.wideStorageType(defaultType);
+                            llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
+                            // (an array default of an array element - `[[k = mk(1)] = []]` - is of the element's type)
+                            auto bothArrays = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(defaultType) &&
+                                              isa<mlir_ts::ArrayType>(valueType);
+                            if (defaultType != valueType && !bothArrays &&
+                                mth.extendsType(location, defaultType, valueType, typeParamsWithArgs) != ExtendsResult::True)
+                            {
+                                valueType = getUnionType(location, valueType, defaultType);
+                            }
+                        }
+                    }
+
+                    // (without a default, an element past the end is undefined: a name bound to an element of a reference
+                    // type is `T | undefined` - readsUndefinedPastEnd; it read as null. Not where a literal has the element,
+                    // nor for an inner pattern, which reads the element on)
+                    auto createArrayOfInit = literalOf(init);
+                    if (!defaultValue && !isDotDotDot && bindsName && readsUndefinedPastEnd(valueType) &&
+                        !(createArrayOfInit && static_cast<unsigned>(index) < createArrayOfInit->getNumOperands()))
+                    {
+                        valueType = mlir_ts::OptionalType::get(valueType);
+                    }
+
+                    // -mm=own: a default that makes a new value is held by a slot of the scope, as an object pattern's is
+                    // (optionalValueOrDefault); the element read borrows the slot or the source's element. A new value
+                    // merged with a borrow of the element had no owner: own refused the pattern.
+                    auto defaultSlot = defaultValue ? ownPatternDefaultSlot(location, valueType, genContext) : mlir::Value();
+
                     auto result = conditionalValue(location, inBoundsValue,
                         [&]() {
                             // TODO: unify it with ElementAccess
@@ -639,10 +748,40 @@ namespace mlirgen
                                                                                 builder.getI32IntegerAttr(index));
                             auto elemRef = builder.create<mlir_ts::ElementRefOp>(
                                 location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
-                            return ValueOrLogicalResult(
-                                V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef)));
+                            mlir::Value element = V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef));
+                            if (element.getType() != valueType)
+                            {
+                                auto castResult = cast(location, valueType, element, genContext);
+                                EXIT_IF_FAILED_OR_NO_VALUE(castResult)
+                                element = V(castResult);
+                            }
+
+                            return ValueOrLogicalResult(element);
                         },
                         [&](mlir::Type elementType) {
+                            if (defaultValue)
+                            {
+                                auto value = makeDefault(elementType);
+                                if (!value)
+                                {
+                                    return ValueOrLogicalResult(mlir::failure());
+                                }
+
+                                // (kept only for a new value: settleOwnPatternDefaults)
+                                if (defaultSlot && value.getType() == valueType)
+                                {
+                                    builder.create<mlir_ts::StoreOp>(location, value, defaultSlot);
+                                    value = builder.create<mlir_ts::LoadOp>(location, valueType, defaultSlot);
+                                }
+
+                                return ValueOrLogicalResult(value);
+                            }
+
+                            if (isa<mlir_ts::OptionalType>(elementType))
+                            {
+                                return ValueOrLogicalResult(V(builder.create<mlir_ts::OptionalUndefOp>(location, elementType)));
+                            }
+
                             return ValueOrLogicalResult(V(builder.create<mlir_ts::DefaultOp>(location, elementType)));
                         });
                     return result.failed_or_no_value() ? mlir::Value() : V(result);
@@ -697,6 +836,22 @@ namespace mlirgen
         if (!subInit)
         {
             return mlir::failure();
+        }
+
+        // ...and where the element read is undefined, or may be (`[a = 1] = [undefined]`, an optional element)
+        if (defaultValue && !isDotDotDot)
+        {
+            if (isa<mlir_ts::UndefinedType>(subInit.getType()))
+            {
+                return makeDefault(mlir::Type());
+            }
+
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(subInit.getType()))
+            {
+                auto result = optionalValueOrDefault(location, optionalType.getElementType(), subInit, defaultValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                return V(result);
+            }
         }
 
         return subInit; 
@@ -792,7 +947,8 @@ namespace mlirgen
 
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
                 auto result = processDeclarationArrayBindingPatternSubPath(
-                    location, index, type, init, !!arrayBindingElement->dotDotDotToken, isIterator, isSourceArrayLike, arrayLikeLengthValue, arrayLikeElementType, genContext);
+                    location, index, type, init, !!arrayBindingElement->dotDotDotToken, isIterator, isSourceArrayLike, arrayLikeLengthValue, arrayLikeElementType,
+                    arrayBindingElement->initializer, arrayBindingElement->name == SyntaxKind::Identifier, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 

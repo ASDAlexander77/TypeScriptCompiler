@@ -5629,6 +5629,91 @@ foreach(getter_mm rc gc none)
     tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
     tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
 endforeach()
+# -mm=own: a parameter's default that makes a new value (a function's, a method's, a constructor's, an arrow's, a
+# closure's) is owned by the frame's slot (#1015's, for rc) and given back at exit (it leaked); the same program under
+# rc and gc. IR: the default stores the new value into the slot and gives a read of it (none before).
+foreach(param_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${param_default_mm}-own-param-default-new-value COMMAND test-runner -jit -mm=${param_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+    tslang_add_test(NAME test-compile-${param_default_mm}-own-param-default-new-value COMMAND test-runner -mm=${param_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+endforeach()
+add_test(NAME test-own-param-default-slot
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_default_new_value.ts")
+set_tests_properties(test-own-param-default-slot
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Store\"[(]%[0-9]+, %[0-9]+[)] : [(]!ts[.]class<@N[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[(]%[0-9]+[)] : [(]!ts[.]ref<!ts[.]class<@N[^\n]*\n *\"ts[.]DefaultValue\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=own: a pattern's default that makes a new value (`const { p = mk(1) } = r`, `e ?? mk(1)`, `[mk(1)][0]`,
+# `"q" + i`) is held by a slot of the scope and given back when the scope ends (it leaked); the same program under
+# rc and gc. IR: the default stores the new value into the slot and yields a read of it (none before).
+foreach(pattern_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${pattern_default_mm}-own-pattern-default-new-value COMMAND test-runner -jit -mm=${pattern_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_new_value.ts")
+    tslang_add_test(NAME test-compile-${pattern_default_mm}-own-pattern-default-new-value COMMAND test-runner -mm=${pattern_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_new_value.ts")
+endforeach()
+add_test(NAME test-own-pattern-default-slot
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_new_value.ts")
+set_tests_properties(test-own-pattern-default-slot
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Store\"[(]%[0-9]+, %[0-9]+[)] : [(]!ts[.]class<@N[^\n]*\n *%[0-9]+ = \"ts[.]Load\"[(]%[0-9]+[)] : [(]!ts[.]ref<!ts[.]class<@N[^\n]*\n *\"ts[.]Result\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# -mm=own: a pattern's default that makes a new value in a `try` body or a `switch` case (with a block or without one,
+# in a loop, with a throw out of the try body) has its slot made in front of the TryOp/SwitchOp, as an owned local
+# does (it failed: "operand #0 does not dominate this use"); the same program under rc and gc. Inside an expression
+# (a destructuring assignment in `?:`) own refuses it as before, with the ownership error, not that internal one.
+foreach(pattern_default_try_mm gc rc own)
+    tslang_add_test(NAME test-jit-${pattern_default_try_mm}-own-pattern-default-try-switch COMMAND test-runner -jit -mm=${pattern_default_try_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_try_switch.ts")
+    tslang_add_test(NAME test-compile-${pattern_default_try_mm}-own-pattern-default-try-switch COMMAND test-runner -mm=${pattern_default_try_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_pattern_default_try_switch.ts")
+endforeach()
+add_test(NAME test-compile-own-pattern-default-in-expression-error COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_pattern_default_in_expression_error.ts")
+set_tests_properties(test-compile-own-pattern-default-in-expression-error PROPERTIES PASS_REGULAR_EXPRESSION "a value that borrows 'r.p' cannot be stored, returned or captured"
+                                                                                   FAIL_REGULAR_EXPRESSION "does not dominate|Stack dump|Assertion failed")
+# -mm=own: an array pattern's element default that makes a new value (`const [a = mk(1)] = xs`; `(N | null)[]`,
+# `(N | undefined)[]`, in a `try`, a nested pattern of a field, a destructured parameter) is held by a slot, as an
+# object pattern's is (own refused these once the default was applied); the same program under rc and gc.
+foreach(array_default_mm gc rc own)
+    tslang_add_test(NAME test-jit-${array_default_mm}-own-array-pattern-default-new-value COMMAND test-runner -jit -mm=${array_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_pattern_default_new_value.ts")
+    tslang_add_test(NAME test-compile-${array_default_mm}-own-array-pattern-default-new-value COMMAND test-runner -mm=${array_default_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_array_pattern_default_new_value.ts")
+endforeach()
+# A pattern's default that is a local (`const e = mk(i + 1); const { p = e } = r`) gives the local back at the end of
+# its block under rc and own (it leaked): the default hands it on as the value-or-default's result. A named record,
+# a `let`, an array pattern under every model; a record literal source and the assignment form under gc and rc.
+foreach(default_local_mm gc rc own)
+    tslang_add_test(NAME test-jit-${default_local_mm}-destructuring-default-local COMMAND test-runner -jit -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local.ts")
+    tslang_add_test(NAME test-compile-${default_local_mm}-destructuring-default-local COMMAND test-runner -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local.ts")
+endforeach()
+foreach(default_local_mm gc rc)
+    tslang_add_test(NAME test-jit-${default_local_mm}-destructuring-default-local-literal COMMAND test-runner -jit -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local_literal.ts")
+    tslang_add_test(NAME test-compile-${default_local_mm}-destructuring-default-local-literal COMMAND test-runner -mm=${default_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_default_local_literal.ts")
+endforeach()
+# Array destructuring past the end of its source applies the element's default (`const [a = 1, b = 2] = [5]`, b was
+# 0; with objects the compiler crashed): numbers and strings under every model, objects under gc and rc (own refuses a
+# borrow of the literal's element beside a new default).
+foreach(past_end_mm gc rc own)
+    tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
+    tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end.ts")
+endforeach()
+# USER RULING 11-24: an element past the end of an array value, without a default, is undefined, as node has it. A
+# name bound to an element of a reference type (`const [a, b] = [mk(5)] as N[]`, `(N | null)[]`, nested, for-of, a
+# parameter) is `T | undefined` (it read null); number[]/string[] keep their type's default. The assignment form gives
+# undefined to a target that can hold it (own refuses that shape, as before). IR: the past-end branch yields an
+# undefined `N | undefined`.
+foreach(past_end_undefined_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${past_end_undefined_mm}-destructuring-past-end-undefined COMMAND test-runner -jit -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+    tslang_add_test(NAME test-compile-${past_end_undefined_mm}-destructuring-past-end-undefined COMMAND test-runner -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+endforeach()
+foreach(past_end_undefined_mm gc rc none)
+    tslang_add_test(NAME test-jit-${past_end_undefined_mm}-destructuring-past-end-undefined-assign COMMAND test-runner -jit -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined_assign.ts")
+    tslang_add_test(NAME test-compile-${past_end_undefined_mm}-destructuring-past-end-undefined-assign COMMAND test-runner -mm=${past_end_undefined_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined_assign.ts")
+endforeach()
+add_test(NAME test-destructuring-past-end-undefined-ir
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=gc
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_past_end_undefined.ts")
+set_tests_properties(test-destructuring-past-end-undefined-ir
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]OptionalUndef\"[(][)] : [(][)] -> !ts[.]optional<!ts[.]class<@N"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+foreach(past_end_mm gc rc)
+    tslang_add_test(NAME test-jit-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -jit -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")
+    tslang_add_test(NAME test-compile-${past_end_mm}-destructuring-default-past-end-objects COMMAND test-runner -mm=${past_end_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00destructuring_default_past_end_objects.ts")
+endforeach()
 # A conditional's branch yielding an element of an array literal nested in another (`c ? [[mk(i)]][0][0] :
 # null`), a field read out of an element (`c ? [{ v: mk(i) }][0].v : null`), also past a cast that only narrows
 # (`!`, `as N`, `<N>`), an optional chain out of a literal (`c ? [[mk(i)]][0]?.[0] : null`), or an element of a
