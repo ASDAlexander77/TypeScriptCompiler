@@ -1201,6 +1201,13 @@ class MLIRGenImpl
 
     // `onlyOnAttr` names the copies of a hand-written finally the releases are kept in -
     // UNWIND_ONLY_ATTR_NAME or RETURN_ONLY_ATTR_NAME - or is empty for an ordinary release
+    bool isPatternDefaultSlotOutOfReach(mlir::Value storage)
+    {
+        auto varOp = storage.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && varOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME) &&
+               !varOp->getParentRegion()->isAncestor(builder.getInsertionBlock()->getParent());
+    }
+
     void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars,
                                StringRef onlyOnAttr = {})
     {
@@ -1219,6 +1226,14 @@ class MLIRGenImpl
             }
             else if (isOwnedLocalSlot(storage))
             {
+                // (a pattern default's slot made inside an expression does not reach the scope's end:
+                // ownPatternDefaultSlot)
+                if (isPatternDefaultSlotOutOfReach(storage))
+                {
+                    continue;
+                }
+
+
                 releaseOp = builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
                 // a closure written further on may still capture it (releaseCapturedSlotsAsCells)
                 releaseOp->setAttr(SCOPE_EXIT_RELEASE_ATTR_NAME, builder.getUnitAttr());
@@ -2327,12 +2342,25 @@ class MLIRGenImpl
         }
 
         // A value read out of an element, through any casts: what `a[0]` is in `const c = a[0]`, and
-        // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if).
+        // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if; of a reference
+        // type, `T | undefined`, the element wrapped as an optional: readsUndefinedPastEnd).
         static bool readsElement(mlir::Value value)
         {
-            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            while (value)
             {
-                value = castOp.getIn();
+                if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                    continue;
+                }
+
+                if (auto optionalValueOp = value.getDefiningOp<mlir_ts::OptionalValueOp>())
+                {
+                    value = optionalValueOp.getIn();
+                    continue;
+                }
+
+                break;
             }
 
             if (auto ifOp = value ? value.getDefiningOp<mlir_ts::IfOp>() : mlir_ts::IfOp())
@@ -3647,7 +3675,25 @@ class MLIRGenImpl
     // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
-        bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType, const GenContext &genContext);
+        bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
+        Expression defaultValue, bool bindsName, const GenContext &genContext);
+
+    // An element of an array value past its end is undefined (`const [a, b] = [mk(5)] as N[]`: b, as node has it).
+    // A reference element type (a class, an interface, an object, an array, a tuple, a union with one of those or
+    // null) is read as `T | undefined` then - its own type has only null for "nothing", and the element read as null.
+    // A primitive one (number, boolean, string, a union of those) keeps its type and reads as its type's default: the
+    // variable could not hold undefined.
+    static bool readsUndefinedPastEnd(mlir::Type elementType)
+    {
+        if (isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ObjectType, mlir_ts::ArrayType, mlir_ts::TupleType,
+                mlir_ts::NullType>(elementType))
+        {
+            return true;
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(elementType);
+        return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type type) { return readsUndefinedPastEnd(type); });
+    }
 
     mlir::LogicalResult processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
                                                VariableClass varClass,
@@ -5059,8 +5105,55 @@ class MLIRGenImpl
         return mclh.conditionalValue(condValue, trueValue, falseValue);
     }    
 
+    // -mm=own: the slot a pattern's default that makes a new value is held by (optionalValueOrDefault), a slot of the
+    // scope, released when the scope ends. Made where the scope's owned locals are: in a `try` body or a `switch` case,
+    // in front of the TryOp/SwitchOp, as an owned local is hoisted (mlirGen(VariableDeclaration)) - made in the region,
+    // it did not dominate the release on the unwind leg or at the switch's end ("operand #0 does not dominate this
+    // use"). None in a generator, whose locals are fields of the generator object kept between turns: the default is
+    // what it was before, refused where it was refused. A slot made inside an expression (a destructuring assignment in
+    // `?:`) does not dominate the scope's end either: it is not released there (releaseScopeOwnedVars), and
+    // settleOwnPatternDefaults takes such a slot out again.
+    mlir::Value ownPatternDefaultSlot(mlir::Location location, mlir::Type dataType, const GenContext &genContext)
+    {
+        // (a destructured parameter's default: the frame's, listed when the prologue is done, mlirGenFunctionBody)
+        if (compileOptions.memoryModel != MemoryModelOwn || !(genContext.ownedVars || genContext.bindingParamPatterns) ||
+            genContext.generatorSwitchOperation || !mth.ownsHeapMemory(location, dataType))
+        {
+            return mlir::Value();
+        }
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        if ((genContext.allocateScopeOwnedVarsOutsideOfOperation || genContext.allocateVarsOutsideOfOperation) &&
+            genContext.currentOperation)
+        {
+            builder.setInsertionPoint(genContext.currentOperation);
+        }
+
+        mlir::Value defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
+                                                                      builder.getBoolAttr(false), builder.getIndexAttr(0));
+        auto empty = builder.create<mlir_ts::DefaultOp>(location, dataType);
+        builder.create<mlir_ts::StoreOp>(location, empty, defaultSlot);
+        auto varOp = defaultSlot.getDefiningOp<mlir_ts::VariableOp>();
+        varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+        varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+        varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
+        if (genContext.ownedVars)
+        {
+            genContext.ownedVars->push_back(defaultSlot);
+        }
+
+        return defaultSlot;
+    }
+
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
+        // -mm=own: a default that makes a new value (`const { p = mk(1) } = r`, `"q" + i`) is held by a slot of the scope,
+        // empty unless the default is taken, given back when the scope ends, as a local is; the value read borrows it, as
+        // it borrows the field otherwise. Nothing owned the new value: every evaluation that ran the default leaked it.
+        // A borrowed default (`p = e`) is not stored (settleOwnPatternDefaults).
+        // (rc settles the op in OwnedReturnConsumptionPass, consumeValueOrDefaultResults.)
+        auto defaultSlot = ownPatternDefaultSlot(location, dataType, genContext);
+
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
             location, dataType, value);
 
@@ -5083,6 +5176,14 @@ class MLIRGenImpl
             CAST(defaultValue, location, dataType, defaultValue, genContext);
         }
 
+        // (whether the default is a new value is known once calls are settled: OwnedReturnConsumptionPass,
+        // settleOwnPatternDefaults, keeps the store of one and drops it for a borrowed default)
+        if (defaultSlot)
+        {
+            builder.create<mlir_ts::StoreOp>(location, defaultValue, defaultSlot);
+            defaultValue = builder.create<mlir_ts::LoadOp>(location, dataType, defaultSlot);
+        }
+
         builder.create<mlir_ts::ResultOp>(location, defaultValue);
 
         builder.setInsertionPointAfter(optionalValueOrDefaultOp);
@@ -5097,8 +5198,11 @@ class MLIRGenImpl
         // printed 0). A function gives back none of its parameters (the caller owns what it passes), so the value is
         // owned by a slot of the frame, empty unless the default is taken, given back at the function's exit
         // (mlirGenFunctionBody lists it with the parameters' storage); the parameter borrows it.
+        // -mm=own the same: the slot owns a new default value, moved in (settleOwnPatternDefaults keeps the store of one
+        // and drops it for a borrowed default, which the parameter then borrows as before)
+        auto ownSlot = compileOptions.memoryModel == MemoryModelOwn;
         mlir::Value defaultSlot;
-        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, dataType))
+        if ((compileOptions.isRefCounted() || ownSlot) && mth.ownsHeapMemory(location, dataType))
         {
             defaultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(dataType), mlir::Value(),
                                                               builder.getBoolAttr(false), builder.getIndexAttr(0));
@@ -5108,6 +5212,10 @@ class MLIRGenImpl
             varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
             varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
             varOp->setAttr(DEFAULT_VALUE_SLOT_ATTR_NAME, builder.getUnitAttr());
+            if (ownSlot)
+            {
+                varOp->setAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME, builder.getUnitAttr());
+            }
         }
 
         auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
@@ -5135,8 +5243,11 @@ class MLIRGenImpl
         if (defaultSlot)
         {
             // as an awaited result's slot takes it (mlirGen(AwaitExpression)): a value that carries a reference
-            // hands it over, anything else is retained
-            if (producesOwnedReference(defaultValue))
+            // hands it over, anything else is retained (own: settled later, no retain)
+            if (ownSlot)
+            {
+            }
+            else if (producesOwnedReference(defaultValue))
             {
                 consumeOwnedReference(defaultValue);
             }
@@ -10331,6 +10442,51 @@ class MLIRGenImpl
                     }
 
                     if (mlir::failed(saveTo(rightValue)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    continue;
+                }
+
+                // An element past the end is undefined (as node has it): a target that can hold undefined (`let b: N |
+                // undefined; [a, b] = xs`) is given undefined there, not null - the element is read as `T | undefined`
+                // behind a bounds test (readsUndefinedPastEnd). A target that cannot hold it keeps the read below.
+                auto targetHoldsUndefined = [&]() {
+                    if (!leftExpressionValue || !readsUndefinedPastEnd(elementType))
+                    {
+                        return false;
+                    }
+
+                    auto targetType = leftExpressionValue.getType();
+                    if (isa<mlir_ts::OptionalType>(targetType))
+                    {
+                        return true;
+                    }
+
+                    auto unionType = dyn_cast<mlir_ts::UnionType>(targetType);
+                    return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type type) {
+                               return isa<mlir_ts::UndefinedType, mlir_ts::OptionalType>(type);
+                           });
+                };
+                if (!defaultValue && targetHoldsUndefined())
+                {
+                    auto lengthValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), rightExpressionValue);
+                    auto boundValue = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), mth.getIndexAttrValue(index));
+                    auto inBounds = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                        builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), lengthValue, boundValue));
+                    auto optionalType = mlir_ts::OptionalType::get(elementType);
+                    auto conditional = conditionalValue(location, inBounds,
+                        [&]() -> ValueOrLogicalResult {
+                            auto element = readElement();
+                            CAST_A(optionalElement, location, optionalType, element, genContext);
+                            return ValueOrLogicalResult(optionalElement);
+                        },
+                        [&](mlir::Type trueValueType) {
+                            return ValueOrLogicalResult(V(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType)));
+                        });
+                    EXIT_IF_FAILED_OR_NO_VALUE(conditional)
+                    if (mlir::failed(saveTo(V(conditional))))
                     {
                         return mlir::failure();
                     }

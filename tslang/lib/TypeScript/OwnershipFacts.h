@@ -1525,7 +1525,10 @@ inline bool mayWriteField(mlir::Operation *op, mlir_ts::PropertyRefOp field, mli
         }
         else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(inner))
         {
-            writes = writesPlace(releaseSlotOp.getSlot());
+            // (a slot owning a default value - a parameter's or a pattern's - frees what a parameter or local
+            // reading its field may be: `m(p = mk(1)) { return p.x; }` read it after the release)
+            auto slotOp = releaseSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            writes = writesPlace(releaseSlotOp.getSlot()) || (slotOp && slotOp->hasAttr(PATTERN_DEFAULT_SLOT_ATTR_NAME));
         }
         else if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(inner))
         {
