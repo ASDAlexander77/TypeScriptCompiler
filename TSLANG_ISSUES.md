@@ -3109,4 +3109,8 @@ Looked at, still open:
 - -mm=own: a call of a function value (`f()` of a variable) that throws an object through a yielding finally still
   stops at run time: which function it is is known at run time only.
 
+Decided: -mm=own, a generator's for-of over a field of `this` whose elements are objects (`for (const o of
+this.objs) yield o.n`, 182's leftover) stays refused, with its error. USER RULING 2026-11-24: not moving each element
+out of the array (which would empty it, unlike JavaScript).
+
 Tests diagnostic-location `generator_override_throwing_object_through_yielding_finally_own.ts`.
