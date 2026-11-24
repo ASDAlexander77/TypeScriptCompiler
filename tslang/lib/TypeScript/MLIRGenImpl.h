@@ -5204,11 +5204,57 @@ class MLIRGenImpl
                     NodeArray<Statement> statements;
                     statements.push_back(nf.createVariableStatement(
                         undefined, nf.createVariableDeclarationList(delegateDeclarations, NodeFlags::Const)));
-                    statements.push_back(nf.createForOfStatement(undefined, declList, delegateIdent,
-                                                                 nf.createExpressionStatement(_yield_expr)));
 
                     GenContext delegateGenContext(genContext);
                     delegateGenContext.yieldStarDelegate = ".yd";
+
+                    // ...and one that has `throw` too: a throw() of this generator at that yield is handed to it
+                    // (TSLANG 183) - it may catch the exception and go on yielding, or finish - so the loop calls
+                    // next() itself, and the resume check puts what throw() gives in place of the next step:
+                    //   let .yc = .yd.next();
+                    //   while (!.yc.done) { let .ys = false; yield .yc.value; if (!.ys) .yc = .yd.next(); }
+                    // (the resume check: `.yc = .yd.throw!(this.thrown); .ys = true;`, mlirGenGeneratorResumeChecks)
+                    if (delegateInfo->findField(builder.getStringAttr("throw")) || delegateInfo->findMethod("throw"))
+                    {
+                        auto resultIdent = nf.createIdentifier(S(".yc"));
+                        auto skipIdent = nf.createIdentifier(S(".ys"));
+                        auto nextCall = [&]() {
+                            return nf.createCallExpression(
+                                nf.createPropertyAccessExpression(delegateIdent, nf.createIdentifier(S(ITERATOR_NEXT))), undefined,
+                                NodeArray<Expression>());
+                        };
+                        auto declare = [&](Identifier name, Expression initializer) {
+                            NodeArray<VariableDeclaration> declarations;
+                            declarations.push_back(nf.createVariableDeclaration(name, undefined, undefined, initializer));
+                            return nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Let));
+                        };
+
+                        _yield_expr->expression = nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("value")));
+
+                        NodeArray<Statement> loopStatements;
+                        loopStatements.push_back(declare(skipIdent, nf.createToken(SyntaxKind::FalseKeyword)));
+                        loopStatements.push_back(nf.createExpressionStatement(_yield_expr));
+                        loopStatements.push_back(nf.createIfStatement(
+                            nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken), skipIdent),
+                            nf.createExpressionStatement(
+                                nf.createBinaryExpression(resultIdent, nf.createToken(SyntaxKind::EqualsToken), nextCall())),
+                            undefined));
+
+                        statements.push_back(declare(resultIdent, nextCall()));
+                        statements.push_back(nf.createWhileStatement(
+                            nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken),
+                                                           nf.createPropertyAccessExpression(resultIdent, nf.createIdentifier(S("done")))),
+                            nf.createBlock(loopStatements, false)));
+
+                        delegateGenContext.yieldStarResult = ".yc";
+                        delegateGenContext.yieldStarSkipNext = ".ys";
+                    }
+                    else
+                    {
+                        statements.push_back(nf.createForOfStatement(undefined, declList, delegateIdent,
+                                                                     nf.createExpressionStatement(_yield_expr)));
+                    }
+
                     for (auto statement : statements)
                     {
                         if (mlir::failed(mlirGen(statement, delegateGenContext)))

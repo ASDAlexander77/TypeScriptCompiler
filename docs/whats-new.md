@@ -1,5 +1,6 @@
 # What's new
 
+- `arguments.length` counts the arguments given, not the parameters declared; a generic arrow can be given to a generic parameter (`wrap(<T>(x: T) => x)`), and a function to `(...args: A) => T`; throw() of a generator paused in a `yield*` is handed to the delegate's throw(), which may catch it and go on yielding
 - -mm=own: `for (const s of this.items) yield s` works in a generator method: the field is read again at each step (a field assigned during the loop is followed, unlike JavaScript's for-of)
 - -mm=own: a field read through a union of object shapes can be returned as a borrow of the argument (`getBox(s: Sq | Ci) { return s.box; }`); a method that throws an object through a `finally` that yields is a compile error at the call
 - -mm=own: a value moved in some branches of an `if ... else if` with no `else` is released on the others; `typeof a === "string"` narrows a `const` holding an `any`; a call that throws an object through a `finally` that yields is a compile error, not a stop at run time

@@ -383,6 +383,10 @@ struct GenContext
     // In the loop a `yield*` makes over a delegate that has `return`: the variable holding it, whose return() a
     // return() of the generator calls first at that yield (mlirGenGeneratorResumeChecks)
     const char *yieldStarDelegate = nullptr;
+    // ...and where a throw() of the generator at that yield is handed to the delegate's throw() (TSLANG 183): the
+    // variable its result goes to, in place of the delegate's next(), and the flag that says next() is not called
+    const char *yieldStarResult = nullptr;
+    const char *yieldStarSkipNext = nullptr;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;
