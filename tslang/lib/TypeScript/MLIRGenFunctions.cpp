@@ -472,8 +472,16 @@ namespace mlirgen
         // after the others, ARGUMENT_COUNT_NAME, which a call by its name gives the count of its arguments
         // (mlirGenCall); a call of it as a function value leaves it out, and the count is worked out as before
         // (mlirGenArguments)
-        if (kind == SyntaxKind::FunctionDeclaration && parametersContextAST.as<FunctionDeclaration>()->body &&
-            parametersContextAST->typeParameters.size() == 0 && !hasModifier(parametersContextAST, SyntaxKind::ExportKeyword) &&
+        // ...and a class's method (TSLANG 187): its overrides with or without the parameter are adapted to the slot of
+        // the method they override, as one with more optional parameters or fewer is
+        auto isClassMethod = (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor) &&
+                             parametersContextAST->parent &&
+                             (parametersContextAST->parent == SyntaxKind::ClassDeclaration ||
+                              parametersContextAST->parent == SyntaxKind::ClassExpression);
+        auto functionBody = kind == SyntaxKind::FunctionDeclaration ? parametersContextAST.as<FunctionDeclaration>()->body
+                            : isClassMethod                       ? parametersContextAST.as<FunctionLikeDeclarationBase>()->body
+                                                                  : Node();
+        if (functionBody && !hasModifier(parametersContextAST, SyntaxKind::ExportKeyword) &&
             !hasModifier(parametersContextAST, SyntaxKind::DeclareKeyword) &&
             llvm::none_of(params, [](auto &param) { return param->getIsMultiArgsParam(); }) &&
             llvm::any_of(params, [](auto &param) { return param->getIsOptional(); }))
@@ -485,7 +493,7 @@ namespace mlirgen
                     readsArguments = true;
                 }
             });
-            argumentsVisitor.visit(parametersContextAST.as<FunctionDeclaration>()->body);
+            argumentsVisitor.visit(functionBody);
 
             if (readsArguments)
             {
@@ -1558,9 +1566,13 @@ namespace mlirgen
             arguments.push_back(thrownLocal());
             NodeArray<Statement> handStatements;
             exchangeThrown(handStatements);
+            // (`!` read out unchecked - the `if` checked it: a call of the optional method otherwise gives the call's
+            // result or a default, "a value is merged from several branches" for elements that own memory)
+            auto checkedThrow = nf.createNonNullExpression(delegateThrow());
+            checkedThrow->internalFlags |= InternalFlags::CalleeNonNull;
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
-                nf.createCallExpression(nf.createNonNullExpression(delegateThrow()), undefined, arguments))));
+                nf.createCallExpression(checkedThrow, undefined, arguments))));
             handStatements.push_back(nf.createExpressionStatement(
                 nf.createBinaryExpression(skipIdent(), nf.createToken(SyntaxKind::EqualsToken), nf.createToken(SyntaxKind::TrueKeyword))));
             NodeArray<Statement> callStatements;
@@ -1588,9 +1600,12 @@ namespace mlirgen
                 exchangeThrown(handStatements);
             }
 
+            // (read out unchecked, as above: tested by the `if` around it)
+            auto checkedThrow = nf.createNonNullExpression(delegateThrow());
+            checkedThrow->internalFlags |= InternalFlags::CalleeNonNull;
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarResult))), nf.createToken(SyntaxKind::EqualsToken),
-                nf.createCallExpression(nf.createNonNullExpression(delegateThrow()), undefined, arguments))));
+                nf.createCallExpression(checkedThrow, undefined, arguments))));
             handStatements.push_back(nf.createExpressionStatement(nf.createBinaryExpression(
                 nf.createIdentifier(stows(std::string(genContext.yieldStarSkipNext))), nf.createToken(SyntaxKind::EqualsToken),
                 nf.createToken(SyntaxKind::TrueKeyword))));

@@ -534,13 +534,19 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // A call of a function named `next` - read through an interface, out of a field, or by its
     // symbol - whose one result is a `{value, done}` record.
-    static bool isIteratorNext(mlir::Operation *op);
+    static bool isIteratorNext(mlir::Operation *op, llvm::StringRef method = "next");
 
     // A generator's own `next`: a function named `next` whose first parameter is its state object
     // (makesGeneratorState's shape) and whose result is a `{value, done}` record. It moves what it
     // yields into the record, so a closed interface's `next()` that reaches only such functions (an
     // `Iterable<string>` given a generator, an array or a string) is fresh as a direct call is.
     static bool isGeneratorNext(mlir_ts::FuncOp funcOp);
+
+    // ...and its own `throw` (addGeneratorResumeMethods): it returns what its `next` gives, or throws.
+    // A `throw()` through an interface that reaches only such functions is fresh as `next()` is
+    // (the yield* of a Generator<T> hands a throw() to its delegate there, TSLANG 187). Only these:
+    // another `throw` method is a function like any other.
+    static bool isGeneratorThrow(mlir_ts::FuncOp funcOp);
 
     // A generator another module made: its state object's type is only its shape here, and what each
     // field owns - a local, a yielded value now the caller's, what it borrows from its arguments - is

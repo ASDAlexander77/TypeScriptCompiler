@@ -8,7 +8,7 @@
 namespace own_signature
 {
 
-    bool OwnershipSignaturePass::isIteratorNext(mlir::Operation *op)
+    bool OwnershipSignaturePass::isIteratorNext(mlir::Operation *op, llvm::StringRef method)
     {
         if (op->getNumResults() != 1)
         {
@@ -30,7 +30,9 @@ namespace own_signature
             return false;
         }
 
-        auto isNext = [](llvm::StringRef name) { return name == "next" || name.ends_with(".next"); };
+        auto isNext = [&](llvm::StringRef name) {
+            return name == method || (name.ends_with(method) && name.drop_back(method.size()).ends_with("."));
+        };
         if (auto callee = directCallee(op))
         {
             return isNext(callee.getValue());
@@ -50,6 +52,12 @@ namespace own_signature
         if (auto boundOp = function.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
             function = boundOp.getFunc();
+        }
+
+        // (an optional method read out once checked, TSLANG 187)
+        if (auto valueOp = function.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            function = valueOp.getIn();
         }
 
         if (auto loadOp = function.getDefiningOp<mlir_ts::LoadOp>())
@@ -150,6 +158,29 @@ namespace own_signature
         auto name = funcOp.getSymName();
         auto funcType = funcOp.getFunctionType();
         if (!(name == "next" || name.ends_with(".next")) || funcType.getNumInputs() < 1 || funcType.getNumResults() != 1 ||
+            !mlir::isa<mlir_ts::ObjectType>(funcType.getInput(0)) || !isGeneratorStateType(funcType.getInput(0)))
+        {
+            return false;
+        }
+
+        auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(funcType.getResult(0));
+        if (!tupleType || tupleType.getFields().size() != 2)
+        {
+            return false;
+        }
+
+        auto fieldName = [&](int index) {
+            auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
+            return id ? id.getValue() : llvm::StringRef();
+        };
+        return fieldName(0) == "value" && fieldName(1) == "done";
+    }
+
+    bool OwnershipSignaturePass::isGeneratorThrow(mlir_ts::FuncOp funcOp)
+    {
+        auto name = funcOp.getSymName();
+        auto funcType = funcOp.getFunctionType();
+        if (!name.ends_with(".throw") || funcType.getNumInputs() != 2 || funcType.getNumResults() != 1 ||
             !mlir::isa<mlir_ts::ObjectType>(funcType.getInput(0)) || !isGeneratorStateType(funcType.getInput(0)))
         {
             return false;

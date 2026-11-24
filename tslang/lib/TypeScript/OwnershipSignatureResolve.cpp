@@ -459,7 +459,14 @@ namespace own_signature
         {
             // a function-typed field of an interface, called: `ts.CreateBoundFunction(
             // ts.ExtractInterfaceThis(i), ts.Load(ts.InterfaceSymbolRef(i, f)))`
-            auto loadOp = boundOp.getFunc().getDefiningOp<mlir_ts::LoadOp>();
+            // (an optional method read out once checked, `ts.Value(ts.Load(...))`, TSLANG 187)
+            auto func = boundOp.getFunc();
+            if (auto valueOp = func.getDefiningOp<mlir_ts::ValueOp>())
+            {
+                func = valueOp.getIn();
+            }
+
+            auto loadOp = func.getDefiningOp<mlir_ts::LoadOp>();
             auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>() : mlir_ts::InterfaceSymbolRefOp();
             auto thisOp = boundOp.getThisVal().getDefiningOp<mlir_ts::ExtractInterfaceThisOp>();
             if (refOp && isInterfaceField(refOp.getResult()) && thisOp && thisOp.getInterfaceVal() == refOp.getInterfaceVal())
