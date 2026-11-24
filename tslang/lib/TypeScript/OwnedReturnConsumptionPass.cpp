@@ -818,8 +818,10 @@ class OwnedReturnConsumptionPass
                         continue;
                     }
 
+                    // (or a value-or-default's region, settled the same way: consumeValueOrDefaultResults)
                     auto *conditional = user->getParentOp();
-                    auto yieldsCounted = mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                    auto yieldsCounted = mlir::isa<mlir_ts::ResultOp>(user) &&
+                                         mlir::isa_and_nonnull<mlir_ts::IfOp, mlir_ts::OptionalValueOrDefaultOp>(conditional) &&
                                          conditional->hasAttr(OWNED_RESULT_ATTR_NAME) && user->getPrevNode() &&
                                          mlir::isa<mlir_ts::RetainOp>(user->getPrevNode()) &&
                                          user->getPrevNode()->getOperand(0) == user->getOperand(0);
@@ -1042,7 +1044,9 @@ class OwnedReturnConsumptionPass
     // An inner literal read out of a literal under an optional chain (`[[mk(i)]]?.[0]?.[0]`) is read on through the
     // chain: the chain's conditional yields it as an optional, and the next link reads `ts.Value` of that. The same
     // array, then: `value` and what it is handed on as - through the casts that only widen it, an optional's value,
-    // and a conditional in `block` (or in a statement of it) whose branch yields it.
+    // and a conditional in `block` (or in a statement of it) whose branch yields it. At most 64 values are
+    // collected (each link of a chain adds a few; a 25-level chain stays well below), which bounds the walk; a chain
+    // past that is not followed further and is judged as it was before (refused or released at the branch end).
     static llvm::SmallVector<mlir::Value> chainedAliases(mlir::Value value, mlir::Block *block)
     {
         llvm::SmallVector<mlir::Value> aliases{value};
@@ -2862,11 +2866,13 @@ class OwnedReturnConsumptionPass
             // there first, as a conditional's branch does (consumeConditionalResults)
             auto *region = &op.getDefaultValueRegion();
             auto *producer = produced.getDefiningOp();
+            // (an array literal it makes too: `p = [mk(1)][0]`, given back at the end of the region by
+            // holdReadOnlyNewArrays once the region's yield is counted)
             auto makesTemporary = [&]() {
                 auto found = false;
                 region->walk([&](mlir::Operation *inner) {
                     if (inner->getNumResults() == 1 && inner->getParentRegion() == region &&
-                        ::typescript::mayTakeOverReference(inner->getResult(0)))
+                        (::typescript::mayTakeOverReference(inner->getResult(0)) || isNewArray(inner)))
                     {
                         found = true;
                     }
@@ -3340,14 +3346,17 @@ class OwnedReturnConsumptionPass
     }
 
     // Does `user` run before control reaches the op that follows its ancestor in `block`? True
-    // for `block`'s own ops, and for ops nested in structured statements only.
-    static bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
+    // for `block`'s own ops, and for ops nested in structured statements only. Under rc and own also in the default
+    // of a value-or-default (`const { p = d ?? mk(1) } = ...`), which runs there at most once, as a branch does
+    // (gc and none keep their IR as it was).
+    bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
     {
         for (auto *op = user; op->getBlock() != block; op = op->getParentOp())
         {
             auto *parent = op->getParentOp();
-            if (!parent || !mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
-                                      mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent))
+            if (!parent || !(mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
+                                       mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent) ||
+                             (compileOptions.tracksOwnership() && mlir::isa<mlir_ts::OptionalValueOrDefaultOp>(parent))))
             {
                 return false;
             }
@@ -3524,7 +3533,7 @@ class OwnedReturnConsumptionPass
 
     struct BlockScan;
 
-    static bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
+    bool allUsesReleasableInOwnBlock(mlir::Operation *op, BlockScan &scan)
     {
         auto *block = op->getBlock();
         auto rangeEnd = scan.releaseRangeEnd(op);

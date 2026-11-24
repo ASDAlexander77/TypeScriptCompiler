@@ -3,8 +3,9 @@
 // that new value, a +1 nobody took - every evaluation that ran the default leaked it (main too). The op now carries
 // one reference whichever way it goes (the field's value retained, the default's taken over), and its receiver takes
 // it over or it is given back at the end of its block. A record literal, a named record, nested patterns, strings,
-// `let`, `??`. The same program under gc. (Not under own, which refuses a record literal holding a value it owns
-// anywhere but in a local.)
+// `let`, `??`, and defaults that read a temporary const (`e ?? undefined`, `d!`, `d ?? mk(1)`) or build an array
+// literal (`[mk(1)][0]`): those are given back after the default runs, as in a conditional's branch. The same
+// program under gc. (Not under own, which refuses a record literal holding a value it owns anywhere but in a local.)
 interface R {
     p?: N;
 }
@@ -71,10 +72,28 @@ function main() {
         const { p: f = mk(1) } = { p: mk(i) };
         total += f.x;
 
+        // a default that reads a temporary const, or builds an array literal: given back too
+        const e2: N | null = i % 4 == 0 ? mk(9) : null;
+        const { p: g = e2 ?? undefined } = { p: c ? mk(i) : undefined };
+        if (g) {
+            total += g.x;
+        }
+
+        const { p: h = d ?? mk(1) } = { p: c ? mk(i) : undefined };
+        total += h.x + h.s.length;
+
+        const { p: l = [mk(1)][0] } = { p: c ? mk(i) : undefined };
+        total += l.x + l.s.length;
+
+        if (d) {
+            const { p: m = d! } = { p: c ? mk(i) : undefined };
+            total += m.x;
+        }
+
         churn();
     }
 
     print(total);
-    assert(total == 288903, "total");
+    assert(total == 425130, "total");
     print("done.");
 }

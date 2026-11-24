@@ -5628,6 +5628,14 @@ add_test(NAME test-rc-destructuring-record-retained
 set_tests_properties(test-rc-destructuring-record-retained
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]optional<[^\n]*\n *%[0-9]+ = \"ts[.]OptValueOrDefault\""
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# ...a default that builds an array literal (`p = [mk(1)][0]`): the region retains the element it yields before the
+# literal is given back (none before; the literal leaked).
+add_test(NAME test-rc-destructuring-record-default-literal
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_record.ts")
+set_tests_properties(test-rc-destructuring-record-default-literal
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Retain\"[(]%[0-9]+[)] : [(]!ts[.]class<@N[^\n]*\n *\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<!ts[.]class<@N[^\n]*\n *\"ts[.]Result\""
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 add_test(NAME test-rc-conditional-owned-optional-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_owned_optional.ts")
