@@ -1215,6 +1215,8 @@ namespace mlirgen
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
         loopGenContext.loopLabel = loopLabel;
+        // an outer loop's copies are not this loop's to give back
+        loopGenContext.loopCopyBack = nullptr;
 
         /*auto *cond =*/builder.createBlock(&doWhileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&doWhileOp.getBody(), {}, types);
@@ -1262,6 +1264,8 @@ namespace mlirgen
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
         loopGenContext.loopLabel = loopLabel;
+        // an outer loop's copies are not this loop's to give back
+        loopGenContext.loopCopyBack = nullptr;
 
         /*auto *cond =*/builder.createBlock(&whileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&whileOp.getBody(), {}, types);
@@ -1306,7 +1310,7 @@ namespace mlirgen
     // Whether a `for (let i ...)` body needs an `i` of its own each iteration: a function made in it (an arrow, a
     // function expression, a class) may capture one, and nothing in it assigns one (so the loop's variable
     // still has the value the body's started with when the iteration ends).
-    static bool loopBodyNeedsPerIterationBindings(Node body, const llvm::StringSet<> &names)
+    static bool loopBodyNeedsPerIterationBindings(Node body, const llvm::StringSet<> &names, bool &assignedOut)
     {
         auto hasClosure = false;
         auto assigned = false;
@@ -1322,7 +1326,7 @@ namespace mlirgen
         ts::FuncT<> visitNode;
         ts::ArrayFuncT<> visitArray;
         visitNode = [&](Node node) -> Node {
-            if (!node || assigned)
+            if (!node)
             {
                 return undefined;
             }
@@ -1346,7 +1350,6 @@ namespace mlirgen
                 if (op >= SyntaxKind::FirstAssignment && op <= SyntaxKind::LastAssignment && isLoopName(binary->left))
                 {
                     assigned = true;
-                    return undefined;
                 }
 
                 break;
@@ -1358,7 +1361,6 @@ namespace mlirgen
                     && isLoopName(unary->operand))
                 {
                     assigned = true;
-                    return undefined;
                 }
 
                 break;
@@ -1370,7 +1372,6 @@ namespace mlirgen
                     && isLoopName(unary->operand))
                 {
                     assigned = true;
-                    return undefined;
                 }
 
                 break;
@@ -1393,7 +1394,10 @@ namespace mlirgen
         };
 
         visitNode(body);
-        return hasClosure && !assigned;
+        // one the body assigns gives its value back to the loop's (GenContext::loopCopyBack); it was left to the
+        // one variable, and every closure saw the loop's last value (3 3 3, TSLANG 176)
+        assignedOut = assigned;
+        return hasClosure;
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ForStatement forStatementAST, const GenContext &genContext)
@@ -1440,6 +1444,8 @@ namespace mlirgen
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
         loopGenContext.loopLabel = loopLabel;
+        // an outer loop's copies are not this loop's to give back
+        loopGenContext.loopCopyBack = nullptr;
 
         /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
@@ -1503,6 +1509,7 @@ namespace mlirgen
             // body's scope exists: the body's scope lists it as its own (GenContext::loopBodyCells), or nothing
             // gives the cell back and every iteration leaks one.
             SmallVector<mlir::Value> perIterationCells;
+            SmallVector<std::pair<mlir::Value, mlir::Value>> copyBack;
             GenContext bodyGenContext(loopGenContext);
             bodyGenContext.loopBodyCells = &perIterationCells;
             if (forStatementAST->initializer == SyntaxKind::VariableDeclarationList)
@@ -1521,14 +1528,28 @@ namespace mlirgen
                     }
                 }
 
-                if (!names.empty() && loopBodyNeedsPerIterationBindings(forStatementAST->statement, names))
+                auto assignedInBody = false;
+                // -mm=own: an `i` the body assigns stays the loop's one variable, as before (a copy a closure takes
+                // and the body still writes is refused by own's capture rule)
+                if (!names.empty() && loopBodyNeedsPerIterationBindings(forStatementAST->statement, names, assignedInBody)
+                    && !(assignedInBody && compileOptions.memoryModel == MemoryModelOwn))
                 {
+                    if (assignedInBody)
+                    {
+                        bodyGenContext.loopCopyBack = &copyBack;
+                        bodyGenContext.loopCopyBackLabel = loopGenContext.loopLabel;
+                    }
+
                     for (auto &entry : names)
                     {
                         auto name = StringRef(entry.getKey()).copy(stringAllocator);
                         auto outer = symbolTable.lookup(name);
                         auto outerRefType = outer.first ? dyn_cast<mlir_ts::RefType>(outer.first.getType()) : mlir_ts::RefType();
-                        if (!outerRefType || !outer.second || !mth.isValueType(outerRefType.getElementType()))
+                        // a reference (`for (let s = "a"; ...)`) is copied as the reference under a collector, as
+                        // JavaScript copies it; under rc and own a copy would be one more owner (TSLANG 176)
+                        auto copied = outerRefType && (mth.isValueType(outerRefType.getElementType())
+                                                       || !compileOptions.tracksOwnership());
+                        if (!outerRefType || !outer.second || !copied)
                         {
                             continue;
                         }
@@ -1542,12 +1563,44 @@ namespace mlirgen
                             builder.getIndexAttr(0));
                         declare(location, varDecl, inner, loopGenContext);
                         perIterationCells.push_back(inner);
+                        copyBack.push_back({inner, outer.first});
                     }
                 }
             }
 
             auto bodyResult = mlirGenBranchStatement(forStatementAST->statement, bodyGenContext);
             EXIT_IF_FAILED(bodyResult)
+
+            // the end of the body: the copies' values go back, before the copies are given back
+            if (bodyGenContext.loopCopyBack && !copyBack.empty())
+            {
+                auto *block = builder.getInsertionBlock();
+                auto ended = !block->empty() && block->back().hasTrait<mlir::OpTrait::IsTerminator>();
+                if (!ended)
+                {
+                    for (auto [inner, outer] : copyBack)
+                    {
+                        mlir::Operation *release = nullptr;
+                        for (auto &op : *block)
+                        {
+                            auto releaseCell = dyn_cast<mlir_ts::ReleaseCellOp>(&op);
+                            auto releaseSlot = dyn_cast<mlir_ts::ReleaseSlotOp>(&op);
+                            if ((releaseCell && releaseCell.getSlot() == inner) || (releaseSlot && releaseSlot.getSlot() == inner))
+                            {
+                                release = &op;
+                            }
+                        }
+
+                        mlir::OpBuilder::InsertionGuard guard(builder);
+                        if (release)
+                        {
+                            builder.setInsertionPoint(release);
+                        }
+
+                        mlirGenLoopCopyBack(location, inner, outer);
+                    }
+                }
+            }
         }
 
         builder.create<mlir_ts::ResultOp>(location);
@@ -1994,6 +2047,23 @@ namespace mlirgen
             return mlir::failure();
         }
         label = resolveLoopLabelAlias(label);
+
+        // a `for (let i ...)` body that assigns its own `i`: the value goes back to the loop's before the copy is
+        // given back (GenContext::loopCopyBack)
+        if (genContext.loopCopyBack && (label.empty() || label == genContext.loopCopyBackLabel))
+        {
+            for (auto [inner, outer] : *genContext.loopCopyBack)
+            {
+                auto *innerOp = inner.getDefiningOp();
+                auto *here = builder.getInsertionBlock()->getParentOp();
+                auto hereFunc = here && isa<mlir_ts::FuncOp>(here) ? mlir::cast<mlir_ts::FuncOp>(here)
+                                                                   : (here ? here->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp());
+                if (innerOp && hereFunc && innerOp->getParentOfType<mlir_ts::FuncOp>() == hereFunc)
+                {
+                    mlirGenLoopCopyBack(location, inner, outer);
+                }
+            }
+        }
 
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 

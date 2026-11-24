@@ -2709,12 +2709,9 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        // allocate function parameters as variable
-        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
-        {
-            return mlir::failure();
-        }
-
+        // (Decided before the parameters are made: a closure in a default value (`(a = 5, f = () => a)`) is made
+        // there, and took `a` as a cell its function did not expect - a crash, TSLANG 176.)
+        //
         // A parameter nothing assigns - not this body, not a closure in it - holds the caller's value
         // for the whole call, so a closure takes a copy of it, as it does of `this` and of a `const`,
         // instead of moving it into a heap cell the frame and the box share: a closure made per call
@@ -2740,6 +2737,14 @@ namespace mlirgen
             llvm::StringSet<> assignedNames;
             llvm::StringSet<> lengthNames;
             collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames, &lengthNames);
+            // ...nor a default value of a parameter
+            for (auto parameter : functionLikeDeclarationBaseAST->parameters)
+            {
+                if (parameter->initializer)
+                {
+                    collectAssignedNames(parameter->initializer, assignedNames, &lengthNames);
+                }
+            }
             for (const auto &param : funcProto->getParams())
             {
                 auto keptInCell = own && (mth.isAnyFunctionType(param->getType()) ||
@@ -2751,6 +2756,13 @@ namespace mlirgen
                 }
             }
         }
+
+        // allocate function parameters as variable
+        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
+        {
+            return mlir::failure();
+        }
+
 
         if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))
         {
