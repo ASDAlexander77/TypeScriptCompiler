@@ -5582,6 +5582,18 @@ add_test(NAME test-own-literal-optional-chain-released
 set_tests_properties(test-own-literal-optional-chain-released
                      PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.](optional<!ts[.])?array<"
                                 FAIL_REGULAR_EXPRESSION "error:|Stack dump")
+# Array destructuring with defaults gives the array literal back at the end of its block under rc (it leaked
+# before): a `ts.Release` of the literal (none before). The same program under gc and own.
+foreach(destructuring_mm rc gc own)
+    tslang_add_test(NAME test-jit-${destructuring_mm}-destructuring-literal COMMAND test-runner -jit -mm=${destructuring_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_literal.ts")
+    tslang_add_test(NAME test-compile-${destructuring_mm}-destructuring-literal COMMAND test-runner -mm=${destructuring_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_literal.ts")
+endforeach()
+add_test(NAME test-rc-destructuring-literal-released
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_destructuring_literal.ts")
+set_tests_properties(test-rc-destructuring-literal-released
+                     PROPERTIES PASS_REGULAR_EXPRESSION "\"ts[.]Release\"[(]%[0-9]+[)] : [(]!ts[.]array<"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump")
 add_test(NAME test-rc-conditional-owned-optional-retained
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc
                  "${PROJECT_SOURCE_DIR}/test/tester/own/rc_conditional_owned_optional.ts")

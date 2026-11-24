@@ -785,17 +785,20 @@ class OwnedReturnConsumptionPass
             // conditional within the literal's block that yields the element on - the chain, and its conversion to
             // `| null` (`ts.Value` of the chain's optional) - hands it to its own result, which is followed the same
             // way: it leaves only if that does (borrowsBranchTemporary has the enclosing branch retain it when it
-            // goes on to that branch's `ts.Result`; under own, yieldedByBranch holds the literal past it).
+            // goes on to that branch's `ts.Result`; under own, yieldedByBranch holds the literal past it). Under rc
+            // for any literal: array destructuring with defaults (`const [a = 1, b = "x"] = [n, s]`) reads each
+            // element through a conditional that yields it or the default, into the local in the same block.
             auto isTruthinessTest = [](mlir::Operation *user) {
                 return mlir::isa<mlir_ts::CastOp>(user) && mlir::isa<mlir_ts::BooleanType>(user->getResult(0).getType());
             };
             auto chained = llvm::any_of(op->getUsers(), isTruthinessTest);
+            auto followsConditionals = chained || !own;
             std::function<bool(mlir::Value)> leavesUncounted = [&](mlir::Value value) {
                 for (auto &use : value.getUses())
                 {
                     auto *user = use.getOwner();
                     if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) ||
-                        (chained && mlir::isa<mlir_ts::ValueOp>(user)))
+                        (followsConditionals && mlir::isa<mlir_ts::ValueOp>(user)))
                     {
                         if (leavesUncounted(user->getResult(0)))
                         {
@@ -817,7 +820,7 @@ class OwnedReturnConsumptionPass
                                          user->getPrevNode()->getOperand(0) == user->getOperand(0);
                     if (!yieldsCounted)
                     {
-                        if (chained && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
+                        if (followsConditionals && mlir::isa<mlir_ts::ResultOp>(user) && mlir::isa_and_nonnull<mlir_ts::IfOp>(conditional) &&
                             op->getParentRegion()->isAncestor(conditional->getParentRegion()))
                         {
                             if (leavesUncounted(conditional->getResult(use.getOperandNumber())))
