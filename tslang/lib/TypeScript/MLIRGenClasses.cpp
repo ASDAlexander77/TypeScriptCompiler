@@ -6349,6 +6349,12 @@ genContext);
         {
             rtti = loadedOpaque(rttiName);
         }
+        else if (classInfo->isValue || classInfo->isStatic)
+        {
+            // no `..rtti` global (CLASSES_WITHOUT_RTTI_ATTR_NAME): a static class has no instances,
+            // and a value class no class identity to test
+            rtti = nullOpaque();
+        }
         else if (auto rttiAddress = resolveFullNameIdentifier(location, rttiName, true, genContext))
         {
             rtti = builder.create<mlir_ts::CastOp>(location, opaqueType, rttiAddress);

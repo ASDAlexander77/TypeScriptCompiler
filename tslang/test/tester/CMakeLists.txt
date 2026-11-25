@@ -2499,7 +2499,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192 00tslang_issue_193)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -2586,6 +2586,15 @@ add_test(NAME test-compile-continue-outside-loop-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/continue_outside_loop_error.ts")
 set_tests_properties(test-compile-continue-outside-loop-error PROPERTIES PASS_REGULAR_EXPRESSION "A 'continue' statement can only be used within"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+# TSLANG 193: a class given for an array, a type stored in a module variable
+add_test(NAME test-compile-class-not-array-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_not_array_error.ts")
+set_tests_properties(test-compile-class-not-array-error PROPERTIES PASS_REGULAR_EXPRESSION "the class 'A' is not an array"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code|failed to legalize")
+add_test(NAME test-compile-type-not-value-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/type_not_value_error.ts")
+set_tests_properties(test-compile-type-not-value-error PROPERTIES PASS_REGULAR_EXPRESSION "the type 'number' is not a value"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code|failed to legalize")
 # a subclass whose field fails, then a read of a field it inherits: that error, not a crash
 foreach(failed_field_mm gc own)
     add_test(NAME test-compile-subclass-field-failed-error-${failed_field_mm}

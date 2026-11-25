@@ -2463,9 +2463,14 @@ namespace mlirgen
                 }
             }
 
-            MLIRNamespaceGuard ng(currentNamespace);
-            currentNamespace = functionGenericTypeInfo->elementNamespace;
-            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+            // the parameter's type, read where the function is declared
+            auto receiverOf = [&](size_t index) -> mlir::Type {
+                MLIRNamespaceGuard ng(currentNamespace);
+                currentNamespace = functionGenericTypeInfo->elementNamespace;
+                SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+                auto type = getType(declarationParams[index]->type, typeGenContext);
+                return type && !mth.isNoneType(type) ? type : mlir::Type();
+            };
 
             receivers.resize(arguments.size());
             for (auto [index, argument] : enumerate(arguments))
@@ -2476,10 +2481,33 @@ namespace mlirgen
                     continue;
                 }
 
-                auto type = getType(declarationParams[index]->type, typeGenContext);
-                if (type && !mth.isNoneType(type))
+                auto type = receiverOf(index);
+                receivers[index] = type;
+
+                // a receiver still of a type parameter (`Int<string, U>`) types the literal's members as far as it
+                // can; what they give (`method(p1) { return p1.length }` gives U) types the literals after it
+                // (`{ method(p2) { ... } }` for `Int<U, T>`: its p2 was the type parameter U, and the call failed
+                // with no message)
+                if (type && mth.isGenericType(type) && index + 1 < arguments.size())
                 {
-                    receivers[index] = type;
+                    GenContext argGenContext(genContext);
+                    argGenContext.clearReceiverTypes();
+                    argGenContext.receiverFuncType = type;
+                    if (auto literalType = evaluate(argument, argGenContext); literalType && !mth.isNoneType(literalType))
+                    {
+                        StringMap<mlir::Type> moreInferredTypes;
+                        inferType(location, params[index + offset]->getType(), literalType, moreInferredTypes, genContext);
+                        for (auto &inferred : moreInferredTypes)
+                        {
+                            auto found = typeGenContext.typeParamsWithArgs.find(inferred.getKey());
+                            if (found != typeGenContext.typeParamsWithArgs.end()
+                                && isa<mlir_ts::NamedGenericType>(found->getValue().second)
+                                && inferred.getValue() && !mth.isGenericType(inferred.getValue()))
+                            {
+                                found->getValue().second = mth.wideStorageType(inferred.getValue());
+                            }
+                        }
+                    }
                 }
             }
         }

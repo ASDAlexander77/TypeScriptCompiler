@@ -202,7 +202,10 @@ namespace mlirgen
                 return value;
             };
 
-            if (auto value = cl.Class(classType, accessingFromLevel))
+            // through the class itself (`C.p` of `static p = 3; p = 4;`) no instance field: its static
+            // (an instance field read off the class reference was "failed to legalize 'ts.ClassRef'")
+            auto throughClass = objectValue && objectValue.getDefiningOp<mlir_ts::ClassRefOp>();
+            if (auto value = throughClass ? mlir::Value() : cl.Class(classType, accessingFromLevel))
             {
                 return weakField(value);
             }
@@ -476,6 +479,17 @@ namespace mlirgen
                     if (!classInfo)
                     {
                         return mlir::Value();
+                    }
+
+                    // a static class (`static class Helpers`) has no vtable and no subclass: the value is that class,
+                    // whose members are read as through its name (its static method, read through the vtable,
+                    // was "Expected 0 arguments, but got 1")
+                    if (classInfo->isStatic)
+                    {
+                        auto classRef = builder.create<mlir_ts::ClassRefOp>(
+                            location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
+                        return ClassMembersAccess(location, classRef, classInfo, name, false, argument,
+                                                  detectAccessLevel(classType, genContext), genContext);
                     }
 
                     auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));

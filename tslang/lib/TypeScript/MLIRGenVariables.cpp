@@ -1391,6 +1391,25 @@ namespace mlirgen
                 return std::make_tuple(V(classValue).getType(), V(classValue), TypeProvided::No);
             }
 
+            // `const K = Foo` of `type Foo = number` in a module: a type has no value for a global to hold (it was
+            // "failed to legalize operation 'ts.TypeRef'"). `export default Foo` of an imported type exports no
+            // value, as TypeScript emits none: its default is undefined
+            if (auto initValue = std::get<1>(typeAndInit);
+                initValue && std::get<2>(typeAndInit) == TypeProvided::No && !isLocalConst
+                && varClass.type != VariableType::External && !declarationMode
+                && initValue.getDefiningOp<mlir_ts::TypeRefOp>())
+            {
+                if ((item->internalFlags & InternalFlags::DefaultExport) == InternalFlags::DefaultExport)
+                {
+                    auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+                    return std::make_tuple(undefValue.getType(), V(undefValue), TypeProvided::No);
+                }
+
+                emitError(location) << "the type '" << to_print(initValue.getType()) << "' is not a value: it can't be stored in '"
+                                    << MLIRHelper::getName(item->name) << "'";
+                return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No);
+            }
+
             if (varClass.isDynamicImport)
             {
                 auto nameStr = varClass.dllName.empty()

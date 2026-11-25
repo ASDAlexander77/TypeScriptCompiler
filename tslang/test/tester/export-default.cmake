@@ -21,6 +21,10 @@ file(WRITE "${WORK_DIR}/m3.ts" "function helper(n: number) { return n * 3; }\nex
 file(WRITE "${WORK_DIR}/m4.ts" "export default function () { return 7; }\n")
 file(WRITE "${WORK_DIR}/m5.ts" "export default function named() { return 8; }\n")
 file(WRITE "${WORK_DIR}/m6.ts" "export default class { v = 9; }\n")
+# the default export of an imported type: no value, as TypeScript emits none (it was "failed to legalize
+# operation 'ts.TypeRef'", TSLANG 193)
+file(WRITE "${WORK_DIR}/m7.ts" "type Ten = number;\nexport { Ten };\n")
+file(WRITE "${WORK_DIR}/m8.ts" "import { Ten } from \"./m7\";\nexport default Ten;\nexport const ten: Ten = 10;\n")
 file(WRITE "${WORK_DIR}/main.ts" [=[
 import four from "./m1";
 import obj from "./m2";
@@ -28,13 +32,14 @@ import triple from "./m3";
 import seven from "./m4";
 import eight from "./m5";
 import Nine from "./m6";
+import { ten } from "./m8";
 
 function main() {
-    print(four, obj.a, obj.b, triple(5), seven(), eight(), new Nine().v);
+    print(four, obj.a, obj.b, triple(5), seven(), eight(), new Nine().v, ten);
 }
 ]=])
 
-set(expected "4 1 x 15 7 8 9")
+set(expected "4 1 x 15 7 8 9 10")
 
 # run(<what> <tslang arguments...>)
 function(run what)
@@ -54,7 +59,7 @@ run("JIT under rc" --emit=jit --no-default-lib -mm=rc "${WORK_DIR}/main.ts")
 # each module its own object, linked with the program's: the default exports are the modules' symbols
 if(DEFINED TSLANG_LIB)
     set(objects "")
-    foreach(module m1 m2 m3 m4 m5 m6)
+    foreach(module m1 m2 m3 m4 m5 m6 m7 m8)
         execute_process(COMMAND "${TSLANG}" --emit=obj --no-default-lib -mm=none "${WORK_DIR}/${module}.ts" -o "${WORK_DIR}/${module}.obj"
             WORKING_DIRECTORY "${WORK_DIR}" ERROR_VARIABLE err RESULT_VARIABLE status)
         if(NOT status EQUAL 0)

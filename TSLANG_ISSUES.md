@@ -3447,3 +3447,22 @@ Test `00destructure_computed_keys.ts` (gc, rc, none).
 
 Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `instanceof_failed_class_error.ts`,
 `break_outside_loop_error.ts`, `continue_outside_loop_error.ts`, `00any_to_union.ts` (gc, rc, none).
+
+193. More bugs found by the tsc tests sweep (internal errors and a silent failure). Fixed:
+- A static and an instance field of one name (`static p = 3; p = 4;`, also named by a literal or a symbol): `C.p`
+  read the instance field off the class ("failed to legalize operation 'ts.ClassRef'"). Through the class itself
+  only its statics are looked up.
+- A static class as a value (`{ s: Array }`, `export default Array`): "failed to legalize operation 'ts.AddressOf'" -
+  a static class (and a @value class) has no `..rtti` global; its value holds none. A static method read through such
+  a value was "Expected 0 arguments, but got 1"; it is read as through the class's name.
+- A class given for an array (`g(A)` with `g(x: { new (): A }[])`, an interface method's last overload taking one):
+  "failed to legalize operation 'ts.ClassRef'"; now an error.
+- A type in a module variable (`const K = Foo` of `type Foo = number`): "failed to legalize operation 'ts.TypeRef'";
+  now an error. `export default Foo` of an imported type exports no value, as TypeScript emits none.
+- Object literals given for `Int<T, U>` and then `Int<U, T>` (`foo("", { method(p1) { return p1.length } },
+  { method(p2) { ... } })`): U, given by the first literal's method, did not type the second's parameter, which was
+  the type parameter itself, and the call failed with "failed statement" alone. The literals are typed in order, each
+  by what those before it give.
+
+Tests `00tslang_issue_193.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the
+`export default` test (`export-default.cmake`).

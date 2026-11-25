@@ -2493,6 +2493,15 @@ namespace mlirgen
                 return castArrayElementwise(location, arrayType, value, srcArrayType, genContext);
             }
 
+            // a class itself is no array (`g(A)` with `g(x: { new (): A }[])` was "failed to legalize
+            // 'ts.ClassRef'")
+            if (value.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                emitError(location) << "the class '" << to_print(valueType) << "' is not an array: it can't be given for '"
+                                    << to_print(type) << "'";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
             return std::nullopt;
         }
 
