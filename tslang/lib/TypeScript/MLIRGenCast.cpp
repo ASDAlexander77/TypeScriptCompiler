@@ -6260,12 +6260,15 @@ namespace mlirgen
         type = TypeOfOpHelper::typeOfBaseType(type);
 
         auto isArray = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(type);
+        // a dictionary (`{ [k: string]: T }`, an object literal with a key known only at run time): its keys are its
+        // entries', known at run time, not its class's members (TSLANG 191)
+        auto isDictionary = dictionaryClassInfoOf(type, genContext) != nullptr;
         SmallVector<std::string> values;
         SmallVector<std::string> methods;
         llvm::StringSet<> optionals;
         llvm::StringSet<> readOnly;
         llvm::StringMap<mlir::Type> types;
-        if (!isArray && !anyKeysOfType(type, values, methods, &optionals, &readOnly, &types))
+        if (!isArray && !isDictionary && !anyKeysOfType(type, values, methods, &optionals, &readOnly, &types))
         {
             return;
         }
@@ -6296,7 +6299,24 @@ namespace mlirgen
 
         std::string name;
         std::string src;
-        if (isArray)
+        if (isDictionary)
+        {
+            // its entries, by a key as text (a number key is its text, as an object's is)
+            name = "__any_keys_dictionary";
+            src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
+                  "const d = <T>box;\n"
+                  "if (op == " + keysOp + ") { const r: string[] = []; for (const e in d) r.push(e); return <any>r; }\n"
+                  "const kt = typeof key;\n"
+                  "let k = \"\";\n"
+                  "if (kt == \"string\") k = <string>key;\n"
+                  "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
+                  "else {\n" + notThere + "}\n"
+                  "if (op == " + has + ") return <any>(k in d);\n"
+                  "if (op == " + set + ") { d[k] = value; return undefined; }\n"
+                  "return <any>d[k];\n"
+                  "}\n";
+        }
+        else if (isArray)
         {
             // a write of an element in range, or one past the end (it grows by one). One function for each kind
             // of element a write checks (anyKeyValueKind): `_n` numbers, `_s` strings, `_b` booleans.

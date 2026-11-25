@@ -3388,3 +3388,15 @@ Test `00ambient_module_import.ts` (gc, rc, own, none).
 - A namespace, or a module imported as one, given as a value (`f(foo)` of `import * as foo`): it failed in the
   lowering ("failed to legalize operation 'ts.NamespaceRef'"); it is "the namespace 'foo' is not a value". Making
   module namespaces run-time objects is not done (namespaces have no run-time value, a decision of 11-17).
+
+191, continued: computed keys known only at run time (USER 2026-11-25: ease the constant-key rule where the object
+holds run-time keys - a dictionary, a class, an `any`). Fixed:
+- A method of an object literal with a key known only at run time (`{ [fieldName]() { ... } }`): the literal is a
+  dictionary (it was for properties, 152), and a method is an entry holding the function (a function expression:
+  its `this` is not the dictionary). It was "can hold only properties and spreads".
+- Such a dictionary given to an `any` (`const box: any = { [k]: 7 }`, `box[k]`): the run-time key read threw "Can't
+  cast from any type" - a dictionary's keys adapter reads its entries (`for...in`, `k in`, write), not its class's
+  members (makeAnyKeysAdapter). Not under -mm=own, where `any[k]` is refused.
+Next: a class member named at run time (USER: one dynamic table per class).
+
+Test `00computed_runtime_keys.ts` (gc, rc, none; the methods part works under own too).

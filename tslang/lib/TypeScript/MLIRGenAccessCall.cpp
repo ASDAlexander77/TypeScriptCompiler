@@ -4261,6 +4261,37 @@ namespace mlirgen
             return std::nullopt;
         }
 
+        // a method of a dictionary made here (`{ [fieldName]() { return 1; } }`): an entry holding the function, a
+        // property whose value is the function expression (it was "can hold only properties and spreads", TSLANG 191)
+        if (runTimeKey || spreadsDictionary)
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            for (auto &property : objectLiteral->properties)
+            {
+                if (property != SyntaxKind::MethodDeclaration)
+                {
+                    continue;
+                }
+
+                auto method = property.as<MethodDeclaration>();
+                if (!method->body)
+                {
+                    continue;
+                }
+
+                ModifiersArray modifiers;
+                auto function = nf.createFunctionExpression(modifiers, method->asteriskToken, undefined, method->typeParameters,
+                                                            method->parameters, method->type, method->body);
+                function->pos = method->pos;
+                function->_end = method->_end;
+                auto assignment = nf.createPropertyAssignment(method->name, function);
+                assignment->pos = method->pos;
+                assignment->_end = method->_end;
+                assignment->parent = objectLiteral;
+                property = assignment;
+            }
+        }
+
         for (auto property : objectLiteral->properties)
         {
             if (property != SyntaxKind::PropertyAssignment && property != SyntaxKind::ShorthandPropertyAssignment &&
