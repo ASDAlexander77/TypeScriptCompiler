@@ -1923,6 +1923,26 @@ namespace own_inference
         if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(kept); storeOp && rootOf(storeOp.getValue()) == read->getResult(0))
         {
             auto owner = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            // ...or an assignment to an owning local declared with a value (TSLANG 190: `let kept: Box | null =
+            // null; for (const b of g) kept = b;`): rc's retain of the value, then the release of the old one,
+            // right before the store - the local gives back what it held, and owns the value from then on
+            if (owner && owner != slot && isOwningVariable(owner) && !owner.getCaptured().value_or(false) && owner.getInitializer())
+            {
+                auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
+                auto retainOp = releaseSlotOp ? mlir::dyn_cast_or_null<mlir_ts::RetainOp>(releaseSlotOp->getPrevNode()) : mlir_ts::RetainOp();
+                if (!releaseSlotOp || releaseSlotOp.getSlot() != owner.getResult() || !retainOp ||
+                    retainOp.getReference() != storeOp.getValue())
+                {
+                    return false;
+                }
+
+                take.retain = retainOp;
+                take.taker = storeOp;
+                take.field = field.getResult();
+                take.slot = slot;
+                return true;
+            }
+
             auto *retainSlot = owner && isOwningVariable(owner) && !owner.getCaptured().value_or(false) && !owner.getInitializer()
                                    ? onlyRetainSlotOf(owner)
                                    : nullptr;
