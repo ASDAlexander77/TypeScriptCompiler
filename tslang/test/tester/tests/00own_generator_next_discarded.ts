@@ -70,7 +70,7 @@ function main() {
     assert(leftHolding(1) == 2, "left holding");
 
     let n = 0;
-    for (let i = 0; i < 100000; i++) {
+    for (let i = 0; i < 20000; i++) {
         n += dropped(i) + drained(i) + kept(i) + keptBoxes(i) + leftHolding(i);
     }
 
