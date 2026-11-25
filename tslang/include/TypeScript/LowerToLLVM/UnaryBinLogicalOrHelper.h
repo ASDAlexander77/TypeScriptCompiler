@@ -421,6 +421,19 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto zero = builder.create<LLVM::ZeroOp>(loc, codePointer.getType());
         return builder.create<StdIOpTy>(loc, v1, codePointer, zero);
     }
+    // ...and a plain function's pointer (`h == null` of a `typeof f | null`): it was constant false (TSLANG 191)
+    else if (isa<mlir_ts::FunctionType>(leftType)
+             && (right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())))
+    {
+        auto llvmFuncType = typeConverter.convertType(leftType);
+        mlir::Value llvmFunc = left.getType() == llvmFuncType
+            ? left
+            : builder.create<mlir_ts::DialectCastOp>(loc, llvmFuncType, left).getResult();
+        auto intPtrType = llvmtch.getIntPtrType(0);
+        mlir::Value pointer = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, llvmFunc);
+        auto zero = builder.create<LLVM::ConstantOp>(loc, intPtrType, builder.getIntegerAttr(intPtrType, 0));
+        return builder.create<StdIOpTy>(loc, v1, pointer, zero);
+    }
     else if (auto unionType = dyn_cast<mlir_ts::UnionType>(leftType))
     {
         ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);

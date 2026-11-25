@@ -17818,6 +17818,12 @@ class MLIRGenImpl
 
             auto modulePath = convertWideToUTF8(expression.as<ts::StringLiteral>()->text);
             auto location = loc(importEqualsDeclarationAST);
+            // a `declare module "m" { ... }` the program has: x is that module, or what its `export =` names
+            if (ambientModuleExportEquals.count(modulePath))
+            {
+                return bindAmbientModuleImport(location, modulePath, name, StringRef(), genContext);
+            }
+
             if (mlir::failed(mlirGenImportModule(location, modulePath, genContext)))
             {
                 return mlir::failure();
@@ -22515,6 +22521,15 @@ class MLIRGenImpl
     // a file's `export = X`, by its canonical path (lowerDefaultExports): the name `import x = require("./m")` binds x
     // to (TSLANG 191)
     llvm::StringMap<std::string> exportEqualsByFile;
+
+    // `declare module "m" { ... }` of the root, by its name: the name its `export = X` gives (dotted, or empty). An
+    // import of "m" is that namespace's, not a file's (TSLANG 191)
+    llvm::StringMap<std::string> ambientModuleExportEquals;
+
+    // `localName` of an import of the ambient module `moduleName`: the module itself (`member` empty, or what its
+    // `export =` names), or a member of it - as `import localName = moduleName.<member>` makes it
+    mlir::LogicalResult bindAmbientModuleImport(mlir::Location location, StringRef moduleName, StringRef localName,
+                                                StringRef member, const GenContext &genContext);
 
     // `import ... from "m"`, `export ... from "m"`, `import x = require("m")`: the module generated here, a source
     // file or a shared library (TSLANG 191)

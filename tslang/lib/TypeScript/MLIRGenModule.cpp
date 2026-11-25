@@ -2719,6 +2719,67 @@ namespace mlirgen
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
         auto namePtr = namespaceName;
 
+        // `declare module "m" { ... }` of the root: what an import of "m" is (bindAmbientModuleImport), with the name its
+        // `export = X` gives - through an `import X = C.D` of the block (TSLANG 191)
+        // (not `declare module "./a" { ... }`, which adds to the module of that file: an augmentation)
+        if (moduleDeclarationAST->name == SyntaxKind::StringLiteral && currentNamespace == rootNamespace &&
+            !StringRef(namePtr).starts_with(".") && !StringRef(namePtr).starts_with("/"))
+        {
+            std::string exportEquals;
+            if (auto block = moduleDeclarationAST->body; block && block == SyntaxKind::ModuleBlock)
+            {
+                std::function<std::string(Node)> entityName = [&](Node node) -> std::string {
+                    if (node == SyntaxKind::Identifier)
+                    {
+                        return MLIRHelper::getName(node.as<Identifier>());
+                    }
+
+                    if (node == SyntaxKind::QualifiedName)
+                    {
+                        auto left = entityName(node.as<QualifiedName>()->left);
+                        return left.empty() ? left : left + "." + MLIRHelper::getName(node.as<QualifiedName>()->right);
+                    }
+
+                    return std::string();
+                };
+
+                for (auto statement : block.as<ModuleBlock>()->statements)
+                {
+                    if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
+                    {
+                        exportEquals = entityName(statement.as<ExportAssignment>()->expression);
+                    }
+                }
+
+                for (auto statement : block.as<ModuleBlock>()->statements)
+                {
+                    if (!exportEquals.empty() && statement == SyntaxKind::ImportEqualsDeclaration &&
+                        MLIRHelper::getName(statement.as<ImportEqualsDeclaration>()->name) == exportEquals)
+                    {
+                        auto target = entityName(statement.as<ImportEqualsDeclaration>()->moduleReference);
+                        if (!target.empty())
+                        {
+                            exportEquals = target;
+                        }
+                    }
+                }
+            }
+
+            // `declare module "foo";` - no body: whatever is imported from it is an `any`
+            if (!moduleDeclarationAST->body)
+            {
+                exportEquals = "*";
+            }
+
+            ambientModuleExportEquals[namePtr] = exportEquals;
+        }
+
+        // (a module declared without a body has nothing to generate: it crashed)
+        if (!moduleDeclarationAST->body)
+        {
+            return mlir::success();
+        }
+
         MLIRNamespaceGuard nsGuard(currentNamespace);
         registerNamespace(namePtr);
 
@@ -3527,6 +3588,46 @@ namespace mlirgen
 
         auto stringVal = valueAttr.getValue();
 
+        // `import ... from "m"` of a `declare module "m" { ... }` the program has: each name is the module's, as
+        // `import x = m.a` makes it, and no file is looked for (it was "can't open file: m.ts", TSLANG 191)
+        if (ambientModuleExportEquals.count(stringVal))
+        {
+            auto importClause = importDeclarationAST->importClause;
+            if (!importClause)
+            {
+                return mlir::success();
+            }
+
+            if (importClause->name &&
+                mlir::failed(bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(importClause->name), "default", genContext)))
+            {
+                return mlir::failure();
+            }
+
+            if (auto namedBindings = importClause->namedBindings)
+            {
+                if (namedBindings == SyntaxKind::NamespaceImport)
+                {
+                    return bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(namedBindings.as<NamespaceImport>()->name),
+                                                   StringRef(), genContext);
+                }
+
+                if (namedBindings == SyntaxKind::NamedImports)
+                {
+                    for (auto element : namedBindings.as<NamedImports>()->elements)
+                    {
+                        auto member = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name);
+                        if (mlir::failed(bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(element->name), member, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+                    }
+                }
+            }
+
+            return mlir::success();
+        }
+
         auto fullPath = importLibraryPath(stringVal);
         if (sys::fs::exists(fullPath))
         {
@@ -3622,6 +3723,82 @@ namespace mlirgen
         }
 
         return mlirGenInclude(location, modulePath, genContext);
+    }
+
+    mlir::LogicalResult MLIRGenImpl::bindAmbientModuleImport(mlir::Location location, StringRef moduleName, StringRef localName,
+                                                             StringRef member, const GenContext &genContext)
+    {
+        // `import localName = moduleName.<what export = names>.<member>`, made as the parser makes it
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // a module declared without a body (`declare module "foo";`): `declare const localName: any;`
+        if (ambientModuleExportEquals.lookup(moduleName) == "*")
+        {
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(localName.str())), undefined,
+                                                                nf.createToken(SyntaxKind::AnyKeyword), undefined));
+            ModifiersArray modifiers;
+            modifiers.push_back(nf.createToken(SyntaxKind::DeclareKeyword));
+            auto statement = nf.createVariableStatement(modifiers, nf.createVariableDeclarationList(declarations, NodeFlags::Const));
+            return mlirGen(statement.as<Statement>(), genContext);
+        }
+        EntityName reference = nf.createIdentifier(convertUTF8toWide(moduleName.str()));
+        auto exportEquals = ambientModuleExportEquals.lookup(moduleName);
+        std::string path;
+        if (member.empty())
+        {
+            path = exportEquals;
+        }
+        else if (member == "default")
+        {
+            path = exportEquals.empty() ? std::string("default") : exportEquals;
+        }
+        else
+        {
+            path = exportEquals.empty() ? member.str() : exportEquals + "." + member.str();
+        }
+
+        SmallVector<StringRef> parts;
+        StringRef(path).split(parts, '.', -1, false);
+        for (auto part : parts)
+        {
+            reference = nf.createQualifiedName(reference, nf.createIdentifier(convertUTF8toWide(part.str())));
+        }
+
+        // a type the module declares (an interface, a type alias): the name is that type
+        if (!parts.empty())
+        {
+            auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+            NodeArray<TypeNode> noTypeArguments;
+            auto typeReference = nf.createTypeReferenceNode(reference, noTypeArguments);
+            GenContext typeGenContext(genContext);
+            typeGenContext.allowPartialResolve = true;
+            auto type = getType(typeReference, typeGenContext);
+            if (genContext.postponedMessages)
+            {
+                rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+            }
+
+            // (an interface, or a type alias of the namespace that holds it: a function's name is a type too, its own)
+            std::string holder = moduleName.str();
+            for (auto part : ArrayRef<StringRef>(parts).drop_back())
+            {
+                holder += "." + part.str();
+            }
+
+            auto holderNamespace = getNamespaceByFullName(holder);
+            auto isTypeAlias = holderNamespace && holderNamespace->typeAliasMap.count(parts.back());
+            if (type && (isa<mlir_ts::InterfaceType>(type) || isTypeAlias))
+            {
+                getTypeAliasMap()[StringRef(localName).copy(stringAllocator)] = {type, undefined};
+                return mlir::success();
+            }
+        }
+
+        NodeArray<ModifierLike> modifiers;
+        auto declaration = nf.createImportEqualsDeclaration(modifiers, false, nf.createIdentifier(convertUTF8toWide(localName.str())),
+                                                            reference);
+        return mlirGen(declaration, genContext);
     }
 
     // `export { a, b as c }`: the file's own a and b are exported (lowerDefaultExports marked them); c is another name

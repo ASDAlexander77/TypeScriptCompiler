@@ -3365,3 +3365,14 @@ Tests `import_json_module.ts` + `json_module_data.json` (gc, rc, own; compiled s
   inside a function body.
 
 Test `00expando_function_properties.ts` (gc, rc, own, none).
+
+191, continued (sweep 3614 -> 3632 pass, no new failures). Fixed:
+- Imports of a `declare module "m" { ... }` the program declares - `import x = require("m")`, `import * as x from
+  "m"`, a default import, `import { a, b as c } from "m"`: they looked for a file ("can't open file: m.ts"). Each
+  name is the module's, as `import x = m.a` makes it (bindAmbientModuleImport), through what the module's
+  `export =` names (an `import X = C` of its block followed); an interface or a type alias of it is that type.
+  `declare module "./a" { ... }` adds to a file's module (an augmentation) and is not one; `declare module "foo";`
+  (no body) gives `any`s - it crashed the compiler.
+- `h == null` of a `typeof f | null` (a plain function's pointer): it was constant false; it compares the pointer.
+
+Test `00ambient_module_import.ts` (gc, rc, own, none).
