@@ -2493,6 +2493,15 @@ namespace mlirgen
                 return castArrayElementwise(location, arrayType, value, srcArrayType, genContext);
             }
 
+            // a class itself is no array (`g(A)` with `g(x: { new (): A }[])` was "failed to legalize
+            // 'ts.ClassRef'")
+            if (value.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                emitError(location) << "the class '" << to_print(valueType) << "' is not an array: it can't be given for '"
+                                    << to_print(type) << "'";
+                return ValueOrLogicalResult(mlir::failure());
+            }
+
             return std::nullopt;
         }
 
@@ -3047,6 +3056,115 @@ namespace mlirgen
                         return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
 
+                    // an object literal given to a union of shapes told apart by a literal field (`{ kind: "a", method(a)
+                    // {...} }` for `{ kind: "a"; method(x: string): number } | { kind: "b"; ... }`): the member its literal
+                    // fields name - a literal with a method is an object, which no member's tuple is cast from ("can't
+                    // be stored")
+                    if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectType>(valueType))
+                    {
+                        auto sourceType = valueType;
+                        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(sourceType))
+                        {
+                            sourceType = objectType.getStorageType();
+                        }
+
+                        llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
+                        if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectStorageType>(sourceType)
+                            && mlir::succeeded(mth.getFields(sourceType, sourceFields)))
+                        {
+                            mlir::Type namedMember;
+                            auto ambiguous = false;
+                            for (auto subType : types)
+                            {
+                                llvm::SmallVector<mlir_ts::FieldInfo> memberFields;
+                                if (!isa<mlir_ts::TupleType>(subType) || mlir::failed(mth.getFields(subType, memberFields)))
+                                {
+                                    continue;
+                                }
+
+                                auto named = false;
+                                auto conflicts = false;
+                                for (auto &memberField : memberFields)
+                                {
+                                    auto memberLiteral = dyn_cast<mlir_ts::LiteralType>(mth.stripOptionalType(memberField.type));
+                                    if (!memberLiteral)
+                                    {
+                                        continue;
+                                    }
+
+                                    for (auto &sourceField : sourceFields)
+                                    {
+                                        if (sourceField.id != memberField.id)
+                                        {
+                                            continue;
+                                        }
+
+                                        auto sourceLiteral = dyn_cast<mlir_ts::LiteralType>(sourceField.type);
+                                        if (sourceLiteral && sourceLiteral.getValue() == memberLiteral.getValue())
+                                        {
+                                            named = true;
+                                        }
+                                        else
+                                        {
+                                            conflicts = true;
+                                        }
+                                    }
+                                }
+
+                                if (named && !conflicts)
+                                {
+                                    ambiguous = ambiguous || !!namedMember;
+                                    namedMember = subType;
+                                }
+                            }
+
+                            if (namedMember && !ambiguous)
+                            {
+                                CAST(value, location, namedMember, value, genContext);
+                                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                            }
+                        }
+                    }
+
+                    // an array given to a union with one array in it (`f(["a"])` for `["a"] | I`, whose `["a"]` is an array of
+                    // "a"): that array, its elements converted (it was "'ts.Cast' op type [const_array] can't be stored")
+                    if (isa<mlir_ts::ConstArrayType, mlir_ts::ArrayType>(valueType))
+                    {
+                        mlir::Type arrayMember;
+                        auto arrayMembers = 0;
+                        for (auto subType : types)
+                        {
+                            if (isa<mlir_ts::ArrayType>(subType))
+                            {
+                                arrayMember = subType;
+                                arrayMembers++;
+                            }
+                        }
+
+                        if (arrayMembers == 1)
+                        {
+                            CAST(value, location, arrayMember, value, genContext);
+                            return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                        }
+                    }
+
+                    // an object literal or a tuple given to a union with `Object` (`object`), `any` or `unknown` in it
+                    // (`const x: Object | string = { x: 0 }`): that member takes it (it was "'ts.Cast' op type
+                    // [const_tuple] can't be stored")
+                    if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectType>(valueType))
+                    {
+                        for (auto subType : types)
+                        {
+                            auto objectType = dyn_cast<mlir_ts::ObjectType>(subType);
+                            if ((objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()))
+                                || isa<mlir_ts::AnyType, mlir_ts::UnknownType>(subType))
+                            {
+                                CAST(value, location, subType, value, genContext);
+                                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                            }
+                        }
+                    }
+
                     // a class object, a class itself (`inject(Store)` for `A | B`) or an interface that is
                     // none of the union's types and fits none of its interfaces: the cast made of it was
                     // refused only when the module was verified ("module verification error")
@@ -3105,8 +3223,11 @@ namespace mlirgen
             return V(builder.create<mlir_ts::CastOp>(location, type, casted));
         }
 
-        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases)
-        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType) && isa<mlir_ts::InterfaceType>(baseType))
+        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases); to
+        // `unknown | null` (`a ? b : null` of `b: unknown`) the box of null, as null given to `unknown` is - a null
+        // pointer was read as a box: `u === null` was false, and the JIT crashed reading it
+        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType)
+            && isa<mlir_ts::InterfaceType, mlir_ts::UnknownType, mlir_ts::AnyType>(baseType))
         {
             auto casted = cast(location, baseType, value, genContext, /*disableStrictNullCheck=*/true);
             EXIT_IF_FAILED_OR_NO_VALUE(casted)
@@ -3408,6 +3529,23 @@ namespace mlirgen
                 {
                     return *result;
                 }
+
+                // a union with `unknown` (or `any`) in it (`0 | unknown`, `(b ?? null) ?? 0` of `b: unknown`): what the
+                // box holds is that member, which takes anything (it was "'ts.Cast' op type ['!ts.any'] can't be
+                // stored")
+                for (auto member : unionType.getTypes())
+                {
+                    if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(member))
+                    {
+                        mlir::Value memberValue = value;
+                        if (memberValue.getType() != member)
+                        {
+                            memberValue = builder.create<mlir_ts::CastOp>(location, member, memberValue);
+                        }
+
+                        return V(builder.create<mlir_ts::CastOp>(location, type, memberValue));
+                    }
+                }
             }
         }
 
@@ -3511,7 +3649,9 @@ namespace mlirgen
     // a result a function type takes as it is, widened: `string` for `string | number`, `T | undefined`, `any`
     static bool resultWidensTo(mlir::Type from, mlir::Type to)
     {
-        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(to))
+        // a function that never returns (`fail(m): never`) is one returning anything (`withFew([1], id, fail)` of
+        // `haveNone: (reason: string) => r` with r an `s32[]`): its adapter gives no value back, as it never returns
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(to) || isa<mlir_ts::NeverType>(from))
         {
             return true;
         }
@@ -3718,6 +3858,15 @@ namespace mlirgen
             // cast of a taken-over result is not one OwnedReturnConsumptionPass reads as returning owned, and
             // one such function in a module leaves every call through a function value there unreleased
             mlir::Value result = callOp.getResult(0);
+
+            // a function that never returns: the adapter's return is never reached, and has no value of it to give
+            if (isa<mlir_ts::NeverType>(result.getType()))
+            {
+                auto nothing = builder.create<mlir_ts::DefaultOp>(location, destResults.front());
+                builder.create<mlir_ts::ReturnValOp>(location, nothing, resultRef);
+                return mlir::success();
+            }
+
             auto widened = result.getType() != destResults.front();
             if (ownsResult)
             {
@@ -5117,8 +5266,10 @@ namespace mlirgen
         llvm::StringSet<> tags;
         for (auto member : unionType.getTypes())
         {
+            // (a tuple too, its box saying "tuple": `string | [string, string]`, read as a tuple is from a box)
             auto supported = isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::StringType, mlir_ts::BigIntType,
-                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType,
+                                 mlir_ts::TupleType>(member);
             auto tag = supported ? toh.typeOfAsString(member) : std::string();
             if (tag.empty() || !tags.insert(tag).second)
             {
@@ -5153,6 +5304,12 @@ namespace mlirgen
             else if (isa<mlir_ts::UndefinedType>(member))
             {
                 memberValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            }
+            else if (isa<mlir_ts::TupleType>(member))
+            {
+                auto result = castAnyToTuple(location, member, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                memberValue = V(result);
             }
             else
             {

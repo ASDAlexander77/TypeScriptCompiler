@@ -605,7 +605,10 @@ enum class InternalFlags : number
     StackLocal = 1 << 25,
     // the function a generator is rewritten into (buildGeneratorWrapperDeclaration): its body is the generator's
     // object, whose next() is the generator's own body - which may call the generator by its name
-    GeneratorWrapper = 1 << 26
+    GeneratorWrapper = 1 << 26,
+    // the const an `export default <expression>` is lowered into: of a name that is a type only (`export default Foo`
+    // of an imported `type Foo`), there is no value to export (mlirGenVariableDeclaration)
+    DefaultExport = 1 << 27
 };
 
 ENUM_OPS(InternalFlags)

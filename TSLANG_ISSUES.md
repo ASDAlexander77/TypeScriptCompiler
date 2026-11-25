@@ -3447,3 +3447,58 @@ Test `00destructure_computed_keys.ts` (gc, rc, none).
 
 Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `instanceof_failed_class_error.ts`,
 `break_outside_loop_error.ts`, `continue_outside_loop_error.ts`, `00any_to_union.ts` (gc, rc, none).
+
+193. More bugs found by the tsc tests sweep (internal errors and a silent failure). Fixed:
+- A static and an instance field of one name (`static p = 3; p = 4;`, also named by a literal or a symbol): `C.p`
+  read the instance field off the class ("failed to legalize operation 'ts.ClassRef'"). Through the class itself
+  only its statics are looked up.
+- A static class as a value (`{ s: Array }`, `export default Array`): "failed to legalize operation 'ts.AddressOf'" -
+  a static class (and a @value class) has no `..rtti` global; its value holds none. A static method read through such
+  a value was "Expected 0 arguments, but got 1"; it is read as through the class's name.
+- A class given for an array (`g(A)` with `g(x: { new (): A }[])`, an interface method's last overload taking one):
+  "failed to legalize operation 'ts.ClassRef'"; now an error.
+- A type in a module variable (`const K = Foo` of `type Foo = number`): "failed to legalize operation 'ts.TypeRef'";
+  now an error. `export default Foo` of an imported type exports no value, as TypeScript emits none.
+- Object literals given for `Int<T, U>` and then `Int<U, T>` (`foo("", { method(p1) { return p1.length } },
+  { method(p2) { ... } })`): U, given by the first literal's method, did not type the second's parameter, which was
+  the type parameter itself, and the call failed with "failed statement" alone. The literals are typed in order, each
+  by what those before it give.
+- `map` of a `never[] | string[]`: the union was read as its `never[]`, whose `map` took `item: never` ("'Never'
+  can't be used as parameter type"). `never`, and an array of it, merged with another type is that type. An untyped
+  parameter's errors were at `<unknown>:0`; they are at the parameter.
+- `unknown | null` (`a ? b : null` of `b: unknown`), stored as the box alone: its null was a null pointer read as a
+  box, and `u === null` compared the box's pointer - false when it held null, and the JIT crashed. Null is boxed, and
+  the box is compared as an `unknown` is.
+- `any` given to a union with `unknown` in it (`(a ? b ?? null : null) ?? 0` is `0 | unknown`), and an object literal
+  given to `Object | string`: "'ts.Cast' op type ... can't be stored". The member that takes anything takes it.
+- Two `any`s compared in a module variable's initializer, with the default library: "redefinition of symbol named
+  'memcmp'" (the library declares memcmp, not lowered yet there); the library's is called.
+- An object literal's method given to an object type's method signature (`const o: { method(x: string): number } =
+  { method(a) { return a.length } }`): its parameter took the signature's `this` ("Can't resolve property 'length' of
+  type Opaque"). Given to a union of such shapes told apart by a literal field (`{ kind: "a", method(a) {...} }`),
+  the literal is typed by the member its literal fields name, and cast to it ("can't be stored"). Not yet: a
+  discriminant read from a module `const` (widened to string), a template literal or a missing one.
+- An array literal given to a union with a tuple in it (`f(["a"])` for `["a"] | I`): "can't be stored"; the union's
+  array takes it.
+- A negated test narrowed neither branch: `if (!Array.isArray(d)) d.v`, `if (!(typeof d === "array"))`, `if (!(d
+  instanceof F)) return; d.v` read the union. `!(a === b)` is `a !== b`; `!(x instanceof C)` narrows its then branch by
+  what the test's being false gives and its else branch to C.
+- A variable a test narrowed, then assigned in the branch, read the value the test saw: `if (typeof x === "number")
+  { x = "s" + x; print(x) }` printed the number (wrong result), also after an `if` inside the branch that assigned it.
+  After an assignment it is narrowed to what it was given (a member of its union), else it is its declared type,
+  read again.
+- After `if (test) x = e;` (no else) the variable is what the test's being false leaves it or what the branch gave
+  it: `if (!Array.isArray(d)) d = [d];` makes it an array after the `if` (it read the `F | F[]`). Only for a variable
+  the branch assigns once, by a statement of its own, in a branch that does not leave early.
+- A function returning `never` given for one returning a type parameter that another argument made an `s32[]`
+  (`withFew([1, 2, 3], id, fail)`): "can't assign '(p0: string) => never' to '(p0: string) => s32[]'" (it compiled
+  before `never` gave way in the merge). It is called through an adapter, which never returns either.
+- An ambient destructuring declaration (`declare var { a, ...x } : Foo;`, in a `declare namespace` too): "failed
+  statement" alone. Each name is declared as `declare var a: Foo["a"]` is; a rest element declares nothing.
+- `any` given to a union with a tuple in it (`string | [string, string]`): "can't be stored"; the box's tag says
+  which member it is.
+- `[n, ...rest] = robot` of a tuple: the rest was its last element cast to an array ("cast from type '!ts.string' to
+  array type", at `<unknown>:0`); it is an array of the elements from there on, or a tuple of them for a tuple target.
+
+Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
+`00narrowing_after_assign.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).

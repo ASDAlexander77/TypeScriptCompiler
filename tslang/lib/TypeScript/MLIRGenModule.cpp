@@ -769,6 +769,7 @@ namespace mlirgen
                                                                 undefined, exportAssignment->expression);
                 declaration->pos = exportAssignment->pos;
                 declaration->_end = exportAssignment->_end;
+                declaration->internalFlags |= InternalFlags::DefaultExport;
                 declarations.push_back(declaration);
 
                 ModifiersArray modifiers;

@@ -6909,6 +6909,62 @@ class MLIRGenImpl
             expr = asTypeOf;
         }
 
+        // `!test`: what the test's being false gives narrows the then branch, and its being true the else branch. It
+        // narrowed neither (only `!x` of a value that may be null was looked at): `if (!Array.isArray(d)) d.v`, `if
+        // (!(d instanceof F)) d.w` read the union
+        if (expr == SyntaxKind::PrefixUnaryExpression && expr.as<PrefixUnaryExpression>()->_operator == SyntaxKind::ExclamationToken)
+        {
+            auto operand = stripParentheses(expr.as<PrefixUnaryExpression>()->operand);
+            if (auto asTypeOf = arrayIsArrayAsTypeOf(operand))
+            {
+                operand = asTypeOf;
+            }
+
+            if (operand == SyntaxKind::BinaryExpression)
+            {
+                auto binExpr = operand.as<BinaryExpression>();
+                auto op = (SyntaxKind)binExpr->operatorToken;
+                auto flipped = op == SyntaxKind::EqualsEqualsEqualsToken    ? SyntaxKind::ExclamationEqualsEqualsToken
+                               : op == SyntaxKind::ExclamationEqualsEqualsToken ? SyntaxKind::EqualsEqualsEqualsToken
+                               : op == SyntaxKind::EqualsEqualsToken           ? SyntaxKind::ExclamationEqualsToken
+                               : op == SyntaxKind::ExclamationEqualsToken      ? SyntaxKind::EqualsEqualsToken
+                                                                               : SyntaxKind::Unknown;
+                if (flipped != SyntaxKind::Unknown)
+                {
+                    // `!(a === b)` is `a !== b`
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto negated = nf.createBinaryExpression(binExpr->left, nf.createToken(flipped), binExpr->right);
+                    negated->pos = binExpr->pos;
+                    negated->_end = binExpr->_end;
+                    return checkSafeCast(negated, conditionValue, elseSafeCases, genContext);
+                }
+
+                if (op == SyntaxKind::InstanceOfKeyword)
+                {
+                    // no operator says `!(x instanceof C)`: its then branch has what `x instanceof C` being false gives
+                    ElseSafeCases whenFalse;
+                    collectElseSafeCases(operand, conditionValue, whenFalse, genContext);
+                    addElseSafeCastStatements(whenFalse, genContext);
+
+                    // ...and its else branch (and the code after `if (!(x instanceof C)) return;`) has x as a C
+                    if (elseSafeCases)
+                    {
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        if (auto typeName = instanceOfEntityName(nf, binExpr->right))
+                        {
+                            if (auto classType = getType(nf.createTypeReferenceNode(typeName), genContext);
+                                classType && !mth.isNoneType(classType))
+                            {
+                                elseSafeCases->push_back({stripParenthesesAndUntangleEquals(binExpr->left), classType});
+                            }
+                        }
+                    }
+
+                    return mlir::success();
+                }
+            }
+        }
+
         if (expr == SyntaxKind::BinaryExpression)
         {
             auto binExpr = expr.as<BinaryExpression>();
@@ -7240,6 +7296,9 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext);
+    llvm::SmallVector<std::pair<std::string, Expression>> assignedOnceInBranch(Statement branch);
+    void mergedAfterIf(mlir::Location location, StringRef name, mlir::Type thenType, const ElseSafeCases &elseSafeCases,
+                       const GenContext &genContext);
     mlir::LogicalResult mlirGenBranchStatement(Statement statement, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext);
@@ -10249,7 +10308,73 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
 
-        return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+        auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+        EXIT_IF_FAILED(saved)
+
+        if (leftExpression == SyntaxKind::Identifier)
+        {
+            renarrowAfterAssignment(location, MLIRHelper::getName(leftExpression.as<Identifier>()), leftExpressionValue,
+                                    rightExpressionValue.getType(), genContext);
+        }
+
+        return saved;
+    }
+
+    // A variable a test narrowed (addSafeCastStatement), then assigned: its name read the value the test saw (`if
+    // (typeof x === "number") { x = "s" + x; print(x); }` printed the number). It is narrowed again, to the type of
+    // what it was given when that is one of its declared union's members, else to its declared type - read again
+    // from its place. In the scope of the assignment.
+    void renarrowAfterAssignment(mlir::Location location, StringRef name, mlir::Value narrowedValue, mlir::Type assignedType,
+                                 const GenContext &genContext)
+    {
+        auto safeCastOp = narrowedValue.getDefiningOp<mlir_ts::SafeCastOp>();
+        if (!safeCastOp || safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME) || safeCastOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
+        {
+            return;
+        }
+
+        auto loadOp = safeCastOp.getValue().getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp)
+        {
+            return;
+        }
+
+        auto fresh = builder.create<mlir_ts::LoadOp>(location, loadOp.getType(), loadOp.getReference());
+        auto declaredType = fresh.getType();
+        auto givenType = mth.wideStorageType(assignedType);
+
+        mlir::Type narrowedType = declaredType;
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(declaredType); unionType && llvm::is_contained(unionType.getTypes(), givenType))
+        {
+            narrowedType = givenType;
+        }
+        else if (auto optType = dyn_cast<mlir_ts::OptionalType>(declaredType); optType && optType.getElementType() == givenType)
+        {
+            narrowedType = givenType;
+        }
+
+        if (narrowedType != declaredType)
+        {
+            (void)addSafeCastStatement(location, name, fresh, narrowedType, false, nullptr, genContext);
+            return;
+        }
+
+        // no member it is: the name is the variable as it is declared again (a generator's local is read through its
+        // view each time, the narrowed type aside)
+        if (genContext.allocateVarsInContextThis)
+        {
+            return;
+        }
+
+        auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, declaredType, fresh, fresh);
+        GenContext narrowingGenContext(genContext);
+        narrowingGenContext.insertIntoParentScope = false;
+        (void)registerVariable(
+            location, name, false, VariableType::Const,
+            [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                return {declaredType, wrappedValue, TypeProvided::Yes};
+            },
+            narrowingGenContext, false, true);
     }
 
     // The same place named twice: each part is a name, `this`, a number, a member or an element of
@@ -10695,6 +10820,87 @@ class MLIRGenImpl
                 if (leftItem == SyntaxKind::OmittedExpression)
                 {
                     continue;
+                }
+
+                // `[n, ...rest] = robot` of a tuple: rest is an array of the elements from here on, of the element type
+                // its target has (its last element was cast to the array: "cast from type '!ts.string' to array type")
+                if (leftItem == SyntaxKind::SpreadElement)
+                {
+                    auto restTarget = mlirGen(leftItem.as<SpreadElement>()->expression, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(restTarget)
+                    auto restTargetValue = V(restTarget);
+                    auto restArrayType = dyn_cast<mlir_ts::ArrayType>(mth.stripOptionalType(restTargetValue.getType()));
+
+                    // ...or a tuple of them (`[x, ...a2] = v` with `a2: [number, number]`)
+                    if (auto restTupleType = dyn_cast<mlir_ts::TupleType>(mth.stripOptionalType(restTargetValue.getType()));
+                        restTupleType && !restArrayType)
+                    {
+                        if (restTupleType.size() != tupleType.size() - index)
+                        {
+                            emitError(location) << "the rest of a tuple has " << (tupleType.size() - index)
+                                                << " element(s), and '" << to_print(restTupleType) << "' takes "
+                                                << restTupleType.size();
+                            return mlir::failure();
+                        }
+
+                        SmallVector<mlir::Value> restFields;
+                        for (auto restIndex = index; restIndex < tupleType.size(); restIndex++)
+                        {
+                            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue,
+                                                           builder.getI32IntegerAttr(restIndex));
+                            mlir::Value element = cl.Tuple(tupleType, true);
+                            if (!element)
+                            {
+                                return mlir::failure();
+                            }
+
+                            auto fieldType = restTupleType.getFieldInfo(restIndex - index).type;
+                            if (element.getType() != fieldType)
+                            {
+                                CAST(element, location, fieldType, element, genContext);
+                            }
+
+                            restFields.push_back(element);
+                        }
+
+                        auto restTuple = builder.create<mlir_ts::CreateTupleOp>(location, restTupleType, restFields);
+                        auto saved = mlirGenSaveLogicOneItem(location, restTargetValue, restTuple, genContext);
+                        EXIT_IF_FAILED(saved)
+                        break;
+                    }
+
+                    if (!restArrayType)
+                    {
+                        emitError(location) << "the rest of a tuple can only be given to an array, not to '"
+                                            << to_print(restTargetValue.getType()) << "'";
+                        return mlir::failure();
+                    }
+
+                    SmallVector<mlir::Value> restElements;
+                    for (auto restIndex = index; restIndex < tupleType.size(); restIndex++)
+                    {
+                        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue,
+                                                       builder.getI32IntegerAttr(restIndex));
+                        mlir::Value element = cl.Tuple(tupleType, true);
+                        if (!element)
+                        {
+                            return mlir::failure();
+                        }
+
+                        if (element.getType() != restArrayType.getElementType())
+                        {
+                            CAST(element, location, restArrayType.getElementType(), element, genContext);
+                        }
+
+                        restElements.push_back(element);
+                    }
+
+                    // the data block about to be filled releases every element when it dies
+                    mlirGenRetainCaptured(location, restElements);
+                    auto restArray = builder.create<mlir_ts::CreateArrayOp>(location, restArrayType, restElements);
+                    auto saved = mlirGenSaveLogicOneItem(location, restTargetValue, restArray, genContext);
+                    EXIT_IF_FAILED(saved)
+                    break;
                 }
 
                 // `[a = 1, b = "abc"] = [2, "def"]`: the target is `a`, 1 its default. Evaluated first as written,
@@ -16823,6 +17029,16 @@ class MLIRGenImpl
         auto fieldType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
         if (fieldType && mth.isAnyFunctionType(mth.stripOptionalType(fieldType)))
         {
+            // a method signature of an object type (`{ method(x: string): number }`) is a function whose first input
+            // is its `this` (an opaque), unlike a field of a function type (a hybrid function): the member's
+            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque)
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(mth.stripOptionalType(fieldType));
+            if (funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0))
+                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(MLIRTypeHelper::stripValueType(receiverType)))
+            {
+                return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+            }
+
             return mth.stripOptionalType(fieldType);
         }
 
@@ -19977,6 +20193,8 @@ class MLIRGenImpl
         mlir_ts::ClassType classType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
         ObjectLiteralExpression objectLiteral, const GenContext &genContext);
+    mlir::Type unionMemberNamedByLiteral(mlir_ts::UnionType unionType, ObjectLiteralExpression objectLiteral,
+        const GenContext &genContext);
 
     ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);

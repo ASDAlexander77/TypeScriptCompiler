@@ -1059,6 +1059,211 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // The variables a branch assigns once, each by an expression statement of the branch's own (`x = e;`), with what it
+    // assigns - in a branch that has no return, throw, break, continue or yield, and no other assignment, `++`/`--` or
+    // compound assignment of them. Others are not merged after the `if`.
+    llvm::SmallVector<std::pair<std::string, Expression>> MLIRGenImpl::assignedOnceInBranch(Statement branch)
+    {
+        llvm::SmallVector<std::pair<std::string, Expression>> candidates;
+
+        auto leaves = false;
+        for (auto kind : {SyntaxKind::ReturnStatement, SyntaxKind::ThrowStatement, SyntaxKind::BreakStatement,
+                          SyntaxKind::ContinueStatement, SyntaxKind::YieldExpression, SyntaxKind::AwaitExpression})
+        {
+            FilterVisitorAST<Node> visitor(kind, [&](auto) { leaves = true; });
+            visitor.visit(branch);
+        }
+
+        if (leaves)
+        {
+            return candidates;
+        }
+
+        // every write of a name in the branch
+        llvm::StringMap<int> writes;
+        auto writtenName = [](Expression target) -> std::string {
+            auto stripped = target;
+            while (stripped == SyntaxKind::ParenthesizedExpression)
+            {
+                stripped = stripped.as<ParenthesizedExpression>()->expression;
+            }
+
+            return stripped == SyntaxKind::Identifier ? MLIRHelper::getName(stripped.as<Identifier>()) : std::string();
+        };
+
+        FilterVisitorAST<Node> binaryVisitor(SyntaxKind::BinaryExpression, [&](auto node) {
+            auto binExpr = node.template as<BinaryExpression>();
+            auto op = (SyntaxKind)binExpr->operatorToken;
+            if (isAssignmentOperator(op))
+            {
+                auto name = writtenName(binExpr->left);
+                if (!name.empty())
+                {
+                    writes[name] += op == SyntaxKind::EqualsToken ? 1 : 2;
+                }
+            }
+        });
+        binaryVisitor.visit(branch);
+
+        for (auto kind : {SyntaxKind::PrefixUnaryExpression, SyntaxKind::PostfixUnaryExpression})
+        {
+            FilterVisitorAST<Node> unaryVisitor(kind, [&](auto node) {
+                Expression operand;
+                if (kind == SyntaxKind::PrefixUnaryExpression)
+                {
+                    operand = node.template as<PrefixUnaryExpression>()->operand;
+                }
+                else
+                {
+                    operand = node.template as<PostfixUnaryExpression>()->operand;
+                }
+
+                auto name = writtenName(operand);
+                if (!name.empty())
+                {
+                    writes[name] += 2;
+                }
+            });
+            unaryVisitor.visit(branch);
+        }
+
+        // the branch's own statements
+        NodeArray<Statement> statements;
+        if (branch == SyntaxKind::Block)
+        {
+            statements = branch.as<ts::Block>()->statements;
+        }
+        else
+        {
+            statements.push_back(branch);
+        }
+
+        for (auto statement : statements)
+        {
+            if (statement != SyntaxKind::ExpressionStatement)
+            {
+                continue;
+            }
+
+            auto expression = statement.as<ExpressionStatement>()->expression;
+            if (expression != SyntaxKind::BinaryExpression
+                || (SyntaxKind)expression.as<BinaryExpression>()->operatorToken != SyntaxKind::EqualsToken)
+            {
+                continue;
+            }
+
+            auto binExpr = expression.as<BinaryExpression>();
+            auto name = writtenName(binExpr->left);
+            if (!name.empty() && writes.lookup(name) == 1)
+            {
+                candidates.push_back({name, binExpr->right});
+            }
+        }
+
+        return candidates;
+    }
+
+    // After an `if` with no else whose branch gave `name` a value of `thenType` (assignedOnceInBranch): the variable is
+    // what the test's being false leaves it or `thenType`, narrowed to that when it is narrower than its type here.
+    void MLIRGenImpl::mergedAfterIf(mlir::Location location, StringRef name, mlir::Type thenType,
+                                    const ElseSafeCases &elseSafeCases, const GenContext &genContext)
+    {
+        auto current = resolveIdentifier(location, name, genContext);
+        if (!current)
+        {
+            return;
+        }
+
+        // the variable's place: read again
+        mlir::Value placeValue = current;
+        if (auto safeCastOp = current.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            placeValue = safeCastOp.getValue();
+        }
+
+        // the members are those of the type it is declared with: a variable a test around this `if` narrowed (`if
+        // (typeof x === "number") { if (c) x = "s"; ... }`) is no longer only what that test left it
+        auto loadOp = placeValue.getDefiningOp<mlir_ts::LoadOp>();
+        auto unionType = loadOp ? dyn_cast<mlir_ts::UnionType>(loadOp.getType()) : mlir_ts::UnionType();
+        if (!unionType)
+        {
+            return;
+        }
+
+        // what the test's being false leaves it: what it is here, unless the test narrows it
+        mlir::Type falseType = current.getType();
+        for (auto &elseSafeCase : elseSafeCases)
+        {
+            auto expr = elseSafeCase.expr;
+            while (expr == SyntaxKind::ParenthesizedExpression)
+            {
+                expr = expr.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (expr == SyntaxKind::Identifier && MLIRHelper::getName(expr.as<Identifier>()) == name && elseSafeCase.safeType)
+            {
+                falseType = elseSafeCase.safeType;
+            }
+        }
+
+        llvm::SmallVector<mlir::Type> members;
+        auto add = [&](mlir::Type type) {
+            if (auto memberUnion = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                for (auto member : memberUnion.getTypes())
+                {
+                    if (!llvm::is_contained(members, member))
+                    {
+                        members.push_back(member);
+                    }
+                }
+            }
+            else if (!isa<mlir_ts::NeverType>(type) && !llvm::is_contained(members, type))
+            {
+                members.push_back(type);
+            }
+        };
+
+        add(falseType);
+        add(thenType);
+
+        auto unionMembers = unionType.getTypes();
+        if (members.empty() || llvm::any_of(members, [&](mlir::Type member) { return !llvm::is_contained(unionMembers, member); }))
+        {
+            return;
+        }
+
+        auto mergedType = members.size() == 1 ? members.front() : getUnionType(members);
+        if (mergedType == current.getType() && !current.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            return;
+        }
+
+        auto fresh = builder.create<mlir_ts::LoadOp>(location, loadOp.getType(), loadOp.getReference());
+        if (members.size() < unionMembers.size())
+        {
+            (void)addSafeCastStatement(location, name, fresh, mergedType, false, nullptr, genContext);
+            return;
+        }
+
+        // every member it may be: the variable as it is declared, read again (a narrowing around this `if` read a
+        // value it no longer has). A generator's local is read through its view each time.
+        if (genContext.allocateVarsInContextThis)
+        {
+            return;
+        }
+
+        auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, unionType, fresh, fresh);
+        GenContext narrowingGenContext(genContext);
+        narrowingGenContext.insertIntoParentScope = false;
+        (void)registerVariable(
+            location, name, false, VariableType::Const,
+            [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                return {unionType, wrappedValue, TypeProvided::Yes};
+            },
+            narrowingGenContext, false, true);
+    }
+
     // whether control never runs past the statement: it returns, throws, breaks or continues on
     // every path. Conservative - a statement it cannot tell about does not count.
     static bool statementAlwaysExits(Statement statement)
@@ -1130,6 +1335,14 @@ namespace mlirgen
         // that is a string), and the code after it, written for any T, has to compile all the same.
         auto alwaysExits = !hasElse && literalValue.has_value() && literalValue.value() && genContext.funcOp
             && genContext.typeParamsWithArgs.empty() && statementAlwaysExits(ifStatementAST->thenStatement);
+        // `if (!Array.isArray(d)) d = [d];`: after the `if`, d is what the test's being false leaves it or what the
+        // branch gave it - an `F[]` both ways, where it read the `F | F[]` it is declared ("access expression is
+        // not applicable to F[] | F" of a `for...of d` after it). Only a variable the branch assigns once, by a
+        // statement of its own, in a branch that can't leave early; the type it is given is found where the test
+        // narrows (mergedAfterIf below).
+        auto mergeCandidates = !hasElse && !thenExits && !alwaysExits && !literalValue.has_value() && genContext.funcOp
+            ? assignedOnceInBranch(ifStatementAST->thenStatement) : llvm::SmallVector<std::pair<std::string, Expression>>();
+        llvm::SmallVector<std::pair<std::string, mlir::Type>> thenEndTypes;
         {
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
@@ -1138,10 +1351,21 @@ namespace mlirgen
             if (processIf)
             {
                 // check if we do safe-cast here
-                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits || alwaysExits ? &elseSafeCases : nullptr, genContext);
+                checkSafeCast(ifStatementAST->expression, V(result),
+                              hasElse || thenExits || alwaysExits || !mergeCandidates.empty() ? &elseSafeCases : nullptr, genContext);
 
                 auto result = mlirGenBranchStatement(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
+
+                // what each candidate is given, read where the test narrows (its value there is the one the
+                // assignment reads: the branch assigns it once)
+                for (auto &[name, assigned] : mergeCandidates)
+                {
+                    if (auto type = evaluate(assigned, genContext); type && !mth.isNoneType(type))
+                    {
+                        thenEndTypes.push_back({name, mth.wideStorageType(type)});
+                    }
+                }
             }
         }
 
@@ -1163,6 +1387,11 @@ namespace mlirgen
         }
 
         builder.setInsertionPointAfter(ifOp);
+
+        for (auto &[name, thenType] : thenEndTypes)
+        {
+            mergedAfterIf(location, name, thenType, elseSafeCases, genContext);
+        }
 
         if (thenExits)
         {
@@ -1372,7 +1601,7 @@ namespace mlirgen
             {
                 auto binary = node.as<BinaryExpression>();
                 auto op = (SyntaxKind)binary->operatorToken;
-                if (op >= SyntaxKind::FirstAssignment && op <= SyntaxKind::LastAssignment && isLoopName(binary->left))
+                if (isAssignmentOperator(op) && isLoopName(binary->left))
                 {
                     assigned = true;
                 }

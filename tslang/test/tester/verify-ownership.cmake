@@ -109,6 +109,9 @@ set(not_compilable_alone
     instanceof_failed_class_error.ts
     break_outside_loop_error.ts
     continue_outside_loop_error.ts
+    # errors by design (TSLANG 193 error tests)
+    class_not_array_error.ts
+    type_not_value_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts
     # an error by design (test-compile-subclass-field-failed-error)

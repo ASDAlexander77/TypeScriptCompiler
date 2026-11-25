@@ -1473,6 +1473,25 @@ namespace mlirgen
             }
         }
 
+        // `unknown | null` (`any | null`) is the box alone, its null a box of null: compared as the box it is (its pointer
+        // compared with null was never null - `u === null` was false)
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue)
+        {
+            for (auto *operand : {&leftExpressionValue, &rightExpressionValue})
+            {
+                mlir::Type baseType;
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>((*operand).getType());
+                    unionType && !mth.isUnionTypeNeedsTag(location, unionType, baseType)
+                    && isa_and_nonnull<mlir_ts::AnyType, mlir_ts::UnknownType>(baseType))
+                {
+                    mlir::Value box = builder.create<mlir_ts::GetValueFromUnionOp>(location, baseType, *operand);
+                    *operand = isa<mlir_ts::AnyType>(baseType) ? box : builder.create<mlir_ts::CastOp>(location, getAnyType(), box);
+                }
+            }
+        }
+
         if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;
@@ -2463,9 +2482,14 @@ namespace mlirgen
                 }
             }
 
-            MLIRNamespaceGuard ng(currentNamespace);
-            currentNamespace = functionGenericTypeInfo->elementNamespace;
-            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+            // the parameter's type, read where the function is declared
+            auto receiverOf = [&](size_t index) -> mlir::Type {
+                MLIRNamespaceGuard ng(currentNamespace);
+                currentNamespace = functionGenericTypeInfo->elementNamespace;
+                SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
+                auto type = getType(declarationParams[index]->type, typeGenContext);
+                return type && !mth.isNoneType(type) ? type : mlir::Type();
+            };
 
             receivers.resize(arguments.size());
             for (auto [index, argument] : enumerate(arguments))
@@ -2476,10 +2500,33 @@ namespace mlirgen
                     continue;
                 }
 
-                auto type = getType(declarationParams[index]->type, typeGenContext);
-                if (type && !mth.isNoneType(type))
+                auto type = receiverOf(index);
+                receivers[index] = type;
+
+                // a receiver still of a type parameter (`Int<string, U>`) types the literal's members as far as it
+                // can; what they give (`method(p1) { return p1.length }` gives U) types the literals after it
+                // (`{ method(p2) { ... } }` for `Int<U, T>`: its p2 was the type parameter U, and the call failed
+                // with no message)
+                if (type && mth.isGenericType(type) && index + 1 < arguments.size())
                 {
-                    receivers[index] = type;
+                    GenContext argGenContext(genContext);
+                    argGenContext.clearReceiverTypes();
+                    argGenContext.receiverFuncType = type;
+                    if (auto literalType = evaluate(argument, argGenContext); literalType && !mth.isNoneType(literalType))
+                    {
+                        StringMap<mlir::Type> moreInferredTypes;
+                        inferType(location, params[index + offset]->getType(), literalType, moreInferredTypes, genContext);
+                        for (auto &inferred : moreInferredTypes)
+                        {
+                            auto found = typeGenContext.typeParamsWithArgs.find(inferred.getKey());
+                            if (found != typeGenContext.typeParamsWithArgs.end()
+                                && isa<mlir_ts::NamedGenericType>(found->getValue().second)
+                                && inferred.getValue() && !mth.isGenericType(inferred.getValue()))
+                            {
+                                found->getValue().second = mth.wideStorageType(inferred.getValue());
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -3743,6 +3790,109 @@ namespace mlirgen
         return NewClassInstanceWithSettingFields(location, classType, classFields, values, genContext);
     }
 
+    // The member of a union of shapes an object literal's literal fields name: every field of the member typed by a
+    // literal (`kind: "a"`) that the object literal gives (`kind: "a"`, or `kind` of `const kind = "a"`) is given that
+    // literal, and at least one is given. None, or more than one member: no member.
+    mlir::Type MLIRGenImpl::unionMemberNamedByLiteral(mlir_ts::UnionType unionType, ObjectLiteralExpression objectLiteral,
+                                                      const GenContext &genContext)
+    {
+        // the literal's fields whose values are literals: their names and their literal types
+        llvm::SmallVector<std::pair<mlir::Attribute, mlir_ts::LiteralType>> givenLiterals;
+        for (auto &item : objectLiteral->properties)
+        {
+            Node name;
+            Expression value;
+            if (item == SyntaxKind::PropertyAssignment)
+            {
+                name = item.as<PropertyAssignment>()->name;
+                value = item.as<PropertyAssignment>()->initializer;
+            }
+            else if (item == SyntaxKind::ShorthandPropertyAssignment)
+            {
+                name = item.as<ShorthandPropertyAssignment>()->name;
+                value = item.as<ShorthandPropertyAssignment>()->name;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (value != SyntaxKind::StringLiteral && value != SyntaxKind::NumericLiteral && value != SyntaxKind::TrueKeyword
+                && value != SyntaxKind::FalseKeyword && value != SyntaxKind::Identifier
+                && value != SyntaxKind::NoSubstitutionTemplateLiteral)
+            {
+                continue;
+            }
+
+            auto fieldId = TupleFieldName(name, genContext);
+            auto literalType = fieldId ? dyn_cast_or_null<mlir_ts::LiteralType>(evaluate(value, genContext)) : mlir_ts::LiteralType();
+            if (literalType)
+            {
+                givenLiterals.push_back({fieldId, literalType});
+            }
+        }
+
+        if (givenLiterals.empty())
+        {
+            return mlir::Type();
+        }
+
+        mlir::Type found;
+        for (auto member : unionType.getTypes())
+        {
+            if (!isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member))
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir_ts::FieldInfo> fields;
+            if (mlir::failed(mth.getFields(member, fields)))
+            {
+                continue;
+            }
+
+            auto named = false;
+            auto conflicts = false;
+            for (auto &field : fields)
+            {
+                auto fieldLiteral = dyn_cast<mlir_ts::LiteralType>(mth.stripOptionalType(field.type));
+                if (!fieldLiteral)
+                {
+                    continue;
+                }
+
+                for (auto &[id, given] : givenLiterals)
+                {
+                    if (id != field.id)
+                    {
+                        continue;
+                    }
+
+                    if (given.getValue() == fieldLiteral.getValue())
+                    {
+                        named = true;
+                    }
+                    else
+                    {
+                        conflicts = true;
+                    }
+                }
+            }
+
+            if (named && !conflicts)
+            {
+                if (found)
+                {
+                    return mlir::Type();
+                }
+
+                found = member;
+            }
+        }
+
+        return found;
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         auto location = loc(objectLiteral);
@@ -3787,6 +3937,17 @@ namespace mlirgen
         if (oli.receiverType)
         {
             oli.receiverType = mth.stripOptionalType(oli.receiverType);
+
+            // a union of shapes told apart by a literal field (`{ kind: "a"; method(x: string): number } | { kind: "b"; ... }`):
+            // the literal is typed by the member its own literal fields name (`{ kind: "a", method(a) {...} }`), as
+            // TypeScript's discriminated contextual type is - its method's parameter had no type (Opaque)
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(oli.receiverType))
+            {
+                if (auto memberType = unionMemberNamedByLiteral(unionType, objectLiteral, genContext))
+                {
+                    oli.receiverType = memberType;
+                }
+            }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << oli.receiverType << "\n";);
 
