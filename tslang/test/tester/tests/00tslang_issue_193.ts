@@ -78,6 +78,22 @@ function notLeaf(d: Leaf | Branch) {
     return d.v;
 }
 
+// - an ambient destructuring declaration (`declare var { a, ...rest } : AB;`, in a declared namespace too): "failed
+//   statement" alone; each name is declared as `declare var a: AB["a"]` would be
+interface AB {
+    a: number;
+    b: string;
+}
+
+declare var { a: ambientA, ...ambientRest }: AB;
+
+declare namespace Ambient {
+    export var { b }: AB;
+}
+
+// - `[n, ...rest] = robot` of a tuple: the rest took the last element cast to an array
+type Robot = [number, string, string];
+
 // read in module variables, as the sweep's tests did
 const t7 = Foo[k3];
 const t8 = new Foo()[k3];
@@ -103,6 +119,12 @@ function main() {
 
     assert(notArray(new Leaf()) == 1 && notArray([new Leaf(), new Leaf()]) == 2, "!(typeof d === \"array\") narrows");
     assert(notLeaf(new Branch()) == 2 && notLeaf(new Leaf()) == 1, "!(d instanceof Leaf) narrows");
+
+    const robot: Robot = [1, "mower", "mowing"];
+    let n: number;
+    let rest: (number | string)[];
+    [n, ...rest] = robot;
+    assert(n == 1 && rest.length == 2 && rest[0] == "mower" && rest[1] == "mowing", "the rest of a tuple assigned");
 
     print("done.");
 }

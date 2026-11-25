@@ -3490,6 +3490,15 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
 - After `if (test) x = e;` (no else) the variable is what the test's being false leaves it or what the branch gave
   it: `if (!Array.isArray(d)) d = [d];` makes it an array after the `if` (it read the `F | F[]`). Only for a variable
   the branch assigns once, by a statement of its own, in a branch that does not leave early.
+- A function returning `never` given for one returning a type parameter that another argument made an `s32[]`
+  (`withFew([1, 2, 3], id, fail)`): "can't assign '(p0: string) => never' to '(p0: string) => s32[]'" (it compiled
+  before `never` gave way in the merge). It is called through an adapter, which never returns either.
+- An ambient destructuring declaration (`declare var { a, ...x } : Foo;`, in a `declare namespace` too): "failed
+  statement" alone. Each name is declared as `declare var a: Foo["a"]` is; a rest element declares nothing.
+- `any` given to a union with a tuple in it (`string | [string, string]`): "can't be stored"; the box's tag says
+  which member it is.
+- `[n, ...rest] = robot` of a tuple: the rest was its last element cast to an array ("cast from type '!ts.string' to
+  array type", at `<unknown>:0`); it is an array of the elements from there on, or a tuple of them for a tuple target.
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
 `00narrowing_after_assign.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).

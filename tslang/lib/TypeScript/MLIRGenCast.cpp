@@ -3649,7 +3649,9 @@ namespace mlirgen
     // a result a function type takes as it is, widened: `string` for `string | number`, `T | undefined`, `any`
     static bool resultWidensTo(mlir::Type from, mlir::Type to)
     {
-        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(to))
+        // a function that never returns (`fail(m): never`) is one returning anything (`withFew([1], id, fail)` of
+        // `haveNone: (reason: string) => r` with r an `s32[]`): its adapter gives no value back, as it never returns
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(to) || isa<mlir_ts::NeverType>(from))
         {
             return true;
         }
@@ -3856,6 +3858,15 @@ namespace mlirgen
             // cast of a taken-over result is not one OwnedReturnConsumptionPass reads as returning owned, and
             // one such function in a module leaves every call through a function value there unreleased
             mlir::Value result = callOp.getResult(0);
+
+            // a function that never returns: the adapter's return is never reached, and has no value of it to give
+            if (isa<mlir_ts::NeverType>(result.getType()))
+            {
+                auto nothing = builder.create<mlir_ts::DefaultOp>(location, destResults.front());
+                builder.create<mlir_ts::ReturnValOp>(location, nothing, resultRef);
+                return mlir::success();
+            }
+
             auto widened = result.getType() != destResults.front();
             if (ownsResult)
             {
@@ -5255,8 +5266,10 @@ namespace mlirgen
         llvm::StringSet<> tags;
         for (auto member : unionType.getTypes())
         {
+            // (a tuple too, its box saying "tuple": `string | [string, string]`, read as a tuple is from a box)
             auto supported = isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::StringType, mlir_ts::BigIntType,
-                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType,
+                                 mlir_ts::TupleType>(member);
             auto tag = supported ? toh.typeOfAsString(member) : std::string();
             if (tag.empty() || !tags.insert(tag).second)
             {
@@ -5291,6 +5304,12 @@ namespace mlirgen
             else if (isa<mlir_ts::UndefinedType>(member))
             {
                 memberValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            }
+            else if (isa<mlir_ts::TupleType>(member))
+            {
+                auto result = castAnyToTuple(location, member, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                memberValue = V(result);
             }
             else
             {

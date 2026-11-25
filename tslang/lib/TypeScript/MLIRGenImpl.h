@@ -10822,6 +10822,87 @@ class MLIRGenImpl
                     continue;
                 }
 
+                // `[n, ...rest] = robot` of a tuple: rest is an array of the elements from here on, of the element type
+                // its target has (its last element was cast to the array: "cast from type '!ts.string' to array type")
+                if (leftItem == SyntaxKind::SpreadElement)
+                {
+                    auto restTarget = mlirGen(leftItem.as<SpreadElement>()->expression, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(restTarget)
+                    auto restTargetValue = V(restTarget);
+                    auto restArrayType = dyn_cast<mlir_ts::ArrayType>(mth.stripOptionalType(restTargetValue.getType()));
+
+                    // ...or a tuple of them (`[x, ...a2] = v` with `a2: [number, number]`)
+                    if (auto restTupleType = dyn_cast<mlir_ts::TupleType>(mth.stripOptionalType(restTargetValue.getType()));
+                        restTupleType && !restArrayType)
+                    {
+                        if (restTupleType.size() != tupleType.size() - index)
+                        {
+                            emitError(location) << "the rest of a tuple has " << (tupleType.size() - index)
+                                                << " element(s), and '" << to_print(restTupleType) << "' takes "
+                                                << restTupleType.size();
+                            return mlir::failure();
+                        }
+
+                        SmallVector<mlir::Value> restFields;
+                        for (auto restIndex = index; restIndex < tupleType.size(); restIndex++)
+                        {
+                            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue,
+                                                           builder.getI32IntegerAttr(restIndex));
+                            mlir::Value element = cl.Tuple(tupleType, true);
+                            if (!element)
+                            {
+                                return mlir::failure();
+                            }
+
+                            auto fieldType = restTupleType.getFieldInfo(restIndex - index).type;
+                            if (element.getType() != fieldType)
+                            {
+                                CAST(element, location, fieldType, element, genContext);
+                            }
+
+                            restFields.push_back(element);
+                        }
+
+                        auto restTuple = builder.create<mlir_ts::CreateTupleOp>(location, restTupleType, restFields);
+                        auto saved = mlirGenSaveLogicOneItem(location, restTargetValue, restTuple, genContext);
+                        EXIT_IF_FAILED(saved)
+                        break;
+                    }
+
+                    if (!restArrayType)
+                    {
+                        emitError(location) << "the rest of a tuple can only be given to an array, not to '"
+                                            << to_print(restTargetValue.getType()) << "'";
+                        return mlir::failure();
+                    }
+
+                    SmallVector<mlir::Value> restElements;
+                    for (auto restIndex = index; restIndex < tupleType.size(); restIndex++)
+                    {
+                        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue,
+                                                       builder.getI32IntegerAttr(restIndex));
+                        mlir::Value element = cl.Tuple(tupleType, true);
+                        if (!element)
+                        {
+                            return mlir::failure();
+                        }
+
+                        if (element.getType() != restArrayType.getElementType())
+                        {
+                            CAST(element, location, restArrayType.getElementType(), element, genContext);
+                        }
+
+                        restElements.push_back(element);
+                    }
+
+                    // the data block about to be filled releases every element when it dies
+                    mlirGenRetainCaptured(location, restElements);
+                    auto restArray = builder.create<mlir_ts::CreateArrayOp>(location, restArrayType, restElements);
+                    auto saved = mlirGenSaveLogicOneItem(location, restTargetValue, restArray, genContext);
+                    EXIT_IF_FAILED(saved)
+                    break;
+                }
+
                 // `[a = 1, b = "abc"] = [2, "def"]`: the target is `a`, 1 its default. Evaluated first as written,
                 // the target was an assignment of the default.
                 Expression target = leftItem;

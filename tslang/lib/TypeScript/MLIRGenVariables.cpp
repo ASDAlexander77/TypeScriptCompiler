@@ -1278,6 +1278,51 @@ namespace mlirgen
 
         auto location = loc(item);
 
+        // `declare var { a, b: c } : Foo;`: an ambient pattern has no value to take apart; it declares each name, of
+        // the type its field has (`Foo["a"]`), as `declare var a: Foo["a"]` would. A rest element (`...x`) or a
+        // nested pattern declares nothing. It failed with "failed statement" alone.
+        if (item->name == SyntaxKind::ObjectBindingPattern && !item->initializer && item->type
+            && (varClass == VariableType::External || declarationMode))
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            for (auto element : item->name.as<ObjectBindingPattern>()->elements)
+            {
+                if (element->dotDotDotToken || element->name != SyntaxKind::Identifier)
+                {
+                    continue;
+                }
+
+                Node keyNode = element->propertyName ? element->propertyName : element->name;
+                std::string key;
+                if (keyNode == SyntaxKind::Identifier)
+                {
+                    key = MLIRHelper::getName(keyNode.as<Identifier>());
+                }
+                else if (keyNode == SyntaxKind::StringLiteral)
+                {
+                    key = convertWideToUTF8(keyNode.as<ts::StringLiteral>()->text);
+                }
+                else
+                {
+                    continue;
+                }
+
+                Node keyLiteral = nf.createStringLiteral(convertUTF8toWide(key));
+                auto fieldType = nf.createIndexedAccessTypeNode(item->type, nf.createLiteralTypeNode(keyLiteral));
+                auto declaration = nf.createVariableDeclaration(element->name, undefined, fieldType, undefined);
+                declaration->pos = element->pos;
+                declaration->_end = element->_end;
+                declaration->parent = item->parent;
+                declaration->internalFlags = item->internalFlags;
+                if (mlir::failed(mlirGen(declaration, varClass, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            return mlir::success();
+        }
+
 #ifndef ANY_AS_DEFAULT
         auto isExternal = varClass == VariableType::External;
         if (declarationMode)

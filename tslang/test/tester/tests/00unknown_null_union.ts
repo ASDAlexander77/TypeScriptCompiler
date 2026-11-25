@@ -21,6 +21,12 @@ function pick(a: unknown, b: unknown) {
     return (a ? b ?? null : null) ?? 0;
 }
 
+// - `any` given to `string | [string, string]`: "can't be stored"; the box says which
+function fromAny(a: any) {
+    const v: string | [string, string] = a;
+    return typeof v === "string" ? "s:" + v : "t:" + v[0] + v[1];
+}
+
 function main() {
     assert(nullOr(false, 5) == "null nullish string", "unknown | null holding null");
     assert(nullOr(true, 5) == "value set s32", "unknown | null holding a value");
@@ -31,6 +37,9 @@ function main() {
     const x: Object | string = { x: 0 };
     const s: Object | string = "s";
     assert(typeof x != "string" && typeof s == "string", "an object literal given to Object | string");
+
+    const pair: [string, string] = ["mow", "ing"];
+    assert(fromAny(pair) == "t:mowing" && fromAny("plain") == "s:plain", "any given to string | [string, string]");
 
     print("done.");
 }
