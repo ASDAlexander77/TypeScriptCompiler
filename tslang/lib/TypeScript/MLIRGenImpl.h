@@ -3455,6 +3455,17 @@ class MLIRGenImpl
                     mlir::StringAttr::get(builder.getContext(), variableDeclarationInfo.varClass.dllName)});
             }
 
+            // its place among the module's start-up constructors, should its initializer need one (TSLANG 191). A
+            // global of the module's top level only: a namespace's code runs in a constructor of its own, made after its
+            // statements, and a variable it initializes after that code (`count++; export var label = "" + count`)
+            // must run after it, as it did
+            if (variableDeclarationInfo.scope == VariableScope::Global && !variableDeclarationInfo.isExternal &&
+                !variableDeclarationInfo.isImport && currentNamespace == rootNamespace)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME),
+                                 builder.getI64IntegerAttr(reserveGlobalConstructorPriority())});
+            }
+
             if (variableDeclarationInfo.varClass.writtenOnce)
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), WRITTEN_ONCE_GLOBAL_ATTR_NAME),
@@ -22526,6 +22537,13 @@ class MLIRGenImpl
     // import of "m" is that namespace's, not a file's (TSLANG 191)
     llvm::StringMap<std::string> ambientModuleExportEquals;
     void recordAmbientModule(ModuleDeclaration moduleDeclarationAST);
+
+    // the next global constructor priority of each module being made (reserveGlobalConstructorPriority, TSLANG 191)
+    llvm::DenseMap<mlir::Operation *, int64_t> nextGlobalConstructorPriority;
+    int64_t reserveGlobalConstructorPriority();
+
+    // class members named by a key known only at run time: entries of the class's `.dyn` table (TSLANG 191)
+    void lowerRunTimeNamedMembers(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext);
 
     // an import of a module the program declares (`declare module "m"`) and no file gives: a file of that name wins
     // (a `declare module "pkg" { ... }` beside the package adds to it)

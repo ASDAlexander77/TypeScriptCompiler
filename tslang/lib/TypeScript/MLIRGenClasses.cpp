@@ -100,6 +100,134 @@ namespace mlirgen
         return std::get<0>(value);
     }
 
+    // Members named by a key known only at run time (`class Holder { [fieldName]() { ... } }`, `static [k] = 1`): not
+    // members of the class's layout, but entries of one table per class (USER 2026-11-25), its static `.dyn` (a
+    // name no program can write), an ObjectDictionary<any> a static block of the class fills. A method is an entry
+    // holding the function (its `this` is not the object). A key read at run time (`h[k]`) finds them after the
+    // class's own members (makeAnyKeysAdapter); `h.f1` does not, as tsc types them only through an index signature.
+    // A field declared with a type only has nothing to hold; one given a value per object, or an accessor, stays
+    // the error it was ("a computed property name must be a constant", TSLANG 191).
+    void MLIRGenImpl::lowerRunTimeNamedMembers(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        if (!classDeclarationAST->name || !getGenericClassInfoByFullName(OBJECT_DICTIONARY_CLASS_NAME))
+        {
+            return;
+        }
+
+        auto isRunTimeName = [&](Node name) {
+            if (!name || name != SyntaxKind::ComputedPropertyName)
+            {
+                return false;
+            }
+
+            auto expression = name.as<ComputedPropertyName>()->expression;
+            if (!wellKnownSymbolName(expression).empty() || computedNameConstants.lookup(name.as<ComputedPropertyName>().operator->()))
+            {
+                return false;
+            }
+
+            auto keyType = evaluate(expression, genContext);
+            return keyType && (isa<mlir_ts::StringType, mlir_ts::NumberType>(keyType) || isa<mlir::IntegerType>(keyType));
+        };
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto className = MLIRHelper::getName(classDeclarationAST->name);
+        auto dynName = [&]() { return nf.createIdentifier(S(".dyn")); };
+        NodeArray<Statement> fills;
+        NodeArray<ClassElement> kept;
+        auto changed = false;
+        for (auto member : classDeclarationAST->members)
+        {
+            Node name;
+            Expression value;
+            auto drop = false;
+            if (member == SyntaxKind::MethodDeclaration)
+            {
+                auto method = member.as<MethodDeclaration>();
+                name = method->name;
+                if (method->body && isRunTimeName(name))
+                {
+                    ModifiersArray modifiers;
+                    auto function = nf.createFunctionExpression(modifiers, method->asteriskToken, undefined, method->typeParameters,
+                                                                method->parameters, method->type, method->body);
+                    function->pos = method->pos;
+                    function->_end = method->_end;
+                    value = function;
+                }
+            }
+            else if (member == SyntaxKind::PropertyDeclaration)
+            {
+                auto property = member.as<PropertyDeclaration>();
+                name = property->name;
+                if (isRunTimeName(name))
+                {
+                    if (!property->initializer)
+                    {
+                        drop = true;
+                    }
+                    else if (hasModifier(member, SyntaxKind::StaticKeyword))
+                    {
+                        value = property->initializer;
+                    }
+                }
+            }
+
+            if (!value && !drop)
+            {
+                kept.push_back(member);
+                continue;
+            }
+
+            changed = true;
+            if (value)
+            {
+                auto table = nf.createPropertyAccessExpression(nf.createIdentifier(convertUTF8toWide(className)), dynName());
+                auto entry = nf.createElementAccessExpression(table, name.as<ComputedPropertyName>()->expression);
+                auto assignment = nf.createBinaryExpression(entry, nf.createToken(SyntaxKind::EqualsToken), value);
+                auto statement = nf.createExpressionStatement(assignment);
+                for (Node node : {Node(table), Node(entry), Node(assignment), Node(statement)})
+                {
+                    node->pos = member->pos;
+                    node->_end = member->_end;
+                }
+
+                fills.push_back(statement);
+            }
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        // `static .dyn: ObjectDictionary<any>;` and `static { Holder..dyn = new ObjectDictionary<any>(); Holder..dyn[k] = ...; }`
+        // (made in the block: a static field's object initializer runs after the class's static blocks)
+        auto dictionaryName = [&]() { return nf.createIdentifier(S(OBJECT_DICTIONARY_CLASS_NAME)); };
+        NodeArray<TypeNode> anyArgument;
+        anyArgument.push_back(nf.createToken(SyntaxKind::AnyKeyword).as<TypeNode>());
+        NodeArray<Expression> noArguments;
+        auto tableType = nf.createTypeReferenceNode(dictionaryName(), anyArgument);
+        auto tableValue = nf.createNewExpression(dictionaryName(), anyArgument, noArguments);
+        auto tableRef = nf.createPropertyAccessExpression(nf.createIdentifier(convertUTF8toWide(className)), dynName());
+        auto makeTable = nf.createExpressionStatement(nf.createBinaryExpression(tableRef, nf.createToken(SyntaxKind::EqualsToken), tableValue));
+        fills.insert(fills.begin(), makeTable);
+        NodeArray<ModifierLike> staticModifiers;
+        staticModifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
+        auto tableDeclaration = nf.createPropertyDeclaration(staticModifiers, dynName(), undefined, tableType, undefined);
+        auto fillBlock = nf.createClassStaticBlockDeclaration(nf.createBlock(fills, true));
+        for (Node node : {Node(tableType), Node(tableValue), Node(tableRef), Node(makeTable), Node(tableDeclaration), Node(fillBlock)})
+        {
+            node->pos = classDeclarationAST->pos;
+            node->_end = classDeclarationAST->pos;
+        }
+
+        tableDeclaration->parent = classDeclarationAST;
+        fillBlock->parent = classDeclarationAST;
+        kept.push_back(tableDeclaration);
+        kept.push_back(fillBlock);
+        classDeclarationAST->members = kept;
+    }
+
     std::pair<mlir::LogicalResult, mlir::StringRef> MLIRGenImpl::mlirGen(ClassLikeDeclaration classDeclarationAST,
                                                             const GenContext &genContext)
     {
@@ -122,6 +250,8 @@ namespace mlirgen
 
             return {registerGenericClass(classDeclarationAST, genContext), ""};
         }
+
+        lowerRunTimeNamedMembers(classDeclarationAST, genContext);
 
         auto newClassPtr = mlirGenClassInfo(classDeclarationAST, genContext);
         if (!newClassPtr)

@@ -6499,6 +6499,19 @@ namespace mlirgen
                        " return <any>o[" + quote(key) + "]; }\n";
             }
 
+            // ...and the class's members named at run time, its `.dyn` table (lowerRunTimeNamedMembers): read by the
+            // class's name, which a class of the module's top level has (TSLANG 191)
+            if (classType)
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                if (classInfo && classInfo->fullName == classInfo->name &&
+                    classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(".dyn", builder.getContext())) >= 0)
+                {
+                    src += "{ const dt = " + classInfo->name.str() + "[\".dyn\"]; if (k in dt) { if (op == " + has +
+                           ") return <any>true; if (op == " + set + ") { dt[k] = value; return undefined; } return <any>dt[k]; } }\n";
+                }
+            }
+
             src += notThere + "}\n";
         }
 

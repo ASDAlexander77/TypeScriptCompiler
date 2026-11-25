@@ -2054,14 +2054,41 @@ namespace mlirgen
 
         // each one after every one before it: LLVM leaves the order of equal priorities undefined,
         // and a global's initializer may read one made before it (#446)
-        int64_t priority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
-        for (auto existing : theModule.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
-        {
-            priority = std::max<int64_t>(priority, existing.getPriority().getSExtValue() + 1);
-        }
+        auto priority = reserveGlobalConstructorPriority();
 
         builder.create<mlir_ts::GlobalConstructorOp>(
             location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName), builder.getIndexAttr(priority));
+    }
+
+    // The next global constructor's priority in the module being made: above every constructor made already and every
+    // priority a global was given (GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME). A global of the module takes one when it is
+    // made, in the order of the source, so a class's static constructor runs after the initializers of the globals
+    // before it, as in TypeScript - the lowering made a global's own constructor after every one MLIRGen made: `const
+    // x = f(); class C { static y = x; }` gave C.y null (TSLANG 191).
+    int64_t MLIRGenImpl::reserveGlobalConstructorPriority()
+    {
+        auto *module = theModule.getOperation();
+        auto next = nextGlobalConstructorPriority.find(module);
+        if (next == nextGlobalConstructorPriority.end())
+        {
+            int64_t priority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
+            for (auto existing : theModule.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
+            {
+                priority = std::max<int64_t>(priority, existing.getPriority().getSExtValue() + 1);
+            }
+
+            for (auto globalOp : theModule.getBody()->getOps<mlir_ts::GlobalOp>())
+            {
+                if (auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME))
+                {
+                    priority = std::max<int64_t>(priority, reserved.getInt() + 1);
+                }
+            }
+
+            next = nextGlobalConstructorPriority.insert({module, priority}).first;
+        }
+
+        return next->second++;
     }
 
     mlir::LogicalResult MLIRGenImpl::generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,

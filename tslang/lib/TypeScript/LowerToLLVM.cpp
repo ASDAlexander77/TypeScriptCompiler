@@ -6523,9 +6523,12 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
                 lch.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
 
-                rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
+                // at the place MLIRGen gave it among the module's constructors, in the order of the source, so a class's
+                // static constructor after it reads its value (TSLANG 191)
+                auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME);
+                rewriter.create<mlir_ts::GlobalConstructorOp>(loc,
                     FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)),
-                    rewriter.getIndexAttr(tsLlvmContext->nextGlobalConstructorPriority++));
+                    rewriter.getIndexAttr(reserved ? reserved.getInt() : tsLlvmContext->nextGlobalConstructorPriority++));
             }
         }
         else
@@ -10707,6 +10710,16 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
         tsLlvmContext.nextGlobalConstructorPriority =
             std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, existing.getPriority().getSExtValue() + 1);
+    }
+
+    // ...and above every priority a global was given (GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME)
+    for (auto globalOp : m.getBody()->getOps<mlir_ts::GlobalOp>())
+    {
+        if (auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME))
+        {
+            tsLlvmContext.nextGlobalConstructorPriority =
+                std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, reserved.getInt() + 1);
+        }
     }
 
     patterns.insert<

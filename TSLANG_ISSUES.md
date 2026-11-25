@@ -3400,3 +3400,15 @@ holds run-time keys - a dictionary, a class, an `any`). Fixed:
 Next: a class member named at run time (USER: one dynamic table per class).
 
 Test `00computed_runtime_keys.ts` (gc, rc, none; the methods part works under own too).
+
+191, continued: a class member named at run time (USER 2026-11-25: "Per-class dynamic table"). Fixed:
+- `class Holder { [methodName]() {...}; static [staticName] = 42; [declaredName]: string; }` with names known only
+  at run time: "a computed property name must be a constant". Such methods and static valued properties go into one
+  dictionary per class (static `.dyn`, filled by a static block); `h[k]` through the class's keys adapter reads it
+  after the fixed members. `h.f1` with a constant name does not find them. A field with no value is type-only and is
+  dropped. Instance fields with values and accessors named at run time keep the error. Not under -mm=own.
+- Found alongside: `const x = pick(1); class C { static y = x; }` - y was null: class statics were initialized before
+  the module's globals. A global reserves its initialization order when it is created (ts.ctor_priority), so code
+  runs in source order. Globals inside namespaces keep the old order.
+
+Tests `00class_runtime_keys.ts` (gc, rc, none), `00static_init_order.ts` (all).
