@@ -1035,6 +1035,15 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // ...nor is a namespace, or a module imported as one (`f(foo)` of an `import * as foo`), a value to give: it
+        // failed in the lowering ("failed to legalize operation 'ts.NamespaceRef'", TSLANG 191)
+        if (isa<mlir_ts::NamespaceType>(valueType) && !isa<mlir_ts::NamespaceType>(type))
+        {
+            emitError(location) << "the namespace '" << to_print(valueType) << "' is not a value and can't be given for '"
+                                << to_print(type) << "'; give one of its members";
+            return mlir::failure();
+        }
+
         // In every model but -mm=own an `object` is an `any` box (USER RULING 2026-11-23 for rc; gc and none follow it so
         // that `object` reads the same everywhere): under rc its release then frees what the box
         // holds by the box's tag, a class object with its fields. A bare `object` said nothing of what it pointed

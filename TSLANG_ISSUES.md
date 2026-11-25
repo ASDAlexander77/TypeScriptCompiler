@@ -3376,3 +3376,15 @@ Test `00expando_function_properties.ts` (gc, rc, own, none).
 - `h == null` of a `typeof f | null` (a plain function's pointer): it was constant false; it compares the pointer.
 
 Test `00ambient_module_import.ts` (gc, rc, own, none).
+
+191, continued (sweep 3632 -> 3640 pass, no new failures). Fixed:
+- An import alias of a class merged with a namespace (`import A = M.C` of `class C {} namespace C {}`, an ambient
+  module's `export = C`): `new A()` was "'M.C' is a namespace, not a class". The name is the class, whose members a
+  namespace member is found after.
+- Two ambient modules requiring each other (`declare module "sub" { import Main = require("main"); ... }` before
+  `declare module "main"`): ambient modules are recorded when their file is read, and an import of one binds by its
+  full name (a local named as the module found the local). A file of the module's name wins over the declaration.
+- `import * as x from "./m"` of a module whose `export = X`: x is X, as with require.
+- A namespace, or a module imported as one, given as a value (`f(foo)` of `import * as foo`): it failed in the
+  lowering ("failed to legalize operation 'ts.NamespaceRef'"); it is "the namespace 'foo' is not a value". Making
+  module namespaces run-time objects is not done (namespaces have no run-time value, a decision of 11-17).

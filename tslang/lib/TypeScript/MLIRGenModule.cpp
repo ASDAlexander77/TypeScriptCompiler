@@ -521,6 +521,13 @@ namespace mlirgen
 
         widenOverloadImplementations(sourceFile);
         lowerExpandoAssignments(sourceFile);
+        for (auto statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ModuleDeclaration)
+            {
+                recordAmbientModule(statement.as<ModuleDeclaration>());
+            }
+        }
 
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
@@ -2712,6 +2719,72 @@ namespace mlirgen
         }
     }
 
+    // `declare module "m" { ... }` of the root: what an import of "m" is (bindAmbientModuleImport), with the name its
+    // `export = X` gives - through an `import X = C.D` of the block. Recorded when its file is read (lowerDefaultExports),
+    // so an ambient module declared later in the file is known to one that requires it (TSLANG 191). Not `declare
+    // module "./a" { ... }`, which adds to the module of that file (an augmentation).
+    void MLIRGenImpl::recordAmbientModule(ModuleDeclaration moduleDeclarationAST)
+    {
+        if (moduleDeclarationAST->name != SyntaxKind::StringLiteral)
+        {
+            return;
+        }
+
+        auto name = MLIRHelper::getName(moduleDeclarationAST->name);
+        if (StringRef(name).starts_with(".") || StringRef(name).starts_with("/"))
+        {
+            return;
+        }
+
+        std::string exportEquals;
+        if (auto block = moduleDeclarationAST->body; block && block == SyntaxKind::ModuleBlock)
+        {
+            std::function<std::string(Node)> entityName = [&](Node node) -> std::string {
+                if (node == SyntaxKind::Identifier)
+                {
+                    return MLIRHelper::getName(node.as<Identifier>());
+                }
+
+                if (node == SyntaxKind::QualifiedName)
+                {
+                    auto left = entityName(node.as<QualifiedName>()->left);
+                    return left.empty() ? left : left + "." + MLIRHelper::getName(node.as<QualifiedName>()->right);
+                }
+
+                return std::string();
+            };
+
+            for (auto statement : block.as<ModuleBlock>()->statements)
+            {
+                if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
+                {
+                    exportEquals = entityName(statement.as<ExportAssignment>()->expression);
+                }
+            }
+
+            for (auto statement : block.as<ModuleBlock>()->statements)
+            {
+                if (!exportEquals.empty() && statement == SyntaxKind::ImportEqualsDeclaration &&
+                    MLIRHelper::getName(statement.as<ImportEqualsDeclaration>()->name) == exportEquals)
+                {
+                    auto target = entityName(statement.as<ImportEqualsDeclaration>()->moduleReference);
+                    if (!target.empty())
+                    {
+                        exportEquals = target;
+                    }
+                }
+            }
+        }
+
+        // `declare module "foo";` - no body: whatever is imported from it is an `any`
+        if (!moduleDeclarationAST->body)
+        {
+            exportEquals = "*";
+        }
+
+        ambientModuleExportEquals[name] = exportEquals;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(moduleDeclarationAST);
@@ -2719,59 +2792,9 @@ namespace mlirgen
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
         auto namePtr = namespaceName;
 
-        // `declare module "m" { ... }` of the root: what an import of "m" is (bindAmbientModuleImport), with the name its
-        // `export = X` gives - through an `import X = C.D` of the block (TSLANG 191)
-        // (not `declare module "./a" { ... }`, which adds to the module of that file: an augmentation)
-        if (moduleDeclarationAST->name == SyntaxKind::StringLiteral && currentNamespace == rootNamespace &&
-            !StringRef(namePtr).starts_with(".") && !StringRef(namePtr).starts_with("/"))
+        if (currentNamespace == rootNamespace)
         {
-            std::string exportEquals;
-            if (auto block = moduleDeclarationAST->body; block && block == SyntaxKind::ModuleBlock)
-            {
-                std::function<std::string(Node)> entityName = [&](Node node) -> std::string {
-                    if (node == SyntaxKind::Identifier)
-                    {
-                        return MLIRHelper::getName(node.as<Identifier>());
-                    }
-
-                    if (node == SyntaxKind::QualifiedName)
-                    {
-                        auto left = entityName(node.as<QualifiedName>()->left);
-                        return left.empty() ? left : left + "." + MLIRHelper::getName(node.as<QualifiedName>()->right);
-                    }
-
-                    return std::string();
-                };
-
-                for (auto statement : block.as<ModuleBlock>()->statements)
-                {
-                    if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
-                    {
-                        exportEquals = entityName(statement.as<ExportAssignment>()->expression);
-                    }
-                }
-
-                for (auto statement : block.as<ModuleBlock>()->statements)
-                {
-                    if (!exportEquals.empty() && statement == SyntaxKind::ImportEqualsDeclaration &&
-                        MLIRHelper::getName(statement.as<ImportEqualsDeclaration>()->name) == exportEquals)
-                    {
-                        auto target = entityName(statement.as<ImportEqualsDeclaration>()->moduleReference);
-                        if (!target.empty())
-                        {
-                            exportEquals = target;
-                        }
-                    }
-                }
-            }
-
-            // `declare module "foo";` - no body: whatever is imported from it is an `any`
-            if (!moduleDeclarationAST->body)
-            {
-                exportEquals = "*";
-            }
-
-            ambientModuleExportEquals[namePtr] = exportEquals;
+            recordAmbientModule(moduleDeclarationAST);
         }
 
         // (a module declared without a body has nothing to generate: it crashed)
@@ -3590,7 +3613,7 @@ namespace mlirgen
 
         // `import ... from "m"` of a `declare module "m" { ... }` the program has: each name is the module's, as
         // `import x = m.a` makes it, and no file is looked for (it was "can't open file: m.ts", TSLANG 191)
-        if (ambientModuleExportEquals.count(stringVal))
+        if (isAmbientModuleImport(stringVal))
         {
             auto importClause = importDeclarationAST->importClause;
             if (!importClause)
@@ -3657,6 +3680,24 @@ namespace mlirgen
                 {
                     getImportAliasMap()[alias] = StringRef(defaultExport->second).copy(stringAllocator);
                 }
+            }
+        }
+
+        // `import * as x from "./m"` of a module that says `export = X`: x is X, as `import x = require("./m")` makes it
+        // (TSLANG 191)
+        if (auto importClause = importDeclarationAST->importClause;
+            importClause && importClause->namedBindings && importClause->namedBindings == SyntaxKind::NamespaceImport)
+        {
+            auto exportEquals = exportEqualsByFile.find(canonicalFilePath(includeFilePath(stringVal)));
+            if (exportEquals != exportEqualsByFile.end())
+            {
+                auto alias = MLIRHelper::getName(importClause->namedBindings.as<NamespaceImport>()->name, stringAllocator);
+                if (alias != exportEquals->second)
+                {
+                    getImportAliasMap()[alias] = StringRef(exportEquals->second).copy(stringAllocator);
+                }
+
+                return mlir::success();
             }
         }
 
@@ -3756,6 +3797,18 @@ namespace mlirgen
         else
         {
             path = exportEquals.empty() ? member.str() : exportEquals + "." + member.str();
+        }
+
+        // a class or a namespace of the module (or the module itself), by its full name: the name is that one. The module
+        // may be generated after the import (`declare module "a" { import b = require("b"); }` before `declare module
+        // "b"`); a name it gives is looked up when it is used. (Resolved as an expression, `b.b` of a local `b` named
+        // as the module found the local.)
+        auto fullName = path.empty() ? moduleName.str() : moduleName.str() + "." + path;
+        auto moduleGenerated = getNamespaceByFullName(moduleName) != nullptr;
+        if (getClassInfoByFullName(fullName) || getNamespaceByFullName(fullName) || !moduleGenerated)
+        {
+            getImportEqualsMap()[StringRef(localName).copy(stringAllocator)] = StringRef(fullName).copy(stringAllocator);
+            return mlir::success();
         }
 
         SmallVector<StringRef> parts;

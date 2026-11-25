@@ -17819,7 +17819,7 @@ class MLIRGenImpl
             auto modulePath = convertWideToUTF8(expression.as<ts::StringLiteral>()->text);
             auto location = loc(importEqualsDeclarationAST);
             // a `declare module "m" { ... }` the program has: x is that module, or what its `export =` names
-            if (ambientModuleExportEquals.count(modulePath))
+            if (isAmbientModuleImport(modulePath))
             {
                 return bindAmbientModuleImport(location, modulePath, name, StringRef(), genContext);
             }
@@ -22525,6 +22525,14 @@ class MLIRGenImpl
     // `declare module "m" { ... }` of the root, by its name: the name its `export = X` gives (dotted, or empty). An
     // import of "m" is that namespace's, not a file's (TSLANG 191)
     llvm::StringMap<std::string> ambientModuleExportEquals;
+    void recordAmbientModule(ModuleDeclaration moduleDeclarationAST);
+
+    // an import of a module the program declares (`declare module "m"`) and no file gives: a file of that name wins
+    // (a `declare module "pkg" { ... }` beside the package adds to it)
+    bool isAmbientModuleImport(StringRef modulePath)
+    {
+        return ambientModuleExportEquals.count(modulePath) && !sys::fs::is_regular_file(includeFilePath(modulePath));
+    }
 
     // `localName` of an import of the ambient module `moduleName`: the module itself (`member` empty, or what its
     // `export =` names), or a member of it - as `import localName = moduleName.<member>` makes it

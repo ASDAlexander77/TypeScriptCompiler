@@ -11,6 +11,33 @@ declare module "shapes" {
 
 declare module "anything";
 
+// `export =` of a class merged with a namespace; two modules requiring each other
+declare module "merged" {
+    namespace Tool {
+        export var version: number;
+    }
+    class Tool {
+        n: number;
+    }
+    export = Tool;
+}
+
+declare module "sub" {
+    import Main = require("main");
+    class Sub {
+        main: Main;
+    }
+    export = Sub;
+}
+
+declare module "main" {
+    import Sub = require("sub");
+    class Main {
+        sub: Sub;
+    }
+    export = Main;
+}
+
 declare module "counter" {
     class Counter {
         n: number;
@@ -25,6 +52,8 @@ import Counter = require("counter");
 import C2 from "counter";
 import anything = require("anything");
 import * as anyNs from "anything";
+import Tool = require("merged");
+import Main = require("main");
 
 class Square implements Shape {
     constructor(public side: number) {}
@@ -47,6 +76,9 @@ function main() {
     let c: Counter | null = null;
     let c2: C2 | null = null;
     assert(c == null && c2 == null, "the class `export =` names");
+    let t: Tool | null = null;
+    let m: Main | null = null;
+    assert(t == null && m == null, "a class merged with a namespace; modules requiring each other");
     let v: number = 0;
     if (v == 1) {
         // (a module with no body: what it gives is an `any`; not run, it has no definition)

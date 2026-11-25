@@ -2996,6 +2996,16 @@ namespace mlirgen
         if (getImportEqualsMap().count(name))
         {
             auto fullName = getImportEqualsMap().lookup(name);
+            // a class merged with a namespace of its name (`class C {} namespace C {}`, `import A = M.C`): the name is
+            // the class, whose members a namespace member is found after (`new A()` was "'M.C' is a namespace, not a
+            // class", TSLANG 191)
+            if (auto classInfo = getClassInfoByFullName(fullName); classInfo && classInfo->classType)
+            {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, classInfo->classType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+            }
+
             auto namespaceInfo = getNamespaceByFullName(fullName);
             if (namespaceInfo)
             {
