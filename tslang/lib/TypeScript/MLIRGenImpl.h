@@ -20089,6 +20089,8 @@ class MLIRGenImpl
 
     ValueOrLogicalResult castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType, mlir::Value value,
                                                 const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castAnyToUnionOfPrimitives(mlir::Location location, mlir_ts::UnionType unionType, mlir::Value value,
+                                                    const GenContext &genContext);
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
 

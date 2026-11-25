@@ -3439,6 +3439,11 @@ Test `00destructure_computed_keys.ts` (gc, rc, none).
   'ts.ClassRef'"; the parameter is the class's value, as `var k = C` is.
 - `break` / `continue` with no loop (or switch, for break) around it in its function: "failed to legalize operation
   'ts.Break'"; now TypeScript's error (a second, internal one still follows it).
+- `any` to a union of primitives (`const v: number | string = a`, `null as any` given to one): "'ts.Cast' op type
+  ['!ts.any'] can't be stored". The member whose tag the box has is read; a number's from any numeric tag, as a
+  literal is boxed as an s32. A union two members of which share a tag is not done this way.
+- A class's box holding no object (`c ? new P() : null` is a P, given to an `any`) read back as the class: its
+  `instanceof` read the vtable of nothing (a trap); it is null.
 
 Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `instanceof_failed_class_error.ts`,
-`break_outside_loop_error.ts`, `continue_outside_loop_error.ts`.
+`break_outside_loop_error.ts`, `continue_outside_loop_error.ts`, `00any_to_union.ts` (gc, rc, none).

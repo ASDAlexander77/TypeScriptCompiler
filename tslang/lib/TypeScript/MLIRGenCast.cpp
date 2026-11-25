@@ -3400,6 +3400,15 @@ namespace mlirgen
             {
                 return castAnyToUnionOfTuples(location, unionType, value, genContext);
             }
+
+            // a union of primitives (`const v: number | string = a`): the member whose tag the box has
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type); unionType && !genContext.allowPartialResolve)
+            {
+                if (auto result = castAnyToUnionOfPrimitives(location, unionType, value, genContext))
+                {
+                    return *result;
+                }
+            }
         }
 
         // opaque to hybrid func
@@ -4672,6 +4681,14 @@ namespace mlirgen
             {
                 ss << S("{ \n");
 
+                // a class's box holding no object (`c ? new P() : null` is a P, boxed as one): null, not an
+                // `instanceof` reading the vtable of nothing
+                if (!classInstances.empty())
+                {
+                    // (compared through a cast, so that `a` keeps its type: narrowed to null it can't be a class)
+                    ss << S("if ((<Opaque>a) === null) return <TYPE_INST_ALIAS0>a;\n");
+                }
+
                 for (auto [index, _] : enumerate(classInstances))
                 {
                     ss << S("if (a instanceof TYPE_INST_ALIAS");
@@ -5062,6 +5079,127 @@ namespace mlirgen
 
             builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
             auto thenValue = asMember(members[index]);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = castOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return castOf(0);
+    }
+
+    // `any` to a union whose members the box's tag tells apart (`number | string | null`, one class at most): each
+    // member's tag tested in turn, the last read as its member (castPrimitiveTypeFromAny throws there if the box holds
+    // another). No value (std::nullopt) for a union two members of which share a tag, or with a member no tag names.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castAnyToUnionOfPrimitives(mlir::Location location, mlir_ts::UnionType unionType,
+                                                                                mlir::Value value, const GenContext &genContext)
+    {
+        // a union with no tag of its own (`N | null`, one pointer) is what a plain cast makes, unchecked, as before
+        mlir::Type actualType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, actualType))
+        {
+            return std::nullopt;
+        }
+
+        TypeOfOpHelper toh(builder);
+        auto isNumeric = [](mlir::Type type) { return isa<mlir_ts::NumberType, mlir::IntegerType, mlir::FloatType>(type); };
+        auto numericMembers = llvm::count_if(unionType.getTypes(), isNumeric);
+
+        // each member and the tags of the boxes it is read from: the box of a number may say "s32" or "f64" (a literal
+        // boxed as it is), which the unboxing converts, so the only numeric member of a union takes every numeric tag
+        SmallVector<std::pair<mlir::Type, SmallVector<std::string>>> members;
+        llvm::StringSet<> tags;
+        for (auto member : unionType.getTypes())
+        {
+            auto supported = isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::StringType, mlir_ts::BigIntType,
+                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+            auto tag = supported ? toh.typeOfAsString(member) : std::string();
+            if (tag.empty() || !tags.insert(tag).second)
+            {
+                return std::nullopt;
+            }
+
+            SmallVector<std::string> memberTags{tag};
+            if (isNumeric(member) && numericMembers == 1)
+            {
+                memberTags = {"number", "s8", "s16", "s32", "s64", "u8", "u16", "u32", "u64",
+                              "i8", "i16", "i32", "i64", "f16", "f32", "f64", "f128", "index"};
+            }
+
+            members.push_back({member, memberTags});
+        }
+
+        // null and undefined first: read as their member, they would be no test of the box at the end
+        std::stable_partition(members.begin(), members.end(),
+                              [](auto &member) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member.first); });
+        if (members.empty() || isa<mlir_ts::NullType, mlir_ts::UndefinedType>(members.back().first))
+        {
+            return std::nullopt;
+        }
+
+        auto asMember = [&](size_t index) -> ValueOrLogicalResult {
+            auto member = members[index].first;
+            mlir::Value memberValue;
+            if (isa<mlir_ts::NullType>(member))
+            {
+                memberValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            }
+            else if (isa<mlir_ts::UndefinedType>(member))
+            {
+                memberValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            }
+            else
+            {
+                auto result = castPrimitiveTypeFromAny(location, member, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                memberValue = V(result);
+
+                // a class's box may hold a null (`c ? new P() : null` is a P): given as a `P | null`, the union's
+                // null is what it holds then, not a P with no object (`v === null` was false)
+                if (isa<mlir_ts::ClassType>(member) && tags.count("null"))
+                {
+                    auto nullableResult = cast(location, getUnionType(location, member, getNullType()), memberValue, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(nullableResult)
+                    memberValue = V(nullableResult);
+                }
+            }
+
+            return cast(location, unionType, memberValue, genContext);
+        };
+
+        auto holdsMember = [&](size_t index) -> mlir::Value {
+            mlir::Value holds;
+            for (auto &tag : members[index].second)
+            {
+                auto typeOfValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), value);
+                auto tagValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(tag));
+                mlir::Value same = builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, tagValue,
+                                                                           builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+                holds = holds ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                         builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken), holds, same)
+                                    .getResult()
+                              : same;
+            }
+
+            return holds;
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == members.size())
+            {
+                return asMember(index);
+            }
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{unionType}, holdsMember(index), true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = asMember(index);
             EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
 
