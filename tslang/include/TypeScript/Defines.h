@@ -536,6 +536,9 @@
 // stops the program if it is ever reached, and a call to it is an error. The other models ignore it.
 #define SHARES_ELEMENTS_DECORATOR "sharesElements"
 #define OWN_CANNOT_SHARE_ATTR_NAME "ts.own_cannot_share"
+// A module `const` beside top-level code (GenContext::rootFunctionConst) is a global the module's code stores once,
+// where it is declared: -mm=own takes it for one no call writes, as a const its initializer sets (TSLANG 191)
+#define WRITTEN_ONCE_GLOBAL_ATTR_NAME "ts.written_once"
 // `@immortalizes` names the parameters the function keeps for good, in an append-only global (a
 // keeper, docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): its callers make each
 // argument immortal. Checked against a body; trusted on a declaration, a C function that keeps a

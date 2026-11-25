@@ -3455,6 +3455,12 @@ class MLIRGenImpl
                     mlir::StringAttr::get(builder.getContext(), variableDeclarationInfo.varClass.dllName)});
             }
 
+            if (variableDeclarationInfo.varClass.writtenOnce)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), WRITTEN_ONCE_GLOBAL_ATTR_NAME),
+                                 mlir::UnitAttr::get(builder.getContext())});
+            }
+
             if (this->compileOptions.generateDebugInfo)
             {
                 MLIRDebugInfoHelper mti(builder, debugScope);

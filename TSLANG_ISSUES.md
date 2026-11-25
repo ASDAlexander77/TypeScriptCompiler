@@ -3246,3 +3246,31 @@ Tests `00own_generator_objects_from_iterator.ts` (gc, rc, own), diagnostic-locat
 
 Tests `00own_forof_keep_in_outer_let.ts`, `00own_global_initializer_adapter.ts`, `00any_unbox_wider_than_box.ts`
 (gc, rc, own), `import_bodiless_writes.ts` + `export_bodiless_writes.ts` (gc, rc).
+
+191 (open items of 187-190, 2026-11-25). Fixed:
+- -mm=own: a generator object's own `next()` called by hand (`const g = gen(k); g.next()`, the object typed by its
+  shape, not Generator<T>), its `{ value, done }` dropped or kept in a local: what it yielded was never freed - a
+  generator of strings, stepped and then left (or drained), grew the heap with every call (50 MB for 2M calls, rc
+  4 MB). 188 marked the call through Generator<T>'s `next` owned; the call through the object's own `next`/`throw`
+  field is marked so too (mlirGenCall), which OwnershipSignaturePass already took for fresh (isIteratorNext).
+- -mm=own: a module `const` beside top-level code read in a function across a call of a function value another
+  such const holds (`export const s = "x" + k; export const g = function () {...}; ... print(s, g())`): "a value that
+  borrows 's' is used here after 's' is released or overwritten". The root's code stores such a const once, where
+  it is declared, but the store made it a global "written", so `g()` had no known callee and might assign any
+  global. Such a global is marked (WRITTEN_ONCE_GLOBAL_ATTR_NAME, GenContext::rootStatementWasConst), and its one
+  store, outside a loop, is taken for its initializer (OwnershipSignaturePass::writtenOnceStores): no call writes
+  it, and a function value it holds is that function (globalFunction). A `let` such a function writes still ends
+  what was read of it.
+- A non-exported `const h = function (n) {...}` beside top-level code, called (`h(1)`): "'ts.Call' op 'h' does not
+  reference a valid function", in every model. A function expression is the module's function there, as an arrow
+  is (TSLANG 178).
+
+Looked at, still open:
+- `arguments` read through a function value (`const f = obj.m; f(1, undefined)`): a function value's type has no
+  place for the count, so a call through one can't give it; every call through a function value would have to.
+- -mm=own: a call of a function value that throws an object through a yielding finally stops at run time: which
+  function it is is known at run time only.
+Checked: throw() at a `yield*` of strings is handed to the delegate (187); of objects there is no throw() under
+-mm=own, by design (189).
+
+Tests `00own_generator_next_discarded.ts`, `00own_module_const_beside_top_level.ts` (gc, rc, own).

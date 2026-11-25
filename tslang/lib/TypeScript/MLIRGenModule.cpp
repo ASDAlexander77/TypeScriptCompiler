@@ -1788,6 +1788,8 @@ namespace mlirgen
                     auto isVariableStatement = statement == SyntaxKind::VariableStatement;
                     if (isCodeStatment(statement) || isVariableStatement)
                     {
+                        auto wasConst = isVariableStatement && (statement.as<VariableStatement>()->declarationList->flags &
+                                                                NodeFlags::Const) == NodeFlags::Const;
                         if (isVariableStatement)
                         {
                             // patch VariableStatement
@@ -1795,7 +1797,10 @@ namespace mlirgen
                             variableStatement->declarationList->flags &= ~NodeFlags::Let;
                             auto hasArrowDeclaration = llvm::any_of(
                                 variableStatement->declarationList->declarations, 
-                                [](auto decl) { return decl->initializer == SyntaxKind::ArrowFunction; });
+                                [](auto decl) {
+                                    return decl->initializer == SyntaxKind::ArrowFunction ||
+                                           decl->initializer == SyntaxKind::FunctionExpression;
+                                });
                             if (!hasArrowDeclaration)
                             {
                                 variableStatement->declarationList->flags &= ~NodeFlags::Const;
@@ -1806,6 +1811,7 @@ namespace mlirgen
                         statementGenContext.rootFunctionConst =
                             isVariableStatement
                             && (statement.as<VariableStatement>()->declarationList->flags & NodeFlags::Const) == NodeFlags::Const;
+                        statementGenContext.rootStatementWasConst = wasConst;
                         if (failed(mlirGen(statement, statementGenContext)))
                         {
                             emitError(loc(statement), "failed statement");

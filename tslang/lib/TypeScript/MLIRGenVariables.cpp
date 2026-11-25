@@ -1575,6 +1575,13 @@ namespace mlirgen
                     variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
             }
 
+            // a module `const` beside top-level code is stored once, by the root's code where it is declared
+            if (!isUsing && !itemVarClass.isImport && genContext.funcOp && genContext.rootStatementWasConst &&
+                genContext.funcOp == genContext.rootStatementsFuncOp)
+            {
+                itemVarClass.writtenOnce = true;
+            }
+
             // (so is one beside top-level code, a global of the module there too: GenContext::rootFunctionConst)
             if (itemVarClass.type == VariableType::Const && !isUsing && itemVarClass.isExport && !itemVarClass.isImport
                 && (!genContext.funcOp || genContext.rootFunctionConst && genContext.funcOp == genContext.rootStatementsFuncOp))

@@ -243,6 +243,9 @@ struct GenContext
     // A `const` of such a statement whose value is a function (`const a = () => b()`): it is the module's, a
     // global named by it, as it is with no top-level code beside it, so the module's functions call it by name.
     bool rootFunctionConst = false;
+    // Such a statement was a `const` (its flags are patched to a `var`'s unless a value is an arrow): what it
+    // declares is stored once, where it is declared (WRITTEN_ONCE_GLOBAL_ATTR_NAME, TSLANG 191)
+    bool rootStatementWasConst = false;
     FunctionPrototypeDOM::TypePtr funcProto;
     // the prototype of the function whose body is generated: its parameters are `arguments`
     FunctionPrototypeDOM::TypePtr bodyFuncProto;
