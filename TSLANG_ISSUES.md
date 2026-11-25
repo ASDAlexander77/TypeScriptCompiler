@@ -3320,3 +3320,7 @@ Test `00tslang_issue_191.ts` (gc, rc, own, none).
 Still open: genericFunctionsAndConditionalInference (a generic method `lr<I, O>(a: Targets<I>[F])` of `Ops<"left">`:
 `Targets<I>["left"]` with `I` not given yet is not resolved), contextualParamTypeVsNestedReturnTypeInference1 (type
 arguments from the contextual type of a nested call).
+
+Also open: a function given to an interface of one call signature that stays an interface (`interface A { (): B }`,
+`interface B { (): A }`, `function mb(): A { return ma; }`): "invalid cast from () => B to A". Such interfaces name each
+other, so neither can be a function type; a function given to one would need an object whose call slot holds it.
