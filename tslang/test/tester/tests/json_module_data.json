@@ -1,0 +1,6 @@
+{
+    "name": "tslang",
+    "version": 3,
+    "tags": ["a", "bb"],
+    "nested": { "flag": true }
+}

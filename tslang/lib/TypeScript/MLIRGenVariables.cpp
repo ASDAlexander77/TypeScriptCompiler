@@ -971,16 +971,68 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::processDeclarationObjectBindingPatternSubPath(
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
-        auto fieldName = getFieldNameFromBindingElement(objectBindingElement);
-        auto isNumericAccess = isa<mlir::IntegerAttr>(fieldName);
+        mlir::Attribute fieldName;
+        mlir::Value value;
+
+        // `const { [itemId]: item } = items`: the key is the computed name's, not the binding's (it read `items.item`).
+        // A constant one is a field name as any other; one known at run time reads the element (`items[itemId]`)
+        if (objectBindingElement->propertyName == SyntaxKind::ComputedPropertyName)
+        {
+            auto keyExpression = objectBindingElement->propertyName.as<ComputedPropertyName>()->expression;
+            auto keyResult = mlirGen(keyExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(keyResult)
+            auto keyValue = V(keyResult);
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto constant = mcl.ExtractAttr(keyValue);
+            if (!constant)
+            {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(keyValue.getType()))
+                {
+                    constant = literalType.getValue();
+                }
+            }
+
+            if (auto stringKey = dyn_cast_or_null<mlir::StringAttr>(constant))
+            {
+                fieldName = MLIRHelper::TupleFieldName(stringKey.getValue(), builder.getContext());
+            }
+            else if (isa_and_nonnull<mlir::IntegerAttr>(constant))
+            {
+                fieldName = constant;
+            }
+            else
+            {
+                auto result = mlirGenElementAccess(location, init, keyValue, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                value = V(result);
+            }
+        }
+        else
+        {
+            fieldName = getFieldNameFromBindingElement(objectBindingElement);
+        }
+
+        // a dictionary's entries are no fields: `const { a } = dict` reads `dict["a"]`
+        if (!value && isa_and_nonnull<mlir::StringAttr>(fieldName) && dictionaryClassInfoOf(init.getType(), genContext))
+        {
+            auto keyValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), fieldName);
+            auto result = mlirGenElementAccess(location, init, keyValue, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            value = V(result);
+        }
+
+        auto isNumericAccess = isa_and_nonnull<mlir::IntegerAttr>(fieldName);
 
         LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
 
         mlir::Value subInit;
         mlir::Type subInitType;
 
-        mlir::Value value;
-        if (isNumericAccess)
+        if (value)
+        {
+            // read by its run-time key above
+        }
+        else if (isNumericAccess)
         {
             MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, fieldName);
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
@@ -1021,7 +1073,7 @@ namespace mlirgen
         // the default applies to a field that may be missing; one the source always has (`var { x = 500 } = { x: 20 }`,
         // a const tuple) keeps its value, as in TypeScript, where the default is then never used
         mlir_ts::OptionalType optionalFieldType = dyn_cast<mlir_ts::OptionalType>(value.getType());
-        if (!optionalFieldType)
+        if (!optionalFieldType && fieldName)
         {
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
@@ -1142,10 +1194,15 @@ namespace mlirgen
             // nested obj, objectBindingElement->propertyName -> name
             if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
             {
-                auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
+                // the elements after it are declared too (`const { a: { x }, b } = o` declared no `b`)
+                auto nestedPattern = objectBindingElement->name.as<ObjectBindingPattern>();
+                if (mlir::failed(processDeclarationObjectBindingPattern(
+                        location, nestedPattern, varClass, subValueFunc, genContext)))
+                {
+                    return mlir::failure();
+                }
 
-                return processDeclarationObjectBindingPattern(
-                    location, objectBindingPattern, varClass, subValueFunc, genContext);
+                continue;
             }
 
             if (mlir::failed(processDeclaration(
@@ -1280,6 +1337,13 @@ namespace mlirgen
             if (declarationMode && !genContext.funcOp)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
+                // `export var y;` - no type, no value - is an `any`, as where the module is compiled itself (its
+                // importer failed with "failed statement", TSLANG 191)
+                if (!t && !item->type && !item->initializer)
+                {
+                    t = getAnyType();
+                }
+
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
@@ -1573,6 +1637,13 @@ namespace mlirgen
             {
                 itemVarClass.isExport = atModuleLevel && getExportModifier(
                     variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
+            }
+
+            // a module `const` beside top-level code is stored once, by the root's code where it is declared
+            if (!isUsing && !itemVarClass.isImport && genContext.funcOp && genContext.rootStatementWasConst &&
+                genContext.funcOp == genContext.rootStatementsFuncOp)
+            {
+                itemVarClass.writtenOnce = true;
             }
 
             // (so is one beside top-level code, a global of the module there too: GenContext::rootFunctionConst)
@@ -2806,7 +2877,10 @@ namespace mlirgen
             // `interface Cb { (x: number): number }` (and `extends Function`, an interface of nothing): one call
             // signature and nothing else is the function type, as `{ (x: number): number }` is. As an interface, a
             // function given to it was "invalid cast from (p0: number) => number to Cb" (TSLANG 175).
-            if (auto callType = callSignatureOnlyType(interfaceInfo))
+            // (not for a part of an intersection, which adds members to the interface: keepCallableInterface)
+            auto callType = keepCallableInterface ? mlir::Type() : callSignatureOnlyType(interfaceInfo);
+            keepCallableInterface = false;
+            if (callType)
             {
                 return callType;
             }
@@ -2979,6 +3053,16 @@ namespace mlirgen
         if (getImportEqualsMap().count(name))
         {
             auto fullName = getImportEqualsMap().lookup(name);
+            // a class merged with a namespace of its name (`class C {} namespace C {}`, `import A = M.C`): the name is
+            // the class, whose members a namespace member is found after (`new A()` was "'M.C' is a namespace, not a
+            // class", TSLANG 191)
+            if (auto classInfo = getClassInfoByFullName(fullName); classInfo && classInfo->classType)
+            {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, classInfo->classType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+            }
+
             auto namespaceInfo = getNamespaceByFullName(fullName);
             if (namespaceInfo)
             {
@@ -3009,6 +3093,24 @@ namespace mlirgen
         }
 
         auto type = resolveTypeByNameInNamespace(location, name, genContext);
+
+        // a type parameter is no value: `new A()` in `<A,>(x: A) => new A()` is the class `A` of this namespace or one
+        // around it, not the type the parameter is given ("'new' on a value of type 'any'", TSLANG 191). One given a
+        // class is that class, as before.
+        if (type && !isa<mlir_ts::ClassType>(type) && genContext.typeParamsWithArgs.count(name))
+        {
+            MLIRNamespaceGuard ng(currentNamespace);
+            for (auto namespaceInfo = currentNamespace; namespaceInfo; namespaceInfo = namespaceInfo->parentNamespace)
+            {
+                currentNamespace = namespaceInfo;
+                if (auto classInfo = getClassesMap().count(name) ? getClassesMap().lookup(name) : ClassInfo::TypePtr();
+                    classInfo && classInfo->classType && !classInfo->isValue)
+                {
+                    type = classInfo->classType;
+                    break;
+                }
+            }
+        }
 
         // as a value, a @value class's name is the class (`V.plus`, `new V()`), as any class's is -
         // before its fields are laid out too, when it has no type yet

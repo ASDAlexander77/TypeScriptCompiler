@@ -3246,3 +3246,204 @@ Tests `00own_generator_objects_from_iterator.ts` (gc, rc, own), diagnostic-locat
 
 Tests `00own_forof_keep_in_outer_let.ts`, `00own_global_initializer_adapter.ts`, `00any_unbox_wider_than_box.ts`
 (gc, rc, own), `import_bodiless_writes.ts` + `export_bodiless_writes.ts` (gc, rc).
+
+191 (open items of 187-190, 2026-11-25). Fixed:
+- -mm=own: a generator object's own `next()` called by hand (`const g = gen(k); g.next()`, the object typed by its
+  shape, not Generator<T>), its `{ value, done }` dropped or kept in a local: what it yielded was never freed - a
+  generator of strings, stepped and then left (or drained), grew the heap with every call (50 MB for 2M calls, rc
+  4 MB). 188 marked the call through Generator<T>'s `next` owned; the call through the object's own `next`/`throw`
+  field is marked so too (mlirGenCall), which OwnershipSignaturePass already took for fresh (isIteratorNext).
+- -mm=own: a module `const` beside top-level code read in a function across a call of a function value another
+  such const holds (`export const s = "x" + k; export const g = function () {...}; ... print(s, g())`): "a value that
+  borrows 's' is used here after 's' is released or overwritten". The root's code stores such a const once, where
+  it is declared, but the store made it a global "written", so `g()` had no known callee and might assign any
+  global. Such a global is marked (WRITTEN_ONCE_GLOBAL_ATTR_NAME, GenContext::rootStatementWasConst), and its one
+  store, outside a loop, is taken for its initializer (OwnershipSignaturePass::writtenOnceStores): no call writes
+  it, and a function value it holds is that function (globalFunction). A `let` such a function writes still ends
+  what was read of it.
+- A non-exported `const h = function (n) {...}` beside top-level code, called (`h(1)`): "'ts.Call' op 'h' does not
+  reference a valid function", in every model. A function expression is the module's function there, as an arrow
+  is (TSLANG 178).
+
+Looked at, still open:
+- `arguments` read through a function value (`const f = obj.m; f(1, undefined)`): a function value's type has no
+  place for the count, so a call through one can't give it; every call through a function value would have to.
+- -mm=own: a call of a function value that throws an object through a yielding finally stops at run time: which
+  function it is is known at run time only.
+Checked: throw() at a `yield*` of strings is handed to the delegate (187); of objects there is no throw() under
+-mm=own, by design (189).
+
+Tests `00own_generator_next_discarded.ts`, `00own_module_const_beside_top_level.ts` (gc, rc, own).
+
+191, continued: TypeScript's compiler tests that passed on 11-23 and failed on 11-25 (sweep 3263 -> 3291 -> 3300 pass, no
+new failures). Fixed:
+- An interface extending an interface of one call signature (`interface I7 extends I6 {}` of `interface I6 { ():
+  void }`, 175 made such an interface its function type): "interface cannot extend type: () => void". What extends
+  it extends the interface (MLIRGenInterfaces). An interface that declares the call signature of the one it
+  extends again is still that function type (callSignatureOnlyType: one signature, however often declared).
+- Interfaces of one call signature naming each other (`interface A { (): B }`, `interface B { (): C }`, ...): each
+  became a function type when it was done while the others held the interface ("invalid cast from () => A to
+  B"). One whose signature names a callable interface, or one not done yet, stays an interface.
+- An interface of one call signature in an intersection (`x: F & { foo: number }`): "'Never' can't be used as
+  parameter type". A part of an intersection that names it is the interface, which the intersection adds members
+  to (keepCallableInterface).
+- A field read through a union of shapes, one of whose fields is `unknown` (`s.value !== undefined` of `{ value:
+  string } | { value: unknown } | { value: undefined }`): "'ts.Cast' op type ['!ts.any'] can't be stored in". The
+  `unknown` read is the union's `unknown` member (mlirGenUnionFieldRead).
+- `x.slice(1)` of `[number, string] | [number, string, string]`: "calling an extension function given as a value is
+  not supported". An array method of a tuple is not a field to read out of each member (mlirGenUnionFieldRead);
+  and a tuple literal given to a union of tuples (`count([1, "a"])`) is the member of as many elements
+  (tupleMemberFitting), which 112's tags made a verifier error.
+
+Still open from the sweep: `{ foo?: number }` given to `{ foo: number } | { foo: undefined }` (which member is
+known at run time only), `x.slice(1) as readonly string[]` (an array of a union is not an array of strings), two
+functions returning each other through interfaces of one call signature ("can't resolve name"), and
+contextualOuterTypeParameters, contextualParamTypeVsNestedReturnTypeInference1,
+declarationEmitTypeParameterNameInOuterScope, genericClassesRedeclaration, genericFunctionsAndConditionalInference.
+
+Test `00tslang_issue_191.ts` (gc, rc, own, none).
+
+191, continued (sweep 3300 -> 3303 pass, no new failures). Fixed:
+- `new A()` in `<A,>(x: A) => new A()` of a module with a class `A`: "'new' on a value of type 'any'". A type
+  parameter is no value: the name is the class of this namespace or one around it, unless the parameter is given a
+  class (resolveIdentifierInNamespace).
+- `const fn1: <T>(x: T) => void = t => {...}` (a module const of a generic function type given an arrow):
+  "redefinition of symbol named 'fn1'". Its value is the cast of the arrow named after it, and the global was kept
+  beside that function (isGlobalConstLambda sees through the cast).
+- A function of one signature declared again in a later block of a `declare namespace` (genericClassesRedeclaration):
+  "declared again with another signature". 179's renaming of a block's own names took the second block's
+  `IIndexable` for one; a `declare namespace` exports its members without `export` (renameNamespaceBlockLocals).
+- A type parameter whose constraint is literals (`F extends Target`, `type Target = keyof Targets<any>`) given a
+  literal (`Ops<"left">` for `Ops<F>`) keeps it, as TypeScript does: it was widened to `string`, and `Targets<A>[F]`
+  of `Ops<string>` could not be read.
+
+Still open: genericFunctionsAndConditionalInference (a generic method `lr<I, O>(a: Targets<I>[F])` of `Ops<"left">`:
+`Targets<I>["left"]` with `I` not given yet is not resolved), contextualParamTypeVsNestedReturnTypeInference1 (type
+arguments from the contextual type of a nested call).
+
+Also open: a function given to an interface of one call signature that stays an interface (`interface A { (): B }`,
+`interface B { (): A }`, `function mb(): A { return ma; }`): "invalid cast from () => B to A". Such interfaces name each
+other, so neither can be a function type; a function given to one would need an object whose call slot holds it.
+
+191, continued: module syntax (USER RULING 2026-11-25, which reverses 11-18's "exports are clear errors"; sweep
+3303 -> 3565 pass, no new failures). Fixed:
+- `export { a, b as c }` of a file's own declarations: each is exported as `export` written on it would make it
+  (lowerDefaultExports adds the modifier), and `c` is another name for `b` (an import alias, registered where the
+  statement is generated: mlirGenExportDeclaration). `export { a as default }` makes `a` the default export.
+- `export { a, b as c } from "./m"`, `export * from "./m"`, `export { default as x } from "./m"`: m is generated
+  as an import of it is (mlirGenImportModule), and the renames are aliases; `export * as ns from "./m"` is ns as
+  `import * as ns` makes it. Tslang's modules are one flat program, so what m declares reaches this module's
+  importers through it.
+- `export = X`: a declaration of the file named so is exported, an expression is kept in an exported constant, and
+  the file's `exportEqualsByFile` (and default export) is that name. `import x = require("./m")` generates m and
+  makes x another name for it; a module without `export =` is x as `import * as x` makes it. In a `declare module
+  "m"` block `export =` compiles to nothing; elsewhere (a namespace) it is still an error, as in TypeScript.
+- A value given for a namespace's type (`var m: typeof moduleA = i` of an imported module) crashed the lowering:
+  it is "a value of type 'I' can't be given for 'moduleA': a namespace has no run-time value".
+
+Tests `import_export_lists.ts` + `export_lists_r.ts` + `export_lists_m.ts`, `import_export_equals.ts` +
+`export_equals_ns.ts` + `export_equals_class.ts` (gc, rc, own, compiled separately); crash-errors export_list,
+export_from and export_equals now compile.
+
+191, continued (sweep 3565 -> 3594 pass, no new failures). Fixed:
+- A JSON file imported as a module (`import b = require("./b.json")`, `import b from "./b.json"`): it was loaded as
+  a shared library ("Can't open: Unknown error (0xC1)"). Its one expression is its `export =` (lowerDefaultExports),
+  and a specifier with a source extension is not a library (importLibraryPath).
+- A module exporting `var y;` (no type, no value), imported: "failed statement". In declaration mode it is an
+  `any`, as where the module is compiled itself.
+
+Tests `import_json_module.ts` + `json_module_data.json` (gc, rc, own; compiled separately and JIT).
+
+191, continued (sweep 3594 -> 3614 pass, no new failures). Fixed:
+- A namespace merged with a function (`function f() {} namespace f { export let x = 5; }`): `f.x` was "Can't
+  resolve property 'x' of type () => number". A member not otherwise found on a function's symbol is the
+  namespace's of that name (mlirGenPropertyAccessExpressionLogic).
+- Properties a function is given after it (`foo.bar = 12`, `foo["baz"] = "ok"`, `foo[strConst] = ...`, a const
+  arrow or function expression too): TypeScript's expando declarations. The first assignment of each property at
+  the file's top level is `namespace foo { export let bar = 12; }` (lowerExpandoAssignments), a later one assigns
+  it. They were "access expression is not applicable to () => void". Not done: a symbol key, or a property given
+  inside a function body.
+
+Test `00expando_function_properties.ts` (gc, rc, own, none).
+
+191, continued (sweep 3614 -> 3632 pass, no new failures). Fixed:
+- Imports of a `declare module "m" { ... }` the program declares - `import x = require("m")`, `import * as x from
+  "m"`, a default import, `import { a, b as c } from "m"`: they looked for a file ("can't open file: m.ts"). Each
+  name is the module's, as `import x = m.a` makes it (bindAmbientModuleImport), through what the module's
+  `export =` names (an `import X = C` of its block followed); an interface or a type alias of it is that type.
+  `declare module "./a" { ... }` adds to a file's module (an augmentation) and is not one; `declare module "foo";`
+  (no body) gives `any`s - it crashed the compiler.
+- `h == null` of a `typeof f | null` (a plain function's pointer): it was constant false; it compares the pointer.
+
+Test `00ambient_module_import.ts` (gc, rc, own, none).
+
+191, continued (sweep 3632 -> 3640 pass, no new failures). Fixed:
+- An import alias of a class merged with a namespace (`import A = M.C` of `class C {} namespace C {}`, an ambient
+  module's `export = C`): `new A()` was "'M.C' is a namespace, not a class". The name is the class, whose members a
+  namespace member is found after.
+- Two ambient modules requiring each other (`declare module "sub" { import Main = require("main"); ... }` before
+  `declare module "main"`): ambient modules are recorded when their file is read, and an import of one binds by its
+  full name (a local named as the module found the local). A file of the module's name wins over the declaration.
+- `import * as x from "./m"` of a module whose `export = X`: x is X, as with require.
+- A namespace, or a module imported as one, given as a value (`f(foo)` of `import * as foo`): it failed in the
+  lowering ("failed to legalize operation 'ts.NamespaceRef'"); it is "the namespace 'foo' is not a value". Making
+  module namespaces run-time objects is not done (namespaces have no run-time value, a decision of 11-17).
+
+191, continued: computed keys known only at run time (USER 2026-11-25: ease the constant-key rule where the object
+holds run-time keys - a dictionary, a class, an `any`). Fixed:
+- A method of an object literal with a key known only at run time (`{ [fieldName]() { ... } }`): the literal is a
+  dictionary (it was for properties, 152), and a method is an entry holding the function (a function expression:
+  its `this` is not the dictionary). It was "can hold only properties and spreads".
+- Such a dictionary given to an `any` (`const box: any = { [k]: 7 }`, `box[k]`): the run-time key read threw "Can't
+  cast from any type" - a dictionary's keys adapter reads its entries (`for...in`, `k in`, write), not its class's
+  members (makeAnyKeysAdapter). Not under -mm=own, where `any[k]` is refused.
+Next: a class member named at run time (USER: one dynamic table per class).
+
+Test `00computed_runtime_keys.ts` (gc, rc, none; the methods part works under own too).
+
+191, continued: a class member named at run time (USER 2026-11-25: "Per-class dynamic table"). Fixed:
+- `class Holder { [methodName]() {...}; static [staticName] = 42; [declaredName]: string; }` with names known only
+  at run time: "a computed property name must be a constant". Such methods and static valued properties go into one
+  dictionary per class (static `.dyn`, filled by a static block); `h[k]` through the class's keys adapter reads it
+  after the fixed members. `h.f1` with a constant name does not find them. A field with no value is type-only and is
+  dropped. Instance fields with values and accessors named at run time keep the error. Not under -mm=own.
+- Found alongside: `const x = pick(1); class C { static y = x; }` - y was null: class statics were initialized before
+  the module's globals. A global reserves its initialization order when it is created (ts.ctor_priority), so code
+  runs in source order. Globals inside namespaces keep the old order.
+
+Tests `00class_runtime_keys.ts` (gc, rc, none), `00static_init_order.ts` (all).
+
+191, continued (sweep: 3 more pass). Fixed:
+- A computed name keyed by a union of literals (`const k = cond ? "f1" : "f2"; { [k]() {...} }`, a class member of
+  it): "a computed property name must be a constant" - such a key is known at run time like a string.
+- An object pattern with a computed key (`const { [itemId]: item } = items`): it read the binding's name ("Class
+  member 'item' can't be found"). A constant key is the field's name (a parameter's pattern type too:
+  `({ [`key`]: renamed }) => renamed`); one known at run time reads `items[k]`. A dictionary's entries are read by
+  key (`const { a } = dict`).
+- `const { a: { x }, b } = o`: the elements after a nested object pattern were not declared ("can't resolve name: b").
+
+Test `00destructure_computed_keys.ts` (gc, rc, none).
+
+192. Bugs found by the tsc tests sweep (crashes and internal errors). Fixed:
+- A getter with a declared type whose body fails, beside a setter, then any use of the property: the compiler
+  crashed. The getter, known as the accessor before its body is made (175), is taken back when its body fails, and a
+  virtual accessor whose getter has no method yet reads the function itself (a null method's slot was read).
+- `instanceof` on a union one class of which failed (`x: Base | Derived1` of a Derived1 missing Base's field): the
+  union's cast helper instantiated itself until the stack overflowed; the same union cast met again while its helper
+  is made is an error.
+- `typeof` did not narrow a field: `typeof this._x === "number" ? this._x : this._x.bar` was "Can't resolve property
+  'bar' of type number", in an `if` too. A field is narrowed as a name is (getterSetterSubtypeAssignment crashed on it).
+- `var before = new C()` above `class C`: "failed to legalize operation 'ts.AddressOf'" - the class's vtable global
+  was not lowered yet; its address is taken from its ts.Global.
+- A class as a parameter's default (`static bar(zz = this)`, `f(zz = C)`): "failed to legalize operation
+  'ts.ClassRef'"; the parameter is the class's value, as `var k = C` is.
+- `break` / `continue` with no loop (or switch, for break) around it in its function: "failed to legalize operation
+  'ts.Break'"; now TypeScript's error (a second, internal one still follows it).
+- `any` to a union of primitives (`const v: number | string = a`, `null as any` given to one): "'ts.Cast' op type
+  ['!ts.any'] can't be stored". The member whose tag the box has is read; a number's from any numeric tag, as a
+  literal is boxed as an s32. A union two members of which share a tag is not done this way.
+- A class's box holding no object (`c ? new P() : null` is a P, given to an `any`) read back as the class: its
+  `instanceof` read the vtable of nothing (a trap); it is null.
+
+Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `instanceof_failed_class_error.ts`,
+`break_outside_loop_error.ts`, `continue_outside_loop_error.ts`, `00any_to_union.ts` (gc, rc, none).

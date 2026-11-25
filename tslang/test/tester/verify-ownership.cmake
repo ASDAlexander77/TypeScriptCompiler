@@ -104,6 +104,11 @@ set(not_compilable_alone
     argument_boolean_to_number_error.ts
     # an error by design (test-compile-cdecl-closure-error)
     cdecl_closure_error.ts
+    # errors by design (TSLANG 192 error tests)
+    accessor_failed_getter_error.ts
+    instanceof_failed_class_error.ts
+    break_outside_loop_error.ts
+    continue_outside_loop_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts
     # an error by design (test-compile-subclass-field-failed-error)

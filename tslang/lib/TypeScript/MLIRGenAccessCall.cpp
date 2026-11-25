@@ -584,6 +584,25 @@ namespace mlirgen
             }
         }
 
+        // a member of a namespace merged with a function (`function f() {} namespace f { export let x = 5; }`, and the
+        // properties a function is given after it, `f.x = 5`, lowerExpandoAssignments): the namespace's (TSLANG 191)
+        if (!value)
+        {
+            if (auto symbolRefOp = objectValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                if (auto namespaceInfo = getNamespaceByFullName(symbolRefOp.getIdentifier()))
+                {
+                    auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+                    auto namespaceRef = builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
+                    auto member = mlirGenPropertyAccessExpression(location, namespaceRef, name, false, genContext);
+                    if (!member.failed_or_no_value())
+                    {
+                        return V(member);
+                    }
+                }
+            }
+        }
+
         // extention logic: <obj>.<functionName>(this)
         if (!value)
         {
@@ -992,6 +1011,15 @@ namespace mlirgen
                     if (!funcEntry)
                     {
                         return mlir::Value();
+                    }
+
+                    // a getter known as the accessor before it is a method of the class (one read while its body
+                    // is discovered, TSLANG 175) has no slot yet: it is the function itself (a virtual setter beside
+                    // it read the missing method's slot and crashed)
+                    if (!methodInfo)
+                    {
+                        return builder.create<mlir_ts::SymbolRefOp>(
+                            location, funcEntry.funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcEntry.name));
                     }
 
                     assert(genContext.allowPartialResolve || methodInfo->virtualIndex >= 0);
@@ -3303,10 +3331,31 @@ namespace mlirgen
                         func = valueOp.getIn();
                     }
 
-                    auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                    // ...or through the generator object's own field (`const g = gen(); g.next()`, the object typed
+                    // by its shape): what it yielded was never freed either (TSLANG 191)
+                    auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>()
+                                       : funcRefValue.getDefiningOp<mlir_ts::LoadOp>();
                     auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>()
                                         : mlir_ts::InterfaceSymbolRefOp();
                     auto identifier = refOp ? dyn_cast<mlir::StringAttr>(refOp.getIdentifier()) : mlir::StringAttr();
+                    if (auto propertyRefOp = !refOp && loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                                              : mlir_ts::PropertyRefOp())
+                    {
+                        auto objectType = dyn_cast<mlir_ts::ObjectType>(propertyRefOp.getObjectRef().getType());
+                        auto storageTuple = objectType ? dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()) : mlir_ts::TupleType();
+                        if (!storageTuple && objectType)
+                        {
+                            if (auto storageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+                            {
+                                storageTuple = mlir_ts::TupleType::get(builder.getContext(), storageType.getFields());
+                            }
+                        }
+
+                        if (storageTuple && propertyRefOp.getPosition() < storageTuple.getFields().size())
+                        {
+                            identifier = dyn_cast_or_null<mlir::StringAttr>(storageTuple.getFields()[propertyRefOp.getPosition()].id);
+                        }
+                    }
                     auto tupleType = dyn_cast<mlir_ts::TupleType>(V(value).getType());
                     auto fieldName = [&](int index) {
                         auto id = dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
@@ -4176,8 +4225,7 @@ namespace mlirgen
                 // only a key whose type is a string or a number, not a literal, is made here; any other (one
                 // that does not resolve yet, a symbol) is the record's, as before
                 auto keyType = evaluate(expression, genContext);
-                if (!keyType || !(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType>(keyType) ||
-                                  isa<mlir::IntegerType>(keyType)))
+                if (!isRunTimeKeyType(keyType, true))
                 {
                     continue;
                 }
@@ -4219,6 +4267,37 @@ namespace mlirgen
         if (!runTimeKey && !dictionaryType && !spreadsDictionary)
         {
             return std::nullopt;
+        }
+
+        // a method of a dictionary made here (`{ [fieldName]() { return 1; } }`): an entry holding the function, a
+        // property whose value is the function expression (it was "can hold only properties and spreads", TSLANG 191)
+        if (runTimeKey || spreadsDictionary)
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+            for (auto &property : objectLiteral->properties)
+            {
+                if (property != SyntaxKind::MethodDeclaration)
+                {
+                    continue;
+                }
+
+                auto method = property.as<MethodDeclaration>();
+                if (!method->body)
+                {
+                    continue;
+                }
+
+                ModifiersArray modifiers;
+                auto function = nf.createFunctionExpression(modifiers, method->asteriskToken, undefined, method->typeParameters,
+                                                            method->parameters, method->type, method->body);
+                function->pos = method->pos;
+                function->_end = method->_end;
+                auto assignment = nf.createPropertyAssignment(method->name, function);
+                assignment->pos = method->pos;
+                assignment->_end = method->_end;
+                assignment->parent = objectLiteral;
+                property = assignment;
+            }
         }
 
         for (auto property : objectLiteral->properties)

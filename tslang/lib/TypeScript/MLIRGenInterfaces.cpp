@@ -1315,6 +1315,22 @@ namespace mlirgen
                 }
             }
 
+            // ...and an interface of one call signature, which as a type is that signature's function type
+            // (callSignatureOnlyType): what extends it extends the interface, its members ("interface cannot extend
+            // type: () => void", TSLANG 191)
+            if (ifaceType && mth.isAnyFunctionType(ifaceType.getType()) && extendsType->expression == SyntaxKind::Identifier)
+            {
+                auto baseName = MLIRHelper::getName(extendsType->expression.as<Identifier>());
+                if (getInterfacesMap().count(baseName))
+                {
+                    auto baseInfo = getInterfacesMap().lookup(baseName);
+                    if (baseInfo->interfaceType && !baseInfo->isValue)
+                    {
+                        ifaceType = builder.create<mlir_ts::TypeRefOp>(loc(extendsType), baseInfo->interfaceType);
+                    }
+                }
+            }
+
             // `interface TagClass extends Tag<Self, Type>` where a generic function is named `Tag` too: the name
             // as a value is the function, which gives no value here; the base is the type of that name. A null
             // value's type was read (a crash).

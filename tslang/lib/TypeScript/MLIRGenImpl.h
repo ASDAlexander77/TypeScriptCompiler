@@ -3455,6 +3455,23 @@ class MLIRGenImpl
                     mlir::StringAttr::get(builder.getContext(), variableDeclarationInfo.varClass.dllName)});
             }
 
+            // its place among the module's start-up constructors, should its initializer need one (TSLANG 191). A
+            // global of the module's top level only: a namespace's code runs in a constructor of its own, made after its
+            // statements, and a variable it initializes after that code (`count++; export var label = "" + count`)
+            // must run after it, as it did
+            if (variableDeclarationInfo.scope == VariableScope::Global && !variableDeclarationInfo.isExternal &&
+                !variableDeclarationInfo.isImport && currentNamespace == rootNamespace)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME),
+                                 builder.getI64IntegerAttr(reserveGlobalConstructorPriority())});
+            }
+
+            if (variableDeclarationInfo.varClass.writtenOnce)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), WRITTEN_ONCE_GLOBAL_ATTR_NAME),
+                                 mlir::UnitAttr::get(builder.getContext())});
+            }
+
             if (this->compileOptions.generateDebugInfo)
             {
                 MLIRDebugInfoHelper mti(builder, debugScope);
@@ -3638,7 +3655,15 @@ class MLIRGenImpl
             && variableDeclarationInfo.initial
             && mth.isAnyFunctionType(variableDeclarationInfo.type))
         {
-            if (auto symbolRefOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::SymbolRefOp>())
+            // (through the cast to the type the const declares: `const fn1: <T>(x: T) => void = t => {...}`, whose
+            // global was left beside the function of its name, "redefinition of symbol named 'fn1'", TSLANG 191)
+            auto initial = variableDeclarationInfo.initial;
+            while (auto castOp = initial.getDefiningOp<mlir_ts::CastOp>())
+            {
+                initial = castOp.getIn();
+            }
+
+            if (auto symbolRefOp = initial.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 if (symbolRefOp.getIdentifier() == variableDeclarationInfo.fullName)
                 {
@@ -3706,6 +3731,27 @@ class MLIRGenImpl
         if (objectBindingElement->propertyName == SyntaxKind::NumericLiteral)
         {
             fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
+        }
+        else if (objectBindingElement->propertyName == SyntaxKind::ComputedPropertyName)
+        {
+            // `{ ["key"]: renamed }`, `{ [`key`]: renamed }`: the literal is the field's name, not the binding's
+            auto expression = objectBindingElement->propertyName.as<ComputedPropertyName>()->expression;
+            if (expression == SyntaxKind::StringLiteral || expression == SyntaxKind::NoSubstitutionTemplateLiteral)
+            {
+                auto text = convertWideToUTF8(expression.as<LiteralLikeNode>()->text);
+                if (!text.empty())
+                {
+                    fieldName = MLIRHelper::TupleFieldName(text, builder.getContext());
+                }
+            }
+            else if (expression == SyntaxKind::NumericLiteral)
+            {
+                fieldName = getNumericLiteralAttribute(expression);
+            }
+            else if (auto bindingName = MLIRHelper::getName(objectBindingElement->name); !bindingName.empty())
+            {
+                fieldName = MLIRHelper::TupleFieldName(bindingName, builder.getContext());
+            }
         }
         else
         {
@@ -6304,7 +6350,9 @@ class MLIRGenImpl
             auto typeOfOp = typeOfVal.as<TypeOfExpression>();
             // strip parenthesizes
             auto expr = stripParentheses(typeOfOp->expression);
-            if (expr != SyntaxKind::Identifier)
+            // a field is narrowed as a name is (`typeof this._x === "number" ? this._x : this._x.bar`): its reads
+            // in the branch take the narrowed type (safeTypesMap), as `instanceof` narrows one
+            if (expr != SyntaxKind::Identifier && expr != SyntaxKind::PropertyAccessExpression)
             {
                 return mlir::failure();
             }
@@ -17790,6 +17838,51 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(ImportEqualsDeclaration importEqualsDeclarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(importEqualsDeclarationAST->name);
+
+        // `import x = require("./m")`: m is generated as an import is, and x is what m's `export = X` names; a module
+        // without one is x as `import * as x` makes it (TSLANG 191: "'import X = require(...)' is not supported")
+        if (!name.empty() && importEqualsDeclarationAST->moduleReference == SyntaxKind::ExternalModuleReference)
+        {
+            auto expression = importEqualsDeclarationAST->moduleReference.as<ExternalModuleReference>()->expression;
+            if (expression != SyntaxKind::StringLiteral)
+            {
+                emitError(loc(importEqualsDeclarationAST->moduleReference), "the module of 'require(...)' must be a string literal");
+                return mlir::failure();
+            }
+
+            auto modulePath = convertWideToUTF8(expression.as<ts::StringLiteral>()->text);
+            auto location = loc(importEqualsDeclarationAST);
+            // a `declare module "m" { ... }` the program has: x is that module, or what its `export =` names
+            if (isAmbientModuleImport(modulePath))
+            {
+                return bindAmbientModuleImport(location, modulePath, name, StringRef(), genContext);
+            }
+
+            if (mlir::failed(mlirGenImportModule(location, modulePath, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto canonicalPath = canonicalFilePath(includeFilePath(modulePath));
+            auto exportEquals = exportEqualsByFile.find(canonicalPath);
+            if (exportEquals != exportEqualsByFile.end())
+            {
+                if (exportEquals->second != name)
+                {
+                    auto alias = StringRef(name).copy(stringAllocator);
+                    getImportAliasMap()[alias] = StringRef(exportEquals->second).copy(stringAllocator);
+                }
+
+                return mlir::success();
+            }
+
+            auto namespaceName = StringRef(name).copy(stringAllocator);
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namespaceName);
+            currentNamespace->isModuleImport = true;
+            return mlir::success();
+        }
+
         if (!name.empty())
         {
             auto result = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
@@ -19246,6 +19339,10 @@ class MLIRGenImpl
     // the next discovery pass, as for a @value class (getValueTypeOfClassIfLaidOut).
     // An interface of one call signature and nothing else, with what it extends: that signature's function type
     // (as for a type literal, `{ (x: number): number }`). Null for anything else, or an interface not done yet.
+    // set while a part of an intersection type is resolved: an interface of one call signature it names stays the
+    // interface, to which the intersection adds members (cleared once an interface is resolved, TSLANG 191)
+    bool keepCallableInterface = false;
+
     mlir::Type callSignatureOnlyType(InterfaceInfo::TypePtr interfaceInfo)
     {
         mlir::Type callType;
@@ -19258,7 +19355,7 @@ class MLIRGenImpl
 
             for (auto &method : info->methods)
             {
-                if (method.name != CALL_FIELD_NAME || callType || !method.funcType || method.genericSignature)
+                if (method.name != CALL_FIELD_NAME || !method.funcType || method.genericSignature)
                 {
                     return false;
                 }
@@ -19270,7 +19367,29 @@ class MLIRGenImpl
                     return false;
                 }
 
-                callType = getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+                // ...not one whose signature names another callable interface (`interface A { (): B }`, `interface B
+                // { (): A }`): each would become a function type when it is done, while the other still holds the
+                // interface ("invalid cast from () => A to B", TSLANG 191)
+                auto callable = [&](mlir::Type type) {
+                    auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type);
+                    auto other = interfaceType ? getInterfaceInfoByFullName(interfaceType.getName().getValue()) : InterfaceInfo::TypePtr();
+                    // (one not done yet may be callable too)
+                    return other && (!other->membersResolved ||
+                                     llvm::any_of(other->methods, [](auto &otherMethod) { return otherMethod.name == CALL_FIELD_NAME; }));
+                };
+                if (llvm::any_of(funcType.getInputs().drop_front(), callable) || llvm::any_of(funcType.getResults(), callable))
+                {
+                    return false;
+                }
+
+                // (the signature of the interface it extends declared again is that one, TSLANG 191)
+                auto signature = getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+                if (callType && callType != signature)
+                {
+                    return false;
+                }
+
+                callType = signature;
             }
 
             return llvm::all_of(info->extends, [&](auto &extent) { return walk(std::get<1>(extent)); });
@@ -19970,11 +20089,16 @@ class MLIRGenImpl
 
     ValueOrLogicalResult castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType, mlir::Value value,
                                                 const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castAnyToUnionOfPrimitives(mlir::Location location, mlir_ts::UnionType unionType, mlir::Value value,
+                                                    const GenContext &genContext);
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
 
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
+    // the union casts whose helper is being made: the same one met again in it (its `return t` not narrowed, a
+    // member that failed) is an error, not a helper that instantiates itself until the stack overflows
+    llvm::DenseSet<std::pair<mlir::Type, mlir::Type>> castsFromUnionInProgress;
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 
@@ -22433,6 +22557,69 @@ class MLIRGenImpl
 
     // a file's default export, by its canonical path (lowerDefaultExports): the name `import x from` binds x to
     llvm::StringMap<std::string> defaultExportByFile;
+    // a file's `export = X`, by its canonical path (lowerDefaultExports): the name `import x = require("./m")` binds x
+    // to (TSLANG 191)
+    llvm::StringMap<std::string> exportEqualsByFile;
+
+    // `declare module "m" { ... }` of the root, by its name: the name its `export = X` gives (dotted, or empty). An
+    // import of "m" is that namespace's, not a file's (TSLANG 191)
+    llvm::StringMap<std::string> ambientModuleExportEquals;
+    void recordAmbientModule(ModuleDeclaration moduleDeclarationAST);
+
+    // the next global constructor priority of each module being made (reserveGlobalConstructorPriority, TSLANG 191)
+    llvm::DenseMap<mlir::Operation *, int64_t> nextGlobalConstructorPriority;
+    int64_t reserveGlobalConstructorPriority();
+
+    // class members named by a key known only at run time: entries of the class's `.dyn` table (TSLANG 191)
+    void lowerRunTimeNamedMembers(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext);
+
+    // the type of a computed name's key whose value is known only at run time: a string, a number, an any, or a
+    // union of string and number literals (`const k = cond ? "f1" : "f2"`)
+    bool isRunTimeKeyType(mlir::Type keyType, bool allowAny)
+    {
+        if (!keyType)
+        {
+            return false;
+        }
+
+        if (isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType>(keyType) || (allowAny && isa<mlir_ts::AnyType>(keyType)))
+        {
+            return true;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(keyType))
+        {
+            return llvm::all_of(unionType.getTypes(), [](mlir::Type type) {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+                {
+                    type = literalType.getElementType();
+                }
+
+                return isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType>(type);
+            });
+        }
+
+        return false;
+    }
+
+    // an import of a module the program declares (`declare module "m"`) and no file gives: a file of that name wins
+    // (a `declare module "pkg" { ... }` beside the package adds to it)
+    bool isAmbientModuleImport(StringRef modulePath)
+    {
+        return ambientModuleExportEquals.count(modulePath) && !sys::fs::is_regular_file(includeFilePath(modulePath));
+    }
+
+    // `localName` of an import of the ambient module `moduleName`: the module itself (`member` empty, or what its
+    // `export =` names), or a member of it - as `import localName = moduleName.<member>` makes it
+    mlir::LogicalResult bindAmbientModuleImport(mlir::Location location, StringRef moduleName, StringRef localName,
+                                                StringRef member, const GenContext &genContext);
+
+    // `import ... from "m"`, `export ... from "m"`, `import x = require("m")`: the module generated here, a source
+    // file or a shared library (TSLANG 191)
+    mlir::LogicalResult mlirGenImportModule(mlir::Location location, StringRef modulePath, const GenContext &genContext);
+
+    // `export { a, b as c }`, `export { a } from "m"`, `export * from "m"`, `export * as ns from "m"` (TSLANG 191)
+    mlir::LogicalResult mlirGenExportDeclaration(ExportDeclaration exportDeclarationAST, const GenContext &genContext);
 
     // Files on the current generation stack: the program and every `import` being generated
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b

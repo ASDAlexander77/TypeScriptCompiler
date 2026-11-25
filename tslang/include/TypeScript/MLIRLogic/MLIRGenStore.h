@@ -116,6 +116,8 @@ struct VariableClass
     bool isBoxed;
     // @dllname: exported symbol name, empty when the variable keeps its own name
     StringRef dllName;
+    // a module `const` the root's code stores once (WRITTEN_ONCE_GLOBAL_ATTR_NAME)
+    bool writtenOnce = false;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 

@@ -1026,6 +1026,24 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // ...nor has a namespace's type (`var m: typeof moduleA = i` of an `import moduleA = require("./m")`): the
+        // cast of another value to it crashed the lowering (TSLANG 191)
+        if (isa<mlir_ts::NamespaceType>(type) && !isa<mlir_ts::NamespaceType>(valueType))
+        {
+            emitError(location) << "a value of type '" << to_print(valueType) << "' can't be given for '" << to_print(type)
+                                << "': a namespace has no run-time value";
+            return mlir::failure();
+        }
+
+        // ...nor is a namespace, or a module imported as one (`f(foo)` of an `import * as foo`), a value to give: it
+        // failed in the lowering ("failed to legalize operation 'ts.NamespaceRef'", TSLANG 191)
+        if (isa<mlir_ts::NamespaceType>(valueType) && !isa<mlir_ts::NamespaceType>(type))
+        {
+            emitError(location) << "the namespace '" << to_print(valueType) << "' is not a value and can't be given for '"
+                                << to_print(type) << "'; give one of its members";
+            return mlir::failure();
+        }
+
         // In every model but -mm=own an `object` is an `any` box (USER RULING 2026-11-23 for rc; gc and none follow it so
         // that `object` reads the same everywhere): under rc its release then frees what the box
         // holds by the box's tag, a class object with its fields. A bare `object` said nothing of what it pointed
@@ -2917,6 +2935,24 @@ namespace mlirgen
                 continue;
             }
 
+            // a tuple of elements (`[1, "a"]` for `[number, string] | [number, string, string]`): the member of as
+            // many elements, each of a type it can be given (TSLANG 191)
+            auto positional = [](llvm::ArrayRef<mlir_ts::FieldInfo> fields) {
+                return llvm::all_of(fields, [](const mlir_ts::FieldInfo &field) { return !field.id; });
+            };
+            if (positional(valueFields) && positional(tupleType.getFields()))
+            {
+                if (valueFields.size() == tupleType.getFields().size() &&
+                    llvm::all_of(llvm::zip(valueFields, tupleType.getFields()), [&](auto pair) {
+                        return mth.canCastFromTo(location, std::get<0>(pair).type, std::get<1>(pair).type);
+                    }))
+                {
+                    return member;
+                }
+
+                continue;
+            }
+
             // every field the value has is the member's, of a type it can be given; every other is optional
             auto fits = llvm::all_of(valueFields, [&](const mlir_ts::FieldInfo &field) {
                 auto index = tupleType.getIndex(field.id);
@@ -3363,6 +3399,15 @@ namespace mlirgen
                 && llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::TupleType>(member); }))
             {
                 return castAnyToUnionOfTuples(location, unionType, value, genContext);
+            }
+
+            // a union of primitives (`const v: number | string = a`): the member whose tag the box has
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type); unionType && !genContext.allowPartialResolve)
+            {
+                if (auto result = castAnyToUnionOfPrimitives(location, unionType, value, genContext))
+                {
+                    return *result;
+                }
             }
         }
 
@@ -4636,6 +4681,14 @@ namespace mlirgen
             {
                 ss << S("{ \n");
 
+                // a class's box holding no object (`c ? new P() : null` is a P, boxed as one): null, not an
+                // `instanceof` reading the vtable of nothing
+                if (!classInstances.empty())
+                {
+                    // (compared through a cast, so that `a` keeps its type: narrowed to null it can't be a class)
+                    ss << S("if ((<Opaque>a) === null) return <TYPE_INST_ALIAS0>a;\n");
+                }
+
                 for (auto [index, _] : enumerate(classInstances))
                 {
                     ss << S("if (a instanceof TYPE_INST_ALIAS");
@@ -5041,12 +5094,142 @@ namespace mlirgen
         return castOf(0);
     }
 
+    // `any` to a union whose members the box's tag tells apart (`number | string | null`, one class at most): each
+    // member's tag tested in turn, the last read as its member (castPrimitiveTypeFromAny throws there if the box holds
+    // another). No value (std::nullopt) for a union two members of which share a tag, or with a member no tag names.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castAnyToUnionOfPrimitives(mlir::Location location, mlir_ts::UnionType unionType,
+                                                                                mlir::Value value, const GenContext &genContext)
+    {
+        // a union with no tag of its own (`N | null`, one pointer) is what a plain cast makes, unchecked, as before
+        mlir::Type actualType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, actualType))
+        {
+            return std::nullopt;
+        }
+
+        TypeOfOpHelper toh(builder);
+        auto isNumeric = [](mlir::Type type) { return isa<mlir_ts::NumberType, mlir::IntegerType, mlir::FloatType>(type); };
+        auto numericMembers = llvm::count_if(unionType.getTypes(), isNumeric);
+
+        // each member and the tags of the boxes it is read from: the box of a number may say "s32" or "f64" (a literal
+        // boxed as it is), which the unboxing converts, so the only numeric member of a union takes every numeric tag
+        SmallVector<std::pair<mlir::Type, SmallVector<std::string>>> members;
+        llvm::StringSet<> tags;
+        for (auto member : unionType.getTypes())
+        {
+            auto supported = isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::StringType, mlir_ts::BigIntType,
+                                 mlir::IntegerType, mlir::FloatType, mlir_ts::ClassType, mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+            auto tag = supported ? toh.typeOfAsString(member) : std::string();
+            if (tag.empty() || !tags.insert(tag).second)
+            {
+                return std::nullopt;
+            }
+
+            SmallVector<std::string> memberTags{tag};
+            if (isNumeric(member) && numericMembers == 1)
+            {
+                memberTags = {"number", "s8", "s16", "s32", "s64", "u8", "u16", "u32", "u64",
+                              "i8", "i16", "i32", "i64", "f16", "f32", "f64", "f128", "index"};
+            }
+
+            members.push_back({member, memberTags});
+        }
+
+        // null and undefined first: read as their member, they would be no test of the box at the end
+        std::stable_partition(members.begin(), members.end(),
+                              [](auto &member) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member.first); });
+        if (members.empty() || isa<mlir_ts::NullType, mlir_ts::UndefinedType>(members.back().first))
+        {
+            return std::nullopt;
+        }
+
+        auto asMember = [&](size_t index) -> ValueOrLogicalResult {
+            auto member = members[index].first;
+            mlir::Value memberValue;
+            if (isa<mlir_ts::NullType>(member))
+            {
+                memberValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            }
+            else if (isa<mlir_ts::UndefinedType>(member))
+            {
+                memberValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            }
+            else
+            {
+                auto result = castPrimitiveTypeFromAny(location, member, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                memberValue = V(result);
+
+                // a class's box may hold a null (`c ? new P() : null` is a P): given as a `P | null`, the union's
+                // null is what it holds then, not a P with no object (`v === null` was false)
+                if (isa<mlir_ts::ClassType>(member) && tags.count("null"))
+                {
+                    auto nullableResult = cast(location, getUnionType(location, member, getNullType()), memberValue, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(nullableResult)
+                    memberValue = V(nullableResult);
+                }
+            }
+
+            return cast(location, unionType, memberValue, genContext);
+        };
+
+        auto holdsMember = [&](size_t index) -> mlir::Value {
+            mlir::Value holds;
+            for (auto &tag : members[index].second)
+            {
+                auto typeOfValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), value);
+                auto tagValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(tag));
+                mlir::Value same = builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, tagValue,
+                                                                           builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+                holds = holds ? builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                         builder.getI32IntegerAttr((int)SyntaxKind::BarBarToken), holds, same)
+                                    .getResult()
+                              : same;
+            }
+
+            return holds;
+        };
+
+        std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index + 1 == members.size())
+            {
+                return asMember(index);
+            }
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{unionType}, holdsMember(index), true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = asMember(index);
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = castOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return castOf(0);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
         {
             if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(location, unionType.getTypes())))
             {
+                auto castKey = std::make_pair(value.getType(), type);
+                if (!castsFromUnionInProgress.insert(castKey).second)
+                {
+                    emitError(location) << "Cast from " << to_print(value.getType()) << " to " << to_print(type) << " is not supported";
+                    return mlir::failure();
+                }
+
+                auto releaseCastKey = llvm::make_scope_exit([&]() { castsFromUnionInProgress.erase(castKey); });
+
                 // info, we add "_" extra as scanner append "_" in front of "__";
                 auto funcName = ".cast";
 
@@ -6224,12 +6407,15 @@ namespace mlirgen
         type = TypeOfOpHelper::typeOfBaseType(type);
 
         auto isArray = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(type);
+        // a dictionary (`{ [k: string]: T }`, an object literal with a key known only at run time): its keys are its
+        // entries', known at run time, not its class's members (TSLANG 191)
+        auto isDictionary = dictionaryClassInfoOf(type, genContext) != nullptr;
         SmallVector<std::string> values;
         SmallVector<std::string> methods;
         llvm::StringSet<> optionals;
         llvm::StringSet<> readOnly;
         llvm::StringMap<mlir::Type> types;
-        if (!isArray && !anyKeysOfType(type, values, methods, &optionals, &readOnly, &types))
+        if (!isArray && !isDictionary && !anyKeysOfType(type, values, methods, &optionals, &readOnly, &types))
         {
             return;
         }
@@ -6260,7 +6446,24 @@ namespace mlirgen
 
         std::string name;
         std::string src;
-        if (isArray)
+        if (isDictionary)
+        {
+            // its entries, by a key as text (a number key is its text, as an object's is)
+            name = "__any_keys_dictionary";
+            src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
+                  "const d = <T>box;\n"
+                  "if (op == " + keysOp + ") { const r: string[] = []; for (const e in d) r.push(e); return <any>r; }\n"
+                  "const kt = typeof key;\n"
+                  "let k = \"\";\n"
+                  "if (kt == \"string\") k = <string>key;\n"
+                  "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
+                  "else {\n" + notThere + "}\n"
+                  "if (op == " + has + ") return <any>(k in d);\n"
+                  "if (op == " + set + ") { d[k] = value; return undefined; }\n"
+                  "return <any>d[k];\n"
+                  "}\n";
+        }
+        else if (isArray)
         {
             // a write of an element in range, or one past the end (it grows by one). One function for each kind
             // of element a write checks (anyKeyValueKind): `_n` numbers, `_s` strings, `_b` booleans.
@@ -6441,6 +6644,19 @@ namespace mlirgen
                 src += "if (k == " + quote(key) + ") { if (op == " + has + ") return <any>true; if (op == " + set + ") " +
                        throwTypeErrorSource("a method can't be written through a value of type any") +
                        " return <any>o[" + quote(key) + "]; }\n";
+            }
+
+            // ...and the class's members named at run time, its `.dyn` table (lowerRunTimeNamedMembers): read by the
+            // class's name, which a class of the module's top level has (TSLANG 191)
+            if (classType)
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                if (classInfo && classInfo->fullName == classInfo->name &&
+                    classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(".dyn", builder.getContext())) >= 0)
+                {
+                    src += "{ const dt = " + classInfo->name.str() + "[\".dyn\"]; if (k in dt) { if (op == " + has +
+                           ") return <any>true; if (op == " + set + ") { dt[k] = value; return undefined; } return <any>dt[k]; } }\n";
+                }
             }
 
             src += notThere + "}\n";

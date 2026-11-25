@@ -664,15 +664,25 @@ namespace own_signature
             return {};
         }
 
-        auto globalOp = globals.lookup(addressOfOp.getGlobalName());
-        auto *block = globalOp ? globalOp.getInitializerBlock() : nullptr;
-        auto resultOp = block && !block->empty() ? mlir::dyn_cast<mlir_ts::GlobalResultOp>(block->getTerminator()) : mlir_ts::GlobalResultOp();
-        if (!resultOp || resultOp->getNumOperands() != 1)
+        mlir::Value value;
+        // ...or a module `const` beside top-level code, which the root's code gives its value (TSLANG 191)
+        if (auto stored = writtenOnceStores.find(addressOfOp.getGlobalName()); stored != writtenOnceStores.end())
         {
-            return {};
+            value = stored->second.getValue();
+        }
+        else
+        {
+            auto globalOp = globals.lookup(addressOfOp.getGlobalName());
+            auto *block = globalOp ? globalOp.getInitializerBlock() : nullptr;
+            auto resultOp = block && !block->empty() ? mlir::dyn_cast<mlir_ts::GlobalResultOp>(block->getTerminator()) : mlir_ts::GlobalResultOp();
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return {};
+            }
+
+            value = resultOp->getOperand(0);
         }
 
-        auto value = resultOp->getOperand(0);
         while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
         {
             value = castOp.getIn();

@@ -108,15 +108,54 @@ namespace own_signature
         readFieldsForLocals(module);
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
         module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });
+        // ...but a module `const` beside top-level code, which the module's code stores once where it is declared
+        // (WRITTEN_ONCE_GLOBAL_ATTR_NAME), is written by no call, as a const its initializer sets: a function value it
+        // holds is that function, and what it holds is not released while a function borrows it (TSLANG 191)
+        llvm::StringMap<llvm::SmallVector<mlir_ts::StoreOp, 1>> storesOfWrittenOnce;
         module.walk([&](mlir_ts::AddressOfOp addressOfOp) {
-            auto onlyLoaded = llvm::all_of(addressOfOp->getUsers(), [](mlir::Operation *user) {
-                return mlir::isa<mlir_ts::LoadOp>(user);
-            });
+            auto globalOp = globals.lookup(addressOfOp.getGlobalName());
+            auto writtenOnce = globalOp && globalOp->hasAttr(WRITTEN_ONCE_GLOBAL_ATTR_NAME);
+            auto onlyLoaded = true;
+            for (auto *user : addressOfOp->getUsers())
+            {
+                if (mlir::isa<mlir_ts::LoadOp>(user))
+                {
+                    continue;
+                }
+
+                // the store, and the release of the default it replaces, in the root's code
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                if (writtenOnce && storeOp && storeOp.getReference() == addressOfOp.getResult() &&
+                    storeOp.getValue() != addressOfOp.getResult() && !mayRunAgain(storeOp))
+                {
+                    storesOfWrittenOnce[addressOfOp.getGlobalName()].push_back(storeOp);
+                    continue;
+                }
+
+                if (writtenOnce && mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                {
+                    continue;
+                }
+
+                onlyLoaded = false;
+            }
+
             if (!onlyLoaded)
             {
                 writtenGlobals.insert(addressOfOp.getGlobalName());
             }
         });
+        for (auto &stores : storesOfWrittenOnce)
+        {
+            if (stores.getValue().size() > 1)
+            {
+                writtenGlobals.insert(stores.getKey());
+            }
+            else if (!writtenGlobals.contains(stores.getKey()))
+            {
+                writtenOnceStores[stores.getKey()] = stores.getValue().front();
+            }
+        }
         if (auto names = module->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_OWN_NO_DROPS_ATTR_NAME))
         {
             for (auto name : names.getAsRange<mlir::StringAttr>())

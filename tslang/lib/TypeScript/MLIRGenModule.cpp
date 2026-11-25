@@ -335,6 +335,183 @@ namespace mlirgen
         walkStatements(sourceFile->statements);
     }
 
+    // Properties a function is given after it (`function foo() {} foo.bar = 12; foo["baz"] = "ok";`, a const holding an
+    // arrow or a function expression too): TypeScript's expando declarations, a namespace merged with the function.
+    // The first assignment of each property, at the file's top level, is that namespace's exported `let` with the
+    // value assigned (`namespace foo { export let bar = 12; }`); a later one assigns it, and `foo.bar` reads it
+    // (mlirGenPropertyAccessExpressionLogic). They were "access expression is not applicable to () => void" (TSLANG 191).
+    static void lowerExpandoAssignments(SourceFile sourceFile)
+    {
+        // the functions of the file's top level, and whether each is exported
+        llvm::StringMap<bool> functions;
+        // the string constants of the top level (`const strMem = "strMemName"`), for `foo[strMem] = ...`
+        llvm::StringMap<std::string> stringConstants;
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::FunctionDeclaration)
+            {
+                auto functionDeclaration = statement.as<FunctionDeclaration>();
+                if (functionDeclaration->name && functionDeclaration->body)
+                {
+                    functions[MLIRHelper::getName(functionDeclaration->name)] = hasModifier(statement, SyntaxKind::ExportKeyword);
+                }
+            }
+            else if (statement == SyntaxKind::VariableStatement)
+            {
+                auto declarationList = statement.as<VariableStatement>()->declarationList;
+                if ((declarationList->flags & NodeFlags::Const) != NodeFlags::Const)
+                {
+                    continue;
+                }
+
+                for (auto variable : declarationList->declarations)
+                {
+                    if (variable->name != SyntaxKind::Identifier || !variable->initializer)
+                    {
+                        continue;
+                    }
+
+                    auto name = MLIRHelper::getName(variable->name.as<Identifier>());
+                    if (variable->initializer == SyntaxKind::ArrowFunction || variable->initializer == SyntaxKind::FunctionExpression)
+                    {
+                        functions[name] = hasModifier(statement, SyntaxKind::ExportKeyword);
+                    }
+                    else if (variable->initializer == SyntaxKind::StringLiteral)
+                    {
+                        stringConstants[name] = convertWideToUTF8(variable->initializer.as<ts::StringLiteral>()->text);
+                    }
+                }
+            }
+        }
+
+        if (functions.empty())
+        {
+            return;
+        }
+
+        auto isIdentifierName = [](StringRef name) {
+            if (name.empty() || !(llvm::isAlpha(name[0]) || name[0] == '_' || name[0] == '$'))
+            {
+                return false;
+            }
+
+            return llvm::all_of(name, [](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; });
+        };
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        llvm::StringSet<> declared;
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement != SyntaxKind::ExpressionStatement)
+            {
+                continue;
+            }
+
+            auto expression = statement.as<ExpressionStatement>()->expression;
+            if (expression != SyntaxKind::BinaryExpression
+                || expression.as<BinaryExpression>()->operatorToken != SyntaxKind::EqualsToken)
+            {
+                continue;
+            }
+
+            auto assignment = expression.as<BinaryExpression>();
+            Expression target;
+            std::string property;
+            if (assignment->left == SyntaxKind::PropertyAccessExpression)
+            {
+                auto access = assignment->left.as<PropertyAccessExpression>();
+                target = access->expression;
+                if (access->name == SyntaxKind::Identifier)
+                {
+                    property = MLIRHelper::getName(access->name.as<Identifier>());
+                }
+            }
+            else if (assignment->left == SyntaxKind::ElementAccessExpression)
+            {
+                auto access = assignment->left.as<ElementAccessExpression>();
+                target = access->expression;
+                auto key = access->argumentExpression;
+                if (key == SyntaxKind::StringLiteral)
+                {
+                    property = convertWideToUTF8(key.as<ts::StringLiteral>()->text);
+                }
+                else if (key == SyntaxKind::NoSubstitutionTemplateLiteral)
+                {
+                    property = convertWideToUTF8(key.as<NoSubstitutionTemplateLiteral>()->text);
+                }
+                else if (key == SyntaxKind::Identifier)
+                {
+                    auto constant = stringConstants.find(MLIRHelper::getName(key.as<Identifier>()));
+                    if (constant != stringConstants.end())
+                    {
+                        property = constant->second;
+                    }
+                }
+            }
+
+            if (!target || target != SyntaxKind::Identifier || !isIdentifierName(property))
+            {
+                continue;
+            }
+
+            auto functionName = MLIRHelper::getName(target.as<Identifier>());
+            auto function = functions.find(functionName);
+            if (function == functions.end())
+            {
+                continue;
+            }
+
+            auto propertyName = nf.createIdentifier(convertUTF8toWide(property));
+            if (!declared.insert(functionName + "." + property).second)
+            {
+                // a later assignment: the namespace's `let`, read as the function's property
+                if (assignment->left == SyntaxKind::ElementAccessExpression)
+                {
+                    auto access = nf.createPropertyAccessExpression(target, propertyName);
+                    access->pos = assignment->left->pos;
+                    access->_end = assignment->left->_end;
+                    assignment->left = access;
+                }
+
+                continue;
+            }
+
+            NodeArray<VariableDeclaration> declarations;
+            auto declaration = nf.createVariableDeclaration(propertyName, undefined, undefined, assignment->right);
+            declaration->pos = statement->pos;
+            declaration->_end = statement->_end;
+            declarations.push_back(declaration);
+
+            ModifiersArray letModifiers;
+            letModifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+            declarationList->pos = statement->pos;
+            declarationList->_end = statement->_end;
+            auto variableStatement = nf.createVariableStatement(letModifiers, declarationList);
+            variableStatement->pos = statement->pos;
+            variableStatement->_end = statement->_end;
+
+            NodeArray<Statement> blockStatements;
+            blockStatements.push_back(variableStatement);
+            auto block = nf.createModuleBlock(blockStatements);
+            block->pos = statement->pos;
+            block->_end = statement->_end;
+
+            NodeArray<ModifierLike> namespaceModifiers;
+            if (function->second)
+            {
+                namespaceModifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            }
+
+            auto namespaceName = nf.createIdentifier(convertUTF8toWide(functionName));
+            auto namespaceDeclaration = nf.createModuleDeclaration(namespaceModifiers, namespaceName, block, NodeFlags::Namespace);
+            namespaceDeclaration->pos = statement->pos;
+            namespaceDeclaration->_end = statement->_end;
+            namespaceDeclaration->parent = sourceFile;
+            statement = namespaceDeclaration;
+        }
+    }
+
     void MLIRGenImpl::lowerDefaultExports(SourceFile sourceFile, StringRef filePath)
     {
         if (!sourceFile)
@@ -343,10 +520,31 @@ namespace mlirgen
         }
 
         widenOverloadImplementations(sourceFile);
+        lowerExpandoAssignments(sourceFile);
+        for (auto statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ModuleDeclaration)
+            {
+                recordAmbientModule(statement.as<ModuleDeclaration>());
+            }
+        }
 
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
         NodeFactory nf(NodeFactoryFlags::None);
+
+        // a JSON module (`import b = require("./b.json")`, `import b from "./b.json"`): its value is what it exports,
+        // `export = <the JSON>`, lowered below as any `export =` of an expression (TSLANG 191)
+        if (sys::path::extension(filePath) == ".json" && sourceFile->statements.size() == 1 &&
+            sourceFile->statements[0] == SyntaxKind::ExpressionStatement)
+        {
+            auto &statement = sourceFile->statements[0];
+            auto exportAssignment = nf.createExportAssignment(undefined, true, statement.as<ExpressionStatement>()->expression);
+            exportAssignment->pos = statement->pos;
+            exportAssignment->_end = statement->_end;
+            exportAssignment->parent = sourceFile;
+            statement = exportAssignment;
+        }
         // A module has one default export, and the first is what `import x from` binds. Another (an error in
         // TypeScript, but compiled as before) gets a name of its own, `<name>_<n>`: two unnamed functions given
         // the one name were a redefinition. Counted per load, as a file may be loaded again and must give
@@ -409,6 +607,140 @@ namespace mlirgen
                         valueNames.insert(MLIRHelper::getName(variable->name.as<Identifier>()));
                     }
                 }
+            }
+        }
+
+        // the top-level statements that declare a name (a function's overloads are several)
+        auto declarationsOf = [&](StringRef wanted) {
+            SmallVector<Statement *> found;
+            for (auto &statement : sourceFile->statements)
+            {
+                Node declarationName;
+                if (statement == SyntaxKind::InterfaceDeclaration)
+                {
+                    declarationName = statement.as<InterfaceDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::TypeAliasDeclaration)
+                {
+                    declarationName = statement.as<TypeAliasDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::ClassDeclaration)
+                {
+                    declarationName = statement.as<ClassDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::FunctionDeclaration)
+                {
+                    declarationName = statement.as<FunctionDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::EnumDeclaration)
+                {
+                    declarationName = statement.as<EnumDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::ModuleDeclaration)
+                {
+                    declarationName = statement.as<ModuleDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::VariableStatement)
+                {
+                    for (auto variable : statement.as<VariableStatement>()->declarationList->declarations)
+                    {
+                        if (variable->name == SyntaxKind::Identifier && MLIRHelper::getName(variable->name.as<Identifier>()) == wanted)
+                        {
+                            found.push_back(&statement);
+                            break;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (declarationName && declarationName == SyntaxKind::Identifier &&
+                    MLIRHelper::getName(declarationName.as<Identifier>()) == wanted)
+                {
+                    found.push_back(&statement);
+                }
+            }
+
+            return found;
+        };
+        auto markExported = [&](StringRef wanted) {
+            auto found = declarationsOf(wanted);
+            for (auto *statement : found)
+            {
+                if (!hasModifier(*statement, SyntaxKind::ExportKeyword))
+                {
+                    (*statement)->modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+                }
+            }
+
+            return !found.empty();
+        };
+
+        // `export { a, b as c }` of the file's own declarations: each is exported, as `export` written on it would
+        // make it; `c` is another name for `b`, which the statement registers where it is generated (an import's
+        // alias). `export { a as default }` makes a the default export. They were "'export { ... }' statements are
+        // not supported" (TSLANG 191).
+        // `export = X` (CommonJS): X is what `import x = require("./m")` binds x to - a declaration of the file,
+        // exported, or the value of an expression, kept in an exported constant as `export default <expression>` is
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ExportDeclaration && !statement.as<ExportDeclaration>()->moduleSpecifier)
+            {
+                auto exportClause = statement.as<ExportDeclaration>()->exportClause;
+                if (exportClause && exportClause == SyntaxKind::NamedExports)
+                {
+                    for (auto element : exportClause.as<NamedExports>()->elements)
+                    {
+                        auto local = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name);
+                        auto exported = MLIRHelper::getName(element->name);
+                        markExported(local);
+                        if (exported == "default")
+                        {
+                            found(local);
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
+            {
+                auto exportAssignment = statement.as<ExportAssignment>();
+                std::string exportedName;
+                if (exportAssignment->expression == SyntaxKind::Identifier)
+                {
+                    exportedName = MLIRHelper::getName(exportAssignment->expression.as<Identifier>());
+                    markExported(exportedName);
+                    auto emptyStatement = nf.createEmptyStatement();
+                    emptyStatement->pos = statement->pos;
+                    emptyStatement->_end = statement->_end;
+                    statement = emptyStatement;
+                }
+                else
+                {
+                    exportedName = nextName();
+                    NodeArray<VariableDeclaration> declarations;
+                    auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(exportedName)),
+                                                                    undefined, undefined, exportAssignment->expression);
+                    declaration->pos = exportAssignment->pos;
+                    declaration->_end = exportAssignment->_end;
+                    declarations.push_back(declaration);
+
+                    ModifiersArray modifiers;
+                    modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+                    auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+                    declarationList->pos = exportAssignment->pos;
+                    declarationList->_end = exportAssignment->_end;
+                    auto variableStatement = nf.createVariableStatement(modifiers, declarationList);
+                    variableStatement->pos = exportAssignment->pos;
+                    variableStatement->_end = exportAssignment->_end;
+                    variableStatement->parent = sourceFile;
+                    statement = variableStatement;
+                }
+
+                exportEqualsByFile[canonicalPath] = exportedName;
+                found(exportedName);
             }
         }
 
@@ -1722,14 +2054,41 @@ namespace mlirgen
 
         // each one after every one before it: LLVM leaves the order of equal priorities undefined,
         // and a global's initializer may read one made before it (#446)
-        int64_t priority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
-        for (auto existing : theModule.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
-        {
-            priority = std::max<int64_t>(priority, existing.getPriority().getSExtValue() + 1);
-        }
+        auto priority = reserveGlobalConstructorPriority();
 
         builder.create<mlir_ts::GlobalConstructorOp>(
             location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName), builder.getIndexAttr(priority));
+    }
+
+    // The next global constructor's priority in the module being made: above every constructor made already and every
+    // priority a global was given (GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME). A global of the module takes one when it is
+    // made, in the order of the source, so a class's static constructor runs after the initializers of the globals
+    // before it, as in TypeScript - the lowering made a global's own constructor after every one MLIRGen made: `const
+    // x = f(); class C { static y = x; }` gave C.y null (TSLANG 191).
+    int64_t MLIRGenImpl::reserveGlobalConstructorPriority()
+    {
+        auto *module = theModule.getOperation();
+        auto next = nextGlobalConstructorPriority.find(module);
+        if (next == nextGlobalConstructorPriority.end())
+        {
+            int64_t priority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
+            for (auto existing : theModule.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
+            {
+                priority = std::max<int64_t>(priority, existing.getPriority().getSExtValue() + 1);
+            }
+
+            for (auto globalOp : theModule.getBody()->getOps<mlir_ts::GlobalOp>())
+            {
+                if (auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME))
+                {
+                    priority = std::max<int64_t>(priority, reserved.getInt() + 1);
+                }
+            }
+
+            next = nextGlobalConstructorPriority.insert({module, priority}).first;
+        }
+
+        return next->second++;
     }
 
     mlir::LogicalResult MLIRGenImpl::generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
@@ -1788,6 +2147,8 @@ namespace mlirgen
                     auto isVariableStatement = statement == SyntaxKind::VariableStatement;
                     if (isCodeStatment(statement) || isVariableStatement)
                     {
+                        auto wasConst = isVariableStatement && (statement.as<VariableStatement>()->declarationList->flags &
+                                                                NodeFlags::Const) == NodeFlags::Const;
                         if (isVariableStatement)
                         {
                             // patch VariableStatement
@@ -1795,7 +2156,10 @@ namespace mlirgen
                             variableStatement->declarationList->flags &= ~NodeFlags::Let;
                             auto hasArrowDeclaration = llvm::any_of(
                                 variableStatement->declarationList->declarations, 
-                                [](auto decl) { return decl->initializer == SyntaxKind::ArrowFunction; });
+                                [](auto decl) {
+                                    return decl->initializer == SyntaxKind::ArrowFunction ||
+                                           decl->initializer == SyntaxKind::FunctionExpression;
+                                });
                             if (!hasArrowDeclaration)
                             {
                                 variableStatement->declarationList->flags &= ~NodeFlags::Const;
@@ -1806,6 +2170,7 @@ namespace mlirgen
                         statementGenContext.rootFunctionConst =
                             isVariableStatement
                             && (statement.as<VariableStatement>()->declarationList->flags & NodeFlags::Const) == NodeFlags::Const;
+                        statementGenContext.rootStatementWasConst = wasConst;
                         if (failed(mlirGen(statement, statementGenContext)))
                         {
                             emitError(loc(statement), "failed statement");
@@ -2206,6 +2571,15 @@ namespace mlirgen
             return;
         }
 
+        // ...as a `declare namespace` does, in any file: its members are exported without `export` (the second block of
+        // `declare namespace TypeScript { interface IIndexable<T> ...; function createIntrinsicsObject<T>(): IIndexable<T> }`
+        // named its own IIndexable, and the function was "declared again with another signature", TSLANG 191)
+        if ((block->flags & NodeFlags::Ambient) == NodeFlags::Ambient ||
+            llvm::any_of(block->statements, [](auto statement) { return (statement->flags & NodeFlags::Ambient) == NodeFlags::Ambient; }))
+        {
+            return;
+        }
+
         auto blockKey = fileName + ":" + std::to_string(block->pos.pos);
         llvm::StringSet<> clashing;
         for (auto &statement : block->statements)
@@ -2372,12 +2746,89 @@ namespace mlirgen
         }
     }
 
+    // `declare module "m" { ... }` of the root: what an import of "m" is (bindAmbientModuleImport), with the name its
+    // `export = X` gives - through an `import X = C.D` of the block. Recorded when its file is read (lowerDefaultExports),
+    // so an ambient module declared later in the file is known to one that requires it (TSLANG 191). Not `declare
+    // module "./a" { ... }`, which adds to the module of that file (an augmentation).
+    void MLIRGenImpl::recordAmbientModule(ModuleDeclaration moduleDeclarationAST)
+    {
+        if (moduleDeclarationAST->name != SyntaxKind::StringLiteral)
+        {
+            return;
+        }
+
+        auto name = MLIRHelper::getName(moduleDeclarationAST->name);
+        if (StringRef(name).starts_with(".") || StringRef(name).starts_with("/"))
+        {
+            return;
+        }
+
+        std::string exportEquals;
+        if (auto block = moduleDeclarationAST->body; block && block == SyntaxKind::ModuleBlock)
+        {
+            std::function<std::string(Node)> entityName = [&](Node node) -> std::string {
+                if (node == SyntaxKind::Identifier)
+                {
+                    return MLIRHelper::getName(node.as<Identifier>());
+                }
+
+                if (node == SyntaxKind::QualifiedName)
+                {
+                    auto left = entityName(node.as<QualifiedName>()->left);
+                    return left.empty() ? left : left + "." + MLIRHelper::getName(node.as<QualifiedName>()->right);
+                }
+
+                return std::string();
+            };
+
+            for (auto statement : block.as<ModuleBlock>()->statements)
+            {
+                if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
+                {
+                    exportEquals = entityName(statement.as<ExportAssignment>()->expression);
+                }
+            }
+
+            for (auto statement : block.as<ModuleBlock>()->statements)
+            {
+                if (!exportEquals.empty() && statement == SyntaxKind::ImportEqualsDeclaration &&
+                    MLIRHelper::getName(statement.as<ImportEqualsDeclaration>()->name) == exportEquals)
+                {
+                    auto target = entityName(statement.as<ImportEqualsDeclaration>()->moduleReference);
+                    if (!target.empty())
+                    {
+                        exportEquals = target;
+                    }
+                }
+            }
+        }
+
+        // `declare module "foo";` - no body: whatever is imported from it is an `any`
+        if (!moduleDeclarationAST->body)
+        {
+            exportEquals = "*";
+        }
+
+        ambientModuleExportEquals[name] = exportEquals;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(moduleDeclarationAST);
 
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
         auto namePtr = namespaceName;
+
+        if (currentNamespace == rootNamespace)
+        {
+            recordAmbientModule(moduleDeclarationAST);
+        }
+
+        // (a module declared without a body has nothing to generate: it crashed)
+        if (!moduleDeclarationAST->body)
+        {
+            return mlir::success();
+        }
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         registerNamespace(namePtr);
@@ -3060,6 +3511,14 @@ namespace mlirgen
             fullPath += targetIsWindows ? ".dll" : ".so";
         }
 
+        // a module's source named with its extension (`import b = require("./b.json")`) is no library: as one, the
+        // JSON file was loaded as a DLL ("Can't open: Unknown error (0xC1)", TSLANG 191)
+        auto extension = sys::path::extension(fullPath);
+        if (extension != ".dll" && extension != ".so" && extension != ".dylib")
+        {
+            return std::string();
+        }
+
         return fullPath;
     }
 
@@ -3179,6 +3638,46 @@ namespace mlirgen
 
         auto stringVal = valueAttr.getValue();
 
+        // `import ... from "m"` of a `declare module "m" { ... }` the program has: each name is the module's, as
+        // `import x = m.a` makes it, and no file is looked for (it was "can't open file: m.ts", TSLANG 191)
+        if (isAmbientModuleImport(stringVal))
+        {
+            auto importClause = importDeclarationAST->importClause;
+            if (!importClause)
+            {
+                return mlir::success();
+            }
+
+            if (importClause->name &&
+                mlir::failed(bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(importClause->name), "default", genContext)))
+            {
+                return mlir::failure();
+            }
+
+            if (auto namedBindings = importClause->namedBindings)
+            {
+                if (namedBindings == SyntaxKind::NamespaceImport)
+                {
+                    return bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(namedBindings.as<NamespaceImport>()->name),
+                                                   StringRef(), genContext);
+                }
+
+                if (namedBindings == SyntaxKind::NamedImports)
+                {
+                    for (auto element : namedBindings.as<NamedImports>()->elements)
+                    {
+                        auto member = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name);
+                        if (mlir::failed(bindAmbientModuleImport(location, stringVal, MLIRHelper::getName(element->name), member, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+                    }
+                }
+            }
+
+            return mlir::success();
+        }
+
         auto fullPath = importLibraryPath(stringVal);
         if (sys::fs::exists(fullPath))
         {
@@ -3208,6 +3707,24 @@ namespace mlirgen
                 {
                     getImportAliasMap()[alias] = StringRef(defaultExport->second).copy(stringAllocator);
                 }
+            }
+        }
+
+        // `import * as x from "./m"` of a module that says `export = X`: x is X, as `import x = require("./m")` makes it
+        // (TSLANG 191)
+        if (auto importClause = importDeclarationAST->importClause;
+            importClause && importClause->namedBindings && importClause->namedBindings == SyntaxKind::NamespaceImport)
+        {
+            auto exportEquals = exportEqualsByFile.find(canonicalFilePath(includeFilePath(stringVal)));
+            if (exportEquals != exportEqualsByFile.end())
+            {
+                auto alias = MLIRHelper::getName(importClause->namedBindings.as<NamespaceImport>()->name, stringAllocator);
+                if (alias != exportEquals->second)
+                {
+                    getImportAliasMap()[alias] = StringRef(exportEquals->second).copy(stringAllocator);
+                }
+
+                return mlir::success();
             }
         }
 
@@ -3263,6 +3780,174 @@ namespace mlirgen
     StringRef MLIRGenImpl::resolveImportAlias(StringRef name)
     {
         return getImportAliasMap().lookup(name);
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenImportModule(mlir::Location location, StringRef modulePath, const GenContext &genContext)
+    {
+        auto fullPath = importLibraryPath(modulePath);
+        if (sys::fs::exists(fullPath))
+        {
+            return mlirGenImportSharedLib(location, fullPath, /*dynamic=*/true, genContext);
+        }
+
+        return mlirGenInclude(location, modulePath, genContext);
+    }
+
+    mlir::LogicalResult MLIRGenImpl::bindAmbientModuleImport(mlir::Location location, StringRef moduleName, StringRef localName,
+                                                             StringRef member, const GenContext &genContext)
+    {
+        // `import localName = moduleName.<what export = names>.<member>`, made as the parser makes it
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // a module declared without a body (`declare module "foo";`): `declare const localName: any;`
+        if (ambientModuleExportEquals.lookup(moduleName) == "*")
+        {
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(localName.str())), undefined,
+                                                                nf.createToken(SyntaxKind::AnyKeyword), undefined));
+            ModifiersArray modifiers;
+            modifiers.push_back(nf.createToken(SyntaxKind::DeclareKeyword));
+            auto statement = nf.createVariableStatement(modifiers, nf.createVariableDeclarationList(declarations, NodeFlags::Const));
+            return mlirGen(statement.as<Statement>(), genContext);
+        }
+        EntityName reference = nf.createIdentifier(convertUTF8toWide(moduleName.str()));
+        auto exportEquals = ambientModuleExportEquals.lookup(moduleName);
+        std::string path;
+        if (member.empty())
+        {
+            path = exportEquals;
+        }
+        else if (member == "default")
+        {
+            path = exportEquals.empty() ? std::string("default") : exportEquals;
+        }
+        else
+        {
+            path = exportEquals.empty() ? member.str() : exportEquals + "." + member.str();
+        }
+
+        // a class or a namespace of the module (or the module itself), by its full name: the name is that one. The module
+        // may be generated after the import (`declare module "a" { import b = require("b"); }` before `declare module
+        // "b"`); a name it gives is looked up when it is used. (Resolved as an expression, `b.b` of a local `b` named
+        // as the module found the local.)
+        auto fullName = path.empty() ? moduleName.str() : moduleName.str() + "." + path;
+        auto moduleGenerated = getNamespaceByFullName(moduleName) != nullptr;
+        if (getClassInfoByFullName(fullName) || getNamespaceByFullName(fullName) || !moduleGenerated)
+        {
+            getImportEqualsMap()[StringRef(localName).copy(stringAllocator)] = StringRef(fullName).copy(stringAllocator);
+            return mlir::success();
+        }
+
+        SmallVector<StringRef> parts;
+        StringRef(path).split(parts, '.', -1, false);
+        for (auto part : parts)
+        {
+            reference = nf.createQualifiedName(reference, nf.createIdentifier(convertUTF8toWide(part.str())));
+        }
+
+        // a type the module declares (an interface, a type alias): the name is that type
+        if (!parts.empty())
+        {
+            auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+            NodeArray<TypeNode> noTypeArguments;
+            auto typeReference = nf.createTypeReferenceNode(reference, noTypeArguments);
+            GenContext typeGenContext(genContext);
+            typeGenContext.allowPartialResolve = true;
+            auto type = getType(typeReference, typeGenContext);
+            if (genContext.postponedMessages)
+            {
+                rollbackPostponedErrorMessages(genContext.postponedMessages, savedErrorMessagesCount);
+            }
+
+            // (an interface, or a type alias of the namespace that holds it: a function's name is a type too, its own)
+            std::string holder = moduleName.str();
+            for (auto part : ArrayRef<StringRef>(parts).drop_back())
+            {
+                holder += "." + part.str();
+            }
+
+            auto holderNamespace = getNamespaceByFullName(holder);
+            auto isTypeAlias = holderNamespace && holderNamespace->typeAliasMap.count(parts.back());
+            if (type && (isa<mlir_ts::InterfaceType>(type) || isTypeAlias))
+            {
+                getTypeAliasMap()[StringRef(localName).copy(stringAllocator)] = {type, undefined};
+                return mlir::success();
+            }
+        }
+
+        NodeArray<ModifierLike> modifiers;
+        auto declaration = nf.createImportEqualsDeclaration(modifiers, false, nf.createIdentifier(convertUTF8toWide(localName.str())),
+                                                            reference);
+        return mlirGen(declaration, genContext);
+    }
+
+    // `export { a, b as c }`: the file's own a and b are exported (lowerDefaultExports marked them); c is another name
+    // for b, as `import { b as c }` makes it. `export { a, b as c } from "./m"` and `export * from "./m"` are m's
+    // declarations, which the importer of this module then has as an import of m gives them: an imported module's
+    // declarations are generated at the top level (mlirGenImportBindings). `export * as ns from "./m"` is ns, as
+    // `import * as ns` makes it. They were "'export { ... }' and 'export ... from' statements are not supported"
+    // (TSLANG 191).
+    mlir::LogicalResult MLIRGenImpl::mlirGenExportDeclaration(ExportDeclaration exportDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(exportDeclarationAST);
+        std::string defaultOfModule;
+        if (auto moduleSpecifier = exportDeclarationAST->moduleSpecifier)
+        {
+            if (moduleSpecifier != SyntaxKind::StringLiteral)
+            {
+                emitError(loc(moduleSpecifier), "the module of 'export ... from' must be a string literal");
+                return mlir::failure();
+            }
+
+            auto modulePath = convertWideToUTF8(moduleSpecifier.as<ts::StringLiteral>()->text);
+            if (mlir::failed(mlirGenImportModule(location, modulePath, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto defaultExport = defaultExportByFile.find(canonicalFilePath(includeFilePath(modulePath)));
+            if (defaultExport != defaultExportByFile.end())
+            {
+                defaultOfModule = defaultExport->second;
+            }
+        }
+
+        auto exportClause = exportDeclarationAST->exportClause;
+        if (!exportClause)
+        {
+            // `export * from "./m"`
+            return mlir::success();
+        }
+
+        if (exportClause == SyntaxKind::NamespaceExport)
+        {
+            auto namespaceName = MLIRHelper::getName(exportClause.as<NamespaceExport>()->name, stringAllocator);
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namespaceName);
+            currentNamespace->isModuleImport = true;
+            return mlir::success();
+        }
+
+        if (exportClause == SyntaxKind::NamedExports)
+        {
+            for (auto element : exportClause.as<NamedExports>()->elements)
+            {
+                auto target = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name, stringAllocator);
+                auto alias = MLIRHelper::getName(element->name, stringAllocator);
+                // `export { default } from "./m"`, `export { default as X } from "./m"`: m's default export
+                if (target == "default" && !defaultOfModule.empty())
+                {
+                    target = StringRef(defaultOfModule).copy(stringAllocator);
+                }
+
+                if (alias != target && alias != "default")
+                {
+                    getImportAliasMap()[alias] = target;
+                }
+            }
+        }
+
+        return mlir::success();
     }
 
 } // namespace mlirgen

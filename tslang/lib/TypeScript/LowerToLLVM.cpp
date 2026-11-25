@@ -6523,9 +6523,12 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
                 lch.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
 
-                rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
+                // at the place MLIRGen gave it among the module's constructors, in the order of the source, so a class's
+                // static constructor after it reads its value (TSLANG 191)
+                auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME);
+                rewriter.create<mlir_ts::GlobalConstructorOp>(loc,
                     FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)),
-                    rewriter.getIndexAttr(tsLlvmContext->nextGlobalConstructorPriority++));
+                    rewriter.getIndexAttr(reserved ? reserved.getInt() : tsLlvmContext->nextGlobalConstructorPriority++));
             }
         }
         else
@@ -6628,15 +6631,22 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
             auto module = addressOfOp->getParentOfType<mlir::ModuleOp>();
             assert(module);
             auto globalOp = lch.lookupGlobal(module, addressOfOp.getGlobalName());
-            if (!globalOp)
+            if (globalOp)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! found symbol: " << globalOp << "\n";);
+                actualType = mlir_ts::RefType::get(globalOp.getType());
+            }
+            // a global defined after the one whose initializer is lowered here is not converted yet (`var before =
+            // new C()` above `class C` reads the class's vtable): its type is its ts.Global's
+            else if (auto tsGlobalOp = module.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName()))
+            {
+                actualType = mlir_ts::RefType::get(tsGlobalOp.getType());
+            }
+            else
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! NOT found symbol: " << addressOfOp.getGlobalName() << "\n";);
-                assert(globalOp);
                 return mlir::failure();
             }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! found symbol: " << globalOp << "\n";);
-            actualType = mlir_ts::RefType::get(globalOp.getType());
 
             auto value = lch.getAddressOfGlobalVar(addressOfOp.getGlobalName(), tch.convertType(actualType),
                                                    addressOfOp.getOffset() ? addressOfOp.getOffset().value() : 0);
@@ -10707,6 +10717,16 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
         tsLlvmContext.nextGlobalConstructorPriority =
             std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, existing.getPriority().getSExtValue() + 1);
+    }
+
+    // ...and above every priority a global was given (GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME)
+    for (auto globalOp : m.getBody()->getOps<mlir_ts::GlobalOp>())
+    {
+        if (auto reserved = globalOp->getAttrOfType<mlir::IntegerAttr>(GLOBAL_CONSTRUCTOR_PRIORITY_ATTR_NAME))
+        {
+            tsLlvmContext.nextGlobalConstructorPriority =
+                std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, reserved.getInt() + 1);
+        }
     }
 
     patterns.insert<

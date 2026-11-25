@@ -3621,7 +3621,12 @@ namespace mlirgen
         auto unionTypes = false;
         for (auto typeItem : intersectionTypeNode->types)
         {
+            // an interface of one call signature is that signature's function type (callSignatureOnlyType), but with
+            // more members it is the interface they are added to (`F & { foo: number }`, it was `never`, TSLANG 191)
+            auto savedKeepCallableInterface = keepCallableInterface;
+            keepCallableInterface = typeItem == SyntaxKind::TypeReference;
             auto type = getType(typeItem, genContext);
+            keepCallableInterface = savedKeepCallableInterface;
             if (!type)
             {
                 return mlir::Type();

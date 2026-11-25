@@ -201,6 +201,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     llvm::StringMap<mlir_ts::GlobalOp> globals;
     // Globals whose address is used other than to load from it: what they hold may change.
     llvm::StringSet<> writtenGlobals;
+    // A module `const` beside top-level code (WRITTEN_ONCE_GLOBAL_ATTR_NAME), not among them: the one store that
+    // gives it its value, as an initializer would (TSLANG 191)
+    llvm::StringMap<mlir_ts::StoreOp> writtenOnceStores;
     llvm::SmallVector<Call> calls;
 
     // the parameters every callee of a call keeps for good (immortalizes); `disagree` when some do

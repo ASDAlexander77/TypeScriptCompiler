@@ -1614,6 +1614,22 @@ namespace mlirgen
                 auto keepsLiteral = constraint && constraint == SyntaxKind::TypeOperator
                                     && constraint.as<TypeOperatorNode>()->_operator == SyntaxKind::KeyOfKeyword
                                     && isa<mlir_ts::LiteralType>(type);
+                // ...and so does one whose constraint is literals (`F extends Target` of `type Target = keyof
+                // Targets<any>`, `"left" | "right"`): `Ops<"left">` given for `Ops<F>` was an `Ops<string>`, whose
+                // `Targets<A>[F]` members could not be read (TSLANG 191)
+                if (!keepsLiteral && constraint && isa<mlir_ts::LiteralType>(type))
+                {
+                    auto constraintType = getType(constraint, instantiateGenContext);
+                    auto isLiteral = [](mlir::Type member) { return isa<mlir_ts::LiteralType>(member); };
+                    if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(constraintType))
+                    {
+                        keepsLiteral = llvm::all_of(unionType.getTypes(), isLiteral);
+                    }
+                    else
+                    {
+                        keepsLiteral = constraintType && isLiteral(constraintType);
+                    }
+                }
                 auto widenType = keepsLiteral ? type : mth.wideStorageType(type);
                 genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(typeInfo, widenType);
 
