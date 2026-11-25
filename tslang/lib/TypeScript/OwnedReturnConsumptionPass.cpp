@@ -653,6 +653,9 @@ class OwnedReturnConsumptionPass
     // It runs once the results of the calls are settled: a call's result (`f([mk(1), mk(2)])`) is marked an
     // owned result moved into the literal there, so before it the literal looked as if it borrowed them and
     // was never given back.
+    // A global's initializer too (`const n = count(1, 2)` of a `count(...a: any[])`, TSLANG 190): its rest
+    // array was given back by nothing, and own refused the values boxed into it ("the initializer of global
+    // takes a second reference"); releaseDiscardedTemporaries gives it back at the end of the region.
     void ownNewArrayArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         if (compileOptions.memoryModel != MemoryModelOwn)
@@ -662,7 +665,7 @@ class OwnedReturnConsumptionPass
 
         module.walk([&](mlir::Operation *op) {
             if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
-                !op->getParentOfType<mlir::FunctionOpInterface>())
+                !(op->getParentOfType<mlir::FunctionOpInterface>() || op->getParentOfType<mlir_ts::GlobalOp>()))
             {
                 return;
             }
