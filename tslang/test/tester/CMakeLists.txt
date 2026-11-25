@@ -2174,6 +2174,9 @@ foreach(os_suffix "win32|x86_64-pc-windows-msvc|GetCurrentProcessId|getpid" "lin
 endforeach()
 tslang_add_test(NAME test-compile-rc-export-import-owned-returns COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 tslang_add_test(NAME test-compile-none-export-import-owned-returns COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+# TSLANG 190: a callee with no body here (another module's) may write a place of an object it is given
+tslang_add_test(NAME test-compile-export-import-bodiless-writes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_bodiless_writes.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_bodiless_writes.ts")
+tslang_add_test(NAME test-compile-rc-export-import-bodiless-writes COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_bodiless_writes.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_bodiless_writes.ts")
 tslang_add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-compile-export-import-throw-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
 tslang_add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
