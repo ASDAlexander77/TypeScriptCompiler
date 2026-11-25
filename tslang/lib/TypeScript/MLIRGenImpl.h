@@ -7296,6 +7296,9 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext);
+    llvm::SmallVector<std::pair<std::string, Expression>> assignedOnceInBranch(Statement branch);
+    void mergedAfterIf(mlir::Location location, StringRef name, mlir::Type thenType, const ElseSafeCases &elseSafeCases,
+                       const GenContext &genContext);
     mlir::LogicalResult mlirGenBranchStatement(Statement statement, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext);
@@ -10305,7 +10308,73 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
 
-        return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+        auto saved = mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+        EXIT_IF_FAILED(saved)
+
+        if (leftExpression == SyntaxKind::Identifier)
+        {
+            renarrowAfterAssignment(location, MLIRHelper::getName(leftExpression.as<Identifier>()), leftExpressionValue,
+                                    rightExpressionValue.getType(), genContext);
+        }
+
+        return saved;
+    }
+
+    // A variable a test narrowed (addSafeCastStatement), then assigned: its name read the value the test saw (`if
+    // (typeof x === "number") { x = "s" + x; print(x); }` printed the number). It is narrowed again, to the type of
+    // what it was given when that is one of its declared union's members, else to its declared type - read again
+    // from its place. In the scope of the assignment.
+    void renarrowAfterAssignment(mlir::Location location, StringRef name, mlir::Value narrowedValue, mlir::Type assignedType,
+                                 const GenContext &genContext)
+    {
+        auto safeCastOp = narrowedValue.getDefiningOp<mlir_ts::SafeCastOp>();
+        if (!safeCastOp || safeCastOp->hasAttr(DECLARED_FIELD_VIEW_ATTR_NAME) || safeCastOp->hasAttr(WEAK_FIELD_VIEW_ATTR_NAME))
+        {
+            return;
+        }
+
+        auto loadOp = safeCastOp.getValue().getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp)
+        {
+            return;
+        }
+
+        auto fresh = builder.create<mlir_ts::LoadOp>(location, loadOp.getType(), loadOp.getReference());
+        auto declaredType = fresh.getType();
+        auto givenType = mth.wideStorageType(assignedType);
+
+        mlir::Type narrowedType = declaredType;
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(declaredType); unionType && llvm::is_contained(unionType.getTypes(), givenType))
+        {
+            narrowedType = givenType;
+        }
+        else if (auto optType = dyn_cast<mlir_ts::OptionalType>(declaredType); optType && optType.getElementType() == givenType)
+        {
+            narrowedType = givenType;
+        }
+
+        if (narrowedType != declaredType)
+        {
+            (void)addSafeCastStatement(location, name, fresh, narrowedType, false, nullptr, genContext);
+            return;
+        }
+
+        // no member it is: the name is the variable as it is declared again (a generator's local is read through its
+        // view each time, the narrowed type aside)
+        if (genContext.allocateVarsInContextThis)
+        {
+            return;
+        }
+
+        auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, declaredType, fresh, fresh);
+        GenContext narrowingGenContext(genContext);
+        narrowingGenContext.insertIntoParentScope = false;
+        (void)registerVariable(
+            location, name, false, VariableType::Const,
+            [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                return {declaredType, wrappedValue, TypeProvided::Yes};
+            },
+            narrowingGenContext, false, true);
     }
 
     // The same place named twice: each part is a name, `this`, a number, a member or an element of

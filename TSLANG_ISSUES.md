@@ -3483,6 +3483,13 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
 - A negated test narrowed neither branch: `if (!Array.isArray(d)) d.v`, `if (!(typeof d === "array"))`, `if (!(d
   instanceof F)) return; d.v` read the union. `!(a === b)` is `a !== b`; `!(x instanceof C)` narrows its then branch by
   what the test's being false gives and its else branch to C.
+- A variable a test narrowed, then assigned in the branch, read the value the test saw: `if (typeof x === "number")
+  { x = "s" + x; print(x) }` printed the number (wrong result), also after an `if` inside the branch that assigned it.
+  After an assignment it is narrowed to what it was given (a member of its union), else it is its declared type,
+  read again.
+- After `if (test) x = e;` (no else) the variable is what the test's being false leaves it or what the branch gave
+  it: `if (!Array.isArray(d)) d = [d];` makes it an array after the `if` (it read the `F | F[]`). Only for a variable
+  the branch assigns once, by a statement of its own, in a branch that does not leave early.
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
-`class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
+`00narrowing_after_assign.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
