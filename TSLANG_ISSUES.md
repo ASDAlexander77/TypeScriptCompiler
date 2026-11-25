@@ -3466,6 +3466,13 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
 - `map` of a `never[] | string[]`: the union was read as its `never[]`, whose `map` took `item: never` ("'Never'
   can't be used as parameter type"). `never`, and an array of it, merged with another type is that type. An untyped
   parameter's errors were at `<unknown>:0`; they are at the parameter.
+- `unknown | null` (`a ? b : null` of `b: unknown`), stored as the box alone: its null was a null pointer read as a
+  box, and `u === null` compared the box's pointer - false when it held null, and the JIT crashed. Null is boxed, and
+  the box is compared as an `unknown` is.
+- `any` given to a union with `unknown` in it (`(a ? b ?? null : null) ?? 0` is `0 | unknown`), and an object literal
+  given to `Object | string`: "'ts.Cast' op type ... can't be stored". The member that takes anything takes it.
+- Two `any`s compared in a module variable's initializer, with the default library: "redefinition of symbol named
+  'memcmp'" (the library declares memcmp, not lowered yet there); the library's is called.
 
-Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts` (gc, rc, none), `class_not_array_error.ts`,
-`type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
+Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
+`class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).

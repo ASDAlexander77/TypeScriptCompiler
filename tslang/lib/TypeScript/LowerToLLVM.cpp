@@ -1927,7 +1927,19 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto i8PtrTy = th.getPtrType();
         auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
 
-        auto memcmpFuncOp = ch.getOrInsertFunction("memcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType}));
+        // the default library declares memcmp itself (lib.native.d.ts): where its declaration is not lowered yet (a
+        // module variable's initializer), it is called by its name - one declared here as well was "redefinition of
+        // symbol named 'memcmp'"
+        auto memcmpType = th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType});
+        auto *declaredMemcmp = op->getParentOfType<ModuleOp>().lookupSymbol("memcmp");
+        auto callMemcmp = [&](ValueRange args) -> LLVM::CallOp {
+            if (declaredMemcmp && !isa<LLVM::LLVMFuncOp>(declaredMemcmp))
+            {
+                return rewriter.create<LLVM::CallOp>(loc, memcmpType, FlatSymbolRefAttr::get(rewriter.getContext(), "memcmp"), args);
+            }
+
+            return rewriter.create<LLVM::CallOp>(loc, ch.getOrInsertFunction("memcmp", memcmpType), args);
+        };
 
         auto sizeAny1 = al.getDataSizeOfAny(op1);
         auto sizeAny2 = al.getDataSizeOfAny(op2);
@@ -1942,8 +1954,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
             [&](OpBuilder &builder, Location loc) {
                 auto const0 = clh.createI32ConstantOf(0);
                 // sizeAny1 equals sizeAny2
-                auto compareResult =
-                    rewriter.create<LLVM::CallOp>(loc, memcmpFuncOp, ValueRange{dataPtr1, dataPtr2, sizeAny1});
+                auto compareResult = callMemcmp(ValueRange{dataPtr1, dataPtr2, sizeAny1});
 
                 // else compare body
                 mlir::Value bodyCmpResult;

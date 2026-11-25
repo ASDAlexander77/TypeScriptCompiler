@@ -1473,6 +1473,25 @@ namespace mlirgen
             }
         }
 
+        // `unknown | null` (`any | null`) is the box alone, its null a box of null: compared as the box it is (its pointer
+        // compared with null was never null - `u === null` was false)
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue)
+        {
+            for (auto *operand : {&leftExpressionValue, &rightExpressionValue})
+            {
+                mlir::Type baseType;
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>((*operand).getType());
+                    unionType && !mth.isUnionTypeNeedsTag(location, unionType, baseType)
+                    && isa_and_nonnull<mlir_ts::AnyType, mlir_ts::UnknownType>(baseType))
+                {
+                    mlir::Value box = builder.create<mlir_ts::GetValueFromUnionOp>(location, baseType, *operand);
+                    *operand = isa<mlir_ts::AnyType>(baseType) ? box : builder.create<mlir_ts::CastOp>(location, getAnyType(), box);
+                }
+            }
+        }
+
         if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;

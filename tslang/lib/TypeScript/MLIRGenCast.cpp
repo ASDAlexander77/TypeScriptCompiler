@@ -3056,6 +3056,23 @@ namespace mlirgen
                         return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
 
+                    // an object literal or a tuple given to a union with `Object` (`object`), `any` or `unknown` in it
+                    // (`const x: Object | string = { x: 0 }`): that member takes it (it was "'ts.Cast' op type
+                    // [const_tuple] can't be stored")
+                    if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectType>(valueType))
+                    {
+                        for (auto subType : types)
+                        {
+                            auto objectType = dyn_cast<mlir_ts::ObjectType>(subType);
+                            if ((objectType && isa<mlir_ts::AnyType>(objectType.getStorageType()))
+                                || isa<mlir_ts::AnyType, mlir_ts::UnknownType>(subType))
+                            {
+                                CAST(value, location, subType, value, genContext);
+                                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                            }
+                        }
+                    }
+
                     // a class object, a class itself (`inject(Store)` for `A | B`) or an interface that is
                     // none of the union's types and fits none of its interfaces: the cast made of it was
                     // refused only when the module was verified ("module verification error")
@@ -3114,8 +3131,11 @@ namespace mlirgen
             return V(builder.create<mlir_ts::CastOp>(location, type, casted));
         }
 
-        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases)
-        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType) && isa<mlir_ts::InterfaceType>(baseType))
+        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases); to
+        // `unknown | null` (`a ? b : null` of `b: unknown`) the box of null, as null given to `unknown` is - a null
+        // pointer was read as a box: `u === null` was false, and the JIT crashed reading it
+        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType)
+            && isa<mlir_ts::InterfaceType, mlir_ts::UnknownType, mlir_ts::AnyType>(baseType))
         {
             auto casted = cast(location, baseType, value, genContext, /*disableStrictNullCheck=*/true);
             EXIT_IF_FAILED_OR_NO_VALUE(casted)
@@ -3416,6 +3436,23 @@ namespace mlirgen
                 if (auto result = castAnyToUnionOfPrimitives(location, unionType, value, genContext))
                 {
                     return *result;
+                }
+
+                // a union with `unknown` (or `any`) in it (`0 | unknown`, `(b ?? null) ?? 0` of `b: unknown`): what the
+                // box holds is that member, which takes anything (it was "'ts.Cast' op type ['!ts.any'] can't be
+                // stored")
+                for (auto member : unionType.getTypes())
+                {
+                    if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(member))
+                    {
+                        mlir::Value memberValue = value;
+                        if (memberValue.getType() != member)
+                        {
+                            memberValue = builder.create<mlir_ts::CastOp>(location, member, memberValue);
+                        }
+
+                        return V(builder.create<mlir_ts::CastOp>(location, type, memberValue));
+                    }
                 }
             }
         }
