@@ -3473,6 +3473,11 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
   given to `Object | string`: "'ts.Cast' op type ... can't be stored". The member that takes anything takes it.
 - Two `any`s compared in a module variable's initializer, with the default library: "redefinition of symbol named
   'memcmp'" (the library declares memcmp, not lowered yet there); the library's is called.
+- An object literal's method given to an object type's method signature (`const o: { method(x: string): number } =
+  { method(a) { return a.length } }`): its parameter took the signature's `this` ("Can't resolve property 'length' of
+  type Opaque"). Given to a union of such shapes told apart by a literal field (`{ kind: "a", method(a) {...} }`),
+  the literal is typed by the member its literal fields name, and cast to it ("can't be stored"). Not yet: a
+  discriminant read from a module `const` (widened to string), a template literal or a missing one.
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
 `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).

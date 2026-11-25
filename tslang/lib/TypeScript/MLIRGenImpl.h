@@ -16823,6 +16823,16 @@ class MLIRGenImpl
         auto fieldType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
         if (fieldType && mth.isAnyFunctionType(mth.stripOptionalType(fieldType)))
         {
+            // a method signature of an object type (`{ method(x: string): number }`) is a function whose first input
+            // is its `this` (an opaque), unlike a field of a function type (a hybrid function): the member's
+            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque)
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(mth.stripOptionalType(fieldType));
+            if (funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0))
+                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(MLIRTypeHelper::stripValueType(receiverType)))
+            {
+                return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+            }
+
             return mth.stripOptionalType(fieldType);
         }
 
@@ -19977,6 +19987,8 @@ class MLIRGenImpl
         mlir_ts::ClassType classType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsDictionary(mlir::Location location,
         ObjectLiteralExpression objectLiteral, const GenContext &genContext);
+    mlir::Type unionMemberNamedByLiteral(mlir_ts::UnionType unionType, ObjectLiteralExpression objectLiteral,
+        const GenContext &genContext);
 
     ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);

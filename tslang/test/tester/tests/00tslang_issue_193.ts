@@ -33,6 +33,16 @@ function roundTrip<T, U>(x: T, y: Int<T, U>, z: Int<U, T>): T {
     return z.method(y.method(x));
 }
 
+// - an object literal with a method given to an object type with a method signature (`{ method(x: string): number }`):
+//   the method's parameter took the signature's `this` (Opaque); and to a union of such shapes told apart by a literal
+//   field (`{ kind: "a", method(a) {...} }`), typed by the member it names ("can't be stored")
+type Shape = { kind: "a"; method(x: string): number } | { kind: "b"; method(x: number): string };
+type One = { kind: "a"; method(x: string): number };
+
+function invoke(item: Shape) {
+    return item.kind === "a" ? "" + item.method("12") : item.method(42);
+}
+
 // read in module variables, as the sweep's tests did
 const t7 = Foo[k3];
 const t8 = new Foo()[k3];
@@ -48,6 +58,11 @@ function main() {
 
     const r = roundTrip("abc", { method(p1) { return p1.length } }, { method(p2) { return "n" + p2 } });
     assert(r == "n3", "U inferred from one object literal's method types the next one's");
+
+    const one: One = { kind: "a", method(a) { return a.length; } };
+    assert(one.method("123") == 3, "a method typed by a method signature");
+    assert(invoke({ kind: "a", method(a) { return a.length; } }) == "2", "a literal typed by the member its kind names");
+    assert(invoke({ kind: "b", method(n) { return "n" + n; } }) == "n42", "a literal typed by the other member");
 
     print("done.");
 }

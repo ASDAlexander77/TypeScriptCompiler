@@ -3056,6 +3056,76 @@ namespace mlirgen
                         return V(builder.create<mlir_ts::CastOp>(location, type, value));
                     }
 
+                    // an object literal given to a union of shapes told apart by a literal field (`{ kind: "a", method(a)
+                    // {...} }` for `{ kind: "a"; method(x: string): number } | { kind: "b"; ... }`): the member its literal
+                    // fields name - a literal with a method is an object, which no member's tuple is cast from ("can't
+                    // be stored")
+                    if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectType>(valueType))
+                    {
+                        auto sourceType = valueType;
+                        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(sourceType))
+                        {
+                            sourceType = objectType.getStorageType();
+                        }
+
+                        llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
+                        if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ObjectStorageType>(sourceType)
+                            && mlir::succeeded(mth.getFields(sourceType, sourceFields)))
+                        {
+                            mlir::Type namedMember;
+                            auto ambiguous = false;
+                            for (auto subType : types)
+                            {
+                                llvm::SmallVector<mlir_ts::FieldInfo> memberFields;
+                                if (!isa<mlir_ts::TupleType>(subType) || mlir::failed(mth.getFields(subType, memberFields)))
+                                {
+                                    continue;
+                                }
+
+                                auto named = false;
+                                auto conflicts = false;
+                                for (auto &memberField : memberFields)
+                                {
+                                    auto memberLiteral = dyn_cast<mlir_ts::LiteralType>(mth.stripOptionalType(memberField.type));
+                                    if (!memberLiteral)
+                                    {
+                                        continue;
+                                    }
+
+                                    for (auto &sourceField : sourceFields)
+                                    {
+                                        if (sourceField.id != memberField.id)
+                                        {
+                                            continue;
+                                        }
+
+                                        auto sourceLiteral = dyn_cast<mlir_ts::LiteralType>(sourceField.type);
+                                        if (sourceLiteral && sourceLiteral.getValue() == memberLiteral.getValue())
+                                        {
+                                            named = true;
+                                        }
+                                        else
+                                        {
+                                            conflicts = true;
+                                        }
+                                    }
+                                }
+
+                                if (named && !conflicts)
+                                {
+                                    ambiguous = ambiguous || !!namedMember;
+                                    namedMember = subType;
+                                }
+                            }
+
+                            if (namedMember && !ambiguous)
+                            {
+                                CAST(value, location, namedMember, value, genContext);
+                                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                            }
+                        }
+                    }
+
                     // an object literal or a tuple given to a union with `Object` (`object`), `any` or `unknown` in it
                     // (`const x: Object | string = { x: 0 }`): that member takes it (it was "'ts.Cast' op type
                     // [const_tuple] can't be stored")
