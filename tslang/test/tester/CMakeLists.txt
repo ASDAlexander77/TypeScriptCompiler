@@ -2499,7 +2499,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -2569,6 +2569,23 @@ add_test(NAME test-compile-computed-name-failed-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/computed_name_failed_error.ts")
 set_tests_properties(test-compile-computed-name-failed-error PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'x'"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# TSLANG 192: a failing getter beside a setter, instanceof on a union with a failed class, break/continue outside a loop
+add_test(NAME test-compile-accessor-failed-getter-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/accessor_failed_getter_error.ts")
+set_tests_properties(test-compile-accessor-failed-getter-error PROPERTIES PASS_REGULAR_EXPRESSION "can't resolve name: undefinedName"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-instanceof-failed-class-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/instanceof_failed_class_error.ts")
+set_tests_properties(test-compile-instanceof-failed-class-error PROPERTIES PASS_REGULAR_EXPRESSION "field type not matching for .foo."
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-break-outside-loop-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/break_outside_loop_error.ts")
+set_tests_properties(test-compile-break-outside-loop-error PROPERTIES PASS_REGULAR_EXPRESSION "A 'break' statement can only be used within"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-continue-outside-loop-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/continue_outside_loop_error.ts")
+set_tests_properties(test-compile-continue-outside-loop-error PROPERTIES PASS_REGULAR_EXPRESSION "A 'continue' statement can only be used within"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
 # a subclass whose field fails, then a read of a field it inherits: that error, not a crash
 foreach(failed_field_mm gc own)
     add_test(NAME test-compile-subclass-field-failed-error-${failed_field_mm}

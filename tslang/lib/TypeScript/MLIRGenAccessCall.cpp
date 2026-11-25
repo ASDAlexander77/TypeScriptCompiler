@@ -1013,6 +1013,15 @@ namespace mlirgen
                         return mlir::Value();
                     }
 
+                    // a getter known as the accessor before it is a method of the class (one read while its body
+                    // is discovered, TSLANG 175) has no slot yet: it is the function itself (a virtual setter beside
+                    // it read the missing method's slot and crashed)
+                    if (!methodInfo)
+                    {
+                        return builder.create<mlir_ts::SymbolRefOp>(
+                            location, funcEntry.funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcEntry.name));
+                    }
+
                     assert(genContext.allowPartialResolve || methodInfo->virtualIndex >= 0);
 
                     auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(

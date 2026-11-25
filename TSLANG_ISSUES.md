@@ -3423,3 +3423,22 @@ Tests `00class_runtime_keys.ts` (gc, rc, none), `00static_init_order.ts` (all).
 - `const { a: { x }, b } = o`: the elements after a nested object pattern were not declared ("can't resolve name: b").
 
 Test `00destructure_computed_keys.ts` (gc, rc, none).
+
+192. Bugs found by the tsc tests sweep (crashes and internal errors). Fixed:
+- A getter with a declared type whose body fails, beside a setter, then any use of the property: the compiler
+  crashed. The getter, known as the accessor before its body is made (175), is taken back when its body fails, and a
+  virtual accessor whose getter has no method yet reads the function itself (a null method's slot was read).
+- `instanceof` on a union one class of which failed (`x: Base | Derived1` of a Derived1 missing Base's field): the
+  union's cast helper instantiated itself until the stack overflowed; the same union cast met again while its helper
+  is made is an error.
+- `typeof` did not narrow a field: `typeof this._x === "number" ? this._x : this._x.bar` was "Can't resolve property
+  'bar' of type number", in an `if` too. A field is narrowed as a name is (getterSetterSubtypeAssignment crashed on it).
+- `var before = new C()` above `class C`: "failed to legalize operation 'ts.AddressOf'" - the class's vtable global
+  was not lowered yet; its address is taken from its ts.Global.
+- A class as a parameter's default (`static bar(zz = this)`, `f(zz = C)`): "failed to legalize operation
+  'ts.ClassRef'"; the parameter is the class's value, as `var k = C` is.
+- `break` / `continue` with no loop (or switch, for break) around it in its function: "failed to legalize operation
+  'ts.Break'"; now TypeScript's error (a second, internal one still follows it).
+
+Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `instanceof_failed_class_error.ts`,
+`break_outside_loop_error.ts`, `continue_outside_loop_error.ts`.

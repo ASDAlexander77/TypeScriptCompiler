@@ -2109,11 +2109,57 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // An unlabeled `break` needs a loop or a `switch` around it, a `continue` a loop, in the same function: one with
+    // none reached the lowering as a jump to nowhere ("failed to legalize operation 'ts.Break'"). A chain of parents
+    // that ends with no function or file (a statement made by the compiler) is let through.
+    static bool hasEnclosingJumpTarget(Node statement, bool isContinue)
+    {
+        for (Node node = statement->parent; node; node = node->parent)
+        {
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::ForStatement:
+            case SyntaxKind::ForInStatement:
+            case SyntaxKind::ForOfStatement:
+            case SyntaxKind::WhileStatement:
+            case SyntaxKind::DoStatement:
+                return true;
+            case SyntaxKind::SwitchStatement:
+                if (!isContinue)
+                {
+                    return true;
+                }
+
+                break;
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::ArrowFunction:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::Constructor:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::ClassStaticBlockDeclaration:
+            case SyntaxKind::SourceFile:
+                return false;
+            default:
+                break;
+            }
+        }
+
+        return true;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
     {
         auto location = loc(continueStatementAST);
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
+        if (label.empty() && !hasEnclosingJumpTarget(continueStatementAST, true))
+        {
+            emitError(location, "A 'continue' statement can only be used within an enclosing iteration statement");
+            return mlir::failure();
+        }
+
         if (auto *yieldingFinally = yieldingFinallyOf(genContext);
             yieldingFinally && jumpLeavesYieldingFinally(false, label, *yieldingFinally, genContext))
         {
@@ -2157,6 +2203,12 @@ namespace mlirgen
         auto location = loc(breakStatementAST);
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
+        if (label.empty() && !hasEnclosingJumpTarget(breakStatementAST, false))
+        {
+            emitError(location, "A 'break' statement can only be used within an enclosing iteration or switch statement");
+            return mlir::failure();
+        }
+
         if (auto *yieldingFinally = yieldingFinallyOf(genContext);
             yieldingFinally && label != yieldingFinally->label &&
             jumpLeavesYieldingFinally(true, label, *yieldingFinally, genContext))

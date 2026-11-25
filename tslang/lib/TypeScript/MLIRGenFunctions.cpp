@@ -331,6 +331,21 @@ namespace mlirgen
                             mlir_ts::FunctionType::get(builder.getContext(), boundFuncType.getInputs().drop_front(),
                                                        boundFuncType.getResults(), boundFuncType.isVarArg()));
                     }
+                    // a class given as the default (`zz = C`, a static method's `zz = this`) is the class's value, as
+                    // `var k = C` is; the evaluated type alone is that of an instance ("failed to legalize 'ts.ClassRef'")
+                    else if (isa<mlir_ts::ClassType>(evalType))
+                    {
+                        evaluate(
+                            initializer,
+                            [&](mlir::Value value) {
+                                if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>();
+                                    classRefOp && !getValueClassInfo(classRefOp.getType()))
+                                {
+                                    evalType = mlir_ts::ClassValueType::get(classRefOp.getType());
+                                }
+                            },
+                            defaultGenContext);
+                    }
 
                     // TODO: set type if not provided
                     isOptional = true;
@@ -835,7 +850,11 @@ namespace mlirgen
 
         // A getter with a declared type that reads itself (`get p(): number { return this.p; }`): it is known as its
         // class's accessor while its body is discovered, as a method is ("Class member 'p' can't be found", TSLANG
-        // 175). addAccessor registers it as what it is.
+        // 175). addAccessor registers it as what it is. If its body fails, the entry is taken back: a getter no function
+        // stands behind crashed a use of the property once a setter had joined it.
+        ClassInfo::TypePtr preRegisteredAccessorClass;
+        std::string preRegisteredAccessorName;
+        auto preRegisteredAccessorStatic = false;
         if (detectReturnType && functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
             && functionLikeDeclarationBaseAST->type && funcType && funcType.getNumResults() > 0
             && !mth.isNoneType(funcType.getResult(0)))
@@ -849,8 +868,34 @@ namespace mlirgen
                 classInfo->accessors.push_back({propertyName, FunctionEntry{fullName.str(), funcType, std::string()}, {},
                                                 isStatic, false, false, mlir_ts::AccessLevel::Public,
                                                 mlir_ts::AccessLevel::Public});
+                preRegisteredAccessorClass = classInfo;
+                preRegisteredAccessorName = propertyName;
+                preRegisteredAccessorStatic = isStatic;
             }
         }
+
+        auto takeBackPreRegisteredAccessor = [&]() {
+            if (!preRegisteredAccessorClass)
+            {
+                return;
+            }
+
+            auto &accessors = preRegisteredAccessorClass->accessors;
+            auto index = preRegisteredAccessorClass->getAccessorIndexExact(preRegisteredAccessorName, preRegisteredAccessorStatic);
+            if (index < 0)
+            {
+                return;
+            }
+
+            if (accessors[index].set.name.empty())
+            {
+                accessors.erase(accessors.begin() + index);
+            }
+            else
+            {
+                accessors[index].get = {};
+            }
+        };
 
         if (detectReturnType)
         {
@@ -927,6 +972,7 @@ namespace mlirgen
             else
             {
                 // false result
+                takeBackPreRegisteredAccessor();
                 return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
             }
         }

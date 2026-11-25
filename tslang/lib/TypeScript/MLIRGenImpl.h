@@ -6350,7 +6350,9 @@ class MLIRGenImpl
             auto typeOfOp = typeOfVal.as<TypeOfExpression>();
             // strip parenthesizes
             auto expr = stripParentheses(typeOfOp->expression);
-            if (expr != SyntaxKind::Identifier)
+            // a field is narrowed as a name is (`typeof this._x === "number" ? this._x : this._x.bar`): its reads
+            // in the branch take the narrowed type (safeTypesMap), as `instanceof` narrows one
+            if (expr != SyntaxKind::Identifier && expr != SyntaxKind::PropertyAccessExpression)
             {
                 return mlir::failure();
             }
@@ -20092,6 +20094,9 @@ class MLIRGenImpl
 
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
+    // the union casts whose helper is being made: the same one met again in it (its `return t` not narrowed, a
+    // member that failed) is an error, not a helper that instantiates itself until the stack overflows
+    llvm::DenseSet<std::pair<mlir::Type, mlir::Type>> castsFromUnionInProgress;
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 

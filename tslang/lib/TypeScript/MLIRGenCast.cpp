@@ -5083,6 +5083,15 @@ namespace mlirgen
         {
             if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(location, unionType.getTypes())))
             {
+                auto castKey = std::make_pair(value.getType(), type);
+                if (!castsFromUnionInProgress.insert(castKey).second)
+                {
+                    emitError(location) << "Cast from " << to_print(value.getType()) << " to " << to_print(type) << " is not supported";
+                    return mlir::failure();
+                }
+
+                auto releaseCastKey = llvm::make_scope_exit([&]() { castsFromUnionInProgress.erase(castKey); });
+
                 // info, we add "_" extra as scanner append "_" in front of "__";
                 auto funcName = ".cast";
 
