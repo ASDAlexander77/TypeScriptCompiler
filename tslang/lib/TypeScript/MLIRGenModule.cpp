@@ -2212,6 +2212,15 @@ namespace mlirgen
             return;
         }
 
+        // ...as a `declare namespace` does, in any file: its members are exported without `export` (the second block of
+        // `declare namespace TypeScript { interface IIndexable<T> ...; function createIntrinsicsObject<T>(): IIndexable<T> }`
+        // named its own IIndexable, and the function was "declared again with another signature", TSLANG 191)
+        if ((block->flags & NodeFlags::Ambient) == NodeFlags::Ambient ||
+            llvm::any_of(block->statements, [](auto statement) { return (statement->flags & NodeFlags::Ambient) == NodeFlags::Ambient; }))
+        {
+            return;
+        }
+
         auto blockKey = fileName + ":" + std::to_string(block->pos.pos);
         llvm::StringSet<> clashing;
         for (auto &statement : block->statements)

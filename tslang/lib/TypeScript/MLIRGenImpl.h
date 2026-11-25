@@ -3644,7 +3644,15 @@ class MLIRGenImpl
             && variableDeclarationInfo.initial
             && mth.isAnyFunctionType(variableDeclarationInfo.type))
         {
-            if (auto symbolRefOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::SymbolRefOp>())
+            // (through the cast to the type the const declares: `const fn1: <T>(x: T) => void = t => {...}`, whose
+            // global was left beside the function of its name, "redefinition of symbol named 'fn1'", TSLANG 191)
+            auto initial = variableDeclarationInfo.initial;
+            while (auto castOp = initial.getDefiningOp<mlir_ts::CastOp>())
+            {
+                initial = castOp.getIn();
+            }
+
+            if (auto symbolRefOp = initial.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 if (symbolRefOp.getIdentifier() == variableDeclarationInfo.fullName)
                 {

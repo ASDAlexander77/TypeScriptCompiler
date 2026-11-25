@@ -3302,3 +3302,21 @@ contextualOuterTypeParameters, contextualParamTypeVsNestedReturnTypeInference1,
 declarationEmitTypeParameterNameInOuterScope, genericClassesRedeclaration, genericFunctionsAndConditionalInference.
 
 Test `00tslang_issue_191.ts` (gc, rc, own, none).
+
+191, continued (sweep 3300 -> 3303 pass, no new failures). Fixed:
+- `new A()` in `<A,>(x: A) => new A()` of a module with a class `A`: "'new' on a value of type 'any'". A type
+  parameter is no value: the name is the class of this namespace or one around it, unless the parameter is given a
+  class (resolveIdentifierInNamespace).
+- `const fn1: <T>(x: T) => void = t => {...}` (a module const of a generic function type given an arrow):
+  "redefinition of symbol named 'fn1'". Its value is the cast of the arrow named after it, and the global was kept
+  beside that function (isGlobalConstLambda sees through the cast).
+- A function of one signature declared again in a later block of a `declare namespace` (genericClassesRedeclaration):
+  "declared again with another signature". 179's renaming of a block's own names took the second block's
+  `IIndexable` for one; a `declare namespace` exports its members without `export` (renameNamespaceBlockLocals).
+- A type parameter whose constraint is literals (`F extends Target`, `type Target = keyof Targets<any>`) given a
+  literal (`Ops<"left">` for `Ops<F>`) keeps it, as TypeScript does: it was widened to `string`, and `Targets<A>[F]`
+  of `Ops<string>` could not be read.
+
+Still open: genericFunctionsAndConditionalInference (a generic method `lr<I, O>(a: Targets<I>[F])` of `Ops<"left">`:
+`Targets<I>["left"]` with `I` not given yet is not resolved), contextualParamTypeVsNestedReturnTypeInference1 (type
+arguments from the contextual type of a nested call).

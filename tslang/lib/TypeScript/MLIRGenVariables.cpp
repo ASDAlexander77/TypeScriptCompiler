@@ -3020,6 +3020,24 @@ namespace mlirgen
 
         auto type = resolveTypeByNameInNamespace(location, name, genContext);
 
+        // a type parameter is no value: `new A()` in `<A,>(x: A) => new A()` is the class `A` of this namespace or one
+        // around it, not the type the parameter is given ("'new' on a value of type 'any'", TSLANG 191). One given a
+        // class is that class, as before.
+        if (type && !isa<mlir_ts::ClassType>(type) && genContext.typeParamsWithArgs.count(name))
+        {
+            MLIRNamespaceGuard ng(currentNamespace);
+            for (auto namespaceInfo = currentNamespace; namespaceInfo; namespaceInfo = namespaceInfo->parentNamespace)
+            {
+                currentNamespace = namespaceInfo;
+                if (auto classInfo = getClassesMap().count(name) ? getClassesMap().lookup(name) : ClassInfo::TypePtr();
+                    classInfo && classInfo->classType && !classInfo->isValue)
+                {
+                    type = classInfo->classType;
+                    break;
+                }
+            }
+        }
+
         // as a value, a @value class's name is the class (`V.plus`, `new V()`), as any class's is -
         // before its fields are laid out too, when it has no type yet
         if (auto valueClassInfo = getValueClassInfo(type))
