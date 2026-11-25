@@ -2190,6 +2190,8 @@ tslang_add_test(NAME test-compile-rc-export-import-bodiless-writes COMMAND test-
 # TSLANG 191: `export { ... }` lists, `export ... from`, `export * as ns from`; `export =` and `import x = require()`
 foreach(exports_mm gc rc own)
     tslang_add_test(NAME test-compile-${exports_mm}-export-lists COMMAND test-runner -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_export_lists.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_lists_r.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_lists_m.ts")
+    tslang_add_test(NAME test-compile-${exports_mm}-json-module COMMAND test-runner -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_json_module.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/json_module_data.json")
+    tslang_add_test(NAME test-jit-${exports_mm}-json-module COMMAND test-runner -jit -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_json_module.ts")
     tslang_add_test(NAME test-compile-${exports_mm}-export-equals COMMAND test-runner -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_export_equals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_equals_ns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_equals_class.ts")
 endforeach()
 tslang_add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")

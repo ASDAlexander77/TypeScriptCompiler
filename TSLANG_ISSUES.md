@@ -3344,3 +3344,12 @@ other, so neither can be a function type; a function given to one would need an 
 Tests `import_export_lists.ts` + `export_lists_r.ts` + `export_lists_m.ts`, `import_export_equals.ts` +
 `export_equals_ns.ts` + `export_equals_class.ts` (gc, rc, own, compiled separately); crash-errors export_list,
 export_from and export_equals now compile.
+
+191, continued (sweep 3565 -> 3594 pass, no new failures). Fixed:
+- A JSON file imported as a module (`import b = require("./b.json")`, `import b from "./b.json"`): it was loaded as
+  a shared library ("Can't open: Unknown error (0xC1)"). Its one expression is its `export =` (lowerDefaultExports),
+  and a specifier with a source extension is not a library (importLibraryPath).
+- A module exporting `var y;` (no type, no value), imported: "failed statement". In declaration mode it is an
+  `any`, as where the module is compiled itself.
+
+Tests `import_json_module.ts` + `json_module_data.json` (gc, rc, own; compiled separately and JIT).

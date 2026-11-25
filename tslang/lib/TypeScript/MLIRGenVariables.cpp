@@ -1280,6 +1280,13 @@ namespace mlirgen
             if (declarationMode && !genContext.funcOp)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
+                // `export var y;` - no type, no value - is an `any`, as where the module is compiled itself (its
+                // importer failed with "failed statement", TSLANG 191)
+                if (!t && !item->type && !item->initializer)
+                {
+                    t = getAnyType();
+                }
+
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 

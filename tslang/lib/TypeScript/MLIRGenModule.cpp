@@ -347,6 +347,19 @@ namespace mlirgen
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
         NodeFactory nf(NodeFactoryFlags::None);
+
+        // a JSON module (`import b = require("./b.json")`, `import b from "./b.json"`): its value is what it exports,
+        // `export = <the JSON>`, lowered below as any `export =` of an expression (TSLANG 191)
+        if (sys::path::extension(filePath) == ".json" && sourceFile->statements.size() == 1 &&
+            sourceFile->statements[0] == SyntaxKind::ExpressionStatement)
+        {
+            auto &statement = sourceFile->statements[0];
+            auto exportAssignment = nf.createExportAssignment(undefined, true, statement.as<ExpressionStatement>()->expression);
+            exportAssignment->pos = statement->pos;
+            exportAssignment->_end = statement->_end;
+            exportAssignment->parent = sourceFile;
+            statement = exportAssignment;
+        }
         // A module has one default export, and the first is what `import x from` binds. Another (an error in
         // TypeScript, but compiled as before) gets a name of its own, `<name>_<n>`: two unnamed functions given
         // the one name were a redefinition. Counted per load, as a file may be loaded again and must give
@@ -3207,6 +3220,14 @@ namespace mlirgen
         if (sys::path::extension(fullPath) == "")
         {
             fullPath += targetIsWindows ? ".dll" : ".so";
+        }
+
+        // a module's source named with its extension (`import b = require("./b.json")`) is no library: as one, the
+        // JSON file was loaded as a DLL ("Can't open: Unknown error (0xC1)", TSLANG 191)
+        auto extension = sys::path::extension(fullPath);
+        if (extension != ".dll" && extension != ".so" && extension != ".dylib")
+        {
+            return std::string();
         }
 
         return fullPath;
