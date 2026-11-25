@@ -3303,10 +3303,31 @@ namespace mlirgen
                         func = valueOp.getIn();
                     }
 
-                    auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                    // ...or through the generator object's own field (`const g = gen(); g.next()`, the object typed
+                    // by its shape): what it yielded was never freed either (TSLANG 191)
+                    auto loadOp = func ? func.getDefiningOp<mlir_ts::LoadOp>()
+                                       : funcRefValue.getDefiningOp<mlir_ts::LoadOp>();
                     auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>()
                                         : mlir_ts::InterfaceSymbolRefOp();
                     auto identifier = refOp ? dyn_cast<mlir::StringAttr>(refOp.getIdentifier()) : mlir::StringAttr();
+                    if (auto propertyRefOp = !refOp && loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                                              : mlir_ts::PropertyRefOp())
+                    {
+                        auto objectType = dyn_cast<mlir_ts::ObjectType>(propertyRefOp.getObjectRef().getType());
+                        auto storageTuple = objectType ? dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()) : mlir_ts::TupleType();
+                        if (!storageTuple && objectType)
+                        {
+                            if (auto storageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+                            {
+                                storageTuple = mlir_ts::TupleType::get(builder.getContext(), storageType.getFields());
+                            }
+                        }
+
+                        if (storageTuple && propertyRefOp.getPosition() < storageTuple.getFields().size())
+                        {
+                            identifier = dyn_cast_or_null<mlir::StringAttr>(storageTuple.getFields()[propertyRefOp.getPosition()].id);
+                        }
+                    }
                     auto tupleType = dyn_cast<mlir_ts::TupleType>(V(value).getType());
                     auto fieldName = [&](int index) {
                         auto id = dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
