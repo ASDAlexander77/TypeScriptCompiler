@@ -412,6 +412,140 @@ namespace mlirgen
             }
         }
 
+        // the top-level statements that declare a name (a function's overloads are several)
+        auto declarationsOf = [&](StringRef wanted) {
+            SmallVector<Statement *> found;
+            for (auto &statement : sourceFile->statements)
+            {
+                Node declarationName;
+                if (statement == SyntaxKind::InterfaceDeclaration)
+                {
+                    declarationName = statement.as<InterfaceDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::TypeAliasDeclaration)
+                {
+                    declarationName = statement.as<TypeAliasDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::ClassDeclaration)
+                {
+                    declarationName = statement.as<ClassDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::FunctionDeclaration)
+                {
+                    declarationName = statement.as<FunctionDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::EnumDeclaration)
+                {
+                    declarationName = statement.as<EnumDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::ModuleDeclaration)
+                {
+                    declarationName = statement.as<ModuleDeclaration>()->name;
+                }
+                else if (statement == SyntaxKind::VariableStatement)
+                {
+                    for (auto variable : statement.as<VariableStatement>()->declarationList->declarations)
+                    {
+                        if (variable->name == SyntaxKind::Identifier && MLIRHelper::getName(variable->name.as<Identifier>()) == wanted)
+                        {
+                            found.push_back(&statement);
+                            break;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (declarationName && declarationName == SyntaxKind::Identifier &&
+                    MLIRHelper::getName(declarationName.as<Identifier>()) == wanted)
+                {
+                    found.push_back(&statement);
+                }
+            }
+
+            return found;
+        };
+        auto markExported = [&](StringRef wanted) {
+            auto found = declarationsOf(wanted);
+            for (auto *statement : found)
+            {
+                if (!hasModifier(*statement, SyntaxKind::ExportKeyword))
+                {
+                    (*statement)->modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+                }
+            }
+
+            return !found.empty();
+        };
+
+        // `export { a, b as c }` of the file's own declarations: each is exported, as `export` written on it would
+        // make it; `c` is another name for `b`, which the statement registers where it is generated (an import's
+        // alias). `export { a as default }` makes a the default export. They were "'export { ... }' statements are
+        // not supported" (TSLANG 191).
+        // `export = X` (CommonJS): X is what `import x = require("./m")` binds x to - a declaration of the file,
+        // exported, or the value of an expression, kept in an exported constant as `export default <expression>` is
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::ExportDeclaration && !statement.as<ExportDeclaration>()->moduleSpecifier)
+            {
+                auto exportClause = statement.as<ExportDeclaration>()->exportClause;
+                if (exportClause && exportClause == SyntaxKind::NamedExports)
+                {
+                    for (auto element : exportClause.as<NamedExports>()->elements)
+                    {
+                        auto local = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name);
+                        auto exported = MLIRHelper::getName(element->name);
+                        markExported(local);
+                        if (exported == "default")
+                        {
+                            found(local);
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            if (statement == SyntaxKind::ExportAssignment && statement.as<ExportAssignment>()->isExportEquals)
+            {
+                auto exportAssignment = statement.as<ExportAssignment>();
+                std::string exportedName;
+                if (exportAssignment->expression == SyntaxKind::Identifier)
+                {
+                    exportedName = MLIRHelper::getName(exportAssignment->expression.as<Identifier>());
+                    markExported(exportedName);
+                    auto emptyStatement = nf.createEmptyStatement();
+                    emptyStatement->pos = statement->pos;
+                    emptyStatement->_end = statement->_end;
+                    statement = emptyStatement;
+                }
+                else
+                {
+                    exportedName = nextName();
+                    NodeArray<VariableDeclaration> declarations;
+                    auto declaration = nf.createVariableDeclaration(nf.createIdentifier(convertUTF8toWide(exportedName)),
+                                                                    undefined, undefined, exportAssignment->expression);
+                    declaration->pos = exportAssignment->pos;
+                    declaration->_end = exportAssignment->_end;
+                    declarations.push_back(declaration);
+
+                    ModifiersArray modifiers;
+                    modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+                    auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+                    declarationList->pos = exportAssignment->pos;
+                    declarationList->_end = exportAssignment->_end;
+                    auto variableStatement = nf.createVariableStatement(modifiers, declarationList);
+                    variableStatement->pos = exportAssignment->pos;
+                    variableStatement->_end = exportAssignment->_end;
+                    variableStatement->parent = sourceFile;
+                    statement = variableStatement;
+                }
+
+                exportEqualsByFile[canonicalPath] = exportedName;
+                found(exportedName);
+            }
+        }
+
         for (auto &statement : sourceFile->statements)
         {
             if (statement == SyntaxKind::ExportAssignment && !statement.as<ExportAssignment>()->isExportEquals
@@ -3278,6 +3412,86 @@ namespace mlirgen
     StringRef MLIRGenImpl::resolveImportAlias(StringRef name)
     {
         return getImportAliasMap().lookup(name);
+    }
+
+    mlir::LogicalResult MLIRGenImpl::mlirGenImportModule(mlir::Location location, StringRef modulePath, const GenContext &genContext)
+    {
+        auto fullPath = importLibraryPath(modulePath);
+        if (sys::fs::exists(fullPath))
+        {
+            return mlirGenImportSharedLib(location, fullPath, /*dynamic=*/true, genContext);
+        }
+
+        return mlirGenInclude(location, modulePath, genContext);
+    }
+
+    // `export { a, b as c }`: the file's own a and b are exported (lowerDefaultExports marked them); c is another name
+    // for b, as `import { b as c }` makes it. `export { a, b as c } from "./m"` and `export * from "./m"` are m's
+    // declarations, which the importer of this module then has as an import of m gives them: an imported module's
+    // declarations are generated at the top level (mlirGenImportBindings). `export * as ns from "./m"` is ns, as
+    // `import * as ns` makes it. They were "'export { ... }' and 'export ... from' statements are not supported"
+    // (TSLANG 191).
+    mlir::LogicalResult MLIRGenImpl::mlirGenExportDeclaration(ExportDeclaration exportDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(exportDeclarationAST);
+        std::string defaultOfModule;
+        if (auto moduleSpecifier = exportDeclarationAST->moduleSpecifier)
+        {
+            if (moduleSpecifier != SyntaxKind::StringLiteral)
+            {
+                emitError(loc(moduleSpecifier), "the module of 'export ... from' must be a string literal");
+                return mlir::failure();
+            }
+
+            auto modulePath = convertWideToUTF8(moduleSpecifier.as<ts::StringLiteral>()->text);
+            if (mlir::failed(mlirGenImportModule(location, modulePath, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto defaultExport = defaultExportByFile.find(canonicalFilePath(includeFilePath(modulePath)));
+            if (defaultExport != defaultExportByFile.end())
+            {
+                defaultOfModule = defaultExport->second;
+            }
+        }
+
+        auto exportClause = exportDeclarationAST->exportClause;
+        if (!exportClause)
+        {
+            // `export * from "./m"`
+            return mlir::success();
+        }
+
+        if (exportClause == SyntaxKind::NamespaceExport)
+        {
+            auto namespaceName = MLIRHelper::getName(exportClause.as<NamespaceExport>()->name, stringAllocator);
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namespaceName);
+            currentNamespace->isModuleImport = true;
+            return mlir::success();
+        }
+
+        if (exportClause == SyntaxKind::NamedExports)
+        {
+            for (auto element : exportClause.as<NamedExports>()->elements)
+            {
+                auto target = MLIRHelper::getName(element->propertyName ? element->propertyName : element->name, stringAllocator);
+                auto alias = MLIRHelper::getName(element->name, stringAllocator);
+                // `export { default } from "./m"`, `export { default as X } from "./m"`: m's default export
+                if (target == "default" && !defaultOfModule.empty())
+                {
+                    target = StringRef(defaultOfModule).copy(stringAllocator);
+                }
+
+                if (alias != target && alias != "default")
+                {
+                    getImportAliasMap()[alias] = target;
+                }
+            }
+        }
+
+        return mlir::success();
     }
 
 } // namespace mlirgen

@@ -1026,6 +1026,15 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // ...nor has a namespace's type (`var m: typeof moduleA = i` of an `import moduleA = require("./m")`): the
+        // cast of another value to it crashed the lowering (TSLANG 191)
+        if (isa<mlir_ts::NamespaceType>(type) && !isa<mlir_ts::NamespaceType>(valueType))
+        {
+            emitError(location) << "a value of type '" << to_print(valueType) << "' can't be given for '" << to_print(type)
+                                << "': a namespace has no run-time value";
+            return mlir::failure();
+        }
+
         // In every model but -mm=own an `object` is an `any` box (USER RULING 2026-11-23 for rc; gc and none follow it so
         // that `object` reads the same everywhere): under rc its release then frees what the box
         // holds by the box's tag, a class object with its fields. A bare `object` said nothing of what it pointed

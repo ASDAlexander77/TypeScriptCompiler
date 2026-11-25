@@ -631,11 +631,17 @@ namespace mlirgen
                 return mlir::success();
             }
 
-            emitError(loc(statementAST), "'export { ... }' and 'export ... from' statements are not supported; put 'export' on the declaration");
-            return mlir::failure();
+            return mlirGenExportDeclaration(exportDeclarationAST, genContext);
         }
         else if (kind == SyntaxKind::ExportAssignment)
         {
+            // `export = X` in a `declare module "m" { ... }`: what an ambient module gives `import x = require("m")`;
+            // the declarations it names are generated where they are (a file's own is lowered, lowerDefaultExports)
+            if (statementAST.as<ExportAssignment>()->isExportEquals && (statementAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient)
+            {
+                return mlir::success();
+            }
+
             // a file's own `export default <expression>` is an exported constant by now (lowerDefaultExports);
             // one in a `declare module "m" { ... }` is not
             emitError(loc(statementAST), statementAST.as<ExportAssignment>()->isExportEquals

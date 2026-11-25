@@ -17804,6 +17804,45 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(ImportEqualsDeclaration importEqualsDeclarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(importEqualsDeclarationAST->name);
+
+        // `import x = require("./m")`: m is generated as an import is, and x is what m's `export = X` names; a module
+        // without one is x as `import * as x` makes it (TSLANG 191: "'import X = require(...)' is not supported")
+        if (!name.empty() && importEqualsDeclarationAST->moduleReference == SyntaxKind::ExternalModuleReference)
+        {
+            auto expression = importEqualsDeclarationAST->moduleReference.as<ExternalModuleReference>()->expression;
+            if (expression != SyntaxKind::StringLiteral)
+            {
+                emitError(loc(importEqualsDeclarationAST->moduleReference), "the module of 'require(...)' must be a string literal");
+                return mlir::failure();
+            }
+
+            auto modulePath = convertWideToUTF8(expression.as<ts::StringLiteral>()->text);
+            auto location = loc(importEqualsDeclarationAST);
+            if (mlir::failed(mlirGenImportModule(location, modulePath, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto canonicalPath = canonicalFilePath(includeFilePath(modulePath));
+            auto exportEquals = exportEqualsByFile.find(canonicalPath);
+            if (exportEquals != exportEqualsByFile.end())
+            {
+                if (exportEquals->second != name)
+                {
+                    auto alias = StringRef(name).copy(stringAllocator);
+                    getImportAliasMap()[alias] = StringRef(exportEquals->second).copy(stringAllocator);
+                }
+
+                return mlir::success();
+            }
+
+            auto namespaceName = StringRef(name).copy(stringAllocator);
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namespaceName);
+            currentNamespace->isModuleImport = true;
+            return mlir::success();
+        }
+
         if (!name.empty())
         {
             auto result = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
@@ -22473,6 +22512,16 @@ class MLIRGenImpl
 
     // a file's default export, by its canonical path (lowerDefaultExports): the name `import x from` binds x to
     llvm::StringMap<std::string> defaultExportByFile;
+    // a file's `export = X`, by its canonical path (lowerDefaultExports): the name `import x = require("./m")` binds x
+    // to (TSLANG 191)
+    llvm::StringMap<std::string> exportEqualsByFile;
+
+    // `import ... from "m"`, `export ... from "m"`, `import x = require("m")`: the module generated here, a source
+    // file or a shared library (TSLANG 191)
+    mlir::LogicalResult mlirGenImportModule(mlir::Location location, StringRef modulePath, const GenContext &genContext);
+
+    // `export { a, b as c }`, `export { a } from "m"`, `export * from "m"`, `export * as ns from "m"` (TSLANG 191)
+    mlir::LogicalResult mlirGenExportDeclaration(ExportDeclaration exportDeclarationAST, const GenContext &genContext);
 
     // Files on the current generation stack: the program and every `import` being generated
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b

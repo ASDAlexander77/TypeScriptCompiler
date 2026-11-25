@@ -1,1 +1,2 @@
-export = 2 + 2;
+declare let k: string;
+interface Bad { [k]: number; }

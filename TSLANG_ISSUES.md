@@ -3324,3 +3324,23 @@ arguments from the contextual type of a nested call).
 Also open: a function given to an interface of one call signature that stays an interface (`interface A { (): B }`,
 `interface B { (): A }`, `function mb(): A { return ma; }`): "invalid cast from () => B to A". Such interfaces name each
 other, so neither can be a function type; a function given to one would need an object whose call slot holds it.
+
+191, continued: module syntax (USER RULING 2026-11-25, which reverses 11-18's "exports are clear errors"; sweep
+3303 -> 3565 pass, no new failures). Fixed:
+- `export { a, b as c }` of a file's own declarations: each is exported as `export` written on it would make it
+  (lowerDefaultExports adds the modifier), and `c` is another name for `b` (an import alias, registered where the
+  statement is generated: mlirGenExportDeclaration). `export { a as default }` makes `a` the default export.
+- `export { a, b as c } from "./m"`, `export * from "./m"`, `export { default as x } from "./m"`: m is generated
+  as an import of it is (mlirGenImportModule), and the renames are aliases; `export * as ns from "./m"` is ns as
+  `import * as ns` makes it. Tslang's modules are one flat program, so what m declares reaches this module's
+  importers through it.
+- `export = X`: a declaration of the file named so is exported, an expression is kept in an exported constant, and
+  the file's `exportEqualsByFile` (and default export) is that name. `import x = require("./m")` generates m and
+  makes x another name for it; a module without `export =` is x as `import * as x` makes it. In a `declare module
+  "m"` block `export =` compiles to nothing; elsewhere (a namespace) it is still an error, as in TypeScript.
+- A value given for a namespace's type (`var m: typeof moduleA = i` of an imported module) crashed the lowering:
+  it is "a value of type 'I' can't be given for 'moduleA': a namespace has no run-time value".
+
+Tests `import_export_lists.ts` + `export_lists_r.ts` + `export_lists_m.ts`, `import_export_equals.ts` +
+`export_equals_ns.ts` + `export_equals_class.ts` (gc, rc, own, compiled separately); crash-errors export_list,
+export_from and export_equals now compile.

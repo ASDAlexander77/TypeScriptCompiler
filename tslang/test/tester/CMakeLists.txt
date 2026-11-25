@@ -2187,6 +2187,11 @@ tslang_add_test(NAME test-compile-none-export-import-owned-returns COMMAND test-
 # TSLANG 190: a callee with no body here (another module's) may write a place of an object it is given
 tslang_add_test(NAME test-compile-export-import-bodiless-writes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_bodiless_writes.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_bodiless_writes.ts")
 tslang_add_test(NAME test-compile-rc-export-import-bodiless-writes COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_bodiless_writes.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_bodiless_writes.ts")
+# TSLANG 191: `export { ... }` lists, `export ... from`, `export * as ns from`; `export =` and `import x = require()`
+foreach(exports_mm gc rc own)
+    tslang_add_test(NAME test-compile-${exports_mm}-export-lists COMMAND test-runner -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_export_lists.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_lists_r.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_lists_m.ts")
+    tslang_add_test(NAME test-compile-${exports_mm}-export-equals COMMAND test-runner -mm=${exports_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_export_equals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_equals_ns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_equals_class.ts")
+endforeach()
 tslang_add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-compile-export-import-throw-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
 tslang_add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
@@ -4715,9 +4720,6 @@ set(crash_error_cases
     "jsx_mismatched_closing_tag.tsx|jsx_mismatched_closing_tag\\.tsx:1:16: error: Expected corresponding JSX closing tag for 'div'"
     "jsx_no_children.tsx|jsx_no_children\\.tsx:1:9: error: JSX is not supported"
     "jsx_namespaced_tag.tsx|jsx_namespaced_tag\\.tsx:1:9: error: JSX is not supported"
-    "export_list.ts|export_list\\.ts:2:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
-    "export_from.ts|export_from\\.ts:1:1: error: 'export { \\.\\.\\. }' and 'export \\.\\.\\. from' statements are not supported"
-    "export_equals.ts|export_equals\\.ts:2:1: error: 'export =' is not supported"
     # a file's `export default <expression>` is an exported constant (export-default.cmake); one in a `declare module` block is not
     "export_default_in_module_block.ts|export_default_in_module_block\\.ts:2:5: error: 'export default <expression>' is not supported here: only at a file's top level"
     # what can't be assigned to says what it is (it said "saving to constant object")
@@ -4783,7 +4785,7 @@ set(crash_error_cases
     "const_declared_first_assigned.ts|const_declared_first_assigned\\.ts:4:5: error: can't assign to 'c': it is a constant"
     # the errors of a referenced file's retried pass (a forward reference) were printed before a later file's
     # own error, as if they were the cause (the sweep's "PromiseFulfilledResult can't be found", from lib.generics)
-    "stale_errors_of_retried_file.ts|fails\\.d\\.ts:1:1: error: 'export =' is not supported"
+    "stale_errors_of_retried_file.ts|fails\\.d\\.ts:2:17: error: a computed property name must be a constant"
     "symbol_description_not_constant.ts|symbol_description_not_constant\\.ts:2:19: error: the description of a symbol must be a constant string"
     # an exported interface keyed by an exported `let`: the field was kept with no name, which printing the
     # interface for export read
@@ -4811,7 +4813,7 @@ set_property(TEST test-compile-crash-errors-jsx-no-children APPEND PROPERTY FAIL
 set_property(TEST test-compile-crash-errors-stale-errors-of-retried-file APPEND PROPERTY FAIL_REGULAR_EXPRESSION "can't find type by name: Later")
 # `export {}` and `export as namespace` make no code: they compile. So do a predicate naming no parameter, a
 # `never` field, `[[]]`, a narrowing inside a `switch` case that used to outlive it, and a module-level `never`.
-foreach(crash_ok_name export_empty export_as_namespace type_predicate_unknown_parameter
+foreach(crash_ok_name export_empty export_as_namespace export_list export_from export_equals type_predicate_unknown_parameter
                       class_never_field nested_empty_array switch_case_narrowing_scope never_global
                       module_try_catch_finally_locals call_signature_interface call_any call_untyped_parameter
                       export_default_expression)
