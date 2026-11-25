@@ -415,6 +415,14 @@ namespace mlirgen
     {
         auto location = loc(asExpressionAST);
 
+        // `{ mode: "a", output: x } as const` given to a type (`const c: Candidate = ...`): typed by that type, as
+        // TypeScript checks it against it - typed by `const` instead, its `mode` was a string, which no member of
+        // `{ mode: "a"; ... } | { mode: "b" }` takes ("can't be stored")
+        if (isConstAssertion(asExpressionAST) && genContext.receiverType)
+        {
+            return mlirGen(asExpressionAST->expression, genContext);
+        }
+
         auto typeInfo = getType(asExpressionAST->type, genContext);
         if (!typeInfo)
         {

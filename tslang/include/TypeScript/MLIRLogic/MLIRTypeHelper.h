@@ -4187,9 +4187,31 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
+        // a union in a union is its members (a function's return type merged from `{ valid }` and a `U`: `{ valid } | (A |
+        // B)` was a union nothing could be stored in)
+        mlir::SmallVector<mlir::Type> flattened;
+        std::function<void(mlir::Type)> flatten = [&](mlir::Type type) {
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    flatten(member);
+                }
+
+                return;
+            }
+
+            flattened.push_back(type);
+        };
+
+        for (auto type : types)
+        {
+            flatten(type);
+        }
+
         mlir::SmallPtrSet<mlir::Type, 2> normalizedTypes;
         auto isUndefined = false;
-        for (auto type : types)
+        for (auto type : flattened)
         {
             if (isa<mlir_ts::UndefinedType>(type))
             {
@@ -4422,6 +4444,25 @@ class MLIRTypeHelper
         {
             merged = true;
             return getUnionType(location, existType, currentType);
+        }
+
+        // a union returned and then another value (`return utilValidate(); ... return { valid: true };`): the union, when
+        // the value is (or casts to) one of its members, else the union with it as a member more. It failed with
+        // "failed statement" alone.
+        for (auto [unionSide, otherSide] : {std::make_pair(existType, currentType), std::make_pair(currentType, existType)})
+        {
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(unionSide))
+            {
+                merged = true;
+                if (llvm::any_of(unionType.getTypes(), [&](mlir::Type member) {
+                        return member == otherSide || canCastFromTo(location, otherSide, member);
+                    }))
+                {
+                    return unionSide;
+                }
+
+                return getUnionType(location, existType, currentType);
+            }
         }
 
         auto existTuple = dyn_cast<mlir_ts::TupleType>(existType);

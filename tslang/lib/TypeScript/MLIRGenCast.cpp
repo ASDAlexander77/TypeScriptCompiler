@@ -170,6 +170,13 @@ namespace mlirgen
             return builder.create<mlir_ts::OptionalUndefOp>(location, fieldType);
         }
 
+        // `msg?: undefined` is a field of the type `undefined` (an optional undefined is undefined): absent, it is that
+        // ("field "msg" can't be found in tuple '{valid:boolean}'")
+        if (isa<mlir_ts::UndefinedType>(fieldType))
+        {
+            return builder.create<mlir_ts::UndefOp>(location, fieldType);
+        }
+
         if (isa<mlir_ts::AnyType>(fieldType))
         {
             auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
@@ -2967,8 +2974,9 @@ namespace mlirgen
                 auto index = tupleType.getIndex(field.id);
                 return index >= 0 && mth.canCastFromTo(location, field.type, tupleType.getFields()[index].type);
             });
+            // (`msg?: undefined` is a field of the type `undefined`: optional as well, absentFieldValue)
             fits = fits && llvm::all_of(tupleType.getFields(), [&](const mlir_ts::FieldInfo &field) {
-                return isa<mlir_ts::OptionalType>(field.type)
+                return isa<mlir_ts::OptionalType, mlir_ts::UndefinedType>(field.type)
                     || llvm::any_of(valueFields, [&](const mlir_ts::FieldInfo &valueField) { return valueField.id == field.id; });
             });
             if (fits)
@@ -5386,6 +5394,49 @@ namespace mlirgen
                 }
 
                 auto releaseCastKey = llvm::make_scope_exit([&]() { castsFromUnionInProgress.erase(castKey); });
+
+                // a union of object shapes (`{ valid; msg: string } | { valid }`, a `?:` of two literals) given to another
+                // type (`{ valid; msg?: undefined } | { valid; msg: string }`): `typeof` says "tuple" for each, but
+                // the tag's layout tells them apart - each member is tested for and cast as it is ("Cast from ... is
+                // not supported")
+                mlir::Type unionBaseType;
+                if (llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member); })
+                    && unionType.getTypes().size() > 1 && mth.isUnionTypeNeedsTag(location, unionType, unionBaseType)
+                    && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+                {
+                    auto members = unionType.getTypes();
+                    auto box = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+                    std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+                        auto asMember = [&]() -> ValueOrLogicalResult {
+                            auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], value);
+                            return cast(location, type, memberValue, genContext);
+                        };
+
+                        if (index + 1 == members.size())
+                        {
+                            return asMember();
+                        }
+
+                        auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), box,
+                                                                                mlir::TypeAttr::get(members[index]));
+                        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
+
+                        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                        auto thenValue = asMember();
+                        EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+                        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                        auto elseValue = castOf(index + 1);
+                        EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+                        builder.setInsertionPointAfter(ifOp);
+                        return V(ifOp.getResults().front());
+                    };
+
+                    return castOf(0);
+                }
 
                 // info, we add "_" extra as scanner append "_" in front of "__";
                 auto funcName = ".cast";

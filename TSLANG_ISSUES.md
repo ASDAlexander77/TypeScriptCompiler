@@ -3502,3 +3502,20 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
 `00narrowing_after_assign.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
+
+194. Bugs found by the third sweep of TypeScript's compiler tests. Fixed:
+- An object literal `as const` given to a type (`const c: Candidate = { mode: "a", output: x } as const`): typed by
+  `const`, its `mode` was a string, which no member of `{ mode: "a"; ... } | { mode: "b" }` takes ("can't be stored").
+  It is typed by the type it is given.
+- A field `msg?: undefined` (an optional `undefined` is `undefined`) left out of an object literal: "field "msg" can't
+  be found in tuple". It is absent, as an optional field is.
+- A union of object shapes (`b ? { valid: true } : { valid: false, msg: "m" }`) given to another union of shapes:
+  "Cast from ... is not supported" - `typeof` says "tuple" for each. The tag's layout tells them apart; each member is
+  tested for and cast as it is.
+- A union in a union (a function returning a `U` and an object literal: `{ valid } | (A | B)`) is its members.
+- A function returning a union and then a value of one of its members: "failed statement" alone.
+  Not yet: such a function returning a union and then a value of no member (`{ valid: true }` after a `U` of shapes with
+  `msg`); reading a field some member has not (`v.msg` of `{ valid } | { valid; msg }`, an error in TypeScript) reads
+  the value as the first member that has it.
+
+Tests `00tslang_issue_194.ts` (all models).
