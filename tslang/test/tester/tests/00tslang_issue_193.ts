@@ -43,6 +43,15 @@ function invoke(item: Shape) {
     return item.kind === "a" ? "" + item.method("12") : item.method(42);
 }
 
+// - an array literal given to a union with a one-element tuple in it (`["a"] | I`): "can't be stored"
+interface HasOther {
+    someOtherProperty: number;
+}
+
+function tupleOrInterface(args: ["a"] | HasOther) {
+    return "ok";
+}
+
 // read in module variables, as the sweep's tests did
 const t7 = Foo[k3];
 const t8 = new Foo()[k3];
@@ -63,6 +72,8 @@ function main() {
     assert(one.method("123") == 3, "a method typed by a method signature");
     assert(invoke({ kind: "a", method(a) { return a.length; } }) == "2", "a literal typed by the member its kind names");
     assert(invoke({ kind: "b", method(n) { return "n" + n; } }) == "n42", "a literal typed by the other member");
+
+    assert(tupleOrInterface(["a"]) == "ok", "an array literal given to a union with a tuple");
 
     print("done.");
 }

@@ -3126,6 +3126,28 @@ namespace mlirgen
                         }
                     }
 
+                    // an array given to a union with one array in it (`f(["a"])` for `["a"] | I`, whose `["a"]` is an array of
+                    // "a"): that array, its elements converted (it was "'ts.Cast' op type [const_array] can't be stored")
+                    if (isa<mlir_ts::ConstArrayType, mlir_ts::ArrayType>(valueType))
+                    {
+                        mlir::Type arrayMember;
+                        auto arrayMembers = 0;
+                        for (auto subType : types)
+                        {
+                            if (isa<mlir_ts::ArrayType>(subType))
+                            {
+                                arrayMember = subType;
+                                arrayMembers++;
+                            }
+                        }
+
+                        if (arrayMembers == 1)
+                        {
+                            CAST(value, location, arrayMember, value, genContext);
+                            return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                        }
+                    }
+
                     // an object literal or a tuple given to a union with `Object` (`object`), `any` or `unknown` in it
                     // (`const x: Object | string = { x: 0 }`): that member takes it (it was "'ts.Cast' op type
                     // [const_tuple] can't be stored")
