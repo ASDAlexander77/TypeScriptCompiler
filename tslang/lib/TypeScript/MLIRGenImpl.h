@@ -3732,6 +3732,27 @@ class MLIRGenImpl
         {
             fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
         }
+        else if (objectBindingElement->propertyName == SyntaxKind::ComputedPropertyName)
+        {
+            // `{ ["key"]: renamed }`, `{ [`key`]: renamed }`: the literal is the field's name, not the binding's
+            auto expression = objectBindingElement->propertyName.as<ComputedPropertyName>()->expression;
+            if (expression == SyntaxKind::StringLiteral || expression == SyntaxKind::NoSubstitutionTemplateLiteral)
+            {
+                auto text = convertWideToUTF8(expression.as<LiteralLikeNode>()->text);
+                if (!text.empty())
+                {
+                    fieldName = MLIRHelper::TupleFieldName(text, builder.getContext());
+                }
+            }
+            else if (expression == SyntaxKind::NumericLiteral)
+            {
+                fieldName = getNumericLiteralAttribute(expression);
+            }
+            else if (auto bindingName = MLIRHelper::getName(objectBindingElement->name); !bindingName.empty())
+            {
+                fieldName = MLIRHelper::TupleFieldName(bindingName, builder.getContext());
+            }
+        }
         else
         {
             auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
@@ -22544,6 +22565,35 @@ class MLIRGenImpl
 
     // class members named by a key known only at run time: entries of the class's `.dyn` table (TSLANG 191)
     void lowerRunTimeNamedMembers(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext);
+
+    // the type of a computed name's key whose value is known only at run time: a string, a number, an any, or a
+    // union of string and number literals (`const k = cond ? "f1" : "f2"`)
+    bool isRunTimeKeyType(mlir::Type keyType, bool allowAny)
+    {
+        if (!keyType)
+        {
+            return false;
+        }
+
+        if (isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType>(keyType) || (allowAny && isa<mlir_ts::AnyType>(keyType)))
+        {
+            return true;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(keyType))
+        {
+            return llvm::all_of(unionType.getTypes(), [](mlir::Type type) {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+                {
+                    type = literalType.getElementType();
+                }
+
+                return isa<mlir_ts::StringType, mlir_ts::NumberType, mlir::IntegerType>(type);
+            });
+        }
+
+        return false;
+    }
 
     // an import of a module the program declares (`declare module "m"`) and no file gives: a file of that name wins
     // (a `declare module "pkg" { ... }` beside the package adds to it)

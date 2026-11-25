@@ -96,6 +96,10 @@ function main() {
     const values = { a: 1, [k1]: 2 };
     assert(values[k1] == 2 && values.a == 1, "a property under a run-time key");
 
+    const k3 = k1.length > 1 ? "u1" : "u2";
+    const chosen = { [k3]: 3 };
+    assert(chosen["u1"] == 3, "a key of a union of literals");
+
     const box: any = { [k2]: 7, b: 8 };
     assert(box[k2] == 7 && box.b == 8, "given to an any");
 

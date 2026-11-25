@@ -80,6 +80,8 @@ function pick(n: number): string {
 const methodName = pick(1);
 const staticName = pick(2);
 const declaredName = pick(3);
+// a union of literals is a key known at run time too
+const chosenName = methodName.length > 1 ? "u1" : "u2";
 
 class Holder {
     n = 5;
@@ -91,6 +93,10 @@ class Holder {
     static [staticName] = 42;
 
     [declaredName]: string;
+
+    [chosenName]() {
+        return "chosen";
+    }
 
     plain(): number {
         return this.n;
@@ -110,6 +116,9 @@ function main() {
 
     const d: string = declaredName;
     assert(h[d] == undefined, "a field declared with a type only holds nothing");
+
+    const u: string = chosenName;
+    assert((<() => string>h[u])() == "chosen", "a method named by a union of literals");
 
     const n: string = "n";
     assert(h[n] == 5, "an own member by a run-time key");

@@ -127,7 +127,7 @@ namespace mlirgen
             }
 
             auto keyType = evaluate(expression, genContext);
-            return keyType && (isa<mlir_ts::StringType, mlir_ts::NumberType>(keyType) || isa<mlir::IntegerType>(keyType));
+            return isRunTimeKeyType(keyType, false);
         };
 
         NodeFactory nf(NodeFactoryFlags::None);

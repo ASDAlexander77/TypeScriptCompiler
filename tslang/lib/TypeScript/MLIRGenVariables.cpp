@@ -971,16 +971,68 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::processDeclarationObjectBindingPatternSubPath(
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
-        auto fieldName = getFieldNameFromBindingElement(objectBindingElement);
-        auto isNumericAccess = isa<mlir::IntegerAttr>(fieldName);
+        mlir::Attribute fieldName;
+        mlir::Value value;
+
+        // `const { [itemId]: item } = items`: the key is the computed name's, not the binding's (it read `items.item`).
+        // A constant one is a field name as any other; one known at run time reads the element (`items[itemId]`)
+        if (objectBindingElement->propertyName == SyntaxKind::ComputedPropertyName)
+        {
+            auto keyExpression = objectBindingElement->propertyName.as<ComputedPropertyName>()->expression;
+            auto keyResult = mlirGen(keyExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(keyResult)
+            auto keyValue = V(keyResult);
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto constant = mcl.ExtractAttr(keyValue);
+            if (!constant)
+            {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(keyValue.getType()))
+                {
+                    constant = literalType.getValue();
+                }
+            }
+
+            if (auto stringKey = dyn_cast_or_null<mlir::StringAttr>(constant))
+            {
+                fieldName = MLIRHelper::TupleFieldName(stringKey.getValue(), builder.getContext());
+            }
+            else if (isa_and_nonnull<mlir::IntegerAttr>(constant))
+            {
+                fieldName = constant;
+            }
+            else
+            {
+                auto result = mlirGenElementAccess(location, init, keyValue, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                value = V(result);
+            }
+        }
+        else
+        {
+            fieldName = getFieldNameFromBindingElement(objectBindingElement);
+        }
+
+        // a dictionary's entries are no fields: `const { a } = dict` reads `dict["a"]`
+        if (!value && isa_and_nonnull<mlir::StringAttr>(fieldName) && dictionaryClassInfoOf(init.getType(), genContext))
+        {
+            auto keyValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), fieldName);
+            auto result = mlirGenElementAccess(location, init, keyValue, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            value = V(result);
+        }
+
+        auto isNumericAccess = isa_and_nonnull<mlir::IntegerAttr>(fieldName);
 
         LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
 
         mlir::Value subInit;
         mlir::Type subInitType;
 
-        mlir::Value value;
-        if (isNumericAccess)
+        if (value)
+        {
+            // read by its run-time key above
+        }
+        else if (isNumericAccess)
         {
             MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, fieldName);
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
@@ -1021,7 +1073,7 @@ namespace mlirgen
         // the default applies to a field that may be missing; one the source always has (`var { x = 500 } = { x: 20 }`,
         // a const tuple) keeps its value, as in TypeScript, where the default is then never used
         mlir_ts::OptionalType optionalFieldType = dyn_cast<mlir_ts::OptionalType>(value.getType());
-        if (!optionalFieldType)
+        if (!optionalFieldType && fieldName)
         {
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
@@ -1142,10 +1194,15 @@ namespace mlirgen
             // nested obj, objectBindingElement->propertyName -> name
             if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
             {
-                auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
+                // the elements after it are declared too (`const { a: { x }, b } = o` declared no `b`)
+                auto nestedPattern = objectBindingElement->name.as<ObjectBindingPattern>();
+                if (mlir::failed(processDeclarationObjectBindingPattern(
+                        location, nestedPattern, varClass, subValueFunc, genContext)))
+                {
+                    return mlir::failure();
+                }
 
-                return processDeclarationObjectBindingPattern(
-                    location, objectBindingPattern, varClass, subValueFunc, genContext);
+                continue;
             }
 
             if (mlir::failed(processDeclaration(

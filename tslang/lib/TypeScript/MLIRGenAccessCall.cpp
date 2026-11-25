@@ -4216,8 +4216,7 @@ namespace mlirgen
                 // only a key whose type is a string or a number, not a literal, is made here; any other (one
                 // that does not resolve yet, a symbol) is the record's, as before
                 auto keyType = evaluate(expression, genContext);
-                if (!keyType || !(isa<mlir_ts::StringType, mlir_ts::NumberType, mlir_ts::AnyType>(keyType) ||
-                                  isa<mlir::IntegerType>(keyType)))
+                if (!isRunTimeKeyType(keyType, true))
                 {
                     continue;
                 }

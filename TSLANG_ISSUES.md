@@ -3412,3 +3412,14 @@ Test `00computed_runtime_keys.ts` (gc, rc, none; the methods part works under ow
   runs in source order. Globals inside namespaces keep the old order.
 
 Tests `00class_runtime_keys.ts` (gc, rc, none), `00static_init_order.ts` (all).
+
+191, continued (sweep: 3 more pass). Fixed:
+- A computed name keyed by a union of literals (`const k = cond ? "f1" : "f2"; { [k]() {...} }`, a class member of
+  it): "a computed property name must be a constant" - such a key is known at run time like a string.
+- An object pattern with a computed key (`const { [itemId]: item } = items`): it read the binding's name ("Class
+  member 'item' can't be found"). A constant key is the field's name (a parameter's pattern type too:
+  `({ [`key`]: renamed }) => renamed`); one known at run time reads `items[k]`. A dictionary's entries are read by
+  key (`const { a } = dict`).
+- `const { a: { x }, b } = o`: the elements after a nested object pattern were not declared ("can't resolve name: b").
+
+Test `00destructure_computed_keys.ts` (gc, rc, none).
