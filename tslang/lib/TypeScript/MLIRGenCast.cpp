@@ -2917,6 +2917,24 @@ namespace mlirgen
                 continue;
             }
 
+            // a tuple of elements (`[1, "a"]` for `[number, string] | [number, string, string]`): the member of as
+            // many elements, each of a type it can be given (TSLANG 191)
+            auto positional = [](llvm::ArrayRef<mlir_ts::FieldInfo> fields) {
+                return llvm::all_of(fields, [](const mlir_ts::FieldInfo &field) { return !field.id; });
+            };
+            if (positional(valueFields) && positional(tupleType.getFields()))
+            {
+                if (valueFields.size() == tupleType.getFields().size() &&
+                    llvm::all_of(llvm::zip(valueFields, tupleType.getFields()), [&](auto pair) {
+                        return mth.canCastFromTo(location, std::get<0>(pair).type, std::get<1>(pair).type);
+                    }))
+                {
+                    return member;
+                }
+
+                continue;
+            }
+
             // every field the value has is the member's, of a type it can be given; every other is optional
             auto fits = llvm::all_of(valueFields, [&](const mlir_ts::FieldInfo &field) {
                 auto index = tupleType.getIndex(field.id);

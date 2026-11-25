@@ -19252,6 +19252,10 @@ class MLIRGenImpl
     // the next discovery pass, as for a @value class (getValueTypeOfClassIfLaidOut).
     // An interface of one call signature and nothing else, with what it extends: that signature's function type
     // (as for a type literal, `{ (x: number): number }`). Null for anything else, or an interface not done yet.
+    // set while a part of an intersection type is resolved: an interface of one call signature it names stays the
+    // interface, to which the intersection adds members (cleared once an interface is resolved, TSLANG 191)
+    bool keepCallableInterface = false;
+
     mlir::Type callSignatureOnlyType(InterfaceInfo::TypePtr interfaceInfo)
     {
         mlir::Type callType;
@@ -19264,7 +19268,7 @@ class MLIRGenImpl
 
             for (auto &method : info->methods)
             {
-                if (method.name != CALL_FIELD_NAME || callType || !method.funcType || method.genericSignature)
+                if (method.name != CALL_FIELD_NAME || !method.funcType || method.genericSignature)
                 {
                     return false;
                 }
@@ -19276,7 +19280,29 @@ class MLIRGenImpl
                     return false;
                 }
 
-                callType = getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+                // ...not one whose signature names another callable interface (`interface A { (): B }`, `interface B
+                // { (): A }`): each would become a function type when it is done, while the other still holds the
+                // interface ("invalid cast from () => A to B", TSLANG 191)
+                auto callable = [&](mlir::Type type) {
+                    auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type);
+                    auto other = interfaceType ? getInterfaceInfoByFullName(interfaceType.getName().getValue()) : InterfaceInfo::TypePtr();
+                    // (one not done yet may be callable too)
+                    return other && (!other->membersResolved ||
+                                     llvm::any_of(other->methods, [](auto &otherMethod) { return otherMethod.name == CALL_FIELD_NAME; }));
+                };
+                if (llvm::any_of(funcType.getInputs().drop_front(), callable) || llvm::any_of(funcType.getResults(), callable))
+                {
+                    return false;
+                }
+
+                // (the signature of the interface it extends declared again is that one, TSLANG 191)
+                auto signature = getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+                if (callType && callType != signature)
+                {
+                    return false;
+                }
+
+                callType = signature;
             }
 
             return llvm::all_of(info->extends, [&](auto &extent) { return walk(std::get<1>(extent)); });

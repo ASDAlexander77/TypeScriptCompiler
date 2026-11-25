@@ -3274,3 +3274,31 @@ Checked: throw() at a `yield*` of strings is handed to the delegate (187); of ob
 -mm=own, by design (189).
 
 Tests `00own_generator_next_discarded.ts`, `00own_module_const_beside_top_level.ts` (gc, rc, own).
+
+191, continued: TypeScript's compiler tests that passed on 11-23 and failed on 11-25 (sweep 3263 -> 3291 -> 3300 pass, no
+new failures). Fixed:
+- An interface extending an interface of one call signature (`interface I7 extends I6 {}` of `interface I6 { ():
+  void }`, 175 made such an interface its function type): "interface cannot extend type: () => void". What extends
+  it extends the interface (MLIRGenInterfaces). An interface that declares the call signature of the one it
+  extends again is still that function type (callSignatureOnlyType: one signature, however often declared).
+- Interfaces of one call signature naming each other (`interface A { (): B }`, `interface B { (): C }`, ...): each
+  became a function type when it was done while the others held the interface ("invalid cast from () => A to
+  B"). One whose signature names a callable interface, or one not done yet, stays an interface.
+- An interface of one call signature in an intersection (`x: F & { foo: number }`): "'Never' can't be used as
+  parameter type". A part of an intersection that names it is the interface, which the intersection adds members
+  to (keepCallableInterface).
+- A field read through a union of shapes, one of whose fields is `unknown` (`s.value !== undefined` of `{ value:
+  string } | { value: unknown } | { value: undefined }`): "'ts.Cast' op type ['!ts.any'] can't be stored in". The
+  `unknown` read is the union's `unknown` member (mlirGenUnionFieldRead).
+- `x.slice(1)` of `[number, string] | [number, string, string]`: "calling an extension function given as a value is
+  not supported". An array method of a tuple is not a field to read out of each member (mlirGenUnionFieldRead);
+  and a tuple literal given to a union of tuples (`count([1, "a"])`) is the member of as many elements
+  (tupleMemberFitting), which 112's tags made a verifier error.
+
+Still open from the sweep: `{ foo?: number }` given to `{ foo: number } | { foo: undefined }` (which member is
+known at run time only), `x.slice(1) as readonly string[]` (an array of a union is not an array of strings), two
+functions returning each other through interfaces of one call signature ("can't resolve name"), and
+contextualOuterTypeParameters, contextualParamTypeVsNestedReturnTypeInference1,
+declarationEmitTypeParameterNameInOuterScope, genericClassesRedeclaration, genericFunctionsAndConditionalInference.
+
+Test `00tslang_issue_191.ts` (gc, rc, own, none).

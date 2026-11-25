@@ -6851,7 +6851,10 @@ genContext);
         {
             auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, member, unionValue);
             auto fieldType = evaluateProperty(location, memberValue, name.str(), genContext);
-            if (!fieldType || isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(fieldType))
+            // (nor an array method of a tuple, `x.slice(1)` of `[number, string] | [number, string, string]`: an
+            // extension function, called on the object, not a value to merge, TSLANG 191)
+            if (!fieldType || isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType,
+                                  mlir_ts::ExtensionFunctionType>(fieldType))
             {
                 return mlir::Value();
             }
@@ -6882,6 +6885,32 @@ genContext);
             if (V(value).getType() == resultType)
             {
                 return value;
+            }
+
+            // an `unknown` field, read as the `any` box it is, given to a union with `unknown` in it (`string |
+            // number | unknown`): it is that member ("'ts.Cast' op type ['!ts.any'] can't be stored in", TSLANG 191)
+            if (auto resultUnion = dyn_cast<mlir_ts::UnionType>(mth.stripOptionalType(resultType));
+                resultUnion && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(V(value).getType()))
+            {
+                for (auto subType : resultUnion.getTypes())
+                {
+                    if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(subType))
+                    {
+                        auto memberValue = V(value);
+                        if (memberValue.getType() != subType)
+                        {
+                            CAST(memberValue, location, subType, memberValue, genContext);
+                        }
+
+                        mlir::Value unionValue = builder.create<mlir_ts::CastOp>(location, resultUnion, memberValue);
+                        if (resultUnion == resultType)
+                        {
+                            return unionValue;
+                        }
+
+                        return cast(location, resultType, unionValue, genContext);
+                    }
+                }
             }
 
             return cast(location, resultType, V(value), genContext);
