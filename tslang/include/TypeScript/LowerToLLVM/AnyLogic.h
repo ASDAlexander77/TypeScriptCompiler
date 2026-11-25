@@ -135,6 +135,34 @@ class AnyLogic
             return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, value);
         }
 
+        // A value wider than a pointer (a function value's {func, this, tag}, a record) read out of a box
+        // holding a smaller one - `<(() => void) | null>a` of an `a: any = null`, whose box holds 8 bytes -
+        // read up to 16 bytes past the end of the block (TSLANG 190: the guard-page heap faulted on it, and
+        // an unoptimized build kept the whole load). Only the bytes the box has (ANY_SIZE) are copied, into
+        // a zeroed slot: the rest of the value is zero, a null function where the box holds null.
+        LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
+        auto valueSize = llvmtch.getTypeAllocSizeInBytes(resLLVMType);
+        if (valueSize > 8)
+        {
+            auto i64Type = th.getI64Type();
+            auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
+                                                        ValueRange{zero, zero});
+            mlir::Value size = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, ptrSize);
+            if (llvmIndexType != i64Type)
+            {
+                size = rewriter.create<LLVM::ZExtOp>(loc, i64Type, size);
+            }
+
+            auto full = rewriter.create<LLVM::ConstantOp>(loc, i64Type, rewriter.getI64IntegerAttr(valueSize));
+            auto smaller = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, size, full);
+            auto count = rewriter.create<LLVM::SelectOp>(loc, smaller, size, full);
+
+            auto slot = ch.Alloca(resLLVMType, 1);
+            rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, resLLVMType), slot);
+            rewriter.create<LLVM::MemcpyOp>(loc, slot, ptrValue, count, /*isVolatile=*/false);
+            return rewriter.create<LLVM::LoadOp>(loc, resLLVMType, slot);
+        }
+
         return rewriter.create<LLVM::LoadOp>(loc, resLLVMType, ptrValue);
     }
 

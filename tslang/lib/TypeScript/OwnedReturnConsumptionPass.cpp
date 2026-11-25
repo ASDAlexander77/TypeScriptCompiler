@@ -653,6 +653,9 @@ class OwnedReturnConsumptionPass
     // It runs once the results of the calls are settled: a call's result (`f([mk(1), mk(2)])`) is marked an
     // owned result moved into the literal there, so before it the literal looked as if it borrowed them and
     // was never given back.
+    // A global's initializer too (`const n = count(1, 2)` of a `count(...a: any[])`, TSLANG 190): its rest
+    // array was given back by nothing, and own refused the values boxed into it ("the initializer of global
+    // takes a second reference"); releaseDiscardedTemporaries gives it back at the end of the region.
     void ownNewArrayArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         if (compileOptions.memoryModel != MemoryModelOwn)
@@ -662,7 +665,7 @@ class OwnedReturnConsumptionPass
 
         module.walk([&](mlir::Operation *op) {
             if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
-                !op->getParentOfType<mlir::FunctionOpInterface>())
+                !(op->getParentOfType<mlir::FunctionOpInterface>() || op->getParentOfType<mlir_ts::GlobalOp>()))
             {
                 return;
             }
@@ -1531,6 +1534,24 @@ class OwnedReturnConsumptionPass
         };
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getSymName();
+
+            // A function with no body here - another module's, the default library's non-generic one - may write any
+            // place of an object it is given (TSLANG 190: `clobber(arr[0], h)` from another module, setting
+            // `h.items[0]`, freed what its first parameter read). Not one given only values that reach no object:
+            // numbers, booleans, strings (immutable), which is most of the runtime's.
+            if (funcOp.getBody().empty())
+            {
+                auto reachesObjects = llvm::any_of(funcOp.getFunctionType().getInputs(), [&](mlir::Type type) {
+                    return !mlir::isa<mlir_ts::StringType>(type) && mth.ownsHeapMemory(funcOp.getLoc(), type);
+                });
+                if (reachesObjects)
+                {
+                    writtenKinds[name].insert("*");
+                }
+
+                return;
+            }
+
             funcOp.walk([&](mlir::Operation *op) {
                 // (`a.length = n` too: a shorter array gives back the elements it drops)
                 if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
@@ -1718,10 +1739,9 @@ class OwnedReturnConsumptionPass
             const llvm::StringSet<> *kinds = &moduleKinds;
             if (!callee.empty() && !assignsAny.contains(callee))
             {
-                // A callee with no body here writes nothing - as for the globals (assigns). That holds because
-                // the default library's mutating array methods are generic: instantiated in this module, their
-                // bodies are walked like any function here. A non-generic library function that wrote into an
-                // array or an object it is given would be missed.
+                // A callee with no body here writes any place of an object it may be given (writtenKinds, "*"),
+                // and nothing when it is given none. The default library's mutating array methods are generic:
+                // instantiated in this module, their bodies are walked like any function here.
                 auto it = writtenKinds.find(callee);
                 if (it == writtenKinds.end())
                 {

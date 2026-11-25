@@ -9,6 +9,66 @@
 namespace own_signature
 {
 
+    // A function value's box (a bound or hybrid function) that a global's initializer gives only to
+    // calls - as an argument, or as a field of a record literal that is only an argument - and gives
+    // back once, after them: a temporary the initializer makes and drops itself, as a function body
+    // does (moveIntoGlobals, TSLANG 190)
+    static bool isGivenOnlyToCalls(mlir::Value root)
+    {
+        if (!mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(root.getType()))
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::Operation *> calls;
+        mlir::Operation *release = nullptr;
+        auto onlyCalls = true;
+        auto takesAsArgument = [](mlir::Operation *user, mlir::Value used) {
+            return isCall(user) && llvm::is_contained(callArgs(user), used);
+        };
+        forEachUse(root, [&](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::RetainOp>(user))
+            {
+                return;
+            }
+
+            if (mlir::isa<mlir_ts::ReleaseOp>(user))
+            {
+                release = user;
+                return;
+            }
+
+            if (takesAsArgument(user, used))
+            {
+                calls.push_back(user);
+                return;
+            }
+
+            // a record literal made for the call, which only the call reads
+            if (auto tupleOp = mlir::dyn_cast<mlir_ts::CreateTupleOp>(user); tupleOp && !tupleOp->use_empty())
+            {
+                for (auto &tupleUse : tupleOp->getUses())
+                {
+                    if (!takesAsArgument(tupleUse.getOwner(), tupleUse.get()))
+                    {
+                        onlyCalls = false;
+                        return;
+                    }
+
+                    calls.push_back(tupleUse.getOwner());
+                }
+
+                return;
+            }
+
+            onlyCalls = false;
+        });
+
+        return onlyCalls && release && !calls.empty() && llvm::all_of(calls, [&](mlir::Operation *call) {
+                   return call->getBlock() == release->getBlock() && call->isBeforeInBlock(release);
+               });
+    }
+
     bool OwnershipSignaturePass::movesIntoResult(mlir::Value value)
     {
         return llvm::all_of(value.getUses(), [](mlir::OpOperand &use) {
@@ -363,6 +423,37 @@ namespace own_signature
                 // the release then gives back, as in a function body
                 if (retained == 1 && releasedOnce == 1 && onlyConcatenated && isFresh(value) &&
                     mlir::isa<mlir_ts::StringType>(value.getType()))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
+                // ...and so is the box of an adapted function value (functionValueAdapter, TSLANG 190:
+                // `const kept = call({ x: (n: number) => n + 1 }, 4)`), given to calls only - as an
+                // argument, or as a field of a record literal that is only an argument - and given back
+                // after them. ownGlobalInitializerCalls moves it into a callee that keeps it and refuses
+                // a callee whose result borrows it, as for any other argument
+                if (retained == 1 && releasedOnce == 1 && isFresh(value) && isGivenOnlyToCalls(rootOf(value)))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
+                // ...or moved into an array literal that owns what it holds (a call's rest array,
+                // ownNewArrayArguments): the literal is its one owner, and gives it back with itself
+                auto movedIntoOwnedLiteral = true;
+                auto literals = 0;
+                forEachUse(rootOf(value), [&](mlir::Operation *user, mlir::Value) {
+                    if (mlir::isa<mlir_ts::RetainOp>(user))
+                    {
+                        return;
+                    }
+
+                    auto takenByLiteral = mlir::isa<mlir_ts::CreateArrayOp>(user) && user->hasAttr(OWNED_RESULT_ATTR_NAME);
+                    literals += takenByLiteral;
+                    movedIntoOwnedLiteral = movedIntoOwnedLiteral && takenByLiteral;
+                });
+                if (retained == 1 && !released && literals == 1 && movedIntoOwnedLiteral && isFresh(value))
                 {
                     retainOp.erase();
                     continue;

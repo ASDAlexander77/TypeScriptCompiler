@@ -3219,3 +3219,30 @@ Looked at, still open:
 
 Tests `00own_generator_objects_from_iterator.ts` (gc, rc, own), diagnostic-location
 `own_generator_value_yielded_twice.ts`.
+
+190 (189's and #1027's leftovers, 2026-11-25). Fixed:
+- -mm=own: a for-of element kept in a `let` declared outside the loop (`let kept: Box | null = null; for (const b of
+  g) kept = b;`) was refused ("'b' borrows a field and cannot be stored, returned or captured"); `push` worked. The
+  element moves out of the loop's `{ value, done }` record into the `let`, whose old value is given back
+  (OwnershipInferencePass::fieldTakeOf takes an assignment to an owning local declared with a value: rc's retain,
+  the release of the old value, the store). Refused still: `b` read after the store, an array's element (a
+  borrow, as before), a captured `let`.
+- -mm=own: a module `const` whose initializer gives a function value read at run time as another function type
+  (`const kept = call(wrap(<T>(x: T) => x), 1)`), or values boxed into a rest parameter's array (`const n =
+  count(1)` of a `count(...a: any[])`): "the initializer of global takes a second reference"; in a function it
+  worked. The adapter's box given only to calls and given back after them is the initializer's temporary
+  (moveIntoGlobals); a global initializer's rest array is owned and given back at the end of the region, as in a
+  function (ownNewArrayArguments; it was given back by nothing, under rc too). A callee returning its rest array
+  stays refused in a global, as `id(new V(1))` does.
+- A function value read out of an `any` whose box holds a smaller value (`<((n: number) => number) | null>a` of an
+  `a: any = null`) loaded the whole `{func, this, tag}`, 16 bytes past the end of the box: 00any_call under -mm=rc
+  with --opt=false faulted on a guard-page heap (an optimized build loaded only the first pointer). UnboxAny copies
+  only the bytes the box has into a zeroed slot for a value wider than a pointer.
+- -mm=rc: a callee with no body in the module (another module's, a non-generic library function) was taken to
+  write nothing, so the argument hold of #1027 missed `clobber(arr[0], h)` from another module setting
+  `h.items[0]`: the store freed the box the callee then read (the program spun in a corrupted heap). Such a
+  callee may write any place of an object it is given (writtenKinds "*"); one given only numbers, booleans and
+  strings writes nothing.
+
+Tests `00own_forof_keep_in_outer_let.ts`, `00own_global_initializer_adapter.ts`, `00any_unbox_wider_than_box.ts`
+(gc, rc, own), `import_bodiless_writes.ts` + `export_bodiless_writes.ts` (gc, rc).
