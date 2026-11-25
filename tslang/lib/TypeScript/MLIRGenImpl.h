@@ -6909,6 +6909,62 @@ class MLIRGenImpl
             expr = asTypeOf;
         }
 
+        // `!test`: what the test's being false gives narrows the then branch, and its being true the else branch. It
+        // narrowed neither (only `!x` of a value that may be null was looked at): `if (!Array.isArray(d)) d.v`, `if
+        // (!(d instanceof F)) d.w` read the union
+        if (expr == SyntaxKind::PrefixUnaryExpression && expr.as<PrefixUnaryExpression>()->_operator == SyntaxKind::ExclamationToken)
+        {
+            auto operand = stripParentheses(expr.as<PrefixUnaryExpression>()->operand);
+            if (auto asTypeOf = arrayIsArrayAsTypeOf(operand))
+            {
+                operand = asTypeOf;
+            }
+
+            if (operand == SyntaxKind::BinaryExpression)
+            {
+                auto binExpr = operand.as<BinaryExpression>();
+                auto op = (SyntaxKind)binExpr->operatorToken;
+                auto flipped = op == SyntaxKind::EqualsEqualsEqualsToken    ? SyntaxKind::ExclamationEqualsEqualsToken
+                               : op == SyntaxKind::ExclamationEqualsEqualsToken ? SyntaxKind::EqualsEqualsEqualsToken
+                               : op == SyntaxKind::EqualsEqualsToken           ? SyntaxKind::ExclamationEqualsToken
+                               : op == SyntaxKind::ExclamationEqualsToken      ? SyntaxKind::EqualsEqualsToken
+                                                                               : SyntaxKind::Unknown;
+                if (flipped != SyntaxKind::Unknown)
+                {
+                    // `!(a === b)` is `a !== b`
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto negated = nf.createBinaryExpression(binExpr->left, nf.createToken(flipped), binExpr->right);
+                    negated->pos = binExpr->pos;
+                    negated->_end = binExpr->_end;
+                    return checkSafeCast(negated, conditionValue, elseSafeCases, genContext);
+                }
+
+                if (op == SyntaxKind::InstanceOfKeyword)
+                {
+                    // no operator says `!(x instanceof C)`: its then branch has what `x instanceof C` being false gives
+                    ElseSafeCases whenFalse;
+                    collectElseSafeCases(operand, conditionValue, whenFalse, genContext);
+                    addElseSafeCastStatements(whenFalse, genContext);
+
+                    // ...and its else branch (and the code after `if (!(x instanceof C)) return;`) has x as a C
+                    if (elseSafeCases)
+                    {
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        if (auto typeName = instanceOfEntityName(nf, binExpr->right))
+                        {
+                            if (auto classType = getType(nf.createTypeReferenceNode(typeName), genContext);
+                                classType && !mth.isNoneType(classType))
+                            {
+                                elseSafeCases->push_back({stripParenthesesAndUntangleEquals(binExpr->left), classType});
+                            }
+                        }
+                    }
+
+                    return mlir::success();
+                }
+            }
+        }
+
         if (expr == SyntaxKind::BinaryExpression)
         {
             auto binExpr = expr.as<BinaryExpression>();

@@ -3480,6 +3480,9 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
   discriminant read from a module `const` (widened to string), a template literal or a missing one.
 - An array literal given to a union with a tuple in it (`f(["a"])` for `["a"] | I`): "can't be stored"; the union's
   array takes it.
+- A negated test narrowed neither branch: `if (!Array.isArray(d)) d.v`, `if (!(typeof d === "array"))`, `if (!(d
+  instanceof F)) return; d.v` read the union. `!(a === b)` is `a !== b`; `!(x instanceof C)` narrows its then branch by
+  what the test's being false gives and its else branch to C.
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
 `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).

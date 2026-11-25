@@ -52,6 +52,32 @@ function tupleOrInterface(args: ["a"] | HasOther) {
     return "ok";
 }
 
+// - a negated test narrows (`!(typeof d === "array")`, `!(d instanceof F)`; `!Array.isArray(d)` with the default library):
+//   neither branch was narrowed
+class Leaf {
+    v = 1;
+}
+
+class Branch {
+    w = 2;
+}
+
+function notArray(d: Leaf | Leaf[]) {
+    if (!(typeof d === "array")) {
+        return d.v;
+    } else {
+        return d.length;
+    }
+}
+
+function notLeaf(d: Leaf | Branch) {
+    if (!(d instanceof Leaf)) {
+        return d.w;
+    }
+
+    return d.v;
+}
+
 // read in module variables, as the sweep's tests did
 const t7 = Foo[k3];
 const t8 = new Foo()[k3];
@@ -74,6 +100,9 @@ function main() {
     assert(invoke({ kind: "b", method(n) { return "n" + n; } }) == "n42", "a literal typed by the other member");
 
     assert(tupleOrInterface(["a"]) == "ok", "an array literal given to a union with a tuple");
+
+    assert(notArray(new Leaf()) == 1 && notArray([new Leaf(), new Leaf()]) == 2, "!(typeof d === \"array\") narrows");
+    assert(notLeaf(new Branch()) == 2 && notLeaf(new Leaf()) == 1, "!(d instanceof Leaf) narrows");
 
     print("done.");
 }
