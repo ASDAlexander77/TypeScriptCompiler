@@ -3353,3 +3353,15 @@ export_from and export_equals now compile.
   `any`, as where the module is compiled itself.
 
 Tests `import_json_module.ts` + `json_module_data.json` (gc, rc, own; compiled separately and JIT).
+
+191, continued (sweep 3594 -> 3614 pass, no new failures). Fixed:
+- A namespace merged with a function (`function f() {} namespace f { export let x = 5; }`): `f.x` was "Can't
+  resolve property 'x' of type () => number". A member not otherwise found on a function's symbol is the
+  namespace's of that name (mlirGenPropertyAccessExpressionLogic).
+- Properties a function is given after it (`foo.bar = 12`, `foo["baz"] = "ok"`, `foo[strConst] = ...`, a const
+  arrow or function expression too): TypeScript's expando declarations. The first assignment of each property at
+  the file's top level is `namespace foo { export let bar = 12; }` (lowerExpandoAssignments), a later one assigns
+  it. They were "access expression is not applicable to () => void". Not done: a symbol key, or a property given
+  inside a function body.
+
+Test `00expando_function_properties.ts` (gc, rc, own, none).

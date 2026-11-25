@@ -584,6 +584,25 @@ namespace mlirgen
             }
         }
 
+        // a member of a namespace merged with a function (`function f() {} namespace f { export let x = 5; }`, and the
+        // properties a function is given after it, `f.x = 5`, lowerExpandoAssignments): the namespace's (TSLANG 191)
+        if (!value)
+        {
+            if (auto symbolRefOp = objectValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                if (auto namespaceInfo = getNamespaceByFullName(symbolRefOp.getIdentifier()))
+                {
+                    auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+                    auto namespaceRef = builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
+                    auto member = mlirGenPropertyAccessExpression(location, namespaceRef, name, false, genContext);
+                    if (!member.failed_or_no_value())
+                    {
+                        return V(member);
+                    }
+                }
+            }
+        }
+
         // extention logic: <obj>.<functionName>(this)
         if (!value)
         {

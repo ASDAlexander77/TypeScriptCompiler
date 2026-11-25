@@ -335,6 +335,183 @@ namespace mlirgen
         walkStatements(sourceFile->statements);
     }
 
+    // Properties a function is given after it (`function foo() {} foo.bar = 12; foo["baz"] = "ok";`, a const holding an
+    // arrow or a function expression too): TypeScript's expando declarations, a namespace merged with the function.
+    // The first assignment of each property, at the file's top level, is that namespace's exported `let` with the
+    // value assigned (`namespace foo { export let bar = 12; }`); a later one assigns it, and `foo.bar` reads it
+    // (mlirGenPropertyAccessExpressionLogic). They were "access expression is not applicable to () => void" (TSLANG 191).
+    static void lowerExpandoAssignments(SourceFile sourceFile)
+    {
+        // the functions of the file's top level, and whether each is exported
+        llvm::StringMap<bool> functions;
+        // the string constants of the top level (`const strMem = "strMemName"`), for `foo[strMem] = ...`
+        llvm::StringMap<std::string> stringConstants;
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement == SyntaxKind::FunctionDeclaration)
+            {
+                auto functionDeclaration = statement.as<FunctionDeclaration>();
+                if (functionDeclaration->name && functionDeclaration->body)
+                {
+                    functions[MLIRHelper::getName(functionDeclaration->name)] = hasModifier(statement, SyntaxKind::ExportKeyword);
+                }
+            }
+            else if (statement == SyntaxKind::VariableStatement)
+            {
+                auto declarationList = statement.as<VariableStatement>()->declarationList;
+                if ((declarationList->flags & NodeFlags::Const) != NodeFlags::Const)
+                {
+                    continue;
+                }
+
+                for (auto variable : declarationList->declarations)
+                {
+                    if (variable->name != SyntaxKind::Identifier || !variable->initializer)
+                    {
+                        continue;
+                    }
+
+                    auto name = MLIRHelper::getName(variable->name.as<Identifier>());
+                    if (variable->initializer == SyntaxKind::ArrowFunction || variable->initializer == SyntaxKind::FunctionExpression)
+                    {
+                        functions[name] = hasModifier(statement, SyntaxKind::ExportKeyword);
+                    }
+                    else if (variable->initializer == SyntaxKind::StringLiteral)
+                    {
+                        stringConstants[name] = convertWideToUTF8(variable->initializer.as<ts::StringLiteral>()->text);
+                    }
+                }
+            }
+        }
+
+        if (functions.empty())
+        {
+            return;
+        }
+
+        auto isIdentifierName = [](StringRef name) {
+            if (name.empty() || !(llvm::isAlpha(name[0]) || name[0] == '_' || name[0] == '$'))
+            {
+                return false;
+            }
+
+            return llvm::all_of(name, [](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; });
+        };
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        llvm::StringSet<> declared;
+        for (auto &statement : sourceFile->statements)
+        {
+            if (statement != SyntaxKind::ExpressionStatement)
+            {
+                continue;
+            }
+
+            auto expression = statement.as<ExpressionStatement>()->expression;
+            if (expression != SyntaxKind::BinaryExpression
+                || expression.as<BinaryExpression>()->operatorToken != SyntaxKind::EqualsToken)
+            {
+                continue;
+            }
+
+            auto assignment = expression.as<BinaryExpression>();
+            Expression target;
+            std::string property;
+            if (assignment->left == SyntaxKind::PropertyAccessExpression)
+            {
+                auto access = assignment->left.as<PropertyAccessExpression>();
+                target = access->expression;
+                if (access->name == SyntaxKind::Identifier)
+                {
+                    property = MLIRHelper::getName(access->name.as<Identifier>());
+                }
+            }
+            else if (assignment->left == SyntaxKind::ElementAccessExpression)
+            {
+                auto access = assignment->left.as<ElementAccessExpression>();
+                target = access->expression;
+                auto key = access->argumentExpression;
+                if (key == SyntaxKind::StringLiteral)
+                {
+                    property = convertWideToUTF8(key.as<ts::StringLiteral>()->text);
+                }
+                else if (key == SyntaxKind::NoSubstitutionTemplateLiteral)
+                {
+                    property = convertWideToUTF8(key.as<NoSubstitutionTemplateLiteral>()->text);
+                }
+                else if (key == SyntaxKind::Identifier)
+                {
+                    auto constant = stringConstants.find(MLIRHelper::getName(key.as<Identifier>()));
+                    if (constant != stringConstants.end())
+                    {
+                        property = constant->second;
+                    }
+                }
+            }
+
+            if (!target || target != SyntaxKind::Identifier || !isIdentifierName(property))
+            {
+                continue;
+            }
+
+            auto functionName = MLIRHelper::getName(target.as<Identifier>());
+            auto function = functions.find(functionName);
+            if (function == functions.end())
+            {
+                continue;
+            }
+
+            auto propertyName = nf.createIdentifier(convertUTF8toWide(property));
+            if (!declared.insert(functionName + "." + property).second)
+            {
+                // a later assignment: the namespace's `let`, read as the function's property
+                if (assignment->left == SyntaxKind::ElementAccessExpression)
+                {
+                    auto access = nf.createPropertyAccessExpression(target, propertyName);
+                    access->pos = assignment->left->pos;
+                    access->_end = assignment->left->_end;
+                    assignment->left = access;
+                }
+
+                continue;
+            }
+
+            NodeArray<VariableDeclaration> declarations;
+            auto declaration = nf.createVariableDeclaration(propertyName, undefined, undefined, assignment->right);
+            declaration->pos = statement->pos;
+            declaration->_end = statement->_end;
+            declarations.push_back(declaration);
+
+            ModifiersArray letModifiers;
+            letModifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+            declarationList->pos = statement->pos;
+            declarationList->_end = statement->_end;
+            auto variableStatement = nf.createVariableStatement(letModifiers, declarationList);
+            variableStatement->pos = statement->pos;
+            variableStatement->_end = statement->_end;
+
+            NodeArray<Statement> blockStatements;
+            blockStatements.push_back(variableStatement);
+            auto block = nf.createModuleBlock(blockStatements);
+            block->pos = statement->pos;
+            block->_end = statement->_end;
+
+            NodeArray<ModifierLike> namespaceModifiers;
+            if (function->second)
+            {
+                namespaceModifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            }
+
+            auto namespaceName = nf.createIdentifier(convertUTF8toWide(functionName));
+            auto namespaceDeclaration = nf.createModuleDeclaration(namespaceModifiers, namespaceName, block, NodeFlags::Namespace);
+            namespaceDeclaration->pos = statement->pos;
+            namespaceDeclaration->_end = statement->_end;
+            namespaceDeclaration->parent = sourceFile;
+            statement = namespaceDeclaration;
+        }
+    }
+
     void MLIRGenImpl::lowerDefaultExports(SourceFile sourceFile, StringRef filePath)
     {
         if (!sourceFile)
@@ -343,6 +520,7 @@ namespace mlirgen
         }
 
         widenOverloadImplementations(sourceFile);
+        lowerExpandoAssignments(sourceFile);
 
         auto canonicalPath = canonicalFilePath(filePath);
         auto name = defaultExportName(filePath);
