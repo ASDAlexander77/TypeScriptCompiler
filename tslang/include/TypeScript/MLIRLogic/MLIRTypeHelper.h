@@ -4548,6 +4548,26 @@ class MLIRTypeHelper
             return existType;
         }
 
+        // never has no values: merged with a type, it is that type (`never[] | string[]` was a `never[]`, whose `map`
+        // took `item: never` - "'Never' can't be used as parameter type")
+        if (isa<mlir_ts::NeverType>(existType) || isa<mlir_ts::NeverType>(currentType))
+        {
+            merged = true;
+            return isa<mlir_ts::NeverType>(existType) ? currentType : existType;
+        }
+
+        // and an array of nothing (`[]` typed `never[]`) is one of any element type
+        auto isNeverArray = [](mlir::Type type) {
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(type);
+            return arrayType && isa<mlir_ts::NeverType>(arrayType.getElementType());
+        };
+        if ((isNeverArray(existType) && isa<mlir_ts::ArrayType>(currentType))
+            || (isNeverArray(currentType) && isa<mlir_ts::ArrayType>(existType)))
+        {
+            merged = true;
+            return isNeverArray(existType) ? currentType : existType;
+        }
+
         // any takes in everything, as in a union (getUnionTypeWithMerge): `[].concat([1])` infers T from
         // `any[]` and `s32[][]`, and `any | s32` - a union TypeScript has no such thing as - was boxed and
         // read back as if it were one of its members, crashing the compiler

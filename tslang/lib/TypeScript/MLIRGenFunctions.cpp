@@ -273,7 +273,8 @@ namespace mlirgen
             auto isOptional = !!arg->questionToken;
             auto typeParameter = arg->type;
 
-            auto location = loc(typeParameter);
+            // (an untyped parameter, `item => ...`, is where its errors are: they were at "<unknown>:0")
+            auto location = typeParameter ? loc(typeParameter) : loc(arg);
 
             if (typeParameter)
             {

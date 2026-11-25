@@ -3463,6 +3463,9 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
   { method(p2) { ... } })`): U, given by the first literal's method, did not type the second's parameter, which was
   the type parameter itself, and the call failed with "failed statement" alone. The literals are typed in order, each
   by what those before it give.
+- `map` of a `never[] | string[]`: the union was read as its `never[]`, whose `map` took `item: never` ("'Never'
+  can't be used as parameter type"). `never`, and an array of it, merged with another type is that type. An untyped
+  parameter's errors were at `<unknown>:0`; they are at the parameter.
 
-Tests `00tslang_issue_193.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the
-`export default` test (`export-default.cmake`).
+Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts` (gc, rc, none), `class_not_array_error.ts`,
+`type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
