@@ -3571,31 +3571,33 @@ namespace mlirgen
         auto callResult = mlirGenCall(location, nextProperty, callOperands, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(callResult)
 
-        // load property "value"
         auto doneProperty = mlirGenPropertyAccessExpression(location, callResult, "done", false, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(doneProperty)
 
-        auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
-
-        auto valueProp = V(valueProperty);
-
-        if (operandsProcessingInfo != nullptr)
-        {
-            if (auto receiverType = operandsProcessingInfo->isCastNeededWithOptionalUnwrap(valueProp.getType()))
-            {
-                CAST(valueProp, location, receiverType, valueProp, genContext);
-            }
-        }                        
-
-        // conditional expr:  done ? undefined : value
         auto doneInvValue =  V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
             builder.getI32IntegerAttr((int)SyntaxKind::ExclamationToken), doneProperty));
 
-        mlir::Value condValue = builder.create<mlir_ts::OptionalOp>(
-            location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
+        // conditional expr: done ? undefined : value - a conditional whose branch reads "value", as `r.done ?
+        // undefined : r.value` is, not a ts.Optional of a value read either way: -mm=own follows a field of the
+        // owned result of next() to its receiver through the one (an optional's value, a conditional's
+        // branch) and not the other, and refused `const [a, b] = new Set([...])` once next() was known to
+        // return owned (the release of 2026-11-26)
+        return optionalValueOrUndefined(location, doneInvValue,
+            [&](const GenContext &genContext) -> ValueOrLogicalResult {
+                auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
 
-        return condValue;
+                auto valueProp = V(valueProperty);
+                if (operandsProcessingInfo != nullptr)
+                {
+                    if (auto receiverType = operandsProcessingInfo->isCastNeededWithOptionalUnwrap(valueProp.getType()))
+                    {
+                        CAST(valueProp, location, receiverType, valueProp, genContext);
+                    }
+                }
+
+                return valueProp;
+            }, genContext);
     }
 
     mlir::LogicalResult MLIRGenImpl::processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
