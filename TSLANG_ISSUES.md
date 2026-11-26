@@ -3555,3 +3555,16 @@ Tests `00tslang_issue_195.ts` (all models).
   is "a value that borrows a field cannot be stored".
 
 Tests `00tslang_issue_196.ts` (all models).
+
+197. Bugs found by the third sweep of TypeScript's compiler tests (continued): a class reading a local it can't capture
+gave invalid IR ("'ts.Load' op using value defined outside the region"). Fixed:
+- A class declared in a block of the module's code (`for (let i...) { class C { f = i; } }`, `{ let x; class C { m() {
+  return x; } } }`), or a class expression of the module's code: its members were discovered by the pass over the
+  module's declarations, which does not know the block's locals, and not again. They are discovered where they are
+  made, as a function of such a block is (TSLANG 105); one reading a local is the error a class in a function gets
+  ("a class can't capture yet"), and one reading none works as before.
+- A static block of a class declared in a function (`static { H.x = v; }`), and the table its run-time named members are
+  put in (`[name]() {}` with `const name = ...` in the function), read the function's locals: a static block runs at
+  the start of the program. It is an error.
+
+Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, `class_static_block_local_error.ts`.

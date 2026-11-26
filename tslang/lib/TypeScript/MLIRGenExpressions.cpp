@@ -4645,6 +4645,13 @@ namespace mlirgen
     {
         std::string fullName;
 
+        // a class expression in the module's code (`for (let i...) array.push(class { f = i; })`): its members read the
+        // code's locals as a class declared in a block of it does (InternalFlags::InModuleBlock)
+        if (!genContext.funcOp || genContext.funcOp == genContext.rootStatementsFuncOp)
+        {
+            classExpressionAST->internalFlags |= InternalFlags::InModuleBlock;
+        }
+
         // go to root
         {
             mlir::OpBuilder::InsertionGuard guard(builder);

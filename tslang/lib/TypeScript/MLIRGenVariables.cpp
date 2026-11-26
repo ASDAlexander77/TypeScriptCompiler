@@ -2758,6 +2758,20 @@ namespace mlirgen
                 genContext.passResult->outerVariableUses.insert({value.second->getName(), mlir::LocationAttr(location)});
             }
 
+            // a local of another function read where nothing captures it: a class's static block, or the table its
+            // run-time named members are put in, runs at the start of the program, out of the function the class is
+            // declared in (`function f() { const v = ...; class H { static { H.x = v; } } }`) - it read the local across
+            // its isolated region ("'ts.Store' op using value defined outside the region")
+            if (isOuterVar && !genContext.passResult && !genContext.dummyRun && !genContext.allowPartialResolve
+                && !isGenericFunctionReference(value.first) && classStaticBlockDepth > 0)
+            {
+                emitError(location) << "'" << value.second->getName()
+                                    << "' is a local of the function a class is declared in, read by code of the class that runs "
+                                       "out of that function (a static block, a run-time computed member name): a class can't "
+                                       "capture yet";
+                return mlir::Value();
+            }
+
             // end of logic: outer vars
 
             if (!value.second->getReadWriteAccess())

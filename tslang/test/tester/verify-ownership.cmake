@@ -111,6 +111,8 @@ set(not_compilable_alone
     continue_outside_loop_error.ts
     # errors by design (TSLANG 193 error tests)
     class_not_array_error.ts
+    class_reads_block_local_error.ts
+    class_static_block_local_error.ts
     type_not_value_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts

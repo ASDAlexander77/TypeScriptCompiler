@@ -1078,7 +1078,12 @@ namespace mlirgen
         // So is a function declared in a block of the module's code (`{ let x = 1; function foo() { x } }`,
         // `for (let x; ;) { function foo() { x } }`): it reads the block's locals as well.
         // (marked by mlirGen(Block): the parser leaves no parent link to tell)
-        auto isNestedInModuleBlock = functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+        // (and a member of a class declared there: its class marks it)
+        auto isNestedInModuleBlock = (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::Constructor
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
+                                      || functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
             && (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::InModuleBlock) == InternalFlags::InModuleBlock;
         // And a method or an accessor of an object literal (`{ let x = 1; const o = { foo() { return x; } }; }`).
         auto memberParentKind = functionLikeDeclarationBaseAST->parent ? (SyntaxKind)functionLikeDeclarationBaseAST->parent

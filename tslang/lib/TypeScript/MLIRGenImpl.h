@@ -22788,6 +22788,9 @@ class MLIRGenImpl
 
     // functions whose return type was discovered with a return value that could not be made yet (a call of a function
     // declared further on): discovered again where they are next made (discoverFunctionReturnTypeAndCapturedVars)
+    // a class's static block being generated: a global constructor, out of the function the class is declared in
+    int classStaticBlockDepth = 0;
+
     llvm::StringSet<> functionsWithUnresolvedReturn;
     // ...and discovered again since: registered again with that type (registerFunctionOp)
     llvm::StringSet<> functionsWithUnresolvedReturnRediscovered;

@@ -259,6 +259,9 @@ namespace mlirgen
             return {mlir::failure(), ""};
         }
 
+        newClassPtr->inModuleBlock = newClassPtr->inModuleBlock
+            || (classDeclarationAST->internalFlags & InternalFlags::InModuleBlock) == InternalFlags::InModuleBlock;
+
         // an abstract class is there to be extended, and a C++ binding is called through the C++
         // vtable: neither can be @final
         if (newClassPtr->isFinal && (newClassPtr->isAbstract || newClassPtr->isCppVTable))
@@ -5895,6 +5898,11 @@ genContext);
             funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
 
+        if (newClassPtr->inModuleBlock)
+        {
+            funcLikeDeclaration->internalFlags |= InternalFlags::InModuleBlock;
+        }
+
         auto [result, funcOp, funcName, isGeneric] =
             mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
         // the entry a generator method was known by while its own body was generated (mlirGenFunctionPrototype):
@@ -5961,6 +5969,9 @@ genContext);
             // create global construct
             auto funcType = getFunctionType({}, {}, false);
 
+            // what it reads of the function the class is declared in is an error (resolveIdentifier)
+            classStaticBlockDepth++;
+            auto leaveStaticBlock = llvm::make_scope_exit([&]() { classStaticBlockDepth--; });
             if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, funcType,
                 [&](mlir::Location location, const GenContext &genContext) {
                     return mlirGen(classStaticBlock->body, genContext);
