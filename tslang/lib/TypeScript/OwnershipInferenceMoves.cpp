@@ -1239,6 +1239,29 @@ namespace own_inference
                     return;
                 }
 
+                // an element of an array that borrows it (a rest argument, `console.log(pair().value)`,
+                // classifyArgumentArrays; or a local array literal, classifyLocalBorrowingArrays): rc's
+                // retain for it is gone, and what uses the array reads the field
+                if (mlir::isa<mlir_ts::RetainOp>(user) && fieldBorrowRetains.contains(user))
+                {
+                    return;
+                }
+
+                if (mlir::isa<mlir_ts::CreateArrayOp>(user) && user->hasAttr(OWN_BORROWING_ARRAY_ATTR_NAME))
+                {
+                    reads.push_back(user);
+                    forEachUse(user->getResult(0), [&](mlir::Operation *arrayUser, mlir::Value) { reads.push_back(arrayUser); });
+                    if (auto found = arrayElementUses.find(user); found != arrayElementUses.end())
+                    {
+                        for (auto &use : found->second)
+                        {
+                            reads.push_back(use.op);
+                        }
+                    }
+
+                    return;
+                }
+
                 auto merged = mergedValuesOf(user, used);
                 if (!merged.empty())
                 {

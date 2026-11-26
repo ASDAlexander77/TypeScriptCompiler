@@ -872,6 +872,15 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // an element read out of an iterable is `T | undefined` (past its end): a pattern of it reads T's value,
+        // as an element access does (`const [[k, v]] = map`; TypeScript types the element T)
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(init.getType()))
+        {
+            typeRef = optType.getElementType();
+            type = typeRef;
+            init = builder.create<mlir_ts::ValueOp>(location, typeRef, init);
+        }
+
         mlir::Value arrayLikeLengthValue;
         mlir::Type arrayLikeElementType;
         auto isIterator = false;
