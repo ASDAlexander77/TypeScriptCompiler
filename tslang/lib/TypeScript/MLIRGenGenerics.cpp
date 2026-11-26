@@ -812,7 +812,8 @@ namespace mlirgen
             // given `any` for a parameter whose type only holds a type parameter (`cb: () => R`, erased to `any`):
             // that type parameter is `any` - nothing in an `any` gives it one, and left out the instantiation failed
             // with "can't find type by name: R"
-            if (isa<mlir_ts::AnyType>(receiverParamType) && !isa<mlir_ts::NamedGenericType>(paramType))
+            if (isa<mlir_ts::AnyType>(receiverParamType)
+                && isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(paramType))
             {
                 mth.forEachTypes(paramType, [&](mlir::Type type) {
                     if (auto namedGeneric = dyn_cast_or_null<mlir_ts::NamedGenericType>(type))

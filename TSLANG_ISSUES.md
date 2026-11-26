@@ -3672,6 +3672,8 @@ Tests `00tslang_issue_204.ts` (all models), `00tslang_issue_204_catch.ts` (gc, r
   consume: (data) => ... }` for `Options<Data>`, fields or methods): "failed statement". The fields' types are read
   without the hidden `this`, a declared result is the member's (`(): number => 1.5`), and members whose parameters
   wait for the type parameter are left out until the others have given it.
+- `X & any` was `never` (`{ x: string } & T` with T `any`: "'Never' can't be used as parameter type"); it is `any`, as in
+  TypeScript (`never & any` stays `never`).
 
 Not yet:
 - An arrow member of an object literal that says `this` or `super` is a method of the literal (its `this` is the
@@ -3680,6 +3682,8 @@ Not yet:
 - A literal given to a generic call whose field returns an integer where the type parameter is inferred as a number
   from elsewhere (`takeG({ produce: () => 44 }, 1.5)`): "can't assign '() => s32' to '() => number'", as is a literal
   variable given to the interface (`const o2: Options<number> = t`).
+- `{ x: string } & any` is `never` ("'Never' can't be used as parameter type"); TypeScript has `any`. Making it `any`
+  sends `conditionalTypeDoesntSpinForever.ts` (tsc) into a loop, so it stays for now.
 - The debug JIT crashes in LLVM translation on any program (local debug build, 11-26); release is fine.
 
 Tests `00tslang_issue_205.ts` (gc, rc, none: under -mm=own the returned closure over a parameter is refused by design).
