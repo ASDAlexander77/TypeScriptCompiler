@@ -11171,6 +11171,21 @@ class MLIRGenImpl
                     restSource = ifOp.getResult(0);
                 }
 
+                // ...and of a `T | null`: T's (as a declaration)
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(restSource.getType()))
+                {
+                    auto nonNullish = getNonNullishType(unionType);
+                    // (read as T, as a field of it is - a cast is refused in strict null mode: one pointer as it is, the
+                    // member's value out of a tagged union)
+                    if (nonNullish != restSource.getType() && !isa<mlir_ts::UnionType>(nonNullish))
+                    {
+                        mlir::Type actualType;
+                        restSource = mth.isUnionTypeNeedsTag(location, unionType, actualType)
+                            ? mlir::Value(builder.create<mlir_ts::GetValueFromUnionOp>(location, nonNullish, restSource))
+                            : mlir::Value(builder.create<mlir_ts::CastOp>(location, nonNullish, restSource));
+                    }
+                }
+
                 llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
                 llvm::SmallVector<mlir_ts::FieldInfo> restFields;
                 if (mlir::failed(mth.getFields(restSource.getType(), sourceFields)))
@@ -20516,6 +20531,8 @@ class MLIRGenImpl
                                                     const GenContext &genContext);
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
+    ValueOrLogicalResult castAnyToTupleOfNumbers(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                 const GenContext &genContext);
 
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);

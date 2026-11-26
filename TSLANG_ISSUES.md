@@ -3708,3 +3708,29 @@ array_class_splice.ts crashing in the debug JIT on Ubuntu 22.04/24.04 with no ou
 
 Tests `00rc_splice_result_owned.ts` (gc, rc, none; under own the test's re-insertion of the removed elements is
 refused).
+
+207. Leftovers of 195, 196, 198 and 205. Fixed:
+- A literal given to a generic call whose function member returns an integer, where the type parameter is a number
+  from another argument (`takeG({ produce: () => 44 }, 1.5)` for `takeG<D>(o: Options<D>, d: D)`): "can't assign
+  '() => s32' to '() => number'", and with the arguments the other way round `D` was `1.5 | s32`. The literal is typed
+  by the parameter once the call's other arguments give D (inferObjectLiteralArgumentReceivers, as a literal whose
+  members' parameters wait for D already was); its members are read one by one for the inference, without making them -
+  a member made then kept the `() => s32` it was made with.
+- An `any` holding an object literal written with integers (`{ code: 7 }`, an s32 field) cast to an object type of
+  numbers (`<{ code: number }>a`): it threw "the object's fields are not those of type". A layout with s32 in place of
+  some of the number fields (three at most) is read as itself and converted (castAnyToTupleOfNumbers). Not under
+  -mm=own, where the value merged from those reads is a second reference: there the cast still throws.
+- Under -mm=own, an object literal leaving out an optional field of the tuple it is given to (`const o: { disc?: false;
+  cb } = { cb }`): "a value that borrows a field cannot be stored". The literal is made with the missing optional
+  fields, undefined, and so is the receiver's tuple as it is, where it was converted by reading its fields out of its
+  slot.
+- The rest of a `T | null` (`const { a, ...rest } = u`, and `({ a, ...rest } = u)`): "the rest of a value of type
+  'null | T' can't be taken". It is T's, read as the pattern's other names read T's fields.
+
+Not yet:
+- Under -mm=own, a tuple literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`): "this function does not
+  own it". The same tuple in a local first (`const t: [string, number] = ["a" + i, i]; k.keepOne(t)`) works.
+- A literal held by a variable first (`const t = { produce: () => 45 }; const o: Options<number> = t`): `t`'s member is
+  `() => s32`, which is not `() => number` (integer literals are s32, user ruling).
+
+Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, rc, none).

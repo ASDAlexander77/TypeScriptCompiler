@@ -1247,6 +1247,22 @@ namespace mlirgen
             init = ifOp.getResult(0);
         }
 
+        // ...and of a `T | null`: T's, as the pattern's other names read T's fields (destructuring a null throws in
+        // JavaScript). It was "the rest of a value of type 'null | T' can't be taken".
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(init.getType()))
+        {
+            auto nonNullish = getNonNullishType(unionType);
+            // (read as T, as a field of it is - a cast is refused in strict null mode: one pointer as it is, the
+            // member's value out of a tagged union)
+            if (nonNullish != init.getType() && !isa<mlir_ts::UnionType>(nonNullish))
+            {
+                mlir::Type actualType;
+                init = mth.isUnionTypeNeedsTag(location, unionType, actualType)
+                    ? mlir::Value(builder.create<mlir_ts::GetValueFromUnionOp>(location, nonNullish, init))
+                    : mlir::Value(builder.create<mlir_ts::CastOp>(location, nonNullish, init));
+            }
+        }
+
         SmallVector<mlir::Attribute> names;
 
         // take all used fields

@@ -2737,7 +2737,10 @@ namespace mlirgen
                 continue;
             }
 
-            if (!isContextSensitiveObjectLiteral(argument))
+            // (not a literal with a function member whose result is not declared: evaluating it makes the function,
+            // whose type - the `() => s32` of `() => 44` - then stays the function's when the literal is made for
+            // its receiver; its members are read one by one below, without making them)
+            if (!isReceiverTypedObjectLiteral(argument))
             {
                 // widened, as an inference from a literal is (`5` gives s32, not the literal type 5)
                 if (auto type = evaluate(argument, genContext))
@@ -4496,6 +4499,36 @@ namespace mlirgen
         if (auto earlyResult = mlirGenObjectLiteralFields(location, oli, genContext))
         {
             return *earlyResult;
+        }
+
+        // A tuple receiver's optional fields the literal leaves out (`const o: { disc?: false; cb: Cb } = { cb }`) are
+        // its own, undefined, when it has every other one: it is then laid out as the receiver below and is the value.
+        // Built without them, it was converted by reading its fields out of its slot into a new tuple - under -mm=own
+        // a borrow of the slot, which can't be stored ("a value that borrows a field cannot be stored").
+        if (auto receiverTuple = dyn_cast_or_null<mlir_ts::TupleType>(oli.receiverType))
+        {
+            auto hasField = [&](mlir::Attribute id) {
+                return llvm::any_of(oli.fieldInfos, [&](const mlir_ts::FieldInfo &fieldInfo) { return fieldInfo.id == id; });
+            };
+
+            auto missingOnlyOptional = llvm::all_of(receiverTuple.getFields(), [&](const mlir_ts::FieldInfo &field) {
+                return hasField(field.id) || isa<mlir_ts::OptionalType>(field.type);
+            });
+            auto anyMissing = llvm::any_of(receiverTuple.getFields(), [&](const mlir_ts::FieldInfo &field) { return !hasField(field.id); });
+            if (missingOnlyOptional && anyMissing && oli.methodInfos.empty() && oli.methodInfosWithCaptures.empty())
+            {
+                for (auto &field : receiverTuple.getFields())
+                {
+                    if (!hasField(field.id))
+                    {
+                        auto undefinedValue = builder.create<mlir_ts::OptionalUndefOp>(location, field.type);
+                        if (mlir::failed(addObjectFieldInfo(location, oli, field.id, undefinedValue, field.type, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+                    }
+                }
+            }
         }
 
         // update after processing all fields

@@ -33,17 +33,11 @@ function main() {
 
     assert(thrown);
 
-    // a tuple of other fields throws too: `{ n: 5 }` holds an s32, which was read as a number, and
-    // `{ m: 1.5 }` was read as if its field were `n`
-    thrown = false;
-    try {
-        const s: any = { n: 5 };
-        asTuple(s);
-    } catch (e) {
-        thrown = true;
-    }
+    // `{ n: 5 }` holds an s32, which was read as a number's bits; it is converted (TSLANG 207), where it threw
+    const s: any = { n: 5 };
+    assert(asTuple(s).n / 2 == 2.5);
 
-    assert(thrown);
+    // a tuple of other fields throws: `{ m: 1.5 }` was read as if its field were `n`
 
     thrown = false;
     try {

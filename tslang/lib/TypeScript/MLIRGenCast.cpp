@@ -3703,7 +3703,7 @@ namespace mlirgen
 
             if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
             {
-                return castAnyToTuple(location, type, value, genContext);
+                return castAnyToTupleOfNumbers(location, type, value, genContext);
             }
 
             // a union of object shapes (`<Shape>a`): the shape whose layout the box's tuple has, the last
@@ -5416,6 +5416,85 @@ namespace mlirgen
         EXIT_IF_FAILED(checked)
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
+    }
+
+    // `any` to an object type with number fields (`<{ code: number }>a`): an object literal boxed as it is holds the s32
+    // of an integer it was written with (`{ code: 7 }`), a layout of its own, and the cast threw "the object's fields
+    // are not those of type". Each layout with s32 in place of some of the number fields (three of them at most) is
+    // read as itself and converted, as the literal given to the type is. Anything else is castAnyToTuple's, and so is
+    // every cast under -mm=own.
+    ValueOrLogicalResult MLIRGenImpl::castAnyToTupleOfNumbers(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                              const GenContext &genContext)
+    {
+        auto tupleType = dyn_cast<mlir_ts::TupleType>(type);
+        SmallVector<unsigned> numberFields;
+        if (tupleType)
+        {
+            for (auto [index, field] : enumerate(tupleType.getFields()))
+            {
+                if (isa<mlir_ts::NumberType>(field.type))
+                {
+                    numberFields.push_back(index);
+                }
+            }
+        }
+
+        // (not under -mm=own: a value merged from the branches is a second reference it can't classify yet, and the
+        // plain read is refused with it)
+        if (numberFields.empty() || numberFields.size() > 3 || compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return castAnyToTuple(location, type, value, genContext);
+        }
+
+        // the type's own layout first: it is the one a value of the type has
+        SmallVector<mlir::Type> layouts{type};
+        auto s32Type = builder.getIntegerType(32, true);
+        for (unsigned mask = 1; mask < (1u << numberFields.size()); ++mask)
+        {
+            SmallVector<mlir_ts::FieldInfo> fields(tupleType.getFields().begin(), tupleType.getFields().end());
+            for (auto [bit, fieldIndex] : enumerate(numberFields))
+            {
+                if (mask & (1u << bit))
+                {
+                    fields[fieldIndex].type = s32Type;
+                }
+            }
+
+            layouts.push_back(getTupleType(fields));
+        }
+
+        std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index == layouts.size())
+            {
+                // none of them: the checked read, which says what the box holds
+                return castAnyToTuple(location, type, value, genContext);
+            }
+
+            auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), value,
+                                                                    mlir::TypeAttr::get(layouts[index]));
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            mlir::Value thenValue = builder.create<mlir_ts::CastOp>(location, layouts[index], value);
+            if (index > 0)
+            {
+                auto converted = cast(location, type, thenValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(converted)
+                thenValue = V(converted);
+            }
+
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{thenValue});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = castOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return castOf(0);
     }
 
     ValueOrLogicalResult MLIRGenImpl::castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType,
