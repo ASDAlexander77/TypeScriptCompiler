@@ -11105,9 +11105,28 @@ class MLIRGenImpl
                     }
                 }
 
+                // the rest of a `T | undefined`: T's fields, their defaults where it has no value (as a declaration)
+                auto restSource = rightExpressionValue;
+                if (auto optType = dyn_cast<mlir_ts::OptionalType>(restSource.getType()))
+                {
+                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), restSource);
+                    auto ifOp = builder.create<mlir_ts::IfOp>(location, optType.getElementType(), hasValue, true);
+                    {
+                        mlir::OpBuilder::InsertionGuard guard(builder);
+                        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                        auto value = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), restSource);
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{value});
+                        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                        auto defaultValue = builder.create<mlir_ts::DefaultOp>(location, optType.getElementType());
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{defaultValue});
+                    }
+
+                    restSource = ifOp.getResult(0);
+                }
+
                 llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
                 llvm::SmallVector<mlir_ts::FieldInfo> restFields;
-                if (mlir::failed(mth.getFields(rightExpressionValue.getType(), sourceFields)))
+                if (mlir::failed(mth.getFields(restSource.getType(), sourceFields)))
                 {
                     emitError(location) << "the rest of a value of type '" << to_print(rightExpressionValue.getType())
                                         << "' can't be taken: give it an object";
@@ -11122,7 +11141,7 @@ class MLIRGenImpl
                     }
                 }
 
-                CAST_A(restValue, location, getTupleType(restFields), rightExpressionValue, genContext);
+                CAST_A(restValue, location, getTupleType(restFields), restSource, genContext);
 
                 auto spreadTarget = item.as<SpreadAssignment>()->expression;
                 auto result = mlirGen(spreadTarget, genContext);

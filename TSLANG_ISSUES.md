@@ -3579,7 +3579,9 @@ Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, 
   declaration.
 - The rest of a `T | undefined` in a declaration (`const { ...rest } = u`): "field ... can't be found in tuple". It is
   T's fields, with their defaults where it has no value, as `{ ...u }` spreads it.
-  Not yet: `var { ...rest } = u` of a `var rest: T` declared before it ("field "value" can't be found").
+- ...and the same in an assignment (`({ ...r } = u)`, and `var { ...rest } = u` of a `var rest` declared before it,
+  which is one): "field "value" can't be found".
+  Not yet: the rest of a `T | null` ("the rest of a value of type 'null | T' can't be taken").
 
 Tests `00tslang_issue_198.ts` (all models).
 
