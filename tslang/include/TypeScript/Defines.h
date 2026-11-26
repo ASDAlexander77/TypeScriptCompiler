@@ -600,6 +600,10 @@
 #define OBJECT_DICTIONARY_CLASS_NAME "ObjectDictionary"
 // the default library's function a spread of a dictionary into a new one calls
 #define OBJECT_DICTIONARY_ASSIGN_NAME "objectDictionaryAssign"
+// the default library's functions Object.values, Object.entries and Object.fromEntries of a dictionary call
+#define OBJECT_DICTIONARY_VALUES_NAME "objectDictionaryValues"
+#define OBJECT_DICTIONARY_ENTRIES_NAME "objectDictionaryEntries"
+#define OBJECT_DICTIONARY_FROM_ENTRIES_NAME "objectDictionaryFromEntries"
 // On a `ts.ThisVirtualSymbolRef` (a method's) or a `ts.VirtualSymbolRef` (an accessor's): the
 // receiver's class is @final, but defined in another module, so the call still goes through the
 // vtable. The slot holds the method the reference names, which
@@ -791,6 +795,16 @@
 // optional one only while set) - an accessor or a method is no key of an instance, as in JavaScript. A value
 // that is no object (a number, null) has none.
 #define ANY_KEYS_OP_KEYS 3
+// `delete box[key]`: a dictionary's entry deleted (a TypeError when it is sealed or frozen); the keys of any other
+// value are fixed when it is made, a TypeError
+#define ANY_KEYS_OP_DELETE 4
+// how far the value is closed, a number (Object.isExtensible, isSealed, isFrozen of an `any`): a dictionary's 0 open,
+// 1 no key added, 2 nor deleted, 3 nor any value written; an array's 0 (it grows); another object's 2 (its keys are
+// fixed); what is no object 3
+#define ANY_KEYS_OP_CLOSED 5
+// Object.preventExtensions, seal, freeze of an `any`: a dictionary closed as far as `value` (1, 2, 3); any other value
+// as it was
+#define ANY_KEYS_OP_CLOSE 6
 // The block header, last so that it sits immediately in front of the name bytes. A tag is a
 // `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
 // string - so a tag has to look like a payload with an immortal block header, exactly as a

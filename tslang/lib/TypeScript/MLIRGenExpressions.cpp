@@ -1792,24 +1792,277 @@ namespace mlirgen
             });
     }
 
-    // `Object.freeze(o)` (and seal, preventExtensions) is `o`: tslang's objects have no frozen state to set.
-    // `Object.keys(o)`, `Object.values(o)` and `Object.entries(o)` of an object or a tuple, whose fields are
-    // known when it is compiled, are made of them: `["a", "b"]`, `[o.a, o.b]`, `[["a", o.a], ["b", o.b]]` - the
-    // keys `for...in` walks (forInFieldKeys). `Object` was a type only: "'Object' is a type here, not a value".
+    // The calls of JavaScript's `Object`, unless the program declares its own `Object` value (it was a type only:
+    // "'Object' is a type here, not a value").
+    // - `Object.keys(o)` (and `Object.getOwnPropertyNames(o)`), `Object.values(o)` and `Object.entries(o)` of an object
+    //   or a tuple, whose fields are known when it is compiled, are made of them: `["a", "b"]`, `[o.a, o.b]`,
+    //   `[["a", o.a], ["b", o.b]]` - the keys `for...in` walks (forInFieldKeys). Of a dictionary they are its entries'
+    //   (its `keys`, the default library's objectDictionaryValues and objectDictionaryEntries); the keys of an `any`
+    //   are looked up at run time.
+    // - `Object.hasOwn(o, k)` of a dictionary or an array is `k in o`; of anything else, whether `k` is one of `Object.keys(o)` (a
+    //   method or an accessor is not an own key, as in JavaScript, where it is the prototype's).
+    // - A dictionary is the one object that gains and loses keys: `Object.preventExtensions`, `Object.seal` and
+    //   `Object.freeze` close it (its `close`; of an `any`, ANY_KEYS_OP_CLOSE), and `Object.isExtensible`, `isSealed`
+    //   and `isFrozen` ask how far it is closed (`closed`, ANY_KEYS_OP_CLOSED). Any other object's keys are fixed when
+    //   it is made, as a sealed object's are: closing it is `o` itself, and it is sealed, not extensible and not
+    //   frozen (its fields are written). An array grows, so it is extensible, and it is not closed. What is no object
+    //   (a number, a string) is frozen, as JavaScript says.
+    // - `Object.assign(d, ...sources)` copies into a dictionary each source's fields or entries, as `{ ...s }` does,
+    //   and is `d`.
+    // - `Object.fromEntries(pairs)` of an array of [key, value] pairs is a dictionary of them
+    //   (objectDictionaryFromEntries).
     ValueOrLogicalResult MLIRGenImpl::mlirGenObjectBuiltin(mlir::Location location, StringRef method,
-                                                           Expression argument, const GenContext &genContext)
+                                                           NodeArray<Expression> arguments, const GenContext &genContext)
     {
-        if (method == "freeze" || method == "seal" || method == "preventExtensions")
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // a function of the default library: an error where it is not there
+        auto libraryFunction = [&](StringRef name) -> mlir::Value {
+            auto function = resolveIdentifier(location, name, genContext);
+            if (!function)
+            {
+                emitError(location) << "'Object." << method << "' needs the default library's '" << name
+                                    << "', which is not there";
+            }
+
+            return function;
+        };
+
+        if (method == "hasOwn")
         {
-            return mlirGen(argument, genContext);
+            // a dictionary's entry, an array's index
+            auto objectType = evaluate(arguments[0], genContext);
+            if (dictionaryClassInfoOf(objectType, genContext) || isa_and_nonnull<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(objectType))
+            {
+                auto inExpression = nf.createBinaryExpression(arguments[1], nf.createToken(SyntaxKind::InKeyword), arguments[0]);
+                // the positions of the call's arguments, for the diagnostics of what is made of it
+                inExpression->pos = arguments[0]->pos;
+                inExpression->_end = arguments[1]->_end;
+                return mlirGen(inExpression.as<Expression>(), genContext);
+            }
+
+            // ("_" in front of "__", as the scanner puts it)
+            auto hasOwnName = ".object_has_own";
+            auto hasOwn = resolveIdentifier(location, hasOwnName, genContext);
+            if (!hasOwn)
+            {
+                std::string src = "function __object_has_own<T>(keys: T[], key: T): boolean {\n"
+                                  "for (let i = 0; i < keys.length; i++) { if (keys[i] == key) return true; }\n"
+                                  "return false;\n}\n";
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(stows(src))))
+                {
+                    return mlir::failure();
+                }
+
+                hasOwn = resolveIdentifier(location, hasOwnName, genContext);
+                if (!hasOwn)
+                {
+                    return mlir::failure();
+                }
+            }
+
+            NodeArray<Expression> objectArgument;
+            objectArgument.push_back(arguments[0]);
+            auto keysResult = mlirGenObjectBuiltin(location, "keys", objectArgument, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(keysResult)
+            auto keyResult = mlirGen(arguments[1], genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(keyResult)
+            CAST_A(keyValue, location, getStringType(), V(keyResult), genContext);
+            SmallVector<mlir::Value, 4> operands{V(keysResult), keyValue};
+            return mlirGenCallExpression(location, hasOwn, {}, operands, genContext);
         }
 
+        if (method == "fromEntries")
+        {
+            auto entriesType = evaluate(arguments.front(), genContext);
+            mlir::Type pairType;
+            if (auto arrayType = dyn_cast_or_null<mlir_ts::ArrayType>(entriesType))
+            {
+                pairType = arrayType.getElementType();
+            }
+            else if (auto constArrayType = dyn_cast_or_null<mlir_ts::ConstArrayType>(entriesType))
+            {
+                pairType = constArrayType.getElementType();
+            }
+
+            mlir::Type valueType;
+            if (auto tupleType = dyn_cast_or_null<mlir_ts::TupleType>(pairType); tupleType && tupleType.getFields().size() == 2)
+            {
+                valueType = tupleType.getFields()[1].type;
+            }
+            else if (auto constTupleType = dyn_cast_or_null<mlir_ts::ConstTupleType>(pairType);
+                     constTupleType && constTupleType.getFields().size() == 2)
+            {
+                valueType = constTupleType.getFields()[1].type;
+            }
+
+            if (!valueType)
+            {
+                emitError(location) << "'Object.fromEntries' of a value of type '" << to_print(entriesType)
+                                    << "' is not supported: give it an array of [key, value] pairs";
+                return mlir::failure();
+            }
+
+            auto function = libraryFunction(OBJECT_DICTIONARY_FROM_ENTRIES_NAME);
+            if (!function)
+            {
+                return mlir::failure();
+            }
+
+            auto entriesResult = mlirGen(arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(entriesResult)
+            auto entriesValue = V(entriesResult);
+
+            // T, the dictionary's values, is the pairs' value type; E the pairs'
+            GenContext fromGenContext(genContext);
+            fromGenContext.typeAliasMap.insert({".FROM_ENTRIES_T", mth.wideStorageType(mth.stripLiteralType(valueType))});
+            fromGenContext.typeAliasMap.insert({".FROM_ENTRIES_E", entriesValue.getType()});
+            NodeArray<TypeNode> typeArguments;
+            typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".FROM_ENTRIES_T")).as<Node>()));
+            typeArguments.push_back(nf.createTypeReferenceNode(nf.createIdentifier(S(".FROM_ENTRIES_E")).as<Node>()));
+            SmallVector<mlir::Value, 4> operands{entriesValue};
+            return mlirGenCallExpression(location, function, typeArguments, operands, fromGenContext);
+        }
+
+        if (method == "assign")
+        {
+            auto targetResult = mlirGen(arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(targetResult)
+            auto target = V(targetResult);
+            if (!dictionaryClassInfoOf(target.getType(), genContext))
+            {
+                emitError(location) << "'Object.assign' into a value of type '" << to_print(target.getType())
+                                    << "' is not supported: its keys are fixed when it is made; give it a dictionary";
+                return mlir::failure();
+            }
+
+            for (auto [index, source] : llvm::enumerate(arguments))
+            {
+                if (index == 0)
+                {
+                    continue;
+                }
+
+                auto sourceResult = mlirGen(source, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(sourceResult)
+                if (mlir::failed(mlirGenSpreadIntoDictionary(loc(source), target, V(sourceResult), genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            return target;
+        }
+
+        if (method == "getOwnPropertyNames")
+        {
+            method = "keys";
+        }
+
+        auto argument = arguments.front();
         auto result = mlirGen(argument, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto objectValue = V(result);
+        auto isAny = isa<mlir_ts::AnyType, mlir_ts::UnknownType>(objectValue.getType());
+        auto dictionaryInfo = dictionaryClassInfoOf(objectValue.getType(), genContext);
+        auto isDictionary = dictionaryInfo != nullptr;
+
+        auto closeLevel = method == "preventExtensions" ? 1 : method == "seal" ? 2 : method == "freeze" ? 3 : 0;
+        if (closeLevel || method == "isExtensible" || method == "isSealed" || method == "isFrozen")
+        {
+            auto levelValue = [&](int level) -> mlir::Value {
+                return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(level));
+            };
+
+            // how far it is closed: 0 open, 1 no key added, 2 nor deleted, 3 nor any value written
+            mlir::Value closed;
+            // a dictionary of a library older than its `close` and `closed` (or a program's own) is never closed
+            if (isDictionary && (dictionaryInfo->getMethodIndex("close") < 0 || dictionaryInfo->getMethodIndex("closed") < 0))
+            {
+                if (closeLevel)
+                {
+                    emitError(location) << "'Object." << method << "' of a dictionary needs the default library's '"
+                                        << OBJECT_DICTIONARY_CLASS_NAME << "' with 'close' and 'closed', which are not there";
+                    return mlir::failure();
+                }
+
+                return V(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(method == "isExtensible")));
+            }
+
+            if (isDictionary)
+            {
+                if (closeLevel)
+                {
+                    SmallVector<mlir::Value, 4> operands{levelValue(closeLevel)};
+                    auto closeResult = mlirGenDictionaryCall(location, objectValue, "close", operands, genContext);
+                    if (mlir::failed(closeResult.result))
+                    {
+                        return mlir::failure();
+                    }
+
+                    return objectValue;
+                }
+
+                SmallVector<mlir::Value, 4> noOperands;
+                auto closedResult = mlirGenDictionaryCall(location, objectValue, "closed", noOperands, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(closedResult)
+                CAST(closed, location, getNumberType(), V(closedResult), genContext);
+            }
+            else if (isAny)
+            {
+                mlir::Value box = objectValue;
+                if (!isa<mlir_ts::AnyType>(box.getType()))
+                {
+                    CAST(box, location, getAnyType(), box, genContext);
+                }
+
+                auto noKey = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+                if (closeLevel)
+                {
+                    auto closeResult = mlirGenAnyKey(location, box, noKey, ANY_KEYS_OP_CLOSE, genContext, levelValue(closeLevel));
+                    if (mlir::failed(closeResult.result))
+                    {
+                        return mlir::failure();
+                    }
+
+                    return objectValue;
+                }
+
+                auto closedResult = mlirGenAnyKey(location, box, noKey, ANY_KEYS_OP_CLOSED, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(closedResult)
+                closed = V(closedResult);
+            }
+            else
+            {
+                if (closeLevel)
+                {
+                    return objectValue;
+                }
+
+                auto type = mth.stripLiteralType(mth.stripOptionalType(objectValue.getType()));
+                auto level = isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(type) ? 0
+                             : mth.isNumericType(type) ||
+                                     isa<mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::NullType, mlir_ts::UndefinedType>(type)
+                                 ? 3
+                                 : 2;
+                auto answer = method == "isExtensible" ? level == 0 : method == "isSealed" ? level >= 2 : level == 3;
+                return V(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(answer)));
+            }
+
+            auto compare = [&](SyntaxKind op, int level) -> mlir::Value {
+                return builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(), builder.getI32IntegerAttr((int)op),
+                                                                closed, levelValue(level));
+            };
+
+            return method == "isExtensible" ? compare(SyntaxKind::EqualsEqualsToken, 0)
+                   : method == "isSealed"   ? compare(SyntaxKind::GreaterThanEqualsToken, 2)
+                                            : compare(SyntaxKind::EqualsEqualsToken, 3);
+        }
 
         // an `any`'s keys are known at run time only: its keys adapter lists them (ANY_KEYS_OP_KEYS)
-        if (method == "keys" && isa<mlir_ts::AnyType, mlir_ts::UnknownType>(objectValue.getType()))
+        if (method == "keys" && isAny)
         {
             if (!isa<mlir_ts::AnyType>(objectValue.getType()))
             {
@@ -1820,11 +2073,23 @@ namespace mlirgen
             return mlirGenAnyKey(location, objectValue, noKey, ANY_KEYS_OP_KEYS, genContext);
         }
 
-        // a dictionary's keys, in the order its entries were added
-        if (method == "keys" && dictionaryClassInfoOf(objectValue.getType(), genContext))
+        // a dictionary's keys, values or entries, in the order its entries were added
+        if (isDictionary)
         {
-            SmallVector<mlir::Value, 4> noOperands;
-            return mlirGenDictionaryCall(location, objectValue, "keys", noOperands, genContext);
+            if (method == "keys")
+            {
+                SmallVector<mlir::Value, 4> noOperands;
+                return mlirGenDictionaryCall(location, objectValue, "keys", noOperands, genContext);
+            }
+
+            auto function = libraryFunction(method == "values" ? OBJECT_DICTIONARY_VALUES_NAME : OBJECT_DICTIONARY_ENTRIES_NAME);
+            if (!function)
+            {
+                return mlir::failure();
+            }
+
+            SmallVector<mlir::Value, 4> operands{objectValue};
+            return mlirGenCallExpression(location, function, {}, operands, genContext);
         }
 
         SmallVector<std::string> keys;
@@ -1841,7 +2106,6 @@ namespace mlirgen
         auto varDecl = std::make_shared<VariableDeclarationDOM>(objectName, objectValue.getType(), location);
         declare(location, varDecl, objectValue, genContext);
 
-        NodeFactory nf(NodeFactoryFlags::None);
         NodeArray<Expression> elements;
         for (auto &key : keys)
         {
@@ -2083,9 +2347,12 @@ namespace mlirgen
                 && MLIRHelper::getName(access->expression.as<Identifier>()) == "Object")
             {
                 auto method = MLIRHelper::getName(access->name);
-                if ((method == "keys" || method == "values" || method == "entries" || method == "freeze"
-                     || method == "seal" || method == "preventExtensions")
-                    && callExpression->arguments.size() == 1)
+                auto count = callExpression->arguments.size();
+                if (((method == "keys" || method == "values" || method == "entries" || method == "getOwnPropertyNames"
+                      || method == "freeze" || method == "seal" || method == "preventExtensions" || method == "isExtensible"
+                      || method == "isSealed" || method == "isFrozen" || method == "fromEntries")
+                     && count == 1)
+                    || (method == "hasOwn" && count == 2) || (method == "assign" && count >= 1))
                 {
                     auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
                     auto declared = resolveIdentifier(location, "Object", genContext);
@@ -2096,7 +2363,7 @@ namespace mlirgen
 
                     if (!declared)
                     {
-                        return mlirGenObjectBuiltin(location, method, callExpression->arguments.front(), genContext);
+                        return mlirGenObjectBuiltin(location, method, callExpression->arguments, genContext);
                     }
                 }
             }
@@ -3159,6 +3426,11 @@ namespace mlirgen
         auto location = loc(deleteExpression);
 
         if (auto deleted = mlirGenDictionaryDelete(location, deleteExpression->expression, genContext))
+        {
+            return *deleted;
+        }
+
+        if (auto deleted = mlirGenAnyDelete(location, deleteExpression->expression, genContext))
         {
             return *deleted;
         }
