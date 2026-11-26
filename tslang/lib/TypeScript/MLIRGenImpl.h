@@ -6906,6 +6906,12 @@ class MLIRGenImpl
     mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCases *elseSafeCases, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
+        // `m!` tested is `m` tested (`m! && m[0]` of a `string[] | null`: `m[0]` indexed the union)
+        while (expr == SyntaxKind::NonNullExpression)
+        {
+            expr = stripParentheses(expr.as<NonNullExpression>()->expression);
+        }
+
         if (auto asTypeOf = arrayIsArrayAsTypeOf(expr))
         {
             expr = asTypeOf;
@@ -17257,11 +17263,25 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
+                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
+
+                // typed by the receiver as `name: value` is (`{ kind, method(a) {} }` with `const kind = "a"` for the
+                // `{ kind: "a"; ... }` member of a union: the field was stored as a string, which no member takes)
+                if (oli.receiverType)
+                {
+                    receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, oli.receiverType);
+                }
+
+                GenContext receiverTypeGenContext(genContext);
+                receiverTypeGenContext.clearReceiverTypes();
+                if (receiverElementType)
+                {
+                    receiverTypeGenContext.receiverType = receiverElementType;
+                }
+
+                auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), receiverTypeGenContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
-
-                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
@@ -20293,6 +20313,8 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> castToOptionalType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
     std::optional<ValueOrLogicalResult> castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castOptionalFieldToUnionMember(mlir::Location location, mlir_ts::UnionType unionType,
+                                                                       mlir::Value value, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castToNullableUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castFromNullableUnion(mlir::Location location, mlir::Type type, mlir::Value value, mlir_ts::UnionType unionType, const GenContext &genContext);
 

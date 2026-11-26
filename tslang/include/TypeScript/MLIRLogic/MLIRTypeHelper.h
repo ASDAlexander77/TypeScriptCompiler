@@ -661,6 +661,19 @@ class MLIRTypeHelper
         return isa<mlir_ts::ConstTupleType>(type) && constTupleHoldsArray(type);
     }
 
+    // a field that can hold no value: `never`, or `f?: never`, which is stored as an optional of the empty tuple
+    bool isNeverField(mlir::Type type)
+    {
+        auto fieldType = stripOptionalType(type);
+        if (isa<mlir_ts::NeverType>(fieldType))
+        {
+            return true;
+        }
+
+        auto tupleType = dyn_cast<mlir_ts::TupleType>(fieldType);
+        return tupleType && tupleType.size() == 0 && isa<mlir_ts::OptionalType>(type);
+    }
+
     mlir::Type wideStorageType(mlir::Type type)
     {
         auto actualType = type;

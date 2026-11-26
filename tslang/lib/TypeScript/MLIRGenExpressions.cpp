@@ -3804,12 +3804,31 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::unionMemberNamedByLiteral(mlir_ts::UnionType unionType, ObjectLiteralExpression objectLiteral,
                                                       const GenContext &genContext)
     {
-        // the literal's fields whose values are literals: their names and their literal types
+        // the literal's fields whose values are literals: their names and their literal types (a null one: `undefined`)
         llvm::SmallVector<std::pair<mlir::Attribute, mlir_ts::LiteralType>> givenLiterals;
+        // the names of all the fields it gives, and whether it may give more (a spread)
+        llvm::SmallVector<mlir::Attribute> givenNames;
+        auto hasSpread = false;
         for (auto &item : objectLiteral->properties)
         {
             Node name;
             Expression value;
+            if (item == SyntaxKind::SpreadAssignment)
+            {
+                hasSpread = true;
+                continue;
+            }
+
+            if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
+            {
+                if (auto fieldId = TupleFieldName(item.as<NamedDeclaration>()->name, genContext))
+                {
+                    givenNames.push_back(fieldId);
+                }
+
+                continue;
+            }
+
             if (item == SyntaxKind::PropertyAssignment)
             {
                 name = item.as<PropertyAssignment>()->name;
@@ -3825,6 +3844,47 @@ namespace mlirgen
                 continue;
             }
 
+            auto fieldId = TupleFieldName(name, genContext);
+            if (!fieldId)
+            {
+                continue;
+            }
+
+            givenNames.push_back(fieldId);
+
+            // `undefined`: the member whose field may be left out (`disc: undefined` for `{ disc?: false; ... }`)
+            if (value == SyntaxKind::Identifier && value.as<Identifier>()->escapedText == S(UNDEFINED_NAME))
+            {
+                givenLiterals.push_back({fieldId, mlir_ts::LiteralType()});
+                continue;
+            }
+
+            // a template of literals only (`${"s"}`) is the text it makes, as TypeScript evaluates it
+            if (value == SyntaxKind::TemplateExpression)
+            {
+                auto templateExpr = value.as<TemplateExpression>();
+                auto text = convertWideToUTF8(templateExpr->head->text);
+                auto allLiterals = true;
+                for (auto &span : templateExpr->templateSpans)
+                {
+                    if (span->expression != SyntaxKind::StringLiteral)
+                    {
+                        allLiterals = false;
+                        break;
+                    }
+
+                    text += convertWideToUTF8(span->expression.as<ts::StringLiteral>()->text);
+                    text += convertWideToUTF8(span->literal->text);
+                }
+
+                if (allLiterals)
+                {
+                    givenLiterals.push_back({fieldId, mlir_ts::LiteralType::get(builder.getStringAttr(text), getStringType())});
+                }
+
+                continue;
+            }
+
             if (value != SyntaxKind::StringLiteral && value != SyntaxKind::NumericLiteral && value != SyntaxKind::TrueKeyword
                 && value != SyntaxKind::FalseKeyword && value != SyntaxKind::Identifier
                 && value != SyntaxKind::NoSubstitutionTemplateLiteral)
@@ -3832,17 +3892,11 @@ namespace mlirgen
                 continue;
             }
 
-            auto fieldId = TupleFieldName(name, genContext);
-            auto literalType = fieldId ? dyn_cast_or_null<mlir_ts::LiteralType>(evaluate(value, genContext)) : mlir_ts::LiteralType();
+            auto literalType = dyn_cast_or_null<mlir_ts::LiteralType>(evaluate(value, genContext));
             if (literalType)
             {
                 givenLiterals.push_back({fieldId, literalType});
             }
-        }
-
-        if (givenLiterals.empty())
-        {
-            return mlir::Type();
         }
 
         mlir::Type found;
@@ -3869,16 +3923,37 @@ namespace mlirgen
                     continue;
                 }
 
-                for (auto &[id, given] : givenLiterals)
+                auto isOptional = isa<mlir_ts::OptionalType>(field.type);
+                auto given = false;
+                for (auto &[id, givenLiteral] : givenLiterals)
                 {
                     if (id != field.id)
                     {
                         continue;
                     }
 
-                    if (given.getValue() == fieldLiteral.getValue())
+                    given = true;
+                    if (givenLiteral ? givenLiteral.getValue() == fieldLiteral.getValue() : isOptional)
                     {
                         named = true;
+                    }
+                    else
+                    {
+                        conflicts = true;
+                    }
+                }
+
+                // a literal field the object literal leaves out: the member, when the field may be left out (`{ cb }` for
+                // `{ disc: true; cb } | { disc?: false; cb }`); never a member it must be given to
+                if (!given && !hasSpread && !llvm::is_contained(givenNames, field.id))
+                {
+                    // (and only when the member has every field the object literal gives: `{ b: "s" }` is not a
+                    // `{ mode?: "x"; a: number }` beside a `{ b: string }`)
+                    if (isOptional)
+                    {
+                        named = named || llvm::all_of(givenNames, [&](mlir::Attribute givenName) {
+                            return llvm::any_of(fields, [&](auto &memberField) { return memberField.id == givenName; });
+                        });
                     }
                     else
                     {
@@ -3895,6 +3970,40 @@ namespace mlirgen
                 }
 
                 found = member;
+            }
+        }
+
+        // no literal names one: a field the object literal gives that a member has as `never` rules that member out
+        // (`{ href: "..." }` for `{ href: string; ... } | { href?: never; ... }`); the one member left, if one is
+        if (!found)
+        {
+            mlir::Type left;
+            auto leftCount = 0;
+            auto ruledOut = 0;
+            for (auto member : unionType.getTypes())
+            {
+                llvm::SmallVector<mlir_ts::FieldInfo> fields;
+                if (!isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member) || mlir::failed(mth.getFields(member, fields)))
+                {
+                    return mlir::Type();
+                }
+
+                auto givesNever = llvm::any_of(fields, [&](auto &field) {
+                    return mth.isNeverField(field.type) && llvm::is_contained(givenNames, field.id);
+                });
+                if (givesNever)
+                {
+                    ruledOut++;
+                    continue;
+                }
+
+                left = member;
+                leftCount++;
+            }
+
+            if (leftCount == 1 && ruledOut > 0)
+            {
+                return left;
             }
         }
 

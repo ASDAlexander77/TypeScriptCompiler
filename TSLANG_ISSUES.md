@@ -3538,3 +3538,20 @@ Tests `00tslang_issue_194.ts` (all models).
   holding `{ code: 7 }` (an s32 field) can't be cast to `{ code: number }` ("the object's fields are not those of type").
 
 Tests `00tslang_issue_195.ts` (all models).
+
+196. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- `m! && m[0]` of a `string[] | null`: `m!` tested did not narrow `m`, as `m` tested does; and `m[0]` of such a union
+  (one pointer) gave ElementRef the union ("operand #0 must be ... array"). It is indexed as the array.
+- A shape with an optional field (`{ foo?: number }`) given to a union with a member for each case of it (`{ foo:
+  number } | { foo?: undefined }`): "'ts.Cast' op type ... can't be stored". Whether the field has a value tells which.
+- An object literal given to a union of shapes, told apart by a field it gives as `undefined` (`{ disc?: false }`),
+  leaves out, gives a template of literals for (`` `${"s"}` ``), gives a const for (`{ kind, ... }` with `const kind =
+  "a"`: a shorthand field was not typed by the member), or gives where another member has `never` (`href?: never`):
+  no member was found ("can't be stored"), and the literal's functions had untyped parameters.
+- A union of shapes with the same fields tested for truth (`if (u)`, the test of `u?.kind`): the members merge into
+  one type, and the cast failed with nothing said ("failed statement"). An object is true; a cast from such a union to
+  a type it can't be says so.
+  Not yet: under -mm=own, an object literal leaving out an optional field (`const o: { disc?: false; cb } = { cb }`)
+  is "a value that borrows a field cannot be stored".
+
+Tests `00tslang_issue_196.ts` (all models).
