@@ -1467,6 +1467,16 @@ tslang_add_test(NAME test-jit-rc-00-own-iterable-destructure COMMAND test-runner
 tslang_add_test(NAME test-jit-own-00-own-iterable-destructure COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_iterable_destructure.ts")
 tslang_add_test(NAME test-compile-00-own-iterable-destructure COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_iterable_destructure.ts")
 tslang_add_test(NAME test-compile-own-00-own-iterable-destructure COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_iterable_destructure.ts")
+tslang_add_test(NAME test-jit-00-own-rest-argument-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_rest_argument_field.ts")
+tslang_add_test(NAME test-jit-rc-00-own-rest-argument-field COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_rest_argument_field.ts")
+tslang_add_test(NAME test-jit-own-00-own-rest-argument-field COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_rest_argument_field.ts")
+tslang_add_test(NAME test-compile-00-own-rest-argument-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_rest_argument_field.ts")
+tslang_add_test(NAME test-compile-own-00-own-rest-argument-field COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_rest_argument_field.ts")
+tslang_add_test(NAME test-jit-00-nested-iterable-array-pattern COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_iterable_array_pattern.ts")
+tslang_add_test(NAME test-jit-rc-00-nested-iterable-array-pattern COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_iterable_array_pattern.ts")
+tslang_add_test(NAME test-jit-own-00-nested-iterable-array-pattern COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_iterable_array_pattern.ts")
+tslang_add_test(NAME test-compile-00-nested-iterable-array-pattern COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_iterable_array_pattern.ts")
+tslang_add_test(NAME test-compile-own-00-nested-iterable-array-pattern COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_iterable_array_pattern.ts")
 tslang_add_test(NAME test-jit-00-own-module-const-beside-top-level COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_module_const_beside_top_level.ts")
 tslang_add_test(NAME test-jit-rc-00-own-module-const-beside-top-level COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_module_const_beside_top_level.ts")
 tslang_add_test(NAME test-jit-own-00-own-module-const-beside-top-level COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_module_const_beside_top_level.ts")
@@ -6879,6 +6889,19 @@ add_test(NAME test-rc-captured-cells
 foreach(captured_cells_mm gc rc none)
     tslang_add_test(NAME test-compile-captured-cells-${captured_cells_mm} COMMAND test-runner -mm=${captured_cells_mm} "${PROJECT_SOURCE_DIR}/test/tester/captured-cells/captured_cells.ts")
     tslang_add_test(NAME test-jit-captured-cells-${captured_cells_mm} COMMAND test-runner -jit -mm=${captured_cells_mm} "${PROJECT_SOURCE_DIR}/test/tester/captured-cells/captured_cells.ts")
+endforeach()
+# A new array given to an optional parameter (`new Set([a, b])`) reaches the call as `ts.OptionalValue` of it,
+# and nothing gave it back under rc or own; nor, under own, a literal of strings alone given to any call. The
+# IR is read, as no run shows the leak. It runs in every model.
+foreach(optional_array_mm rc own)
+    add_test(NAME test-${optional_array_mm}-optional-array-argument
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMM=${optional_array_mm}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/optional-array-argument/optional_array_argument.ts"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/optional-array-argument.cmake")
+endforeach()
+foreach(optional_array_mm gc rc none own)
+    tslang_add_test(NAME test-compile-optional-array-argument-${optional_array_mm} COMMAND test-runner -mm=${optional_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/optional-array-argument/optional_array_argument.ts")
+    tslang_add_test(NAME test-jit-optional-array-argument-${optional_array_mm} COMMAND test-runner -jit -mm=${optional_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/optional-array-argument/optional_array_argument.ts")
 endforeach()
 foreach(temp_array_mm gc rc none own)
     tslang_add_test(NAME test-compile-temp-array-literal-${temp_array_mm} COMMAND test-runner -mm=${temp_array_mm} "${PROJECT_SOURCE_DIR}/test/tester/temp-array-literal/temp_array_literal.ts")

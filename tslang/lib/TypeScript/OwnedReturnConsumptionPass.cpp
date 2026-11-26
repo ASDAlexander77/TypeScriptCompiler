@@ -412,6 +412,12 @@ class OwnedReturnConsumptionPass
         // (`po([undefined])`, `[null]`: elements that are no value at all, so nothing to own or to borrow - such a
         // literal given to a call was never given back, own leaked it every call)
         auto onlyNoValues = true;
+        // text it holds a copy of (copyBorrowedTextElements), or was given new (`["x" + i]`): its own, as a new value
+        // moved in is. Not counted, a literal of strings alone given to a call (`new Set(["a" + i])`, `len(["x" + i])`)
+        // was owned by nothing and given back by nothing: each call leaked it and its strings
+        // (not beside a value something else had, which the literal would take over: `[s, o]` borrows both)
+        auto holdsText = false;
+        auto anyTaken = false;
         for (auto element : arrayOp->getOperands())
         {
             if (isNoValue(element))
@@ -422,6 +428,7 @@ class OwnedReturnConsumptionPass
             if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element))
             {
                 onlyNoValues = onlyNoValues && !isBorrowedText(element);
+                holdsText = holdsText || isBorrowedText(element);
                 continue;
             }
 
@@ -438,10 +445,11 @@ class OwnedReturnConsumptionPass
                 return false;
             }
 
+            anyTaken = true;
             allTakenAreLocals = allTakenAreLocals && isLocalsOwn(element);
         }
 
-        return anyNew || onlyNoValues || (allTakenAreLocals && !givenToCall);
+        return anyNew || (holdsText && !anyTaken) || onlyNoValues || (allTakenAreLocals && !givenToCall);
     }
 
     // undefined or null, through the casts and the optional that only widen it
@@ -610,7 +618,8 @@ class OwnedReturnConsumptionPass
             return false;
         }
 
-        // its one use is the call, through casts
+        // its one use is the call, through casts, and the optional an optional parameter takes it as (`new
+        // Set([a, b])` of a `constructor(values?: V[])`: given back by nothing, each call leaked the literal)
         while (value.hasOneUse())
         {
             auto *user = *value.getUsers().begin();
@@ -619,16 +628,28 @@ class OwnedReturnConsumptionPass
                 return true;
             }
 
-            auto userCastOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
-            if (!userCastOp)
+            if (!mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp>(user))
             {
                 return false;
             }
 
-            value = userCastOp.getRes();
+            value = user->getResult(0);
         }
 
         return false;
+    }
+
+    // The new array an argument given as an optional is (`ts.OptionalValue` of it, its one use), or the argument
+    static mlir::Value arrayInsideOptional(mlir::Value argument)
+    {
+        auto optionalValueOp = argument.getDefiningOp<mlir_ts::OptionalValueOp>();
+        if (optionalValueOp && optionalValueOp->getOperand(0).hasOneUse() &&
+            mlir::isa<mlir_ts::ArrayType>(optionalValueOp->getOperand(0).getType()))
+        {
+            return optionalValueOp->getOperand(0);
+        }
+
+        return argument;
     }
 
     // -mm=own: may a new array own what it holds, so that giving it back gives its elements back too? One of
@@ -682,6 +703,9 @@ class OwnedReturnConsumptionPass
                         argument = boundOp->getOperand(0);
                     }
                 }
+
+                // an optional parameter's (`new Set([a, b])`): the array inside the optional
+                argument = arrayInsideOptional(argument);
 
                 auto *definingOp = argument.getDefiningOp();
 
@@ -2046,9 +2070,9 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
-                if (compileOptions.isRefCounted() && arrayMadeFor(argument, op, true))
+                if (compileOptions.isRefCounted() && arrayMadeFor(arrayInsideOptional(argument), op, true))
                 {
-                    held.push_back({op, argument});
+                    held.push_back({op, arrayInsideOptional(argument)});
                     continue;
                 }
 
