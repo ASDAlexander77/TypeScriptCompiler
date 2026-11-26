@@ -265,6 +265,22 @@ class LLVMCodeHelperBase
         return getOrInsertFunction(mlir::UnknownLoc::get(op->getContext()) /*op->getLoc()*/, op->getParentOfType<ModuleOp>(), name, llvmFnType);
     }
 
+    // A call of a C function the runtime needs (`strtod`, `memcmp`): the default library may declare it itself
+    // (lib.native.d.ts), and where its declaration is not lowered yet there is a symbol of that name that is no LLVM
+    // function - a second one was "redefinition of symbol named 'strtod'". That one is called by name.
+    LLVM::CallOp callOrInsertFunction(mlir::Location loc, const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType,
+                                      ValueRange args)
+    {
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        auto *declared = parentModule.lookupSymbol(name);
+        if (declared && !isa<LLVM::LLVMFuncOp>(declared))
+        {
+            return rewriter.create<LLVM::CallOp>(loc, llvmFnType, FlatSymbolRefAttr::get(rewriter.getContext(), name), args);
+        }
+
+        return rewriter.create<LLVM::CallOp>(loc, getOrInsertFunction(name, llvmFnType), args);
+    }
+
     mlir::Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         return _MemoryAlloc<int>(sizeOfAlloc, zero);

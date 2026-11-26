@@ -340,12 +340,11 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         // `strtod`, not `atof`: atof leaves a value out of range undefined, strtod gives an infinity
         // or 0
         auto i8PtrTy = th.getPtrType();
-        auto parseFloatFuncOp = ch.getOrInsertFunction(
-            "strtod", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy, th.getPtrType()}));
+        auto strtodType = th.getFunctionType(rewriter.getF64Type(), {i8PtrTy, th.getPtrType()});
         auto nullOp = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
 
         // strtod gives a double whatever the result is: `<f32>"2.5"` wants a float
-        auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.getArg(), nullOp});
+        auto funcCall = ch.callOrInsertFunction(loc, "strtod", strtodType, ValueRange{transformed.getArg(), nullOp});
         auto resultType = getTypeConverter()->convertType(op.getType());
         if (resultType == rewriter.getF64Type())
         {

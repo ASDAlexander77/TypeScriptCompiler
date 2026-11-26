@@ -109,7 +109,7 @@ class ConvertLogic
         // the target's CRT, not the host's, as ConvertF: sprintf_s is MSVC only
         auto printFunc = ch.getOrInsertFunction(compileOptions.isWindows ? "sprintf_s" : "snprintf",
                                                 th.getFunctionType(i32Ty, {ptrTy, llvmIndexType, ptrTy}, true));
-        auto strtodFunc = ch.getOrInsertFunction("strtod", th.getFunctionType(f64Ty, {ptrTy, ptrTy}));
+        auto strtodType = th.getFunctionType(f64Ty, {ptrTy, ptrTy});
 
         OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -143,7 +143,7 @@ class ConvertLogic
         };
         auto strtod = [&](mlir::Value str) {
             auto nullPtr = rewriter.create<LLVM::ZeroOp>(noLoc, ptrTy);
-            return rewriter.create<LLVM::CallOp>(noLoc, strtodFunc, ValueRange{str, nullPtr}).getResult();
+            return ch.callOrInsertFunction(noLoc, "strtod", strtodType, ValueRange{str, nullPtr}).getResult();
         };
         auto at = [&](mlir::Value base, mlir::Value index) -> mlir::Value {
             return rewriter.create<LLVM::GEPOp>(noLoc, ptrTy, i8Ty, base, ArrayRef<LLVM::GEPArg>{index});

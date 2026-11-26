@@ -3567,4 +3567,8 @@ gave invalid IR ("'ts.Load' op using value defined outside the region"). Fixed:
   put in (`[name]() {}` with `const name = ...` in the function), read the function's locals: a static block runs at
   the start of the program. It is an error.
 
+- `strtod` declared (as the default library declares it) beside a string converted to a number: where the declaration
+  was not lowered yet, the conversion's own `strtod` was a second symbol of that name ("redefinition of symbol named
+  'strtod'", or a crash). It is called by name, as `memcmp` is (TSLANG 193).
+
 Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, `class_static_block_local_error.ts`.
