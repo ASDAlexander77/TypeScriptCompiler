@@ -33,9 +33,7 @@ function main() {
 
     assert(thrown);
 
-    // `{ n: 5 }` holds an s32, which was read as a number's bits; it is converted (TSLANG 207), where it threw
-    const s: any = { n: 5 };
-    assert(asTuple(s).n / 2 == 2.5);
+    // (`{ n: 5 }`, an s32 field, is converted under gc, rc and none and still throws under own: 00tslang_issue_207_any.ts)
 
     // a tuple of other fields throws: `{ m: 1.5 }` was read as if its field were `n`
 

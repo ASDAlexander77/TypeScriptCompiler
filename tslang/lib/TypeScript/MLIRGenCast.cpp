@@ -60,9 +60,14 @@ namespace mlirgen
     // (a closure, see MLIRTypeHelper::isObjectFieldFunctionWithoutThis) keeps its
     // own type: cast to the interface's it would lose its captures. Its slot calls a
     // thunk reading the field instead (mlirGenObjectVirtualTableDefinitionForInterface).
+    // ...unless its type is not the member's (`matches` says, TSLANG 208): `{ produce: () => 45 }` held by a variable
+    // has a `() => s32` for `produce: () => Data` of `Options<number>`. Then the clone's field is a function value of
+    // the member's type, without its `this` (a type literal's field, as `{ produce: () => number }` has), which the
+    // cast into the clone adapts the function to (functionValueAdapter: the result widened).
     static mlir::LogicalResult getInterfaceCloneFields(mlir::ArrayRef<mlir_ts::FieldInfo> srcFields,
                                                        InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
-                                                       SmallVector<mlir_ts::FieldInfo> &fields)
+                                                       SmallVector<mlir_ts::FieldInfo> &fields,
+                                                       llvm::function_ref<bool(mlir::Type, mlir::Type)> matches)
     {
         // an interface not declared (yet) has no fields to clone
         if (!interfaceInfo)
@@ -84,6 +89,21 @@ namespace mlirgen
             auto keepsOwnType = interfaceField != interfaceFields.end()
                 && isa<mlir_ts::FunctionType>(interfaceField->type)
                 && MLIRTypeHelper::isObjectFieldFunctionWithoutThis(origField.type);
+            if (keepsOwnType && !matches(origField.type, interfaceField->type))
+            {
+                auto memberType = cast<mlir_ts::FunctionType>(interfaceField->type);
+                mlir::ArrayRef<mlir::Type> inputs = memberType.getInputs();
+                if (!inputs.empty() && isa<mlir_ts::OpaqueType>(inputs.front()))
+                {
+                    inputs = inputs.drop_front();
+                }
+
+                auto valueType =
+                    mlir_ts::HybridFunctionType::get(context, inputs, memberType.getResults(), memberType.isVarArg());
+                fields.push_back(mlir_ts::FieldInfo{origField.id, valueType, origField.isConditional, origField.accessLevel});
+                continue;
+            }
+
             fields.push_back(interfaceField != interfaceFields.end() && !keepsOwnType ? *interfaceField : origField);
         }
 
@@ -4124,6 +4144,32 @@ namespace mlirgen
     mlir::Value MLIRGenImpl::fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type,
                                                   const GenContext &genContext)
     {
+        // a field of a constant object (`const t = { produce: () => 45 }` folds to a constant of the functions'
+        // names) is that function, named (TSLANG 208): read as a value, it would be boxed (functionValueAdapter),
+        // which -mm=own takes for a second reference of the box where the object holding it is stored
+        if (auto extractOp = value.getDefiningOp<mlir_ts::ExtractPropertyOp>(); extractOp && extractOp.getPosition().size() == 1)
+        {
+            if (auto constantOp = extractOp.getObject().getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto elements = dyn_cast<mlir::ArrayAttr>(constantOp.getValue());
+                auto position = extractOp.getPosition().front();
+                auto symbol = elements && position >= 0 && position < (int64_t)elements.size()
+                    ? dyn_cast<mlir::FlatSymbolRefAttr>(elements[position])
+                    : mlir::FlatSymbolRefAttr();
+                if (symbol && isa<mlir_ts::FunctionType>(value.getType()))
+                {
+                    auto symbolValue = builder.create<mlir_ts::SymbolRefOp>(location, value.getType(), symbol);
+                    if (auto thunk = fewerParametersThunk(location, symbolValue, type, genContext))
+                    {
+                        return thunk;
+                    }
+
+                    symbolValue->erase();
+                    return mlir::Value();
+                }
+            }
+        }
+
         auto boundOp = value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
         auto symbolRefOp = boundOp ? boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>()
                                    : value.getDefiningOp<mlir_ts::SymbolRefOp>();
@@ -6081,7 +6127,10 @@ namespace mlirgen
         if (mlir::failed(mth.canCastTupleToInterface(location, srcTuple, interfaceInfo, true)))
         {
             SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
+            if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields,
+                    [&](mlir::Type src, mlir::Type dest) {
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match;
+                    })))
             {
                 return mlir::failure();
             }
@@ -6209,7 +6258,10 @@ namespace mlirgen
             if (mlir::failed(mth.canCastTupleToInterface(location, storageTuple, interfaceInfo, true)))
             {
                 SmallVector<mlir_ts::FieldInfo> fields;
-                if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
+                if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields,
+                    [&](mlir::Type src, mlir::Type dest) {
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match;
+                    })))
                 {
                     return mlir::failure();
                 }

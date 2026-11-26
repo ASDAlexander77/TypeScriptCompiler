@@ -3727,10 +3727,35 @@ refused).
 - The rest of a `T | null` (`const { a, ...rest } = u`, and `({ a, ...rest } = u)`): "the rest of a value of type
   'null | T' can't be taken". It is T's, read as the pattern's other names read T's fields.
 
-Not yet:
+Not yet (both fixed in 208):
 - Under -mm=own, a tuple literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`): "this function does not
   own it". The same tuple in a local first (`const t: [string, number] = ["a" + i, i]; k.keepOne(t)`) works.
 - A literal held by a variable first (`const t = { produce: () => 45 }; const o: Options<number> = t`): `t`'s member is
   `() => s32`, which is not `() => number` (integer literals are s32, user ruling).
 
 Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, rc, none).
+
+208. The "not yet" of 207. Fixed:
+- A literal held by a variable first, whose function member returns an integer, given as an interface whose member
+  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, and `read(t)` for a parameter
+  `o: Options<number>`): "field "produce" not matching type: '() => number' and '() => s32'". Integer literals stay
+  s32 (user ruling); the function is adapted, as it already was given as a `() => number` value
+  (`let f: () => number = one`), by a function that calls it and widens its result. The object's clone for the
+  interface has the member's type for such a field (getInterfaceCloneFields), and the field of a constant object is
+  its function, named (fewerParametersThunk): no box, so -mm=own takes it too.
+- Under -mm=own, a tuple or object literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`,
+  `k.keepObj({ s: "b" + i, n: i })`): "this function does not own it". The literal is built in a slot nothing owns; as
+  an argument it now goes into a local of its own, as `const t = [...]; k.keepOne(t)` puts it (ownedLiteralArgument):
+  the local gives it to a callee that keeps it, and gives it back where the callee only reads it. 2M calls of either
+  stay at about 5 MB. Only a literal of new values or constants (one holding what it borrows, or a closure, is a
+  borrowing record, as it was), and not inside `&&`/`?:`, whose region does not reach the scope's end.
+
+Not yet:
+- Under -mm=own, the same directly in a `try` body (`try { k.keepOne(["t" + n, 0]); }`): "an object literal that holds
+  a value it owns is moved only into a local". A declared local there is refused the same way
+  (`try { const t: [string, number] = ["t" + n, 0]; k.keepOne(t); }`); in a loop inside the `try` both work.
+- Under -mm=own, the same for an object in a `let` (`let t = { produce: () => 45 }; const o: Options<number> = t`):
+  its function is read at run time and adapted through a box (functionValueAdapter), which the clone takes a second
+  reference to: "a value takes a second reference". A `const` object works.
+
+Tests `00tslang_issue_208.ts` (all models).

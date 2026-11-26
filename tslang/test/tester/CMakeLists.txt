@@ -2554,6 +2554,12 @@ foreach(issue207_mm gc rc none)
     tslang_add_test(NAME test-jit-00tslang_issue_207_any-${issue207_mm} COMMAND test-runner -jit -mm=${issue207_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_207_any.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_207_any-${issue207_mm} COMMAND test-runner -mm=${issue207_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_207_any.ts")
 endforeach()
+# TSLANG 208: the "not yet" of 207 (a literal's integer function member given as an interface's number one, a tuple or
+# object literal given to a callee that keeps it under own)
+foreach(issue208_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_208-${issue208_mm} COMMAND test-runner -jit -mm=${issue208_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_208.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_208-${issue208_mm} COMMAND test-runner -mm=${issue208_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_208.ts")
+endforeach()
 # the array `splice` gives back, kept in a local and returned: under rc its header is born owned (it was freed on
 # the way out)
 foreach(splice_mm gc rc none)
