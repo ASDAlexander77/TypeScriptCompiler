@@ -3697,11 +3697,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
 
-    // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
+    // (`iteratorSource`: the iterator `init` is the `next` of, which a rest element `...rest` reads on to its end)
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(
-        mlir::Location location, int index, mlir::Type type, mlir::Value init, 
+        mlir::Location location, int index, mlir::Type type, mlir::Value init,
         bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
-        Expression defaultValue, bool bindsName, const GenContext &genContext);
+        Expression defaultValue, bool bindsName, mlir::Value iteratorSource, const GenContext &genContext);
 
     // An element of an array value past its end is undefined (`const [a, b] = [mk(5)] as N[]`: b, as node has it).
     // A reference element type (a class, an interface, an object, an array, a tuple, a union with one of those or

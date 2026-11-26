@@ -1279,6 +1279,10 @@ class OwnershipInferencePass
     // is treated as taking the value, which can only turn a program into an error.
     static bool isBorrow(mlir::Operation *user, mlir::Value value);
 
+    // A field of a tuple literal built in place (a local with no owner of its own, filled field by
+    // field) whose tuple is only read whole into uses that borrow it.
+    static bool isBorrowedTupleLiteralField(mlir::Value fieldRef);
+
     // `ts.CreateBoundFunction(ts.Cast(object), method)` split straight back into `ts.GetThis` and
     // `ts.GetMethod` for a call: a method of another module's class - its constructor, when it is
     // built with `new` - called on an object here. It reads the object as `ts.ThisSymbolRef` does
