@@ -3589,3 +3589,10 @@ when no member has it; a constant number too, which was read as a member's name)
 that name (0 when none has it); each member is compared in turn.
 
 Tests `00tslang_issue_199.ts` (all models).
+
+200. A destructuring `var` of the module declaring some names again and some for the first time (`var { n: nb, p: pb }
+= r; var { n: nc, p: pb } = s;`): "redefinition of symbol named 'pb'" - only a pattern all of whose names were declared
+before was an assignment. The names declared before are taken as hidden variables of the pattern (`.var.pb.<pos>`)
+and assigned to after it, in the module's code or a constructor of their own.
+
+Tests `00tslang_issue_200.ts` (all models).

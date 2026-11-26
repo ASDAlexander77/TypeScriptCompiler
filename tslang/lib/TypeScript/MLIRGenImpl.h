@@ -23293,6 +23293,9 @@ class MLIRGenImpl
     // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
     // of the same name is the same variable)
     llvm::StringMap<int> moduleVarFirstDeclaration;
+    // a destructuring `var` of the module, by its position: the names it declared again, and the hidden variables they
+    // were taken as (`var { n: nc, p: pb } = s` after a `var { p: pb }`)
+    llvm::DenseMap<int, SmallVector<std::pair<std::string, std::string>>> moduleVarRedeclaredNames;
 
     // The yields standing where nothing is computed before them, marked by the statement around
     // them (the AST has no parent links to look up): yield node -> its value is used. See

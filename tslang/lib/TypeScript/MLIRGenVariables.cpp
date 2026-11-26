@@ -1849,6 +1849,70 @@ namespace mlirgen
                     continue;
                 }
 
+                // some of its names declared before, some not (`var { n: nb, p: pb } = r; var { n: nc, p: pb } = s;`):
+                // the ones declared before are taken as variables of their own (`.var.pb.<pos>`), assigned to them
+                // after the declaration - each made a global of its own: "redefinition of symbol named 'pb'"
+                if (!moduleVarRedeclaredNames.count(item->pos.pos))
+                {
+                    SmallVector<std::pair<std::string, std::string>> renamed;
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    std::function<void(Node)> renameDeclared = [&](Node pattern) {
+                        auto renameElement = [&](BindingElement element) {
+                            if (element->name != SyntaxKind::Identifier)
+                            {
+                                renameDeclared(element->name);
+                                return;
+                            }
+
+                            auto name = MLIRHelper::getName(element->name.as<Identifier>());
+                            auto found = moduleVarFirstDeclaration.find(concatFullNamespaceName(name));
+                            if (found == moduleVarFirstDeclaration.end() || found->second == item->pos.pos)
+                            {
+                                return;
+                            }
+
+                            auto hidden = ".var." + name + "." + std::to_string(item->pos.pos);
+                            // `{ pb }` is named by its name: the property keeps it
+                            if (pattern == SyntaxKind::ObjectBindingPattern && !element->propertyName)
+                            {
+                                element->propertyName = element->name;
+                            }
+
+                            auto hiddenName = nf.createIdentifier(convertUTF8toWide(hidden));
+                            hiddenName->pos = element->name->pos;
+                            hiddenName->_end = element->name->_end;
+                            element->name = hiddenName;
+                            renamed.push_back({name, hidden});
+                        };
+
+                        if (pattern == SyntaxKind::ObjectBindingPattern)
+                        {
+                            for (auto element : pattern.as<ObjectBindingPattern>()->elements)
+                            {
+                                renameElement(element);
+                            }
+                        }
+                        else if (pattern == SyntaxKind::ArrayBindingPattern)
+                        {
+                            for (auto element : pattern.as<ArrayBindingPattern>()->elements)
+                            {
+                                if (element == SyntaxKind::BindingElement)
+                                {
+                                    renameElement(element.as<BindingElement>());
+                                }
+                            }
+                        }
+                    };
+
+                    renameDeclared(item->name);
+                    moduleVarRedeclaredNames[item->pos.pos] = renamed;
+                    if (!renamed.empty())
+                    {
+                        names.clear();
+                        collectBindingPatternNames(item->name, names);
+                    }
+                }
+
                 for (auto &name : names)
                 {
                     moduleVarFirstDeclaration.try_emplace(concatFullNamespaceName(name), item->pos.pos);
@@ -1858,6 +1922,52 @@ namespace mlirgen
             if (mlir::failed(mlirGen(item, itemVarClass, genContext)))
             {
                 return mlir::failure();
+            }
+
+            // ...and the names declared before given the values of the ones they were taken as
+            if (auto redeclared = moduleVarRedeclaredNames.find(item->pos.pos);
+                redeclared != moduleVarRedeclaredNames.end() && !redeclared->second.empty()
+                && (genContext.funcOp || !genContext.dummyRun))
+            {
+                auto assignAll = [&](const GenContext &assignGenContext) -> mlir::LogicalResult {
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    for (auto &[name, hidden] : redeclared->second)
+                    {
+                        auto target = nf.createIdentifier(convertUTF8toWide(name));
+                        auto source = nf.createIdentifier(convertUTF8toWide(hidden));
+                        auto assignment = nf.createBinaryExpression(target, nf.createToken(SyntaxKind::EqualsToken), source);
+                        for (Node node : {Node(target), Node(source), Node(assignment)})
+                        {
+                            node->pos = item->pos;
+                            node->_end = item->_end;
+                        }
+
+                        auto result = mlirGen(assignment.as<Expression>(), assignGenContext);
+                        EXIT_IF_FAILED(result)
+                    }
+
+                    return mlir::success();
+                };
+
+                if (genContext.funcOp)
+                {
+                    EXIT_IF_FAILED(assignAll(genContext))
+                }
+                else
+                {
+                    // no code of the module runs in a function: from a constructor of its own, after the declaration's
+                    auto location = loc(item);
+                    auto name = MLIRHelper::getAnonymousName(location, ".gcr", "");
+                    auto fullInitGlobalFuncName = getFullNamespaceName(name);
+                    mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                    if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, getFunctionType({}, {}, false),
+                        [&](mlir::Location location, const GenContext &genContext) { return assignAll(genContext); }, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    addGlobalConstructor(location, fullInitGlobalFuncName, /*afterGlobals=*/true);
+                }
             }
         }
 
