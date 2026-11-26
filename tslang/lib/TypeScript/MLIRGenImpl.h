@@ -14762,14 +14762,16 @@ class MLIRGenImpl
     // a slot nothing owns (createTupleInSlot, mlirGenCreateTuple), read whole once here: given to a callee that keeps
     // it, there was nothing to move it from ("this function does not own it", TSLANG 208). It goes into a local of its
     // own, as `const t = ["a" + i, i]; k.keep(t)` puts it: the local owns the literal, gives it to a callee that keeps
-    // it as its last use, and gives it back at the end of its scope where the callee only borrows it. Not where an
-    // owned local is hoisted (directly in a `try` body, where a declared one is refused too; a generator's turn): there
+    // it as its last use, and gives it back at the end of its scope where the callee only borrows it. Directly in a
+    // `try` body the local is made in front of the `try` and given the literal by a store, as a declared one is
+    // (createLocalVariable), so the cleanup sees it. Not in a generator, whose locals are fields of its object: there
     // the literal stays as it was.
     mlir::Value ownedLiteralArgument(mlir::Location location, Expression expression, mlir::Value value,
                                      const GenContext &genContext)
     {
         if (compileOptions.memoryModel != MemoryModelOwn || genContext.ownedVars == nullptr
-            || genContext.allocateScopeOwnedVarsOutsideOfOperation || genContext.generatorSwitchOperation)
+            || genContext.generatorSwitchOperation
+            || (genContext.allocateScopeOwnedVarsOutsideOfOperation && !genContext.currentOperation))
         {
             return value;
         }
@@ -14852,8 +14854,24 @@ class MLIRGenImpl
             }
         }
 
-        auto localOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(value.getType()), value,
-                                                           builder.getBoolAttr(false), builder.getIndexAttr(0));
+        mlir_ts::VariableOp localOp;
+        if (genContext.allocateScopeOwnedVarsOutsideOfOperation)
+        {
+            {
+                mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                builder.setInsertionPoint(genContext.currentOperation);
+                localOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(value.getType()), mlir::Value(),
+                                                              builder.getBoolAttr(false), builder.getIndexAttr(0));
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, value, localOp);
+        }
+        else
+        {
+            localOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(value.getType()), value,
+                                                          builder.getBoolAttr(false), builder.getIndexAttr(0));
+        }
+
         localOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
         builder.create<mlir_ts::RetainSlotOp>(location, localOp);
         genContext.ownedVars->push_back(localOp);

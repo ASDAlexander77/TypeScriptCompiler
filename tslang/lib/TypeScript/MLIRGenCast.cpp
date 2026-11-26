@@ -60,10 +60,10 @@ namespace mlirgen
     // (a closure, see MLIRTypeHelper::isObjectFieldFunctionWithoutThis) keeps its
     // own type: cast to the interface's it would lose its captures. Its slot calls a
     // thunk reading the field instead (mlirGenObjectVirtualTableDefinitionForInterface).
-    // ...unless its type is not the member's (`matches` says, TSLANG 208): `{ produce: () => 45 }` held by a variable
-    // has a `() => s32` for `produce: () => Data` of `Options<number>`. Then the clone's field is a function value of
-    // the member's type, without its `this` (a type literal's field, as `{ produce: () => number }` has), which the
-    // cast into the clone adapts the function to (functionValueAdapter: the result widened).
+    // ...unless its type is not the member's, nor one the slot's thunk converts (`matches` says: an s32 result for a
+    // number, isResultWideningFieldFunction, TSLANG 208). Then the clone's field is a function value of the member's
+    // type, without its `this` (a type literal's field, as `{ produce: () => number }` has), which the cast into the
+    // clone adapts the function to (fewerParametersThunk, functionValueAdapter).
     static mlir::LogicalResult getInterfaceCloneFields(mlir::ArrayRef<mlir_ts::FieldInfo> srcFields,
                                                        InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
                                                        SmallVector<mlir_ts::FieldInfo> &fields,
@@ -6129,7 +6129,8 @@ namespace mlirgen
             SmallVector<mlir_ts::FieldInfo> fields;
             if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields,
                     [&](mlir::Type src, mlir::Type dest) {
-                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match;
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match
+                            || mth.isResultWideningFieldFunction(location, src, dest);
                     })))
             {
                 return mlir::failure();
@@ -6260,7 +6261,8 @@ namespace mlirgen
                 SmallVector<mlir_ts::FieldInfo> fields;
                 if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields,
                     [&](mlir::Type src, mlir::Type dest) {
-                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match;
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match
+                            || mth.isResultWideningFieldFunction(location, src, dest);
                     })))
                 {
                     return mlir::failure();

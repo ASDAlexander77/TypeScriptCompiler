@@ -42,6 +42,11 @@ function main() {
     const p: Options<number> = named;
     assert(p.produce() / 2 == 0.5);
 
+    // ...and one in a `let`, whose function is read at run time
+    let held = { produce: () => 46 };
+    const q: Options<number> = held;
+    assert(q.produce() / 4 == 11.5 && readOptions(held) / 4 == 11.5);
+
     const k = new K();
     for (let i = 0; i < 3; i++) {
         k.keepOne(["a" + i, i]);
@@ -51,6 +56,18 @@ function main() {
 
     assert(k.items.length == 6 && k.items[4][0] == "a2" && k.items[5][0] == "c2" && k.items[5][1] == 12);
     assert(k.objs.length == 3 && k.objs[2].s == "b2" && k.objs[2].n == 2);
+
+    // directly in a `try` body, as an argument and in a local
+    try {
+        k.keepOne(["t" + k.items.length, 0]);
+    } catch (e) {}
+
+    try {
+        const kept: [string, number] = ["u" + k.items.length, 1];
+        k.keepOne(kept);
+    } catch (e) {}
+
+    assert(k.items.length == 8 && k.items[6][0] == "t6" && k.items[7][0] == "u7" && k.items[7][1] == 1);
 
     // a callee that only reads it
     let sum: number = 0;

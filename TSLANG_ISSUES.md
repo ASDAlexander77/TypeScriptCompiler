@@ -3737,25 +3737,31 @@ Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, 
 
 208. The "not yet" of 207. Fixed:
 - A literal held by a variable first, whose function member returns an integer, given as an interface whose member
-  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, and `readOptions(t)` for a parameter
-  `o: Options<number>`): "field "produce" not matching type: '() => number' and '() => s32'". Integer literals stay
-  s32 (user ruling); the function is adapted, as it already was given as a `() => number` value
-  (`let f: () => number = one`), by a function that calls it and widens its result. The object's clone for the
-  interface has the member's type for such a field (getInterfaceCloneFields), and the field of a constant object is
-  its function, named (fewerParametersThunk): no box, so -mm=own takes it too.
+  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, a `let` as well, and
+  `readOptions(t)` for a parameter `o: Options<number>`): "field "produce" not matching type: '() => number' and
+  '() => s32'". Integer literals stay s32 (user ruling); the function is adapted, as it already was given as a
+  `() => number` value (`let f: () => number = one`). The interface's slot calls the field through a thunk, as it calls
+  a closure field, and the thunk converts the result (isResultWideningFieldFunction): the object is given as it is,
+  with no copy, and no box for -mm=own to refuse. Where the object is copied for another field, the copy keeps the
+  function as it is for the same thunk; a field of a constant object read as a function value is its function, named
+  (fewerParametersThunk).
 - Under -mm=own, a tuple or object literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`,
   `k.keepObj({ s: "b" + i, n: i })`): "this function does not own it". The literal is built in a slot nothing owns; as
   an argument it now goes into a local of its own, as `const t = [...]; k.keepOne(t)` puts it (ownedLiteralArgument):
   the local gives it to a callee that keeps it, and gives it back where the callee only reads it. 2M calls of either
-  stay at about 5 MB. Only a literal of new values or constants (one holding what it borrows, or a closure, is a
+  stay at about 5 MB. Only a literal of new values or string constants (one holding what it borrows, or a closure, is a
   borrowing record, as it was), and not inside `&&`/`?:`, whose region does not reach the scope's end.
+- Under -mm=own, the same directly in a `try` body, and a declared local there (`try { const t = ["u" + n, 1];
+  k.keepOne(t); }`): "an object literal that holds a value it owns is moved only into a local". The local is made in
+  front of the `try` and given its value by a store right before its retain; that retain is now the literal's, as an
+  initializer's is (recordRetainOf).
 
 Not yet:
-- Under -mm=own, the same directly in a `try` body (`try { k.keepOne(["t" + n, 0]); }`): "an object literal that holds
-  a value it owns is moved only into a local". A declared local there is refused the same way
-  (`try { const t: [string, number] = ["t" + n, 0]; k.keepOne(t); }`); in a loop inside the `try` both work.
-- Under -mm=own, the same for an object in a `let` (`let t = { produce: () => 45 }; const o: Options<number> = t`):
-  its function is read at run time and adapted through a box (functionValueAdapter), which the clone takes a second
-  reference to: "a value takes a second reference". A `const` object works.
+- Under -mm=own, a value moved in a `try` body that other statements of the body can throw before
+  (`try { f(); const t = ["b" + i, i]; k.keepOne(t); g(); }`): "moved here on some paths only". The unwind leg reached
+  before the local is given its value is not known to find it empty. One statement per `try`, or a loop in it, works.
+- Under -mm=own, a callee that keeps a parameter and throws before keeping it (`keep(c) { if (...) throw "no";
+  this.items.push(c); }`) leaks the parameter: 1M throws of `k.keep(new C(i))` grow to about 60 MB. Not new here (a
+  class instance leaks the same way); the callee's unwind does not give back a kept parameter.
 
 Tests `00tslang_issue_208.ts` (all models).
