@@ -5453,6 +5453,7 @@ namespace mlirgen
                 SmallVector<mlir::Type> classInstances;
                 SmallVector<mlir::Type> tupleTypes;
                 auto hasUnsupportedType = false;
+                auto toBooleanDest = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
                 ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
@@ -5491,6 +5492,17 @@ namespace mlirgen
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
                         .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = false; })
+                        .Case<mlir_ts::TupleType, mlir_ts::ConstTupleType>([&](auto tupleType_) {
+                            // an object shape (`number | { x: number }`): its box says "tuple"; tested for truth it
+                            // is true. The empty one a `never` field is (`string | []`, the `value` of `{ value:
+                            // string } | { value?: never }`) is no value at all: cast to the other members, it is not
+                            // there. Any other shape cast to a type it is not stays an error.
+                            auto isEmptyShape = mlir::cast<mlir_ts::TupleType>(mth.removeConstType(tupleType_)).size() == 0;
+                            if (toBooleanDest || (isEmptyShape && !mth.canCastFromTo(location, tupleType_, type)))
+                                typeOfs["tuple"] = false;
+                            else
+                                hasUnsupportedType = true;
+                        })
                         .Default([&](auto type) {
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             hasUnsupportedType = true;
@@ -5611,6 +5623,13 @@ namespace mlirgen
                         if (toBoolean && (pair.getKey() == "null" || pair.getKey() == "undefined"))
                         {
                             ss << S("return false;\n");
+                        }
+                        else if (pair.getKey() == "tuple")
+                        {
+                            if (toBoolean)
+                                ss << S("return true;\n");
+                            else
+                                ss << S("throw \"Can't cast from union type\";\n");
                         }
                         else if (pair.getKey() == "class")
                         {

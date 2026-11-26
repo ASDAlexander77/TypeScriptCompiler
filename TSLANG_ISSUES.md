@@ -3519,3 +3519,22 @@ Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown
   the value as the first member that has it.
 
 Tests `00tslang_issue_194.ts` (all models).
+
+195. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- A union with an object shape tested for truth (`if (u)` of a `number | { x: number }`, `a[k] && a[k].x`): "Cast from
+  ... to boolean is not supported". A shape is true. The empty shape a `never` field is (`string | []`, the `value` of
+  `{ value: string } | { value?: never }` after the other member was ruled out) is no value of the type it is cast to.
+- A field tested for truth (`if (o.bar)` of a `bar: number | null`) was not narrowed, as `o.bar !== null` is: "can't
+  cast from 'null' to 'number'" where it was read as a number in the branch.
+- An object shape thrown (`throw { code: 1 }`, an intersection of shapes, an array, null): "Not supported type in throw".
+  It is thrown as an `any`, what a catch variable is (literals widened first).
+- A function returning a union of shapes and then an object literal a member takes by leaving out a field it may
+  (`{ valid: true }` for `{ valid: boolean; msg?: undefined }`), or one no member takes: "failed statement" alone. The
+  union of them keeps its members as they are (merged, `{ valid; msg?: undefined }` went into `{ valid; msg: string }`).
+- ...and when the function returning the union is declared after its caller: the return type was taken from the other
+  `return` alone, and the union cast to it ("failed statement"). A function whose discovery could not make a returned
+  value yet is discovered again when it is made.
+  Not yet: `const { bar } = o` in a branch where `o.bar` is narrowed gives `bar` the field's declared type; an `any`
+  holding `{ code: 7 }` (an s32 field) can't be cast to `{ code: number }` ("the object's fields are not those of type").
+
+Tests `00tslang_issue_195.ts` (all models).

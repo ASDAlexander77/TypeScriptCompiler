@@ -5826,6 +5826,8 @@ class MLIRGenImpl
 
             if (mth.isNoneType(type))
             {
+                // a value not resolved yet (a call of a function declared further on): see hasUnresolvedReturn
+                genContext.passResult->hasUnresolvedReturn = true;
                 return mlir::success();
             }
 
@@ -7144,7 +7146,15 @@ class MLIRGenImpl
                     propertyType, 
                     false,
                     elseSafeCase,
-                    genContext);                            
+                    genContext);
+            }
+
+            // a field tested for truth (`if (o.bar)` of a `bar: number | null`): a number there, as after
+            // `o.bar !== null`. (Not an optional field: `if (d.throw)` of a `throw?: ...` is read through the field,
+            // the code the compiler writes for `yield*` among it - narrowed, -mm=own lost track of whose it is.)
+            if (isa_and_nonnull<mlir_ts::UnionType>(evaluate(expr, genContext)))
+            {
+                return checkSafeCastBoolean(expr, false, elseSafeCase, genContext);
             }
 
             return mlir::success();
@@ -22753,6 +22763,12 @@ class MLIRGenImpl
 
     // the types whose exception records each module has (mlirGenRttiForType)
     llvm::DenseMap<mlir::Operation *, llvm::DenseSet<mlir::Type>> rttiTypesOfModule;
+
+    // functions whose return type was discovered with a return value that could not be made yet (a call of a function
+    // declared further on): discovered again where they are next made (discoverFunctionReturnTypeAndCapturedVars)
+    llvm::StringSet<> functionsWithUnresolvedReturn;
+    // ...and discovered again since: registered again with that type (registerFunctionOp)
+    llvm::StringSet<> functionsWithUnresolvedReturnRediscovered;
 
     mlir::StringRef mainSourceFileName;
 
