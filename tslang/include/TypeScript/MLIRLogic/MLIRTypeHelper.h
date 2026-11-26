@@ -661,6 +661,19 @@ class MLIRTypeHelper
         return isa<mlir_ts::ConstTupleType>(type) && constTupleHoldsArray(type);
     }
 
+    // a field that can hold no value: `never`, or `f?: never`, which is stored as an optional of the empty tuple
+    bool isNeverField(mlir::Type type)
+    {
+        auto fieldType = stripOptionalType(type);
+        if (isa<mlir_ts::NeverType>(fieldType))
+        {
+            return true;
+        }
+
+        auto tupleType = dyn_cast<mlir_ts::TupleType>(fieldType);
+        return tupleType && tupleType.size() == 0 && isa<mlir_ts::OptionalType>(type);
+    }
+
     mlir::Type wideStorageType(mlir::Type type)
     {
         auto actualType = type;
@@ -4187,9 +4200,31 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
+        // a union in a union is its members (a function's return type merged from `{ valid }` and a `U`: `{ valid } | (A |
+        // B)` was a union nothing could be stored in)
+        mlir::SmallVector<mlir::Type> flattened;
+        std::function<void(mlir::Type)> flatten = [&](mlir::Type type) {
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    flatten(member);
+                }
+
+                return;
+            }
+
+            flattened.push_back(type);
+        };
+
+        for (auto type : types)
+        {
+            flatten(type);
+        }
+
         mlir::SmallPtrSet<mlir::Type, 2> normalizedTypes;
         auto isUndefined = false;
-        for (auto type : types)
+        for (auto type : flattened)
         {
             if (isa<mlir_ts::UndefinedType>(type))
             {
@@ -4422,6 +4457,54 @@ class MLIRTypeHelper
         {
             merged = true;
             return getUnionType(location, existType, currentType);
+        }
+
+        // a union returned and then another value (`return utilValidate(); ... return { valid: true };`): the union, when
+        // the value is (or casts to) one of its members, else the union with it as a member more. It failed with
+        // "failed statement" alone.
+        // (an object literal is such a member also when the member only has more fields it may leave out:
+        // `{ valid: true }` is the `{ valid: boolean; msg?: undefined }` of the union)
+        auto fitsWithAbsentFields = [&](mlir::Type src, mlir::Type dest) {
+            auto srcTuple = dyn_cast<mlir_ts::TupleType>(removeConstType(src));
+            auto destTuple = dyn_cast<mlir_ts::TupleType>(dest);
+            if (!srcTuple || !destTuple)
+            {
+                return false;
+            }
+
+            for (auto &field : srcTuple.getFields())
+            {
+                auto index = destTuple.getIndex(field.id);
+                if (index < 0 || !(wideStorageType(field.type) == destTuple.getType(index)
+                                   || canCastFromTo(location, field.type, destTuple.getType(index))))
+                {
+                    return false;
+                }
+            }
+
+            return llvm::all_of(destTuple.getFields(), [&](auto &field) {
+                return srcTuple.getIndex(field.id) >= 0 || isa<mlir_ts::OptionalType, mlir_ts::UndefinedType>(field.type);
+            });
+        };
+
+        for (auto [unionSide, otherSide] : {std::make_pair(existType, currentType), std::make_pair(currentType, existType)})
+        {
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(unionSide))
+            {
+                merged = true;
+                if (llvm::any_of(unionType.getTypes(), [&](mlir::Type member) {
+                        return member == otherSide || canCastFromTo(location, otherSide, member)
+                               || fitsWithAbsentFields(otherSide, member);
+                    }))
+                {
+                    return unionSide;
+                }
+
+                // the members kept as they are: merged, `{ valid; msg?: undefined }` went into `{ valid; msg: string }`, and
+                // the union returned was cast to one without its member (silently: "failed statement")
+                mlir::SmallVector<mlir::Type> members{existType, currentType};
+                return getUnionType(members);
+            }
         }
 
         auto existTuple = dyn_cast<mlir_ts::TupleType>(existType);

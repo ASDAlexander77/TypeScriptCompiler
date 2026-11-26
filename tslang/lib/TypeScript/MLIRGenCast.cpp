@@ -170,6 +170,13 @@ namespace mlirgen
             return builder.create<mlir_ts::OptionalUndefOp>(location, fieldType);
         }
 
+        // `msg?: undefined` is a field of the type `undefined` (an optional undefined is undefined): absent, it is that
+        // ("field "msg" can't be found in tuple '{valid:boolean}'")
+        if (isa<mlir_ts::UndefinedType>(fieldType))
+        {
+            return builder.create<mlir_ts::UndefOp>(location, fieldType);
+        }
+
         if (isa<mlir_ts::AnyType>(fieldType))
         {
             auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
@@ -2967,8 +2974,9 @@ namespace mlirgen
                 auto index = tupleType.getIndex(field.id);
                 return index >= 0 && mth.canCastFromTo(location, field.type, tupleType.getFields()[index].type);
             });
+            // (`msg?: undefined` is a field of the type `undefined`: optional as well, absentFieldValue)
             fits = fits && llvm::all_of(tupleType.getFields(), [&](const mlir_ts::FieldInfo &field) {
-                return isa<mlir_ts::OptionalType>(field.type)
+                return isa<mlir_ts::OptionalType, mlir_ts::UndefinedType>(field.type)
                     || llvm::any_of(valueFields, [&](const mlir_ts::FieldInfo &valueField) { return valueField.id == field.id; });
             });
             if (fits)
@@ -2978,6 +2986,127 @@ namespace mlirgen
         }
 
         return mlir::Type();
+    }
+
+    // A shape with an optional field (`{ foo?: number }`) given to a union with a member that has the field's type there
+    // (`{ foo: number }`) and one that has `undefined` there (`{ foo?: undefined }`): the field tells which, at run time.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castOptionalFieldToUnionMember(mlir::Location location, mlir_ts::UnionType unionType,
+                                                                                    mlir::Value value, const GenContext &genContext)
+    {
+        auto srcTuple = dyn_cast<mlir_ts::TupleType>(mth.removeConstType(value.getType()));
+        if (!srcTuple)
+        {
+            return std::nullopt;
+        }
+
+        auto srcFields = srcTuple.getFields();
+        for (auto [indexValue, srcField] : llvm::enumerate(srcFields))
+        {
+            auto index = indexValue;
+            auto optType = dyn_cast<mlir_ts::OptionalType>(srcField.type);
+            if (!optType)
+            {
+                continue;
+            }
+
+            auto findMember = [&](std::function<bool(mlir::Type)> fieldFits) -> mlir_ts::TupleType {
+                for (auto subType : unionType.getTypes())
+                {
+                    auto memberTuple = dyn_cast<mlir_ts::TupleType>(subType);
+                    if (!memberTuple || memberTuple.size() != srcTuple.size())
+                    {
+                        continue;
+                    }
+
+                    auto fits = true;
+                    for (auto [memberIndex, memberField] : llvm::enumerate(memberTuple.getFields()))
+                    {
+                        auto &otherField = srcFields[memberIndex];
+                        auto memberFieldType = mth.stripOptionalType(memberField.type);
+                        fits = memberField.id == otherField.id
+                               && (memberIndex == index ? fieldFits(memberFieldType)
+                                                        : memberField.type == otherField.type
+                                                              || mth.canCastFromTo(location, otherField.type, memberField.type));
+                        if (!fits)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (fits)
+                    {
+                        return memberTuple;
+                    }
+                }
+
+                return mlir_ts::TupleType();
+            };
+
+            auto elementType = optType.getElementType();
+            auto withValue = findMember([&](mlir::Type fieldType) {
+                return !isa<mlir_ts::UndefinedType>(fieldType)
+                       && (fieldType == elementType || mth.canCastFromTo(location, elementType, fieldType));
+            });
+            auto withUndefined = findMember([](mlir::Type fieldType) { return isa<mlir_ts::UndefinedType>(fieldType); });
+            if (!withValue || !withUndefined)
+            {
+                continue;
+            }
+
+            auto tupleValue = value;
+            if (tupleValue.getType() != srcTuple)
+            {
+                auto result = cast(location, srcTuple, tupleValue, genContext);
+                if (result.failed_or_no_value())
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                tupleValue = V(result);
+            }
+
+            auto readField = [&](size_t fieldIndex) -> mlir::Value {
+                return builder.create<mlir_ts::ExtractPropertyOp>(location, srcTuple.getType(fieldIndex), tupleValue,
+                                                                  builder.getDenseI64ArrayAttr({(int64_t)fieldIndex}));
+            };
+
+            auto makeMember = [&](mlir_ts::TupleType member, bool hasValue) -> ValueOrLogicalResult {
+                SmallVector<mlir::Value> values;
+                for (auto [memberIndex, memberField] : llvm::enumerate(member.getFields()))
+                {
+                    mlir::Value fieldValue;
+                    if (memberIndex == index)
+                    {
+                        fieldValue = hasValue ? builder.create<mlir_ts::ValueOp>(location, elementType, readField(index)).getResult()
+                                              : builder.create<mlir_ts::UndefOp>(location, getUndefinedType()).getResult();
+                    }
+                    else
+                    {
+                        fieldValue = readField(memberIndex);
+                    }
+
+                    if (fieldValue.getType() != memberField.type)
+                    {
+                        auto result = cast(location, memberField.type, fieldValue, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(result)
+                        fieldValue = V(result);
+                    }
+
+                    values.push_back(fieldValue);
+                }
+
+                auto created = builder.create<mlir_ts::CreateTupleOp>(location, member, values);
+                return V(builder.create<mlir_ts::CastOp>(location, unionType, created));
+            };
+
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), readField(index));
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+            return mclh.conditionalValue(
+                hasValue, [&]() { return makeMember(withValue, true); },
+                [&](mlir::Type) { return makeMember(withUndefined, false); });
+        }
+
+        return std::nullopt;
     }
 
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
@@ -3035,6 +3164,14 @@ namespace mlirgen
                     {
                         CAST(value, location, memberType, value, genContext);
                         return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                    }
+
+                    // a shape with an optional field given to a union with a member for each case of it
+                    // (`{ foo?: number }` for `{ foo: number } | { foo?: undefined }`): which one is told by whether the
+                    // field has a value (it was "'ts.Cast' op type ... can't be stored")
+                    if (auto result = castOptionalFieldToUnionMember(location, unionType, value, genContext))
+                    {
+                        return *result;
                     }
 
                     // an object literal, a tuple or a class object given to a union of interfaces
@@ -3121,6 +3258,40 @@ namespace mlirgen
                             if (namedMember && !ambiguous)
                             {
                                 CAST(value, location, namedMember, value, genContext);
+                                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                            }
+
+                            // no literal names one: a field the value has that a member has as `never` rules that member
+                            // out (`{ href: "..." }` for `{ href: string } | { href?: never }`); the one member left
+                            mlir::Type left;
+                            auto leftCount = 0;
+                            auto ruledOut = 0;
+                            for (auto subType : types)
+                            {
+                                llvm::SmallVector<mlir_ts::FieldInfo> memberFields;
+                                if (!isa<mlir_ts::TupleType>(subType) || mlir::failed(mth.getFields(subType, memberFields)))
+                                {
+                                    leftCount = -1;
+                                    break;
+                                }
+
+                                auto givesNever = llvm::any_of(memberFields, [&](auto &memberField) {
+                                    return mth.isNeverField(memberField.type)
+                                           && llvm::any_of(sourceFields, [&](auto &sourceField) { return sourceField.id == memberField.id; });
+                                });
+                                if (givesNever)
+                                {
+                                    ruledOut++;
+                                    continue;
+                                }
+
+                                left = subType;
+                                leftCount++;
+                            }
+
+                            if (leftCount == 1 && ruledOut > 0)
+                            {
+                                CAST(value, location, left, value, genContext);
                                 return V(builder.create<mlir_ts::CastOp>(location, type, value));
                             }
                         }
@@ -5376,6 +5547,15 @@ namespace mlirgen
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
         {
+            // a union of object shapes only, tested for truth (`if (u)`, the test of `u?.kind`): an object is true, and
+            // null or undefined would be members of their own. (Shapes with the same fields merge into one below, which
+            // is no union: the cast failed with nothing said - "failed statement".)
+            if ((isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type))
+                && llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member); }))
+            {
+                return V(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true)));
+            }
+
             if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(location, unionType.getTypes())))
             {
                 auto castKey = std::make_pair(value.getType(), type);
@@ -5386,6 +5566,49 @@ namespace mlirgen
                 }
 
                 auto releaseCastKey = llvm::make_scope_exit([&]() { castsFromUnionInProgress.erase(castKey); });
+
+                // a union of object shapes (`{ valid; msg: string } | { valid }`, a `?:` of two literals) given to another
+                // type (`{ valid; msg?: undefined } | { valid; msg: string }`): `typeof` says "tuple" for each, but
+                // the tag's layout tells them apart - each member is tested for and cast as it is ("Cast from ... is
+                // not supported")
+                mlir::Type unionBaseType;
+                if (llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member); })
+                    && unionType.getTypes().size() > 1 && mth.isUnionTypeNeedsTag(location, unionType, unionBaseType)
+                    && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
+                {
+                    auto members = unionType.getTypes();
+                    auto box = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+                    std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+                        auto asMember = [&]() -> ValueOrLogicalResult {
+                            auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], value);
+                            return cast(location, type, memberValue, genContext);
+                        };
+
+                        if (index + 1 == members.size())
+                        {
+                            return asMember();
+                        }
+
+                        auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), box,
+                                                                                mlir::TypeAttr::get(members[index]));
+                        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
+
+                        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                        auto thenValue = asMember();
+                        EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+                        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                        auto elseValue = castOf(index + 1);
+                        EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+                        builder.setInsertionPointAfter(ifOp);
+                        return V(ifOp.getResults().front());
+                    };
+
+                    return castOf(0);
+                }
 
                 // info, we add "_" extra as scanner append "_" in front of "__";
                 auto funcName = ".cast";
@@ -5402,6 +5625,7 @@ namespace mlirgen
                 SmallVector<mlir::Type> classInstances;
                 SmallVector<mlir::Type> tupleTypes;
                 auto hasUnsupportedType = false;
+                auto toBooleanDest = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
                 ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
@@ -5440,6 +5664,17 @@ namespace mlirgen
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
                         .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = false; })
+                        .Case<mlir_ts::TupleType, mlir_ts::ConstTupleType>([&](auto tupleType_) {
+                            // an object shape (`number | { x: number }`): its box says "tuple"; tested for truth it
+                            // is true. The empty one a `never` field is (`string | []`, the `value` of `{ value:
+                            // string } | { value?: never }`) is no value at all: cast to the other members, it is not
+                            // there. Any other shape cast to a type it is not stays an error.
+                            auto isEmptyShape = mlir::cast<mlir_ts::TupleType>(mth.removeConstType(tupleType_)).size() == 0;
+                            if (toBooleanDest || (isEmptyShape && !mth.canCastFromTo(location, tupleType_, type)))
+                                typeOfs["tuple"] = false;
+                            else
+                                hasUnsupportedType = true;
+                        })
                         .Default([&](auto type) {
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             hasUnsupportedType = true;
@@ -5561,6 +5796,13 @@ namespace mlirgen
                         {
                             ss << S("return false;\n");
                         }
+                        else if (pair.getKey() == "tuple")
+                        {
+                            if (toBoolean)
+                                ss << S("return true;\n");
+                            else
+                                ss << S("throw \"Can't cast from union type\";\n");
+                        }
                         else if (pair.getKey() == "class")
                         {
                             writeClassTests();
@@ -5618,9 +5860,12 @@ namespace mlirgen
                         nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()), 
                         nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_U")).as<Node>()) 
                     }, 
-                    operands, 
+                    operands,
                     funcCallGenContext);
             }
+
+            // a union whose members merge into one type (shapes with the same fields): no member to test for
+            emitError(location) << "Cast from " << to_print(value.getType()) << " to " << to_print(type) << " is not supported";
         }
 
         return mlir::failure();

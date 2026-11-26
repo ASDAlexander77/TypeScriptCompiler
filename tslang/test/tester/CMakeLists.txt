@@ -2499,7 +2499,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192 00tslang_issue_193 00narrowing_after_assign)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192 00tslang_issue_193 00narrowing_after_assign 00tslang_issue_194 00tslang_issue_195 00tslang_issue_196)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()

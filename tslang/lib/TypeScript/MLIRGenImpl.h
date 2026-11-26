@@ -5826,6 +5826,8 @@ class MLIRGenImpl
 
             if (mth.isNoneType(type))
             {
+                // a value not resolved yet (a call of a function declared further on): see hasUnresolvedReturn
+                genContext.passResult->hasUnresolvedReturn = true;
                 return mlir::success();
             }
 
@@ -6904,6 +6906,12 @@ class MLIRGenImpl
     mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCases *elseSafeCases, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
+        // `m!` tested is `m` tested (`m! && m[0]` of a `string[] | null`: `m[0]` indexed the union)
+        while (expr == SyntaxKind::NonNullExpression)
+        {
+            expr = stripParentheses(expr.as<NonNullExpression>()->expression);
+        }
+
         if (auto asTypeOf = arrayIsArrayAsTypeOf(expr))
         {
             expr = asTypeOf;
@@ -7144,7 +7152,15 @@ class MLIRGenImpl
                     propertyType, 
                     false,
                     elseSafeCase,
-                    genContext);                            
+                    genContext);
+            }
+
+            // a field tested for truth (`if (o.bar)` of a `bar: number | null`): a number there, as after
+            // `o.bar !== null`. (Not an optional field: `if (d.throw)` of a `throw?: ...` is read through the field,
+            // the code the compiler writes for `yield*` among it - narrowed, -mm=own lost track of whose it is.)
+            if (isa_and_nonnull<mlir_ts::UnionType>(evaluate(expr, genContext)))
+            {
+                return checkSafeCastBoolean(expr, false, elseSafeCase, genContext);
             }
 
             return mlir::success();
@@ -17247,11 +17263,25 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
+                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
+
+                // typed by the receiver as `name: value` is (`{ kind, method(a) {} }` with `const kind = "a"` for the
+                // `{ kind: "a"; ... }` member of a union: the field was stored as a string, which no member takes)
+                if (oli.receiverType)
+                {
+                    receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, oli.receiverType);
+                }
+
+                GenContext receiverTypeGenContext(genContext);
+                receiverTypeGenContext.clearReceiverTypes();
+                if (receiverElementType)
+                {
+                    receiverTypeGenContext.receiverType = receiverElementType;
+                }
+
+                auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), receiverTypeGenContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
-
-                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
@@ -20283,6 +20313,8 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> castToOptionalType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
     std::optional<ValueOrLogicalResult> castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castOptionalFieldToUnionMember(mlir::Location location, mlir_ts::UnionType unionType,
+                                                                       mlir::Value value, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castToNullableUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castFromNullableUnion(mlir::Location location, mlir::Type type, mlir::Value value, mlir_ts::UnionType unionType, const GenContext &genContext);
 
@@ -22753,6 +22785,12 @@ class MLIRGenImpl
 
     // the types whose exception records each module has (mlirGenRttiForType)
     llvm::DenseMap<mlir::Operation *, llvm::DenseSet<mlir::Type>> rttiTypesOfModule;
+
+    // functions whose return type was discovered with a return value that could not be made yet (a call of a function
+    // declared further on): discovered again where they are next made (discoverFunctionReturnTypeAndCapturedVars)
+    llvm::StringSet<> functionsWithUnresolvedReturn;
+    // ...and discovered again since: registered again with that type (registerFunctionOp)
+    llvm::StringSet<> functionsWithUnresolvedReturnRediscovered;
 
     mlir::StringRef mainSourceFileName;
 

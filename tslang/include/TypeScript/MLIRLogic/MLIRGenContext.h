@@ -57,6 +57,8 @@ struct PassResult
     bool functionReturnTypeShouldBeProvided;
     // a `return;` without a value: with value returns as well, the function returns T | undefined
     bool hasBareReturn = false;
+    // a `return e` whose value could not be made in this (partial) run: what the other returns give is not the type
+    bool hasUnresolvedReturn = false;
     // a generator's next(): its {value, done} is Iterator<T>'s, so a finished one's undefined value is not in T
     bool iteratorResult = false;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> outerVariables;

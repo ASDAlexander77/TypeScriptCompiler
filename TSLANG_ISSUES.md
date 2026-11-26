@@ -3502,3 +3502,56 @@ Tests `00tslang_issue_192.ts` (all models), `accessor_failed_getter_error.ts`, `
 
 Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown_null_union.ts` (gc, rc, none),
 `00narrowing_after_assign.ts` (all models), `class_not_array_error.ts`, `type_not_value_error.ts`, and the `export default` test (`export-default.cmake`).
+
+194. Bugs found by the third sweep of TypeScript's compiler tests. Fixed:
+- An object literal `as const` given to a type (`const c: Candidate = { mode: "a", output: x } as const`): typed by
+  `const`, its `mode` was a string, which no member of `{ mode: "a"; ... } | { mode: "b" }` takes ("can't be stored").
+  It is typed by the type it is given.
+- A field `msg?: undefined` (an optional `undefined` is `undefined`) left out of an object literal: "field "msg" can't
+  be found in tuple". It is absent, as an optional field is.
+- A union of object shapes (`b ? { valid: true } : { valid: false, msg: "m" }`) given to another union of shapes:
+  "Cast from ... is not supported" - `typeof` says "tuple" for each. The tag's layout tells them apart; each member is
+  tested for and cast as it is.
+- A union in a union (a function returning a `U` and an object literal: `{ valid } | (A | B)`) is its members.
+- A function returning a union and then a value of one of its members: "failed statement" alone.
+  Not yet: such a function returning a union and then a value of no member (`{ valid: true }` after a `U` of shapes with
+  `msg`); reading a field some member has not (`v.msg` of `{ valid } | { valid; msg }`, an error in TypeScript) reads
+  the value as the first member that has it.
+
+Tests `00tslang_issue_194.ts` (all models).
+
+195. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- A union with an object shape tested for truth (`if (u)` of a `number | { x: number }`, `a[k] && a[k].x`): "Cast from
+  ... to boolean is not supported". A shape is true. The empty shape a `never` field is (`string | []`, the `value` of
+  `{ value: string } | { value?: never }` after the other member was ruled out) is no value of the type it is cast to.
+- A field tested for truth (`if (o.bar)` of a `bar: number | null`) was not narrowed, as `o.bar !== null` is: "can't
+  cast from 'null' to 'number'" where it was read as a number in the branch.
+- An object shape thrown (`throw { code: 1 }`, an intersection of shapes, an array, null): "Not supported type in throw".
+  It is thrown as an `any`, what a catch variable is (literals widened first).
+- A function returning a union of shapes and then an object literal a member takes by leaving out a field it may
+  (`{ valid: true }` for `{ valid: boolean; msg?: undefined }`), or one no member takes: "failed statement" alone. The
+  union of them keeps its members as they are (merged, `{ valid; msg?: undefined }` went into `{ valid; msg: string }`).
+- ...and when the function returning the union is declared after its caller: the return type was taken from the other
+  `return` alone, and the union cast to it ("failed statement"). A function whose discovery could not make a returned
+  value yet is discovered again when it is made.
+  Not yet: `const { bar } = o` in a branch where `o.bar` is narrowed gives `bar` the field's declared type; an `any`
+  holding `{ code: 7 }` (an s32 field) can't be cast to `{ code: number }` ("the object's fields are not those of type").
+
+Tests `00tslang_issue_195.ts` (all models).
+
+196. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- `m! && m[0]` of a `string[] | null`: `m!` tested did not narrow `m`, as `m` tested does; and `m[0]` of such a union
+  (one pointer) gave ElementRef the union ("operand #0 must be ... array"). It is indexed as the array.
+- A shape with an optional field (`{ foo?: number }`) given to a union with a member for each case of it (`{ foo:
+  number } | { foo?: undefined }`): "'ts.Cast' op type ... can't be stored". Whether the field has a value tells which.
+- An object literal given to a union of shapes, told apart by a field it gives as `undefined` (`{ disc?: false }`),
+  leaves out, gives a template of literals for (`` `${"s"}` ``), gives a const for (`{ kind, ... }` with `const kind =
+  "a"`: a shorthand field was not typed by the member), or gives where another member has `never` (`href?: never`):
+  no member was found ("can't be stored"), and the literal's functions had untyped parameters.
+- A union of shapes with the same fields tested for truth (`if (u)`, the test of `u?.kind`): the members merge into
+  one type, and the cast failed with nothing said ("failed statement"). An object is true; a cast from such a union to
+  a type it can't be says so.
+  Not yet: under -mm=own, an object literal leaving out an optional field (`const o: { disc?: false; cb } = { cb }`)
+  is "a value that borrows a field cannot be stored".
+
+Tests `00tslang_issue_196.ts` (all models).

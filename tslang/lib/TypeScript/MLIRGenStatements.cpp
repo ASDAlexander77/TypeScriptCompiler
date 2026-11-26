@@ -944,8 +944,15 @@ namespace mlirgen
             }
 
             auto result = mlirGen(expression, receiverTypeGenContext);
+            if (result.failed() && genContext.passResult)
+            {
+                // a value the discovery can't make yet (a call of a function declared further on): the return type
+                // found from the other returns is not the function's
+                genContext.passResult->hasUnresolvedReturn = true;
+            }
+
             EXIT_IF_FAILED(result)
-            
+
             auto expressionValue = V(result);
 
             // `return g()` of a call that returns nothing: the call, and a `return;` (in discovery the missing value
@@ -2928,6 +2935,28 @@ namespace mlirgen
         auto result = mlirGen(throwStatementAST->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exception = V(result);
+        // what was thrown, before it is boxed below: what -mm=own's checks are about
+        auto thrownType = exception.getType();
+
+        // an object shape, an array, an interface... (`throw { code: 1 }`, `throw e` of a `{ foo } & { baz }`) has no
+        // exception record of its own ("Not supported type in throw"): it is thrown boxed, as an `any` - what a
+        // catch variable is
+        if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ArrayType, mlir_ts::ConstArrayType,
+                mlir_ts::InterfaceType, mlir_ts::ObjectType, mlir_ts::UnionType, mlir_ts::NullType,
+                mlir_ts::UndefinedType>(exception.getType()))
+        {
+            // a literal widened first, as a variable keeps it (`{ code: 7 }` read back as a `{ code: number }`)
+            if (auto wideType = mth.wideStorageType(exception.getType()); wideType != exception.getType())
+            {
+                auto widened = cast(location, wideType, exception, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(widened)
+                exception = V(widened);
+            }
+
+            auto boxed = cast(location, getAnyType(), exception, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(boxed)
+            exception = V(boxed);
+        }
 
         // -mm=own: a YieldingFinally keeps what is thrown through it in an `any` (to throw it again after the finally),
         // and an `any` that holds an object can't be copied there - it stopped at run time. Said here where the
@@ -2935,16 +2964,16 @@ namespace mlirgen
         // A function that throws such an object out of itself is remembered: a call of it in such a try is the same
         // throw (mlirGenOwnCallThrowingObject).
         auto throwsObject = compileOptions.memoryModel == MemoryModelOwn &&
-                            !own_facts::isCopyableValue(exception.getType()) &&
-                            mth.ownsHeapMemory(location, exception.getType());
+                            !own_facts::isCopyableValue(thrownType) &&
+                            mth.ownsHeapMemory(location, thrownType);
         if (throwsObject && !genContext.throwCaughtInFunction && genContext.funcOp)
         {
-            functionsThrowingObjects.try_emplace(mlir_ts::FuncOp(genContext.funcOp).getName(), to_print(exception.getType()));
+            functionsThrowingObjects.try_emplace(mlir_ts::FuncOp(genContext.funcOp).getName(), to_print(thrownType));
         }
 
         if (throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
         {
-            emitError(location) << "-mm=own: an object of type '" << to_print(exception.getType())
+            emitError(location) << "-mm=own: an object of type '" << to_print(thrownType)
                                 << "' thrown through a finally block that yields is not supported: catch it inside "
                                    "the try statement, or throw a string";
             return mlir::failure();

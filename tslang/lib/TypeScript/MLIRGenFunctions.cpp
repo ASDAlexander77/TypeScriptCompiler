@@ -802,7 +802,8 @@ namespace mlirgen
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered)
+        auto rediscoverReturnType = functionsWithUnresolvedReturn.contains(fullName);
+        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered || rediscoverReturnType)
             && !funcProto->getIsGeneric();        // An instance of a generic function (countDown<string>) whose return type is declared: its type is known
         // before its body is, and a call of itself in the body (`return countDown(value, n - 1) + 1`) takes it
         // from here (instantiateSpecializedFunction). A function at the top level was registered by the pass
@@ -908,7 +909,7 @@ namespace mlirgen
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, funcProtoGenContext)))
             {
-                if (!funcProtoGenContext.forceDiscover && funcType && funcType.getNumResults() > 0)
+                if (!funcProtoGenContext.forceDiscover && !rediscoverReturnType && funcType && funcType.getNumResults() > 0)
                 {
                     funcProto->setReturnType(funcType.getResult(0));
                 }
@@ -1228,7 +1229,19 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
+                // a return whose value could not be made yet (`return utilValidate()` of a function declared after this
+                // one, or of this one itself) beside one that could: the type of that one alone is the type for now,
+                // but the function is discovered again when it is made - the union `utilValidate` returns was cast to
+                // the type of `{ valid: true }` alone ("failed statement")
                 funcProto->setDiscovered(true);
+                if (passResult->hasUnresolvedReturn && !hasExplicitReturnType)
+                {
+                    functionsWithUnresolvedReturn.insert(name);
+                }
+                else if (functionsWithUnresolvedReturn.erase(name))
+                {
+                    functionsWithUnresolvedReturnRediscovered.insert(name);
+                }
                 auto discoveredType = passResult->functionReturnType;
 
                 // a bare `return;` beside value returns, or an end of the body that is reachable: T | undefined
@@ -2080,6 +2093,13 @@ namespace mlirgen
                                     << "\n";);
 
             return true;
+        }
+
+        // discovered again with another return type (a return value that could not be made the first time:
+        // functionsWithUnresolvedReturn): a call of it reads the type it has now
+        if (functionsWithUnresolvedReturnRediscovered.erase(funcProto->getName()))
+        {
+            getFunctionMap()[name] = makeFunctionEntry(funcOp);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! re-reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()

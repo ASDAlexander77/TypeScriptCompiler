@@ -1683,6 +1683,12 @@ namespace mlirgen
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: union type " << baseType << "\n";);
                 arrayType = baseType;
+                // the value too, not only the type it is indexed as (`m[0]` of a `string[] | null`, one pointer: the
+                // union went to ElementRef - "operand #0 must be ... array")
+                if (isa<mlir_ts::ArrayType, mlir_ts::StringType>(baseType))
+                {
+                    expression = builder.create<mlir_ts::CastOp>(location, baseType, expression);
+                }
             }
         }
 
