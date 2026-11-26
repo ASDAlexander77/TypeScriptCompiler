@@ -3695,3 +3695,16 @@ Not yet:
 - The debug JIT crashes in LLVM translation on any program (local debug build, 11-26); release is fine.
 
 Tests `00tslang_issue_205.ts` and `00tslang_issue_205_this.ts` (gc, rc, none: under -mm=own the returned closure over a parameter is refused by design).
+
+206. The array `splice` gives back, under -mm=rc, was freed while it was being returned (release run of 2026-11-26,
+array_class_splice.ts crashing in the debug JIT on Ubuntu 22.04/24.04 with no output). Fixed:
+- `const removed = this.data.splice(start, count); ...; return removed;` (the default library's Array<T>.splice): the
+  result is marked owned (mlirGenArraySplice), so `removed` takes its reference over and does not retain, but the
+  lowering made the header with `ArrayLayout::make`, whose block is born with no reference. The return retained it to
+  1, the local's release took it back to 0 and freed it, and the caller read a freed array: the next allocations wrote
+  over it and mimalloc's free list (a crash in `mi_malloc` at a later `splice`). It has been so since allocations are
+  born with no reference; on Windows and in a warm JIT cache the freed block happened to survive. Under rc the header
+  is now born with the reference, as an owned `new C()`'s is.
+
+Tests `00rc_splice_result_owned.ts` (gc, rc, none; under own the test's re-insertion of the removed elements is
+refused).
