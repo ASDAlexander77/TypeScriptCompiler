@@ -3503,20 +3503,43 @@ namespace mlirgen
             builder.create<mlir_ts::ResultOp>(location);
         }
 
-        // the names a catch pattern binds, read from the variable `holder` holding what was caught
-        auto destructureCatchPattern = [&](StringRef holder, const GenContext &patternGenContext) -> mlir::LogicalResult {
+        // the clause's block, taking a catch pattern apart first: `let { x } = <holder>;`, `holder` the variable holding
+        // what was caught. A statement of the block, so the names it binds are the block's locals, given back on each
+        // way out of it - an exception too (bound in the clause, -mm=rc kept them on the unwind leg of a `finally`)
+        auto catchBlockOf = [&](StringRef holder) -> ts::Block {
+            auto block = catchClause->block;
             if (!catchPattern)
             {
-                return mlir::success();
+                return block;
             }
 
-            return processDeclarationName(
-                catchPattern, VariableType::Let,
-                [&](mlir::Location valueLocation, const GenContext &valueGenContext) -> TypeValueInitType {
-                    auto value = resolveIdentifier(valueLocation, holder, valueGenContext);
-                    return {value ? value.getType() : mlir::Type(), value, TypeProvided::No};
-                },
-                patternGenContext);
+            NodeFactory nf(NodeFactoryFlags::None);
+            auto holderIdentifier = nf.createIdentifier(stows(holder.str()));
+            holderIdentifier->pos = catchPattern->pos;
+            holderIdentifier->_end = catchPattern->_end;
+            auto declaration = nf.createVariableDeclaration(catchPattern, undefined, undefined, holderIdentifier);
+            declaration->pos = catchPattern->pos;
+            declaration->_end = catchPattern->_end;
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(declaration);
+            auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+            declarationList->pos = catchPattern->pos;
+            declarationList->_end = catchPattern->_end;
+            auto statement = nf.createVariableStatement(undefined, declarationList);
+            statement->pos = catchPattern->pos;
+            statement->_end = catchPattern->_end;
+
+            NodeArray<Statement> statements;
+            statements.push_back(statement);
+            for (auto blockStatement : block->statements)
+            {
+                statements.push_back(blockStatement);
+            }
+
+            auto patternBlock = nf.createBlock(statements, true);
+            patternBlock->pos = block->pos;
+            patternBlock->_end = block->_end;
+            return patternBlock;
         };
 
         // catches
@@ -3617,15 +3640,13 @@ namespace mlirgen
                     }
                 }
 
-                EXIT_IF_FAILED(destructureCatchPattern(caughtName, clauseGenContext))
-                auto result = mlirGen(tryStatementAST->catchClause->block, clauseGenContext);
+                auto result = mlirGen(catchBlockOf(caughtName), clauseGenContext);
                 EXIT_IF_FAILED(result)
                 EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &clauseGenContext));
             }
             else
             {
-                EXIT_IF_FAILED(destructureCatchPattern(varName, catchGenContext))
-                auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
+                auto result = mlirGen(catchBlockOf(varName), catchGenContext);
                 EXIT_IF_FAILED(result)
             }
         }

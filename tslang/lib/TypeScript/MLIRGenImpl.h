@@ -5988,6 +5988,35 @@ class MLIRGenImpl
         }
     }
 
+    // an expression reading a place without side effects: a name, `this`, `super`, and a property, or an element at a
+    // literal or a name, of one (`o.a.b`, `xs[0]`, `m[k]`), parenthesized or with `!`
+    bool isNarrowableReference(Expression expr)
+    {
+        switch ((SyntaxKind)expr)
+        {
+        case SyntaxKind::Identifier:
+        case SyntaxKind::ThisKeyword:
+        case SyntaxKind::SuperKeyword:
+            return true;
+        case SyntaxKind::ParenthesizedExpression:
+            return isNarrowableReference(expr.as<ParenthesizedExpression>()->expression);
+        case SyntaxKind::NonNullExpression:
+            return isNarrowableReference(expr.as<NonNullExpression>()->expression);
+        case SyntaxKind::PropertyAccessExpression:
+            return isNarrowableReference(expr.as<PropertyAccessExpression>()->expression);
+        case SyntaxKind::ElementAccessExpression:
+        {
+            auto elementAccess = expr.as<ElementAccessExpression>();
+            auto argument = elementAccess->argumentExpression;
+            return isNarrowableReference(elementAccess->expression)
+                && (argument == SyntaxKind::NumericLiteral || argument == SyntaxKind::StringLiteral
+                    || argument == SyntaxKind::Identifier || argument == SyntaxKind::NoSubstitutionTemplateLiteral);
+        }
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto safeType = getType(typeToken, genContext);
@@ -6030,6 +6059,13 @@ class MLIRGenImpl
         }
 
         auto expr = stripParenthesesAndUntangleEquals(exprIn);
+
+        // only what names a place can be narrowed: the value is read again here, and a call (`o() === undefined && x`)
+        // was made a second time - a third in an `if`. Its result is not named again, so there is nothing to narrow.
+        if (!isNarrowableReference(expr))
+        {
+            return mlir::success();
+        }
 
         auto isNotLocalVariable = false;
         auto location = loc(expr);
@@ -10964,6 +11000,14 @@ class MLIRGenImpl
                     }
 
                     continue;
+                }
+
+                // (`[a, b, c] = t` of a `[number, number]` failed without an error)
+                if (index >= tupleType.size())
+                {
+                    emitError(loc(leftItem)) << "a tuple of type '" << to_print(tupleType) << "' has no element at index "
+                                             << index;
+                    return mlir::failure();
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
@@ -20493,6 +20537,9 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext);
+
+    void emitTooFewTypeArguments(mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+                                 size_t argsCount);
 
     std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArgumentsNoDefaults(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,

@@ -114,6 +114,16 @@ set(not_compilable_alone
     class_reads_block_local_error.ts
     class_static_block_local_error.ts
     type_not_value_error.ts
+    # errors by design (TSLANG 204 error tests)
+    too_few_type_args_error.ts
+    destructuring_no_initializer_error.ts
+    tuple_index_pattern_error.ts
+    index_signature_optional_error.ts
+    enum_numeric_name_error.ts
+    generic_class_expression_error.ts
+    catch_rest_any_error.ts
+    class_itself_interface_error.ts
+    class_itself_string_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts
     # an error by design (test-compile-subclass-field-failed-error)

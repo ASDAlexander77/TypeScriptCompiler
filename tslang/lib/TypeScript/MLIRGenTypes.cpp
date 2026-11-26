@@ -464,6 +464,11 @@ namespace mlirgen
                                     : mlir::Type());
             if (!type)
             {
+                if (isDefault && argsCount > 0)
+                {
+                    emitTooFewTypeArguments(location, typeParams, argsCount);
+                }
+
                 return {mlir::failure(), anyNamedGenericType};
             }
 
@@ -481,6 +486,24 @@ namespace mlirgen
         }
 
         return {mlir::success(), anyNamedGenericType};
+    }
+
+    void MLIRGenImpl::emitTooFewTypeArguments(mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+                                              size_t argsCount)
+    {
+        auto required = llvm::count_if(typeParams, [](auto typeParam) { return !typeParam->hasDefault(); });
+        auto diagnostic = emitError(location);
+        diagnostic << "expected ";
+        if (static_cast<size_t>(required) != typeParams.size())
+        {
+            diagnostic << required << "-" << typeParams.size();
+        }
+        else
+        {
+            diagnostic << typeParams.size();
+        }
+
+        diagnostic << " type arguments, but got " << argsCount;
     }
 
     std::tuple<mlir::LogicalResult, IsGeneric> MLIRGenImpl::zipTypeParametersWithArguments(
@@ -516,7 +539,14 @@ namespace mlirgen
                 {
                     // seems creating instance without TypeParams, can be used instance with the same name
                     // such as Point and Point<T>
-                    return {mlir::failure(), IsGeneric::NoDefaults};    
+                    return {mlir::failure(), IsGeneric::NoDefaults};
+                }
+
+                // some type arguments given, and not one for this parameter, which has no default (`new D<number>()`
+                // of a `D<T, U>` failed without an error)
+                if (isDefault && argsCount > 0)
+                {
+                    emitTooFewTypeArguments(location, typeParams, argsCount);
                 }
 
                 return {mlir::failure(), anyNamedGenericType};

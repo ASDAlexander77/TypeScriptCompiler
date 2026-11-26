@@ -1067,12 +1067,36 @@ namespace mlirgen
         else if (isNumericAccess)
         {
             MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, fieldName);
+            // an index past a tuple's elements (`const { 3: d } = t` of a `[boolean, string, number]`) failed without
+            // an error
+            auto checkIndex = [&](auto tupleType) {
+                auto index = mlir::cast<mlir::IntegerAttr>(fieldName).getInt();
+                if (tupleType.getIndex(fieldName) < 0 && (index < 0 || static_cast<size_t>(index) >= tupleType.size()))
+                {
+                    emitError(location) << "a tuple of type '" << to_print(type) << "' has no element at index "
+                                        << index;
+                    return false;
+                }
+
+                return true;
+            };
+
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
+                if (!checkIndex(tupleType))
+                {
+                    return mlir::failure();
+                }
+
                 value = cl.Tuple(tupleType, true);
             }
             else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
             {
+                if (!checkIndex(constTupleType))
+                {
+                    return mlir::failure();
+                }
+
                 value = cl.Tuple(constTupleType, true);
             }
             else if (isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ConstArrayType>(type))

@@ -4,6 +4,9 @@
 //   generic type" - the pattern was read in the discovery of the function's parameters, before TX is known
 // - a field narrowed where it is destructured (`if (o.bar) { const { bar } = o; }`) kept its declared type
 // - a function returning `any` given as one returning another type (`(v: any) => any` as `(v: any) => string`)
+// - a call tested for a narrowing (`o() === undefined && x`) was made again by the narrowing (twice; three times in
+//   an `if`)
+// - a `?:` with a branch of no value (`c ? f() : 0`, `f(): void`): "'ts.If' op expects a non-empty block"; it is undefined
 type TG<T> = { f: number; g: T; h: string };
 interface IG<T> { f: number; g: T; k: number }
 // (the rest of an object with a string field is refused under -mm=own: it borrows the field)
@@ -45,6 +48,26 @@ function applyN(f: (v: any) => number, v: any): number {
     return f(v);
 }
 
+let calls = 0;
+
+function bump(): void {
+    calls++;
+}
+
+function voidBranches(b: boolean) {
+    b ? bump() : 0;
+    const y = b ? bump() : 5;
+    b ? bump() : bump();
+    return y;
+}
+
+let made = 0;
+
+function maybe(): number | undefined {
+    made++;
+    return undefined;
+}
+
 function main() {
     assert(getF({ f: 1, g: true, h: "x" }) == 1, "a pattern over a generic alias");
     assert(restLength({ f: 2, g: 1, k: 3 }) == 5, "...with a rest");
@@ -58,6 +81,16 @@ function main() {
     assert(g("a" + 1) == "a1", "an any result read as a string");
     assert(apply(ident, "b") == "b", "...given as an argument");
     assert(applyN(ident, 3.5) == 3.5, "...read as a number");
+
+    assert(voidBranches(true) === undefined && calls == 3, "a branch of no value is undefined");
+    assert(voidBranches(false) === 5 && calls == 4, "...the other branch");
+
+    const tested = maybe() === undefined && made > 0;
+    assert(tested && made == 1, "a tested call is made once");
+    if (maybe() === undefined && made > 0) {
+        made += 10;
+    }
+    assert(made == 12, "...in an if");
 
     print("done.");
 }

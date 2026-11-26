@@ -1867,6 +1867,24 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // a key of `boolean` or of literals (`[u: "foo" | "bar"]`, which TypeScript has a mapped type for) failed
+            // without an error
+            auto keyTypeNode = interfaceMember.as<IndexSignatureDeclaration>()->parameters.front()->type;
+            if (auto keyType = keyTypeNode ? getType(keyTypeNode, genContext) : mlir::Type())
+            {
+                auto isInvalidKey = [](mlir::Type type) {
+                    return isa<mlir_ts::BooleanType, mlir_ts::LiteralType>(type);
+                };
+                auto unionType = dyn_cast<mlir_ts::UnionType>(keyType);
+                if (isInvalidKey(keyType) || (unionType && llvm::any_of(unionType.getTypes(), isInvalidKey)))
+                {
+                    emitError(loc(keyTypeNode)) << "an index signature parameter can't be of type '" << to_print(keyType)
+                                                << "': give it 'string', 'number' or 'symbol' (for a set of keys, use "
+                                                   "a mapped type, `{ [K in Keys]: T }`)";
+                    return mlir::failure();
+                }
+            }
+
             auto methodSignature = interfaceMember.as<MethodSignature>();
             // we need this code to add "THIS" param to declaration
             interfaceMember->parent = interfaceDeclarationAST;

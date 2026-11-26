@@ -2595,6 +2595,43 @@ add_test(NAME test-compile-class-static-block-local-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_static_block_local_error.ts")
 set_tests_properties(test-compile-class-static-block-local-error PROPERTIES PASS_REGULAR_EXPRESSION "'v' is a local of the function a class is declared in"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code|outside the region")
+# TSLANG 204: clear errors where these failed with "failed statement" alone
+add_test(NAME test-compile-too-few-type-args-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/too_few_type_args_error.ts")
+set_tests_properties(test-compile-too-few-type-args-error PROPERTIES PASS_REGULAR_EXPRESSION "expected 2 type arguments, but got 1"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-destructuring-no-initializer-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/destructuring_no_initializer_error.ts")
+set_tests_properties(test-compile-destructuring-no-initializer-error PROPERTIES PASS_REGULAR_EXPRESSION "a destructuring declaration must have an initializer"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-tuple-index-pattern-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_index_pattern_error.ts")
+set_tests_properties(test-compile-tuple-index-pattern-error PROPERTIES PASS_REGULAR_EXPRESSION "has no element at index 2"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-index-signature-optional-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/index_signature_optional_error.ts")
+set_tests_properties(test-compile-index-signature-optional-error PROPERTIES PASS_REGULAR_EXPRESSION "an index signature parameter can't be optional"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-enum-numeric-name-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_numeric_name_error.ts")
+set_tests_properties(test-compile-enum-numeric-name-error PROPERTIES PASS_REGULAR_EXPRESSION "an enum member can't have a numeric name"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-generic-class-expression-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/generic_class_expression_error.ts")
+set_tests_properties(test-compile-generic-class-expression-error PROPERTIES PASS_REGULAR_EXPRESSION "a generic class expression is not a value"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-catch-rest-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/catch_rest_any_error.ts")
+set_tests_properties(test-compile-catch-rest-any-error PROPERTIES PASS_REGULAR_EXPRESSION "the rest of a value of type 'any' can't be taken"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-class-itself-interface-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_itself_interface_error.ts")
+set_tests_properties(test-compile-class-itself-interface-error PROPERTIES PASS_REGULAR_EXPRESSION "itself can't be given as interface"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-class-itself-string-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_itself_string_error.ts")
+set_tests_properties(test-compile-class-itself-string-error PROPERTIES PASS_REGULAR_EXPRESSION "itself can't be converted to a string"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
 # TSLANG 193: a class given for an array, a type stored in a module variable
 add_test(NAME test-compile-class-not-array-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_not_array_error.ts")
