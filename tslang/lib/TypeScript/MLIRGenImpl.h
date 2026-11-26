@@ -16989,6 +16989,28 @@ class MLIRGenImpl
         for (auto &item : oli.objectLiteral->properties)
         {
             auto closure = false;
+
+            // an arrow that says `this` or `super` reads the code around it, as in JavaScript (user ruling 11-26):
+            // `{ a: () => this.m() }` in a method calls the method's object, `{ a: () => super.m() }` its base's - a
+            // closure whatever the literal is made for. (It was a method of the literal: `this` read the literal, and
+            // `super` was "can't resolve name: .this".)
+            if (item == SyntaxKind::PropertyAssignment
+                && item.as<PropertyAssignment>()->initializer == SyntaxKind::ArrowFunction)
+            {
+                Node initializer = item.as<PropertyAssignment>()->initializer;
+                // (its own `this`: not that of a function declared in it, `function add_() { this.val }`)
+                auto saysThis = false;
+                FilterVisitorSkipOwnThisAST<Node> thisVisitor(SyntaxKind::ThisKeyword, [&](auto) { saysThis = true; });
+                FilterVisitorSkipOwnThisAST<Node> superVisitor(SyntaxKind::SuperKeyword, [&](auto) { saysThis = true; });
+                thisVisitor.visit(initializer);
+                superVisitor.visit(initializer);
+                if (saysThis)
+                {
+                    oli.closureMembers.push_back(true);
+                    continue;
+                }
+            }
+
             if (item == SyntaxKind::PropertyAssignment && objectTypeReceiver)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
@@ -17101,10 +17123,36 @@ class MLIRGenImpl
         // thunk (mlirGenObjectVirtualTableDefinitionForInterface)
         if (auto receiverFuncType = dyn_cast_or_null<mlir_ts::FunctionType>(receiverElementType))
         {
-            if (!mth.isObjectFieldFunctionWithoutThis(receiverFuncType) && mth.isObjectFieldFunctionWithoutThis(type)
-                && mth.TestFunctionTypesMatchWithObjectMethods(location, type, receiverFuncType).result == MatchResultType::Match)
+            if (!mth.isObjectFieldFunctionWithoutThis(receiverFuncType) && mth.isObjectFieldFunctionWithoutThis(type))
             {
-                receiverElementType = mlir::Type();
+                if (mth.TestFunctionTypesMatchWithObjectMethods(location, type, receiverFuncType).result == MatchResultType::Match)
+                {
+                    receiverElementType = mlir::Type();
+                }
+                // ...and one that needs an adapter (`() => s32` for `f: () => number`) is adapted to the slot's type
+                // without its `this`, a closure still: cast to the slot itself, the adapter lost its captures (a
+                // wrong value read)
+                else if (receiverFuncType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(receiverFuncType.getInput(0)))
+                {
+                    // (a hybrid function, which holds a closure: a plain one would drop the captures again)
+                    auto withoutThis = mlir_ts::HybridFunctionType::get(
+                        builder.getContext(), receiverFuncType.getInputs().drop_front(), receiverFuncType.getResults(),
+                        receiverFuncType.isVarArg());
+                    auto adapted = cast(location, withoutThis, itemValue, genContext);
+                    if (adapted.failed_or_no_value())
+                    {
+                        return mlir::failure();
+                    }
+
+                    itemValue = V(adapted);
+                    if (mth.isObjectFieldFunctionWithoutThis(itemValue.getType()))
+                    {
+                        value = builder.getUnitAttr();
+                        isConstValue = false;
+                        type = itemValue.getType();
+                        receiverElementType = mlir::Type();
+                    }
+                }
             }
         }
 
@@ -17155,12 +17203,25 @@ class MLIRGenImpl
         {
             // a method signature of an object type (`{ method(x: string): number }`) is a function whose first input
             // is its `this` (an opaque), unlike a field of a function type (a hybrid function): the member's
-            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque)
+            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque). So is
+            // an interface's field of a function type (`consume: (d: number) => void`), stored with that `this`
+            // first (mlirGenInterfaceAddFieldMember): `{ consume: (d) => ... }` typed its `d` Opaque
             auto funcType = dyn_cast<mlir_ts::FunctionType>(mth.stripOptionalType(fieldType));
             if (funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0))
-                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(MLIRTypeHelper::stripValueType(receiverType)))
+                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::InterfaceType>(
+                       MLIRTypeHelper::stripValueType(receiverType)))
             {
                 return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
+            }
+
+            // ...nor a closure's captures, first in the type a literal made before recorded for it (a class field's
+            // `{ d: (cb) => cb(this) }`, made again in the constructor with that type for its receiver: `cb` was
+            // typed as the captures, "not a function to call: a value of type 'Reference<{this:C1}>'")
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(mth.stripOptionalType(fieldType));
+                boundFuncType && boundFuncType.getNumInputs() > 0)
+            {
+                return getFunctionType(boundFuncType.getInputs().drop_front(), boundFuncType.getResults(),
+                                       boundFuncType.isVarArg());
             }
 
             return mth.stripOptionalType(fieldType);

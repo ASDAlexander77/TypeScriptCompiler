@@ -207,6 +207,18 @@ namespace mlirgen
             int vtableOffset = 0;
             if (auto *fieldInfo = tempInterfaceInfo->findField(concreteField.id, vtableOffset))
             {
+                // a field of a function type is stored with a `this` first, as a method is (mlirGenInterfaceAddFieldMember):
+                // `produce: () => Data` given `() => 42` inferred nothing for Data
+                auto fieldFuncType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type);
+                if (fieldFuncType && fieldFuncType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(fieldFuncType.getInput(0)))
+                {
+                    auto concreteFuncType = dyn_cast<mlir_ts::FunctionType>(concreteField.type);
+                    auto concreteType = concreteFuncType && concreteFuncType.getNumInputs() == fieldFuncType.getNumInputs()
+                        ? withoutThis(concreteField.type) : concreteField.type;
+                    inferType(location, withoutThis(fieldInfo->type), concreteType, results, genContext);
+                    continue;
+                }
+
                 inferType(location, fieldInfo->type, concreteField.type, results, genContext);
                 continue;
             }
@@ -794,6 +806,23 @@ namespace mlirgen
             auto paramType = getType(param->type, genericGenContext);
             if (!paramType || !mth.isGenericType(paramType))
             {
+                continue;
+            }
+
+            // given `any` for a parameter whose type only holds a type parameter (`cb: () => R`, erased to `any`):
+            // that type parameter is `any` - nothing in an `any` gives it one, and left out the instantiation failed
+            // with "can't find type by name: R"
+            if (isa<mlir_ts::AnyType>(receiverParamType)
+                && isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(paramType))
+            {
+                mth.forEachTypes(paramType, [&](mlir::Type type) {
+                    if (auto namedGeneric = dyn_cast_or_null<mlir_ts::NamedGenericType>(type))
+                    {
+                        inferredTypes.try_emplace(namedGeneric.getName().getValue(), getAnyType());
+                    }
+
+                    return true;
+                });
                 continue;
             }
 

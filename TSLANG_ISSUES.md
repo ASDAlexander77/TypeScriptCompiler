@@ -3654,3 +3654,44 @@ Tests `00tslang_issue_204.ts` (all models), `00tslang_issue_204_catch.ts` (gc, r
 `too_few_type_args_error.ts`, `destructuring_no_initializer_error.ts`, `tuple_index_pattern_error.ts`,
 `index_signature_optional_error.ts`, `enum_numeric_name_error.ts`, `generic_class_expression_error.ts`,
 `catch_rest_any_error.ts`, `class_itself_interface_error.ts`, `class_itself_string_error.ts`, `index_signature_key_error.ts`.
+
+205. Bugs found by the tsc compiler-tests sweep (continued). Fixed:
+- A generic function whose result is a generic function type using its own type parameter (`function f<Out>(): <R>(cb:
+  (d: Out) => R) => R`, declared or not): "failed statement" with nothing said. While Out is unknown the inner type
+  parameters stay named generics (zipped with no type arguments, one with no default or constraint failed).
+- A generic arrow returned (`return <R>(cb: () => R) => cb()`, with a declared return type or none): "can't find type
+  by name: R". Instantiated with `any`, a type parameter only inside a parameter's function type (`cb: () => R`, given
+  `any`) is `any`.
+- An arrow returned from an arrow instantiated for a function type (`(cb) => (x: Out) => R`): the inner arrow took the
+  outer one's whole type as its result ("can't assign ... return type '(p0: number) => number' is not 'number'", or a
+  wrong result at run time). The type a function is given to no longer reaches the functions written in its body.
+- An untyped parameter of an arrow given to an interface's field of a function type (`const h: H = { consume: (d) =>
+  ... }` for `consume: (d: number) => void`): typed Opaque - the hidden `this` the field's type is stored with - so
+  "can't assign '(p1: Opaque) => void' ... it takes 1 argument(s), 2 expected".
+- A generic call given an object literal whose members give the type parameter to each other (`{ produce: () => 42,
+  consume: (data) => ... }` for `Options<Data>`, fields or methods): "failed statement". The fields' types are read
+  without the hidden `this`, a declared result is the member's (`(): number => 1.5`), and members whose parameters
+  wait for the type parameter are left out until the others have given it.
+- `X & any` was `never` (`{ x: string } & T` with T `any`: "'Never' can't be used as parameter type"); it is `any`, as in
+  TypeScript (`never & any` stays `never`).
+- An arrow member of an object literal that says `this` or `super` was a method of the literal: `{ a: () => this.m() }`
+  read the literal, `{ a: () => super.m() }` was "can't resolve name: .this". It reads the code around it, as in
+  JavaScript (user ruling 11-26): a closure, whatever the literal is made for. Under -mm=own, one that escapes (the
+  literal returned) is refused, as any closure capturing `this` that escapes is. A literal's method keeps the literal as
+  its `this`.
+- A closure given for an interface's field of a function type through an adapter (`() => s32` for `f: () => number`,
+  `return { f: () => this.k }` with `k = 7`): the adapter lost the closure's captures, and the call read a wrong value.
+  It is adapted to the field's type without its `this`, and stays a closure.
+- An untyped parameter of an arrow in a literal made in a class field's initializer (`lit = { d: (cb) => cb(this) }`):
+  typed as the closure's captures, read from the type the literal was first made with ("not a function to call: a value
+  of type 'Reference<{this:C1}>'").
+
+Not yet:
+- A literal given to a generic call whose field returns an integer where the type parameter is inferred as a number
+  from elsewhere (`takeG({ produce: () => 44 }, 1.5)`): "can't assign '() => s32' to '() => number'", as is a literal
+  variable given to the interface (`const o2: Options<number> = t`).
+- `{ x: string } & any` is `never` ("'Never' can't be used as parameter type"); TypeScript has `any`. Making it `any`
+  sends `conditionalTypeDoesntSpinForever.ts` (tsc) into a loop, so it stays for now.
+- The debug JIT crashes in LLVM translation on any program (local debug build, 11-26); release is fine.
+
+Tests `00tslang_issue_205.ts` and `00tslang_issue_205_this.ts` (gc, rc, none: under -mm=own the returned closure over a parameter is refused by design).

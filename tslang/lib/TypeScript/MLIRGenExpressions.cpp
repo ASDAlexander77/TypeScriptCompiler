@@ -2627,6 +2627,24 @@ namespace mlirgen
 
     // An object literal with a function member whose parameters are not all typed (`{ write: value => s = value }`):
     // they take their types from the literal's receiver
+    static bool isContextSensitiveMember(ObjectLiteralElementLike item)
+    {
+        Node member = item;
+        if (item == SyntaxKind::PropertyAssignment)
+        {
+            member = item.as<PropertyAssignment>()->initializer;
+        }
+
+        if (member != SyntaxKind::ArrowFunction && member != SyntaxKind::FunctionExpression
+            && member != SyntaxKind::MethodDeclaration)
+        {
+            return false;
+        }
+
+        return llvm::any_of(member.as<FunctionLikeDeclarationBase>()->parameters,
+                            [](ParameterDeclaration parameter) { return !parameter->type && !parameter->initializer; });
+    }
+
     static bool isContextSensitiveObjectLiteral(Expression expression)
     {
         if (expression != SyntaxKind::ObjectLiteralExpression)
@@ -2634,22 +2652,7 @@ namespace mlirgen
             return false;
         }
 
-        return llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, [](ObjectLiteralElementLike item) {
-            Node member = item;
-            if (item == SyntaxKind::PropertyAssignment)
-            {
-                member = item.as<PropertyAssignment>()->initializer;
-            }
-
-            if (member != SyntaxKind::ArrowFunction && member != SyntaxKind::FunctionExpression
-                && member != SyntaxKind::MethodDeclaration)
-            {
-                return false;
-            }
-
-            return llvm::any_of(member.as<FunctionLikeDeclarationBase>()->parameters,
-                                [](ParameterDeclaration parameter) { return !parameter->type && !parameter->initializer; });
-        });
+        return llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, isContextSensitiveMember);
     }
 
     // A generic call with such a literal for an argument: `foo({ read: () => s, write: value => s = value })` for
@@ -2742,7 +2745,10 @@ namespace mlirgen
                         inputs.push_back(getType(parameter->type, genContext));
                     }
 
-                    auto resultType = evaluate(funcLikeDeclaration->body.as<Expression>(), genContext);
+                    // its declared result (`(): number => 42` is a number, not the s32 its expression is)
+                    auto resultType = funcLikeDeclaration->type
+                        ? getType(funcLikeDeclaration->type, genContext)
+                        : evaluate(funcLikeDeclaration->body.as<Expression>(), genContext);
                     if (!resultType || mth.isNoneType(resultType) || llvm::any_of(inputs, [](mlir::Type input) { return !input; }))
                     {
                         continue;
@@ -2808,13 +2814,59 @@ namespace mlirgen
                 // a receiver still of a type parameter (`Int<string, U>`) types the literal's members as far as it
                 // can; what they give (`method(p1) { return p1.length }` gives U) types the literals after it
                 // (`{ method(p2) { ... } }` for `Int<U, T>`: its p2 was the type parameter U, and the call failed
-                // with no message)
-                if (type && mth.isGenericType(type) && index + 1 < arguments.size())
+                // with no message). So is the literal itself: `{ produce() { return 42; }, consume(d) {} }` for
+                // `Options<Data>` gives Data from `produce`, which types `consume`'s d (it was the type parameter, and
+                // the call failed with no message)
+                if (type && mth.isGenericType(type))
                 {
                     GenContext argGenContext(genContext);
                     argGenContext.clearReceiverTypes();
                     argGenContext.receiverFuncType = type;
-                    if (auto literalType = evaluate(argument, argGenContext); literalType && !mth.isNoneType(literalType))
+                    auto anyInferred = false;
+                    auto literalType = evaluate(argument, argGenContext);
+                    if (!literalType || mth.isNoneType(literalType))
+                    {
+                        // a member typed by a type parameter not known yet (`consume(d) {}` for `consume(data: Data)`)
+                        // fails the literal: its other members (`produce() { return 42; }`) still give what they give
+                        NodeArray<ObjectLiteralElementLike> givingMembers;
+                        auto properties = argument.as<ObjectLiteralExpression>()->properties;
+                        for (auto item : properties)
+                        {
+                            if (!isContextSensitiveMember(item))
+                            {
+                                givingMembers.push_back(item);
+                            }
+                        }
+
+                        if (!givingMembers.empty() && givingMembers.size() < properties.size())
+                        {
+                            // making the literal's members sets their parents (processObjectFunctionLike): they are the
+                            // argument's own again after
+                            SmallVector<std::pair<Node, Node>> parents;
+                            for (auto item : givingMembers)
+                            {
+                                parents.push_back({item, item->parent});
+                                if (item == SyntaxKind::PropertyAssignment)
+                                {
+                                    auto initializer = item.as<PropertyAssignment>()->initializer;
+                                    parents.push_back({initializer, initializer->parent});
+                                }
+                            }
+
+                            NodeFactory nf(NodeFactoryFlags::None);
+                            auto givingLiteral = nf.createObjectLiteralExpression(givingMembers, false);
+                            givingLiteral->pos = argument->pos;
+                            givingLiteral->_end = argument->_end;
+                            literalType = evaluate(givingLiteral.as<Expression>(), argGenContext);
+
+                            for (auto &[node, parent] : parents)
+                            {
+                                node->parent = parent;
+                            }
+                        }
+                    }
+
+                    if (literalType && !mth.isNoneType(literalType))
                     {
                         StringMap<mlir::Type> moreInferredTypes;
                         inferType(location, params[index + offset]->getType(), literalType, moreInferredTypes, genContext);
@@ -2826,8 +2878,14 @@ namespace mlirgen
                                 && inferred.getValue() && !mth.isGenericType(inferred.getValue()))
                             {
                                 found->getValue().second = mth.wideStorageType(inferred.getValue());
+                                anyInferred = true;
                             }
                         }
+                    }
+
+                    if (anyInferred)
+                    {
+                        receivers[index] = receiverOf(index);
                     }
                 }
             }
