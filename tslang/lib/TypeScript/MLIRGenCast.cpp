@@ -3833,6 +3833,12 @@ namespace mlirgen
             return true;
         }
 
+        // an integer (`() => 0` returns an s32) is a number to whoever reads it as one (`(v: any) => number`)
+        if (isa<mlir::IntegerType>(from) && isa<mlir_ts::NumberType>(to))
+        {
+            return true;
+        }
+
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(to))
         {
             return optionalType.getElementType() == from;
@@ -3872,11 +3878,16 @@ namespace mlirgen
         // ...each the same, or an integer the caller gives where the function takes a number (`[1, 2].filter(pos)`
         // of a `pos(v: number)`: the literal's elements are s32), which the adapter converts (TSLANG 167)
         auto common = std::min(srcInputs.size(), destInputs.size());
+        auto convertsInput = false;
         for (auto index = size_t(0); index < common; index++)
         {
             auto srcInput = srcInputs[index];
             auto destInput = destInputs[index];
-            if (srcInput != destInput && !(isa<mlir_ts::NumberType>(srcInput) && isa<mlir::IntegerType>(destInput)))
+            convertsInput = convertsInput || srcInput != destInput;
+            // (and an `any` the caller gives where the function takes a type of its own - `(v: string) => string`
+            // given as `(v: any) => string`, as TypeScript allows: the adapter casts it, checked at run time)
+            if (srcInput != destInput && !(isa<mlir_ts::NumberType>(srcInput) && isa<mlir::IntegerType>(destInput))
+                && !(isa<mlir_ts::AnyType>(destInput) && !isa<mlir_ts::AnyType>(srcInput)))
             {
                 return false;
             }
@@ -3890,7 +3901,7 @@ namespace mlirgen
             }
         }
 
-        return !(sameResults && srcInputs.size() == destInputs.size());
+        return convertsInput || !(sameResults && srcInputs.size() == destInputs.size());
     }
 
     // What a function type's rest parameter is, an array (`(...args: A) => T` with A `number[]`) or a tuple (A
@@ -4629,7 +4640,10 @@ namespace mlirgen
 
                 // fewer parameters, more optional ones, a result given as `void` (`let f: () => void = n`) or
                 // widened (`() => string` as `() => string | number`): adaptableSignature
+                // (and a parameter of another type, which an adapter converts: `any` given where the function takes
+                // a `string` - adaptableSignature says which)
                 if (guardAsBoolean || toRestArray || test.result == MatchResultType::NotMatchArgCount
+                    || test.result == MatchResultType::NotMatchArg
                     || test.result == MatchResultType::NotMatchResultCount
                     || test.result == MatchResultType::NotMatchResult)
                 {

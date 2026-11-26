@@ -3589,3 +3589,34 @@ when no member has it; a constant number too, which was read as a member's name)
 that name (0 when none has it); each member is compared in turn.
 
 Tests `00tslang_issue_199.ts` (all models).
+
+200. A destructuring `var` of the module declaring some names again and some for the first time (`var { n: nb, p: pb }
+= r; var { n: nc, p: pb } = s;`): "redefinition of symbol named 'pb'" - only a pattern all of whose names were declared
+before was an assignment. The names declared before are taken as hidden variables of the pattern (`.var.pb.<pos>`)
+and assigned to after it, in the module's code or a constructor of their own.
+
+Tests `00tslang_issue_200.ts` (all models).
+
+201. Function values (sweep, continued). Fixed:
+- A function called where it is made (`(function () { return f; })()`) whose value is given a type (`const g: (v: any) =>
+  string = ...`): the type was taken as the called function's own ("invalid cast from (p0: string) => string to
+  string"). The callee is made without it.
+- A function value given as one whose parameter is `any` (`(v: string) => string` as `(v: any) => string`, as
+  TypeScript allows): "argument #1 does not match". An adapter converts the argument (checked at run time). A function
+  returning an integer given as one returning a number (`() => 0` as `(v: any) => number`): "it takes 0 argument(s)".
+  The adapter widens the result.
+  Not yet: a result of type `any` given as another type (`(v: any) => any` as `(v: any) => string`) stays the error.
+
+Tests `00tslang_issue_201.ts` (all models).
+
+202. A named function expression held by a variable of its name in a namespace (`namespace N { export let f = function
+f() {} }`, or an expando `example.isFoo = function isFoo() {}`, which is one): "redefinition of symbol named 'N.f'" - the
+variable is that symbol. The function's symbol is one of its own (`N..fn.f`); its name, by which it calls itself, stays.
+
+Tests `00tslang_issue_202.ts` (all models).
+
+203. A function of the program named as a C function the default library declares (`function log(n: number) {}` beside
+its `declare function log(x: number): number`): "redefinition of symbol named 'log'". It is a symbol of its own
+(`.u.log`), and the program's `log` is it; the library's own code keeps the C function.
+
+Tests: `defaultlib/defaultlib_collector.ts` (with the default library, jit and exe).

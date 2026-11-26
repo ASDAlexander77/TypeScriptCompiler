@@ -2099,7 +2099,22 @@ namespace mlirgen
             }
         }
 
-        auto result = mlirGen(callExpr, genContext);
+        // a function called where it is made (`(function () { return f; })()`): the type the call's value is given
+        // (`const g: (v: any) => string = ...`) is not the function's - it typed the function as one returning a
+        // string ("invalid cast from (p0: string) => string to string")
+        auto immediateCallee = callExpr;
+        while (immediateCallee == SyntaxKind::ParenthesizedExpression)
+        {
+            immediateCallee = immediateCallee.as<ParenthesizedExpression>()->expression;
+        }
+
+        GenContext calleeGenContext(genContext);
+        if (immediateCallee == SyntaxKind::FunctionExpression || immediateCallee == SyntaxKind::ArrowFunction)
+        {
+            calleeGenContext.clearReceiverTypes();
+        }
+
+        auto result = mlirGen(callExpr, calleeGenContext);
         // in case of detecting value for recursive calls we need to ignore failed calls
         // last condition we need to reduce posobilities to ignore legitimate failure
         // TODO: register dummy function declaration at the begginnning of detecting function output

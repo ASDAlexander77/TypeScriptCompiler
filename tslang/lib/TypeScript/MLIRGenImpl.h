@@ -22837,6 +22837,54 @@ class MLIRGenImpl
     // ...and discovered again since: registered again with that type (registerFunctionOp)
     llvm::StringSet<> functionsWithUnresolvedReturnRediscovered;
 
+    // whether a location is in a file of the default library (the directory of its declarations file)
+    bool isLocationInDefaultLib(mlir::Location location)
+    {
+        if (compileOptions.defaultDeclarationTSFile.empty())
+        {
+            return false;
+        }
+
+        std::function<std::string(mlir::Location)> fileOf = [&](mlir::Location location) -> std::string {
+            if (auto fileLoc = dyn_cast<mlir::FileLineColLoc>(location))
+            {
+                return fileLoc.getFilename().str();
+            }
+
+            if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
+            {
+                for (auto inner : fusedLoc.getLocations())
+                {
+                    if (auto file = fileOf(inner); !file.empty())
+                    {
+                        return file;
+                    }
+                }
+            }
+
+            if (auto nameLoc = dyn_cast<mlir::NameLoc>(location))
+            {
+                return fileOf(nameLoc.getChildLoc());
+            }
+
+            return std::string();
+        };
+
+        auto normalize = [](std::string path) {
+            std::replace(path.begin(), path.end(), '\\', '/');
+            return StringRef(path).lower();
+        };
+
+        SmallString<256> libDir(compileOptions.defaultDeclarationTSFile);
+        sys::path::remove_filename(libDir);
+        auto file = fileOf(location);
+        return !file.empty() && !libDir.empty() && StringRef(normalize(file)).starts_with(normalize(libDir.str().str()));
+    }
+
+    // functions of the program named as a function the default library declares, under a symbol of their own
+    // (getNameOfFunction): the program's name is theirs (registerFunctionOp)
+    llvm::StringSet<> functionsShadowingDeclarations;
+
     mlir::StringRef mainSourceFileName;
 
     mlir::StringRef path;
@@ -23293,6 +23341,9 @@ class MLIRGenImpl
     // a module or namespace `var` by its full name: the position of the declaration that made it (a later one
     // of the same name is the same variable)
     llvm::StringMap<int> moduleVarFirstDeclaration;
+    // a destructuring `var` of the module, by its position: the names it declared again, and the hidden variables they
+    // were taken as (`var { n: nc, p: pb } = s` after a `var { p: pb }`)
+    llvm::DenseMap<int, SmallVector<std::pair<std::string, std::string>>> moduleVarRedeclaredNames;
 
     // The yields standing where nothing is computed before them, marked by the statement around
     // them (the AST has no parent links to look up): yield node -> its value is used. See

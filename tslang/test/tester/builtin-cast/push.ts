@@ -3,7 +3,7 @@
 function main() {
     let h: (() => number)[] = [];
     // a function value, not an arrow written as the item (which takes the element's type)
-    const f = () => 1;
+    const f = () => "x";
     h.push(f);
     print(h.length);
 }

@@ -9,6 +9,13 @@ function makeKey(i: number): string {
     return `${i}`.padStart(12, "k");
 }
 
+// (also, with the default library in: a function of the program named as a C function the library declares - `log`,
+// its `declare function log(x: number): number` - is the program's; it was "redefinition of symbol named 'log'",
+// TSLANG 203)
+function log(n: number) {
+    return n + 1;
+}
+
 function main() {
     const N = 2000;
 
@@ -31,6 +38,8 @@ function main() {
     print("bad:", bad);
     assert(bad == 0, "strings built by the default library were freed while still held");
     assert(total > 0, "churn");
+
+    assert(log(1) == 2, "the program's log");
 
     print("done.");
 }
