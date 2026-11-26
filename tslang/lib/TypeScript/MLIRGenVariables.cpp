@@ -1119,6 +1119,26 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // the rest of a `T | undefined` (`var { ...rest } = maybe`): T's fields - with their defaults where it has no
+        // value, as `{ ...maybe }` spreads it (a field "can't be found in tuple" of the optional's own)
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(init.getType()))
+        {
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), init);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, optType.getElementType(), hasValue, true);
+            {
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                auto value = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), init);
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{value});
+
+                builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                auto defaultValue = builder.create<mlir_ts::DefaultOp>(location, optType.getElementType());
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{defaultValue});
+            }
+
+            init = ifOp.getResult(0);
+        }
+
         SmallVector<mlir::Attribute> names;
 
         // take all used fields

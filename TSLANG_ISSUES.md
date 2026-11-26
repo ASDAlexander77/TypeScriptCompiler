@@ -3572,3 +3572,13 @@ gave invalid IR ("'ts.Load' op using value defined outside the region"). Fixed:
   'strtod'", or a crash). It is called by name, as `memcmp` is (TSLANG 193).
 
 Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, `class_static_block_local_error.ts`.
+
+198. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- A rest element in an object destructuring assignment (`({ a: x, ...r } = o)`): "rest destructuring in an object
+  destructuring assignment is not supported". It is an object of the fields the pattern does not name, as in a
+  declaration.
+- The rest of a `T | undefined` in a declaration (`const { ...rest } = u`): "field ... can't be found in tuple". It is
+  T's fields, with their defaults where it has no value, as `{ ...u }` spreads it.
+  Not yet: `var { ...rest } = u` of a `var rest: T` declared before it ("field "value" can't be found").
+
+Tests `00tslang_issue_198.ts` (all models).
