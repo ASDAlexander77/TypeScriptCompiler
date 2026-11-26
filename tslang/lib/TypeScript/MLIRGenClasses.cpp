@@ -5742,6 +5742,10 @@ genContext);
 
         // TODO:
         auto indexElement = classMember.as<IndexSignatureDeclaration>();
+        if (mlir::failed(checkIndexSignatureParameter(indexElement)))
+        {
+            return mlir::failure();
+        }
 
         auto &indexInfos = newClassPtr->indexes;
 

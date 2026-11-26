@@ -3839,6 +3839,13 @@ namespace mlirgen
             return true;
         }
 
+        // an `any` result is whatever the caller reads it as (`(v: any) => any` given as `(v: any) => string`, as
+        // TypeScript allows): the adapter casts it, checked at run time
+        if (isa<mlir_ts::AnyType>(from) && !isa<mlir_ts::VoidType>(to))
+        {
+            return true;
+        }
+
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(to))
         {
             return optionalType.getElementType() == from;

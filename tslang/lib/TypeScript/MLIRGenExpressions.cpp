@@ -4701,6 +4701,15 @@ namespace mlirgen
             }
         }
 
+        // a generic class is made for each list of type arguments it is used with; without them it has no value (the
+        // statement failed without an error)
+        if (classExpressionAST->typeParameters.size() > 0)
+        {
+            emitError(location) << "a generic class expression is not a value: declare it as a class (`class "
+                                << (classExpressionAST->name ? MLIRHelper::getName(classExpressionAST->name) : std::string("C"))
+                                << "<T> { ... }`) and use it with its type arguments";
+        }
+
         return mlir::failure();
     }
 

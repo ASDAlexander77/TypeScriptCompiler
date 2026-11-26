@@ -3770,6 +3770,9 @@ class MLIRGenImpl
         return fieldName;
     }
 
+    mlir::Type narrowedFieldOfBindingSource(BindingElement objectBindingElement, mlir::Value init,
+                                            mlir::Attribute fieldName);
+
     ValueOrLogicalResult processDeclarationObjectBindingPatternSubPath(
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext);
 
@@ -20806,6 +20809,32 @@ class MLIRGenImpl
     mlir::Type getMethodSignature(MethodSignature methodSignature, const GenContext &genContext);
 
     mlir::Type getIndexSignature(IndexSignatureDeclaration indexSignature, const GenContext &genContext);
+
+    // an index signature takes one parameter, neither optional nor a rest one (`[idx?: number]: any` failed without
+    // an error)
+    mlir::LogicalResult checkIndexSignatureParameter(IndexSignatureDeclaration indexSignature)
+    {
+        if (indexSignature->parameters.size() != 1)
+        {
+            emitError(loc(indexSignature)) << "an index signature must have exactly one parameter";
+            return mlir::failure();
+        }
+
+        auto parameter = indexSignature->parameters.front();
+        if (parameter->questionToken)
+        {
+            emitError(loc(parameter)) << "an index signature parameter can't be optional";
+            return mlir::failure();
+        }
+
+        if (parameter->dotDotDotToken)
+        {
+            emitError(loc(parameter)) << "an index signature parameter can't be a rest parameter";
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext);
 

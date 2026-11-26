@@ -95,6 +95,10 @@ namespace mlirgen
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
             if (memberNamePtr.empty())
             {
+                // (a numeric name, `enum E { 1.0 }`, or a computed one, `[foo] = 1`, failed without an error)
+                emitError(loc(enumMember->name))
+                    << (enumMember->name == SyntaxKind::NumericLiteral ? "an enum member can't have a numeric name"
+                                                                         : "an enum member's name must be an identifier or a string literal");
                 return mlir::failure();
             }
 
@@ -1858,6 +1862,11 @@ namespace mlirgen
         }
         else if (kind == SyntaxKind::IndexSignature)
         {
+            if (mlir::failed(checkIndexSignatureParameter(interfaceMember.as<IndexSignatureDeclaration>())))
+            {
+                return mlir::failure();
+            }
+
             auto methodSignature = interfaceMember.as<MethodSignature>();
             // we need this code to add "THIS" param to declaration
             interfaceMember->parent = interfaceDeclarationAST;
