@@ -3737,7 +3737,7 @@ Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, 
 
 208. The "not yet" of 207. Fixed:
 - A literal held by a variable first, whose function member returns an integer, given as an interface whose member
-  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, and `read(t)` for a parameter
+  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, and `readOptions(t)` for a parameter
   `o: Options<number>`): "field "produce" not matching type: '() => number' and '() => s32'". Integer literals stay
   s32 (user ruling); the function is adapted, as it already was given as a `() => number` value
   (`let f: () => number = one`), by a function that calls it and widens its result. The object's clone for the

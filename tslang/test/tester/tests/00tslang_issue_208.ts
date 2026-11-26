@@ -10,7 +10,7 @@ function one() {
     return 1;
 }
 
-function read(o: Options<number>) {
+function readOptions(o: Options<number>) {
     return o.produce();
 }
 
@@ -36,7 +36,7 @@ function main() {
     const t = { produce: () => 45 };
     const o: Options<number> = t;
     assert(o.produce() / 2 == 22.5);
-    assert(read(t) / 2 == 22.5);
+    assert(readOptions(t) / 2 == 22.5);
 
     const named = { produce: one };
     const p: Options<number> = named;
