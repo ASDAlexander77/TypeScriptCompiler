@@ -1119,6 +1119,26 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // the rest of a `T | undefined` (`var { ...rest } = maybe`): T's fields - with their defaults where it has no
+        // value, as `{ ...maybe }` spreads it (a field "can't be found in tuple" of the optional's own)
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(init.getType()))
+        {
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), init);
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, optType.getElementType(), hasValue, true);
+            {
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                auto value = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), init);
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{value});
+
+                builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                auto defaultValue = builder.create<mlir_ts::DefaultOp>(location, optType.getElementType());
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{defaultValue});
+            }
+
+            init = ifOp.getResult(0);
+        }
+
         SmallVector<mlir::Attribute> names;
 
         // take all used fields
@@ -2756,6 +2776,20 @@ namespace mlirgen
                 // solution for it)
                 genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
                 genContext.passResult->outerVariableUses.insert({value.second->getName(), mlir::LocationAttr(location)});
+            }
+
+            // a local of another function read where nothing captures it: a class's static block, or the table its
+            // run-time named members are put in, runs at the start of the program, out of the function the class is
+            // declared in (`function f() { const v = ...; class H { static { H.x = v; } } }`) - it read the local across
+            // its isolated region ("'ts.Store' op using value defined outside the region")
+            if (isOuterVar && !genContext.passResult && !genContext.dummyRun && !genContext.allowPartialResolve
+                && !isGenericFunctionReference(value.first) && classStaticBlockDepth > 0)
+            {
+                emitError(location) << "'" << value.second->getName()
+                                    << "' is a local of the function a class is declared in, read by code of the class that runs "
+                                       "out of that function (a static block, a run-time computed member name): a class can't "
+                                       "capture yet";
+                return mlir::Value();
             }
 
             // end of logic: outer vars

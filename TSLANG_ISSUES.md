@@ -3555,3 +3555,37 @@ Tests `00tslang_issue_195.ts` (all models).
   is "a value that borrows a field cannot be stored".
 
 Tests `00tslang_issue_196.ts` (all models).
+
+197. Bugs found by the third sweep of TypeScript's compiler tests (continued): a class reading a local it can't capture
+gave invalid IR ("'ts.Load' op using value defined outside the region"). Fixed:
+- A class declared in a block of the module's code (`for (let i...) { class C { f = i; } }`, `{ let x; class C { m() {
+  return x; } } }`), or a class expression of the module's code: its members were discovered by the pass over the
+  module's declarations, which does not know the block's locals, and not again. They are discovered where they are
+  made, as a function of such a block is (TSLANG 105); one reading a local is the error a class in a function gets
+  ("a class can't capture yet"), and one reading none works as before.
+- A static block of a class declared in a function (`static { H.x = v; }`), and the table its run-time named members are
+  put in (`[name]() {}` with `const name = ...` in the function), read the function's locals: a static block runs at
+  the start of the program. It is an error.
+
+- `strtod` declared (as the default library declares it) beside a string converted to a number: where the declaration
+  was not lowered yet, the conversion's own `strtod` was a second symbol of that name ("redefinition of symbol named
+  'strtod'", or a crash). It is called by name, as `memcmp` is (TSLANG 193).
+
+Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, `class_static_block_local_error.ts`.
+
+198. Bugs found by the third sweep of TypeScript's compiler tests (continued). Fixed:
+- A rest element in an object destructuring assignment (`({ a: x, ...r } = o)`): "rest destructuring in an object
+  destructuring assignment is not supported". It is an object of the fields the pattern does not name, as in a
+  declaration.
+- The rest of a `T | undefined` in a declaration (`const { ...rest } = u`): "field ... can't be found in tuple". It is
+  T's fields, with their defaults where it has no value, as `{ ...u }` spreads it.
+  Not yet: `var { ...rest } = u` of a `var rest: T` declared before it ("field "value" can't be found").
+
+Tests `00tslang_issue_198.ts` (all models).
+
+199. An enum indexed by a key known at run time (`Size[mySize]`, `Size[k]` of a string): "Enum reverse lookup by index
+is not supported". A number gives the name of the member with that value (the reverse mapping of a numeric enum, ""
+when no member has it; a constant number too, which was read as a member's name), a string the value of the member with
+that name (0 when none has it); each member is compared in turn.
+
+Tests `00tslang_issue_199.ts` (all models).

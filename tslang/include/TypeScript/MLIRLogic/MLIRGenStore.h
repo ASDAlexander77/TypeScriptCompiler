@@ -910,6 +910,9 @@ struct ClassInfo
     bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
+    // declared in a block of the module's code (`for (let i...) { class C { f = i; } }`): its members are discovered
+    // where they are generated, as a function of such a block is (InternalFlags::InModuleBlock)
+    bool inModuleBlock = false;
     // `@cpp`: a binding to C++ objects (MSVC/Itanium single inheritance) made elsewhere. The
     // instance is the C++ object, its first word the C++ vtable, and the class's methods are that
     // vtable's slots from 0 in declaration order, a base class's first: no `.instanceOf`, `.new`,

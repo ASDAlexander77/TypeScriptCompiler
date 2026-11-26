@@ -11087,14 +11087,54 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
             }
+            else if (item == SyntaxKind::SpreadAssignment
+                     && !isa<mlir_ts::ArrayType, mlir_ts::ConstArrayType>(rightExpressionValue.getType()))
+            {
+                // `({ a, ...rest } = obj)`: rest is an object of the fields the pattern does not name, as in a
+                // declaration (processDeclarationObjectBindingPatternSubPathSpread)
+                SmallVector<mlir::Attribute> names;
+                for (auto other : objectLiteralExpression->properties)
+                {
+                    if (other == SyntaxKind::PropertyAssignment)
+                    {
+                        names.push_back(TupleFieldName(other.as<PropertyAssignment>()->name, genContext));
+                    }
+                    else if (other == SyntaxKind::ShorthandPropertyAssignment)
+                    {
+                        names.push_back(TupleFieldName(other.as<ShorthandPropertyAssignment>()->name, genContext));
+                    }
+                }
+
+                llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
+                llvm::SmallVector<mlir_ts::FieldInfo> restFields;
+                if (mlir::failed(mth.getFields(rightExpressionValue.getType(), sourceFields)))
+                {
+                    emitError(location) << "the rest of a value of type '" << to_print(rightExpressionValue.getType())
+                                        << "' can't be taken: give it an object";
+                    return mlir::failure();
+                }
+
+                for (auto &fieldInfo : sourceFields)
+                {
+                    if (!llvm::is_contained(names, fieldInfo.id))
+                    {
+                        restFields.push_back(fieldInfo);
+                    }
+                }
+
+                CAST_A(restValue, location, getTupleType(restFields), rightExpressionValue, genContext);
+
+                auto spreadTarget = item.as<SpreadAssignment>()->expression;
+                auto result = mlirGen(spreadTarget, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                if (mlir::failed(mlirGenSaveLogicOneItem(location, V(result), restValue, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
             else
             {
-                // e.g. `({ a, ...rest } = obj)` - rest-destructuring in an object-destructuring
-                // assignment. Confirmed via repro. A real, genuinely missing feature (same shape
-                // as §4.2's array/union object-literal spread gap): synthesizing `rest` needs
-                // enumerating every field of `obj` not already destructured elsewhere in this
-                // pattern, which this function never implemented. Fail cleanly instead of
-                // crashing rather than attempting that here.
+                // the rest of an array in an object pattern, a method or an accessor in a pattern
                 emitError(location, "rest destructuring in an object destructuring assignment is not supported");
                 return mlir::failure();
             }
@@ -13759,6 +13799,8 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> mlirGenEnumRunTimeLookup(mlir::Location location, mlir_ts::EnumType enumType, mlir::Value key,
+                                                                 const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(CallExpression callExpression, const GenContext &genContext);
     void inferObjectLiteralArgumentReceivers(mlir::Location location, mlir::Value funcResult, NodeArray<Expression> arguments,
@@ -22788,6 +22830,9 @@ class MLIRGenImpl
 
     // functions whose return type was discovered with a return value that could not be made yet (a call of a function
     // declared further on): discovered again where they are next made (discoverFunctionReturnTypeAndCapturedVars)
+    // a class's static block being generated: a global constructor, out of the function the class is declared in
+    int classStaticBlockDepth = 0;
+
     llvm::StringSet<> functionsWithUnresolvedReturn;
     // ...and discovered again since: registered again with that type (registerFunctionOp)
     llvm::StringSet<> functionsWithUnresolvedReturnRediscovered;

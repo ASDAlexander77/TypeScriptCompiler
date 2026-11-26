@@ -282,7 +282,9 @@ namespace mlirgen
         {
             for (auto statement : blockAST->statements)
             {
-                if (statement == SyntaxKind::FunctionDeclaration)
+                // (and a class: its members read them too - `for (let i...) { class C { f = i; } }` read `i` across
+                // the isolated region of its constructor, "'ts.Load' op using value defined outside the region")
+                if (statement == SyntaxKind::FunctionDeclaration || statement == SyntaxKind::ClassDeclaration)
                 {
                     statement->internalFlags |= InternalFlags::InModuleBlock;
                 }
