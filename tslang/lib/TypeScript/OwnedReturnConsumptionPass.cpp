@@ -362,6 +362,89 @@ class OwnedReturnConsumptionPass
                holdsWhatItIsGiven(mth, innerOp, /*givenToCall=*/false);
     }
 
+    // ...or a tuple literal built in place (`[["a" + i, 1]]`, `new Map([["a" + i, 1]])`): a local nothing releases,
+    // filled field by field, read whole once into this literal (and the retain the literal took of it). Each field
+    // that owns memory is given a new value no one else keeps (`"a" + i`) or a string constant, so the tuple is a
+    // new value moved in as `[mk(i)]` is, and goes with the literal. Before, the literal looked as if it borrowed the
+    // tuple, was given back by nothing, and each call leaked it and what its fields held.
+    static bool isInPlaceTupleLiteral(MLIRTypeHelper &mth, mlir_ts::CreateArrayOp arrayOp, mlir::Value element)
+    {
+        // (a tuple's fields have no names; an object literal's do, and is a record of its own: classifyRecords)
+        auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(element.getType());
+        if (!tupleType || llvm::any_of(tupleType.getFields(), [](mlir_ts::FieldInfo field) { return !!field.id; }) ||
+            llvm::count(arrayOp->getOperands(), element) != 1)
+        {
+            return false;
+        }
+
+        auto onlyThisLiteral = llvm::all_of(element.getUsers(), [&](mlir::Operation *user) {
+            return user == arrayOp.getOperation() ||
+                   (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == arrayOp->getBlock() && user->isBeforeInBlock(arrayOp));
+        });
+        if (!onlyThisLiteral)
+        {
+            return false;
+        }
+
+        // a new value, or a string constant: nothing else owns either
+        auto isNewField = [&](mlir::Value stored) {
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), stored.getType()))
+            {
+                return true;
+            }
+
+            auto *storedOp = stored.getDefiningOp();
+            if (!storedOp)
+            {
+                return false;
+            }
+
+            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(storedOp); castOp && castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                return true;
+            }
+
+            return storedOp->hasAttr(OWNED_RESULT_ATTR_NAME) && llvm::all_of(stored.getUsers(), [&](mlir::Operation *user) {
+                       return mlir::isa<mlir_ts::StoreOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user) &&
+                              (!mlir::isa<mlir_ts::StoreOp>(user) || user->getOperand(0) == stored);
+                   });
+        };
+
+        // `["a", 1]` of values only: one `ts.CreateTuple`
+        if (auto createTupleOp = element.getDefiningOp<mlir_ts::CreateTupleOp>())
+        {
+            return createTupleOp->getBlock() == arrayOp->getBlock() && llvm::all_of(createTupleOp->getOperands(), isNewField);
+        }
+
+        auto loadOp = element.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!varOp || varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || varOp.getCaptured().value_or(false) || !varOp.getInitializer() ||
+            !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return false;
+        }
+
+        auto reads = 0;
+        return llvm::all_of(varOp->getUsers(), [&](mlir::Operation *varUser) {
+                   if (varUser == loadOp.getOperation())
+                   {
+                       return ++reads == 1;
+                   }
+
+                   auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(varUser);
+                   return fieldOp && fieldOp->getBlock() == arrayOp->getBlock() && fieldOp->isBeforeInBlock(loadOp) &&
+                          llvm::all_of(fieldOp->getUsers(), [&](mlir::Operation *fieldUser) {
+                              if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser))
+                              {
+                                  return storeOp.getReference() == fieldOp.getResult() && isNewField(storeOp.getValue());
+                              }
+
+                              return mlir::isa<mlir_ts::LoadOp>(fieldUser) && fieldUser->use_empty();
+                          });
+               }) &&
+               reads == 1;
+    }
+
     // ...or, under -mm=own, a value something else had, which the literal took a retain of (`[mk(i + 4), o]` of a local
     // `o`, `[mk(i), GA[0]]`). A literal that does not borrow takes every item it is given (callGivenAgain): the
     // inference moves the value in (`o`'s own release goes), counts it with --own-fallback=count (the retain stays,
@@ -434,7 +517,7 @@ class OwnedReturnConsumptionPass
 
             onlyNoValues = false;
 
-            if (isMovedIn(arrayOp, element) || isNestedLiteral(mth, arrayOp, element))
+            if (isMovedIn(arrayOp, element) || isNestedLiteral(mth, arrayOp, element) || isInPlaceTupleLiteral(mth, arrayOp, element))
             {
                 anyNew = true;
                 continue;
@@ -497,8 +580,26 @@ class OwnedReturnConsumptionPass
 
         for (auto element : arrayOp->getOperands())
         {
-            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element) || isMovedIn(arrayOp, element) ||
-                !isNestedLiteral(mth, arrayOp, element))
+            if (!mth.ownsHeapMemory(arrayOp->getLoc(), element.getType()) || isBorrowedText(element) || isMovedIn(arrayOp, element))
+            {
+                continue;
+            }
+
+            // a tuple literal built in place moves in whole: the retain the literal took of it goes
+            if (isInPlaceTupleLiteral(mth, arrayOp, element))
+            {
+                for (auto *user : llvm::make_early_inc_range(element.getUsers()))
+                {
+                    if (mlir::isa<mlir_ts::RetainOp>(user))
+                    {
+                        user->erase();
+                    }
+                }
+
+                continue;
+            }
+
+            if (!isNestedLiteral(mth, arrayOp, element))
             {
                 continue;
             }

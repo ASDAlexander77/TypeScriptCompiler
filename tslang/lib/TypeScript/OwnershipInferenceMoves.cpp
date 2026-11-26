@@ -857,6 +857,18 @@ namespace own_inference
             });
         }
 
+        // ...and so is a field of a tuple literal built in place (`g(["a" + i, 1])`: a local nothing
+        // releases, filled field by field) when the tuple is only read whole into what borrows it -
+        // a call that keeps none of it, an array a call borrows. Taken, the value went with the
+        // local, which has no release of its own: every such call leaked it.
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == value)
+        {
+            if (isBorrowedTupleLiteralField(storeOp.getReference()))
+            {
+                return true;
+            }
+        }
+
         // the array being pushed onto is written, not taken; what is inserted is taken
         if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
         {
@@ -894,6 +906,64 @@ namespace own_inference
         }
 
         return false;
+    }
+
+    bool OwnershipInferencePass::isBorrowedTupleLiteralField(mlir::Value fieldRef)
+    {
+        auto propertyRefOp = fieldRef.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto varOp = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        // (a tuple's fields have no names; an object literal's do, and is a record of its own: classifyRecords)
+        auto tupleType = varOp ? mlir::dyn_cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(varOp.getType()).getElementType())
+                               : mlir_ts::TupleType();
+        if (!tupleType || isOwningVariable(varOp) || varOp.getCaptured().value_or(false) || !varOp.getInitializer() ||
+            !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>() ||
+            llvm::any_of(tupleType.getFields(), [](mlir_ts::FieldInfo field) { return !!field.id; }))
+        {
+            return false;
+        }
+
+        // rc's retain of the tuple for an array it goes into is that array's count, which an array
+        // that borrows its elements drops (classifyArgumentArrays)
+        auto readsOnly = [](mlir::Value read) {
+            auto reads = 0;
+            auto borrowed = llvm::all_of(read.getUses(), [&](mlir::OpOperand &use) {
+                if (mlir::isa<mlir_ts::RetainOp>(use.getOwner()))
+                {
+                    return true;
+                }
+
+                reads++;
+                return isBorrow(use.getOwner(), use.get());
+            });
+            return borrowed && reads > 0;
+        };
+
+        auto wholeReads = 0;
+        auto onlyBorrowed = llvm::all_of(varOp->getUsers(), [&](mlir::Operation *varUser) {
+            if (auto fieldOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(varUser))
+            {
+                // the literal's fields, each filled once (and MLIRGen's unused read of the old value)
+                return llvm::all_of(fieldOp->getUses(), [&](mlir::OpOperand &use) {
+                    if (auto fieldStore = mlir::dyn_cast<mlir_ts::StoreOp>(use.getOwner()))
+                    {
+                        return fieldStore.getReference() == fieldOp.getResult();
+                    }
+
+                    auto fieldLoad = mlir::dyn_cast<mlir_ts::LoadOp>(use.getOwner());
+                    return fieldLoad && fieldLoad->use_empty();
+                });
+            }
+
+            if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(varUser))
+            {
+                wholeReads++;
+                return readsOnly(loadOp.getResult());
+            }
+
+            return false;
+        });
+
+        return onlyBorrowed && wholeReads > 0;
     }
 
     bool OwnershipInferencePass::isBoundForCall(mlir::Operation *thisOp)

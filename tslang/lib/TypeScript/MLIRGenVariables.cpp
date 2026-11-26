@@ -508,7 +508,7 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::processDeclarationArrayBindingPatternSubPath(
         mlir::Location location, int index, mlir::Type type, mlir::Value init, 
         bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType,
-        Expression defaultValue, bool bindsName, const GenContext &genContext)
+        Expression defaultValue, bool bindsName, mlir::Value iteratorSource, const GenContext &genContext)
     {
         // An element's default (`const [a = mk(1), b = mk(2)] = [mk(i)]`) is its value where the element is missing - past
         // the end of the source, or undefined there - as in TypeScript. It was not applied: an element past the end of a
@@ -788,10 +788,27 @@ namespace mlirgen
                 })
                 .Default([&](auto type) { 
 
+                    // `const [first, ...rest] = m.entries()`: the rest is an array of what the iterator gives from
+                    // here on, made as `[...iterator]` is (the elements before took theirs with `next()` already)
+                    if (isDotDotDot && isIterator && iteratorSource)
+                    {
+                        SmallVector<ArrayElement> values;
+                        ArrayInfo arrayInfo;
+                        if (mlir::failed(processArrayValuesSpreadElement(location, iteratorSource, values, arrayInfo, genContext)))
+                        {
+                            return mlir::Value();
+                        }
+
+                        arrayInfo.adjustArrayType(getAnyType());
+                        arrayInfo.isConst = false;
+                        auto restArray = createArrayFromArrayInfo(location, values, arrayInfo, genContext);
+                        return restArray.failed_or_no_value() ? mlir::Value() : V(restArray);
+                    }
+
                     if (isDotDotDot)
                     {
                         emitError(location) << "Array Binding Pattern: spread is not implemented for type: " << to_print(type);
-                        return mlir::Value();  
+                        return mlir::Value();
                     }
 
                     if (isIterator)
@@ -884,6 +901,7 @@ namespace mlirgen
         mlir::Value arrayLikeLengthValue;
         mlir::Type arrayLikeElementType;
         auto isIterator = false;
+        mlir::Value iteratorSource;
         auto isSourceArrayLike = false;
         auto isArrayOrTuple = isa<mlir_ts::ArrayType>(typeRef)
             || isa<mlir_ts::TupleType>(typeRef)
@@ -902,9 +920,10 @@ namespace mlirgen
                         location, iteratorValue, ITERATOR_NEXT, false, genContext);
                     if (nextProperty)
                     {
+                        iteratorSource = iteratorValue;
                         init = V(nextProperty);
                         isIterator = true;
-                    }                    
+                    }
                 }
             }
             else if (hasIterator(location, init, genContext))
@@ -914,6 +933,7 @@ namespace mlirgen
                     location, init, ITERATOR_NEXT, false, genContext);
                 if (nextProperty)
                 {
+                    iteratorSource = init;
                     init = V(nextProperty);
                     isIterator = true;
                 }
@@ -957,7 +977,7 @@ namespace mlirgen
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
                 auto result = processDeclarationArrayBindingPatternSubPath(
                     location, index, type, init, !!arrayBindingElement->dotDotDotToken, isIterator, isSourceArrayLike, arrayLikeLengthValue, arrayLikeElementType,
-                    arrayBindingElement->initializer, arrayBindingElement->name == SyntaxKind::Identifier, genContext);
+                    arrayBindingElement->initializer, arrayBindingElement->name == SyntaxKind::Identifier, iteratorSource, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 
