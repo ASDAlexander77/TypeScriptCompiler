@@ -15238,7 +15238,7 @@ class MLIRGenImpl
     // the full names of the classes read by name (requestMemberTable)
     llvm::StringSet<> memberTableRequests;
 
-    ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, Expression argument,
+    ValueOrLogicalResult mlirGenObjectBuiltin(mlir::Location location, StringRef method, NodeArray<Expression> arguments,
                                               const GenContext &genContext);
     ValueOrLogicalResult mlirGenSharedShare(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
     void markAtomicInstanceShared(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value instance);
@@ -20321,6 +20321,10 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenDictionaryCall(mlir::Location location, mlir::Value dictionary, StringRef method,
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
     std::optional<mlir::LogicalResult> mlirGenDictionaryDelete(mlir::Location location, Expression operand,
+        const GenContext &genContext);
+    mlir::LogicalResult mlirGenSpreadIntoDictionary(mlir::Location spreadLocation, mlir::Value dictionary,
+        mlir::Value spreadValue, const GenContext &genContext);
+    std::optional<mlir::LogicalResult> mlirGenAnyDelete(mlir::Location location, Expression operand,
         const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castIterableToIterator(mlir::Location location, mlir::Value value,
         mlir::Type baseValueType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);

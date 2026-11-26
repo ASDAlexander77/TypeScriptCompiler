@@ -4254,6 +4254,156 @@ namespace mlirgen
         return mlir::failed(result.result) ? mlir::failure() : mlir::success();
     }
 
+    // `delete x[k]` and `delete x.name` of `x: any`: the key deleted at run time (ANY_KEYS_OP_DELETE) - a dictionary's
+    // entry; the keys of any other value are fixed when it is made, a TypeError. Not the value read freed.
+    std::optional<mlir::LogicalResult> MLIRGenImpl::mlirGenAnyDelete(mlir::Location location, Expression operand,
+        const GenContext &genContext)
+    {
+        Expression objectExpression;
+        if (operand == SyntaxKind::ElementAccessExpression)
+        {
+            objectExpression = operand.as<ElementAccessExpression>()->expression;
+        }
+        else if (operand == SyntaxKind::PropertyAccessExpression)
+        {
+            objectExpression = operand.as<PropertyAccessExpression>()->expression;
+        }
+        else
+        {
+            return std::nullopt;
+        }
+
+        auto objectType = evaluate(objectExpression, genContext);
+        if (!objectType || !isa<mlir_ts::AnyType>(objectType))
+        {
+            return std::nullopt;
+        }
+
+        auto objectResult = mlirGen(objectExpression, genContext);
+        if (objectResult.failed_or_no_value())
+        {
+            return mlir::failure();
+        }
+
+        mlir::Value key;
+        if (operand == SyntaxKind::ElementAccessExpression)
+        {
+            auto keyResult = mlirGen(operand.as<ElementAccessExpression>()->argumentExpression, genContext);
+            if (keyResult.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            key = V(keyResult);
+        }
+        else
+        {
+            auto name = MLIRHelper::getName(operand.as<PropertyAccessExpression>()->name, stringAllocator);
+            key = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(name));
+        }
+
+        auto deleted = mlirGenAnyKey(location, V(objectResult), key, ANY_KEYS_OP_DELETE, genContext);
+        return mlir::failed(deleted.result) ? mlir::failure() : mlir::success();
+    }
+
+    // `...s` into `dictionary`, a spread in an object literal that makes one, and a source of Object.assign: a record's
+    // fields, known here, each set; a dictionary's entries, copied by the default library's objectDictionaryAssign (a
+    // generic function: made only where it is used)
+    mlir::LogicalResult MLIRGenImpl::mlirGenSpreadIntoDictionary(mlir::Location spreadLocation, mlir::Value dictionary,
+        mlir::Value spreadValue, const GenContext &genContext)
+    {
+        if (dictionaryClassInfoOf(spreadValue.getType(), genContext))
+        {
+            // of values of another type (`{ ...counts }` of numbers into a dictionary of `number | string`): a
+            // function made here from source once a module, each value cast to the dictionary's - the library's
+            // objectDictionaryAssign takes two of one type. A call, as that one's: under -mm=own the dictionary
+            // made here is lent to it (in place, the loop's second name for it was a second reference)
+            if (spreadValue.getType() != dictionary.getType())
+            {
+                // ("_" in front of "__", as the scanner puts it)
+                auto convertName = ".dictionary_assign_values";
+                auto convert = resolveIdentifier(spreadLocation, convertName, genContext);
+                if (!convert)
+                {
+                    std::string src = std::string("function __dictionary_assign_values<T, S>(target: ") +
+                                      OBJECT_DICTIONARY_CLASS_NAME + "<T>, source: " + OBJECT_DICTIONARY_CLASS_NAME +
+                                      "<S>) {\nfor (const k in source) { const v = source[k]; if (v !== undefined) target[k] = v; }\n}\n";
+                    MLIRLocationGuard vgLoc(overwriteLoc);
+                    overwriteLoc = spreadLocation;
+                    if (mlir::failed(parsePartialStatements(stows(src))))
+                    {
+                        return mlir::failure();
+                    }
+
+                    convert = resolveIdentifier(spreadLocation, convertName, genContext);
+                    if (!convert)
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
+                auto converted = mlirGenCallExpression(spreadLocation, convert, {}, operands, genContext);
+                if (mlir::failed(converted.result))
+                {
+                    return mlir::failure();
+                }
+
+                return mlir::success();
+            }
+
+            auto assign = resolveIdentifier(spreadLocation, OBJECT_DICTIONARY_ASSIGN_NAME, genContext);
+            if (!assign)
+            {
+                emitError(spreadLocation) << "a spread of a dictionary needs the default library's '"
+                                          << OBJECT_DICTIONARY_ASSIGN_NAME << "', which is not there";
+                return mlir::failure();
+            }
+
+            SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
+            auto assigned = mlirGenCallExpression(spreadLocation, assign, {}, operands, genContext);
+            if (mlir::failed(assigned.result))
+            {
+                return mlir::failure();
+            }
+
+            return mlir::success();
+        }
+
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        if (mlir::failed(mth.getFields(spreadValue.getType(), fields)))
+        {
+            emitError(spreadLocation) << "a spread into a dictionary of a value of type '"
+                                      << to_print(spreadValue.getType()) << "' is not supported";
+            return mlir::failure();
+        }
+
+        for (auto &field : fields)
+        {
+            auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+            if (!name)
+            {
+                emitError(spreadLocation) << "a field of '" << to_print(spreadValue.getType())
+                                          << "' has no name a dictionary can hold";
+                return mlir::failure();
+            }
+
+            auto fieldResult = mlirGenPropertyAccessExpression(spreadLocation, spreadValue, field.id, genContext);
+            if (fieldResult.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            auto fieldKey = builder.create<mlir_ts::ConstantOp>(spreadLocation, getStringType(), name);
+            if (mlir::failed(mlirGenDictionarySet(spreadLocation, dictionary, fieldKey, V(fieldResult), genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castTupleToDictionary(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType,
         mlir_ts::ClassType classType, const GenContext &genContext)
     {
@@ -4529,93 +4679,9 @@ namespace mlirgen
                 }
 
                 auto spreadValue = V(spreadResult);
-                if (dictionaryClassInfoOf(spreadValue.getType(), genContext))
+                if (mlir::failed(mlirGenSpreadIntoDictionary(spreadLocation, dictionary, spreadValue, genContext)))
                 {
-                    // of values of another type (`{ ...counts }` of numbers into a dictionary of `number | string`): a
-                    // function made here from source once a module, each value cast to the dictionary's - the library's
-                    // objectDictionaryAssign takes two of one type. A call, as that one's: under -mm=own the dictionary
-                    // made here is lent to it (in place, the loop's second name for it was a second reference)
-                    if (spreadValue.getType() != dictionary.getType())
-                    {
-                        // ("_" in front of "__", as the scanner puts it)
-                        auto convertName = ".dictionary_assign_values";
-                        auto convert = resolveIdentifier(spreadLocation, convertName, genContext);
-                        if (!convert)
-                        {
-                            std::string src = std::string("function __dictionary_assign_values<T, S>(target: ") +
-                                              OBJECT_DICTIONARY_CLASS_NAME + "<T>, source: " + OBJECT_DICTIONARY_CLASS_NAME +
-                                              "<S>) {\nfor (const k in source) { const v = source[k]; if (v !== undefined) target[k] = v; }\n}\n";
-                            MLIRLocationGuard vgLoc(overwriteLoc);
-                            overwriteLoc = spreadLocation;
-                            if (mlir::failed(parsePartialStatements(stows(src))))
-                            {
-                                return ValueOrLogicalResult(mlir::failure());
-                            }
-
-                            convert = resolveIdentifier(spreadLocation, convertName, genContext);
-                            if (!convert)
-                            {
-                                return ValueOrLogicalResult(mlir::failure());
-                            }
-                        }
-
-                        SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
-                        auto converted = mlirGenCallExpression(spreadLocation, convert, {}, operands, genContext);
-                        if (mlir::failed(converted.result))
-                        {
-                            return ValueOrLogicalResult(mlir::failure());
-                        }
-
-                        continue;
-                    }
-
-                    auto assign = resolveIdentifier(spreadLocation, OBJECT_DICTIONARY_ASSIGN_NAME, genContext);
-                    if (!assign)
-                    {
-                        emitError(spreadLocation) << "a spread of a dictionary needs the default library's '"
-                                                  << OBJECT_DICTIONARY_ASSIGN_NAME << "', which is not there";
-                        return ValueOrLogicalResult(mlir::failure());
-                    }
-
-                    SmallVector<mlir::Value, 4> operands{dictionary, spreadValue};
-                    auto assigned = mlirGenCallExpression(spreadLocation, assign, {}, operands, genContext);
-                    if (mlir::failed(assigned.result))
-                    {
-                        return ValueOrLogicalResult(mlir::failure());
-                    }
-
-                    continue;
-                }
-
-                llvm::SmallVector<mlir_ts::FieldInfo> fields;
-                if (mlir::failed(mth.getFields(spreadValue.getType(), fields)))
-                {
-                    emitError(spreadLocation) << "a spread into a dictionary of a value of type '"
-                                              << to_print(spreadValue.getType()) << "' is not supported";
                     return ValueOrLogicalResult(mlir::failure());
-                }
-
-                for (auto &field : fields)
-                {
-                    auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
-                    if (!name)
-                    {
-                        emitError(spreadLocation) << "a field of '" << to_print(spreadValue.getType())
-                                                  << "' has no name a dictionary can hold";
-                        return ValueOrLogicalResult(mlir::failure());
-                    }
-
-                    auto fieldResult = mlirGenPropertyAccessExpression(spreadLocation, spreadValue, field.id, genContext);
-                    if (fieldResult.failed_or_no_value())
-                    {
-                        return ValueOrLogicalResult(mlir::failure());
-                    }
-
-                    auto fieldKey = builder.create<mlir_ts::ConstantOp>(spreadLocation, getStringType(), name);
-                    if (mlir::failed(mlirGenDictionarySet(spreadLocation, dictionary, fieldKey, V(fieldResult), genContext)))
-                    {
-                        return ValueOrLogicalResult(mlir::failure());
-                    }
                 }
 
                 continue;

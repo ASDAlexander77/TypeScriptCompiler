@@ -6883,6 +6883,16 @@ namespace mlirgen
         auto has = std::to_string(ANY_KEYS_OP_HAS);
         auto set = std::to_string(ANY_KEYS_OP_SET);
         auto keysOp = std::to_string(ANY_KEYS_OP_KEYS);
+        auto deleteOp = std::to_string(ANY_KEYS_OP_DELETE);
+        auto closedOp = std::to_string(ANY_KEYS_OP_CLOSED);
+        auto closeOp = std::to_string(ANY_KEYS_OP_CLOSE);
+        // how far a value that is not a dictionary is closed (ANY_KEYS_OP_CLOSED): it can't be closed further
+        // (ANY_KEYS_OP_CLOSE), and a key of it can't be deleted (ANY_KEYS_OP_DELETE)
+        auto fixedKeys = [&](StringRef closed, StringRef deleteError) {
+            return "if (op == " + deleteOp + ") " + throwTypeErrorSource(deleteError) + "\n"
+                   "if (op == " + closedOp + ") return <any>" + closed.str() + ";\n"
+                   "if (op == " + closeOp + ") return undefined;\n";
+        };
         // a write of a key the type has not got: a value's keys are its type's, none is added
         auto noNewKey = "if (op == " + set + ") " +
                         throwTypeErrorSource("a key the type of the value in the value of type any has not got can't be written") + "\n";
@@ -6893,17 +6903,31 @@ namespace mlirgen
         std::string src;
         if (isDictionary)
         {
+            // closed by Object.preventExtensions, seal, freeze (its `close`); one of a library older than its `close`
+            // and `closed` (or a program's own) is never closed
+            auto dictionaryInfo = dictionaryClassInfoOf(type, genContext);
+            auto closable = dictionaryInfo->getMethodIndex("close") >= 0 && dictionaryInfo->getMethodIndex("closed") >= 0;
+            std::string closing =
+                closable ? "if (op == " + closedOp + ") { let c = 0; if (Object.isFrozen(d)) c = 3; else if (Object.isSealed(d)) c = 2; "
+                           "else if (!Object.isExtensible(d)) c = 1; return <any>c; }\n"
+                           "if (op == " + closeOp + ") { const l = <number>value; if (l == 1) Object.preventExtensions(d); "
+                           "else if (l == 2) Object.seal(d); else if (l == 3) Object.freeze(d); return undefined; }\n"
+                         : "if (op == " + closedOp + ") return <any>0;\n"
+                           "if (op == " + closeOp + ") " + throwTypeErrorSource("this dictionary can't be closed") + "\n";
+
             // its entries, by a key as text (a number key is its text, as an object's is)
-            name = "__any_keys_dictionary";
+            name = closable ? "__any_keys_dictionary" : "__any_keys_dictionary_open";
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
                   "const d = <T>box;\n"
                   "if (op == " + keysOp + ") { const r: string[] = []; for (const e in d) r.push(e); return <any>r; }\n"
+                  + closing +
                   "const kt = typeof key;\n"
                   "let k = \"\";\n"
                   "if (kt == \"string\") k = <string>key;\n"
                   "else if (" + anyKeyIsNumberSource + ") k = \"\" + <number>key;\n"
                   "else {\n" + notThere + "}\n"
                   "if (op == " + has + ") return <any>(k in d);\n"
+                  "if (op == " + deleteOp + ") { delete d[k]; return <any>true; }\n"
                   "if (op == " + set + ") { d[k] = value; return undefined; }\n"
                   "return <any>d[k];\n"
                   "}\n";
@@ -6925,7 +6949,8 @@ namespace mlirgen
             name = "__any_keys_array" + std::string(suffix);
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
                   "const kt = typeof key;\n"
-                  "const a = <T>box;\n"
+                  "const a = <T>box;\n" +
+                  fixedKeys("0", "an element of an array can't be deleted through a value of type any") +
                   "if (op == " + keysOp + ") { const r: string[] = []; for (let i = 0; i < a.length; i++) r.push(\"\" + i); return <any>r; }\n"
                   "if (" + anyKeyIsNumberSource + ") {\n"
                   "const i = <number>key;\n"
@@ -6969,7 +6994,8 @@ namespace mlirgen
 
             name = "__any_keys_" + std::to_string(hash);
             src = "function " + name + "<T>(box: any, op: number, key: any, value: any): any {\n"
-                  "const o = <T>box;\n";
+                  "const o = <T>box;\n" +
+                  fixedKeys("2", "a key of an object can't be deleted: its keys are fixed when it is made");
 
             // an object of a subclass has keys of its own: its class's adapter reads them (its member table,
             // CLASS_VTABLE_MEMBERS_SLOT), as JavaScript reads the object, not the type it was boxed as
@@ -7182,9 +7208,12 @@ namespace mlirgen
     {
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
-            emitError(location) << (op == ANY_KEYS_OP_HAS    ? "'k in x' of a value of type 'any'"
-                                    : op == ANY_KEYS_OP_KEYS ? "'for...in' or Object.keys of a value of type 'any'"
-                                                             : "element access of a value of type 'any' ('x[k]')")
+            emitError(location) << (op == ANY_KEYS_OP_HAS      ? "'k in x' of a value of type 'any'"
+                                    : op == ANY_KEYS_OP_KEYS   ? "'for...in' or Object.keys of a value of type 'any'"
+                                    : op == ANY_KEYS_OP_DELETE ? "'delete x[k]' of a value of type 'any'"
+                                    : op == ANY_KEYS_OP_CLOSED || op == ANY_KEYS_OP_CLOSE
+                                        ? "Object.isExtensible, isSealed, isFrozen, preventExtensions, seal or freeze of a value of type 'any'"
+                                        : "element access of a value of type 'any' ('x[k]')")
                                 << " is not supported under -mm=own: cast it to its type first";
             return mlir::failure();
         }
@@ -7210,8 +7239,14 @@ namespace mlirgen
             auto has = std::to_string(ANY_KEYS_OP_HAS);
             auto set = std::to_string(ANY_KEYS_OP_SET);
             auto keysOp = std::to_string(ANY_KEYS_OP_KEYS);
-            // the keys of what has none (`for (k in null)` runs no times, as in JavaScript)
-            auto noKeys = "if (op == " + keysOp + ") { const e: string[] = []; return <T><any>e; }\n";
+            auto deleteOp = std::to_string(ANY_KEYS_OP_DELETE);
+            auto closedOp = std::to_string(ANY_KEYS_OP_CLOSED);
+            auto closeOp = std::to_string(ANY_KEYS_OP_CLOSE);
+            // the keys of what has none (`for (k in null)` runs no times, as in JavaScript); and it is frozen, as
+            // JavaScript says of what is no object
+            auto noKeys = "if (op == " + keysOp + ") { const e: string[] = []; return <T><any>e; }\n"
+                          "if (op == " + closedOp + ") return <T><any>3;\n"
+                          "if (op == " + closeOp + ") return <T>undefined;\n";
             // `b`: `box` before `typeof` narrowed it
             std::string src =
                 "function __any_key<T>(box: any, op: number, key: any, value: any): T {\n"
@@ -7224,7 +7259,9 @@ namespace mlirgen
                 "if (op == " + keysOp + ") { const r: string[] = []; const cs = <string>b; "
                 "for (let i = 0; i < cs.length; i++) r.push(\"\" + i); return <T><any>r; }\n"
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a string is not allowed") + "\n"
-                "if (op == " + set + ") " + throwTypeErrorSource("a string can't be changed") + "\n"
+                "if (op == " + closedOp + ") return <T><any>3;\n"
+                "if (op == " + closeOp + ") return <T>undefined;\n"
+                "if (op == " + set + " || op == " + deleteOp + ") " + throwTypeErrorSource("a string can't be changed") + "\n"
                 "const s = <string>b;\n"
                 "if (" + anyKeyIsNumberSource + ") {\n"
                 "const i = <number>key;\n"
@@ -7240,7 +7277,8 @@ namespace mlirgen
                 throwTypeErrorSource("the keys of the value in the value of type any are not known: it was boxed where they were not") + "\n" +
                 noKeys +
                 "if (op == " + has + ") " + throwTypeErrorSource("'k in x' of a value that is not an object is not allowed") + "\n"
-                "if (op == " + set + ") " + throwTypeErrorSource("a key of a value that is not an object can't be written") + "\n"
+                "if (op == " + set + " || op == " + deleteOp + ") " +
+                throwTypeErrorSource("a key of a value that is not an object can't be written") + "\n"
                 "return <T>undefined;\n"
                 "}\n"
                 "return <T>(<(box: any, op: number, key: any, value: any) => any>keys)(b, op, key, value);\n"
@@ -7290,9 +7328,19 @@ namespace mlirgen
         // its caller owns (OwnedReturnConsumptionPass)
         markAnyAdapterCalls("___any_key<");
 
-        if (op == ANY_KEYS_OP_HAS)
+        if (op == ANY_KEYS_OP_HAS || op == ANY_KEYS_OP_DELETE)
         {
             return cast(location, getBooleanType(), V(result), genContext);
+        }
+
+        if (op == ANY_KEYS_OP_CLOSED)
+        {
+            return cast(location, getNumberType(), V(result), genContext);
+        }
+
+        if (op == ANY_KEYS_OP_CLOSE)
+        {
+            return box;
         }
 
         if (op == ANY_KEYS_OP_SET)
