@@ -2632,6 +2632,10 @@ add_test(NAME test-compile-class-itself-string-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_itself_string_error.ts")
 set_tests_properties(test-compile-class-itself-string-error PROPERTIES PASS_REGULAR_EXPRESSION "itself can't be converted to a string"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-index-signature-key-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/index_signature_key_error.ts")
+set_tests_properties(test-compile-index-signature-key-error PROPERTIES PASS_REGULAR_EXPRESSION "an index signature parameter can't be of type 'boolean'"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
 # TSLANG 193: a class given for an array, a type stored in a module variable
 add_test(NAME test-compile-class-not-array-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_not_array_error.ts")

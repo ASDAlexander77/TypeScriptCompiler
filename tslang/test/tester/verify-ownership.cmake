@@ -124,6 +124,7 @@ set(not_compilable_alone
     catch_rest_any_error.ts
     class_itself_interface_error.ts
     class_itself_string_error.ts
+    index_signature_key_error.ts
     # an error by design (test-compile-computed-name-failed-error)
     computed_name_failed_error.ts
     # an error by design (test-compile-subclass-field-failed-error)

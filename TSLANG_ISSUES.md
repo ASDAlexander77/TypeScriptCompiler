@@ -3642,11 +3642,15 @@ Tests: `defaultlib/defaultlib_collector.ts` (with the default library, jit and e
   not a value); too few type arguments (`new D<number>()` of `D<T, U>`); an optional or rest index signature parameter;
   an enum member with a numeric or computed name; a destructuring declaration with no initializer (`var [a], { b };`);
   an element past a tuple's end, in a pattern (`{ 3: d }`) or an assignment (`[a, b, c] = t` of a pair).
+- Clear errors where these were internal errors or named hidden members: the class itself given as an interface
+  (`const c: Constructor<A> = A`, "failed to legalize operation 'ts.ClassRef'"; `typeof A` and a constructor type
+  `new (...args: any[]) => A` work); the class itself converted to a string (`f += ""`, "Class member 'get_toStringTag'
+  can't be found"); a method with a numeric name (`static 1() {}`, read as `C[1]()`: "can't resolve property/field/base '.index'"); an index signature keyed by `boolean` or by literals (`[u: "foo" | "bar"]`).
 
-The local default library at I:	slang was rebuilt (11-26): the one from 11-22 predates the compiler naming change, and
+The local default library at I:\tslang was rebuilt (11-26): the one from 11-22 predates the compiler naming change, and
 an exe using `Math` failed to link ("DataView..size already defined").
 
 Tests `00tslang_issue_204.ts` (all models), `00tslang_issue_204_catch.ts` (gc, rc, none), and the error tests
 `too_few_type_args_error.ts`, `destructuring_no_initializer_error.ts`, `tuple_index_pattern_error.ts`,
 `index_signature_optional_error.ts`, `enum_numeric_name_error.ts`, `generic_class_expression_error.ts`,
-`catch_rest_any_error.ts`.
+`catch_rest_any_error.ts`, `class_itself_interface_error.ts`, `class_itself_string_error.ts`, `index_signature_key_error.ts`.

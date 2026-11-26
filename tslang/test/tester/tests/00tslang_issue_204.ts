@@ -6,6 +6,7 @@
 // - a function returning `any` given as one returning another type (`(v: any) => any` as `(v: any) => string`)
 // - a call tested for a narrowing (`o() === undefined && x`) was made again by the narrowing (twice; three times in
 //   an `if`)
+// - a method with a numeric name (`static 1() {}`) had no name: `C[1]()` was "can't resolve property/field/base '.index'"
 // - a `?:` with a branch of no value (`c ? f() : 0`, `f(): void`): "'ts.If' op expects a non-empty block"; it is undefined
 type TG<T> = { f: number; g: T; h: string };
 interface IG<T> { f: number; g: T; k: number }
@@ -61,6 +62,16 @@ function voidBranches(b: boolean) {
     return y;
 }
 
+class NumberNamed {
+    static 1() {
+        return 5;
+    }
+
+    2() {
+        return 6;
+    }
+}
+
 let made = 0;
 
 function maybe(): number | undefined {
@@ -91,6 +102,9 @@ function main() {
         made += 10;
     }
     assert(made == 12, "...in an if");
+
+    assert(NumberNamed[1]() == 5 && NumberNamed["1"]() == 5, "a static method of a numeric name");
+    assert(new NumberNamed()[2]() == 6, "...a method");
 
     print("done.");
 }

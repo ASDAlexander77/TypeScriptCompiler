@@ -1963,6 +1963,20 @@ namespace mlirgen
             }
         }
 
+        // a numeric name (`static 1() {}`) is the number's text, as `C[1]` and `C["1"]` read it (it was a method of
+        // no name: "can't resolve property/field/base '.index'")
+        if (methodSignature->name == SyntaxKind::NumericLiteral)
+        {
+            auto text = convertWideToUTF8(methodSignature->name.as<NumericLiteral>()->text);
+            auto number = std::strtod(text.c_str(), nullptr);
+            if (number == (double)(int64_t)number)
+            {
+                return {std::to_string((int64_t)number), true};
+            }
+
+            return {text, true};
+        }
+
         return {MLIRHelper::getName(methodSignature->name), true};
     }
 
