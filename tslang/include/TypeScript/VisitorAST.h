@@ -114,6 +114,36 @@ template <typename T> class FilterVisitorSkipFuncsAST : public FilterVisitorAST<
         }
     }
 };
+// skips what has a `this` of its own (functions, methods, classes), not an arrow: an arrow's `this` is the code around it
+template <typename T> class FilterVisitorSkipOwnThisAST : public FilterVisitorAST<T>
+{
+  public:
+    FilterVisitorSkipOwnThisAST(SyntaxKind kind, std::function<void(T)> functor) : FilterVisitorAST<T>(kind, functor)
+    {
+    }
+
+  protected:
+    virtual bool isFiltered(Node node) override
+    {
+        SyntaxKind currentkind = node;
+        switch (currentkind)
+        {
+        case SyntaxKind::MethodDeclaration:
+        case SyntaxKind::Constructor:
+        case SyntaxKind::GetAccessor:
+        case SyntaxKind::SetAccessor:
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::FunctionDeclaration:
+        //
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::ClassExpression:
+        case SyntaxKind::InterfaceDeclaration:
+            return true;
+        default:
+            return false;
+        }
+    }
+};
 } // namespace ts
 
 #endif // VISITOR_AST_H
