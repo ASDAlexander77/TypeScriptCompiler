@@ -768,6 +768,18 @@ namespace mlirgen
         }
 
         auto fullName = concatFullNamespaceName(name);
+
+        // a named function expression held by a variable of its name (`namespace N { export let f = function f() {} }`,
+        // `example.isFoo = function isFoo() {}`): the variable is the symbol `N.f` already ("redefinition of symbol
+        // named 'N.f'"). The function's symbol is one of its own; its name, by which it calls itself, stays.
+        if (signatureDeclarationBaseAST == SyntaxKind::FunctionExpression && signatureDeclarationBaseAST->name)
+        {
+            if (auto *existing = theModule.lookupSymbol(fullName); existing && !isa<mlir_ts::FuncOp>(existing))
+            {
+                fullName = concatFullNamespaceName(".fn." + name);
+            }
+        }
+
         return std::make_tuple(fullName, name);
     }
 

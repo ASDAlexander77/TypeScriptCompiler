@@ -3608,3 +3608,9 @@ Tests `00tslang_issue_200.ts` (all models).
   Not yet: a result of type `any` given as another type (`(v: any) => any` as `(v: any) => string`) stays the error.
 
 Tests `00tslang_issue_201.ts` (all models).
+
+202. A named function expression held by a variable of its name in a namespace (`namespace N { export let f = function
+f() {} }`, or an expando `example.isFoo = function isFoo() {}`, which is one): "redefinition of symbol named 'N.f'" - the
+variable is that symbol. The function's symbol is one of its own (`N..fn.f`); its name, by which it calls itself, stays.
+
+Tests `00tslang_issue_202.ts` (all models).
