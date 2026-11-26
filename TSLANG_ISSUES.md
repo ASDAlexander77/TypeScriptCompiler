@@ -3582,3 +3582,10 @@ Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, 
   Not yet: `var { ...rest } = u` of a `var rest: T` declared before it ("field "value" can't be found").
 
 Tests `00tslang_issue_198.ts` (all models).
+
+199. An enum indexed by a key known at run time (`Size[mySize]`, `Size[k]` of a string): "Enum reverse lookup by index
+is not supported". A number gives the name of the member with that value (the reverse mapping of a numeric enum, ""
+when no member has it; a constant number too, which was read as a member's name), a string the value of the member with
+that name (0 when none has it); each member is compared in turn.
+
+Tests `00tslang_issue_199.ts` (all models).

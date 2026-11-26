@@ -13799,6 +13799,8 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> mlirGenEnumRunTimeLookup(mlir::Location location, mlir_ts::EnumType enumType, mlir::Value key,
+                                                                 const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(CallExpression callExpression, const GenContext &genContext);
     void inferObjectLiteralArgumentReceivers(mlir::Location location, mlir::Value funcResult, NodeArray<Expression> arguments,

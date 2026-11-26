@@ -1661,6 +1661,108 @@ namespace mlirgen
         return false;
     }
 
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenEnumRunTimeLookup(mlir::Location location, mlir_ts::EnumType enumType,
+                                                                             mlir::Value key, const GenContext &genContext)
+    {
+        auto values = enumType.getValues();
+        if (!values || values.empty())
+        {
+            return std::nullopt;
+        }
+
+        auto keyType = mth.stripLiteralType(key.getType());
+        if (auto keyEnumType = dyn_cast<mlir_ts::EnumType>(keyType))
+        {
+            keyType = keyEnumType.getElementType();
+        }
+
+        auto byName = isa<mlir_ts::StringType>(keyType);
+        auto byValue = mth.isNumericType(keyType);
+        if (!byName && !byValue)
+        {
+            return std::nullopt;
+        }
+
+        // a reverse mapping is of a numeric enum's members only
+        auto members = llvm::to_vector(values.getValue());
+        if (byValue && !llvm::all_of(members, [](mlir::NamedAttribute member) {
+                return isa<mlir::IntegerAttr, mlir::FloatAttr>(member.getValue());
+            }))
+        {
+            return std::nullopt;
+        }
+
+        mlir::Type resultType = byName ? enumType.getElementType() : mlir::Type(getStringType());
+        mlir::Type compareType = byName ? mlir::Type(getStringType()) : mlir::Type(getNumberType());
+        // (a key of that type as it is: cast, -mm=own copied a borrowed one and refused it)
+        mlir::Value keyValue = key;
+        if (key.getType() != compareType)
+        {
+            CAST_A(castKey, location, compareType, key, genContext);
+            keyValue = castKey;
+        }
+
+        // every member compared first, then the branches pick the result
+        SmallVector<mlir::Value> sames;
+        SmallVector<mlir::Value> nameValues;
+        SmallVector<mlir::Value> memberValues;
+        for (auto &member : members)
+        {
+            auto typedAttr = dyn_cast<mlir::TypedAttr>(member.getValue());
+            if (!typedAttr)
+            {
+                return std::nullopt;
+            }
+
+            mlir::Value nameValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), member.getName());
+            mlir::Value memberValue = builder.create<mlir_ts::ConstantOp>(location, typedAttr.getType(), typedAttr);
+            mlir::Value same;
+            if (byName)
+            {
+                // (compared as `k == "Medium"` is: -mm=own reads a LogicalBinaryOp as a borrow of its operands)
+                same = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                                                                keyValue, nameValue);
+                CAST_A(memberResult, location, resultType, memberValue, genContext);
+                memberValue = memberResult;
+            }
+            else
+            {
+                CAST_A(memberNumber, location, getNumberType(), memberValue, genContext);
+                same = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                                builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                                                                keyValue, memberNumber);
+            }
+
+            sames.push_back(same);
+            nameValues.push_back(nameValue);
+            memberValues.push_back(memberValue);
+        }
+
+        std::function<ValueOrLogicalResult(size_t)> lookup = [&](size_t index) -> ValueOrLogicalResult {
+            if (index == members.size())
+            {
+                // no member: "" for a name, the zero of the value
+                return byName ? V(builder.create<mlir_ts::DefaultOp>(location, resultType))
+                              : V(builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("")));
+            }
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, sames[index], true);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{byName ? memberValues[index] : nameValues[index]});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = lookup(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return lookup(0);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
@@ -1901,16 +2003,22 @@ namespace mlirgen
         }        
         else if (auto enumType = dyn_cast<mlir_ts::EnumType>(arrayType))
         {
-            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            // a member by its name; a number, even a constant one, is the reverse mapping below
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>();
+                fieldName && isa<mlir::StringAttr>(fieldName.getValue()))
             {
                 auto attr = fieldName.getValue();
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
-            // numeric-enum reverse mapping (`Color[1]` -> "Green") is not implemented
-            // at all yet, not even for a constant index (see
-            // docs/not-implemented-audit.md) - fail cleanly here rather than crash;
-            // implementing the real feature is a separate, larger piece of work.
+            // a key known at run time: `Color[n]` of a number is the name of the member with that value (the reverse
+            // mapping of a numeric enum, "" when none has it), `Color[s]` of a string the value of the member with that
+            // name (0 when none has it) - each member compared in turn
+            if (auto result = mlirGenEnumRunTimeLookup(location, enumType, argumentExpression, genContext))
+            {
+                return *result;
+            }
+
             emitError(location) << "Enum reverse lookup by index is not supported";
             return ValueOrLogicalResult(mlir::failure());
         }
