@@ -2,6 +2,6 @@
 // was a null value, which went on to the op's builder.
 function main() {
     let h: (() => number)[] = [];
-    h.splice(0, 0, () => 1);
+    h.splice(0, 0, () => "x");
     print(h.length);
 }
