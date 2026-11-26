@@ -2544,6 +2544,12 @@ foreach(issues_mm gc rc none)
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
 endforeach()
+# the array `splice` gives back, kept in a local and returned: under rc its header is born owned (it was freed on
+# the way out)
+foreach(splice_mm gc rc none)
+    tslang_add_test(NAME test-jit-00rc_splice_result_owned-${splice_mm} COMMAND test-runner -jit -mm=${splice_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_splice_result_owned.ts")
+    tslang_add_test(NAME test-compile-00rc_splice_result_owned-${splice_mm} COMMAND test-runner -mm=${splice_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00rc_splice_result_owned.ts")
+endforeach()
 # TSLANG_ISSUES 176: not under rc (a closure in a parameter's default value is given back before it is used) nor own
 # (a loop variable the body assigns and a closure takes is refused)
 foreach(issues_mm gc none)

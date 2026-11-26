@@ -5267,6 +5267,19 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
                                                    rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, removedCopyBytes));
 
             removedArray = layout.make(arrayType, removedData, decSizeAsLLVMType);
+
+            // The result arrives owned (mlirGenArraySplice marks it, as a `new` is): its receiver takes
+            // the reference over and does not retain, and one nothing receives is released (§9.30). Under
+            // rc the header block has to carry that reference, as an owned `new C()`'s does
+            // (NewOpLowering); born with none, `const removed = a.splice(i, 1); return removed;` was
+            // retained to 1 by the return and freed by the local's release on the way out, and the caller
+            // read a freed array (array_class_splice.ts, -mm=rc --di: heap corruption on Linux)
+            if (tsLlvmContext->compileOptions.isRefCounted() && spliceOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+            {
+                auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, removedArray, llvmIndexType);
+                auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+                rewriter.create<LLVM::StoreOp>(loc, one, blockPtr);
+            }
         }
 
         // Keep all arithmetic in the already-LLVM-converted domain (llvmIndexType), matching
