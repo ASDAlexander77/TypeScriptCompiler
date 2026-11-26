@@ -968,6 +968,38 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // The type a narrowing gave the field a binding element reads, where the pattern destructures a variable's
+    // initializer (`const { bar } = o` in `if (o.bar)`): the narrowing is kept by the text of the access, `o.bar`
+    // (addSafeCastStatement). Null when the field is not narrowed there.
+    mlir::Type MLIRGenImpl::narrowedFieldOfBindingSource(BindingElement objectBindingElement, mlir::Value init,
+                                                         mlir::Attribute fieldName)
+    {
+        auto fieldNameAttr = dyn_cast_or_null<mlir::StringAttr>(fieldName);
+        Node pattern = objectBindingElement->parent;
+        if (!fieldNameAttr || !pattern || pattern != SyntaxKind::ObjectBindingPattern)
+        {
+            return mlir::Type();
+        }
+
+        Node declaration = pattern->parent;
+        if (!declaration || declaration != SyntaxKind::VariableDeclaration)
+        {
+            return mlir::Type();
+        }
+
+        auto initializer = declaration.as<VariableDeclaration>()->initializer;
+        if (!initializer
+            || (initializer != SyntaxKind::Identifier && initializer != SyntaxKind::PropertyAccessExpression
+                && initializer != SyntaxKind::ThisKeyword))
+        {
+            return mlir::Type();
+        }
+
+        auto accessText = print(initializer) + "." + fieldNameAttr.getValue().str();
+        auto accessTextRef = mlir::StringRef(accessText).copy(stringAllocator);
+        return safeTypesMap.lookup({init.getType(), accessTextRef});
+    }
+
     ValueOrLogicalResult MLIRGenImpl::processDeclarationObjectBindingPatternSubPath(
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
@@ -1035,12 +1067,36 @@ namespace mlirgen
         else if (isNumericAccess)
         {
             MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, fieldName);
+            // an index past a tuple's elements (`const { 3: d } = t` of a `[boolean, string, number]`) failed without
+            // an error
+            auto checkIndex = [&](auto tupleType) {
+                auto index = mlir::cast<mlir::IntegerAttr>(fieldName).getInt();
+                if (tupleType.getIndex(fieldName) < 0 && (index < 0 || static_cast<size_t>(index) >= tupleType.size()))
+                {
+                    emitError(location) << "a tuple of type '" << to_print(type) << "' has no element at index "
+                                        << index;
+                    return false;
+                }
+
+                return true;
+            };
+
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
+                if (!checkIndex(tupleType))
+                {
+                    return mlir::failure();
+                }
+
                 value = cl.Tuple(tupleType, true);
             }
             else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
             {
+                if (!checkIndex(constTupleType))
+                {
+                    return mlir::failure();
+                }
+
                 value = cl.Tuple(constTupleType, true);
             }
             else if (isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ConstArrayType>(type))
@@ -1063,6 +1119,20 @@ namespace mlirgen
             auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             value = V(result);
+
+            // a field narrowed where it is read (`if (o.bar) { const { bar } = o; }`) is what `o.bar` is there
+            // (it was the field's declared type, `string | undefined`)
+            if (auto narrowedType = narrowedFieldOfBindingSource(objectBindingElement, init, fieldName);
+                narrowedType && value.getType() != narrowedType)
+            {
+                auto castValue = castToNarrowedType(location, value, narrowedType, genContext);
+                if (!castValue)
+                {
+                    return mlir::failure();
+                }
+
+                value = builder.create<mlir_ts::SafeCastOp>(location, narrowedType, castValue, value);
+            }
         }
 
         if (!value)
@@ -1116,6 +1186,15 @@ namespace mlirgen
         {
             emitError(location) << "the rest element of an object pattern can't take the rest of an array: "
                                 << "use an array pattern, `[a, ...b]`";
+            return mlir::failure();
+        }
+
+        // which fields an `any` or an `unknown` has is known at run time only (`catch ({ ...rest })`: the rest was an
+        // empty object)
+        if (isa<mlir_ts::AnyType, mlir_ts::UnknownType>(init.getType()))
+        {
+            emitError(location) << "the rest of a value of type '" << to_print(init.getType())
+                                << "' can't be taken: its fields are known at run time only; cast it to an object type first";
             return mlir::failure();
         }
 
@@ -1341,6 +1420,17 @@ namespace mlirgen
             }
 
             return mlir::success();
+        }
+
+        // `var [a], { b };` takes apart no value (TypeScript: "A destructuring declaration must have an initializer");
+        // it failed with "failed statement" alone. A `for (const [k, v] of m)` declaration is given its value by the
+        // loop, and is no statement's.
+        if ((item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern)
+            && !item->initializer && !(varClass == VariableType::External) && !declarationMode && item->parent
+            && item->parent->parent && item->parent->parent == SyntaxKind::VariableStatement)
+        {
+            emitError(location) << "a destructuring declaration must have an initializer";
+            return mlir::failure();
         }
 
 #ifndef ANY_AS_DEFAULT

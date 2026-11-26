@@ -1748,6 +1748,15 @@ namespace mlirgen
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
             {
+                // the class itself (`f += ""` of a `class f {}`): it has no instance to call a method of (the error
+                // named the hidden accessor, "Class member 'get_toStringTag' can't be found")
+                if (value.getDefiningOp<mlir_ts::ClassRefOp>())
+                {
+                    emitError(location) << "the class '" << to_print(valueType)
+                                        << "' itself can't be converted to a string";
+                    return mlir::failure();
+                }
+
                 auto res = mlirGenCallThisMethod(location, value, "get_" SYMBOL_TO_STRING_TAG, undefined, undefined, genContext);
                 if (!res.failed_or_no_value())
                 {
@@ -1838,6 +1847,19 @@ namespace mlirgen
                                             << to_print(interfaceType) << "': the interface is not declared";
                     }
 
+                    return mlir::failure();
+                }
+
+                // the class itself (`const c: Constructor<A> = A`, `interface Constructor<T> { new (...args: any[]): T }`):
+                // an interface is made over an object, and the class reference is none ("failed to legalize operation
+                // 'ts.ClassRef'"). Its type is `typeof A`, or a constructor type (`new (...args: any[]) => A`).
+                if (value.getDefiningOp<mlir_ts::ClassRefOp>())
+                {
+                    // (said in a discovery pass too: the statement fails there, and is not made again)
+                    emitError(location) << "the class '" << to_print(valueType) << "' itself can't be given as interface '"
+                                        << to_print(interfaceType) << "': give it an instance, or declare it as `typeof "
+                                        << to_print(valueType) << "` or as a constructor type (`new (...args: any[]) => "
+                                        << to_print(valueType) << "`)";
                     return mlir::failure();
                 }
 
@@ -3835,6 +3857,13 @@ namespace mlirgen
 
         // an integer (`() => 0` returns an s32) is a number to whoever reads it as one (`(v: any) => number`)
         if (isa<mlir::IntegerType>(from) && isa<mlir_ts::NumberType>(to))
+        {
+            return true;
+        }
+
+        // an `any` result is whatever the caller reads it as (`(v: any) => any` given as `(v: any) => string`, as
+        // TypeScript allows): the adapter casts it, checked at run time
+        if (isa<mlir_ts::AnyType>(from) && !isa<mlir_ts::VoidType>(to))
         {
             return true;
         }

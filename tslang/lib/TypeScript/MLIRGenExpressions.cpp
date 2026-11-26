@@ -971,6 +971,13 @@ namespace mlirgen
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCases, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
+            // a branch of no value (`c ? f() : 0` with `f(): void`, `c ? super() : 0`) is undefined, as in JavaScript
+            // (the `ts.If` was left without a result: "'ts.If' op expects a non-empty block")
+            if (!result.failed() && !result.value)
+            {
+                result = V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+            }
+
             if (!genContext.allowPartialResolve)
             {
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -1004,6 +1011,11 @@ namespace mlirgen
             addElseSafeCastStatements(elseSafeCases, genContext);
 
             auto result2 = mlirGen(whenFalseExpression, genContext);
+            if (!result2.failed() && !result2.value)
+            {
+                result2 = V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+            }
+
             if (!genContext.allowPartialResolve)
             {
                 EXIT_IF_FAILED_OR_NO_VALUE(result2)
@@ -4699,6 +4711,15 @@ namespace mlirgen
                 // the class definition, with no arguments for its parameters.
                 return V(NewClassInstanceLogicAsOp(location, classInfo, false, genContext));
             }
+        }
+
+        // a generic class is made for each list of type arguments it is used with; without them it has no value (the
+        // statement failed without an error)
+        if (classExpressionAST->typeParameters.size() > 0)
+        {
+            emitError(location) << "a generic class expression is not a value: declare it as a class (`class "
+                                << (classExpressionAST->name ? MLIRHelper::getName(classExpressionAST->name) : std::string("C"))
+                                << "<T> { ... }`) and use it with its type arguments";
         }
 
         return mlir::failure();

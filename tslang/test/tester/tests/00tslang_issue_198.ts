@@ -9,6 +9,12 @@ function restOfOptional(u: { n: number; m: string } | undefined) {
     return rest.n + rest2.n;
 }
 
+function restAssignedOfOptional(u: { n: number } | undefined) {
+    let r: { n: number } = { n: -1 };
+    ({ ...r } = u);
+    return r.n;
+}
+
 function main() {
     assert(restOfOptional({ n: 2, m: "x" }) == 4 && restOfOptional(undefined) == 0, "the rest of an optional");
 
@@ -23,5 +29,6 @@ function main() {
     ({ b: y, ...s } = { b: 5, a: 7 });
     assert(y == 5 && s.a == 7, "a rest element of an object literal");
 
+    assert(restAssignedOfOptional({ n: 4 }) == 4 && restAssignedOfOptional(undefined) == 0, "the rest of an optional assigned");
     print("done.");
 }

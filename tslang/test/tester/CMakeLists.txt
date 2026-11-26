@@ -2499,7 +2499,7 @@ endforeach()
 # 161 (`"1.50" === 1.5` of a `number | string` is false), 133 (a rest parameter typed as a tuple) and
 # 114 (`arguments` with a rest or destructured parameter)
 foreach(issues_mm gc rc none own)
-    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192 00tslang_issue_193 00narrowing_after_assign 00tslang_issue_194 00tslang_issue_195 00tslang_issue_196 00tslang_issue_197 00tslang_issue_198 00tslang_issue_199 00tslang_issue_200 00tslang_issue_201 00tslang_issue_202)
+    foreach(issue_test 00tslang_issue_108 00tslang_issue_147 00tslang_issue_161 00tslang_issue_133 00tslang_issue_114 00union_shape_reads 00union_first_field_tag 00union_classes_no_tag 00tslang_issue_165 00tslang_issue_166 00tslang_issue_167 00tslang_issue_168 00tslang_issue_169 00tslang_issue_171 00tslang_issue_191 00expando_function_properties 00ambient_module_import 00static_init_order 00tslang_issue_192 00tslang_issue_193 00narrowing_after_assign 00tslang_issue_194 00tslang_issue_195 00tslang_issue_196 00tslang_issue_197 00tslang_issue_198 00tslang_issue_199 00tslang_issue_200 00tslang_issue_201 00tslang_issue_202 00tslang_issue_204)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -2507,7 +2507,7 @@ endforeach()
 # TSLANG_ISSUES 112 (shapes whose same-named fields differ in type) and 165 (`<Shape>` of an `any`, `<object>` of
 # an object literal): not under own (the test files say why)
 foreach(issues_mm gc rc none)
-    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174 00tslang_issue_175 00tslang_issue_177 00tslang_issue_178 00tslang_issue_179 00computed_runtime_keys 00class_runtime_keys 00destructure_computed_keys 00any_to_union 00never_array_union 00unknown_null_union)
+    foreach(issue_test 00tslang_issue_112 00tslang_issue_165_any 00tslang_issue_166_unknown 00tslang_issue_168_self 00tslang_issue_170 00tslang_issue_172 00tslang_issue_173 00tslang_issue_174 00tslang_issue_175 00tslang_issue_177 00tslang_issue_178 00tslang_issue_179 00computed_runtime_keys 00class_runtime_keys 00destructure_computed_keys 00any_to_union 00never_array_union 00unknown_null_union 00tslang_issue_204_catch)
         tslang_add_test(NAME test-jit-${issue_test}-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
         tslang_add_test(NAME test-compile-${issue_test}-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/${issue_test}.ts")
     endforeach()
@@ -2595,6 +2595,47 @@ add_test(NAME test-compile-class-static-block-local-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_static_block_local_error.ts")
 set_tests_properties(test-compile-class-static-block-local-error PROPERTIES PASS_REGULAR_EXPRESSION "'v' is a local of the function a class is declared in"
                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code|outside the region")
+# TSLANG 204: clear errors where these failed with "failed statement" alone
+add_test(NAME test-compile-too-few-type-args-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/too_few_type_args_error.ts")
+set_tests_properties(test-compile-too-few-type-args-error PROPERTIES PASS_REGULAR_EXPRESSION "expected 2 type arguments, but got 1"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-destructuring-no-initializer-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/destructuring_no_initializer_error.ts")
+set_tests_properties(test-compile-destructuring-no-initializer-error PROPERTIES PASS_REGULAR_EXPRESSION "a destructuring declaration must have an initializer"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-tuple-index-pattern-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_index_pattern_error.ts")
+set_tests_properties(test-compile-tuple-index-pattern-error PROPERTIES PASS_REGULAR_EXPRESSION "has no element at index 2"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-index-signature-optional-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/index_signature_optional_error.ts")
+set_tests_properties(test-compile-index-signature-optional-error PROPERTIES PASS_REGULAR_EXPRESSION "an index signature parameter can't be optional"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-enum-numeric-name-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/enum_numeric_name_error.ts")
+set_tests_properties(test-compile-enum-numeric-name-error PROPERTIES PASS_REGULAR_EXPRESSION "an enum member can't have a numeric name"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-generic-class-expression-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/generic_class_expression_error.ts")
+set_tests_properties(test-compile-generic-class-expression-error PROPERTIES PASS_REGULAR_EXPRESSION "a generic class expression is not a value"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-catch-rest-any-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/catch_rest_any_error.ts")
+set_tests_properties(test-compile-catch-rest-any-error PROPERTIES PASS_REGULAR_EXPRESSION "the rest of a value of type 'any' can't be taken"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-class-itself-interface-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_itself_interface_error.ts")
+set_tests_properties(test-compile-class-itself-interface-error PROPERTIES PASS_REGULAR_EXPRESSION "itself can't be given as interface"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-class-itself-string-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_itself_string_error.ts")
+set_tests_properties(test-compile-class-itself-string-error PROPERTIES PASS_REGULAR_EXPRESSION "itself can't be converted to a string"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+add_test(NAME test-compile-index-signature-key-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/index_signature_key_error.ts")
+set_tests_properties(test-compile-index-signature-key-error PROPERTIES PASS_REGULAR_EXPRESSION "an index signature parameter can't be of type 'boolean'"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
 # TSLANG 193: a class given for an array, a type stored in a module variable
 add_test(NAME test-compile-class-not-array-error
          COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/class_not_array_error.ts")

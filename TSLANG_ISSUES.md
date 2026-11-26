@@ -3534,7 +3534,7 @@ Tests `00tslang_issue_194.ts` (all models).
 - ...and when the function returning the union is declared after its caller: the return type was taken from the other
   `return` alone, and the union cast to it ("failed statement"). A function whose discovery could not make a returned
   value yet is discovered again when it is made.
-  Not yet: `const { bar } = o` in a branch where `o.bar` is narrowed gives `bar` the field's declared type; an `any`
+  (`const { bar } = o` in a branch where `o.bar` is narrowed: TSLANG 204.) Not yet: an `any`
   holding `{ code: 7 }` (an s32 field) can't be cast to `{ code: number }` ("the object's fields are not those of type").
 
 Tests `00tslang_issue_195.ts` (all models).
@@ -3579,7 +3579,9 @@ Tests `00tslang_issue_197.ts` (all models), `class_reads_block_local_error.ts`, 
   declaration.
 - The rest of a `T | undefined` in a declaration (`const { ...rest } = u`): "field ... can't be found in tuple". It is
   T's fields, with their defaults where it has no value, as `{ ...u }` spreads it.
-  Not yet: `var { ...rest } = u` of a `var rest: T` declared before it ("field "value" can't be found").
+- ...and the same in an assignment (`({ ...r } = u)`, and `var { ...rest } = u` of a `var rest` declared before it,
+  which is one): "field "value" can't be found".
+  Not yet: the rest of a `T | null` ("the rest of a value of type 'null | T' can't be taken").
 
 Tests `00tslang_issue_198.ts` (all models).
 
@@ -3605,7 +3607,8 @@ Tests `00tslang_issue_200.ts` (all models).
   TypeScript allows): "argument #1 does not match". An adapter converts the argument (checked at run time). A function
   returning an integer given as one returning a number (`() => 0` as `(v: any) => number`): "it takes 0 argument(s)".
   The adapter widens the result.
-  Not yet: a result of type `any` given as another type (`(v: any) => any` as `(v: any) => string`) stays the error.
+  A result of type `any` given as another type (`(v: any) => any` as `(v: any) => string`) is cast by the adapter too
+  (TSLANG 204).
 
 Tests `00tslang_issue_201.ts` (all models).
 
@@ -3620,3 +3623,34 @@ its `declare function log(x: number): number`): "redefinition of symbol named 'l
 (`.u.log`), and the program's `log` is it; the library's own code keeps the C function.
 
 Tests: `defaultlib/defaultlib_collector.ts` (with the default library, jit and exe).
+
+204. Bugs found by the tsc compiler-tests sweep (continued). Fixed:
+- A generic function destructuring a parameter of a generic type (`function f<TX>({ f }: TG<TX>)`, a type alias): "Can't
+  resolve property 'f' of type TG<TX>"; with a rest (`{ f, ...rest }: IG<TX>`), "variable 'rest' is referencing generic
+  type". The pattern was taken apart in the discovery of the function's parameters, before TX is known; that discovery
+  reads no body, nor the names a pattern binds.
+- `const { bar } = o` in a branch where `o.bar` is narrowed (`if (o.bar)`): `bar` had the field's declared type.
+- A function returning `any` given as one returning another type: the adapter casts the result (checked at run time).
+- A destructuring pattern as a catch clause's variable (`catch ({ x })`): the clause failed without an error. What was
+  caught is held by a hidden variable and destructured at the start of the clause. An array pattern of it, a field of it
+  under -mm=own and its rest (`catch ({ ...rest })`, which was an empty object) are errors: it is an `any`.
+- A call tested for a narrowing (`o() === undefined && x`, `typeof f() === "string"`) was made again by the narrowing -
+  twice, three times in an `if`. Only a name, `this`, and a property or an element of one are narrowed.
+- A `?:` with a branch of no value (`c ? f() : 0` with `f(): void`, `c ? super() : 0`): "'ts.If' op expects a non-empty
+  block". The branch is undefined, as in JavaScript.
+- Clear errors where these failed with "failed statement" alone: a generic class expression (`const m = class C<X> {}`,
+  not a value); too few type arguments (`new D<number>()` of `D<T, U>`); an optional or rest index signature parameter;
+  an enum member with a numeric or computed name; a destructuring declaration with no initializer (`var [a], { b };`);
+  an element past a tuple's end, in a pattern (`{ 3: d }`) or an assignment (`[a, b, c] = t` of a pair).
+- Clear errors where these were internal errors or named hidden members: the class itself given as an interface
+  (`const c: Constructor<A> = A`, "failed to legalize operation 'ts.ClassRef'"; `typeof A` and a constructor type
+  `new (...args: any[]) => A` work); the class itself converted to a string (`f += ""`, "Class member 'get_toStringTag'
+  can't be found"); a method with a numeric name (`static 1() {}`, read as `C[1]()`: "can't resolve property/field/base '.index'"); an index signature keyed by `boolean` or by literals (`[u: "foo" | "bar"]`).
+
+The local default library at I:\tslang was rebuilt (11-26): the one from 11-22 predates the compiler naming change, and
+an exe using `Math` failed to link ("DataView..size already defined").
+
+Tests `00tslang_issue_204.ts` (all models), `00tslang_issue_204_catch.ts` (gc, rc, none), and the error tests
+`too_few_type_args_error.ts`, `destructuring_no_initializer_error.ts`, `tuple_index_pattern_error.ts`,
+`index_signature_optional_error.ts`, `enum_numeric_name_error.ts`, `generic_class_expression_error.ts`,
+`catch_rest_any_error.ts`, `class_itself_interface_error.ts`, `class_itself_string_error.ts`, `index_signature_key_error.ts`.

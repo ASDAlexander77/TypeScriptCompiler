@@ -3770,6 +3770,9 @@ class MLIRGenImpl
         return fieldName;
     }
 
+    mlir::Type narrowedFieldOfBindingSource(BindingElement objectBindingElement, mlir::Value init,
+                                            mlir::Attribute fieldName);
+
     ValueOrLogicalResult processDeclarationObjectBindingPatternSubPath(
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext);
 
@@ -5985,6 +5988,35 @@ class MLIRGenImpl
         }
     }
 
+    // an expression reading a place without side effects: a name, `this`, `super`, and a property, or an element at a
+    // literal or a name, of one (`o.a.b`, `xs[0]`, `m[k]`), parenthesized or with `!`
+    bool isNarrowableReference(Expression expr)
+    {
+        switch ((SyntaxKind)expr)
+        {
+        case SyntaxKind::Identifier:
+        case SyntaxKind::ThisKeyword:
+        case SyntaxKind::SuperKeyword:
+            return true;
+        case SyntaxKind::ParenthesizedExpression:
+            return isNarrowableReference(expr.as<ParenthesizedExpression>()->expression);
+        case SyntaxKind::NonNullExpression:
+            return isNarrowableReference(expr.as<NonNullExpression>()->expression);
+        case SyntaxKind::PropertyAccessExpression:
+            return isNarrowableReference(expr.as<PropertyAccessExpression>()->expression);
+        case SyntaxKind::ElementAccessExpression:
+        {
+            auto elementAccess = expr.as<ElementAccessExpression>();
+            auto argument = elementAccess->argumentExpression;
+            return isNarrowableReference(elementAccess->expression)
+                && (argument == SyntaxKind::NumericLiteral || argument == SyntaxKind::StringLiteral
+                    || argument == SyntaxKind::Identifier || argument == SyntaxKind::NoSubstitutionTemplateLiteral);
+        }
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto safeType = getType(typeToken, genContext);
@@ -6027,6 +6059,13 @@ class MLIRGenImpl
         }
 
         auto expr = stripParenthesesAndUntangleEquals(exprIn);
+
+        // only what names a place can be narrowed: the value is read again here, and a call (`o() === undefined && x`)
+        // was made a second time - a third in an `if`. Its result is not named again, so there is nothing to narrow.
+        if (!isNarrowableReference(expr))
+        {
+            return mlir::success();
+        }
 
         auto isNotLocalVariable = false;
         auto location = loc(expr);
@@ -10963,6 +11002,14 @@ class MLIRGenImpl
                     continue;
                 }
 
+                // (`[a, b, c] = t` of a `[number, number]` failed without an error)
+                if (index >= tupleType.size())
+                {
+                    emitError(loc(leftItem)) << "a tuple of type '" << to_print(tupleType) << "' has no element at index "
+                                             << index;
+                    return mlir::failure();
+                }
+
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
                 mlir::Value rightValue = cl.Tuple(tupleType, true);
                 if (!rightValue)
@@ -11105,9 +11152,28 @@ class MLIRGenImpl
                     }
                 }
 
+                // the rest of a `T | undefined`: T's fields, their defaults where it has no value (as a declaration)
+                auto restSource = rightExpressionValue;
+                if (auto optType = dyn_cast<mlir_ts::OptionalType>(restSource.getType()))
+                {
+                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), restSource);
+                    auto ifOp = builder.create<mlir_ts::IfOp>(location, optType.getElementType(), hasValue, true);
+                    {
+                        mlir::OpBuilder::InsertionGuard guard(builder);
+                        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                        auto value = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), restSource);
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{value});
+                        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                        auto defaultValue = builder.create<mlir_ts::DefaultOp>(location, optType.getElementType());
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{defaultValue});
+                    }
+
+                    restSource = ifOp.getResult(0);
+                }
+
                 llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
                 llvm::SmallVector<mlir_ts::FieldInfo> restFields;
-                if (mlir::failed(mth.getFields(rightExpressionValue.getType(), sourceFields)))
+                if (mlir::failed(mth.getFields(restSource.getType(), sourceFields)))
                 {
                     emitError(location) << "the rest of a value of type '" << to_print(rightExpressionValue.getType())
                                         << "' can't be taken: give it an object";
@@ -11122,7 +11188,7 @@ class MLIRGenImpl
                     }
                 }
 
-                CAST_A(restValue, location, getTupleType(restFields), rightExpressionValue, genContext);
+                CAST_A(restValue, location, getTupleType(restFields), restSource, genContext);
 
                 auto spreadTarget = item.as<SpreadAssignment>()->expression;
                 auto result = mlirGen(spreadTarget, genContext);
@@ -20472,6 +20538,9 @@ class MLIRGenImpl
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext);
 
+    void emitTooFewTypeArguments(mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+                                 size_t argsCount);
+
     std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArgumentsNoDefaults(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext);
@@ -20787,6 +20856,32 @@ class MLIRGenImpl
     mlir::Type getMethodSignature(MethodSignature methodSignature, const GenContext &genContext);
 
     mlir::Type getIndexSignature(IndexSignatureDeclaration indexSignature, const GenContext &genContext);
+
+    // an index signature takes one parameter, neither optional nor a rest one (`[idx?: number]: any` failed without
+    // an error)
+    mlir::LogicalResult checkIndexSignatureParameter(IndexSignatureDeclaration indexSignature)
+    {
+        if (indexSignature->parameters.size() != 1)
+        {
+            emitError(loc(indexSignature)) << "an index signature must have exactly one parameter";
+            return mlir::failure();
+        }
+
+        auto parameter = indexSignature->parameters.front();
+        if (parameter->questionToken)
+        {
+            emitError(loc(parameter)) << "an index signature parameter can't be optional";
+            return mlir::failure();
+        }
+
+        if (parameter->dotDotDotToken)
+        {
+            emitError(loc(parameter)) << "an index signature parameter can't be a rest parameter";
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext);
 

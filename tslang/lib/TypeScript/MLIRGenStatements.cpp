@@ -3311,6 +3311,16 @@ namespace mlirgen
         std::string varName;
         auto catchClause = tryStatementAST->catchClause;
 
+        // `catch ({ x })`, `catch ([a, b])`: what was caught is held by a hidden variable, and the clause destructures
+        // it first, as `let { x } = caught;` (with the pattern taken as a name of no letters, the clause failed
+        // without an error)
+        auto catchPattern = catchClause && catchClause->variableDeclaration
+                                    && (catchClause->variableDeclaration->name == SyntaxKind::ObjectBindingPattern
+                                        || catchClause->variableDeclaration->name == SyntaxKind::ArrayBindingPattern)
+                                ? catchClause->variableDeclaration->name
+                                : DeclarationName();
+        auto catchPatternName = std::string(".caught.pattern");
+
         // Under rc and own the caught value is the catch variable's (USER RULING 2026-11-17): the
         // `throw` took a reference for the exception, and the catch takes that reference over - on
         // Windows the copy thunk boxes it into an `any`, on Itanium SaveCatchVar does - into a slot
@@ -3347,7 +3357,9 @@ namespace mlirgen
         if (ownsCaught)
         {
             auto varDecl = catchClause->variableDeclaration;
-            caughtName = varDecl ? MLIRHelper::getName(varDecl->name) : std::string(".caught.value");
+            caughtName = catchPattern ? catchPatternName
+                         : varDecl    ? MLIRHelper::getName(varDecl->name)
+                                      : std::string(".caught.value");
             caughtType = varDecl && varDecl->type ? getType(varDecl->type, genContext) : getAnyType();
             varName = ".caught";
             GenContext catchVariableGenContext(genContext);
@@ -3370,7 +3382,25 @@ namespace mlirgen
         else if (catchClause)
         {
             auto varDecl = catchClause->variableDeclaration;
-            if (varDecl)
+            if (varDecl && catchPattern)
+            {
+                varName = catchPatternName;
+                GenContext catchVariableGenContext(genContext);
+                catchVariableGenContext.declaringCatchVariable = true;
+                catchVariableGenContext.allocateVarsInContextThis = false;
+                auto patternType = varDecl->type ? getType(varDecl->type, genContext) : getAnyType();
+                auto declaredType = registerVariable(
+                    location, varName, false, VariableType::Let,
+                    [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                        return {patternType, mlir::Value(), TypeProvided::Yes};
+                    },
+                    catchVariableGenContext);
+                if (!declaredType)
+                {
+                    return mlir::failure();
+                }
+            }
+            else if (varDecl)
             {
                 varName = MLIRHelper::getName(varDecl->name);
                 GenContext catchVariableGenContext(genContext);
@@ -3473,6 +3503,45 @@ namespace mlirgen
             builder.create<mlir_ts::ResultOp>(location);
         }
 
+        // the clause's block, taking a catch pattern apart first: `let { x } = <holder>;`, `holder` the variable holding
+        // what was caught. A statement of the block, so the names it binds are the block's locals, given back on each
+        // way out of it - an exception too (bound in the clause, -mm=rc kept them on the unwind leg of a `finally`)
+        auto catchBlockOf = [&](StringRef holder) -> ts::Block {
+            auto block = catchClause->block;
+            if (!catchPattern)
+            {
+                return block;
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            auto holderIdentifier = nf.createIdentifier(stows(holder.str()));
+            holderIdentifier->pos = catchPattern->pos;
+            holderIdentifier->_end = catchPattern->_end;
+            auto declaration = nf.createVariableDeclaration(catchPattern, undefined, undefined, holderIdentifier);
+            declaration->pos = catchPattern->pos;
+            declaration->_end = catchPattern->_end;
+            NodeArray<VariableDeclaration> declarations;
+            declarations.push_back(declaration);
+            auto declarationList = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+            declarationList->pos = catchPattern->pos;
+            declarationList->_end = catchPattern->_end;
+            auto statement = nf.createVariableStatement(undefined, declarationList);
+            statement->pos = catchPattern->pos;
+            statement->_end = catchPattern->_end;
+
+            NodeArray<Statement> statements;
+            statements.push_back(statement);
+            for (auto blockStatement : block->statements)
+            {
+                statements.push_back(blockStatement);
+            }
+
+            auto patternBlock = nf.createBlock(statements, true);
+            patternBlock->pos = block->pos;
+            patternBlock->_end = block->_end;
+            return patternBlock;
+        };
+
         // catches
         builder.setInsertionPointToStart(&tryOp.getCatches().front());
         if (catchClause && catchClause->block)
@@ -3571,13 +3640,13 @@ namespace mlirgen
                     }
                 }
 
-                auto result = mlirGen(tryStatementAST->catchClause->block, clauseGenContext);
+                auto result = mlirGen(catchBlockOf(caughtName), clauseGenContext);
                 EXIT_IF_FAILED(result)
                 EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &clauseGenContext));
             }
             else
             {
-                auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
+                auto result = mlirGen(catchBlockOf(varName), catchGenContext);
                 EXIT_IF_FAILED(result)
             }
         }

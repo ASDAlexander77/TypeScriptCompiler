@@ -3112,8 +3112,11 @@ namespace mlirgen
             return mlir::failure();
         }
 
-
-        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))
+        // the names a destructured parameter binds are read by the body only, which a parameters-only discovery
+        // skips (below); a generic function's pattern over `TG<TX>` there has no fields to read yet ("Can't resolve
+        // property 'f' of type TG<TX>")
+        if (!(funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly)
+            && failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }

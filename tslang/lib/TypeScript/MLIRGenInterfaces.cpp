@@ -95,6 +95,10 @@ namespace mlirgen
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
             if (memberNamePtr.empty())
             {
+                // (a numeric name, `enum E { 1.0 }`, or a computed one, `[foo] = 1`, failed without an error)
+                emitError(loc(enumMember->name))
+                    << (enumMember->name == SyntaxKind::NumericLiteral ? "an enum member can't have a numeric name"
+                                                                         : "an enum member's name must be an identifier or a string literal");
                 return mlir::failure();
             }
 
@@ -1858,6 +1862,29 @@ namespace mlirgen
         }
         else if (kind == SyntaxKind::IndexSignature)
         {
+            if (mlir::failed(checkIndexSignatureParameter(interfaceMember.as<IndexSignatureDeclaration>())))
+            {
+                return mlir::failure();
+            }
+
+            // a key of `boolean` or of literals (`[u: "foo" | "bar"]`, which TypeScript has a mapped type for) failed
+            // without an error
+            auto keyTypeNode = interfaceMember.as<IndexSignatureDeclaration>()->parameters.front()->type;
+            if (auto keyType = keyTypeNode ? getType(keyTypeNode, genContext) : mlir::Type())
+            {
+                auto isInvalidKey = [](mlir::Type type) {
+                    return isa<mlir_ts::BooleanType, mlir_ts::LiteralType>(type);
+                };
+                auto unionType = dyn_cast<mlir_ts::UnionType>(keyType);
+                if (isInvalidKey(keyType) || (unionType && llvm::any_of(unionType.getTypes(), isInvalidKey)))
+                {
+                    emitError(loc(keyTypeNode)) << "an index signature parameter can't be of type '" << to_print(keyType)
+                                                << "': give it 'string', 'number' or 'symbol' (for a set of keys, use "
+                                                   "a mapped type, `{ [K in Keys]: T }`)";
+                    return mlir::failure();
+                }
+            }
+
             auto methodSignature = interfaceMember.as<MethodSignature>();
             // we need this code to add "THIS" param to declaration
             interfaceMember->parent = interfaceDeclarationAST;
@@ -1934,6 +1961,20 @@ namespace mlirgen
                 emitError(loc(methodSignature->name), "computed method/property name must be a string");
                 return {"", false};
             }
+        }
+
+        // a numeric name (`static 1() {}`) is the number's text, as `C[1]` and `C["1"]` read it (it was a method of
+        // no name: "can't resolve property/field/base '.index'")
+        if (methodSignature->name == SyntaxKind::NumericLiteral)
+        {
+            auto text = convertWideToUTF8(methodSignature->name.as<NumericLiteral>()->text);
+            auto number = std::strtod(text.c_str(), nullptr);
+            if (number == (double)(int64_t)number)
+            {
+                return {std::to_string((int64_t)number), true};
+            }
+
+            return {text, true};
         }
 
         return {MLIRHelper::getName(methodSignature->name), true};
