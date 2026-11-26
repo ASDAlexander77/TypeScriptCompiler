@@ -769,6 +769,20 @@ namespace mlirgen
 
         auto fullName = concatFullNamespaceName(name);
 
+        // a function of the program named as a function the default library declares (`function log(n) {}` beside the
+        // library's `declare function log(x: number): number`, the C function): "redefinition of symbol named 'log'". It
+        // is a symbol of its own, and the program's `log` is it (registerFunctionOp)
+        if (signatureDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+            && signatureDeclarationBaseAST.as<FunctionDeclaration>()->body)
+        {
+            if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(fullName);
+                existing && existing.isDeclaration() && isLocationInDefaultLib(existing.getLoc()))
+            {
+                fullName = concatFullNamespaceName(".u." + name);
+                functionsShadowingDeclarations.insert(fullName);
+            }
+        }
+
         // a named function expression held by a variable of its name (`namespace N { export let f = function f() {} }`,
         // `example.isFoo = function isFoo() {}`): the variable is the symbol `N.f` already ("redefinition of symbol
         // named 'N.f'"). The function's symbol is one of its own; its name, by which it calls itself, stays.
@@ -2114,7 +2128,8 @@ namespace mlirgen
 
         // discovered again with another return type (a return value that could not be made the first time:
         // functionsWithUnresolvedReturn): a call of it reads the type it has now
-        if (functionsWithUnresolvedReturnRediscovered.erase(funcProto->getName()))
+        if (functionsWithUnresolvedReturnRediscovered.erase(funcProto->getName())
+            || functionsShadowingDeclarations.contains(funcProto->getName()))
         {
             getFunctionMap()[name] = makeFunctionEntry(funcOp);
         }

@@ -3614,3 +3614,9 @@ f() {} }`, or an expando `example.isFoo = function isFoo() {}`, which is one): "
 variable is that symbol. The function's symbol is one of its own (`N..fn.f`); its name, by which it calls itself, stays.
 
 Tests `00tslang_issue_202.ts` (all models).
+
+203. A function of the program named as a C function the default library declares (`function log(n: number) {}` beside
+its `declare function log(x: number): number`): "redefinition of symbol named 'log'". It is a symbol of its own
+(`.u.log`), and the program's `log` is it; the library's own code keeps the C function.
+
+Tests: `defaultlib/defaultlib_collector.ts` (with the default library, jit and exe).
