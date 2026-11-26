@@ -3027,6 +3027,10 @@ namespace mlirgen
             funcGenContext.immediatelyCalledIn.clear();
         }
         funcGenContext.discardReturnValue = funcProto->getDiscardsReturnValue();
+        // the type the function is given to is its own, not that of a function written in its body (as the discovery
+        // pass has it): an arrow returned from an arrow instantiated for `(cb) => (x: Out) => R` took that whole
+        // type as its result
+        funcGenContext.clearReceiverTypes();
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;

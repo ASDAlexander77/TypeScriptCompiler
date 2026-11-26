@@ -3654,3 +3654,32 @@ Tests `00tslang_issue_204.ts` (all models), `00tslang_issue_204_catch.ts` (gc, r
 `too_few_type_args_error.ts`, `destructuring_no_initializer_error.ts`, `tuple_index_pattern_error.ts`,
 `index_signature_optional_error.ts`, `enum_numeric_name_error.ts`, `generic_class_expression_error.ts`,
 `catch_rest_any_error.ts`, `class_itself_interface_error.ts`, `class_itself_string_error.ts`, `index_signature_key_error.ts`.
+
+205. Bugs found by the tsc compiler-tests sweep (continued). Fixed:
+- A generic function whose result is a generic function type using its own type parameter (`function f<Out>(): <R>(cb:
+  (d: Out) => R) => R`, declared or not): "failed statement" with nothing said. While Out is unknown the inner type
+  parameters stay named generics (zipped with no type arguments, one with no default or constraint failed).
+- A generic arrow returned (`return <R>(cb: () => R) => cb()`, with a declared return type or none): "can't find type
+  by name: R". Instantiated with `any`, a type parameter only inside a parameter's function type (`cb: () => R`, given
+  `any`) is `any`.
+- An arrow returned from an arrow instantiated for a function type (`(cb) => (x: Out) => R`): the inner arrow took the
+  outer one's whole type as its result ("can't assign ... return type '(p0: number) => number' is not 'number'", or a
+  wrong result at run time). The type a function is given to no longer reaches the functions written in its body.
+- An untyped parameter of an arrow given to an interface's field of a function type (`const h: H = { consume: (d) =>
+  ... }` for `consume: (d: number) => void`): typed Opaque - the hidden `this` the field's type is stored with - so
+  "can't assign '(p1: Opaque) => void' ... it takes 1 argument(s), 2 expected".
+- A generic call given an object literal whose members give the type parameter to each other (`{ produce: () => 42,
+  consume: (data) => ... }` for `Options<Data>`, fields or methods): "failed statement". The fields' types are read
+  without the hidden `this`, a declared result is the member's (`(): number => 1.5`), and members whose parameters
+  wait for the type parameter are left out until the others have given it.
+
+Not yet:
+- An arrow member of an object literal that says `this` or `super` is a method of the literal (its `this` is the
+  literal), not JavaScript's `this` of the code around it: `{ a: () => super.m() }` in a method is "can't resolve name:
+  .this", `{ a: () => this.m() }` reads the literal.
+- A literal given to a generic call whose field returns an integer where the type parameter is inferred as a number
+  from elsewhere (`takeG({ produce: () => 44 }, 1.5)`): "can't assign '() => s32' to '() => number'", as is a literal
+  variable given to the interface (`const o2: Options<number> = t`).
+- The debug JIT crashes in LLVM translation on any program (local debug build, 11-26); release is fine.
+
+Tests `00tslang_issue_205.ts` (gc, rc, none: under -mm=own the returned closure over a parameter is refused by design).

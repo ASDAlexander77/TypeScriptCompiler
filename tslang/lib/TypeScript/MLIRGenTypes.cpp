@@ -3360,11 +3360,11 @@ namespace mlirgen
                                          bool eraseTypeParameters)
     {
         GenContext genericTypeGenContext(genContext);
+        llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
 
         // preparing generic context to resolve types
         if (signature->typeParameters.size())
         {
-            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
             if (mlir::failed(
                     processTypeParameters(signature->typeParameters, typeParameters, genericTypeGenContext)))
             {
@@ -3411,38 +3411,56 @@ namespace mlirgen
             }
         }
 
-        auto resultType = getType(signature->type, genericTypeGenContext);
-        if (!resultType && !genContext.allowPartialResolve)
-        {
-            return mlir::Type();
-        }
-
-        SmallVector<mlir::Type> argTypes;
-        auto isVarArg = false;
-        for (auto paramItem : signature->parameters)
-        {
-            auto type = getType(paramItem->type, genericTypeGenContext);
-            if (!type)
+        auto buildFunctionType = [&](const GenContext &typesGenContext) -> mlir::Type {
+            auto resultType = getType(signature->type, typesGenContext);
+            if (!resultType && !genContext.allowPartialResolve)
             {
                 return mlir::Type();
             }
 
-            if (paramItem->questionToken)
+            SmallVector<mlir::Type> argTypes;
+            auto isVarArg = false;
+            for (auto paramItem : signature->parameters)
             {
-                type = getOptionalType(type);
+                auto type = getType(paramItem->type, typesGenContext);
+                if (!type)
+                {
+                    return mlir::Type();
+                }
+
+                if (paramItem->questionToken)
+                {
+                    type = getOptionalType(type);
+                }
+
+                argTypes.push_back(type);
+
+                isVarArg |= !!paramItem->dotDotDotToken;
             }
 
-            argTypes.push_back(type);
+            return mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType, isVarArg);
+        };
 
-            isVarArg |= !!paramItem->dotDotDotToken;
-        }
-
-        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType, isVarArg);
+        auto funcType = buildFunctionType(genericTypeGenContext);
 
         // erased only where that leaves no generic: one of an enclosing generic (`<const Id>(id: Id): <Self>() =>
         // TagClass<Self, Id>`) is still unresolved here, and instantiating with it crashed
-        if (eraseTypeParameters && signature->typeParameters.size() && mth.isGenericType(funcType))
+        if (funcType && eraseTypeParameters && signature->typeParameters.size() && mth.isGenericType(funcType))
         {
+            if (signature->typeArguments.size() == 0)
+            {
+                // its own type parameters stay named generics until the enclosing generic is instantiated (erasing
+                // then leaves no generic); zipped with no type arguments, one with no default or constraint failed
+                // with nothing said (`function f<Out>(): <R>(cb: (d: Out) => R) => R`)
+                for (auto &typeParam : typeParameters)
+                {
+                    genericTypeGenContext.typeParamsWithArgs[typeParam->getName()] =
+                        std::make_pair(typeParam, getNamedGenericType(typeParam->getName()));
+                }
+
+                return buildFunctionType(genericTypeGenContext);
+            }
+
             return getSignature(signature, genContext, false);
         }
 

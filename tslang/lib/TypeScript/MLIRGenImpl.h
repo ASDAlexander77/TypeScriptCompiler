@@ -17155,10 +17155,13 @@ class MLIRGenImpl
         {
             // a method signature of an object type (`{ method(x: string): number }`) is a function whose first input
             // is its `this` (an opaque), unlike a field of a function type (a hybrid function): the member's
-            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque)
+            // parameters are the ones after it, as an interface method's are below (its `a` was typed Opaque). So is
+            // an interface's field of a function type (`consume: (d: number) => void`), stored with that `this`
+            // first (mlirGenInterfaceAddFieldMember): `{ consume: (d) => ... }` typed its `d` Opaque
             auto funcType = dyn_cast<mlir_ts::FunctionType>(mth.stripOptionalType(fieldType));
             if (funcType && funcType.getNumInputs() > 0 && isa<mlir_ts::OpaqueType>(funcType.getInput(0))
-                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(MLIRTypeHelper::stripValueType(receiverType)))
+                && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::InterfaceType>(
+                       MLIRTypeHelper::stripValueType(receiverType)))
             {
                 return getFunctionType(funcType.getInputs().drop_front(), funcType.getResults(), funcType.isVarArg());
             }
