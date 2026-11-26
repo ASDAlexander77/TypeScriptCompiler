@@ -2655,6 +2655,37 @@ namespace mlirgen
         return llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, isContextSensitiveMember);
     }
 
+    // ...or one with a function member whose result is not declared (`{ produce: () => 44 }`): made on its own it
+    // returns the s32 of its integer, while the parameter it is given to may be `() => number` once the call's other
+    // arguments give the type parameter a number (`takeG({ produce: () => 44 }, 1.5)` was "can't assign '() => s32'
+    // to '() => number'"). Typed by its receiver, it returns what the receiver says, as it does for a known type.
+    static bool isResultInferredMember(ObjectLiteralElementLike item)
+    {
+        if (item != SyntaxKind::PropertyAssignment)
+        {
+            return false;
+        }
+
+        auto initializer = item.as<PropertyAssignment>()->initializer;
+        if (initializer != SyntaxKind::ArrowFunction && initializer != SyntaxKind::FunctionExpression)
+        {
+            return false;
+        }
+
+        return !initializer.as<FunctionLikeDeclarationBase>()->type;
+    }
+
+    static bool isReceiverTypedObjectLiteral(Expression expression)
+    {
+        if (expression != SyntaxKind::ObjectLiteralExpression)
+        {
+            return false;
+        }
+
+        return isContextSensitiveObjectLiteral(expression)
+            || llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, isResultInferredMember);
+    }
+
     // A generic call with such a literal for an argument: `foo({ read: () => s, write: value => s = value })` for
     // `foo<T>(x: Computed<T>)`. The members' parameters are of T, which the rest of the call gives - the other
     // arguments, and the literal's other members. Inferred from their types first (no code is made), the
@@ -2667,7 +2698,7 @@ namespace mlirgen
     {
         auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>();
         if (!symbolOp || !symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME)
-            || llvm::none_of(arguments, isContextSensitiveObjectLiteral) || !genContext.postponedMessages)
+            || llvm::none_of(arguments, isReceiverTypedObjectLiteral) || !genContext.postponedMessages)
         {
             return;
         }
@@ -2803,7 +2834,7 @@ namespace mlirgen
             for (auto [index, argument] : enumerate(arguments))
             {
                 if (index >= declarationParams.size() || !declarationParams[index]->type
-                    || !isContextSensitiveObjectLiteral(argument))
+                    || !isReceiverTypedObjectLiteral(argument))
                 {
                     continue;
                 }
