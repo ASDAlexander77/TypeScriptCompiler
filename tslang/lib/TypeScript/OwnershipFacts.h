@@ -73,6 +73,11 @@ namespace mlir_ts = mlir::typescript;
 // through an interface), -1 for an element - judged as those stores would be if they were the
 // caller's own (OwnershipInferencePass::overwritesChain).
 #define OWN_DROP_FIELDS_ATTR_NAME "__own_drop_fields"
+// Beside OWN_DROP_FIELDS_ATTR_NAME, one for each of its places: the argument of the call whose object owns the place -
+// the callee reaches it from that parameter through fields of classes, which own what they hold, and elements of
+// arrays, or it is the parameter itself (`this._keys` of `d.set(k, v)`) - or -1: reached otherwise. A borrow of
+// something apart from that argument is not dropped by it (OwnershipInferencePass::argumentOwnsApart, TSLANG 216).
+#define OWN_DROP_FIELD_OWNERS_ATTR_NAME "__own_drop_field_owners"
 // A virtual call that may destroy anything only because another module may override the method it
 // names (TSLANG 48): the method's symbol, for the error that a borrow ends there
 #define OWN_OVERRIDABLE_CALL_ATTR_NAME "__own_overridable_call"
@@ -248,6 +253,18 @@ inline std::optional<llvm::SmallVector<std::pair<int64_t, mlir::Type>>> callDrop
     }
 
     return places;
+}
+
+// The argument owning each place of callDropFields (OWN_DROP_FIELD_OWNERS_ATTR_NAME), -1 where none is known; empty when
+// the call says nothing of them.
+inline llvm::ArrayRef<int32_t> callDropFieldOwners(mlir::Operation *op)
+{
+    if (auto attr = op->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DROP_FIELD_OWNERS_ATTR_NAME))
+    {
+        return attr.asArrayRef();
+    }
+
+    return {};
 }
 
 // The argument indices a call's callee keeps.

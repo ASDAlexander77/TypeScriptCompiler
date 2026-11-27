@@ -619,18 +619,42 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     {
         bool any = false;
         llvm::SmallVector<std::pair<int64_t, mlir::Type>, 4> places;
+        // beside each place, the parameter whose object owns it (ownerParam) - or, of a call's callees together
+        // (calleesFieldDrops), the argument - and -1 where none is: reached otherwise, or more than one way
+        llvm::SmallVector<int32_t, 4> owners;
 
-        bool add(std::pair<int64_t, mlir::Type> place)
+        bool add(std::pair<int64_t, mlir::Type> place, int32_t owner = -1)
         {
-            if (llvm::is_contained(places, place))
+            auto found = llvm::find(places, place);
+            if (found != places.end())
             {
-                return false;
+                auto &known = owners[found - places.begin()];
+                if (known == owner || known < 0)
+                {
+                    return false;
+                }
+
+                known = -1;
+                return true;
             }
 
             places.push_back(place);
+            owners.push_back(owner);
             return true;
         }
     };
+
+    // The fields back-references are stored into (spec 70): they borrow what they hold
+    llvm::DenseSet<std::pair<mlir::Type, int64_t>> backReferenceFieldSet;
+    // ...and the fields given a value not made where it is stored (`this.names = a` of a parameter, `this.names = G`)
+    llvm::DenseSet<std::pair<mlir::Type, int64_t>> sharedFieldSet;
+
+    // The parameter of `funcOp` whose object owns `value` - a reference to a place, or a value: reached from the
+    // parameter through fields of classes only ever given new values (not sharedFieldSet's, nor a back-reference's, a
+    // WeakRef's or a handle's), and elements of arrays, or the parameter itself, which the body does not assign. -1
+    // for anything else: a global, a capture, a local, a merge, a tuple's field (a tuple is copied, and shares what it
+    // holds). `insideChanged`: what is under `value` changes (`a.splice()`, a call given it), not only the place.
+    int32_t ownerParam(mlir::Value value, mlir_ts::FuncOp funcOp, bool insideChanged);
 
     llvm::DenseMap<mlir::Operation *, FieldDrops> fieldDrops;
 

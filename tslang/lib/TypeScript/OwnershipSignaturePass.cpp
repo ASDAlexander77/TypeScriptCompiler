@@ -10,6 +10,13 @@
 namespace own_signature
 {
 
+    // Do a call's arguments stand where its callees' parameters do (calleesFieldDrops' owners)? Not through a bound
+    // function or a closure value outside a callback family, whose `this` or capture box the call does not pass.
+    static bool argumentsAlignWithParams(mlir::Operation *callOp, bool viaCallback)
+    {
+        return viaCallback || !mlir::isa<mlir_ts::CallHybridInternalOp, mlir_ts::InvokeHybridOp>(callOp);
+    }
+
     // A function made for an element type -mm=own cannot give a second owner (`@sharesElements`, spec
     // 73): its body becomes a stop, so nothing analyses what it would do. It keeps its place in a
     // vtable; a call to it is inference's error.
@@ -178,6 +185,21 @@ namespace own_signature
             backReferenceFields.insert(mlir::ArrayAttr::get(
                 &getContext(), {mlir::TypeAttr::get(storage),
                                 mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 32), propertyRefOp.getPosition())}));
+            backReferenceFieldSet.insert({storage, propertyRefOp.getPosition()});
+        });
+
+        // the fields of classes given a value not made where it is stored - a parameter's (`set(a) { this.names = a
+        // }`), a read, a global's (`this.names = G` of an immortal `const`, which own allows, given straight or
+        // through a parameter): what such a field holds may be another's too, so what is under it is not apart from
+        // the rest because the object is (ownerParam, TSLANG 216). A field only ever given new values (`names:
+        // string[] = []`) holds what its object alone owns.
+        module.walk([&](mlir_ts::StoreOp storeOp) {
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto storage = propertyRefOp ? fieldOwnerStorage(propertyRefOp) : mlir_ts::ClassStorageType();
+            if (storage && !isFresh(storeOp.getValue()))
+            {
+                sharedFieldSet.insert({storage, propertyRefOp.getPosition()});
+            }
         });
         if (!backReferenceFields.empty())
         {
@@ -396,6 +418,7 @@ namespace own_signature
             }
 
             call.op->removeAttr(OWN_DROP_FIELDS_ATTR_NAME);
+            call.op->removeAttr(OWN_DROP_FIELD_OWNERS_ATTR_NAME);
             if (!call.callees.known)
             {
                 // a method of a class another module may extend, called through its vtable: say so
@@ -451,6 +474,13 @@ namespace own_signature
                 }
 
                 call.op->setAttr(OWN_DROP_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), places));
+
+                // ...and the argument whose object owns each (TSLANG 216)
+                if (argumentsAlignWithParams(call.op, call.callees.viaCallback) &&
+                    llvm::any_of(drops->owners, [](int32_t owner) { return owner >= 0; }))
+                {
+                    call.op->setAttr(OWN_DROP_FIELD_OWNERS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(&getContext(), drops->owners));
+                }
             }
 
             // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
@@ -2078,9 +2108,16 @@ namespace own_signature
                         break;
                     }
 
-                    for (auto place : callee->places)
+                    // a place the callee's argument owns is this function's parameter's when the argument is one
+                    // (or is reached from one as ownerParam reaches it); else it is owned some other way
+                    auto aligned = argumentsAlignWithParams(call->op, call->callees.viaCallback);
+                    auto args = callArgs(call->op);
+                    for (auto [place, owner] : llvm::zip(callee->places, callee->owners))
                     {
-                        changed |= mine.add(place);
+                        auto mineOwner = aligned && owner >= 0 && static_cast<size_t>(owner) < args.size()
+                                             ? ownerParam(args[owner], funcOp, /*insideChanged=*/true)
+                                             : -1;
+                        changed |= mine.add(place, mineOwner);
                     }
                 }
             }
@@ -2252,7 +2289,7 @@ namespace own_signature
             return all;
         }
 
-        for (auto callee : callees.funcs)
+        for (auto [index, callee] : llvm::enumerate(callees.funcs))
         {
             if (noDrops.contains(callee))
             {
@@ -2265,9 +2302,12 @@ namespace own_signature
                 return std::nullopt;
             }
 
-            for (auto place : found->second.places)
+            // each owner as the call's argument: a callback family's member's parameter k is the call's argument
+            // k - its shift (a closure's body takes its capture box first)
+            auto shift = callees.viaCallback && index < callees.shifts.size() ? callees.shifts[index] : 0;
+            for (auto [place, owner] : llvm::zip(found->second.places, found->second.owners))
             {
-                all.add(place);
+                all.add(place, owner >= 0 && owner - shift >= 0 ? owner - shift : -1);
             }
         }
 
@@ -2332,7 +2372,9 @@ namespace own_signature
                         position = OWN_INTERFACE_FIELD_POSITION;
                     }
 
-                    drops.add({position, slot.getType()});
+                    // (`this.x = v`: under `this`)
+                    drops.add({position, slot.getType()},
+                              position == OWN_INTERFACE_FIELD_POSITION ? -1 : ownerParam(slot, funcOp, /*insideChanged=*/false));
                 }
             }
             else if (auto swapOp = mlir::dyn_cast<mlir_ts::SwapOp>(op))
@@ -2356,7 +2398,9 @@ namespace own_signature
                     auto arrayType = refType ? mlir::dyn_cast<mlir_ts::ArrayType>(refType.getElementType()) : mlir_ts::ArrayType();
                     if (arrayType)
                     {
-                        drops.add({-1, mlir_ts::RefType::get(arrayType.getElementType())});
+                        // (`this._keys.splice(i, 1)`: under `this`)
+                        drops.add({-1, mlir_ts::RefType::get(arrayType.getElementType())},
+                                  ownerParam(op->getOperand(0), funcOp, /*insideChanged=*/true));
                     }
                     else
                     {
@@ -2682,6 +2726,108 @@ namespace own_signature
         }
 
         return false;
+    }
+
+    int32_t OwnershipSignaturePass::ownerParam(mlir::Value value, mlir_ts::FuncOp funcOp, bool insideChanged)
+    {
+        auto isParameter = [&](mlir::BlockArgument argument) {
+            return argument.getOwner()->isEntryBlock() && argument.getOwner()->getParent() == &funcOp.getBody();
+        };
+
+        for (auto depth = 0; depth < 32 && value; depth++)
+        {
+            value = rootOf(value);
+            if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                // the part of a subclass's object that is its base class's is the object itself, not a field
+                auto object = propertyRefOp.getObjectRef();
+                auto resultRef = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getType());
+                if (resultRef && mlir::isa<mlir_ts::ClassStorageType>(resultRef.getElementType()))
+                {
+                    value = object;
+                    continue;
+                }
+
+                // a field of an object of a class (not of a value class's storage, which is copied as a tuple is:
+                // a field read off the base part is of the object itself)
+                auto objectRef = mlir::dyn_cast<mlir_ts::RefType>(object.getType());
+                auto basePart = objectRef && mlir::isa<mlir_ts::ClassStorageType>(objectRef.getElementType()) &&
+                                object.getDefiningOp<mlir_ts::PropertyRefOp>();
+                auto storage = fieldOwnerStorage(propertyRefOp);
+                if (!storage || (!mlir::isa<mlir_ts::ClassType>(object.getType()) && !basePart) ||
+                    backReferenceFieldSet.contains({storage, propertyRefOp.getPosition()}) ||
+                    sharedFieldSet.contains({storage, propertyRefOp.getPosition()}))
+                {
+                    return -1;
+                }
+
+                auto fieldRef = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getType());
+                if (!fieldRef || mlir::isa<mlir_ts::WeakRefType>(fieldRef.getElementType()) ||
+                    MLIRTypeHelper::isSharedHandleType(fieldRef.getElementType()))
+                {
+                    return -1;
+                }
+
+                value = object;
+                continue;
+            }
+
+            // the element a store replaces (`this._values[i] = v`), of an array: only the place itself - what is under
+            // an element is not apart, as an array may be given any value as an element (`this.lists.push(G)`)
+            if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
+            {
+                if (depth > 0 || insideChanged)
+                {
+                    return -1;
+                }
+
+                value = elementRefOp.getArray();
+                continue;
+            }
+
+            if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                value = loadOp.getReference();
+                continue;
+            }
+
+            // a parameter's slot the body does not assign or capture: what the caller passed
+            if (auto varOp = value.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                auto argument = varOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(varOp.getInitializer())
+                                                       : mlir::BlockArgument();
+                if (argument && isParameter(argument) && !isAssigned(varOp) && !varOp.getCaptured().value_or(false))
+                {
+                    return static_cast<int32_t>(argument.getArgNumber());
+                }
+
+                return -1;
+            }
+
+            if (auto paramOp = value.getDefiningOp<mlir_ts::ParamOp>())
+            {
+                auto argument = mlir::dyn_cast<mlir::BlockArgument>(paramOp.getArgValue());
+                auto assigned = llvm::any_of(paramOp.getResult().getUsers(), [&](mlir::Operation *user) {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    return storeOp && storeOp.getReference() == paramOp.getResult();
+                });
+                if (argument && isParameter(argument) && !assigned && !paramOp.getCaptured().value_or(false))
+                {
+                    return static_cast<int32_t>(argument.getArgNumber());
+                }
+
+                return -1;
+            }
+
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value); argument && isParameter(argument))
+            {
+                return static_cast<int32_t>(argument.getArgNumber());
+            }
+
+            return -1;
+        }
+
+        return -1;
     }
 
     bool OwnershipSignaturePass::isAssigned(mlir_ts::VariableOp varOp)
