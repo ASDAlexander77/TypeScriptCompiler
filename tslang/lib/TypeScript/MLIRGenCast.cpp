@@ -2775,8 +2775,11 @@ namespace mlirgen
         // The array itself cannot be: its elements are unions, laid out as such ("cast from array type ... is not
         // supported" when it was lowered)
         auto narrowsElements = [&]() {
+            // (a union with no tag - classes, `T | null` of a reference - is laid out as its members are: cast as it is,
+            // the same array, as before)
             auto srcUnionType = dyn_cast<mlir_ts::UnionType>(srcElementType);
-            if (!srcUnionType)
+            mlir::Type srcBaseType;
+            if (!srcUnionType || !mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType))
             {
                 return false;
             }
