@@ -559,6 +559,21 @@ namespace mlirgen
                         return V(fieldRead);
                     }
 
+                    // a member of Array reading a union of tuples (`x.slice(1)`): of the array of the member it holds
+                    if (isArrayReadMember(name))
+                    {
+                        auto arrayValue = mlirGenUnionOfTuplesAsArray(location, objectValue, unionType, genContext);
+                        if (arrayValue.failed())
+                        {
+                            return mlir::Value();
+                        }
+
+                        if (arrayValue.value)
+                        {
+                            return mlirGenPropertyAccessExpression(location, V(arrayValue), name, false, genContext);
+                        }
+                    }
+
                     // the same field in every member (or a method, dispatched where it is called): read as the first
                     auto frontType = mth.getFirstNonNullUnionType(unionType);
                     //auto casted = cast(location, frontType, objectValue, genContext);
@@ -703,6 +718,27 @@ namespace mlirgen
         auto thisTypeFromFunc = mth.getFirstParamFromFuncRef(funcRef.getType());
 
         LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
+
+        // -mm=rc: a new array a method is called on (`[a, b].slice(1)`, `t.slice(1)` of a tuple made an array) is born
+        // uncounted, and nothing gave it back: about 100 bytes a call. It gets the standing a new string has
+        // (markFreshBlockOwned): a reference of its own, marked so, given back where nothing takes it (§9.30)
+        if (compileOptions.isRefCounted() && isa<mlir_ts::ArrayType>(thisValue.getType()))
+        {
+            auto source = thisValue;
+            while (auto castOp = source.getDefiningOp<mlir_ts::CastOp>())
+            {
+                source = castOp.getIn();
+            }
+
+            auto *definingOp = source.getDefiningOp();
+            auto isNewArray = isa_and_nonnull<mlir_ts::CreateArrayOp>(definingOp)
+                || (isa_and_nonnull<mlir_ts::LoadOp>(definingOp) && definingOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
+            if (isNewArray && !definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) && isa<mlir_ts::ArrayType>(source.getType()))
+            {
+                builder.create<mlir_ts::RetainOp>(location, source);
+                definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+            }
+        }
 
         // a key of an `any` is read at run time: a function of the same name found in some namespace is no member
         // of it unless it takes an `any` (`foo.get = class {}` with `foo: any` found the library's generic
@@ -1763,6 +1799,60 @@ namespace mlirgen
         return lookup(0);
     }
 
+    // The first member of a union of tuples, all of elements only, when each has the element at the constant index
+    // `index` holds and the same element types up to it: one laid out alike there, whichever member a value holds.
+    // No type otherwise.
+    mlir::Type MLIRGenImpl::unionTuplesCommonPrefixMember(mlir_ts::UnionType unionType, mlir::Value index)
+    {
+        auto constantOp = index.getDefiningOp<mlir_ts::ConstantOp>();
+        if (!constantOp)
+        {
+            return mlir::Type();
+        }
+
+        int64_t position = -1;
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(constantOp.getValue()))
+        {
+            position = intAttr.getValue().getSExtValue();
+        }
+        else if (auto floatAttr = dyn_cast<mlir::FloatAttr>(constantOp.getValue());
+                 floatAttr && floatAttr.getValueAsDouble() == (double)(int64_t)floatAttr.getValueAsDouble())
+        {
+            position = (int64_t)floatAttr.getValueAsDouble();
+        }
+
+        if (position < 0)
+        {
+            return mlir::Type();
+        }
+
+        SmallVector<mlir_ts::TupleType> tuples;
+        for (auto member : unionType.getTypes())
+        {
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(member));
+            if (!tupleType || (int64_t)tupleType.size() <= position
+                || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+            {
+                return mlir::Type();
+            }
+
+            tuples.push_back(tupleType);
+        }
+
+        for (auto tupleType : ArrayRef<mlir_ts::TupleType>(tuples).drop_front())
+        {
+            for (int64_t i = 0; i <= position; i++)
+            {
+                if (tupleType.getFieldInfo(i).type != tuples.front().getFieldInfo(i).type)
+                {
+                    return mlir::Type();
+                }
+            }
+        }
+
+        return unionType.getTypes().front();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
@@ -1791,6 +1881,20 @@ namespace mlirgen
                 {
                     expression = builder.create<mlir_ts::CastOp>(location, baseType, expression);
                 }
+            }
+            // `x[1]` of a union of tuples (`[number, string] | [number, string, string]`), each holding that element after
+            // the same elements: it is where the first member has it, whichever member the value holds (it was "access
+            // expression is not applicable")
+            else if (auto firstTuple = unionTuplesCommonPrefixMember(unionType, argumentExpression))
+            {
+                expression = builder.create<mlir_ts::GetValueFromUnionOp>(location, firstTuple, expression);
+                arrayType = firstTuple;
+            }
+            // `x[i]` of a run-time index: the element of the member the value holds (a value, as above: not a place
+            // to assign to)
+            else if (auto element = mlirGenUnionOfTuplesElementAt(location, expression, unionType, argumentExpression, genContext))
+            {
+                return *element;
             }
         }
 
@@ -4119,12 +4223,21 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::instantiatedDictionaryType(mlir::Location location, mlir::Type type, const GenContext &genContext)
     {
         auto classInfo = dictionaryClassInfoOf(type, genContext);
-        if (!classInfo || classInfo->typeParamsWithArgs.size() != 1)
+        auto genericClassInfo = classInfo ? getGenericClassInfoByFullName(OBJECT_DICTIONARY_CLASS_NAME) : GenericClassInfo::TypePtr();
+        if (!genericClassInfo || genericClassInfo->typeParams.size() != 1)
         {
             return type;
         }
 
-        auto valueType = std::get<1>(classInfo->typeParamsWithArgs.begin()->getValue());
+        // its value type, by the name of the class's type parameter: one instantiated inside a generic alias
+        // (`Record<string, T>`, the mapped type `{ [P in K]: T }`) carries the alias's type arguments as well
+        auto found = classInfo->typeParamsWithArgs.find(genericClassInfo->typeParams.front()->getName());
+        if (found == classInfo->typeParamsWithArgs.end())
+        {
+            return type;
+        }
+
+        auto valueType = std::get<1>(found->getValue());
         auto instantiated = getObjectDictionaryType(location, valueType, genContext);
         return instantiated ? instantiated : type;
     }
@@ -4191,6 +4304,11 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenDictionaryCall(mlir::Location location, mlir::Value dictionary, StringRef method,
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        // a dictionary whose type was found in an earlier pass (`f(): Record<string, T>`: the alias is read once) may
+        // have had its members generated nowhere: instantiated here, as for an entry read ("'ts.Call' op
+        // 'ObjectDictionary<!ts.number>.keys' does not reference a valid function" of `Object.keys(f())`)
+        instantiatedDictionaryType(location, dictionary.getType(), genContext);
+
         auto methodResult = mlirGenPropertyAccessExpression(location, dictionary, method, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(methodResult)
         return mlirGenCall(location, V(methodResult), operands, genContext);

@@ -2405,11 +2405,26 @@ foreach(union_method_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-union-method-dispatch-${union_method_mm} COMMAND test-runner -jit -mm=${union_method_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-union-method-dispatch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
-# -mm=own: a tuple kept in a local used as an array would give its owned elements a second owner
+# -mm=own: a tuple kept in a local used as an array would give its owned elements a second owner (its strings are
+# copied, TSLANG 215; an array element is not)
 add_test(NAME test-compile-own-tuple-as-array-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_tuple_as_array_error.ts")
-set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, string\\]' would have two owners as an element of an array"
+set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, number\\[\\]\\]' would have two owners as an element of an array"
                                                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A union of tuples cast to a longer member fills what the shorter one lacks (TSLANG 215, USER RULING 2026-11-27); an
+# array under strict null checks has nothing to fill it with, a compile error. Without them it, a string and a class are
+# null: run there by tslang itself, as test-runner has no switch for strict null checks
+add_test(NAME test-compile-tuple-union-cast-fill-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_union_cast_fill_error.ts")
+set_tests_properties(test-compile-tuple-union-cast-fill-error PROPERTIES PASS_REGULAR_EXPRESSION "can't cast '\\[number, string\\]' to '\\[number, string, number\\[\\]\\]': it has no element 2 of 'number\\[\\]', and nothing fills it under strict null checks"
+                                                                       FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+foreach(fill_mm gc rc none own)
+    add_test(NAME test-compile-tuple-union-cast-fill-nonstrict-${fill_mm}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib --strict-null-checks=false -mm=${fill_mm}
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_union_cast_fill_nonstrict.ts")
+    set_tests_properties(test-compile-tuple-union-cast-fill-nonstrict-${fill_mm} PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Null"
+                                                                                       FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
 # Mixins (a generic function given a class) under every memory model
 foreach(mixin_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-mixins-${mixin_mm} COMMAND test-runner -jit -mm=${mixin_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
@@ -2608,6 +2623,11 @@ endforeach()
 foreach(issue214_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_214-${issue214_mm} COMMAND test-runner -jit -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_214-${issue214_mm} COMMAND test-runner -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
+endforeach()
+# TSLANG 215: Record<string, T> a dictionary, a union of tuples cast to one of them, -mm=own slice of one
+foreach(issue215_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_215-${issue215_mm} COMMAND test-runner -jit -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_215-${issue215_mm} COMMAND test-runner -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
 endforeach()
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)
@@ -6956,15 +6976,19 @@ add_test(NAME test-rc-conditional-named-const-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
-# `@owned` on a declared function, class or namespace: its result is the caller's under rc, so a module
-# whose only body-less functions say it still consumes the results of calls through function values
-# (closed world). The default library's lib.d.ts says it; without it every program with the library
-# leaked each such result. No run can see the leak, so the IR is read.
-add_test(NAME test-rc-owned-declarations
-         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
-                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
-                 -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
+# `@owned` on a declared function, class or namespace: its result is the caller's under rc and own, so a
+# call of one gives back what it is not given to keep, and under rc a module whose only body-less
+# functions say it still consumes the results of calls through function values (closed world). Under
+# own a `@lends` declaration's result stays a borrow. The default library's lib.d.ts says it; without it
+# every program with the library leaked each such result (under own, even one held in a local). No run
+# can see the leak, so the IR is read.
+foreach(mm rc own)
+    add_test(NAME test-${mm}-owned-declarations
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMM=${mm}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
+endforeach()
 # A spread of run-time length given to a rest parameter, `cat(...parts)`, packs a new array: under rc
 # the call holds it and gives it back after, as for `cat(a, b)` - the IR is read, as no run shows the
 # leak (Array.join's `"".concat(...parts)` lost one per call). It runs in every model.

@@ -10418,6 +10418,15 @@ class MLIRGenImpl
             // an enum's member is its value by now (`E.a = 1` assigns to `0`)
             error << "the constant " << to_print(type) << " (a literal, or an enum's member): it is a value, not a variable";
         }
+        // `x[1] = v` of a union of tuples: the element is read out of the member the value holds (TSLANG 215)
+        else if (auto extractOp = target.getDefiningOp<mlir_ts::ExtractPropertyOp>();
+                 (extractOp && extractOp->getOperand(0).getDefiningOp<mlir_ts::GetValueFromUnionOp>())
+                 || (target.getDefiningOp<mlir_ts::IfOp>() && target.getDefiningOp()->getNumOperands() == 1
+                     && target.getDefiningOp()->getOperand(0).getDefiningOp<mlir_ts::IsTypeTagOfOp>()))
+        {
+            error << "an element or a field of a union's member: it is read out of the member the union holds, a copy; give "
+                     "the variable that member's type to assign to it";
+        }
         else if (target.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
             error << "a field of a value of type '" << to_print(type)
@@ -16608,7 +16617,27 @@ class MLIRGenImpl
             }
 
             return mlir::success();
-        }                           
+        }
+
+        // `[...x]` of a union of tuples: the array of the member it holds (mlirGenUnionOfTuplesAsArray). Taken as
+        // array-like, its elements were read at a run-time index, which a union of tuples has not got
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            auto arrayValue = mlirGenUnionOfTuplesAsArray(location, itemValue, unionType, genContext);
+            if (arrayValue.failed())
+            {
+                return mlir::failure();
+            }
+
+            if (arrayValue.value)
+            {
+                arrayInfo.isConst = false;
+                values.push_back({V(arrayValue), true, true});
+                accumulateArrayItemType(location, mlir::cast<mlir_ts::ArrayType>(arrayValue.value.getType()).getElementType(),
+                                        arrayInfo);
+                return mlir::success();
+            }
+        }
 
         // ArrayLike, do not put it before Tuple & Const Tuple, otherwise [xxx] will return wrong type
         if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))
@@ -16973,7 +17002,9 @@ class MLIRGenImpl
     // A tuple of unnamed elements as an array of them, of the union of their types: what TypeScript
     // gives `[1, "a"]` with no tuple wanted ((number | string)[]), so the members of Array are a
     // tuple's too (`[1, "a"].map(f)`). Null for a tuple with named fields: that is an object.
-    mlir::Value mlirGenTupleAsArray(mlir::Location location, mlir::Value tupleValue, const GenContext &genContext)
+    // `elementType`, when given, is the array's element type instead (of a union of tuples, all their elements').
+    mlir::Value mlirGenTupleAsArray(mlir::Location location, mlir::Value tupleValue, const GenContext &genContext,
+                                    mlir::Type elementType = mlir::Type())
     {
         if (auto refType = dyn_cast<mlir_ts::RefType>(tupleValue.getType()))
         {
@@ -17007,14 +17038,16 @@ class MLIRGenImpl
         }
 
         // -mm=own: the array takes the tuple's elements. A tuple just made gives them up; one read from
-        // where it is kept (`t.map(f)` of a local `t`) keeps its own, and an element owning memory
-        // would have two owners
+        // where it is kept (`t.map(f)` of a local `t`) keeps its own: a string, a value, is copied for the
+        // array (as castTupleToTuple copies one, TSLANG 211), and another element owning memory would have
+        // two owners
+        auto copyStrings = false;
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
             auto source = tupleValue;
             while (auto *def = source.getDefiningOp())
             {
-                if (!mlir::isa<mlir_ts::CastOp>(def) && !own_facts::isView(def))
+                if (!mlir::isa<mlir_ts::CastOp, mlir_ts::GetValueFromUnionOp>(def) && !own_facts::isView(def))
                 {
                     break;
                 }
@@ -17022,22 +17055,38 @@ class MLIRGenImpl
                 source = def->getOperand(0);
             }
 
-            if (source.getDefiningOp<mlir_ts::LoadOp>()
-                && llvm::any_of(fieldTypes, [&](mlir::Type type) { return mth.ownsHeapMemory(location, type); }))
+            if (source.getDefiningOp<mlir_ts::LoadOp>())
             {
-                emitError(location) << "-mm=own: an element of '" << to_print(tupleType)
-                                    << "' would have two owners as an element of an array; give it an array type";
-                return mlir::Value();
+                if (llvm::any_of(fieldTypes, [&](mlir::Type type) {
+                        return mth.ownsHeapMemory(location, type) && !isa<mlir_ts::StringType>(type);
+                    }))
+                {
+                    emitError(location) << "-mm=own: an element of '" << to_print(tupleType)
+                                        << "' would have two owners as an element of an array; give it an array type";
+                    return mlir::Value();
+                }
+
+                copyStrings = true;
             }
         }
 
-        auto elementType = mth.getUnionTypeWithMerge(location, elementTypes);
+        if (!elementType)
+        {
+            elementType = mth.getUnionTypeWithMerge(location, elementTypes);
+        }
 
         auto fields = builder.create<mlir_ts::DeconstructTupleOp>(location, fieldTypes, tupleValue);
         SmallVector<mlir::Value> elements;
         for (auto field : fields.getResults())
         {
             mlir::Value element = field;
+            if (copyStrings && isa<mlir_ts::StringType>(element.getType()))
+            {
+                auto copy = builder.create<mlir_ts::StringCopyOp>(location, element.getType(), element);
+                copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                element = copy;
+            }
+
             if (element.getType() != elementType)
             {
                 auto result = cast(location, elementType, element, genContext);
@@ -17056,6 +17105,169 @@ class MLIRGenImpl
         mlirGenRetainCaptured(location, elements);
 
         return builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), elements);
+    }
+
+    // A union of tuples of unnamed elements as an array (`x.slice(1)` of `[number, string] | [number, string, string]`):
+    // the array of the member the value holds, told by the layout of its tag as castFromUnion tells them, of the union
+    // of all members' element types. Null when a member is no such tuple. (Read as the first member, a shorter one
+    // gained the first's last elements: `[0, "c"].join(",")` was "0,c,null".)
+    ValueOrLogicalResult mlirGenUnionOfTuplesAsArray(mlir::Location location, mlir::Value unionValue,
+                                                     mlir_ts::UnionType unionType, const GenContext &genContext)
+    {
+        auto members = unionType.getTypes();
+        SmallVector<mlir::Type> elementTypes;
+        for (auto member : members)
+        {
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(member));
+            if (!tupleType || tupleType.size() == 0
+                || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+            {
+                return mlir::Value();
+            }
+
+            for (auto &field : tupleType.getFields())
+            {
+                elementTypes.push_back(mth.wideStorageType(field.type));
+            }
+        }
+
+        auto elementType = mth.getUnionTypeWithMerge(location, elementTypes);
+        auto arrayType = getArrayType(elementType);
+        // the union's own tag (not a box of it, which nothing gave back)
+        auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), unionValue);
+
+        std::function<ValueOrLogicalResult(size_t)> arrayOf = [&](size_t index) -> ValueOrLogicalResult {
+            auto asMember = [&]() -> ValueOrLogicalResult {
+                auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], unionValue);
+                auto arrayValue = mlirGenTupleAsArray(location, memberValue, genContext, elementType);
+                if (!arrayValue)
+                {
+                    return mlir::failure();
+                }
+
+                return arrayValue;
+            };
+
+            if (index + 1 == members.size())
+            {
+                return asMember();
+            }
+
+            auto holds = builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag,
+                                                                mlir::TypeAttr::get(members[index]));
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{arrayType}, holds, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = asMember();
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = arrayOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        auto result = arrayOf(0);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+
+        // the array a branch made, given up to whoever reads it, as a call's new result is; under rc, born uncounted, it
+        // takes the reference that stands for that (markFreshBlockOwned). (The `ts.If` of the first member: those of the
+        // others are in its branches.)
+        if (auto ifOp = V(result).getDefiningOp<mlir_ts::IfOp>())
+        {
+            ifOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+            if (compileOptions.isRefCounted())
+            {
+                builder.create<mlir_ts::RetainOp>(location, V(result));
+            }
+        }
+
+        return result;
+    }
+
+    // `x[i]` of a union of tuples of unnamed elements and an index known at run time: the element of the member the
+    // value holds (mlirGenTupleElementAtIndex of it), told by the union's tag, of the union of all members' element
+    // types. A value, not a place: `x[i] = v` stays refused. No value when it doesn't apply (a member of another kind,
+    // a constant index).
+    std::optional<ValueOrLogicalResult> mlirGenUnionOfTuplesElementAt(mlir::Location location, mlir::Value unionValue,
+                                                                      mlir_ts::UnionType unionType, mlir::Value index,
+                                                                      const GenContext &genContext)
+    {
+        if (index.getDefiningOp<mlir_ts::ConstantOp>()
+            || !isa<mlir::IntegerType, mlir::FloatType, mlir::IndexType, mlir_ts::NumberType>(index.getType()))
+        {
+            return std::nullopt;
+        }
+
+        auto members = unionType.getTypes();
+        SmallVector<mlir::Type> elementTypes;
+        for (auto member : members)
+        {
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(member));
+            if (!tupleType || tupleType.size() == 0
+                || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+            {
+                return std::nullopt;
+            }
+
+            for (auto &field : tupleType.getFields())
+            {
+                elementTypes.push_back(mth.wideStorageType(field.type));
+            }
+        }
+
+        auto resultType = mth.getUnionTypeWithMerge(location, elementTypes);
+        auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), unionValue);
+
+        std::function<ValueOrLogicalResult(size_t)> elementOf = [&](size_t memberIndex) -> ValueOrLogicalResult {
+            auto asMember = [&]() -> ValueOrLogicalResult {
+                auto tupleType = mlir::cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(members[memberIndex]));
+                auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, tupleType, unionValue);
+                auto element = mlirGenTupleElementAtIndex(location, memberValue, index, tupleType, genContext);
+                if (!element)
+                {
+                    return mlir::failure();
+                }
+
+                auto elementValue = *element;
+                EXIT_IF_FAILED_OR_NO_VALUE(elementValue)
+                auto value = V(elementValue);
+                if (value.getType() == resultType)
+                {
+                    return value;
+                }
+
+                return cast(location, resultType, value, genContext);
+            };
+
+            if (memberIndex + 1 == members.size())
+            {
+                return asMember();
+            }
+
+            auto holds = builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag,
+                                                                mlir::TypeAttr::get(members[memberIndex]));
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, holds, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto thenValue = asMember();
+            EXIT_IF_FAILED_OR_NO_VALUE(thenValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(thenValue)});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = elementOf(memberIndex + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return elementOf(0);
     }
 
     ValueOrLogicalResult createFixedSizeArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
@@ -20723,6 +20935,9 @@ class MLIRGenImpl
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
 
     mlir::Value absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext);
+    bool hasElementFill(mlir::Type type);
+    mlir::Value elementFillValue(mlir::Location location, mlir::Type type, const GenContext &genContext);
+    mlir::Type unionTuplesCommonPrefixMember(mlir_ts::UnionType unionType, mlir::Value index);
 
     // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
@@ -20899,6 +21114,9 @@ class MLIRGenImpl
     // the union casts whose helper is being made: the same one met again in it (its `return t` not narrowed, a
     // member that failed) is an error, not a helper that instantiates itself until the stack overflows
     llvm::DenseSet<std::pair<mlir::Type, mlir::Type>> castsFromUnionInProgress;
+    // a member of a union of tuples cast to a longer member (castFromUnion): mapTupleToFields fills each element it
+    // lacks (elementFillValue) instead of refusing it
+    bool fillAbsentTupleElements = false;
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 
@@ -21076,7 +21294,7 @@ class MLIRGenImpl
 
     mlir::Type ExtractTypes(mlir::Location location, mlir::Type type, mlir::Type extract);
 
-    mlir::Type RecordType(mlir::Type keys, mlir::Type valueType);
+    mlir::Type RecordType(mlir::Location location, mlir::Type keys, mlir::Type valueType, const GenContext &genContext);
 
     mlir::Type PickTypes(mlir::Type type, mlir::Type keys);
 

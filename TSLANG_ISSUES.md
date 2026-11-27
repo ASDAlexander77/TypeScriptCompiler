@@ -4006,3 +4006,74 @@ Not yet:
   as a value; design questions without a ruling: overloads of a declared function (136) and class constructor (140).
 
 Tests `00tslang_issue_214.ts` (all models).
+
+215. Leftovers of 214 (2026-11-27). Fixed:
+- `Record<string, T>` was an object with no fields in every model ("mapped type is empty for constrain: string"): the
+  literal given to it lost its fields, `Object.keys` gave none and `r["a"]` read nothing (131). It is `{ [key: string]:
+  T }`, the dictionary of T a string index signature is, both as the built-in Record (no default library) and as the
+  mapped type `{ [P in K]: T }` of K = string (the default library's Record). Without the dictionary class, as before.
+  Such a dictionary as a function's result type has its members generated where it is read (`Object.keys(f())` was
+  "'ObjectDictionary<!ts.number>.keys' does not reference a valid function": the alias is read once, in an early pass);
+  as a constraint (`T extends Record<string, X>`) an object of any fields meets it, as `{}` did; and `keyof` of one is
+  `string`, not the members of the class that holds it (the tsc sweep's 7 tests of these, failing with the change
+  alone, pass).
+- A union of tuples cast to one of them (`<[number, string, string]>x` of `[number, string] | [number, string,
+  string]`) failed with nothing said ("failed statement"): each member is tested for and cast, and the shorter one
+  could not be made the longer - its cast read past its end. The member the value holds is cast, and each element a
+  shorter member lacks is filled (USER RULING 2026-11-27; TypeScript reads undefined there): "" for a string under
+  strict null checks and null without them, 0 for a number, false for a boolean, undefined where the type admits it
+  (`T | undefined`, `T?`, `any`), and null for a class, an interface or an array without strict null checks. One whose
+  type has nothing to fill it with - an object literal's, which is a value, or a class's, an interface's or an array's
+  under strict null checks - makes the cast a compile error ("can't cast '[number]' to '[number, number[]]': it has no
+  element 1 of 'number[]', and nothing fills it under strict null checks"). Only for tuples of elements: a union of
+  object shapes cast to a shape one member lacks a field of stays the compile error it was. A tuple cast to one with
+  more elements (not of a union) is a compile error that says so (tsc refuses it too).
+- `x[1]` of such a union, "access expression is not applicable": an element at a constant index every member has,
+  after the same element types, is read where the first member has it.
+- A member of Array of a union of tuples (`x.slice(1)`, `x.join(",")`, `forEach`, `map`) read the value as the first
+  member, in every model: a `[0, "c"]` held by `[number, string] | [number, string, string]` joined "0,c,null". It is
+  the array of the member the value holds, of the union of all members' element types. So is `[...x]` (it was "can't
+  estimate element of array").
+- Under -mm=own a tuple read from a variable made an array (`t.slice(1)`, `t.forEach(f)` of `t: [number, string]`)
+  was refused ("an element ... would have two owners as an element of an array"): its strings are copied for the array,
+  as a tuple cast to another copies them (211). Another element owning memory stays refused.
+- A union of object shapes or tuples cast to one of its members boxed the union in an `any` to read its tag, and
+  nothing gave the box back: about 40 bytes a cast under rc and -mm=own. The union's own tag is read.
+- A union of tuples iterated (`for (const e of x)`) or read at a run-time index (`x[i]`), "access expression is not
+  applicable": the elements of the member it holds, and the element of that member (each member tested for, as a
+  cast is). `x[1] = v` stays refused, and says why: the element is read out of the member the union holds, a copy.
+- Under -mm=rc an array made for a call and given as `this` to a method (`([i, s] as (number | string)[]).slice(1)`,
+  `t.slice(1)` of a tuple, `[...x]` of a union of tuples) was never given back: about 100 bytes a call (with the
+  compiler of c2a88259d too). Born uncounted, it gets the reference a new string has (markFreshBlockOwned) and is given
+  back where nothing takes it.
+- Under -mm=own a spread literal given to a call (`cnt(...xs)`, the default library's `join`: `"".concat(...parts)`)
+  was never given back: about 100 bytes a call (with the compiler of c2a88259d too). It is given back as a literal
+  given to a call is (ownNewArrayArguments), with copies of the text pushed into it; one holding an object read from
+  elsewhere stays as it was.
+- Under -mm=own no result of a default-library function was ever given back, held in a local or not
+  (`s.toUpperCase()` 16 bytes a call, `s.split("b")` 107, `(1.5).toFixed(2)` 64, `JSON.parse(t)` about 800; with the
+  compiler of c2a88259d too; rc freed them all): own did not read `@owned`, the declaration's word that its result is
+  the caller's (USER DECISION 2026-11-27, reversing 2026-11-18's rc only: what rc reads, own reads the same way, the two
+  models being alike). It does now, except where a declaration says it lends its result (`@lends`, or a result type
+  `this`: `JsonValue.get`, `ArrayBuffer.__bytes`), which own goes by - under rc that result is the caller's all the same.
+  Own's inference takes such a result for the caller's own too (OWN_FRESH_RESULT): a new value, not a part of what the
+  call was given - else `value.get("k").asString()` read the string's release, after `value`'s, as a use of the borrow
+  `get` lends. Each of those probes is flat under own, with the default library built by this compiler.
+
+Not yet:
+- Under -mm=own a union of tuples cast to a longer member is read where it is cast or held in a local (`const l =
+  <Long>x`), but a function can't return it whole (`return <Long>x`): "a value is merged from several branches". Each
+  branch borrows `x` - the member that is the target, or the shorter one filled - and own proves a merge of new values,
+  not a merge of borrows of one value.
+- Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
+  "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
+  string]: number }` alike. The dictionary's `set` is known only to drop strings held anywhere (its drop facts are
+  `[-1, string]`), so any string read out of an array is taken for freed by it; facts naming what is under `this` would
+  tell `items` apart.
+- Still from 214: 128 under own (a capture by value for value types), own `Constructor<T>` of `...args: any[]`; from
+  213: 56, 153, 159 under own; 131 (`Object.keys` of `object`, `Object.assign`, `defineProperty`, `create`), 108, 191's
+  callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads
+  of a declared function (136) and of a `declare class` constructor (140).
+
+Tests `00tslang_issue_215.ts` (all models), `test-{rc,own}-owned-declarations` (the IR of `@owned` and `@lends` calls),
+`tuple_union_cast_fill_error.ts`, `tuple_union_cast_fill_nonstrict.ts` (`--strict-null-checks=false`, all models).

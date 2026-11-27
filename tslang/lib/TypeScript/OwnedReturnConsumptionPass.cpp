@@ -98,7 +98,8 @@ class OwnedReturnConsumptionPass
             }
 
             auto name = funcOp.getName();
-            auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted());
+            auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted(),
+                                                   compileOptions.memoryModel == MemoryModelOwn);
             if (classified)
             {
                 returnsOwned.insert(name);
@@ -201,8 +202,9 @@ class OwnedReturnConsumptionPass
 
         // The same for the functions a class given to a construct signature is called through (`new c(i)` of `c: { new
         // (x: number): Pt }`): MLIRGen makes every one (generateSynthMethodToCallNewCtor) - an object literal can't
-        // have a construct signature - and each returns the object it makes. Under -mm=own, where library
-        // declarations are never classified, the call's result was a borrow, and returning it "a second reference".
+        // have a construct signature - and each returns the object it makes. Under -mm=own, where a library
+        // declaration that lends its result is never classified, the call's result was a borrow, and returning it
+        // "a second reference".
         auto everyNewCtorReturnsOwned = true;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             if (funcOp.getName().contains(NEW_CTOR_METHOD_NAME) && !returnsOwned.contains(funcOp.getName()))
@@ -682,6 +684,94 @@ class OwnedReturnConsumptionPass
         }
     }
 
+    // -mm=own: may a spread literal's array (read out of its slot, `loadOp`) own what was pushed into the slot? Each
+    // item owning memory must be a new value moved in, or text, which is copied for it as copyBorrowedTextElements copies
+    // a literal's (the retain taken of it before the push goes). Anything else - an object read from elsewhere - and
+    // nothing is changed: the array borrows it, and stays as it was (never given back). The slot is the literal's
+    // alone: pushes and reads of it, nothing stored into it.
+    static bool ownSpreadSlotPushes(MLIRTypeHelper &mth, mlir_ts::LoadOp loadOp)
+    {
+        auto slot = loadOp.getReference();
+        if (!slot.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return false;
+        }
+
+        auto elementType = mlir::cast<mlir_ts::ArrayType>(loadOp.getType()).getElementType();
+        auto ownsElements = mth.ownsHeapMemory(loadOp->getLoc(), elementType);
+
+        llvm::SmallVector<mlir_ts::ArrayPushOp> pushes;
+        for (auto *user : slot.getUsers())
+        {
+            if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
+            {
+                pushes.push_back(pushOp);
+                continue;
+            }
+
+            if (!mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                return false;
+            }
+        }
+
+        if (!ownsElements)
+        {
+            return true;
+        }
+
+        auto movedIn = [](mlir::Value item) {
+            auto *itemOp = item.getDefiningOp();
+            return itemOp && itemOp->hasAttr(OWNED_RESULT_ATTR_NAME) && itemOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME);
+        };
+
+        for (auto pushOp : pushes)
+        {
+            for (auto item : pushOp.getItems())
+            {
+                if (mth.ownsHeapMemory(pushOp->getLoc(), item.getType()) && !movedIn(item) && !isBorrowedText(item))
+                {
+                    return false;
+                }
+            }
+        }
+
+        for (auto pushOp : pushes)
+        {
+            for (auto &operand : pushOp->getOpOperands())
+            {
+                auto item = operand.get();
+                if (operand.getOperandNumber() == 0 || !mth.ownsHeapMemory(pushOp->getLoc(), item.getType()) || movedIn(item))
+                {
+                    continue;
+                }
+
+                // the retain taken of it for the push: the last one before the push, in its block
+                mlir::Operation *retain = nullptr;
+                for (auto *user : item.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == pushOp->getBlock() && user->isBeforeInBlock(pushOp) &&
+                        (!retain || retain->isBeforeInBlock(user)))
+                    {
+                        retain = user;
+                    }
+                }
+
+                mlir::OpBuilder builder(pushOp);
+                auto copy = builder.create<mlir_ts::StringCopyOp>(pushOp->getLoc(), item.getType(), item);
+                copy->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(pushOp->getContext()));
+                copy->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(pushOp->getContext()));
+                operand.set(copy);
+                if (retain)
+                {
+                    retain->erase();
+                }
+            }
+        }
+
+        return true;
+    }
+
     // The array a conversion makes for one call (`f(a)` of an `int[]` given as a `number[]`, an array given as
     // an Iterable<number>): a `ts.NewArray` whose elements are written one by one, then given to the call -
     // its other uses are the element references of that loop
@@ -832,6 +922,21 @@ class OwnedReturnConsumptionPass
                 argument = arrayInsideOptional(argument);
 
                 auto *definingOp = argument.getDefiningOp();
+
+                // a spread literal's array (`cnt(...xs)`, `"".concat(...parts)` of the default library's join), read out of
+                // the slot it was filled in: the same, when what was pushed into it can be its own (spreadSlotPushes)
+                if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(definingOp);
+                    loadOp && loadOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME) && !loadOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                    mlir::isa<mlir_ts::ArrayType>(argument.getType()) && seen.insert(argument).second &&
+                    arrayMadeFor(argument, op, true))
+                {
+                    if (ownSpreadSlotPushes(mth, loadOp))
+                    {
+                        loadOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    }
+
+                    continue;
+                }
 
                 // `f([])`: the empty constant array cast to an array - a copy made on the heap there - is the new empty
                 // array it is (ts.NewEmptyArray), which the inference moves into a callee that keeps it (`new
@@ -5045,16 +5150,21 @@ class OwnedReturnConsumptionPass
     // and moving it into the object is what lets this say yes without asking which model the
     // other module was built under - a question a static link cannot answer, because the import
     // is resolved by re-parsing source before any artifact of it exists.
-    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
+    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted, bool own)
     {
-        // ...or, under rc, a declaration that says it is one: `@owned`
+        // ...or, under rc and own, a declaration that says it is one: `@owned`
         // (DECLARED_OWNED_RESULT_ATTR_NAME), which the default library's lib.d.ts says of what lib.ts
         // defines. Without it every library declaration was unclassified, so closed world never held
         // in a program that has the library - every call through a function value, and every direct
-        // library call, kept its result's +1 for good. -mm=own goes by its own declared facts instead
-        // (`@lends`: `JsonValue.get` lends what it returns, which counted as fresh here was released
-        // under the borrow), and gc and none have no count to give back.
-        auto declaredOwned = refCounted && funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME);
+        // library call, kept its result's +1 for good; under own, where lib.ts is compiled under own
+        // too, every library result was a borrow no one gave back, held in a local or not
+        // (`s.toUpperCase()`, `JSON.parse(t)`). A declaration that says it lends its result
+        // (`@lends`, or a result type `this`: `JsonValue.get`, `ArrayBuffer.__bytes`) is one own
+        // must not give back - it says more than `@owned` of the class it is in. Under rc it is the
+        // caller's all the same: rc's body retains what it lends for its caller. gc and none have no
+        // count to give back.
+        auto declaredOwned = funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME) &&
+                             (refCounted || (own && !funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME)));
         if (!funcOp->hasAttr("export") && !declaredOwned)
         {
             return false;
@@ -5073,11 +5183,11 @@ class OwnedReturnConsumptionPass
 
     // body, a return whose retain is not in the same block, a return with no retain at all. A
     // false "no" costs a leak; a false "yes" frees a value the callee never retained.
-    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
+    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted, bool own)
     {
         if (funcOp.isExternal() || funcOp.getBody().empty())
         {
-            return importedFunctionReturnsOwned(mth, funcOp, refCounted);
+            return importedFunctionReturnsOwned(mth, funcOp, refCounted, own);
         }
 
         // A generator's `next` - the function the yields are in - hands its caller a `{ value,

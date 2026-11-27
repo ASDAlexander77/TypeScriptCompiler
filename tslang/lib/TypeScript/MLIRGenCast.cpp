@@ -207,9 +207,91 @@ namespace mlirgen
         return mlir::Value();
     }
 
-    ValueOrLogicalResult MLIRGenImpl::mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+    // Is there a value for an element a union's member lacks, when the union is cast to a longer member
+    // (castFromUnion, USER RULING 2026-11-27)? What absentFieldValue makes of a type that admits undefined, 0 of a
+    // number, false of a boolean, "" of a string under strict null checks and null without them, null of a class, an
+    // interface or an array without strict null checks, and undefined or null of a union that has it. Nothing for
+    // any other type - an object literal's, which is a value, or an array under strict null checks: the cast is a
+    // compile error.
+    bool MLIRGenImpl::hasElementFill(mlir::Type type)
+    {
+        if (isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::AnyType, mlir_ts::NumberType, mlir_ts::BooleanType,
+                mlir_ts::StringType, mlir::IntegerType, mlir::FloatType>(type))
+        {
+            return true;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(),
+                                [](mlir::Type member) { return isa<mlir_ts::UndefinedType, mlir_ts::NullType>(member); });
+        }
+
+        return !compileOptions.strictNullChecks && isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ArrayType>(type);
+    }
+
+    // ...and the value itself (TypeScript reads undefined there, which a number or a string can't hold here)
+    mlir::Value MLIRGenImpl::elementFillValue(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
+        if (auto absent = absentFieldValue(location, type, genContext))
+        {
+            return absent;
+        }
+
+        if (isa<mlir_ts::NumberType>(type))
+        {
+            return builder.create<mlir_ts::ConstantOp>(location, type, builder.getF64FloatAttr(0.0));
+        }
+
+        if (isa<mlir::IntegerType>(type))
+        {
+            return builder.create<mlir_ts::ConstantOp>(location, type, builder.getIntegerAttr(type, 0));
+        }
+
+        if (isa<mlir::FloatType>(type))
+        {
+            return builder.create<mlir_ts::ConstantOp>(location, type, builder.getFloatAttr(type, 0.0));
+        }
+
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            return builder.create<mlir_ts::ConstantOp>(location, type, builder.getBoolAttr(false));
+        }
+
+        if (isa<mlir_ts::StringType>(type) && compileOptions.strictNullChecks)
+        {
+            return builder.create<mlir_ts::ConstantOp>(location, type, getStringAttr(""));
+        }
+
+        if (!hasElementFill(type))
+        {
+            return mlir::Value();
+        }
+
+        // undefined of a union that has it; else null
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        mlir::Value nothing;
+        if (unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::UndefinedType>(member); }))
+        {
+            nothing = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+        }
+        else
+        {
+            nothing = builder.create<mlir_ts::NullOp>(location, getNullType());
+        }
+
+        auto result = cast(location, type, nothing, genContext);
+        return result.failed() ? mlir::Value() : V(result);
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning)
     {
+        // a union's member made a longer member (castFromUnion): its missing elements filled - its own, not those of
+        // a tuple in an element of it, which this casts in turn (the first mapping takes it)
+        auto fillAbsent = fillAbsentTupleElements;
+        fillAbsentTupleElements = false;
+
         auto count = 0;
         for (auto [index, fieldInfo] : enumerate(fields))
         {
@@ -232,11 +314,18 @@ namespace mlirgen
             {
                 if (index >= srcTupleType.size())
                 {
-                    if (auto undefVal = absentFieldValue(location, fieldInfo.type, genContext))
+                    if (auto undefVal = fillAbsent ? elementFillValue(location, fieldInfo.type, genContext)
+                                                   : absentFieldValue(location, fieldInfo.type, genContext))
                     {
                         values.push_back(undefVal);
                         continue;
                     }
+
+                    // (it was read past the tuple's end, and failed with nothing said: "failed statement")
+                    emitError(location) << "element " << index << " of '"
+                                        << to_print(mlir_ts::TupleType::get(builder.getContext(), fields))
+                                        << "' is not in tuple '" << to_print(srcTupleType) << "'";
+                    return mlir::failure();
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
@@ -401,6 +490,9 @@ namespace mlirgen
 
         SmallVector<mlir::Value> values;
 
+        // a union's member made a longer member, its missing elements filled (castFromUnion), which mapTupleToFields
+        // takes
+        auto filling = fillAbsentTupleElements;
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
         if (mlir::failed(result))
         {
@@ -420,13 +512,16 @@ namespace mlirgen
         // that only now takes its type, `[{ a: "x", c: "" }, { a: "y", c: 0 }]` re-made as the common record: its fields
         // are its own, given on as they were. A named `const` built in its slot is read with OWNED_RESULT_NAMED: a
         // variable, whose fields are borrowed)
+        // (not of a union's member made a longer member either: it stays a borrow of the union - what it reads of the
+        // member and constants -, as the member that already is the target is, which the same `?:` of the cast gives:
+        // one branch owned and the other borrowed is a merge -mm=own cannot settle)
         auto sourceLoad = value.getDefiningOp<mlir_ts::LoadOp>();
         auto sourceSlot = sourceLoad ? sourceLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
         auto literalSource = value.getDefiningOp<mlir_ts::ConstantOp>() || value.getDefiningOp<mlir_ts::CreateTupleOp>() ||
                              (sourceSlot && !sourceSlot->hasAttr(OWNED_LOCAL_ATTR_NAME) && sourceSlot.getInitializer() &&
                               sourceSlot.getInitializer().getDefiningOp<mlir_ts::ConstantOp>() &&
                               !sourceLoad->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME));
-        if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && canMakeOwnedTemporaryLocal(genContext))
+        if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && !filling && canMakeOwnedTemporaryLocal(genContext))
         {
             // a string read out of the source is copied; every other field that holds a block has to be a new value or
             // constant data, or the local would release what the source still holds: the tuple stays a borrow then
@@ -5910,11 +6005,61 @@ namespace mlirgen
                     && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
                 {
                     auto members = unionType.getTypes();
-                    auto box = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+                    // the union's own tag, as the box of it had (which nothing gave back: 48 bytes a cast, rc and own)
+                    auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), value);
+                    // (a tuple of elements only: a shape lacking a field stays the compile error mapTupleToFields gives)
+                    auto targetTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(type));
+                    if (targetTuple && llvm::any_of(targetTuple.getFields(), [](auto &field) { return !!field.id; }))
+                    {
+                        targetTuple = mlir_ts::TupleType();
+                    }
+                    // A member that lacks elements of the target (`<[number, string, string]>x` of `[number, string] |
+                    // [number, string, string]`, holding the first) is made the target with each element it lacks filled
+                    // (USER RULING 2026-11-27): "" for a string - null without strict null checks -, 0 for a number, false
+                    // for a boolean, undefined where the type admits it (elementFillValue; TypeScript reads undefined).
+                    // An element whose type has nothing to fill it with (an object literal's, or a class's, an interface's
+                    // or an array's under strict null checks) makes the cast a compile error. (Its cast failed with
+                    // nothing said, "failed statement"; then it threw at run time.)
+                    if (targetTuple)
+                    {
+                        for (auto member : members)
+                        {
+                            auto memberTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(member));
+                            if (!memberTuple)
+                            {
+                                continue;
+                            }
+
+                            for (auto [elementIndex, field] : enumerate(targetTuple.getFields()))
+                            {
+                                if (elementIndex < memberTuple.size() || hasElementFill(field.type))
+                                {
+                                    continue;
+                                }
+
+                                auto diag = emitError(location) << "can't cast '" << to_print(member) << "' to '" << to_print(type)
+                                                                << "': it has no element " << elementIndex << " of '"
+                                                                << to_print(field.type) << "', and nothing fills it";
+                                if (compileOptions.strictNullChecks
+                                    && isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::ArrayType>(field.type))
+                                {
+                                    diag << " under strict null checks (it would be null)";
+                                }
+
+                                return mlir::failure();
+                            }
+                        }
+                    }
+
                     std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
                         auto asMember = [&]() -> ValueOrLogicalResult {
                             auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], value);
-                            return cast(location, type, memberValue, genContext);
+                            auto memberTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(members[index]));
+                            auto shorter = targetTuple && memberTuple && memberTuple.size() < targetTuple.size();
+                            fillAbsentTupleElements = shorter;
+                            auto result = cast(location, type, memberValue, genContext);
+                            fillAbsentTupleElements = false;
+                            return result;
                         };
 
                         if (index + 1 == members.size())
@@ -5922,8 +6067,8 @@ namespace mlirgen
                             return asMember();
                         }
 
-                        auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), box,
-                                                                                mlir::TypeAttr::get(members[index]));
+                        auto holds = builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag,
+                                                                            mlir::TypeAttr::get(members[index]));
                         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
 
                         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
