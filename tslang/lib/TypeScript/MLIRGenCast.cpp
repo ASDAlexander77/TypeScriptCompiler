@@ -574,6 +574,17 @@ namespace mlirgen
             return (name && name.getValue().starts_with(".")) || interfaceInfo->findField(field.id);
         });
 
+        // narrowed by `v instanceof C` (TSLANG 164): it is a C, the test said so. The object it holds is all the cast is -
+        // a borrow of v, as v is. With the way for what is not a C, never taken there, the result was a new C in one
+        // branch, so -mm=own took the other for a reference of its own: a parameter `v` was kept ("cannot make the
+        // callers give it up"). Not a generic class's: `v instanceof G` is true of any G<T>, which this one may not be
+        auto narrowedClassInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (castCheckedByInstanceOf && narrowedClassInfo && !narrowedClassInfo->originClassType)
+        {
+            auto thisPtr = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), value);
+            return ValueOrLogicalResult(builder.create<mlir_ts::CastOp>(location, classType, thisPtr));
+        }
+
         auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
             location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
         auto isInstance = mlirGenInstanceOfInterface(location, value, classRefVal, genContext);
@@ -1927,6 +1938,39 @@ namespace mlirgen
                 // 'ts.ClassRef'"). Its type is `typeof A`, or a constructor type (`new (...args: any[]) => A`).
                 if (value.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
+                    // ...but an interface of a construct signature only (`interface PtCtor { new (x: number): Pt }`,
+                    // TSLANG 139) is made over an object of one field, `new`: the class's constructor called as `new
+                    // P(...)` calls it (generatingStaticNewCtorForClass), as a type literal's construct signature is given
+                    // the class (castClassToTuple). Its P is made the interface's Pt as the object is cast to it
+                    auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                    auto onlyConstructSignature = interfaceInfo->hasNew && interfaceInfo->fields.empty()
+                        && interfaceInfo->accessors.empty() && interfaceInfo->indexes.empty() && interfaceInfo->extends.empty()
+                        && interfaceInfo->methods.size() == 1 && interfaceInfo->methods.front().name == NEW_CTOR_METHOD_NAME;
+                    auto constructorMethod = classInfo ? classInfo->findMethod(CONSTRUCTOR_NAME) : nullptr;
+                    auto memberResultType = onlyConstructSignature
+                        ? mth.getReturnTypeFromFuncRef(interfaceInfo->methods.front().funcType) : mlir::Type();
+                    if (onlyConstructSignature && classInfo && !classInfo->isAbstract && constructorMethod && memberResultType)
+                    {
+                        // (the object it makes is returned as the signature's result, `Pt`: one returning a P was "can't
+                        // assign '(p0: number) => P' to '(p0: number) => Pt'")
+                        auto wrapperType = getFunctionType(constructorMethod->funcType.getInputs().slice(1) /*no this*/,
+                                                           {memberResultType}, constructorMethod->funcType.isVarArg());
+                        auto wrapperName = generateSynthMethodToCallNewCtor(location, classInfo, interfaceInfo->fullName, 0,
+                                                                            wrapperType, 0, genContext);
+                        if (wrapperName.empty())
+                        {
+                            return mlir::failure();
+                        }
+
+                        mlir::Value newCtorValue = builder.create<mlir_ts::SymbolRefOp>(
+                            location, wrapperType, mlir::FlatSymbolRefAttr::get(builder.getContext(), wrapperName));
+                        SmallVector<mlir_ts::FieldInfo> ctorFields{{MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext()),
+                                                                    newCtorValue.getType(), false, mlir_ts::AccessLevel::Public}};
+                        auto ctorObject = builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(ctorFields),
+                                                                                 mlir::ValueRange{newCtorValue});
+                        return cast(location, interfaceType, ctorObject, genContext);
+                    }
+
                     // (said in a discovery pass too: the statement fails there, and is not made again)
                     emitError(location) << "the class '" << to_print(valueType) << "' itself can't be given as interface '"
                                         << to_print(interfaceType) << "': give it an instance, or declare it as `typeof "
@@ -2719,6 +2763,11 @@ namespace mlirgen
         auto srcElementType = srcArrayType.getElementType();
         auto elementType = arrayType.getElementType();
 
+        // (the assertion is this cast's, not the casts that build the new array's elements)
+        auto asserted = castIsAssertion;
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = false;
+
         // ...and an array of any other elements given as `any[]` (`("a" | "b")[]` for a parameter
         // `ReadonlyArray<T>` inferred `any`): each element is boxed on its own
         auto boxesElements = [&]() {
@@ -2726,8 +2775,42 @@ namespace mlirgen
                 && !isa<mlir_ts::ArrayType>(srcElementType);
         };
 
+        // ...and an array of a union said to be an array of members of it (`x.slice(1) as readonly string[]` of
+        // `[number, string] | [number, string, string]`, TSLANG 191): each element is read as the member it is said to be.
+        // The array itself cannot be: its elements are unions, laid out as such ("cast from array type ... is not
+        // supported" when it was lowered). Only asserted: TypeScript refuses `const s: string[] = m`
+        auto narrowsElements = [&]() {
+            if (!asserted)
+            {
+                return false;
+            }
+
+            // (a union with no tag - classes, `T | null` of a reference - is laid out as its members are: cast as it is,
+            // the same array, as before)
+            auto srcUnionType = dyn_cast<mlir_ts::UnionType>(srcElementType);
+            mlir::Type srcBaseType;
+            if (!srcUnionType || !mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType))
+            {
+                return false;
+            }
+
+            SmallVector<mlir::Type> members;
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(elementType))
+            {
+                members.append(unionType.getTypes().begin(), unionType.getTypes().end());
+            }
+            else
+            {
+                members.push_back(elementType);
+            }
+
+            return llvm::all_of(members, [&](mlir::Type member) {
+                return llvm::is_contained(srcUnionType.getTypes(), member);
+            });
+        };
+
         if (srcElementType == elementType
-            || !((isNumericSource(srcElementType) && isNumericTarget(elementType)) || boxesElements()))
+            || !((isNumericSource(srcElementType) && isNumericTarget(elementType)) || boxesElements() || narrowsElements()))
         {
             return std::nullopt;
         }

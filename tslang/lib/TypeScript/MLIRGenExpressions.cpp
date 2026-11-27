@@ -395,6 +395,9 @@ namespace mlirgen
             return reinterpreted;
         }
 
+        // (asserted: an array of a union may be read as an array of members of it, castArrayElementwise)
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = isa<mlir_ts::ArrayType>(typeInfo) && isa<mlir_ts::ArrayType>(exprValue.getType());
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
     }
@@ -442,6 +445,9 @@ namespace mlirgen
             return reinterpreted;
         }
 
+        // (asserted: an array of a union may be read as an array of members of it, castArrayElementwise)
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = isa<mlir_ts::ArrayType>(typeInfo) && isa<mlir_ts::ArrayType>(exprValue.getType());
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
     }
@@ -1947,7 +1953,11 @@ namespace mlirgen
 
                 auto sourceResult = mlirGen(source, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(sourceResult)
-                if (mlir::failed(mlirGenSpreadIntoDictionary(loc(source), target, V(sourceResult), genContext)))
+                // -mm=own: a literal given (`Object.assign(d, { a: "z" + i })`) goes into a local of its own, which gives
+                // back what it holds once its strings are copied into the dictionary: left in a slot nothing owns, they
+                // were never given back
+                auto sourceValue = ownedLiteralArgument(loc(source), source, V(sourceResult), genContext);
+                if (mlir::failed(mlirGenSpreadIntoDictionary(loc(source), target, sourceValue, genContext)))
                 {
                     return mlir::failure();
                 }

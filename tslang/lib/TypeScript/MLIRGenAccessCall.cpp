@@ -4396,8 +4396,19 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // under -mm=own a string read out of the record is copied (strings are values): the dictionary keeps what it is
+            // given, and the record still holds its own - stored, the read was "a value that borrows a field" (TSLANG 152)
+            auto fieldValue = V(fieldResult);
+            if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::StringType>(fieldValue.getType())
+                && isa_and_nonnull<mlir_ts::LoadOp, mlir_ts::ExtractPropertyOp>(fieldValue.getDefiningOp()))
+            {
+                auto copy = builder.create<mlir_ts::StringCopyOp>(spreadLocation, fieldValue.getType(), fieldValue);
+                copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                fieldValue = copy;
+            }
+
             auto fieldKey = builder.create<mlir_ts::ConstantOp>(spreadLocation, getStringType(), name);
-            if (mlir::failed(mlirGenDictionarySet(spreadLocation, dictionary, fieldKey, V(fieldResult), genContext)))
+            if (mlir::failed(mlirGenDictionarySet(spreadLocation, dictionary, fieldKey, fieldValue, genContext)))
             {
                 return mlir::failure();
             }

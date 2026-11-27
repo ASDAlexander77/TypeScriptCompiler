@@ -2691,9 +2691,31 @@ namespace mlirgen
             {
                 return mlir::failure();
             }
+
+            // under -mm=own a `let`/`const` a function before it reads owns the value its declaration gives it, as one
+            // declared with its value does: marked before anything captures it (mlirGenFunctionVar)
+            if (compileOptions.memoryModel == MemoryModelOwn && forwardReferenced.contains(name))
+            {
+                markHoistedLexicalOwned(loc(declaration), name);
+            }
         }
 
         return mlir::success();
+    }
+
+    // A `let`/`const` a function before it reads (`const f = () => g(); const g = () => 10;`), made one of the function's
+    // variables (declareFunctionVars), is declared with no value - its slot starts as null - and given it once, by its
+    // declaration. Under -mm=own the variable owns that value, as one declared with it does: not marked, its cell was
+    // "captured by a closure, but -mm=own cannot tell who owns its value" (TSLANG 144)
+    void MLIRGenImpl::markHoistedLexicalOwned(mlir::Location location, StringRef name)
+    {
+        auto slot = symbolTable.lookup(name).first;
+        auto varOp = slot ? slot.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto refType = varOp ? dyn_cast<mlir_ts::RefType>(varOp.getType()) : mlir_ts::RefType();
+        if (varOp && !varOp.getInitializer() && refType && mth.ownsHeapMemory(location, refType.getElementType()))
+        {
+            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+        }
     }
 
     // `var x = e` in a function: an assignment to the function's `x`, declared before the body or here, the first time
@@ -2874,6 +2896,14 @@ namespace mlirgen
         if (!item->initializer)
         {
             return mlir::success();
+        }
+
+        // under -mm=own a `let`/`const` a function before it reads, declared only here (its type known only here): it owns
+        // its value (markHoistedLexicalOwned)
+        if (compileOptions.memoryModel == MemoryModelOwn && genContext.functionTopLevelVars
+            && genContext.functionTopLevelVars->contains(item->pos.pos))
+        {
+            markHoistedLexicalOwned(location, name);
         }
 
         NodeFactory nf(NodeFactoryFlags::None);

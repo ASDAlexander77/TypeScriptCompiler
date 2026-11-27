@@ -4595,6 +4595,14 @@ class OwnedReturnConsumptionPass
             return thisSymbolRefOp.getIdentifier();
         }
 
+        // a function an object literal holds (`o.make(i)` of `const o = { make: (x) => new P(x) }`): it names it. Named
+        // by nothing, its result was taken for one the call does not hand over, and never given back - a leak under
+        // rc and -mm=own whenever the program links anything whose returns are not classified
+        if (auto symbol = own_facts::constantFieldFunction(callee))
+        {
+            return symbol.getValue();
+        }
+
         auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>();
         if (!getMethodOp)
         {

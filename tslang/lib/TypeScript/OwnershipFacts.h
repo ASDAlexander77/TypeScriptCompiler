@@ -164,6 +164,25 @@ inline mlir::FlatSymbolRefAttr directCallee(mlir::Operation *op)
     return {};
 }
 
+// A function an object literal holds, read out of it as the constant it folds to (`const o = { make: (x) => new P(x) };
+// o.make(i)`: a constant tuple of the functions' symbols): that function, named; else null
+inline mlir::FlatSymbolRefAttr constantFieldFunction(mlir::Value value)
+{
+    auto extractOp = value ? value.getDefiningOp<mlir_ts::ExtractPropertyOp>() : mlir_ts::ExtractPropertyOp();
+    auto constantOp = extractOp && extractOp.getPosition().size() == 1
+                          ? extractOp.getObject().getDefiningOp<mlir_ts::ConstantOp>()
+                          : mlir_ts::ConstantOp();
+    auto elements = constantOp ? mlir::dyn_cast<mlir::ArrayAttr>(constantOp.getValue()) : mlir::ArrayAttr();
+    if (!elements)
+    {
+        return {};
+    }
+
+    auto position = extractOp.getPosition().front();
+    return position >= 0 && position < (int64_t)elements.size() ? mlir::dyn_cast<mlir::FlatSymbolRefAttr>(elements[position])
+                                                                 : mlir::FlatSymbolRefAttr();
+}
+
 // The function value a call goes through, or null when it names its callee.
 inline mlir::Value calleeValue(mlir::Operation *op)
 {

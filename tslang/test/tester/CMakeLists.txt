@@ -2575,6 +2575,22 @@ foreach(issue211_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_211-${issue211_mm} COMMAND test-runner -jit -mm=${issue211_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_211.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_211-${issue211_mm} COMMAND test-runner -mm=${issue211_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_211.ts")
 endforeach()
+# TSLANG 212: 132 generic class for a constructor type, 164 instanceof narrowing (own borrows; generic classes),
+# 144 forward-captured consts, 191 an array of a union as members, an object literal's function called
+foreach(issue212_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_212-${issue212_mm} COMMAND test-runner -jit -mm=${issue212_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_212-${issue212_mm} COMMAND test-runner -mm=${issue212_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212.ts")
+endforeach()
+# TSLANG 212 (152): a record's strings spread into a dictionary or given to Object.assign (own copies them)
+foreach(issue212d_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_212_dictionary-${issue212d_mm} COMMAND test-runner -jit -mm=${issue212d_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_dictionary.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_212_dictionary-${issue212d_mm} COMMAND test-runner -mm=${issue212d_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_dictionary.ts")
+endforeach()
+# TSLANG 212 (139): a class given to an interface of a construct signature; not under -mm=own (refuses its result)
+foreach(issue212c_mm gc rc none)
+    tslang_add_test(NAME test-jit-00tslang_issue_212_ctor_interface-${issue212c_mm} COMMAND test-runner -jit -mm=${issue212c_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_ctor_interface.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_212_ctor_interface-${issue212c_mm} COMMAND test-runner -mm=${issue212c_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_ctor_interface.ts")
+endforeach()
 # TSLANG 152, -mm=own: a store past the end through a parameter's alias stops with a check, not a write past the block
 add_test(NAME test-jit-own-grow-past-end-check
          COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=own
@@ -2595,8 +2611,8 @@ foreach(issues_mm gc none)
     tslang_add_test(NAME test-jit-00tslang_issue_176-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_176.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_176-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_176.ts")
 endforeach()
-# a union of interfaces: instanceof, the class it narrows to, `<IB>v` (own refuses the narrowing, as for one interface)
-foreach(issues_mm gc rc none)
+# a union of interfaces: instanceof, the class it narrows to, `<IB>v`
+foreach(issues_mm gc rc none own)
     tslang_add_test(NAME test-jit-00union_interfaces_instanceof-${issues_mm} COMMAND test-runner -jit -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_interfaces_instanceof.ts")
     tslang_add_test(NAME test-compile-00union_interfaces_instanceof-${issues_mm} COMMAND test-runner -mm=${issues_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_interfaces_instanceof.ts")
 endforeach()

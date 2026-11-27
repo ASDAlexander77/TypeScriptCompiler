@@ -2120,7 +2120,8 @@ class MLIRGenImpl
                                                               GenericClassInfo::TypePtr genericClassInfo,
                                                               NodeArray<Expression> arguments,
                                                               const GenContext &genContext,
-                                                              ArrayRef<mlir::Type> knownArgumentTypes = {});
+                                                              ArrayRef<mlir::Type> knownArgumentTypes = {},
+                                                              mlir::Type restArgumentType = mlir::Type());
 
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
@@ -3703,6 +3704,8 @@ class MLIRGenImpl
                                            const GenContext &genContext);
 
     mlir::LogicalResult declareFunctionVars(Node body, const GenContext &genContext);
+
+    void markHoistedLexicalOwned(mlir::Location location, StringRef name);
     mlir::Type functionVarTypeOfGenericInit(VariableDeclaration typing, mlir::Type type, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenFunctionVar(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
@@ -5979,6 +5982,8 @@ class MLIRGenImpl
         // (`n is number` of a number is whatever the guard returns): a value of that type is narrowed to
         // nothing where it is false
         bool testIsTrueOfType = false;
+        // `!(x instanceof C)`: x is a C where the test is false, as checked at run time
+        bool checkedByInstanceOf = false;
     };
 
     // what a false condition narrows: one test gives one case, `a || b` (false when both are) gives
@@ -5991,6 +5996,8 @@ class MLIRGenImpl
         {
             // (as in checkSafeCast: a failed narrowing must not leave the builder before an op it erased)
             auto insertionPointBefore = builder.saveInsertionPoint();
+            MLIRValueGuard<bool> checkedGuard(castCheckedByInstanceOf);
+            castCheckedByInstanceOf = elseSafeCase.checkedByInstanceOf;
             if (mlir::failed(addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext)))
             {
                 builder.restoreInsertionPoint(insertionPointBefore);
@@ -6027,9 +6034,50 @@ class MLIRGenImpl
         }
     }
 
+    // the members of `type` (a union, or one type) that are an instance of the generic class: a G<T>, or a class derived
+    // from one; none: null
+    mlir::Type instancesOfGenericClass(mlir::Type type, mlir_ts::ClassType genericClassType)
+    {
+        auto isInstance = [&](mlir::Type member) {
+            auto classType = dyn_cast<mlir_ts::ClassType>(member);
+            for (auto classInfo = classType ? getClassInfoByFullName(classType.getName().getValue()) : ClassInfo::TypePtr();
+                 classInfo; classInfo = classInfo->baseClasses.empty() ? ClassInfo::TypePtr() : classInfo->baseClasses.front())
+            {
+                if (classInfo->originClassType == genericClassType)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            SmallVector<mlir::Type> instances;
+            for (auto member : unionType.getTypes())
+            {
+                if (isInstance(member))
+                {
+                    instances.push_back(member);
+                }
+            }
+
+            return instances.empty() ? mlir::Type() : instances.size() == 1 ? instances.front() : getUnionType(instances);
+        }
+
+        return isInstance(type) ? type : mlir::Type();
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        // (an `instanceof` test's narrowing is for the narrowing cast only: not for what the type makes - a generic
+        // class instantiated - castCheckedByInstanceOf)
+        auto checkedByInstanceOf = castCheckedByInstanceOf;
+        MLIRValueGuard<bool> checkedGuard(castCheckedByInstanceOf);
+        castCheckedByInstanceOf = false;
         auto safeType = getType(typeToken, genContext);
+        castCheckedByInstanceOf = checkedByInstanceOf;
         return addSafeCastStatement(expr, safeType, inverse, elseSafeCase, genContext);
     }
 
@@ -6070,6 +6118,11 @@ class MLIRGenImpl
 
         auto expr = stripParenthesesAndUntangleEquals(exprIn);
 
+        // (an `instanceof` test's narrowing is for the narrowing cast only, not for what reading the value makes)
+        auto checkedByInstanceOf = castCheckedByInstanceOf;
+        MLIRValueGuard<bool> checkedGuard(castCheckedByInstanceOf);
+        castCheckedByInstanceOf = false;
+
         // only what names a place can be narrowed: the value is read again here, and a call (`o() === undefined && x`)
         // was made a second time - a third in an `if`. Its result is not named again, so there is nothing to narrow.
         if (!isNarrowableReference(expr))
@@ -6083,6 +6136,20 @@ class MLIRGenImpl
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
+
+        // `v instanceof G` of a generic class: true of every G<T>, and the generic itself is no type a value has - narrowed
+        // to it, an interface `v` crashed the compiler, a union "Can't resolve property". It is narrowed to the members
+        // of a union that are a G<T> (or derive from one), else not at all
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(safeType);
+            classType && !getClassInfoByFullName(classType.getName().getValue())
+            && getGenericClassInfoByFullName(classType.getName().getValue()))
+        {
+            safeType = instancesOfGenericClass(exprValue.getType(), classType);
+            if (!safeType)
+            {
+                return mlir::success();
+            }
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "]\n");
 
@@ -6118,7 +6185,9 @@ class MLIRGenImpl
             elseSafeCase->expr = expr;
         }
 
+        castCheckedByInstanceOf = checkedByInstanceOf;
         auto result2 = addSafeCastStatement(location, nameStr, exprValue, safeType, inverse, elseSafeCase, genContext);
+        castCheckedByInstanceOf = false;
 
         // we need to register pair type+field to associate to variable
         if (isNotLocalVariable)
@@ -6182,6 +6251,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(mlir::Location location, StringRef parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        // the narrowing is an `instanceof` test's: taken here, for its cast below only
+        auto checkedByInstanceOf = castCheckedByInstanceOf;
+        MLIRValueGuard<bool> checkedGuard(castCheckedByInstanceOf);
+        castCheckedByInstanceOf = false;
+
         // narrowed to nothing (the `default` of a switch every case of which is handled, the `else` after the
         // last member was tested for): the code here is never reached, and the name is a `never`, with no value
         // to read out of what it was
@@ -6283,7 +6357,9 @@ class MLIRGenImpl
                 else
                 {
                     // (castToNarrowedType says how a class of a union of interfaces is read)
+                    castCheckedByInstanceOf = checkedByInstanceOf;
                     castedValue = castToNarrowedType(location, exprValue, safeType, genContext);
+                    castCheckedByInstanceOf = false;
                     if (!castedValue)
                     {
                         return mlir::failure();
@@ -6341,7 +6417,10 @@ class MLIRGenImpl
             }
             else
             {
+                // (an interface narrowed to a class by `instanceof` is the object it holds: castInterfaceToClass)
+                castCheckedByInstanceOf = checkedByInstanceOf;
                 CAST_A(result, location, safeType, exprValue, genContext);
+                castCheckedByInstanceOf = false;
                 castedValue = V(result);
             }
         }
@@ -7012,7 +7091,9 @@ class MLIRGenImpl
                             if (auto classType = getType(nf.createTypeReferenceNode(typeName), genContext);
                                 classType && !mth.isNoneType(classType))
                             {
-                                elseSafeCases->push_back({stripParenthesesAndUntangleEquals(binExpr->left), classType});
+                                ElseSafeCase elseCase{stripParenthesesAndUntangleEquals(binExpr->left), classType};
+                                elseCase.checkedByInstanceOf = true;
+                                elseSafeCases->push_back(elseCase);
                             }
                         }
                     }
@@ -7311,6 +7392,8 @@ class MLIRGenImpl
                     // qualified name - handed over as the property access it is, it crashed
                     if (auto typeName = instanceOfEntityName(nf, instanceOf->right))
                     {
+                        MLIRValueGuard<bool> checkedGuard(castCheckedByInstanceOf);
+                        castCheckedByInstanceOf = true;
                         return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(typeName),
                                                     false, elseSafeCase, genContext);
                     }
@@ -23436,6 +23519,14 @@ class MLIRGenImpl
     // set when checkSharedElements refuses a type argument: a `new` whose inferred type arguments
     // were refused does not go on to the defaults (`any`), which would only be refused again
     bool sharedElementsRefused = false;
+
+    // a narrowing by `x instanceof C` is being cast (addSafeCastStatement): an interface x holds a C, checked at run
+    // time, so it is cast to the object it holds, with no other way for what is not a C (castInterfaceToClass)
+    bool castCheckedByInstanceOf = false;
+
+    // the cast is an assertion's (`x as T`, `<T>x`): castArrayElementwise reads an array of a union as an array of members
+    // of it only where the program says so
+    bool castIsAssertion = false;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the
