@@ -5935,7 +5935,8 @@ namespace mlirgen
                     && !MLIRTypeHelper::isFirstFieldDiscriminatedUnion(unionType))
                 {
                     auto members = unionType.getTypes();
-                    auto box = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+                    // the union's own tag, as the box of it had (which nothing gave back: 48 bytes a cast, rc and own)
+                    auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), value);
                     auto targetTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(type));
                     std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
                         auto asMember = [&]() -> ValueOrLogicalResult {
@@ -5969,8 +5970,8 @@ namespace mlirgen
                             return asMember();
                         }
 
-                        auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), box,
-                                                                                mlir::TypeAttr::get(members[index]));
+                        auto holds = builder.create<mlir_ts::IsTypeTagOfOp>(location, getBooleanType(), tag,
+                                                                            mlir::TypeAttr::get(members[index]));
                         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
 
                         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());

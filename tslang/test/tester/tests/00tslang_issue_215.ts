@@ -1,6 +1,7 @@
 // TSLANG 215: `Record<string, T>` is `{ [key: string]: T }`, a dictionary of T (it was an object with no fields: the
 // literal given to it lost its fields, and Object.keys gave none), both as the built-in Record and as a mapped type
-// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them; under -mm=own `slice` of one.
+// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them, indexed, and read as an array (`slice`,
+// `forEach`: of the member it holds; under -mm=own its strings copied).
 // The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name.
 @dictionary
 class ObjectDictionary<T = any> {
@@ -105,6 +106,37 @@ function secondOf(x: Two | Three) {
     return x[1];
 }
 
+// a member of Array on a union of tuples is of the array of the member it holds (read as the first, the shorter one
+// had three elements); under -mm=own a tuple's strings are copied for that array
+function count(x: Two | Three) {
+    let n = 0;
+    x.forEach((e) => { n++; });
+    return n;
+}
+
+function mapped(x: Two | Three) {
+    let n = 0;
+    for (const v of x.map((e) => 1)) {
+        n += v;
+    }
+
+    return n;
+}
+
+function arrays() {
+    let total = 0;
+    for (let i = 0; i < 3; i++) {
+        const x: Two | Three = [i, "a" + i, "b" + i];
+        const y: Two | Three = [i, "c" + i];
+        total += count(x) + count(y);
+        total += mapped(x) + mapped(y);
+        const t: Two = [i, "d" + i];
+        t.forEach((e) => { total++; });
+    }
+
+    assert(total == 36);
+}
+
 function tuples() {
     let total = 0;
     for (let i = 0; i < 3; i++) {
@@ -141,6 +173,7 @@ function tuples() {
 
 function main() {
     tuples();
+    arrays();
 
     const r: Record<string, number> = { a: 1, b: 2 };
     assert(Object.keys(r).length == 2);

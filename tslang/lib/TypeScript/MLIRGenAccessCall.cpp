@@ -559,6 +559,21 @@ namespace mlirgen
                         return V(fieldRead);
                     }
 
+                    // a member of Array reading a union of tuples (`x.slice(1)`): of the array of the member it holds
+                    if (isArrayReadMember(name))
+                    {
+                        auto arrayValue = mlirGenUnionOfTuplesAsArray(location, objectValue, unionType, genContext);
+                        if (arrayValue.failed())
+                        {
+                            return mlir::Value();
+                        }
+
+                        if (arrayValue.value)
+                        {
+                            return mlirGenPropertyAccessExpression(location, V(arrayValue), name, false, genContext);
+                        }
+                    }
+
                     // the same field in every member (or a method, dispatched where it is called): read as the first
                     auto frontType = mth.getFirstNonNullUnionType(unionType);
                     //auto casted = cast(location, frontType, objectValue, genContext);
