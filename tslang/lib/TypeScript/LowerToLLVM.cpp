@@ -1422,7 +1422,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
             auto boxCopy = clh.conditionalExpressionLowering(
                 loc, i8PtrTy, isSet(in),
                 [&](OpBuilder &, Location) -> mlir::Value {
-                    auto dataOffset = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, al.getDataPtrOfAny(rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy)));
+                    auto dataOffset = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, al.getDataPtrOfAny(rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy), /*raw=*/true));
                     mlir::Value bytes = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{dataOffset, al.getDataSizeOfAny(in)});
                     auto copy = ch.MemoryAlloc(bytes);
                     ch.MemoryCopy(copy, bytes, in, bytes);

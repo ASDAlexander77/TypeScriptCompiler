@@ -1610,6 +1610,42 @@ namespace mlirgen
             return resultAny;
         }
 
+        // An `any` compared for equality with a primitive (`u == 1`, `"x" === u`, `u != false`) is compared as an
+        // `any`: the lowering boxes the primitive on the stack and AnyCompareOp answers - undefined and null (a null
+        // `any` too) equal no primitive, numbers by value whatever their widths, `==` coercing as JavaScript does.
+        // The `any` was read as the other side's type instead: a number through .unbox<T>, which threw "Can't cast
+        // from any type" for undefined; a string on the left made undefined "undefined" (`"undefined" == u` was
+        // true); and a boolean on the left reached the lowering as a pointer beside an i1 ("'llvm.icmp' op requires
+        // all operands to have the same type"). Equality is symmetric, so the `any` goes on the left.
+        auto isEquality = opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+                          || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken;
+        auto isBoxablePrimitive = [&](mlir::Type type) {
+            type = mth.stripLiteralType(type);
+            // not f16 or f128, whose conversions need compiler-rt
+            if (auto floatType = dyn_cast<mlir::FloatType>(type))
+            {
+                return floatType.getWidth() == 32 || floatType.getWidth() == 64;
+            }
+
+            return isa<mlir_ts::NumberType, mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::CharType,
+                       mlir_ts::BigIntType, mlir::IntegerType>(type);
+        };
+        auto leftIsAny = isa<mlir_ts::AnyType>(leftExpressionValue.getType());
+        auto rightIsAny = isa<mlir_ts::AnyType>(rightExpressionValue.getType());
+        if (isEquality && leftIsAny != rightIsAny
+            && isBoxablePrimitive(leftIsAny ? rightExpressionValue.getType() : leftExpressionValue.getType()))
+        {
+            auto anyValue = leftIsAny ? leftExpressionValue : rightExpressionValue;
+            auto otherValue = leftIsAny ? rightExpressionValue : leftExpressionValue;
+            auto compared = binaryOpLogic(location, opCode, anyValue, otherValue, genContext);
+            if (!compared)
+            {
+                return mlir::failure();
+            }
+
+            return V(compared);
+        }
+
         if (mlir::failed(adjustTypesForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext)))
         {
             return mlir::failure();

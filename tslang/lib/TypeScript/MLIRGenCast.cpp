@@ -5321,6 +5321,20 @@ namespace mlirgen
                 ss << "\nif (typeof a == 'null') return 'null';";
             }
 
+            // a number of an `any` holding undefined is NaN and of one holding null 0, as Number() gives (it threw
+            // "Can't cast from any type"). An integer has no NaN: undefined still throws there, and null is 0. Not
+            // f16 or f128, whose conversions need compiler-rt (above)
+            auto floatType = dyn_cast<mlir::FloatType>(type);
+            auto isFloat = mlir::isa<mlir_ts::NumberType>(type)
+                || (floatType && (floatType.getWidth() == 32 || floatType.getWidth() == 64));
+            if (isFloat) {
+                ss << "\nif (typeof a == 'undefined') return NaN;";
+            }
+
+            if (isFloat || mlir::isa<mlir::IntegerType>(type) || mlir::isa<mlir::IndexType>(type)) {
+                ss << "\nif (typeof a == 'null') return 0;";
+            }
+
             // `if (a)` and `!a` of an `any` holding undefined or null: false, as in JavaScript -
             // it threw "Can't cast from any type"
             if (mlir::isa<mlir_ts::BooleanType>(type) || mlir::isa<mlir_ts::TypePredicateType>(type)) {
