@@ -19,6 +19,7 @@ using namespace ::typescript;
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -793,6 +794,103 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
         return aliases;
     }
 
+    // ---- kept parameters ----
+
+    // Is `value` the value a load of `slot` gives, seen through casts that keep it (a parameter given to a call)?
+    static bool readOfSlot(mlir::Value value, mlir::Value slot)
+    {
+        for (auto depth = 0; depth < 8 && value; ++depth)
+        {
+            auto *def = value.getDefiningOp();
+            if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
+            {
+                return loadOp.getReference() == slot;
+            }
+
+            if (!mlir::isa_and_nonnull<mlir_ts::CastOp, mlir_ts::ValueOp, mlir_ts::OptionalValueOp>(def))
+            {
+                return false;
+            }
+
+            value = def->getOperand(0);
+        }
+
+        return false;
+    }
+
+    // May `to` run after `from`, along any edge (an unwind one too)?
+    static bool mayRunAfter(mlir::Region &region, mlir::Operation *from, mlir::Operation *to)
+    {
+        from = region.findAncestorOpInRegion(*from);
+        to = region.findAncestorOpInRegion(*to);
+        if (!from || !to)
+        {
+            return true;
+        }
+
+        for (auto *op = from->getNextNode(); op; op = op->getNextNode())
+        {
+            if (op == to)
+            {
+                return true;
+            }
+        }
+
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work(from->getBlock()->getSuccessors().begin(), from->getBlock()->getSuccessors().end());
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (!seen.insert(block).second)
+            {
+                continue;
+            }
+
+            if (block == to->getBlock())
+            {
+                return true;
+            }
+
+            work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+        }
+
+        return false;
+    }
+
+    // -mm=own: the parameters the function keeps on every path it returns by (OWN_KEPT_PARAM_ATTR_NAME), each with the
+    // ops that move it (OWN_KEPT_PARAM_TAKER_ATTR_NAME). Until the move the frame holds what the caller gave up for it.
+    llvm::SmallVector<std::pair<mlir::Value, llvm::SmallVector<mlir::Operation *>>> keptParamsOf(mlir_ts::FuncOp funcOp)
+    {
+        llvm::SmallVector<std::pair<mlir::Value, llvm::SmallVector<mlir::Operation *>>> keptParams;
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return keptParams;
+        }
+
+        funcOp.walk([&](mlir_ts::VariableOp varOp) {
+            if (!varOp->hasAttr(OWN_KEPT_PARAM_ATTR_NAME))
+            {
+                return;
+            }
+
+            llvm::SmallVector<mlir::Operation *> takers;
+            funcOp.walk([&](mlir::Operation *op) {
+                if (op->hasAttr(OWN_KEPT_PARAM_TAKER_ATTR_NAME) &&
+                    llvm::any_of(op->getOperands(), [&](mlir::Value operand) { return readOfSlot(operand, varOp.getResult()); }))
+                {
+                    takers.push_back(op);
+                }
+            });
+
+            if (!takers.empty())
+            {
+                keptParams.push_back({varOp.getResult(), takers});
+            }
+        });
+
+        return keptParams;
+    }
+
     // ---- the ways a handler lets the exception go on ----
 
     // A handler that reads what the frame holds - a `finally` reading a local, its unwind copy -
@@ -1050,7 +1148,8 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             }
         });
 
-        if (resources.empty())
+        auto keptParams = keptParamsOf(funcOp);
+        if (resources.empty() && keptParams.empty())
         {
             return;
         }
@@ -1115,6 +1214,14 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
             return it->second;
         };
 
+        llvm::DenseMap<mlir::Value, mlir::Operation *> keptReleases;
+        auto keptReleasesGone = llvm::make_scope_exit([&]() {
+            for (auto &entry : keptReleases)
+            {
+                entry.second->erase();
+            }
+        });
+
         llvm::SmallVector<Plan> plans;
         for (auto &site : sites)
         {
@@ -1156,6 +1263,33 @@ class UnwindReleasePass : public mlir::PassWrapper<UnwindReleasePass, mlir::Oper
                 {
                     plan.releases.push_back(release);
                 }
+            }
+
+            // a kept parameter the call may throw before the move of (`check(c.n); this.items.push(c);`): the frame
+            // still holds it there, and the exception would take the frame out with it (TSLANG 209). Not where the
+            // call is the move, nor where a move may have run before, nor where the handler the call unwinds to may use
+            // it again. A call given it that is not the move borrows it (`checkC(c); this.items.push(c);`)
+            for (auto &[slot, takers] : keptParams)
+            {
+                if (llvm::any_of(plan.releases, [&](mlir::Operation *release) { return resourceOf(release) == slot; }) ||
+                    llvm::is_contained(takers, site.call) ||
+                    llvm::any_of(takers, [&](mlir::Operation *taker) { return mayRunAfter(region, taker, site.call); }) ||
+                    (site.dest && llvm::any_of(aliasesOfResource(slot), [&](mlir::Value alias) {
+                         return usedAgainFrom(site.dest, alias);
+                     })))
+                {
+                    continue;
+                }
+
+                auto &release = keptReleases[slot];
+                if (!release)
+                {
+                    // a release to copy into the pad, in no block: what the pad runs, never this function
+                    mlir::OpBuilder detached(funcOp.getContext());
+                    release = detached.create<mlir_ts::ReleaseSlotOp>(slot.getLoc(), slot);
+                }
+
+                plan.releases.push_back(release);
             }
 
             if (!plan.releases.empty())

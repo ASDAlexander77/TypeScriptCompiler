@@ -3760,8 +3760,22 @@ Not yet:
 - Under -mm=own, a value moved in a `try` body that other statements of the body can throw before
   (`try { f(); const t = ["b" + i, i]; k.keepOne(t); g(); }`): "moved here on some paths only". The unwind leg reached
   before the local is given its value is not known to find it empty. One statement per `try`, or a loop in it, works.
-- Under -mm=own, a callee that keeps a parameter and throws before keeping it (`keep(c) { if (...) throw "no";
-  this.items.push(c); }`) leaks the parameter: 1M throws of `k.keep(new C(i))` grow to about 60 MB. Not new here (a
-  class instance leaks the same way); the callee's unwind does not give back a kept parameter.
+- Under -mm=own, a callee that keeps a parameter and throws before keeping it leaked the parameter: fixed in 209.
 
 Tests `00tslang_issue_208.ts` (all models).
+
+209. Under -mm=own, a method that keeps its parameter on every way it returns by (`this.items.push(c)`) and throws
+before keeping it leaked the parameter: the caller gave it up, and the exception took the method out holding it. 1M
+throws of `k.keep(new C(i))` grew to about 60 MB, for a `throw` of the method's own (`if (c.n % 3 == 0) throw "no";`)
+and for a call that throws (`check(c.n);`, `checkC(c);`). Fixed:
+- A `throw` the move cannot have run before releases the parameter first (decideParam), as a parameter the body
+  releases on the paths that do not move it already was (releaseKeptParamsAtExits) - not where the thrown value is made
+  of it.
+- A call that may throw before the move gives it back on its unwind (UnwindReleasePass): the inference marks the
+  parameter's slot and the op that moves it (OWN_KEPT_PARAM_ATTR_NAME, OWN_KEPT_PARAM_TAKER_ATTR_NAME), and the call's
+  cleanup pad releases the slot where no move may have run before the call. Not for the call that is the move, nor
+  where a handler of the same function the call unwinds to uses the parameter again (`try { check(c.n); } catch {}
+  this.items.push(c);`, which keeps it).
+Each probe now stays at about 5 MB.
+
+Tests `00tslang_issue_209.ts` (all models).

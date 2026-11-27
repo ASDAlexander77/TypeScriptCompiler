@@ -71,6 +71,13 @@
 // the first (own rc fallback design, section 3). A retain left behind without it is an error.
 #define OWN_COUNTED_ATTR_NAME "__own_counted"
 
+// -mm=own only, set by OwnershipInferencePass for UnwindReleasePass. On a parameter's slot the function keeps on
+// every path it returns by (moved into a field, an array, a keeping call): it owns the value until the move. On the op
+// that moves it, OWN_KEPT_PARAM_TAKER_ATTR_NAME. A call that may throw before the move gives it back on its unwind
+// (TSLANG 209): the exception leaves the function holding it, and nothing else would.
+#define OWN_KEPT_PARAM_ATTR_NAME "__own_kept_param"
+#define OWN_KEPT_PARAM_TAKER_ATTR_NAME "__own_kept_param_taker"
+
 // Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
 // instead of by retaining. The slot still releases at every scope exit - that release is what
 // gives the consumed reference back - so the pair is still balanced, but there is no

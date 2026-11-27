@@ -2560,6 +2560,11 @@ foreach(issue208_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_208-${issue208_mm} COMMAND test-runner -jit -mm=${issue208_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_208.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_208-${issue208_mm} COMMAND test-runner -mm=${issue208_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_208.ts")
 endforeach()
+# TSLANG 209: under own a kept parameter given back when its method throws before keeping it
+foreach(issue209_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_209-${issue209_mm} COMMAND test-runner -jit -mm=${issue209_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_209.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_209-${issue209_mm} COMMAND test-runner -mm=${issue209_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_209.ts")
+endforeach()
 # the array `splice` gives back, kept in a local and returned: under rc its header is born owned (it was freed on
 # the way out)
 foreach(splice_mm gc rc none)

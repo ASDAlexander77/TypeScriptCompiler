@@ -162,6 +162,30 @@ namespace own_inference
             }
         });
 
+        // ...and a `throw` the function is left by before the move (`if (c.n < 0) throw "no"; this.items.push(c);`):
+        // the exception takes the function out holding what its caller gave it up for, which nothing gave back
+        // (TSLANG 209). Released there, as releaseKeptParamsAtExits releases one at its throws - unless the move may
+        // have run on the way (it took the value), or what is thrown is made of it (it goes with the exception)
+        if (everyPath && moved)
+        {
+            // ...and for a call that may throw on the way to the move, UnwindReleasePass gives it back on its unwind
+            if (auto slotOp = slot.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                setAttrTracked(slotOp, OWN_KEPT_PARAM_ATTR_NAME);
+                setAttrTracked(taker, OWN_KEPT_PARAM_TAKER_ATTR_NAME);
+            }
+
+            getFunction().walk([&](mlir_ts::ThrowCallOp throwOp) {
+                if (reachableAfter(taker, throwOp, nullptr) || readsSlot(throwOp->getOperand(0), slot))
+                {
+                    return;
+                }
+
+                mlir::OpBuilder builder(throwOp);
+                exitReleases.push_back(builder.create<mlir_ts::ReleaseSlotOp>(throwOp->getLoc(), slot));
+            });
+        }
+
         // rc's retain goes with the move - a `ts.RetainSlot` too, for an owning local the parameter
         // moves into (`let r = init`, spec 33); a call that keeps it is the move itself
         if (everyPath && !isCall(receiver.retain))
