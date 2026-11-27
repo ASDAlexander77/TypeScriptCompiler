@@ -205,9 +205,14 @@ class OwnedReturnConsumptionPass
         // have a construct signature - and each returns the object it makes. Under -mm=own, where a library
         // declaration that lends its result is never classified, the call's result was a borrow, and returning it
         // "a second reference".
+        // (one whose result owns nothing - `{ n: number }` of `new (a: number): { n: number }` - has nothing to hand over:
+        // not counted, it turned this off for every other construct signature of the module)
         auto everyNewCtorReturnsOwned = true;
         module.walk([&](mlir_ts::FuncOp funcOp) {
-            if (funcOp.getName().contains(NEW_CTOR_METHOD_NAME) && !returnsOwned.contains(funcOp.getName()))
+            auto resultsOwn = llvm::any_of(funcOp.getFunctionType().getResults(), [&](mlir::Type resultType) {
+                return mth.ownsHeapMemory(funcOp.getLoc(), resultType);
+            });
+            if (funcOp.getName().contains(NEW_CTOR_METHOD_NAME) && resultsOwn && !returnsOwned.contains(funcOp.getName()))
             {
                 everyNewCtorReturnsOwned = false;
             }

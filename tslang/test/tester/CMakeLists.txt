@@ -2644,6 +2644,29 @@ foreach(drop_owner_error two_params this_param same_array global_field)
                          PASS_REGULAR_EXPRESSION "'it' borrows [^\n]* but is used here after it may be released or overwritten"
                          FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# TSLANG 217: -mm=own 56 (a `let` walking fields), 128 (closures of an assigned `for` variable, a string one), 159
+# (`yield* this.range()` with @borrows), Constructor<T> of `...args: any[]`, 216's maker of a dictionary; a rest any[]
+# given nothing, `new c(a, b)` through an interface's construct signature with a rest parameter
+foreach(issue217_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_217-${issue217_mm} COMMAND test-runner -jit -mm=${issue217_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_217.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_217-${issue217_mm} COMMAND test-runner -mm=${issue217_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_217.ts")
+endforeach()
+# ...and what stays refused under own
+add_test(NAME test-compile-own-let-borrow-dropped-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_let_borrow_dropped_error.ts")
+set_tests_properties(test-compile-own-let-borrow-dropped-error PROPERTIES
+                     PASS_REGULAR_EXPRESSION "'cur' borrows 'this.a' but is used here after it may be released or overwritten"
+                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-for-let-assigned-after-closure-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_for_let_assigned_after_closure_error.ts")
+set_tests_properties(test-compile-own-for-let-assigned-after-closure-error PROPERTIES
+                     PASS_REGULAR_EXPRESSION "'i' is moved inside a loop but was made outside it"
+                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-yield-star-this-undecorated-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_yield_star_this_undecorated_error.ts")
+set_tests_properties(test-compile-own-yield-star-this-undecorated-error PROPERTIES
+                     PASS_REGULAR_EXPRESSION "@borrows\\(\"this\"\\) on both methods"
+                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")

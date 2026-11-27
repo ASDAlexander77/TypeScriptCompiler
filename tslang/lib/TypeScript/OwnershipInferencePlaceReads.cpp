@@ -1684,7 +1684,15 @@ namespace own_inference
             }
             else
             {
-                reportPlaceBorrowEscapes(kept ? kept : letKept, name, place);
+                // `this` of a generator method's step, given to a call whose result the generator keeps (`yield*
+                // this.range()`): the generator owns its `this` unless both methods say they borrow it (TSLANG 159)
+                auto thisRef = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+                auto generatorThis = thisRef && fieldName(thisRef) == "." THIS_NAME && kept;
+                reportPlaceBorrowEscapes(kept ? kept : letKept, name,
+                                         generatorThis ? llvm::StringRef("the generator's 'this' (a generator method that "
+                                                                         "keeps a generator of 'this' needs "
+                                                                         "@borrows(\"this\") on both methods)")
+                                                       : llvm::StringRef(place));
             }
 
             return false;
