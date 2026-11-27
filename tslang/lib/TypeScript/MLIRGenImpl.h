@@ -3026,6 +3026,16 @@ class MLIRGenImpl
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
+        // an exported `const` is stored as a `let` but never assigned: a string literal keeps its literal type, as in
+        // TypeScript - `{ kind: KA, method(a) {...} }` for a union told apart by `kind` picks the member it names (TSLANG 193)
+        if (variableDeclarationInfo.varClass.exportedConst && variableDeclarationInfo.typeProvided != TypeProvided::Yes)
+        {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type); literalType && isa<mlir_ts::StringType>(literalType.getElementType()))
+            {
+                actualType = type;
+            }
+        }
+
         // A global other modules reach holds a function the way a local `let` does
         // (adjustLocalVariableType): as a hybrid function. Its declaration in __decls,
         // `let f : (p0: number) => number`, reads back as one, so a library inferring a plain
@@ -8637,6 +8647,18 @@ class MLIRGenImpl
 
         for (auto member : unionType.getTypes())
         {
+            // ...or an object shape (`"msg" in v` of `{ valid } | { valid; msg }`), told apart by the tag too: it has the
+            // key when it has the field (TSLANG 194)
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(member))
+            {
+                if (tupleType.getIndex(key) >= 0)
+                {
+                    withKey.push_back(member);
+                }
+
+                continue;
+            }
+
             auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(member);
             if (!interfaceType)
             {
@@ -14769,9 +14791,7 @@ class MLIRGenImpl
     mlir::Value ownedLiteralArgument(mlir::Location location, Expression expression, mlir::Value value,
                                      const GenContext &genContext)
     {
-        if (compileOptions.memoryModel != MemoryModelOwn || genContext.ownedVars == nullptr
-            || genContext.generatorSwitchOperation
-            || (genContext.allocateScopeOwnedVarsOutsideOfOperation && !genContext.currentOperation))
+        if (!canMakeOwnedTemporaryLocal(genContext))
         {
             return value;
         }
@@ -14843,17 +14863,39 @@ class MLIRGenImpl
             return value;
         }
 
-        // ...and not inside an expression (`a && k.keep([...])`, `c ? k.keep([...]) : 0`): a local made in its region does
-        // not reach the scope's end, where it is given back
+        return ownedTemporaryLocal(location, value, genContext);
+    }
+
+    // -mm=own: can a value made here go into an owned local of its own (ownedTemporaryLocal)? A scope that owns
+    // locals, not a generator's (whose locals are fields of its object), and not inside an expression (`a && k.keep(...)`,
+    // `c ? k.keep(...) : 0`): a local made in its region does not reach the scope's end, where it is given back
+    bool canMakeOwnedTemporaryLocal(const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn || genContext.ownedVars == nullptr
+            || genContext.generatorSwitchOperation
+            || (genContext.allocateScopeOwnedVarsOutsideOfOperation && !genContext.currentOperation))
+        {
+            return false;
+        }
+
         for (auto *parentOp = builder.getInsertionBlock()->getParentOp(); parentOp && !isa<mlir_ts::FuncOp>(parentOp);
              parentOp = parentOp->getParentOp())
         {
             if (parentOp->getNumResults() > 0)
             {
-                return value;
+                return false;
             }
         }
 
+        return true;
+    }
+
+    // -mm=own: `value` put into an owned local of its own, as `const t = value` puts it, and read back: the local owns
+    // it, moves it into what keeps it as its last use, and gives it back at the end of its scope otherwise. Directly in a
+    // `try` body the local is made in front of the `try` and given the value by a store, as a declared one is
+    // (createLocalVariable), so the cleanup sees it. Only where canMakeOwnedTemporaryLocal says.
+    mlir::Value ownedTemporaryLocal(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
         mlir_ts::VariableOp localOp;
         if (genContext.allocateScopeOwnedVarsOutsideOfOperation)
         {

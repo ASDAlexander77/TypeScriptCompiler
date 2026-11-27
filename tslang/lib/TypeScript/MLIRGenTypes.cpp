@@ -3708,6 +3708,21 @@ namespace mlirgen
             types.push_back(type);
         }
 
+        // `X & any` is `any` (`never & any` stays `never`), and `X & unknown` is X, as in TypeScript: it was `never` ("'Never'
+        // can't be used as parameter type", TSLANG 205)
+        if (llvm::none_of(types, [](mlir::Type type) { return isa<mlir_ts::NeverType>(type); }))
+        {
+            if (llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::AnyType>(type); }))
+            {
+                return getAnyType();
+            }
+
+            if (llvm::any_of(types, [](mlir::Type type) { return !isa<mlir_ts::UnknownType>(type); }))
+            {
+                llvm::erase_if(types, [](mlir::Type type) { return isa<mlir_ts::UnknownType>(type); });
+            }
+        }
+
         if (types.size() == 0)
         {
             // this is never type
@@ -3768,6 +3783,13 @@ namespace mlirgen
             newInterfaceInfo->assignCanonicalVirtualIndexes();
 
             return newInterfaceInfo->interfaceType;
+        }
+
+        // a type parameter not given yet (`v: { x: string } & T` of a generic function, read before a call gives T): the
+        // intersection is resolved once T is; merged with the shape's fields it was "no intersection", `never` (TSLANG 205)
+        if (llvm::any_of(types, [&](mlir::Type type) { return mth.isGenericType(type); }))
+        {
+            return mth.getIntersectionType(types);
         }
 
         if (baseTupleType)

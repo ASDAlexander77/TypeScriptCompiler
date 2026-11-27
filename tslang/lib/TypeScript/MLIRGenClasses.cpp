@@ -6996,6 +6996,24 @@ genContext);
         std::stable_sort(members.begin(), members.end(),
                          [&](mlir::Type a, mlir::Type b) { return depthOf(a) > depthOf(b); });
 
+        // a field some shapes have and another has not (`v.msg` of `{ valid } | { valid; msg }`): TypeScript's error
+        // ("Property 'msg' does not exist on type"). It was read as the first member that has it, whichever the value
+        // was (TSLANG 194)
+        auto hasField = [&](mlir::Type member) {
+            auto tuple = dyn_cast<mlir_ts::TupleType>(member);
+            return !tuple || tuple.getIndex(nameAttr) >= 0;
+        };
+        auto lacking = llvm::find_if(members, [&](mlir::Type member) { return !hasField(member); });
+        if (lacking != members.end()
+            && llvm::any_of(members, [&](mlir::Type member) { return isa<mlir_ts::TupleType>(member) && hasField(member); }))
+        {
+            emitError(location) << "property '" << name << "' does not exist on '" << to_print(*lacking)
+                                << "', a member of '" << to_print(unionType)
+                                << "': tell the members apart first (a field that names the member, or `\"" << name
+                                << "\" in` the value)";
+            return mlir::failure();
+        }
+
         // the field's type in each member: a field every member has, not a method
         SmallVector<mlir::Type> fieldTypes;
         for (auto member : members)
