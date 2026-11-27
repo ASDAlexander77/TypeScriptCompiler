@@ -10019,7 +10019,7 @@ class MLIRGenImpl
             mlir::Value heldArray;
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
-                heldArray = mlirGenGrowArrayForWrite(location, elementRefOp);
+                heldArray = mlirGenGrowArrayForWrite(location, elementRefOp, genContext);
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
             }
 
@@ -22395,7 +22395,8 @@ class MLIRGenImpl
     // Under -mm=rc, the array the left side read when the right side may give its place another one: retained
     // until the store, which releases it (the caller) - else the right side's store released it, and the write
     // and the growth went into a freed block.
-    mlir::Value mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp)
+    mlir::Value mlirGenGrowArrayForWrite(mlir::Location location, mlir_ts::ElementRefOp elementRefOp,
+                                         const GenContext &genContext)
     {
         auto array = elementRefOp.getArray();
         if (!isa<mlir_ts::ArrayType>(array.getType()))
@@ -22480,6 +22481,24 @@ class MLIRGenImpl
         // read this as a push (growsOnly).
         if (compileOptions.memoryModel == MemoryModelOwn)
         {
+            // ...but the store is checked where the array cannot grow (TSLANG 152): past its end it was written past the
+            // end of the block, and the heap was corrupted. A RangeError there, which JavaScript does not throw (it
+            // grows the array): -mm=own does not grow an array through these yet
+            auto checkInside = [&]() -> mlir::Value {
+                auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), array);
+                auto length32 = builder.create<mlir_ts::CastOp>(location, i32Type, length);
+                auto inside = builder.create<mlir_ts::LogicalBinaryOp>(
+                    location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::LessThanToken), index32, length32);
+                if (mlir::failed(mlirGenRangeCheck(location, inside,
+                                                   "-mm=own does not grow an array here: an element stored past its end",
+                                                   genContext)))
+                {
+                    return mlir::Value();
+                }
+
+                return held;
+            };
+
             // Not through a local over a parameter's array (`let src = order; src[i] = v`): changed in place through
             // it - a push too - the local owns what it holds, and the parameter is kept, which the callers can't be
             // made to give up; every write through it, past the end or not, was refused. As before there (TSLANG 152).
@@ -22488,7 +22507,7 @@ class MLIRGenImpl
                 if (auto loadOp = varOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>();
                     loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ParamOp>())
                 {
-                    return held;
+                    return checkInside();
                 }
             }
 
@@ -22497,7 +22516,7 @@ class MLIRGenImpl
             // element would be taken for one that releases what its callers borrow. As before there.
             if (own_facts::reachesSharedValue(arrayRef))
             {
-                return held;
+                return checkInside();
             }
 
             auto one = builder.create<mlir_ts::ConstantOp>(location, i32Type, builder.getI32IntegerAttr(1));

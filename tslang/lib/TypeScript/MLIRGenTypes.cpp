@@ -2486,6 +2486,21 @@ namespace mlirgen
             return getMappedType(type, nameType, constrainType);
         }
 
+        // `Record<string, T>`, `{ [P in string]: T }`: every string a key, a dictionary of T as `{ [key: string]: T }` is
+        // (getTypeLiteral). It was a record of no fields - only a warning - and a literal given to it lost its own (TSLANG 131)
+        if (!hasNameType && isa<mlir_ts::StringType>(constrainType))
+        {
+            GenContext stringKeyGenContext(genContext);
+            stringKeyGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, constrainType)});
+            if (auto valueType = getType(mappedTypeNode->type, stringKeyGenContext))
+            {
+                if (auto dictionaryType = getObjectDictionaryType(loc(mappedTypeNode), valueType, genContext))
+                {
+                    return dictionaryType;
+                }
+            }
+        }
+
         // the key type param is visible only while resolving this mapped type; use a local
         // context copy so the caller's typeParamsWithArgs (incl. a pre-existing entry with
         // the same name) is never touched

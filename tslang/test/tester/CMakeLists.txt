@@ -2570,6 +2570,29 @@ foreach(issue210_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_210-${issue210_mm} COMMAND test-runner -jit -mm=${issue210_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_210.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_210-${issue210_mm} COMMAND test-runner -mm=${issue210_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_210.ts")
 endforeach()
+# TSLANG 211: leftovers of 193, 194, 205 and old notes (131 Record, 137 for...of a literal, own conversions)
+foreach(issue211_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_211-${issue211_mm} COMMAND test-runner -jit -mm=${issue211_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_211.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_211-${issue211_mm} COMMAND test-runner -mm=${issue211_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_211.ts")
+endforeach()
+# TSLANG 194: a field only some shapes of a union have is an error
+add_test(NAME test-compile-union-field-missing-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/union_field_missing_error.ts")
+set_tests_properties(test-compile-union-field-missing-error PROPERTIES PASS_REGULAR_EXPRESSION "property 'msg' does not exist on"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code")
+# TSLANG 140: a declared class's method overloads are an error
+add_test(NAME test-compile-declared-class-overload-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declared_class_overload_error.ts")
+set_tests_properties(test-compile-declared-class-overload-error PROPERTIES PASS_REGULAR_EXPRESSION "declared method is one external symbol"
+                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|Exception Code|redefinition of symbol")
+# TSLANG 152, -mm=own: a store past the end through a parameter's alias stops with a check, not a write past the block
+add_test(NAME test-jit-own-grow-past-end-check
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=own
+                 --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/own_grow_past_end_check.ts")
+set_tests_properties(test-jit-own-grow-past-end-check
+                     PROPERTIES PASS_REGULAR_EXPRESSION "inside done.*assertion failed: -mm=own does not grow an array here"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Exception Code|PLEASE submit|unreachable")
 # the array `splice` gives back, kept in a local and returned: under rc its header is born owned (it was freed on
 # the way out)
 foreach(splice_mm gc rc none)

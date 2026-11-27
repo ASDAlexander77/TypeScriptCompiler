@@ -428,11 +428,23 @@ namespace mlirgen
                               !sourceLoad->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME));
         if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && canMakeOwnedTemporaryLocal(genContext))
         {
+            // a string read out of the source is copied; every other field that holds a block has to be a new value or
+            // constant data, or the local would release what the source still holds: the tuple stays a borrow then
+            auto isStringRead = [](mlir::Value value) {
+                return isa<mlir_ts::StringType>(value.getType())
+                    && isa_and_nonnull<mlir_ts::LoadOp, mlir_ts::ExtractPropertyOp>(value.getDefiningOp());
+            };
+            auto ownable = llvm::all_of(values, [&](mlir::Value value) {
+                return isStringRead(value) || !mth.ownsHeapMemory(location, value.getType())
+                    || own_facts::isConstantData(value)
+                    || (value.getDefiningOp() && own_facts::isFresh(value) && !own_facts::isLiteral(value.getDefiningOp())
+                        && !mth.isAnyFunctionType(value.getType()));
+            });
+
             auto copied = false;
             for (auto &value : values)
             {
-                auto *def = value.getDefiningOp();
-                if (isa<mlir_ts::StringType>(value.getType()) && isa_and_nonnull<mlir_ts::LoadOp, mlir_ts::ExtractPropertyOp>(def))
+                if (ownable && isStringRead(value))
                 {
                     auto copy = builder.create<mlir_ts::StringCopyOp>(location, value.getType(), value);
                     copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());

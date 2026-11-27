@@ -2224,7 +2224,24 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        auto skip = isa<mlir_ts::ArrayType>(exprValue.getType()) 
+        // -mm=own: a literal iterated straight (`for (const o of [new A(), new B()])`, a tuple built in its slot) is held by
+        // a local of its own, as `const items = [...]; for (const o of items)` holds it: read from its slot, it held the
+        // objects it was given and nothing owned it ("an object literal that holds a value it owns is moved only into a
+        // local", TSLANG 137)
+        if (compileOptions.memoryModel == MemoryModelOwn && stripParentheses(forOfStatementAST->expression) == SyntaxKind::ArrayLiteralExpression
+            && isa<mlir_ts::TupleType>(exprValue.getType()) && mth.ownsHeapMemory(location, exprValue.getType())
+            && canMakeOwnedTemporaryLocal(genContext))
+        {
+            auto loadOp = exprValue.getDefiningOp<mlir_ts::LoadOp>();
+            auto slotOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (slotOp && !slotOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && slotOp.getInitializer()
+                && slotOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                exprValue = ownedTemporaryLocal(location, exprValue, genContext);
+            }
+        }
+
+        auto skip = isa<mlir_ts::ArrayType>(exprValue.getType())
                  || isa<mlir_ts::StringType>(exprValue.getType());
         // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow
         if (!skip)

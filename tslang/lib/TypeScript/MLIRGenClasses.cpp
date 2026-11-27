@@ -5803,6 +5803,45 @@ genContext);
             return mlir::success();
         }
 
+        // ...but a declared class's method binds one external symbol, as a declared function does (MLIRGenFunctions):
+        // declared again with another signature it was "redefinition of symbol named 'DC.constructor'" (TSLANG 140)
+        if (!funcLikeDeclaration->body && isAmbientMember && !newClassPtr->isCppVTable
+            && (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor))
+        {
+            auto sameMember = [&](ClassElement other) {
+                if (other == SyntaxKind::Constructor || classMember == SyntaxKind::Constructor)
+                {
+                    return other == classMember;
+                }
+
+                return other == SyntaxKind::MethodDeclaration
+                    && MLIRHelper::getName(other.as<MethodDeclaration>()->name) == MLIRHelper::getName(funcLikeDeclaration->name)
+                    && hasModifier(other, SyntaxKind::StaticKeyword) == hasModifier(classMember, SyntaxKind::StaticKeyword);
+            };
+
+            if (auto classLike = classMember->parent.as<ClassLikeDeclaration>())
+            {
+                for (auto other : classLike->members)
+                {
+                    if (other == classMember)
+                    {
+                        break;
+                    }
+
+                    if (sameMember(other))
+                    {
+                        auto name = classMember == SyntaxKind::Constructor ? std::string("constructor")
+                                                                           : MLIRHelper::getName(funcLikeDeclaration->name);
+                        emitError(location)
+                            << "'" << name << "' of the declared class is declared again with another signature: a declared "
+                            << "method is one external symbol, so it can't have overloads. Declare it once, with optional or "
+                            << "union parameters";
+                        return mlir::failure();
+                    }
+                }
+            }
+        }
+
         if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
             funcLikeDeclaration, 
