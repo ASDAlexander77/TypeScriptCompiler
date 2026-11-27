@@ -395,6 +395,9 @@ namespace mlirgen
             return reinterpreted;
         }
 
+        // (asserted: an array of a union may be read as an array of members of it, castArrayElementwise)
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = isa<mlir_ts::ArrayType>(typeInfo) && isa<mlir_ts::ArrayType>(exprValue.getType());
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
     }
@@ -442,6 +445,9 @@ namespace mlirgen
             return reinterpreted;
         }
 
+        // (asserted: an array of a union may be read as an array of members of it, castArrayElementwise)
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = isa<mlir_ts::ArrayType>(typeInfo) && isa<mlir_ts::ArrayType>(exprValue.getType());
         CAST_A(castedValue, location, typeInfo, exprValue, genContext);
         return castedValue;
     }

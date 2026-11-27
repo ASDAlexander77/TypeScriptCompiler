@@ -2763,6 +2763,11 @@ namespace mlirgen
         auto srcElementType = srcArrayType.getElementType();
         auto elementType = arrayType.getElementType();
 
+        // (the assertion is this cast's, not the casts that build the new array's elements)
+        auto asserted = castIsAssertion;
+        MLIRValueGuard<bool> assertionGuard(castIsAssertion);
+        castIsAssertion = false;
+
         // ...and an array of any other elements given as `any[]` (`("a" | "b")[]` for a parameter
         // `ReadonlyArray<T>` inferred `any`): each element is boxed on its own
         auto boxesElements = [&]() {
@@ -2773,8 +2778,13 @@ namespace mlirgen
         // ...and an array of a union said to be an array of members of it (`x.slice(1) as readonly string[]` of
         // `[number, string] | [number, string, string]`, TSLANG 191): each element is read as the member it is said to be.
         // The array itself cannot be: its elements are unions, laid out as such ("cast from array type ... is not
-        // supported" when it was lowered)
+        // supported" when it was lowered). Only asserted: TypeScript refuses `const s: string[] = m`
         auto narrowsElements = [&]() {
+            if (!asserted)
+            {
+                return false;
+            }
+
             // (a union with no tag - classes, `T | null` of a reference - is laid out as its members are: cast as it is,
             // the same array, as before)
             auto srcUnionType = dyn_cast<mlir_ts::UnionType>(srcElementType);

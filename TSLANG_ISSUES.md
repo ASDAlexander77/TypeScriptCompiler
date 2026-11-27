@@ -3873,7 +3873,9 @@ Tests `00tslang_issue_211.ts` (all models), `own_grow_past_end_check.ts` (-mm=ow
   stays refused, as before ("kept here", "borrows 'this.c'").
 - 191: an array of a union said to be an array of members of it (`x.slice(1) as readonly string[]` of `[number,
   string] | [number, string, string]`, tsc sliceResultCast): "cast from array type ... is not supported" with no
-  location, at lowering. It is a new array, each element read as the member it is said to be (castArrayElementwise).
+  location, at lowering. It is a new array, each element read as the member it is said to be (castArrayElementwise),
+  for an assertion (`as`, `<T>`) of a union with a tag only: TypeScript refuses `const s: string[] = m`, which stays
+  as it was, and a union with no tag (classes) is cast as it is, the same array.
 - 139: a class given to an interface of a construct signature only (`interface PtCtor { new (x: number): Pt }`,
   `make(P)`; `const c: Constructor<A> = A`): "the class 'P' itself can't be given as interface" (TSLANG 204's clear
   error for an internal one). It is made over an object of one field, `new`, a function calling the class's

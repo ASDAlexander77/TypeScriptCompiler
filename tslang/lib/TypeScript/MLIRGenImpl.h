@@ -23524,6 +23524,10 @@ class MLIRGenImpl
     // time, so it is cast to the object it holds, with no other way for what is not a C (castInterfaceToClass)
     bool castCheckedByInstanceOf = false;
 
+    // the cast is an assertion's (`x as T`, `<T>x`): castArrayElementwise reads an array of a union as an array of members
+    // of it only where the program says so
+    bool castIsAssertion = false;
+
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the
     // next pass; see mlirGen(FunctionDeclaration)
