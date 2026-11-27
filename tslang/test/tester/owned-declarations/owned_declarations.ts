@@ -14,6 +14,8 @@ declare class LibBox {
     describe(): string;
     @lends("this")
     label(): string;
+    @lends("this")
+    child(): LibBox;
 }
 
 @owned
@@ -45,6 +47,13 @@ function direct(n: number) {
 // a borrow of `b`: never the caller's under own
 function lent(b: LibBox) {
     return b.label().length;
+}
+
+// what `@owned` returns from a borrow is no part of it: a new string, given back after `b` is (JsonValue's
+// `value.get("k").asString()`, which -mm=own took for a use of the borrow after `b`'s release)
+function ofChild(n: number) {
+    const b = new LibBox(n);
+    return b.child().describe().length;
 }
 
 function main() {

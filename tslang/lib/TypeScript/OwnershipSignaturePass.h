@@ -645,9 +645,26 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // module's object says returns a value its caller owns (--own-facts): the caller owns the result
     bool isImportedFreshResult(const Call &call)
     {
-        return call.callees.known && call.callees.imported && call.op->getNumResults() == 1 &&
-               ((!call.callees.importedOverwrites && call.callees.importedName.ends_with("." NEW_METHOD_NAME)) ||
-                importedFreshResults.contains(call.callees.importedName));
+        return (call.callees.known && call.callees.imported && call.op->getNumResults() == 1 &&
+                ((!call.callees.importedOverwrites && call.callees.importedName.ends_with("." NEW_METHOD_NAME)) ||
+                 importedFreshResults.contains(call.callees.importedName))) ||
+               isDeclaredOwnedResult(call);
+    }
+
+    // ...or a call of declarations that each say `@owned` (DECLARED_OWNED_RESULT_ATTR_NAME) - the default
+    // library's lib.d.ts, whose lib.ts is compiled under own too - and nothing of lending their result
+    // (`@lends`, a result type `this`; `@borrows`' state is marked where it is bounded): the result is the
+    // caller's, as OwnedReturnConsumptionPass counts it, which gives it back where nothing takes it. Whether
+    // or not the call is known: `@owned` speaks of the result, not of what the callee destroys.
+    bool isDeclaredOwnedResult(const Call &call)
+    {
+        return call.op->getNumResults() == 1 && !call.callees.named.empty() &&
+               llvm::all_of(call.callees.named, [&](mlir::StringAttr symbol) {
+                   auto funcOp = functions.lookup(symbol.getValue());
+                   return funcOp && funcOp.isDeclaration() && funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME) &&
+                          !funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME) && !funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) &&
+                          !funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+               });
     }
 
     // The body's own share of a function's FieldDrops: its stores, not its calls. With `fills`, a

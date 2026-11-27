@@ -42,7 +42,7 @@ function(func_text out function outVar)
     set(${outVar} "${body}" PARENT_SCOPE)
 endfunction()
 
-set(declared lib_text LibBox..new LibBox.describe LibNS.name)
+set(declared lib_text LibBox..new LibBox.describe LibBox.child LibNS.name)
 
 compile("${FILE}" marked)
 foreach(function ${declared})
@@ -67,6 +67,16 @@ if(MM STREQUAL "rc" AND NOT text MATCHES "${consumed}")
 endif()
 if(MM STREQUAL "own" AND text MATCHES "${consumed}")
     message(FATAL_ERROR "under own `label` lends its result (`@lends`): `lent` must not give it back:\n${text}")
+endif()
+
+# ...and own's inference takes an `@owned` result for the caller's own, not a part of what it was called on
+# (`ofChild`): checked past the affine lowering, where inference runs
+if(MM STREQUAL "own")
+    execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own "${FILE}"
+                    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "-mm=own refused ${FILE} (${result}):\n${err}")
+    endif()
 endif()
 
 file(READ "${FILE}" source)
