@@ -3000,11 +3000,12 @@ namespace mlirgen
             functionsThrowingObjects.try_emplace(mlir_ts::FuncOp(genContext.funcOp).getName(), to_print(thrownType));
         }
 
-        if (throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
+        if (auto *yieldingFinally = yieldingFinallyOf(genContext);
+            throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinally)
         {
             emitError(location) << "-mm=own: an object of type '" << to_print(thrownType)
-                                << "' thrown through a finally block that yields is not supported: catch it inside "
-                                   "the try statement, or throw a string";
+                                << "' thrown through a finally block that " << (yieldingFinally->inGenerator ? "yields" : "awaits")
+                                << " is not supported: catch it inside the try statement, or throw a string";
             return mlir::failure();
         }
 
@@ -3132,7 +3133,8 @@ namespace mlirgen
         // not a generator's next(), whose variables are fields of the generator (`this.<slot>`): a `finally` that
         // awaits. A `return`'s value goes into a local declared here, in front of the try; one around this try that
         // has one already holds it for both (a `return` goes on through its finally too)
-        if (!genContext.allocateVarsInContextThis)
+        yieldingFinally.inGenerator = genContext.allocateVarsInContextThis;
+        if (!yieldingFinally.inGenerator)
         {
             if (auto *outer = yieldingFinallyOf(genContext); outer && !outer->valueSlot.empty())
             {
@@ -3220,7 +3222,7 @@ namespace mlirgen
                 }
 
                 Expression value = undefined;
-                if (!exit.slot.empty() && !yieldingFinally.valueSlot.empty())
+                if (!exit.slot.empty() && !yieldingFinally.inGenerator)
                 {
                     value = ident(exit.slot);
                 }
@@ -3274,11 +3276,19 @@ namespace mlirgen
             auto isReturnOfResume = returnStatementAST->expression == SyntaxKind::PropertyAccessExpression &&
                 MLIRHelper::getName(returnStatementAST->expression.as<PropertyAccessExpression>()->name) == GENERATOR_THROWN_NAME;
             // (a `finally` that awaits keeps it in a local of the function, which owns it as any local does)
-            if (!yieldingFinally.valueSlot.empty())
+            if (!yieldingFinally.inGenerator)
             {
-                exit.slot = yieldingFinally.valueSlot;
-                statements.push_back(placed(nf.createExpressionStatement(nf.createBinaryExpression(
-                    nf.createIdentifier(stows(exit.slot)), nf.createToken(SyntaxKind::EqualsToken), returnStatementAST->expression))));
+                if (!yieldingFinally.valueSlot.empty())
+                {
+                    exit.slot = yieldingFinally.valueSlot;
+                    statements.push_back(placed(nf.createExpressionStatement(nf.createBinaryExpression(
+                        nf.createIdentifier(stows(exit.slot)), nf.createToken(SyntaxKind::EqualsToken), returnStatementAST->expression))));
+                }
+                else
+                {
+                    // a function returning nothing (`return f();` of a `void` f): the call, then nothing to return
+                    statements.push_back(placed(nf.createExpressionStatement(returnStatementAST->expression)));
+                }
             }
             else if (compileOptions.memoryModel == MemoryModelOwn && !isReturnOfResume)
             {
@@ -3293,7 +3303,7 @@ namespace mlirgen
                 }
             }
 
-            if (yieldingFinally.valueSlot.empty())
+            if (yieldingFinally.inGenerator)
             {
                 exit.slot = yieldingFinally.slotPrefix + std::to_string(yieldingFinally.exits.size());
                 NodeArray<VariableDeclaration> declarations;

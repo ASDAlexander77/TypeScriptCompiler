@@ -1,7 +1,7 @@
 // TSLANG 212 (139): a class given to an interface of a construct signature only (`interface PtCtor { new (x: number):
 // Pt }`) - "the class 'P' itself can't be given as interface 'PtCtor'". It is made over an object of one field, `new`,
-// which calls the class's constructor and returns its object as the signature's result. Not under -mm=own, which
-// refuses a construct signature's result (through a type literal as well).
+// which calls the class's constructor and returns its object as the signature's result. Not under -mm=own, where a
+// constructor keeping its parameter (R) and Constructor<T> stay refused (00tslang_issue_213.ts runs the rest there).
 interface Pt { x: number; }
 interface PtCtor { new (x: number): Pt; }
 class P implements Pt { s: string; constructor(public x: number) { this.s = "s" + x; } }

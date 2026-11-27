@@ -3350,12 +3350,13 @@ namespace mlirgen
                     uncaughtCalls[mlir_ts::FuncOp(genContext.funcOp).getName()].insert(callee);
                 }
 
-                if (!genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
+                if (auto *yieldingFinally = yieldingFinallyOf(genContext);
+                    !genContext.throwCaughtBeforeYieldingFinally && yieldingFinally)
                 {
                     auto thrownType = ownThrownObjectType(callee);
                     if (!thrownType.empty())
                     {
-                        emitError(location) << ownThrownThroughYieldingFinallyMessage(callee, thrownType);
+                        emitError(location) << ownThrownThroughYieldingFinallyMessage(callee, thrownType, !yieldingFinally->inGenerator);
                         return mlir::failure();
                     }
 
@@ -3363,7 +3364,7 @@ namespace mlirgen
                     // (checkOwnCallsThroughYieldingFinally)
                     if (!genContext.dummyRun)
                     {
-                        pendingOwnYieldingFinallyCalls.push_back({callee.str(), location});
+                        pendingOwnYieldingFinallyCalls.push_back({callee.str(), location, !yieldingFinally->inGenerator});
                     }
                 }
             }

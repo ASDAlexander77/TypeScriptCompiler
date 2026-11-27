@@ -2586,10 +2586,27 @@ foreach(issue212d_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_212_dictionary-${issue212d_mm} COMMAND test-runner -jit -mm=${issue212d_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_dictionary.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_212_dictionary-${issue212d_mm} COMMAND test-runner -mm=${issue212d_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_dictionary.ts")
 endforeach()
-# TSLANG 212 (139): a class given to an interface of a construct signature; not under -mm=own (refuses its result)
+# TSLANG 212 (139): a class given to an interface of a construct signature; not under -mm=own, where a constructor
+# keeping its parameter (`R(r: string)`) and `Constructor<T>` of `...args: any[]` stay refused (213 runs the rest)
 foreach(issue212c_mm gc rc none)
     tslang_add_test(NAME test-jit-00tslang_issue_212_ctor_interface-${issue212c_mm} COMMAND test-runner -jit -mm=${issue212c_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_ctor_interface.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_212_ctor_interface-${issue212c_mm} COMMAND test-runner -mm=${issue212c_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_212_ctor_interface.ts")
+endforeach()
+# TSLANG 213: a construct signature of another result type, an object literal's method through an interface, `any`
+# compared with undefined
+foreach(issue213_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_213-${issue213_mm} COMMAND test-runner -jit -mm=${issue213_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_213-${issue213_mm} COMMAND test-runner -mm=${issue213_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213.ts")
+endforeach()
+# TSLANG 213: a reference `for (let ...)` variable a closure captures, one binding per iteration (not -mm=own: refused)
+foreach(issue213l_mm gc rc none)
+    tslang_add_test(NAME test-jit-00tslang_issue_213_loop-${issue213l_mm} COMMAND test-runner -jit -mm=${issue213l_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_loop.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_213_loop-${issue213l_mm} COMMAND test-runner -mm=${issue213l_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_loop.ts")
+endforeach()
+# TSLANG 213 (140): an `await` in a `finally` block
+foreach(issue213a_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")
 endforeach()
 # TSLANG 152, -mm=own: a store past the end through a parameter's alias stops with a check, not a write past the block
 add_test(NAME test-jit-own-grow-past-end-check
@@ -4723,15 +4740,6 @@ add_test(NAME test-compile-diagnostic-location-generic-method-type-literal
 set_tests_properties(test-compile-diagnostic-location-generic-method-type-literal
                      PROPERTIES PASS_REGULAR_EXPRESSION "generic_method_type_literal\\.ts:2:11: error: generic method 'fn' in a type literal is not supported yet"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-
-# An `await` in a `finally` block is an error at the `await` (the lowering failed on the try).
-add_test(NAME test-compile-diagnostic-location-await-in-finally
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
-                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/await_in_finally.ts"
-                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-await-in-finally.obj")
-set_tests_properties(test-compile-diagnostic-location-await-in-finally
-                     PROPERTIES PASS_REGULAR_EXPRESSION "await_in_finally\\.ts:5:35: error: an 'await' in a 'finally' block is not supported yet"
-                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|legalize")
 
 # The built-in `Symbol` read as a value is an error at its place (the lowering failed on its address).
 add_test(NAME test-compile-diagnostic-location-builtin-symbol-value

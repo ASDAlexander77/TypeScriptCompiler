@@ -329,7 +329,8 @@ class MLIRGenImpl
     // -mm=own: function -> the functions it calls outside a catch clause of its own
     llvm::StringMap<llvm::StringSet<>> uncaughtCalls;
     // -mm=own: the calls made in a try whose finally yields, checked again once the module is generated
-    SmallVector<std::pair<std::string, mlir::Location>> pendingOwnYieldingFinallyCalls;
+    // (and whether the finally awaits rather than yields)
+    SmallVector<std::tuple<std::string, mlir::Location, bool>> pendingOwnYieldingFinallyCalls;
 
     // -mm=own: the type of the object a function throws out of itself, or one it calls does; empty if none
     std::string ownThrownObjectType(StringRef function)
@@ -436,11 +437,11 @@ class MLIRGenImpl
         return overriders;
     }
 
-    std::string ownThrownThroughYieldingFinallyMessage(StringRef function, StringRef thrownType)
+    std::string ownThrownThroughYieldingFinallyMessage(StringRef function, StringRef thrownType, bool awaits = false)
     {
         return (llvm::Twine("-mm=own: '") + function + "' throws an object of type '" + thrownType +
-                "', and thrown through a finally block that yields it is not supported: catch it inside the try "
-                "statement, or throw a string")
+                "', and thrown through a finally block that " + (awaits ? "awaits" : "yields") +
+                " it is not supported: catch it inside the try statement, or throw a string")
             .str();
     }
 
@@ -449,12 +450,12 @@ class MLIRGenImpl
     {
         int failures = 0;
         llvm::DenseSet<mlir::Location> reported;
-        for (auto &[function, location] : pendingOwnYieldingFinallyCalls)
+        for (auto &[function, location, awaits] : pendingOwnYieldingFinallyCalls)
         {
             auto thrownType = ownThrownObjectType(function);
             if (!thrownType.empty() && reported.insert(location).second)
             {
-                emitError(location) << ownThrownThroughYieldingFinallyMessage(function, thrownType);
+                emitError(location) << ownThrownThroughYieldingFinallyMessage(function, thrownType, awaits);
                 failures++;
             }
         }
