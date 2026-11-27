@@ -2668,6 +2668,11 @@ add_test(NAME test-compile-own-for-let-assigned-after-closure-error
 set_tests_properties(test-compile-own-for-let-assigned-after-closure-error PROPERTIES
                      PASS_REGULAR_EXPRESSION "'i' is moved inside a loop but was made outside it"
                      FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-own-class-value-ctor-drops-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_class_value_ctor_drops_error.ts")
+set_tests_properties(test-compile-own-class-value-ctor-drops-error PROPERTIES
+                     PASS_REGULAR_EXPRESSION "'e' borrows 'a\\[\\]' but is used here after it may be released or overwritten"
+                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-own-yield-star-this-undecorated-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_yield_star_this_undecorated_error.ts")
 set_tests_properties(test-compile-own-yield-star-this-undecorated-error PROPERTIES

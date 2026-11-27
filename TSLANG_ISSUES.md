@@ -4178,8 +4178,10 @@ Tests `00tslang_issue_217.ts` (all models), `own_let_borrow_dropped_error.ts`, `
   (up to 17 rounds of `%.*e` and `strtod`, about 5 us a conversion): `"a" + k` of a `k: number`, 4M times, took 22 s
   in every model, 0.7 s now. 217's "a function returning a closure is slow" was this.
 
-Not yet:
-- Under -mm=own `new c(a[0])` of `a: any[]` is refused ("a value that borrows 'a[]' is used here after it may be
-  released"); `new c(...a)` compiles.
+- Under -mm=own `new c(a[0])` of `a: any[]` and `c: new (...args: any[]) => T` was refused ("a value that borrows
+  'a[]' is used here after it may be released"): the class value's allocator, called between the argument's read and
+  the constructor, was taken for a call that may free anything. Its `.new` slot holds the `C..new` the compiler makes
+  for every class, which only allocates; it is said to free nothing. The constructor still may: a borrow used after
+  it (`const e = a[0]; new c(a); print(e)` of a constructor that empties `a`) stays an error.
 
-Test `00tslang_issue_218.ts` (all models).
+Tests `00tslang_issue_218.ts` (all models), `own_class_value_ctor_drops_error.ts`.

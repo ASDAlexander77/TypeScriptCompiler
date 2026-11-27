@@ -1,7 +1,8 @@
 // TSLANG 218: a rest parameter of a generic function whose element type names no type parameter (`...a: any[]`)
 // was packed twice - `g(1, 3, 4)` saw one argument, an array, and `new c(...a)` of `make<T>(c, ...a: any[])` threw
-// "Can't cast from any type" (every model); calls through a function value returning a string, under own, kept
-// a result nobody gave back; an integer `number` became text by the slow search for its shortest digits.
+// "Can't cast from any type" (every model), and -mm=own refused `new c(a[0])` there; calls through a function value
+// returning a string, under own, kept a result nobody gave back; an integer `number` became text by the slow search
+// for its shortest digits.
 
 function g<T>(x: T, ...a: any[]) {
     return a.length;
@@ -39,6 +40,11 @@ function make<T>(c: new (...args: any[]) => T, ...a: any[]): T {
     return new c(...a);
 }
 
+// an argument read off the rest before the class value's allocator runs, which frees nothing (-mm=own refused it)
+function makeFirst<T>(c: new (...args: any[]) => T, ...a: any[]): T {
+    return new c(a[0]);
+}
+
 function assert(cond: boolean, msg: string) {
     if (!cond) throw msg;
 }
@@ -57,6 +63,7 @@ function main() {
 
     const p = make(P, 3.5);
     assert(p.x == 3.5, "make(P, 3.5)");
+    assert(makeFirst(P, 2.5).x == 2.5, "makeFirst(P, 2.5)");
 
     // calls through a function value, each returning a new string
     let total = 0;

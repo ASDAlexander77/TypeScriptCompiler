@@ -10,6 +10,44 @@
 namespace own_signature
 {
 
+    // Is this the call of a class value's allocator - the function in its storage tuple's NEW_METHOD_NAME field
+    // (`ts.CallIndirect`, by now `ts.CallInternal`, of a cast of `ts.ExtractProperty` of a cast of a `!ts.class_value`)?
+    static bool isClassValueAllocatorCall(mlir::Operation *op)
+    {
+        if (!mlir::isa<mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp>(op) || op->getNumOperands() != 1)
+        {
+            return false;
+        }
+
+        mlir::Value callee = op->getOperand(0);
+        if (auto castOp = callee.getDefiningOp<mlir_ts::CastOp>())
+        {
+            callee = castOp.getIn();
+        }
+
+        auto extractOp = callee.getDefiningOp<mlir_ts::ExtractPropertyOp>();
+        if (!extractOp || extractOp.getPosition().size() != 1)
+        {
+            return false;
+        }
+
+        auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(extractOp.getObject().getType());
+        auto position = extractOp.getPosition().front();
+        if (!tupleType || position < 0 || static_cast<size_t>(position) >= tupleType.size())
+        {
+            return false;
+        }
+
+        auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFieldInfo(position).id);
+        if (!id || id.getValue() != NEW_METHOD_NAME)
+        {
+            return false;
+        }
+
+        auto sourceCast = extractOp.getObject().getDefiningOp<mlir_ts::CastOp>();
+        return sourceCast && mlir::isa<mlir_ts::ClassValueType>(sourceCast.getIn().getType());
+    }
+
     // Do a call's arguments stand where its callees' parameters do (calleesFieldDrops' owners)? Not through a bound
     // function or a closure value outside a callback family, whose `this` or capture box the call does not pass.
     static bool argumentsAlignWithParams(mlir::Operation *callOp, bool viaCallback)
@@ -421,6 +459,15 @@ namespace own_signature
             call.op->removeAttr(OWN_DROP_FIELD_OWNERS_ATTR_NAME);
             if (!call.callees.known)
             {
+                // the allocator of a class value (`new c(a[0])` of `c: new (...args: any[]) => T`, a `typeof C`): its
+                // `.new` slot holds the `C..new` this compiler makes for every class, which allocates and sets the
+                // vtable - it frees nothing, and a borrow read before it (the arguments are) outlives it (TSLANG 218)
+                if (isClassValueAllocatorCall(call.op))
+                {
+                    call.op->setAttr(OWN_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    continue;
+                }
+
                 // a method of a class another module may extend, called through its vtable: say so
                 // where a borrow ends at the call (TSLANG 48)
                 auto callee = mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(call.op)
