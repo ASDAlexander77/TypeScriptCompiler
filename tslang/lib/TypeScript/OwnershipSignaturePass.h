@@ -656,6 +656,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // holds). `insideChanged`: what is under `value` changes (`a.splice()`, a call given it), not only the place.
     int32_t ownerParam(mlir::Value value, mlir_ts::FuncOp funcOp, bool insideChanged);
 
+    // Is `value` an object `funcOp` makes - a new value, or a read of a local of it nothing assigns or captures that
+    // was declared with one (`const out: Record<string, number> = {}`)? What a call drops in it was put there during
+    // this call, so none of it is anything its callers hold (216's "not yet": `count` making the dictionary it fills
+    // told its callers it might drop any string element).
+    bool madeHere(mlir::Value value, mlir_ts::FuncOp funcOp);
+
     llvm::DenseMap<mlir::Operation *, FieldDrops> fieldDrops;
 
     // The FieldDrops of the functions --own-facts read from the objects of the modules this one

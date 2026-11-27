@@ -1573,10 +1573,24 @@ namespace mlirgen
     // Whether a `for (let i ...)` body needs an `i` of its own each iteration: a function made in it (an arrow, a
     // function expression, a class) may capture one, and nothing in it assigns one (so the loop's variable
     // still has the value the body's started with when the iteration ends).
-    static bool loopBodyNeedsPerIterationBindings(Node body, const llvm::StringSet<> &names, bool &assignedOut)
+    // `byValueOut`: a closure may take the iteration's value instead of its cell - every assignment comes before the
+    // first closure in the body's text, in no closure and no loop nested in the body (so it runs once, before any
+    // closure is made, in each iteration), and a closure made after sees the value it would read through the cell.
+    static bool loopBodyNeedsPerIterationBindings(Node body, const llvm::StringSet<> &names, bool &assignedOut,
+                                                  bool &byValueOut)
     {
         auto hasClosure = false;
         auto assigned = false;
+        auto byValue = true;
+        auto closureDepth = 0;
+        auto loopDepth = 0;
+        auto assignment = [&]() {
+            assigned = true;
+            if (hasClosure || closureDepth > 0 || loopDepth > 0)
+            {
+                byValue = false;
+            }
+        };
         auto isLoopName = [&](Node node) {
             while (node == SyntaxKind::ParenthesizedExpression)
             {
@@ -1594,6 +1608,8 @@ namespace mlirgen
                 return undefined;
             }
 
+            auto closure = false;
+            auto loop = false;
             switch ((SyntaxKind)node)
             {
             case SyntaxKind::ArrowFunction:
@@ -1604,7 +1620,14 @@ namespace mlirgen
             case SyntaxKind::SetAccessor:
             case SyntaxKind::ClassExpression:
             case SyntaxKind::ClassDeclaration:
-                hasClosure = true;
+                closure = true;
+                break;
+            case SyntaxKind::ForStatement:
+            case SyntaxKind::ForInStatement:
+            case SyntaxKind::ForOfStatement:
+            case SyntaxKind::WhileStatement:
+            case SyntaxKind::DoStatement:
+                loop = true;
                 break;
             case SyntaxKind::BinaryExpression:
             {
@@ -1612,7 +1635,7 @@ namespace mlirgen
                 auto op = (SyntaxKind)binary->operatorToken;
                 if (isAssignmentOperator(op) && isLoopName(binary->left))
                 {
-                    assigned = true;
+                    assignment();
                 }
 
                 break;
@@ -1623,7 +1646,7 @@ namespace mlirgen
                 if ((unary->_operator == SyntaxKind::PlusPlusToken || unary->_operator == SyntaxKind::MinusMinusToken)
                     && isLoopName(unary->operand))
                 {
-                    assigned = true;
+                    assignment();
                 }
 
                 break;
@@ -1634,7 +1657,7 @@ namespace mlirgen
                 if ((unary->_operator == SyntaxKind::PlusPlusToken || unary->_operator == SyntaxKind::MinusMinusToken)
                     && isLoopName(unary->operand))
                 {
-                    assigned = true;
+                    assignment();
                 }
 
                 break;
@@ -1643,7 +1666,13 @@ namespace mlirgen
                 break;
             }
 
+            closureDepth += closure ? 1 : 0;
+            loopDepth += loop ? 1 : 0;
             ts::forEachChild(node, visitNode, visitArray);
+            closureDepth -= closure ? 1 : 0;
+            loopDepth -= loop ? 1 : 0;
+            // (after its body: an assignment in the closure itself is in one, which closureDepth says)
+            hasClosure = hasClosure || closure;
             return undefined;
         };
 
@@ -1660,6 +1689,7 @@ namespace mlirgen
         // one the body assigns gives its value back to the loop's (GenContext::loopCopyBack); it was left to the
         // one variable, and every closure saw the loop's last value (3 3 3, TSLANG 176)
         assignedOut = assigned;
+        byValueOut = byValue;
         return hasClosure;
     }
 
@@ -1792,10 +1822,14 @@ namespace mlirgen
                 }
 
                 auto assignedInBody = false;
-                // -mm=own: an `i` the body assigns stays the loop's one variable, as before (a copy a closure takes
-                // and the body still writes is refused by own's capture rule)
-                if (!names.empty() && loopBodyNeedsPerIterationBindings(forStatementAST->statement, names, assignedInBody)
-                    && !(assignedInBody && compileOptions.memoryModel == MemoryModelOwn))
+                auto byValue = false;
+                // -mm=own: an `i` the body assigns is copied only when its closures can take its value (byValue), each
+                // the value of the iteration it is made in (TSLANG 128); the copy goes back to the loop's variable
+                // after them, which a cell a closure took would forbid (own's capture rule, user ruling 2026-11-13).
+                // Else it stays the loop's one variable, as before.
+                auto own = compileOptions.memoryModel == MemoryModelOwn;
+                if (!names.empty() && loopBodyNeedsPerIterationBindings(forStatementAST->statement, names, assignedInBody, byValue)
+                    && !(assignedInBody && own && !byValue))
                 {
                     if (assignedInBody)
                     {
@@ -1813,18 +1847,36 @@ namespace mlirgen
                         // string, TSLANG 213); under own a copy would be one more owner (TSLANG 176)
                         // (not in a generator's next(), whose resume after a yield in the body would skip the copy's
                         // count: "operand does not dominate this use")
+                        // ...and under own a string the body does not assign: the iteration's is a copy of the text of
+                        // its own (strings are values), which a closure takes as it takes any local (TSLANG 128)
+                        auto ownStringCopy = outerRefType && own && !assignedInBody &&
+                                             isa<mlir_ts::StringType>(outerRefType.getElementType()) &&
+                                             !loopGenContext.allocateVarsInContextThis;
                         auto copied = outerRefType && (mth.isValueType(outerRefType.getElementType())
                                                        || !compileOptions.tracksOwnership()
-                                                       || (compileOptions.isRefCounted() && !loopGenContext.allocateVarsInContextThis));
-                        if (!outerRefType || !outer.second || !copied)
+                                                       || (compileOptions.isRefCounted() && !loopGenContext.allocateVarsInContextThis)
+                                                       || ownStringCopy);
+                        if (!outerRefType || !outer.second || !copied ||
+                            (own && assignedInBody && !mth.isValueType(outerRefType.getElementType())))
                         {
                             continue;
                         }
 
                         auto elementType = outerRefType.getElementType();
-                        auto current = builder.create<mlir_ts::LoadOp>(location, elementType, outer.first);
+                        mlir::Value current = builder.create<mlir_ts::LoadOp>(location, elementType, outer.first);
+                        if (ownStringCopy)
+                        {
+                            auto copy = builder.create<mlir_ts::StringCopyOp>(location, elementType, current);
+                            copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                            current = copy;
+                        }
+
                         auto varDecl = std::make_shared<VariableDeclarationDOM>(name, elementType, location);
                         varDecl->setReadWriteAccess();
+                        if (own && assignedInBody)
+                        {
+                            varDecl->setCaptureByValue();
+                        }
                         auto inner = builder.create<mlir_ts::VariableOp>(
                             location, mlir_ts::RefType::get(elementType), current, builder.getBoolAttr(false),
                             builder.getIndexAttr(0));
@@ -1835,6 +1887,13 @@ namespace mlirgen
                         {
                             inner->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
                             builder.create<mlir_ts::RetainSlotOp>(location, inner);
+                        }
+                        // ...and under own the copy of the text is the local's, as `let t = "a" + k` holds its value
+                        else if (ownStringCopy)
+                        {
+                            inner->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+                            inner->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                            consumeOwnedReference(current);
                         }
 
                         declare(location, varDecl, inner, loopGenContext);

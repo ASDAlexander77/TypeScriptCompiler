@@ -2114,6 +2114,12 @@ namespace own_signature
                     auto args = callArgs(call->op);
                     for (auto [place, owner] : llvm::zip(callee->places, callee->owners))
                     {
+                        // a place of an object made here holds nothing this function's callers have
+                        if (aligned && owner >= 0 && static_cast<size_t>(owner) < args.size() && madeHere(args[owner], funcOp))
+                        {
+                            continue;
+                        }
+
                         auto mineOwner = aligned && owner >= 0 && static_cast<size_t>(owner) < args.size()
                                              ? ownerParam(args[owner], funcOp, /*insideChanged=*/true)
                                              : -1;
@@ -2726,6 +2732,28 @@ namespace own_signature
         }
 
         return false;
+    }
+
+    bool OwnershipSignaturePass::madeHere(mlir::Value value, mlir_ts::FuncOp funcOp)
+    {
+        auto root = rootOf(value);
+        if (own_facts::isFresh(root))
+        {
+            return true;
+        }
+
+        auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!varOp || varOp->getParentOfType<mlir_ts::FuncOp>() != funcOp || varOp.getCaptured().value_or(false) ||
+            !varOp.getInitializer() || !own_facts::isFresh(rootOf(varOp.getInitializer())))
+        {
+            return false;
+        }
+
+        // nothing assigns it, or gives its slot away
+        return llvm::all_of(varOp.getResult().getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::DebugVariableOp>(user);
+        });
     }
 
     int32_t OwnershipSignaturePass::ownerParam(mlir::Value value, mlir_ts::FuncOp funcOp, bool insideChanged)

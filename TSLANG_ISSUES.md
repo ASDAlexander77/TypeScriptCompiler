@@ -4105,3 +4105,57 @@ Not yet: a function that makes the object it writes (`count` itself) still says,
 any string element - the place's owner is its local, not a parameter.
 
 Tests `00tslang_issue_216.ts` (all models), `own_drop_owner_{two_params,this_param,same_array,global_field}_error.ts`.
+
+217. The -mm=own refusals of 56, 128, 159, Constructor<T> of `...args: any[]` and 216's "not yet" (2026-11-27). Fixed:
+- 56: a `let` walking fields (`let cur = this.a; for (...) { s += cur.x; cur = this.b; this.a = new V(5); } return
+  cur.x`): "'cur' borrows 'this.a' but is used here after it may be released or overwritten". A drop of the field
+  ended the borrow wherever a use was reached from it, though `cur` was given `this.b` before the drop in every round.
+  A use through a `let` now records where the `let` takes the borrow (its declaration or the assignment) and the read
+  of the `let` it is made of: the drop ends the borrow when it is reached from there before the `let` is assigned, or
+  when a value read out of the `let` before (`const keep = cur`) is used after it. Still refused: `cur` that is
+  `this.a` on some path at the drop (`if (c) cur = this.b; this.a = ...; cur.x`).
+- 128: a `for (let i ...)` whose body assigns `i` and makes closures ("'i' is moved inside a loop but was made
+  outside it"): each iteration has an `i` of its own, and its closures take its value, not its cell, when every
+  assignment of `i` comes before the first closure in the body's text, outside closures and nested loops - then a
+  closure sees the value it would read through the cell. The copy goes back to the loop's variable after them. An `i`
+  assigned after a closure is made stays refused (own's capture rule, user ruling 2026-11-13). A string loop variable
+  (`for (let s = "a"; ...; s = s + "a") fs.push(() => s)`) the body does not assign: the iteration's is a copy of the
+  text, its own, which each closure takes.
+- 159: `yield* this.range()` in a generator method: "a value that borrows a field cannot be stored". A generator
+  method kept its `this` unless it said `@borrows("this")` (the generator owned the object, so `r.range()` moved `r`
+  and `this.range()` gave it a second owner). User ruling 2026-11-27: a generator method of a class the module keeps
+  to itself borrows its `this` and arguments without saying so, as a generator function does (the spec's "`this` among
+  them"); what it is found to borrow is what it declares, so a call through the vtable has the bound too. Not one in
+  an override family of several methods, nor an exported class's (its callers know only what it says: it still needs
+  `@borrows("this")`, and the error says so). So `return new R().range()` is an error now: the generator may not
+  outlive the temporary. The delegate is bounded by what the generator's state borrows, and may be kept in a field of
+  that state: the state does not outlive what it borrows, so neither does the field. Likewise `yield* up(xs)` of a
+  parameter.
+- `Constructor<T>` (`interface Constructor<T> { new (...args: any[]): T }`) given a class: "a value takes a second
+  reference". The function made for the class was read back out of the object `{ .new_ctor: f }` it was put in, a
+  value known at run time only, and boxed with an adapter the object then held; it is that function, named, and gets
+  the adapter of a named function (fewerParametersThunk). Then, in every model, `new c(1.5, "x")` through such an
+  interface gave the constructor `[1.5, ["x"]]` ("Can't cast from any type"): the call read the bound `this` of the
+  construct signature as its first parameter and made the rest array twice. Then, under -mm=own, `new c()` never gave
+  the object back (30 bytes a call): an interface's name with dots in it (`Constructor<!ts.class<P, ...>>`) never
+  matched its vtable's, so every call through it was taken to return a borrow; and a construct signature whose result
+  owns nothing (`new (a: number): { n: number }`) was taken for one whose result is not handed over, which turned that
+  off for every other construct signature of the module.
+- Under -mm=own the rest array of a call given no argument for it (`mk()` of `mk(...a: any[])`) was never given back
+  (38 bytes a call): an array literal of no elements was not taken for one that owns what it holds.
+- 216's "not yet": a function that makes the dictionary it fills (`count`, `const out = {}; out[it] = 1`) told its
+  callers it may drop any string element, so `for (const it of items) { const d = count(items); d[it] }` was refused.
+  A place of an object the function makes (a new value, or a local nothing assigns or captures declared with one)
+  holds nothing its callers have, and is left out of the facts it gives them.
+
+Stays as it was:
+- 153 (`next(obj)` of a generator kept its value: the error asks for `Shared<Box>`), by design.
+
+Not yet:
+- Under -mm=own a closure that captures a string and escapes (returned, `fs.push(() => s)`) leaks the string when it
+  is given back (before this batch too; rc is flat).
+- `new c(...a)` of a rest `a: any[]` spread into `c: new (...args: any[]) => T` (`make(P, 3.5)`): "Can't cast from any
+  type" at run time in every model (before this batch too); `new c(3.5)` works.
+
+Tests `00tslang_issue_217.ts` (all models), `own_let_borrow_dropped_error.ts`, `own_for_let_assigned_after_closure_error.ts`,
+`own_yield_star_this_undecorated_error.ts`.

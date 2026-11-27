@@ -4167,7 +4167,12 @@ namespace mlirgen
         auto newCtorMethod = V(result);        
 
         SmallVector<mlir::Value, 4> operands;
-        if (mlir::failed(mlirGenOperands(arguments, operands, newCtorMethod.getType(), genContext)))
+        // an interface's construct signature is a method of the object that backs it, bound to it: its first
+        // parameter is that `this`, no argument of the call's. Read from 0, a rest parameter took the first
+        // argument for a fixed one and made the array of the others, and the call made its own array of both
+        // (`new c(1.5, "x")` of `{ new (...args: any[]): T }` gave the constructor [1.5, ["x"]])
+        auto offsetArgs = isa<mlir_ts::BoundFunctionType>(newCtorMethod.getType()) ? 1 : 0;
+        if (mlir::failed(mlirGenOperands(arguments, operands, newCtorMethod.getType(), genContext, offsetArgs)))
         {
             emitError(location) << "Call new instance: can't resolve values of all parameters";
             return mlir::failure();

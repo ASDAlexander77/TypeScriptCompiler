@@ -917,6 +917,38 @@ namespace own_signature
     {
         llvm::MapVector<mlir::Type, BorrowingState> states;
         llvm::DenseMap<mlir::Type, int> made;
+        // A generator method of a class this module keeps to itself borrows its `this` and its arguments as a
+        // generator function does, saying nothing (user ruling 2026-11-27, own spec "@borrows": "`this` among them"):
+        // what it is found to borrow becomes what it declares, so a call through its class's vtable has the bound
+        // too. Not one another method overrides or is overridden by - the family says the same of each - nor one
+        // that says `@keeps`, `@borrows` or `@lends` itself, nor another module's (its callers learn only what it
+        // says: an exported one still needs `@borrows("this")`).
+        auto borrowsImplicitly = [&](mlir_ts::FuncOp maker) {
+            if (!maker || !maker.isPrivate() || maker->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) ||
+                maker->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || maker->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME))
+            {
+                return false;
+            }
+
+            auto inputs = maker.getFunctionType().getInputs();
+            if (inputs.empty() || !mlir::isa<mlir_ts::ClassType>(inputs.front()))
+            {
+                return false;
+            }
+
+            auto name = maker.getSymNameAttr();
+            for (auto &[key, members] : families)
+            {
+                if (llvm::is_contained(members, name) &&
+                    llvm::any_of(members, [&](mlir::StringAttr member) { return member != name; }))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+        llvm::DenseSet<mlir::Operation *> implicitMakers;
         module.walk([&](mlir_ts::NewOp newOp) {
             auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(newOp.getType());
             auto tupleType = valueRefType ? mlir::dyn_cast<mlir_ts::TupleType>(valueRefType.getElementType())
@@ -931,10 +963,16 @@ namespace own_signature
             auto maker = newOp->getParentOfType<mlir_ts::FuncOp>();
             // an open maker has callers this pass cannot give the bound to, unless its signature
             // gives it to them (`@borrows`)
+            auto implicit = captured >= 0 && borrowsImplicitly(maker);
             if (captured < 0 || !maker ||
-                !calledOnlyDirectly(module, maker, /*publicToo=*/maker->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME)))
+                !calledOnlyDirectly(module, maker, /*publicToo=*/maker->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) || implicit))
             {
                 return;
+            }
+
+            if (implicit)
+            {
+                implicitMakers.insert(maker);
             }
 
             auto box = boxStoredIntoState(newOp, captured);
@@ -1044,6 +1082,10 @@ namespace own_signature
             auto bounded = state.bounded;
             llvm::sort(bounded);
             borrowsFound[state.maker] = bounded;
+            if (implicitMakers.contains(state.maker))
+            {
+                state.maker->setAttr(OWN_DECLARED_BORROWS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(&getContext(), bounded));
+            }
             for (auto *store : state.thisStores)
             {
                 store->setAttr(OWN_STATE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
