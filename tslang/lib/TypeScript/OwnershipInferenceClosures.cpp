@@ -1228,8 +1228,37 @@ namespace own_inference
                 return;
             }
 
+            // Bounded only by what this generator's own state borrows (`yield* this.range()` in a generator
+            // method's step: the delegate borrows `this`, as the state does), it may be kept in a field of that
+            // state - the state does not outlive what it borrows, so neither does the field (TSLANG 159).
+            mlir::Value boundingState;
+            auto boundedByState = llvm::all_of(bounded.asArrayRef(), [&](int32_t index) {
+                if (static_cast<size_t>(index) >= args.size() || holdsNoBlock(args[index]))
+                {
+                    return true;
+                }
+
+                auto root = rootOf(args[index]);
+                if (auto object = boundThis(root))
+                {
+                    root = rootOf(object);
+                }
+
+                auto slot = borrowedStateSlotOf(root);
+                if (!slot || (boundingState && boundingState != slot))
+                {
+                    return false;
+                }
+
+                boundingState = slot;
+                return true;
+            }) && boundingState;
+            auto storedInState = [&](mlir_ts::StoreOp storeOp) {
+                return boundedByState && stateSlotOfField(storeOp.getReference()) == boundingState;
+            };
+
             llvm::SmallVector<mlir::Operation *> uses;
-            if (auto *kept = boundedUses(call->getResult(0), uses))
+            if (auto *kept = boundedUses(call->getResult(0), uses, storedInState))
             {
                 reportPlaceBorrowEscapes(kept, name, "its generator's arguments");
                 return;
@@ -1394,7 +1423,81 @@ namespace own_inference
         return true;
     }
 
-    mlir::Operation *OwnershipInferencePass::boundedUses(mlir::Value result, llvm::SmallVectorImpl<mlir::Operation *> &uses)
+    mlir::Value OwnershipInferencePass::stateSlotOfField(mlir::Value fieldRef)
+    {
+        auto propertyRefOp = fieldRef.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto stateLoad = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        if (!stateLoad || borrowingFieldsOf(propertyRefOp->getOperand(0).getType()).empty())
+        {
+            return mlir::Value();
+        }
+
+        // the step's parameter: its slot, given the state once and never assigned
+        auto slot = stateLoad.getReference();
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        auto argument = varOp && varOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(varOp.getInitializer())
+                                                        : mlir::BlockArgument();
+        auto isParam = slot.getDefiningOp<mlir_ts::ParamOp>() ||
+                       (argument && argument.getOwner()->isEntryBlock() && !varOp.getCaptured().value_or(false));
+        if (!isParam || llvm::any_of(slot.getUsers(), [&](mlir::Operation *user) {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                return storeOp && storeOp.getReference() == slot;
+            }))
+        {
+            return mlir::Value();
+        }
+
+        return slot;
+    }
+
+    mlir::Value OwnershipInferencePass::borrowedStateSlotOf(mlir::Value value)
+    {
+        // up the reads to the field of the state that borrows: `.this` of the box, a cell of the box, or a
+        // field of the state given only what they hold
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        for (auto depth = 0; loadOp && depth < 4; ++depth)
+        {
+            auto ref = loadOp.getReference();
+            if (isBorrowingCell(ref) || isBorrowingBoxField(ref) || isBorrowingField(ref))
+            {
+                // the state the field is of: the box's field of it, or the field itself
+                mlir::Value fieldRef = ref;
+                for (auto climb = 0; climb < 3; ++climb)
+                {
+                    if (auto slot = stateSlotOfField(fieldRef))
+                    {
+                        return slot;
+                    }
+
+                    auto refOp = fieldRef.getDefiningOp<mlir_ts::PropertyRefOp>();
+                    auto objectLoad = refOp ? refOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                    auto cellLoad = !refOp ? fieldRef.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+                    if (objectLoad)
+                    {
+                        fieldRef = objectLoad.getReference();
+                    }
+                    else if (cellLoad)
+                    {
+                        fieldRef = cellLoad.getReference();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                return mlir::Value();
+            }
+
+            auto refOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+            loadOp = refOp ? refOp->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Operation *OwnershipInferencePass::boundedUses(mlir::Value result, llvm::SmallVectorImpl<mlir::Operation *> &uses,
+                                                         llvm::function_ref<bool(mlir_ts::StoreOp)> storedIn)
     {
         llvm::SmallVector<mlir::Value> values{result};
         llvm::SmallPtrSet<mlir::Value, 8> seen;
@@ -1428,6 +1531,12 @@ namespace own_inference
                     auto slotVar = slot.getDefiningOp<mlir_ts::VariableOp>();
                     if (!slotVar || slotVar.getCaptured().value_or(false))
                     {
+                        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storedIn && storedIn(storeOp))
+                        {
+                            uses.push_back(user);
+                            return;
+                        }
+
                         kept = user;
                         return;
                     }

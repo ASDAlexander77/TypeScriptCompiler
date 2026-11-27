@@ -527,7 +527,18 @@ class OwnershipInferencePass
     // Every use of a bounded result, through its views, the locals that hold it, and the function
     // and object a call through it is made with. Answers the first use that keeps it - anything
     // that is not a read, a call, a local, or rc's bookkeeping - or null.
-    mlir::Operation *boundedUses(mlir::Value result, llvm::SmallVectorImpl<mlir::Operation *> &uses);
+    // A store `storedIn` answers true for is a use that keeps nothing past the bound (TSLANG 159: a field of
+    // the generator state whose borrowed cells bound the result).
+    mlir::Operation *boundedUses(mlir::Value result, llvm::SmallVectorImpl<mlir::Operation *> &uses,
+                                 llvm::function_ref<bool(mlir_ts::StoreOp)> storedIn = nullptr);
+
+    // The slot of `next()`'s state parameter a value is read out of through a borrowing field of the state -
+    // its box of `this` and the arguments, or a field given only what they hold (`this` in a generator
+    // method's step, a parameter of a generator function) - or null.
+    mlir::Value borrowedStateSlotOf(mlir::Value value);
+
+    // The same slot for a store into a field of that state (`yield* this.range()`'s delegate slot), or null.
+    mlir::Value stateSlotOfField(mlir::Value fieldRef);
 
     // A generator's maker puts what the generator captures - its parameters, an outer local - into
     // a box, and the box into its state object's `.captured` field: the box of a closure that
@@ -709,6 +720,14 @@ class OwnershipInferencePass
         // the function value an indirect call goes through: read when the call starts, not while
         // the callee runs
         bool callee = false;
+        // where the local the use reads through takes the borrow (its declaration, or the assignment
+        // that gives it the read: collectBorrowerUses' `from`); null for a use of the read itself, or
+        // where that is not known. A drop the borrow cannot reach from there without a kill comes after
+        // the local holds something else (TSLANG 56)
+        mlir::Operation *start = nullptr;
+        // the read of that local's slot the use is made of: a value read before the local is given
+        // something else still holds the borrow wherever it is used after
+        mlir::Operation *via = nullptr;
     };
 
     // A borrowing `let`'s slot: each read, and everything it leads to (walkBorrowed), joins

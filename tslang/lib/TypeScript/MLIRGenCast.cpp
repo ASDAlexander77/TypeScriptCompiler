@@ -4415,6 +4415,29 @@ namespace mlirgen
                     return mlir::Value();
                 }
             }
+
+            // ...and of an object made here of named functions: a class given as an interface of a construct
+            // signature (`const c: Constructor<Plain> = Plain`) is the object `{ .new_ctor: <the function made for
+            // the class> }`, which the interface's `new (...args: any[])` reads through an adapter
+            if (auto createTupleOp = extractOp.getObject().getDefiningOp<mlir_ts::CreateTupleOp>())
+            {
+                auto position = extractOp.getPosition().front();
+                auto items = createTupleOp.getItems();
+                auto item = position >= 0 && position < (int64_t)items.size() ? items[position] : mlir::Value();
+                auto itemSymbolRefOp = item ? item.getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+                if (itemSymbolRefOp && isa<mlir_ts::FunctionType>(value.getType()) && item.getType() == value.getType())
+                {
+                    auto symbolValue = builder.create<mlir_ts::SymbolRefOp>(location, value.getType(),
+                                                                            itemSymbolRefOp.getIdentifierAttr());
+                    if (auto thunk = fewerParametersThunk(location, symbolValue, type, genContext))
+                    {
+                        return thunk;
+                    }
+
+                    symbolValue->erase();
+                    return mlir::Value();
+                }
+            }
         }
 
         auto boundOp = value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();

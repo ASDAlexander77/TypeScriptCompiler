@@ -1694,10 +1694,25 @@ namespace own_inference
         // A call given the borrow is a use of it for as long as the callee runs, so a call that
         // may destroy it is a use after that, whatever the order of its arguments. The function
         // value it goes through is only read as it starts.
+        // A use through a `let` that takes the borrow at `use.start` sees it at the drop only when the drop
+        // is reached from there before the `let` is given something else (TSLANG 56: `cur = this.b` ahead
+        // of `this.a = new V(5)` in each round of the loop, and `cur.x` after it reads `this.b`).
+        // A value read out of the `let` before that (`const keep = cur; cur = this.b; this.a = ...; keep.x`, or
+        // a read given to a call with the drop among its arguments) holds it still: the read reaches the drop,
+        // and the use is reached from the drop before the read runs again.
+        auto heldAt = [&](const BorrowUse &use, mlir::Operation *drop) {
+            if (!use.start || reachableAfter(use.start, drop, use.kills))
+            {
+                return true;
+            }
+
+            return use.via && use.via != use.op && reachableAfter(use.via, drop, llvm::ArrayRef<mlir::Operation *>()) &&
+                   reachableAfter(drop, use.op, llvm::ArrayRef<mlir::Operation *>(use.via));
+        };
         auto outlives = [&](mlir::Operation *drop) {
             for (auto &use : uses)
             {
-                if ((use.op != drop || !use.callee) && reachableAfter(drop, use.op, use.kills))
+                if ((use.op != drop || !use.callee) && heldAt(use, drop) && reachableAfter(drop, use.op, use.kills))
                 {
                     // a string given to the very call that may release it, when the call keeps it, or
                     // is a callback - a function value, which nothing can say `@nodrops` of: the call

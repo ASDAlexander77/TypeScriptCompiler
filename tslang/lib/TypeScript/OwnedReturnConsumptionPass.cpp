@@ -588,8 +588,10 @@ class OwnedReturnConsumptionPass
             return true;
         }
 
+        // ...and a literal of no elements: the rest array of a call given none (`mk()` of `mk(...a: any[])`, a construct
+        // signature's `new c()` of `new (...args: any[])`), which was given back by nothing under own (38 bytes a call)
         auto arrayOp = mlir::dyn_cast_or_null<mlir_ts::CreateArrayOp>(op);
-        return arrayOp && holdsWhatItIsGiven(mth, arrayOp, givenToCall);
+        return arrayOp && (arrayOp->getNumOperands() == 0 || holdsWhatItIsGiven(mth, arrayOp, givenToCall));
     }
 
     // The literals nested in one about to be owned (isNestedLiteral), innermost first: each is a new value moved into
@@ -5107,16 +5109,26 @@ class OwnedReturnConsumptionPass
     // `Sphere..vtbl`, names no interface and is left out.
     static bool namesInterface(mlir::StringRef vtableName, mlir::StringRef interfaceName)
     {
+        // the name at the start of a segment, followed by a dot or the end: an instance of a generic interface has
+        // dots of its own (`Constructor<!ts.class<P, !ts.class_storage<P>>>`), and split at each one it never matched -
+        // every call through such an interface was taken to return a borrow (under -mm=own `new c()` of a
+        // `c: Constructor<P>` never gave the object back)
         auto rest = vtableName;
         while (!rest.empty())
         {
-            auto split = rest.split('.');
-            if (split.first == interfaceName)
+            if (rest.starts_with(interfaceName) &&
+                (rest.size() == interfaceName.size() || rest[interfaceName.size()] == '.'))
             {
                 return true;
             }
 
-            rest = split.second;
+            auto dot = rest.find('.');
+            if (dot == mlir::StringRef::npos)
+            {
+                break;
+            }
+
+            rest = rest.drop_front(dot + 1);
         }
 
         return false;

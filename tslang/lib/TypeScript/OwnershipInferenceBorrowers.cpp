@@ -658,6 +658,24 @@ namespace own_inference
             }
         }
 
+        // the uses found here hold the borrow from `from` on (BorrowUse::start); a nested borrower's
+        // (an assignment of what is read here to another `let`) are its own assignment's
+        auto firstUse = uses.size();
+        auto startAt = [&]() {
+            if (!from || !onlyBorrows)
+            {
+                return;
+            }
+
+            for (auto index = firstUse; index < uses.size(); ++index)
+            {
+                if (!uses[index].start)
+                {
+                    uses[index].start = from;
+                }
+            }
+        };
+
         for (auto *user : borrower.getResult().getUsers())
         {
             if (onlyBorrows && isAssignmentOf(user, borrower))
@@ -706,13 +724,23 @@ namespace own_inference
                 return user;
             }
 
+            auto firstOfRead = uses.size();
             uses.push_back({user, {kills.begin(), kills.end()}});
             if (auto *kept = walkBorrowed(readOp.getResult(), kills, uses))
             {
                 return kept;
             }
+
+            for (auto index = firstOfRead; index < uses.size(); ++index)
+            {
+                if (!uses[index].via)
+                {
+                    uses[index].via = readOp;
+                }
+            }
         }
 
+        startAt();
         return nullptr;
     }
 
