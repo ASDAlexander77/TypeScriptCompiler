@@ -2603,6 +2603,12 @@ foreach(issue213l_mm gc rc none)
     tslang_add_test(NAME test-jit-00tslang_issue_213_loop-${issue213l_mm} COMMAND test-runner -jit -mm=${issue213l_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_loop.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_213_loop-${issue213l_mm} COMMAND test-runner -mm=${issue213l_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_loop.ts")
 endforeach()
+# TSLANG 214: a `break` out of a catch clause, a constructor keeping a string through a construct signature, a tuple
+# literal given to a union of tuples
+foreach(issue214_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_214-${issue214_mm} COMMAND test-runner -jit -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_214-${issue214_mm} COMMAND test-runner -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
+endforeach()
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")
