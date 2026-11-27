@@ -4030,18 +4030,28 @@ Tests `00tslang_issue_214.ts` (all models).
   as a tuple cast to another copies them (211). Another element owning memory stays refused.
 - A union of object shapes or tuples cast to one of its members boxed the union in an `any` to read its tag, and
   nothing gave the box back: about 40 bytes a cast under rc and -mm=own. The union's own tag is read.
+- A union of tuples iterated (`for (const e of x)`) or read at a run-time index (`x[i]`), "access expression is not
+  applicable": the elements of the member it holds, and the element of that member (each member tested for, as a
+  cast is). `x[1] = v` stays refused, and says why: the element is read out of the member the union holds, a copy.
+- Under -mm=rc an array made for a call and given as `this` to a method (`([i, s] as (number | string)[]).slice(1)`,
+  `t.slice(1)` of a tuple, `[...x]` of a union of tuples) was never given back: about 100 bytes a call (with the
+  compiler of c2a88259d too). Born uncounted, it gets the reference a new string has (markFreshBlockOwned) and is given
+  back where nothing takes it.
+- Under -mm=own a spread literal given to a call (`cnt(...xs)`, the default library's `join`: `"".concat(...parts)`)
+  was never given back: about 100 bytes a call (with the compiler of c2a88259d too). It is given back as a literal
+  given to a call is (ownNewArrayArguments), with copies of the text pushed into it; one holding an object read from
+  elsewhere stays as it was.
 
 Not yet:
-- Under -mm=rc an array made for a call and given as `this` to a method (`([i, s] as (number | string)[]).slice(1)`,
-  `t.slice(1)` of a tuple, `[...x]` of a union of tuples) is never given back: about 100 bytes a call (before this
-  batch, with the triage compiler of c2a88259d too).
-- Under -mm=own `a.join(",")` of a `(number | string)[]` leaks about 120 bytes a call (default library; the same with
-  the compiler of c2a88259d).
-- A union of tuples: `for (const e of x)` and `x[i]` of a run-time index are "access expression is not applicable",
-  and `x[1] = v` is refused ("can't assign to a field of a value ... that is not held anywhere").
-- Under -mm=own a dictionary written in a generic loop (`out[key(it)] = (out[k] ?? 0) + 1` for `it` of `items: T[]`):
+- Under -mm=own the result of a default-library string function used as a temporary (`"".concat(s, "e").length`,
+  `s.toUpperCase().length`) is never given back: about 32 bytes a call (with the compiler of c2a88259d too). The
+  library declares `__String` `@owned`, which rc trusts and own does not (USER DECISION 2026-11-18: JsonValue.get
+  lends); trusting it under own for string results is a decision to make.
+- Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
   "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
-  string]: number }` alike.
+  string]: number }` alike. The dictionary's `set` is known only to drop strings held anywhere (its drop facts are
+  `[-1, string]`), so any string read out of an array is taken for freed by it; facts naming what is under `this` would
+  tell `items` apart.
 - Still from 214: 128 under own (a capture by value for value types), own `Constructor<T>` of `...args: any[]`; from
   213: 56, 153, 159 under own; 131 (`Object.keys` of `object`, `Object.assign`, `defineProperty`, `create`), 108, 191's
   callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads

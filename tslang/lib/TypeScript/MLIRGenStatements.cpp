@@ -2254,6 +2254,22 @@ namespace mlirgen
             }
         }
 
+        // a union of tuples (`for (const e of x)` of `[number, string] | [number, string, string]`): the elements of the
+        // member it holds, as an array (it was "access expression is not applicable")
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(exprValue.getType()))
+        {
+            auto arrayValue = mlirGenUnionOfTuplesAsArray(location, exprValue, unionType, genContext);
+            if (arrayValue.failed())
+            {
+                return mlir::failure();
+            }
+
+            if (arrayValue.value)
+            {
+                exprValue = V(arrayValue);
+            }
+        }
+
         auto skip = isa<mlir_ts::ArrayType>(exprValue.getType())
                  || isa<mlir_ts::StringType>(exprValue.getType());
         // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow

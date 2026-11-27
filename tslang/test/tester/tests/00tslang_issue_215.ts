@@ -1,7 +1,8 @@
 // TSLANG 215: `Record<string, T>` is `{ [key: string]: T }`, a dictionary of T (it was an object with no fields: the
 // literal given to it lost its fields, and Object.keys gave none), both as the built-in Record and as a mapped type
-// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them, indexed, and read as an array (`slice`,
-// `forEach`: of the member it holds; under -mm=own its strings copied).
+// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them, indexed (at a constant or a run-time
+// index), iterated, and read as an array (`slice`, `forEach`, `[...x]`: of the member it holds; under -mm=own its
+// strings copied).
 // The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name.
 @dictionary
 class ObjectDictionary<T = any> {
@@ -131,6 +132,19 @@ function lengthOf(x: Two | Three) {
     return x.length;
 }
 
+function ofCount(x: Two | Three) {
+    let n = 0;
+    for (const e of x) {
+        n++;
+    }
+
+    return n;
+}
+
+function at(x: Two | Three, i: number) {
+    return x[i];
+}
+
 function arrays() {
     let total = 0;
     for (let i = 0; i < 3; i++) {
@@ -140,11 +154,15 @@ function arrays() {
         total += mapped(x) + mapped(y);
         total += spreadLength(x) + spreadLength(y);
         total += lengthOf(x) + lengthOf(y);
+        total += ofCount(x) + ofCount(y);
+        assert(at(x, 2) == "b" + i);
+        assert(at(y, 1) == "c" + i);
+        assert(at(x, 0) == i);
         const t: Two = [i, "d" + i];
         t.forEach((e) => { total++; });
     }
 
-    assert(total == 66);
+    assert(total == 81);
 }
 
 function tuples() {

@@ -719,6 +719,27 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
 
+        // -mm=rc: a new array a method is called on (`[a, b].slice(1)`, `t.slice(1)` of a tuple made an array) is born
+        // uncounted, and nothing gave it back: about 100 bytes a call. It gets the standing a new string has
+        // (markFreshBlockOwned): a reference of its own, marked so, given back where nothing takes it (§9.30)
+        if (compileOptions.isRefCounted() && isa<mlir_ts::ArrayType>(thisValue.getType()))
+        {
+            auto source = thisValue;
+            while (auto castOp = source.getDefiningOp<mlir_ts::CastOp>())
+            {
+                source = castOp.getIn();
+            }
+
+            auto *definingOp = source.getDefiningOp();
+            auto isNewArray = isa_and_nonnull<mlir_ts::CreateArrayOp>(definingOp)
+                || (isa_and_nonnull<mlir_ts::LoadOp>(definingOp) && definingOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME));
+            if (isNewArray && !definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) && isa<mlir_ts::ArrayType>(source.getType()))
+            {
+                builder.create<mlir_ts::RetainOp>(location, source);
+                definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+            }
+        }
+
         // a key of an `any` is read at run time: a function of the same name found in some namespace is no member
         // of it unless it takes an `any` (`foo.get = class {}` with `foo: any` found the library's generic
         // `Reflect.get<T, K>(target: T, ...)`, whose `T` takes anything, and assigned to it)
@@ -1868,6 +1889,12 @@ namespace mlirgen
             {
                 expression = builder.create<mlir_ts::GetValueFromUnionOp>(location, firstTuple, expression);
                 arrayType = firstTuple;
+            }
+            // `x[i]` of a run-time index: the element of the member the value holds (a value, as above: not a place
+            // to assign to)
+            else if (auto element = mlirGenUnionOfTuplesElementAt(location, expression, unionType, argumentExpression, genContext))
+            {
+                return *element;
             }
         }
 

@@ -2405,10 +2405,11 @@ foreach(union_method_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-union-method-dispatch-${union_method_mm} COMMAND test-runner -jit -mm=${union_method_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
 endforeach()
 tslang_add_test(NAME test-compile-00-union-method-dispatch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_method_dispatch.ts")
-# -mm=own: a tuple kept in a local used as an array would give its owned elements a second owner
+# -mm=own: a tuple kept in a local used as an array would give its owned elements a second owner (its strings are
+# copied, TSLANG 215; an array element is not)
 add_test(NAME test-compile-own-tuple-as-array-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_tuple_as_array_error.ts")
-set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, string\\]' would have two owners as an element of an array"
+set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, number\\[\\]\\]' would have two owners as an element of an array"
                                                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # Mixins (a generic function given a class) under every memory model
 foreach(mixin_mm gc rc none own)

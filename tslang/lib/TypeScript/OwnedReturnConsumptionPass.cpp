@@ -682,6 +682,94 @@ class OwnedReturnConsumptionPass
         }
     }
 
+    // -mm=own: may a spread literal's array (read out of its slot, `loadOp`) own what was pushed into the slot? Each
+    // item owning memory must be a new value moved in, or text, which is copied for it as copyBorrowedTextElements copies
+    // a literal's (the retain taken of it before the push goes). Anything else - an object read from elsewhere - and
+    // nothing is changed: the array borrows it, and stays as it was (never given back). The slot is the literal's
+    // alone: pushes and reads of it, nothing stored into it.
+    static bool ownSpreadSlotPushes(MLIRTypeHelper &mth, mlir_ts::LoadOp loadOp)
+    {
+        auto slot = loadOp.getReference();
+        if (!slot.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return false;
+        }
+
+        auto elementType = mlir::cast<mlir_ts::ArrayType>(loadOp.getType()).getElementType();
+        auto ownsElements = mth.ownsHeapMemory(loadOp->getLoc(), elementType);
+
+        llvm::SmallVector<mlir_ts::ArrayPushOp> pushes;
+        for (auto *user : slot.getUsers())
+        {
+            if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
+            {
+                pushes.push_back(pushOp);
+                continue;
+            }
+
+            if (!mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                return false;
+            }
+        }
+
+        if (!ownsElements)
+        {
+            return true;
+        }
+
+        auto movedIn = [](mlir::Value item) {
+            auto *itemOp = item.getDefiningOp();
+            return itemOp && itemOp->hasAttr(OWNED_RESULT_ATTR_NAME) && itemOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME);
+        };
+
+        for (auto pushOp : pushes)
+        {
+            for (auto item : pushOp.getItems())
+            {
+                if (mth.ownsHeapMemory(pushOp->getLoc(), item.getType()) && !movedIn(item) && !isBorrowedText(item))
+                {
+                    return false;
+                }
+            }
+        }
+
+        for (auto pushOp : pushes)
+        {
+            for (auto &operand : pushOp->getOpOperands())
+            {
+                auto item = operand.get();
+                if (operand.getOperandNumber() == 0 || !mth.ownsHeapMemory(pushOp->getLoc(), item.getType()) || movedIn(item))
+                {
+                    continue;
+                }
+
+                // the retain taken of it for the push: the last one before the push, in its block
+                mlir::Operation *retain = nullptr;
+                for (auto *user : item.getUsers())
+                {
+                    if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == pushOp->getBlock() && user->isBeforeInBlock(pushOp) &&
+                        (!retain || retain->isBeforeInBlock(user)))
+                    {
+                        retain = user;
+                    }
+                }
+
+                mlir::OpBuilder builder(pushOp);
+                auto copy = builder.create<mlir_ts::StringCopyOp>(pushOp->getLoc(), item.getType(), item);
+                copy->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(pushOp->getContext()));
+                copy->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(pushOp->getContext()));
+                operand.set(copy);
+                if (retain)
+                {
+                    retain->erase();
+                }
+            }
+        }
+
+        return true;
+    }
+
     // The array a conversion makes for one call (`f(a)` of an `int[]` given as a `number[]`, an array given as
     // an Iterable<number>): a `ts.NewArray` whose elements are written one by one, then given to the call -
     // its other uses are the element references of that loop
@@ -832,6 +920,21 @@ class OwnedReturnConsumptionPass
                 argument = arrayInsideOptional(argument);
 
                 auto *definingOp = argument.getDefiningOp();
+
+                // a spread literal's array (`cnt(...xs)`, `"".concat(...parts)` of the default library's join), read out of
+                // the slot it was filled in: the same, when what was pushed into it can be its own (spreadSlotPushes)
+                if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(definingOp);
+                    loadOp && loadOp->hasAttr(SPREAD_ARRAY_LITERAL_ATTR_NAME) && !loadOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                    mlir::isa<mlir_ts::ArrayType>(argument.getType()) && seen.insert(argument).second &&
+                    arrayMadeFor(argument, op, true))
+                {
+                    if (ownSpreadSlotPushes(mth, loadOp))
+                    {
+                        loadOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    }
+
+                    continue;
+                }
 
                 // `f([])`: the empty constant array cast to an array - a copy made on the heap there - is the new empty
                 // array it is (ts.NewEmptyArray), which the inference moves into a callee that keeps it (`new
