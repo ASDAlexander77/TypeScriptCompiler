@@ -3935,8 +3935,8 @@ Tests `00tslang_issue_212.ts`, `00tslang_issue_212_dictionary.ts` (all models), 
 - Under -mm=rc a `for (let s ...)` of a string (or another reference) that a closure captures shared one variable: each
   closure saw the loop's last string (TSLANG 176 copied value types only). The iteration's copy takes a count of its
   own, as a `let` does, and one the body assigns gives its value back to the loop's variable.
-- 117 (`let f = n.toFixed; f(1)`) is still an error, waiting for a ruling: tsc accepts it and JavaScript throws a
-  TypeError at the call (the method loses its `this`).
+- 117 (`let f = n.toFixed; f(1)`) stays a compile error (user ruling 2026-11-27): tsc accepts it, but JavaScript throws
+  a TypeError at the call (the method loses its `this`), so the error says so where the program is written.
 
 Not yet:
 - Under -mm=rc an async function with a `catch` clause and a `finally` that awaits leaks about 32 bytes a call when a
