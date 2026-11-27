@@ -60,9 +60,14 @@ namespace mlirgen
     // (a closure, see MLIRTypeHelper::isObjectFieldFunctionWithoutThis) keeps its
     // own type: cast to the interface's it would lose its captures. Its slot calls a
     // thunk reading the field instead (mlirGenObjectVirtualTableDefinitionForInterface).
+    // ...unless its type is not the member's, nor one the slot's thunk converts (`matches` says: an s32 result for a
+    // number, isResultWideningFieldFunction, TSLANG 208). Then the clone's field is a function value of the member's
+    // type, without its `this` (a type literal's field, as `{ produce: () => number }` has), which the cast into the
+    // clone adapts the function to (fewerParametersThunk, functionValueAdapter).
     static mlir::LogicalResult getInterfaceCloneFields(mlir::ArrayRef<mlir_ts::FieldInfo> srcFields,
                                                        InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
-                                                       SmallVector<mlir_ts::FieldInfo> &fields)
+                                                       SmallVector<mlir_ts::FieldInfo> &fields,
+                                                       llvm::function_ref<bool(mlir::Type, mlir::Type)> matches)
     {
         // an interface not declared (yet) has no fields to clone
         if (!interfaceInfo)
@@ -84,6 +89,21 @@ namespace mlirgen
             auto keepsOwnType = interfaceField != interfaceFields.end()
                 && isa<mlir_ts::FunctionType>(interfaceField->type)
                 && MLIRTypeHelper::isObjectFieldFunctionWithoutThis(origField.type);
+            if (keepsOwnType && !matches(origField.type, interfaceField->type))
+            {
+                auto memberType = cast<mlir_ts::FunctionType>(interfaceField->type);
+                mlir::ArrayRef<mlir::Type> inputs = memberType.getInputs();
+                if (!inputs.empty() && isa<mlir_ts::OpaqueType>(inputs.front()))
+                {
+                    inputs = inputs.drop_front();
+                }
+
+                auto valueType =
+                    mlir_ts::HybridFunctionType::get(context, inputs, memberType.getResults(), memberType.isVarArg());
+                fields.push_back(mlir_ts::FieldInfo{origField.id, valueType, origField.isConditional, origField.accessLevel});
+                continue;
+            }
+
             fields.push_back(interfaceField != interfaceFields.end() && !keepsOwnType ? *interfaceField : origField);
         }
 
@@ -3703,7 +3723,7 @@ namespace mlirgen
 
             if (isa<mlir_ts::TupleType>(type) && !genContext.allowPartialResolve)
             {
-                return castAnyToTuple(location, type, value, genContext);
+                return castAnyToTupleOfNumbers(location, type, value, genContext);
             }
 
             // a union of object shapes (`<Shape>a`): the shape whose layout the box's tuple has, the last
@@ -4124,6 +4144,32 @@ namespace mlirgen
     mlir::Value MLIRGenImpl::fewerParametersThunk(mlir::Location location, mlir::Value value, mlir::Type type,
                                                   const GenContext &genContext)
     {
+        // a field of a constant object (`const t = { produce: () => 45 }` folds to a constant of the functions'
+        // names) is that function, named (TSLANG 208): read as a value, it would be boxed (functionValueAdapter),
+        // which -mm=own takes for a second reference of the box where the object holding it is stored
+        if (auto extractOp = value.getDefiningOp<mlir_ts::ExtractPropertyOp>(); extractOp && extractOp.getPosition().size() == 1)
+        {
+            if (auto constantOp = extractOp.getObject().getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto elements = dyn_cast<mlir::ArrayAttr>(constantOp.getValue());
+                auto position = extractOp.getPosition().front();
+                auto symbol = elements && position >= 0 && position < (int64_t)elements.size()
+                    ? dyn_cast<mlir::FlatSymbolRefAttr>(elements[position])
+                    : mlir::FlatSymbolRefAttr();
+                if (symbol && isa<mlir_ts::FunctionType>(value.getType()))
+                {
+                    auto symbolValue = builder.create<mlir_ts::SymbolRefOp>(location, value.getType(), symbol);
+                    if (auto thunk = fewerParametersThunk(location, symbolValue, type, genContext))
+                    {
+                        return thunk;
+                    }
+
+                    symbolValue->erase();
+                    return mlir::Value();
+                }
+            }
+        }
+
         auto boundOp = value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
         auto symbolRefOp = boundOp ? boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>()
                                    : value.getDefiningOp<mlir_ts::SymbolRefOp>();
@@ -5418,6 +5464,85 @@ namespace mlirgen
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
+    // `any` to an object type with number fields (`<{ code: number }>a`): an object literal boxed as it is holds the s32
+    // of an integer it was written with (`{ code: 7 }`), a layout of its own, and the cast threw "the object's fields
+    // are not those of type". Each layout with s32 in place of some of the number fields (three of them at most) is
+    // read as itself and converted, as the literal given to the type is. Anything else is castAnyToTuple's, and so is
+    // every cast under -mm=own.
+    ValueOrLogicalResult MLIRGenImpl::castAnyToTupleOfNumbers(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                              const GenContext &genContext)
+    {
+        auto tupleType = dyn_cast<mlir_ts::TupleType>(type);
+        SmallVector<unsigned> numberFields;
+        if (tupleType)
+        {
+            for (auto [index, field] : enumerate(tupleType.getFields()))
+            {
+                if (isa<mlir_ts::NumberType>(field.type))
+                {
+                    numberFields.push_back(index);
+                }
+            }
+        }
+
+        // (not under -mm=own: a value merged from the branches is a second reference it can't classify yet, and the
+        // plain read is refused with it)
+        if (numberFields.empty() || numberFields.size() > 3 || compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return castAnyToTuple(location, type, value, genContext);
+        }
+
+        // the type's own layout first: it is the one a value of the type has
+        SmallVector<mlir::Type> layouts{type};
+        auto s32Type = builder.getIntegerType(32, true);
+        for (unsigned mask = 1; mask < (1u << numberFields.size()); ++mask)
+        {
+            SmallVector<mlir_ts::FieldInfo> fields(tupleType.getFields().begin(), tupleType.getFields().end());
+            for (auto [bit, fieldIndex] : enumerate(numberFields))
+            {
+                if (mask & (1u << bit))
+                {
+                    fields[fieldIndex].type = s32Type;
+                }
+            }
+
+            layouts.push_back(getTupleType(fields));
+        }
+
+        std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
+            if (index == layouts.size())
+            {
+                // none of them: the checked read, which says what the box holds
+                return castAnyToTuple(location, type, value, genContext);
+            }
+
+            auto holds = builder.create<mlir_ts::IsTupleOfLayoutOp>(location, getBooleanType(), value,
+                                                                    mlir::TypeAttr::get(layouts[index]));
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, holds, true);
+
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            mlir::Value thenValue = builder.create<mlir_ts::CastOp>(location, layouts[index], value);
+            if (index > 0)
+            {
+                auto converted = cast(location, type, thenValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(converted)
+                thenValue = V(converted);
+            }
+
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{thenValue});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto elseValue = castOf(index + 1);
+            EXIT_IF_FAILED_OR_NO_VALUE(elseValue)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{V(elseValue)});
+
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        };
+
+        return castOf(0);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castAnyToUnionOfTuples(mlir::Location location, mlir_ts::UnionType unionType,
                                                              mlir::Value value, const GenContext &genContext)
     {
@@ -6002,7 +6127,11 @@ namespace mlirgen
         if (mlir::failed(mth.canCastTupleToInterface(location, srcTuple, interfaceInfo, true)))
         {
             SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
+            if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields,
+                    [&](mlir::Type src, mlir::Type dest) {
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match
+                            || mth.isResultWideningFieldFunction(location, src, dest);
+                    })))
             {
                 return mlir::failure();
             }
@@ -6130,7 +6259,11 @@ namespace mlirgen
             if (mlir::failed(mth.canCastTupleToInterface(location, storageTuple, interfaceInfo, true)))
             {
                 SmallVector<mlir_ts::FieldInfo> fields;
-                if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
+                if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields,
+                    [&](mlir::Type src, mlir::Type dest) {
+                        return mth.TestFunctionTypesMatchWithObjectMethods(location, src, dest).result == MatchResultType::Match
+                            || mth.isResultWideningFieldFunction(location, src, dest);
+                    })))
                 {
                     return mlir::failure();
                 }

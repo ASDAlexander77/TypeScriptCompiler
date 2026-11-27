@@ -11171,6 +11171,21 @@ class MLIRGenImpl
                     restSource = ifOp.getResult(0);
                 }
 
+                // ...and of a `T | null`: T's (as a declaration)
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(restSource.getType()))
+                {
+                    auto nonNullish = getNonNullishType(unionType);
+                    // (read as T, as a field of it is - a cast is refused in strict null mode: one pointer as it is, the
+                    // member's value out of a tagged union)
+                    if (nonNullish != restSource.getType() && !isa<mlir_ts::UnionType>(nonNullish))
+                    {
+                        mlir::Type actualType;
+                        restSource = mth.isUnionTypeNeedsTag(location, unionType, actualType)
+                            ? mlir::Value(builder.create<mlir_ts::GetValueFromUnionOp>(location, nonNullish, restSource))
+                            : mlir::Value(builder.create<mlir_ts::CastOp>(location, nonNullish, restSource));
+                    }
+                }
+
                 llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
                 llvm::SmallVector<mlir_ts::FieldInfo> restFields;
                 if (mlir::failed(mth.getFields(restSource.getType(), sourceFields)))
@@ -14743,6 +14758,126 @@ class MLIRGenImpl
 
     mlir::LogicalResult processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext);
 
+    // -mm=own: an object or tuple literal given to a call (`k.keep(["a" + i, i])`, `k.keep({ s: "a" + i })`) is built in
+    // a slot nothing owns (createTupleInSlot, mlirGenCreateTuple), read whole once here: given to a callee that keeps
+    // it, there was nothing to move it from ("this function does not own it", TSLANG 208). It goes into a local of its
+    // own, as `const t = ["a" + i, i]; k.keep(t)` puts it: the local owns the literal, gives it to a callee that keeps
+    // it as its last use, and gives it back at the end of its scope where the callee only borrows it. Directly in a
+    // `try` body the local is made in front of the `try` and given the literal by a store, as a declared one is
+    // (createLocalVariable), so the cleanup sees it. Not in a generator, whose locals are fields of its object: there
+    // the literal stays as it was.
+    mlir::Value ownedLiteralArgument(mlir::Location location, Expression expression, mlir::Value value,
+                                     const GenContext &genContext)
+    {
+        if (compileOptions.memoryModel != MemoryModelOwn || genContext.ownedVars == nullptr
+            || genContext.generatorSwitchOperation
+            || (genContext.allocateScopeOwnedVarsOutsideOfOperation && !genContext.currentOperation))
+        {
+            return value;
+        }
+
+        auto literal = stripParentheses(expression);
+        if (literal != SyntaxKind::ArrayLiteralExpression && literal != SyntaxKind::ObjectLiteralExpression)
+        {
+            return value;
+        }
+
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto slotOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!slotOp || slotOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || !slotOp.getInitializer()
+            || !slotOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>()
+            || !isa<mlir_ts::TupleType>(value.getType()) || !mth.ownsHeapMemory(location, value.getType()))
+        {
+            return value;
+        }
+
+        // only a literal of new values (`"a" + i`, `new V(1)`) or constants: one holding what it borrows (`{ start: pos }`,
+        // a borrowing record, spec 32) stays one
+        auto onlyNewValues = llvm::all_of(slotOp->getUsers(), [&](mlir::Operation *user) {
+            if (user == loadOp.getOperation())
+            {
+                return true;
+            }
+
+            auto fieldRefOp = dyn_cast<mlir_ts::PropertyRefOp>(user);
+            return fieldRefOp && llvm::all_of(fieldRefOp->getUsers(), [&](mlir::Operation *fieldUser) {
+                if (isa<mlir_ts::LoadOp>(fieldUser))
+                {
+                    return true;
+                }
+
+                auto storeOp = dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || storeOp.getReference() != fieldRefOp.getResult())
+                {
+                    return false;
+                }
+
+                auto stored = storeOp.getValue();
+                if (!mth.ownsHeapMemory(location, stored.getType()))
+                {
+                    return true;
+                }
+
+                // a string constant is immortal: the local's release of it does nothing. Another constant (`<object>{}`,
+                // read-only data) is no block a release may free
+                auto root = stored;
+                while (root.getDefiningOp<mlir_ts::CastOp>() || root.getDefiningOp<mlir_ts::OptionalValueOp>())
+                {
+                    root = root.getDefiningOp()->getOperand(0);
+                }
+
+                if (auto constantOp = root.getDefiningOp<mlir_ts::ConstantOp>())
+                {
+                    return isa<mlir::StringAttr>(constantOp.getValue());
+                }
+
+                // a new value, made by an op of its own - not a constant seen as one (isLiteral); a closure is new but
+                // holds what it captures (`{ w: (x) => x + item.n }`)
+                auto *def = stored.getDefiningOp();
+                return def && own_facts::isFresh(stored) && !own_facts::isLiteral(def)
+                    && !mth.isAnyFunctionType(stored.getType());
+            });
+        });
+        if (!onlyNewValues)
+        {
+            return value;
+        }
+
+        // ...and not inside an expression (`a && k.keep([...])`, `c ? k.keep([...]) : 0`): a local made in its region does
+        // not reach the scope's end, where it is given back
+        for (auto *parentOp = builder.getInsertionBlock()->getParentOp(); parentOp && !isa<mlir_ts::FuncOp>(parentOp);
+             parentOp = parentOp->getParentOp())
+        {
+            if (parentOp->getNumResults() > 0)
+            {
+                return value;
+            }
+        }
+
+        mlir_ts::VariableOp localOp;
+        if (genContext.allocateScopeOwnedVarsOutsideOfOperation)
+        {
+            {
+                mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                builder.setInsertionPoint(genContext.currentOperation);
+                localOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(value.getType()), mlir::Value(),
+                                                              builder.getBoolAttr(false), builder.getIndexAttr(0));
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, value, localOp);
+        }
+        else
+        {
+            localOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(value.getType()), value,
+                                                          builder.getBoolAttr(false), builder.getIndexAttr(0));
+        }
+
+        localOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+        builder.create<mlir_ts::RetainSlotOp>(location, localOp);
+        genContext.ownedVars->push_back(localOp);
+        return builder.create<mlir_ts::LoadOp>(location, value.getType(), localOp);
+    }
+
     mlir::LogicalResult mlirGenOperand(Expression expression, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext,
                                        mlir::Type receiverType = mlir::Type())
     {
@@ -14760,6 +14895,7 @@ class MLIRGenImpl
         auto result = mlirGen(expression, argGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+        value = ownedLiteralArgument(loc(expression), expression, value, genContext);
 
         // A `@stdcall` function of another library given to C (a parameter of a C function type, @cdecl), on
         // 32-bit Windows: C calls it as __stdcall, so it is the function itself, not the C function the
@@ -20516,6 +20652,8 @@ class MLIRGenImpl
                                                     const GenContext &genContext);
     ValueOrLogicalResult castAnyToTuple(mlir::Location location, mlir::Type type, mlir::Value value,
                                         const GenContext &genContext);
+    ValueOrLogicalResult castAnyToTupleOfNumbers(mlir::Location location, mlir::Type type, mlir::Value value,
+                                                 const GenContext &genContext);
 
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);

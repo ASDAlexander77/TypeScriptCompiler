@@ -1383,6 +1383,32 @@ class MLIRTypeHelper
         return false;
     }
 
+    // A function field without `this` (isObjectFieldFunctionWithoutThis) whose result is an integer where the
+    // interface's member returns a number (`{ produce: () => 45 }`, a `() => s32`, for `produce: () => number`): the
+    // slot's thunk calls it and converts the result (generateSynthMethodToCallField), as it calls a closure field. The
+    // parameters have to match (TSLANG 208)
+    bool isResultWideningFieldFunction(mlir::Location location, mlir::Type fieldType, mlir::Type memberType)
+    {
+        if (!isObjectFieldFunctionWithoutThis(fieldType) || isa<mlir_ts::BoundFunctionType>(fieldType))
+        {
+            return false;
+        }
+
+        auto srcType = GetFunctionType(fieldType);
+        auto destType = dyn_cast<mlir_ts::FunctionType>(memberType);
+        if (!srcType || !destType || srcType.getNumResults() != 1 || destType.getNumResults() != 1
+            || !isa<mlir::IntegerType>(srcType.getResult(0)) || !isa<mlir_ts::NumberType>(destType.getResult(0)))
+        {
+            return false;
+        }
+
+        // the field as if it returned the member's number: then it has to match
+        mlir::Type aligned = isa<mlir_ts::HybridFunctionType>(fieldType)
+            ? mlir::Type(mlir_ts::HybridFunctionType::get(context, srcType.getInputs(), destType.getResults(), srcType.isVarArg()))
+            : mlir::Type(mlir_ts::FunctionType::get(context, srcType.getInputs(), destType.getResults(), srcType.isVarArg()));
+        return TestFunctionTypesMatchWithObjectMethods(location, aligned, memberType).result == MatchResultType::Match;
+    }
+
     // An object-literal method (`this` first) an interface's function member can call through a thunk that gives
     // it as many arguments as it takes: it takes fewer parameters than the member (`next()` for `next(value?)`,
     // the rest ignored, as JavaScript does), or more, each of them optional (`next(value?)` for `next()`). The
@@ -1722,7 +1748,8 @@ class MLIRTypeHelper
                     if (isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
                         && isObjectFieldFunctionWithoutThis(foundField.type))
                     {
-                        if (TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match)
+                        if (TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
+                            || isResultWideningFieldFunction(location, foundField.type, fieldType))
                         {
                             return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
                         }

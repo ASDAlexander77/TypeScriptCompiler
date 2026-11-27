@@ -3708,3 +3708,60 @@ array_class_splice.ts crashing in the debug JIT on Ubuntu 22.04/24.04 with no ou
 
 Tests `00rc_splice_result_owned.ts` (gc, rc, none; under own the test's re-insertion of the removed elements is
 refused).
+
+207. Leftovers of 195, 196, 198 and 205. Fixed:
+- A literal given to a generic call whose function member returns an integer, where the type parameter is a number
+  from another argument (`takeG({ produce: () => 44 }, 1.5)` for `takeG<D>(o: Options<D>, d: D)`): "can't assign
+  '() => s32' to '() => number'", and with the arguments the other way round `D` was `1.5 | s32`. The literal is typed
+  by the parameter once the call's other arguments give D (inferObjectLiteralArgumentReceivers, as a literal whose
+  members' parameters wait for D already was); its members are read one by one for the inference, without making them -
+  a member made then kept the `() => s32` it was made with.
+- An `any` holding an object literal written with integers (`{ code: 7 }`, an s32 field) cast to an object type of
+  numbers (`<{ code: number }>a`): it threw "the object's fields are not those of type". A layout with s32 in place of
+  some of the number fields (three at most) is read as itself and converted (castAnyToTupleOfNumbers). Not under
+  -mm=own, where the value merged from those reads is a second reference: there the cast still throws.
+- Under -mm=own, an object literal leaving out an optional field of the tuple it is given to (`const o: { disc?: false;
+  cb } = { cb }`): "a value that borrows a field cannot be stored". The literal is made with the missing optional
+  fields, undefined, and so is the receiver's tuple as it is, where it was converted by reading its fields out of its
+  slot.
+- The rest of a `T | null` (`const { a, ...rest } = u`, and `({ a, ...rest } = u)`): "the rest of a value of type
+  'null | T' can't be taken". It is T's, read as the pattern's other names read T's fields.
+
+Not yet (both fixed in 208):
+- Under -mm=own, a tuple literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`): "this function does not
+  own it". The same tuple in a local first (`const t: [string, number] = ["a" + i, i]; k.keepOne(t)`) works.
+- A literal held by a variable first (`const t = { produce: () => 45 }; const o: Options<number> = t`): `t`'s member is
+  `() => s32`, which is not `() => number` (integer literals are s32, user ruling).
+
+Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, rc, none).
+
+208. The "not yet" of 207. Fixed:
+- A literal held by a variable first, whose function member returns an integer, given as an interface whose member
+  returns a number (`const t = { produce: () => 45 }; const o: Options<number> = t`, a `let` as well, and
+  `readOptions(t)` for a parameter `o: Options<number>`): "field "produce" not matching type: '() => number' and
+  '() => s32'". Integer literals stay s32 (user ruling); the function is adapted, as it already was given as a
+  `() => number` value (`let f: () => number = one`). The interface's slot calls the field through a thunk, as it calls
+  a closure field, and the thunk converts the result (isResultWideningFieldFunction): the object is given as it is,
+  with no copy, and no box for -mm=own to refuse. Where the object is copied for another field, the copy keeps the
+  function as it is for the same thunk; a field of a constant object read as a function value is its function, named
+  (fewerParametersThunk).
+- Under -mm=own, a tuple or object literal given to a callee that keeps it (`k.keepOne(["a" + i, i])`,
+  `k.keepObj({ s: "b" + i, n: i })`): "this function does not own it". The literal is built in a slot nothing owns; as
+  an argument it now goes into a local of its own, as `const t = [...]; k.keepOne(t)` puts it (ownedLiteralArgument):
+  the local gives it to a callee that keeps it, and gives it back where the callee only reads it. 2M calls of either
+  stay at about 5 MB. Only a literal of new values or string constants (one holding what it borrows, or a closure, is a
+  borrowing record, as it was), and not inside `&&`/`?:`, whose region does not reach the scope's end.
+- Under -mm=own, the same directly in a `try` body, and a declared local there (`try { const t = ["u" + n, 1];
+  k.keepOne(t); }`): "an object literal that holds a value it owns is moved only into a local". The local is made in
+  front of the `try` and given its value by a store right before its retain; that retain is now the literal's, as an
+  initializer's is (recordRetainOf).
+
+Not yet:
+- Under -mm=own, a value moved in a `try` body that other statements of the body can throw before
+  (`try { f(); const t = ["b" + i, i]; k.keepOne(t); g(); }`): "moved here on some paths only". The unwind leg reached
+  before the local is given its value is not known to find it empty. One statement per `try`, or a loop in it, works.
+- Under -mm=own, a callee that keeps a parameter and throws before keeping it (`keep(c) { if (...) throw "no";
+  this.items.push(c); }`) leaks the parameter: 1M throws of `k.keep(new C(i))` grow to about 60 MB. Not new here (a
+  class instance leaks the same way); the callee's unwind does not give back a kept parameter.
+
+Tests `00tslang_issue_208.ts` (all models).

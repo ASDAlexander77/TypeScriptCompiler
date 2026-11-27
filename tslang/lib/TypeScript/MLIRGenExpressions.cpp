@@ -2655,6 +2655,37 @@ namespace mlirgen
         return llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, isContextSensitiveMember);
     }
 
+    // ...or one with a function member whose result is not declared (`{ produce: () => 44 }`): made on its own it
+    // returns the s32 of its integer, while the parameter it is given to may be `() => number` once the call's other
+    // arguments give the type parameter a number (`takeG({ produce: () => 44 }, 1.5)` was "can't assign '() => s32'
+    // to '() => number'"). Typed by its receiver, it returns what the receiver says, as it does for a known type.
+    static bool isResultInferredMember(ObjectLiteralElementLike item)
+    {
+        if (item != SyntaxKind::PropertyAssignment)
+        {
+            return false;
+        }
+
+        auto initializer = item.as<PropertyAssignment>()->initializer;
+        if (initializer != SyntaxKind::ArrowFunction && initializer != SyntaxKind::FunctionExpression)
+        {
+            return false;
+        }
+
+        return !initializer.as<FunctionLikeDeclarationBase>()->type;
+    }
+
+    static bool isReceiverTypedObjectLiteral(Expression expression)
+    {
+        if (expression != SyntaxKind::ObjectLiteralExpression)
+        {
+            return false;
+        }
+
+        return isContextSensitiveObjectLiteral(expression)
+            || llvm::any_of(expression.as<ObjectLiteralExpression>()->properties, isResultInferredMember);
+    }
+
     // A generic call with such a literal for an argument: `foo({ read: () => s, write: value => s = value })` for
     // `foo<T>(x: Computed<T>)`. The members' parameters are of T, which the rest of the call gives - the other
     // arguments, and the literal's other members. Inferred from their types first (no code is made), the
@@ -2667,7 +2698,7 @@ namespace mlirgen
     {
         auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>();
         if (!symbolOp || !symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME)
-            || llvm::none_of(arguments, isContextSensitiveObjectLiteral) || !genContext.postponedMessages)
+            || llvm::none_of(arguments, isReceiverTypedObjectLiteral) || !genContext.postponedMessages)
         {
             return;
         }
@@ -2706,7 +2737,10 @@ namespace mlirgen
                 continue;
             }
 
-            if (!isContextSensitiveObjectLiteral(argument))
+            // (not a literal with a function member whose result is not declared: evaluating it makes the function,
+            // whose type - the `() => s32` of `() => 44` - then stays the function's when the literal is made for
+            // its receiver; its members are read one by one below, without making them)
+            if (!isReceiverTypedObjectLiteral(argument))
             {
                 // widened, as an inference from a literal is (`5` gives s32, not the literal type 5)
                 if (auto type = evaluate(argument, genContext))
@@ -2803,7 +2837,7 @@ namespace mlirgen
             for (auto [index, argument] : enumerate(arguments))
             {
                 if (index >= declarationParams.size() || !declarationParams[index]->type
-                    || !isContextSensitiveObjectLiteral(argument))
+                    || !isReceiverTypedObjectLiteral(argument))
                 {
                     continue;
                 }
@@ -4465,6 +4499,36 @@ namespace mlirgen
         if (auto earlyResult = mlirGenObjectLiteralFields(location, oli, genContext))
         {
             return *earlyResult;
+        }
+
+        // A tuple receiver's optional fields the literal leaves out (`const o: { disc?: false; cb: Cb } = { cb }`) are
+        // its own, undefined, when it has every other one: it is then laid out as the receiver below and is the value.
+        // Built without them, it was converted by reading its fields out of its slot into a new tuple - under -mm=own
+        // a borrow of the slot, which can't be stored ("a value that borrows a field cannot be stored").
+        if (auto receiverTuple = dyn_cast_or_null<mlir_ts::TupleType>(oli.receiverType))
+        {
+            auto hasField = [&](mlir::Attribute id) {
+                return llvm::any_of(oli.fieldInfos, [&](const mlir_ts::FieldInfo &fieldInfo) { return fieldInfo.id == id; });
+            };
+
+            auto missingOnlyOptional = llvm::all_of(receiverTuple.getFields(), [&](const mlir_ts::FieldInfo &field) {
+                return hasField(field.id) || isa<mlir_ts::OptionalType>(field.type);
+            });
+            auto anyMissing = llvm::any_of(receiverTuple.getFields(), [&](const mlir_ts::FieldInfo &field) { return !hasField(field.id); });
+            if (missingOnlyOptional && anyMissing && oli.methodInfos.empty() && oli.methodInfosWithCaptures.empty())
+            {
+                for (auto &field : receiverTuple.getFields())
+                {
+                    if (!hasField(field.id))
+                    {
+                        auto undefinedValue = builder.create<mlir_ts::OptionalUndefOp>(location, field.type);
+                        if (mlir::failed(addObjectFieldInfo(location, oli, field.id, undefinedValue, field.type, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+                    }
+                }
+            }
         }
 
         // update after processing all fields

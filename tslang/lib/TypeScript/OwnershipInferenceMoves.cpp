@@ -457,6 +457,20 @@ namespace own_inference
             // stored into the result slot, or into an owning local (`a = { item: new C() }`)
             auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                                               : mlir_ts::VariableOp();
+            // ...declared with it in a `try` body (`try { const t = ["a" + i, i]; k.keep(t); }`): the local is made in
+            // front of the `try` and given its value by this store, right before its `ts.RetainSlot`
+            // (slotDeclarationStore) - that retain is the record's, as an initializer's is (TSLANG 208)
+            if (slot && isOwningVariable(slot) && !slot.getInitializer())
+            {
+                auto *slotRetain = onlyRetainSlotOf(slot);
+                if (slotRetain && slotDeclarationStore(slotRetain) == storeOp)
+                {
+                    bad = retain != nullptr;
+                    retain = slotRetain;
+                    return;
+                }
+            }
+
             bad = !slot || !(isResultSlot(slot) || isOwningVariable(slot));
         };
         forEachUse(read.getResult(), visit);
