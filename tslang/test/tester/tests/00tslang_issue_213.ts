@@ -63,7 +63,9 @@ function main() {
 
     assert(flags == "11 01 00 00 00 00 ");
 
-    let u: any;
+    // initialized: a `let` with no initializer is not set to undefined outside -mm=rc (the compiler warns), and the
+    // comparison read whatever was on the stack (crashed at --opt_level=0)
+    let u: any = undefined;
     assert(u === undefined);
     assert(!(u === null));
 
