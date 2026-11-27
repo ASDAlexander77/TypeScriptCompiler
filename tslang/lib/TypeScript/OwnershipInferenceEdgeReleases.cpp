@@ -712,13 +712,34 @@ namespace own_inference
         }
 
         // the read, the taker and rc's retain in one block of the body, with nothing between that
-        // could unwind with the value read but not yet taken: a call that takes it may throw having
-        // taken it or not
+        // could unwind with the value read but not yet taken
         auto *block = load->getBlock();
         if (block->getParent() != &body || taker->getBlock() != block || acquire->getBlock() != block ||
-            handler.contains(block) || !load->isBeforeInBlock(taker) || isCall(taker))
+            handler.contains(block) || !load->isBeforeInBlock(taker))
         {
             return nullptr;
+        }
+
+        // a call that keeps it (`try { f(); const t = [...]; k.keepOne(t); g(); }`) has taken it whether it returns or
+        // throws - the callee gives it back on its own unwind (TSLANG 209): the slot is emptied right before the call,
+        // the value already read, so the release on the unwind leg finds nothing on every way past the call, and
+        // nothing on the ways before the local's store either (it starts as null) (TSLANG 210)
+        if (isCall(taker))
+        {
+            if (acquire != taker)
+            {
+                return nullptr;
+            }
+
+            for (auto *op = load->getNextNode(); op && op != taker; op = op->getNextNode())
+            {
+                if (isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>())
+                {
+                    return nullptr;
+                }
+            }
+
+            return taker->getPrevNode();
         }
 
         auto *last = taker->isBeforeInBlock(acquire) ? acquire : taker;
