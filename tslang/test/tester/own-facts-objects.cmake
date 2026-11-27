@@ -2,8 +2,8 @@
 # (docs/superpowers/specs/2026-10-25-own-facts-from-objects-design.md): own_facts_main.ts holds a
 # borrow of a field across calls of own_facts_lib.ts's methods. Given the library's object with
 # --own-facts it compiles, links and runs; without, the calls may destroy anything and the borrow is
-# an error; and a call whose facts say it overwrites the borrowed place (own_facts_main_drops.ts)
-# stays an error with them.
+# an error; and with them, a call whose facts say it overwrites the borrowed place (own_facts_main_drops.ts)
+# gives the local a count of its own (USER RULING 11-27), which own_facts_main.ts needs not.
 
 cmake_minimum_required(VERSION 3.17.3)
 
@@ -49,9 +49,16 @@ if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump")
     message(FATAL_ERROR "own_facts_main with --own-facts: exit ${status}\n${output}")
 endif()
 
-tslang_run(drops --emit=obj -mm=own --own-facts=own_facts_lib.obj own_facts_main_drops.ts -o own_facts_main_drops.obj)
-if(status EQUAL 0 OR NOT output MATCHES ":10:11: error: ('[^']*' borrows|a value that borrows) '[^']*' (but )?is used here after it may be released or overwritten")
-    message(FATAL_ERROR "own_facts_main_drops compiled, or failed otherwise: exit ${status}\n${output}")
+# ...the facts say the borrowed place is overwritten: the local takes a count of its own (USER RULING 11-27), where
+# with the facts of a call that leaves it alone it takes none
+tslang_run(drops --emit=mlir-affine -mm=own --own-facts=own_facts_lib.obj own_facts_main_drops.ts)
+if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump" OR NOT output MATCHES "__own_counted")
+    message(FATAL_ERROR "own_facts_main_drops: expected a counted borrow, exit ${status}\n${output}")
+endif()
+
+tslang_run(main_ir --emit=mlir-affine -mm=own --own-facts=own_facts_lib.obj own_facts_main.ts)
+if(NOT status EQUAL 0 OR output MATCHES "error:|Stack dump|__own_counted")
+    message(FATAL_ERROR "own_facts_main with --own-facts counted a borrow, or failed: exit ${status}\n${output}")
 endif()
 
 tslang_run(link --emit=exe -mm=own "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"

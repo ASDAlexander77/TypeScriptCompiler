@@ -77,9 +77,11 @@ class OwnershipRoutineLogic
             return true;
         }
 
+        // a closure: an extra owner of its capture box, a block of its own whose release asks for one first
+        // (retainClosureBoxExtraOwner) - not through the box's descriptor
         if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
         {
-            return false;
+            return true;
         }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
@@ -2943,6 +2945,13 @@ class OwnershipRoutineLogic
         // copying a closure duplicates its one reference to the capture box and nothing else
         if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
         {
+            // counted under own: the box's descriptor has no retain routine under own (TypeOfOpLowering)
+            if (countedRetains)
+            {
+                retainClosureBoxExtraOwner(type, slotPtr);
+                return;
+            }
+
             releaseViaTagBesideThis(type, slotPtr, CLOSURE_TYPE_INDEX, /*retaining=*/true);
             return;
         }
@@ -3009,6 +3018,28 @@ class OwnershipRoutineLogic
                                                        ArrayRef<LLVM::GEPArg>{0, DATA_VALUE_INDEX});
         auto vtableValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, vtableSlot);
         emitIfNonNull(vtableValue, [&]() {
+            auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
+            emitExtraIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, thisSlot));
+        });
+    }
+
+    // A closure is { func, this, type }: with a type beside it, `this` is its capture box, which it owns - one extra
+    // owner of that block, which the box's release takes away before it frees it (emitIfLastReference). Without one,
+    // `this` is a bound method's object, which the closure does not own: nothing to count.
+    void retainClosureBoxExtraOwner(mlir::Type type, mlir::Value slotPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmType = tch.convertType(type);
+
+        auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                    ArrayRef<LLVM::GEPArg>{0, CLOSURE_TYPE_INDEX});
+        auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+        emitIfNonNull(tagValue, [&]() {
             auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
                                                          ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
             emitExtraIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, thisSlot));

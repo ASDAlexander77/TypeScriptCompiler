@@ -4184,4 +4184,28 @@ Tests `00tslang_issue_217.ts` (all models), `own_let_borrow_dropped_error.ts`, `
   for every class, which only allocates; it is said to free nothing. The constructor still may: a borrow used after
   it (`const e = a[0]; new c(a); print(e)` of a constructor that empties `a`) stays an error.
 
-Tests `00tslang_issue_218.ts` (all models), `own_class_value_ctor_drops_error.ts`.
+Tests `00tslang_issue_218.ts` (all models), `own_class_value_ctor_drops_error.ts` (renamed by 219).
+
+219. A borrow used after a call that may free it takes a reference of its own (2026-11-27, USER RULING). Under
+-mm=own, `const e = a[0]; new Q(a); print(e)`, where Q's constructor empties `a`, was an error ("'e' borrows 'a[]'
+but is used here after it may be released or overwritten"). It was an error for any call: a function, a method, a
+constructor, a call through a class value or a function value. The ruling: the local takes a reference of its own.
+- A string or an `any` is copied into the local. Anything else gets one extra owner, as `--own-fallback=count` gives
+  one, with no warning. A closure's extra owner is on its capture box: the lowering now counts a closure, as it
+  counted an interface's `this`, without the box's descriptor.
+- The reference is given back after the last use on each path. Liveness over the blocks of the function decides
+  where: before an early `return` or a `throw`, on a `continue` or `break` past the last use, and before a loop reads
+  it again. An edge that needs it gets a block of its own.
+- It is decided only where own's analysis fails, so a program own accepted compiles as before. A `let` keeps rc's
+  retain and release, counted. A `const` folded into its read is given them.
+- Still an error: a value freed by this function itself (`a.pop()`, `a[0] = x`), a local assigned again, a value
+  passed on as a block's argument, and a structured loop's `break` or `continue` in between.
+- 32 `own_err_*` cases now compile and print what rc prints. They were renamed `own_counted_*` and run
+  (`own_counted_cases`). Six that call declared functions are compiled only. Two still refuse another shape and
+  have their new first error. The `own_drop_owner_*_error` and `own_class_value_ctor_drops_error` tests lost the
+  suffix and run in every model. `own-facts-objects` and `own-shared-no-drops` check the count instead of the error.
+
+Not yet: an array literal of closures passed to a `(() => number)[]` parameter fails in every model ("invalid cast
+from (p0: Reference<{k:number}>) => number[] to () => number[]"); giving the literal that type works.
+
+Test `00own_borrow_used_after_call.ts` (all models).

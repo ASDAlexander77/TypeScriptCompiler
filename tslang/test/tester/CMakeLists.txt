@@ -2635,14 +2635,20 @@ foreach(issue216_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_216-${issue216_mm} COMMAND test-runner -jit -mm=${issue216_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_216.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_216-${issue216_mm} COMMAND test-runner -mm=${issue216_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_216.ts")
 endforeach()
-# ...and what stays refused: an argument and a borrow neither of which this function owns may be one (two parameters,
-# `this` and a parameter), the array a loop reads is the one the call empties, a field given a value it does not make
-foreach(drop_owner_error two_params this_param same_array global_field)
-    add_test(NAME test-compile-own-drop-owner-${drop_owner_error}-error
-             COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_drop_owner_${drop_owner_error}_error.ts")
-    set_tests_properties(test-compile-own-drop-owner-${drop_owner_error}-error PROPERTIES
-                         PASS_REGULAR_EXPRESSION "'it' borrows [^\n]* but is used here after it may be released or overwritten"
-                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# TSLANG 219 (USER RULING 11-27): -mm=own, a `const`/`let` borrowing an element and used after a call that may free it
+# takes a reference of its own - objects, arrays, strings, `any`, an early return, through a class value
+foreach(borrow_after_call_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00own_borrow_used_after_call-${borrow_after_call_mm} COMMAND test-runner -jit -mm=${borrow_after_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_borrow_used_after_call.ts")
+    tslang_add_test(NAME test-compile-00own_borrow_used_after_call-${borrow_after_call_mm} COMMAND test-runner -mm=${borrow_after_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_borrow_used_after_call.ts")
+endforeach()
+# ...and what was refused for it, accepted since TSLANG 219 (USER RULING 11-27): an argument and a borrow neither of
+# which this function owns (two parameters, `this` and a parameter), the array a loop reads emptied by the call, a
+# field given a value it does not make - the borrowing local takes a reference of its own
+foreach(drop_owner two_params this_param same_array global_field)
+    foreach(drop_owner_mm gc rc none own)
+        tslang_add_test(NAME test-jit-own-drop-owner-${drop_owner}-${drop_owner_mm} COMMAND test-runner -jit -mm=${drop_owner_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_drop_owner_${drop_owner}.ts")
+        tslang_add_test(NAME test-compile-own-drop-owner-${drop_owner}-${drop_owner_mm} COMMAND test-runner -mm=${drop_owner_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_drop_owner_${drop_owner}.ts")
+    endforeach()
 endforeach()
 # TSLANG 217: -mm=own 56 (a `let` walking fields), 128 (closures of an assigned `for` variable, a string one), 159
 # (`yield* this.range()` with @borrows), Constructor<T> of `...args: any[]`, 216's maker of a dictionary; a rest any[]
@@ -2668,11 +2674,10 @@ add_test(NAME test-compile-own-for-let-assigned-after-closure-error
 set_tests_properties(test-compile-own-for-let-assigned-after-closure-error PROPERTIES
                      PASS_REGULAR_EXPRESSION "'i' is moved inside a loop but was made outside it"
                      FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-own-class-value-ctor-drops-error
-         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_class_value_ctor_drops_error.ts")
-set_tests_properties(test-compile-own-class-value-ctor-drops-error PROPERTIES
-                     PASS_REGULAR_EXPRESSION "'e' borrows 'a\\[\\]' but is used here after it may be released or overwritten"
-                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+foreach(class_value_ctor_mm gc rc none own)
+    tslang_add_test(NAME test-jit-own-class-value-ctor-drops-${class_value_ctor_mm} COMMAND test-runner -jit -mm=${class_value_ctor_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_class_value_ctor_drops.ts")
+    tslang_add_test(NAME test-compile-own-class-value-ctor-drops-${class_value_ctor_mm} COMMAND test-runner -mm=${class_value_ctor_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_class_value_ctor_drops.ts")
+endforeach()
 add_test(NAME test-compile-own-yield-star-this-undecorated-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_yield_star_this_undecorated_error.ts")
 set_tests_properties(test-compile-own-yield-star-this-undecorated-error PROPERTIES
@@ -7469,7 +7474,6 @@ set(own_error_cases
     "own_err_const_alias_move|:12:5: error: '[^']*' borrows '[^']*' and cannot be assigned"
     "own_err_const_alias_field|:15:5: error: '[^']*' is moved here while '[^']*' borrows it"
     "own_err_field_alias|:9:11: error: a value that borrows 'n[.]v' is used here after it may be released or overwritten"
-    "own_err_call_in_try_drops|:30:11: error: 'y' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|:9:11: error: '[^']*' is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_twice|:12:25: error: 'n' is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_param|:7:12: error: a closure that escapes owns what it captures, but -mm=own cannot move 'c' into it: its value is the caller's"
@@ -7481,8 +7485,6 @@ set(own_error_cases
     "own_err_closure_param_assigned|:9:5: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
     "own_err_closure_assigns_param|:8:15: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
     "own_err_cell_assigned_in_frame|:16:11: error: 'y' borrows 'a[.]c' but is used here after it may be released or overwritten"
-    "own_err_cell_assigned_in_closure|:18:11: error: 'y' borrows 'a[.]c' but is used here after it may be released or overwritten"
-    "own_err_closure_assigns_captured_field|:19:11: error: 'y' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_unknown_producer|:5:11: error: '[^']*' takes a second reference"
     "own_err_field_function_reassigned|:7:17: error: a value that borrows a field is used here after it may be released or overwritten"
     "own_err_generator_outlives_arg|:12:11: error: 'it' is used here after the value it borrows is released or overwritten"
@@ -7502,8 +7504,6 @@ set(own_error_cases
     "own_err_element_read_loop_pop|:25:15: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
     "own_err_field_read_owner_assigned|:27:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_field_read_owner_moved|:33:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_field_read_call|:31:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_param_read_call|:33:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_global_read_assigned|:29:11: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
     "own_err_merge_read_overwritten|:28:5: error: a value that borrows 'n[.]c' is used here after it may be released or overwritten"
     "own_err_alias_read_popped|:28:9: error: a value that borrows an element is used here after it may be released or overwritten"
@@ -7512,12 +7512,9 @@ set(own_error_cases
     "own_err_container_read_stored|:27:5: error: a value that borrows 'h[.]c' cannot be stored, returned or captured"
     "own_err_field_let_overwritten|:28:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_field_let_assigned|:12:5: error: 'a' borrows 'h[.]a' and cannot be assigned. -mm=own cannot prove that yet"
-    "own_err_call_drops_indirectly|:24:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_call_given_borrow|:21:5: error: a value that borrows 'g[.]c' is used here after it may be released or overwritten"
     "own_err_call_this_borrow|:19:5: error: a value that borrows 'g[.]c' is used here after it may be released or overwritten"
     "own_err_declared_drops|:15:16: error: a value that borrows 'this[.]value' is used here after it may be released or overwritten"
-    "own_err_call_field_drops_owner|:30:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_call_field_drops_under|:30:11: error: 'position' borrows 'p[.]camera[.]position' but is used here after it may be released or overwritten"
     "own_err_exported_virtual_call|:11:16: error: a value that borrows 'this[.]color' is used here after it may be released or overwritten"
     "own_err_borrowed_result_stored|a value that borrows the result of 'firstOf' cannot be stored, returned or captured"
     "own_err_borrowed_result_outlives|:19:11: error: '[^']*' borrows the result of 'firstOf' but is used here after it may be released or overwritten"
@@ -7606,34 +7603,15 @@ set(own_error_cases
     "own_err_interface_borrow_field|:9:59: error: a value that borrows 'this[.]v' cannot be stored, returned or captured"
     "own_err_interface_exported_impl|:15:36: error: a value that borrows 'sc[.]ts' is used here after it may be released or overwritten"
     "own_err_interface_family_disagrees|is a parameter, returned here, but -mm=own cannot tell the callers of 'GA.get' that the result borrows it"
-    "own_err_interface_member_drops|:13:12: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_interface_from_interface|:9:65: error: '[^']*' is a parameter, returned here, but -mm=own cannot tell the callers of 'G[.]get' that the result borrows it"
     "own_err_interface_result_outlives|borrows the result of 'First.first' but is used here after it may be released or overwritten"
-    "own_err_interface_fn_field_drops|:12:12: error: 'v' borrows 'p[.]s[.]v' but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_unknown|:8:27: error: a value that borrows 'p[.]s' is used here after it may be released or overwritten"
     "own_err_interface_fn_field_exported|:6:27: error: a value that borrows 'p[.]s' is used here after it may be released or overwritten"
     "own_err_interface_fn_any_param|:9:41: error: '[^']*' is a parameter, returned here, but -mm=own cannot tell the callers of 'G[.]take' that the result borrows it"
     "own_err_interface_fn_any_result|:9:41: error: '[^']*' is a parameter, returned here, but -mm=own cannot tell the callers of 'G[.]take' that the result borrows it"
-    "own_err_interface_fn_any_drops|:11:70: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_interface_public_exported|:9:58: error: '[^']*' is a parameter, returned here, but -mm=own cannot tell the callers of 'PA[.]pick' that the result borrows it"
     "own_err_interface_public_reachable|:8:35: error: '[^']*' is a parameter, returned here, but -mm=own cannot tell the callers of 'PA[.]pick' that the result borrows it"
-    "own_err_interface_member_types|:12:70: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_interface_member_methods|:13:90: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback|:12:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_global|:11:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_method|:10:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_tuple|:11:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_indirect|:11:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_wrapper|:11:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_class_method|:10:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_interface_field|:15:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_stored_global|:12:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_stored_reference|:12:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_cpp_class|:12:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_field_reference|:13:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_declared_callback_intrinsic|:13:61: error: '[^']*' borrows 'gh[.]c' but is used here after it may be released or overwritten"
-    "own_err_interface_member_class|:12:70: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_interface_member_any|:10:70: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
+    "own_err_interface_member_any|:14:55: error: 'r' borrows a call's result but is used here after it may be released or overwritten"
     "own_err_override_nameable_base|:6:63: error: '[^']*' is a parameter, kept here, but -mm=own cannot make the callers of 'Der[.]keep' give it up"
     "own_err_override_imported_base|:5:63: error: '[^']*' is a parameter, kept here, but -mm=own cannot make the callers of 'Der[.]keep' give it up"
     "own_err_override_imported_class|:5:60: error: '[^']*' is a parameter, kept here, but -mm=own cannot make the callers of 'Der[.]keep' give it up"
@@ -7643,7 +7621,6 @@ set(own_error_cases
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
     "own_err_callback_assigns_receiver|:17:5: error: '[^']*' is lent to 'Bag[.]forEach', which may run a closure that gives '[^']*' a new value"
-    "own_err_callback_assigns_borrowed|:25:11: error: 'inner' borrows 'last[.]inner' but is used here after it may be released or overwritten"
     "own_err_interface_arg_assigned_in_call|:27:11: error: '[^']*' is lent to 'f', but is given a new value before the call takes it"
     "own_err_getter_read_returned|:19:12: error: 'item' is read through an interface, and 'Fresh' fills it with a getter"
     "own_err_literal_element_overwritten|:20:24: error: a value that borrows 'HG[.]v' cannot be stored, returned or captured"
@@ -7662,11 +7639,9 @@ set(own_error_cases
     "own_err_generator_method_reassigned|:17:5: error: a value is used here after the value it borrows is released or overwritten"
     "own_err_callback_method_overridden|:12:53: error: a value that borrows 'this[.]items' is used here after it may be released or overwritten"
     "own_err_shared_borrow_write|:12:11: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
-    "own_err_shared_borrow_call|:19:11: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
     "own_err_shared_borrow_push|:17:11: error: 'first' borrows 'a[.]value[.]items..' but is used here after it may be released or overwritten"
     "own_err_shared_moved_in|:10:11: error: '[^']*' is used here after its value was moved"
     "own_err_shared_borrow_other_type|:29:16: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
-    "own_err_shared_borrow_push_call|:20:11: error: a value that borrows 'a[.]value' is used here after it may be released or overwritten"
     "own_err_shared_borrow_reassigned|:11:11: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
     "own_err_shared_union_owned|a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported"
     "own_err_shared_place_arg|:29:5: error: a value that borrows 'p[.]child' is used here after it may be released or overwritten"
@@ -7686,7 +7661,6 @@ set(own_error_cases
     "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
     "own_err_iface_field_overwritten|:23:11: error: 'd' borrows 'r[.]dir' but is used here after it may be released or overwritten"
     "own_err_iface_field_view_overwritten|:26:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_iface_field_call|:27:11: error: 'd' borrows 'r[.]dir' but is used here after it may be released or overwritten"
     "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten"
     "own_err_read_after_move_overwritten|:10:11: error: a value that borrows 'h[.]c' is used here after it may be released or overwritten"
     "own_err_read_after_move_view|:12:11: error: a value that borrows 'h[.]c' is used here after it may be released or overwritten"
@@ -7721,7 +7695,6 @@ set(own_error_cases
     "own_err_destructure_element_returned|:9:5: error: 'a' borrows 'pair..' and cannot be stored, returned or captured"
     "own_err_record_field_returned|:12:5: error: a value that borrows 'r[.]a' cannot be stored, returned or captured"
     "own_err_destructured_field_returned|:16:5: error: 'a' borrows a temporary and cannot be stored, returned or captured"
-    "own_err_record_field_after_move|:24:11: error: 'a' borrows 'r[.]a' but is used here after it may be released or overwritten"
     "own_err_borrowing_record_const_field|:20:11: error: '[^']*' borrows the result of 'hit' but is used here after it may be released or overwritten"
     "own_err_record_without_lends|:11:1: error: '@record' of 'pairOf' says its result is a borrowing record, but no '@lends' names what it borrows"
     "own_err_record_not_record|:7:1: error: '@record' of 'first' says its result is a record that borrows 'a', but its body returns a borrow of it as it is"
@@ -7743,7 +7716,6 @@ set(own_error_cases
     "own_err_generator_keeps_bounded_outlives|:20:11: error: a value is used here after the value it borrows is released or overwritten"
     "own_err_generator_this_param_returned|:11:26: error: a value that borrows its generator's arguments cannot be stored, returned or captured"
     "own_err_swap_borrow_used_after|:11:11: error: 'first' borrows 'a..' but is used here after it may be released or overwritten"
-    "own_err_swap_call_borrow_used_after|:15:11: error: 'first' borrows 'a..' but is used here after it may be released or overwritten"
     "own_err_callback_forwarded_drops|:15:17: error: a value that borrows 'a..' is used here after it may be released or overwritten"
     "own_err_capture_two_closures|:14:37: error: 'thing' is used here after its value was moved"
     "own_err_capture_in_loop|:15:44: error: 'thing' is moved inside a loop but was made outside it"
@@ -7776,7 +7748,6 @@ set(own_error_cases
     "own_err_back_reference_captures|:13:20: error: a closure that escapes owns what it captures, but -mm=own cannot move 'this' into it: its value is the caller's"
     "own_err_closure_kept_param_used|:19:11: error: '[^']*' is used here after its value was moved"
     "own_err_this_result_other|:7:5: error: 'A.copy' has the result type 'this', but its body returns something else than the object it is called on"
-    "own_err_overridable_call|:17:19: note: 'Base.factor' may be overridden in another module by a method that does. '@final' on the method, or on its class, says it is not"
     "own_err_fill_after_call|:21:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_in_loop|:23:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
@@ -7867,7 +7838,6 @@ set(own_error_cases
     "own_err_pushed_or_null_popped|:17:23: error: a value that borrows 'this[.]views..' is used here after it may be released or overwritten"
     "own_err_kept_local_array_popped|:16:22: error: a value that borrows 'this[.]nodes..' is used here after it may be released or overwritten"
     "own_err_private_field_written_callback|:33:24: error: a value that borrows 'this[.]sample' is used here after it may be released or overwritten"
-    "own_err_const_alias_drops|:22:11: error: a value that borrows 'meshes..[.]clusters' is used here after it may be released or overwritten"
     "own_err_kept_field_rebound|:29:5: error: '[^']*' is used here after its value was moved"
     "own_err_kept_array_filled_after_pop|:21:9: error: a value that borrows 'this[.]frames..' is used here after it may be released or overwritten"
     "own_err_local_object_field_popped|:18:11: error: a value that borrows 'frame[.]allocs..' is used here after it may be released or overwritten"
@@ -7877,7 +7847,7 @@ set(own_error_cases
     "own_err_borrowed_result_holder_stored|:26:16: error: a value that borrows 'this[.]chain' is used here after it may be released or overwritten"
     "own_err_function_expression_name|:11:13: error: 'this' is a parameter, returned here, but -mm=own cannot tell the callers of this function expression that the result borrows it"
     "own_err_named_walk_let|:11:40: error: 'node' borrows 'node[.]next' but is used here after it may be released or overwritten"
-    "own_err_closure_reassigned_captured_call|:23:15: error: 'a' borrows 'this[.]values' but is used here after it may be released or overwritten"
+    "own_err_closure_reassigned_captured_call|:10:17: error: 'this' borrows a field and cannot be stored, returned or captured"
     "own_err_self_assign_through_borrow|:13:5: error: 'n14' borrows the result of 'g11' and cannot be stored, returned or captured"
     "own_err_moved_borrowing_let|:21:9: error: 'p4' is moved here, but it is given a value it borrows elsewhere"
     "own_err_element_given_twice|:17:20: error: 'n' is used here after its value was moved"
@@ -7886,9 +7856,6 @@ set(own_error_cases
     "own_err_param_element_then_borrow|:19:11: error: 'c' is used here after its value was moved"
     "own_err_field_taken_through_copy|:27:5: error: a value that borrows 'copy[.]v' cannot be stored, returned or captured"
     "own_err_readonly_reassigned|:11:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
-    "own_err_readonly_captured|:12:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
-    "own_err_readonly_global|:10:11: error: 'i' borrows 'gl.inner' but is used here after it may be released or overwritten"
-    "own_err_readonly_redeclared|:7:11: error: 'i' borrows 'b.inner' but is used here after it may be released or overwritten"
     "own_err_literal_temp_object_kept|:21:11: error: 'o' borrows an element but is used here after it may be released or overwritten"
     "own_err_literal_temp_merge_stored|:30:18: error: 'e' borrows 'x.c' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
@@ -7903,6 +7870,64 @@ foreach(own_error_case ${own_error_cases})
     set_tests_properties(test-own-err-${own_error_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+# ...and what own accepts since TSLANG 219 (USER RULING 11-27): a local borrowing a place, used after a call that may
+# free what it borrows, takes a reference of its own. Each runs, printing what it prints under rc (a block freed too
+# early reads the churn's values); those calling a declared function that nothing defines are compiled only.
+set(own_counted_cases
+    "own_counted_call_in_try_drops|^1"
+    "own_counted_cell_assigned_in_closure|^1"
+    "own_counted_closure_assigns_captured_field|^1 1"
+    "own_counted_field_read_call|^0"
+    "own_counted_param_read_call|^0"
+    "own_counted_call_drops_indirectly|^0"
+    "own_counted_call_field_drops_owner|^0"
+    "own_counted_call_field_drops_under|^0"
+    "own_counted_interface_member_drops|^5 5"
+    "own_counted_interface_fn_field_drops|^5"
+    "own_counted_interface_fn_any_drops|^5[\r\n]+9"
+    "own_counted_interface_member_types|^5[\r\n]+5"
+    "own_counted_interface_member_methods|^5[\r\n]+5"
+    "own_counted_declared_callback|^5[\r\n]+9"
+    "own_counted_declared_callback_global|^5[\r\n]+9"
+    "own_counted_declared_callback_method|^5[\r\n]+9"
+    "own_counted_declared_callback_indirect|^5[\r\n]+9"
+    "own_counted_declared_callback_wrapper|^5[\r\n]+9"
+    "own_counted_declared_callback_field_reference|^5[\r\n]+9"
+    "own_counted_declared_callback_intrinsic|^5[\r\n]+9"
+    "own_counted_interface_member_class|^5[\r\n]+5"
+    "own_counted_callback_assigns_borrowed|^0 2"
+    "own_counted_shared_borrow_call|^0"
+    "own_counted_shared_borrow_push_call|^0"
+    "own_counted_iface_field_call|^1"
+    "own_counted_record_field_after_move|^1"
+    "own_counted_swap_call_borrow_used_after|^1"
+    "own_counted_overridable_call|^4"
+    "own_counted_const_alias_drops|^3"
+    "own_counted_readonly_captured|^1 0"
+    "own_counted_readonly_global|^1"
+    "own_counted_readonly_redeclared|^4"
+)
+foreach(own_counted_case ${own_counted_cases})
+    string(FIND "${own_counted_case}" "|" own_counted_sep)
+    string(SUBSTRING "${own_counted_case}" 0 ${own_counted_sep} own_counted_name)
+    math(EXPR own_counted_sep "${own_counted_sep} + 1")
+    string(SUBSTRING "${own_counted_case}" ${own_counted_sep} -1 own_counted_output)
+    add_test(NAME test-jit-own-${own_counted_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --jit-cache=false --no-default-lib -mm=own
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_counted_name}.ts")
+    set_tests_properties(test-jit-own-${own_counted_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${own_counted_output}"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Exception Code|Assertion failed")
+endforeach()
+foreach(own_counted_name own_counted_declared_callback_tuple own_counted_declared_callback_class_method own_counted_declared_callback_interface_field own_counted_declared_callback_stored_global own_counted_declared_callback_stored_reference own_counted_declared_callback_cpp_class)
+    add_test(NAME test-own-${own_counted_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_counted_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/own-${own_counted_name}.obj")
+    set_tests_properties(test-own-${own_counted_name}
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 # it used to never finish: a minute is plenty
 set_tests_properties(test-own-err-own_err_self_assign_through_borrow PROPERTIES TIMEOUT 60)

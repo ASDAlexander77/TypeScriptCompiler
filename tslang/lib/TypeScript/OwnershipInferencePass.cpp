@@ -2119,14 +2119,16 @@ namespace own_inference
 
     // countLetsUsedAfterCalls' `const` folded into its read: a string or an `any` is copied right after the read and
     // that copy used in its place, given back after the last use; a class instance or an array is given a count of
-    // its own there (OWN_COUNTED_ATTR_NAME, markCountedRetains) and the count back after the last use. Only where
-    // every use is in the read's block and no return leaves between the read and the last use.
+    // its own there (OWN_COUNTED_ATTR_NAME, markCountedRetains) and the count back where it is last used on each path
+    // (below). Not where a use passes it to a block's argument, or a structured loop's break or continue is in between.
     void OwnershipInferencePass::countFoldedConstRead(mlir::Operation *read)
     {
         auto value = read->getResult(0);
         auto type = value.getType();
         auto copied = isCopyableValueAt(read, type);
-        if (!copied && !mlir::isa<mlir_ts::ClassType, mlir_ts::ArrayType>(type))
+        // (a closure: an extra owner of its capture box - OwnershipRoutineLogic::retainClosureBoxExtraOwner)
+        if (!copied &&
+            !mlir::isa<mlir_ts::ClassType, mlir_ts::ArrayType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type))
         {
             return;
         }
@@ -2136,129 +2138,138 @@ namespace own_inference
             return;
         }
 
-        // the last use, as the op of one block of the read's region it is in; values derived from the read count as
-        // its uses. That block is the read's, or one every path from the read's block reaches and none returns from
-        // to it (`new c(a)` of a class value calls the constructor in a branch of its own): the count is given back
-        // once on every path.
+        // Where the reference is given back: as liveness over the blocks of the read's region says, for the read and
+        // the values seen through it (views). A block it is live into, or the read's own, gives it back after its last
+        // use there when it is live out of none of its successors; one it is live out of gives it back on each edge
+        // into a successor it is not live into - a `continue` or a `break` past its last use, an early `return`
+        // joining the function's exit, the loop's way back to the read. A return or a throw nested in an op before
+        // then gives it back right before it. A loop round the read releases it before the read runs again.
         auto *region = read->getParentRegion();
-        mlir::Block *useBlock = nullptr;
-        mlir::Operation *last = nullptr;
-        auto oneBlock = true;
+        auto *block = read->getBlock();
+        llvm::DenseMap<mlir::Block *, mlir::Operation *> lastUseIn;
+        auto usable = true;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
             auto *ancestor = region->findAncestorOpInRegion(*user);
-            if (!ancestor || (useBlock && ancestor->getBlock() != useBlock))
+            // (a use outside the region, or a branch passing it on to a block's argument: not followed)
+            if (!ancestor || ancestor->hasTrait<mlir::OpTrait::IsTerminator>())
             {
-                oneBlock = false;
+                usable = false;
                 return;
             }
 
-            useBlock = ancestor->getBlock();
+            auto &last = lastUseIn[ancestor->getBlock()];
             if (!last || last->isBeforeInBlock(ancestor))
             {
                 last = ancestor;
             }
         });
 
-        if (!oneBlock || !last || last == read || last->hasTrait<mlir::OpTrait::IsTerminator>())
+        if (!usable || lastUseIn.empty())
         {
             return;
         }
 
-        // A return between the read and the last use gives the reference back too, right before it; a break, a
-        // continue or a throw there (which may leave the read's scope or not) keeps the error. Between them: the
-        // rest of the read's block, each block a path from it passes before it reaches the use's block (each of
-        // which returns or goes on, never back to the read's), and the use's block up to the last use.
+        // the blocks a path from the read reaches
+        llvm::SetVector<mlir::Block *> reached;
+        reached.insert(block);
+        for (size_t index = 0; index < reached.size(); ++index)
+        {
+            for (auto *next : reached[index]->getSuccessors())
+            {
+                reached.insert(next);
+            }
+        }
+
+        llvm::DenseSet<mlir::Block *> liveIn;
+        auto liveOut = [&](mlir::Block *from) {
+            return llvm::any_of(from->getSuccessors(), [&](mlir::Block *next) { return liveIn.contains(next); });
+        };
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto *candidate : reached)
+            {
+                // the read's own block starts with a new reference each time it runs
+                if (candidate == block || liveIn.contains(candidate))
+                {
+                    continue;
+                }
+
+                if (lastUseIn.count(candidate) || liveOut(candidate))
+                {
+                    liveIn.insert(candidate);
+                    changed = true;
+                }
+            }
+        }
+
+        struct Place
+        {
+            mlir::Operation *op;
+            bool after;
+        };
+        llvm::SmallVector<Place> places;
+        llvm::SmallVector<std::pair<mlir::Block *, unsigned>> edges;
         auto leaves = false;
-        llvm::SmallVector<mlir::Operation *> returns;
-        auto scan = [&](mlir::Operation *from, mlir::Operation *to) {
+        for (auto *holding : reached)
+        {
+            if (holding != block && !liveIn.contains(holding))
+            {
+                continue;
+            }
+
+            auto out = liveOut(holding);
+            auto found = lastUseIn.find(holding);
+            auto *last = found != lastUseIn.end() ? found->second : nullptr;
+            if (!out && !last)
+            {
+                // the read's block with no use after it: its successors are all it is live into, or it is dead
+                if (holding == block)
+                {
+                    places.push_back({read, true});
+                }
+
+                continue;
+            }
+
+            // a return or a throw nested before where the reference goes back, and a top-level throw there
+            auto *from = holding == block ? read->getNextNode() : &holding->front();
+            auto *to = out ? holding->getTerminator() : last;
             for (auto *op = from; op && op != to; op = op->getNextNode())
             {
                 op->walk([&](mlir::Operation *nested) {
-                    if (mlir::isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::ReturnInternalOp>(nested))
+                    if (mlir::isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::ReturnInternalOp, mlir_ts::ThrowOp>(nested))
                     {
-                        returns.push_back(nested);
+                        places.push_back({nested, false});
                     }
-                    else if (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp, mlir_ts::ThrowOp>(nested))
+                    else if (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested))
                     {
+                        // (a structured loop's: whether it leaves the scope is not read here)
                         leaves = true;
                     }
                 });
             }
-        };
 
-        auto *block = read->getBlock();
-        if (useBlock == block)
-        {
-            scan(read->getNextNode(), last);
-        }
-        else
-        {
-            // the use's block runs once a path: none from it leads back to it or to the read's
-            llvm::SmallVector<mlir::Block *> pending(useBlock->getSuccessors().begin(), useBlock->getSuccessors().end());
-            llvm::SmallPtrSet<mlir::Block *, 8> seen;
-            while (!pending.empty())
+            if (!out)
             {
-                auto *next = pending.pop_back_val();
-                if (next == block || next == useBlock)
-                {
-                    return;
-                }
-
-                if (seen.insert(next).second)
-                {
-                    pending.append(next->getSuccessors().begin(), next->getSuccessors().end());
-                }
+                places.push_back({last, true});
+                continue;
             }
 
-            // (the blocks after the use's: a path that joins them without passing the use - an early `return`
-            // branching to the function's one exit block - gives the reference back at the end of the block it
-            // joins from, which must lead there only)
-            auto &afterUse = seen;
-            scan(read->getNextNode(), nullptr);
-            llvm::SmallPtrSet<mlir::Block *, 8> visited;
-            llvm::SmallVector<mlir::Block *> toVisit{block};
-            while (!toVisit.empty())
+            auto *terminator = holding->getTerminator();
+            if (!mlir::isa<mlir::BranchOpInterface>(terminator) && terminator->getNumSuccessors() > 0)
             {
-                auto *current = toVisit.pop_back_val();
-                if (current != block)
-                {
-                    auto returnsHere = returns.size();
-                    scan(&current->front(), nullptr);
-                    // a block that neither goes on nor returns (an unreachable end): the reference would stay
-                    if (current->getSuccessors().empty() && returns.size() == returnsHere)
-                    {
-                        return;
-                    }
-                }
-
-                auto successors = current->getSuccessors();
-                auto joining = llvm::count_if(successors, [&](mlir::Block *next) { return afterUse.contains(next); });
-                if (joining > 0)
-                {
-                    if (joining != static_cast<long>(successors.size()) || current == block)
-                    {
-                        return;
-                    }
-
-                    returns.push_back(current->getTerminator());
-                    continue;
-                }
-
-                for (auto *next : successors)
-                {
-                    if (next == block)
-                    {
-                        return;
-                    }
-
-                    if (next != useBlock && visited.insert(next).second)
-                    {
-                        toVisit.push_back(next);
-                    }
-                }
+                leaves = true;
+                continue;
             }
 
-            scan(&useBlock->front(), last);
+            for (unsigned index = 0; index < terminator->getNumSuccessors(); ++index)
+            {
+                if (!liveIn.contains(terminator->getSuccessor(index)))
+                {
+                    edges.push_back({holding, index});
+                }
+            }
         }
 
         if (leaves)
@@ -2269,26 +2280,62 @@ namespace own_inference
         mlir::OpBuilder builder(read->getContext());
         builder.setInsertionPointAfter(read);
         mlir::Value held = value;
+        mlir::Operation *acquired = nullptr;
         if (copied)
         {
             auto copy = builder.create<mlir_ts::StringCopyOp>(read->getLoc(), type, value);
             value.replaceAllUsesExcept(copy, copy);
             held = copy;
+            acquired = copy;
         }
         else
         {
-            builder.create<mlir_ts::RetainOp>(read->getLoc(), value);
+            acquired = builder.create<mlir_ts::RetainOp>(read->getLoc(), value);
             countedValues.insert(countedUnitOf(value));
         }
 
-        for (auto *exit : returns)
+        for (auto &place : places)
         {
-            builder.setInsertionPoint(exit);
-            builder.create<mlir_ts::ReleaseOp>(exit->getLoc(), held);
+            if (place.after)
+            {
+                // (after the read itself is after the copy or the retain just made)
+                builder.setInsertionPointAfter(place.op == read ? acquired : place.op);
+            }
+            else
+            {
+                builder.setInsertionPoint(place.op);
+            }
+
+            builder.create<mlir_ts::ReleaseOp>(place.op->getLoc(), held);
         }
 
-        builder.setInsertionPointAfter(last);
-        builder.create<mlir_ts::ReleaseOp>(last->getLoc(), held);
+        // an edge: before the terminator when it is the block's only way on, else in a block of its own on the edge
+        for (auto [from, index] : edges)
+        {
+            auto *terminator = from->getTerminator();
+            auto loc = terminator->getLoc();
+            if (terminator->getNumSuccessors() == 1)
+            {
+                builder.setInsertionPoint(terminator);
+                builder.create<mlir_ts::ReleaseOp>(loc, held);
+                continue;
+            }
+
+            auto *join = terminator->getSuccessor(index);
+            auto operands = mlir::cast<mlir::BranchOpInterface>(terminator).getSuccessorOperands(index);
+            llvm::SmallVector<mlir::Value> forwarded(operands.getForwardedOperands());
+            auto *split = new mlir::Block();
+            split->insertAfter(from);
+            builder.setInsertionPointToEnd(split);
+            builder.create<mlir_ts::ReleaseOp>(loc, held);
+            builder.create<mlir::cf::BranchOp>(loc, join, forwarded);
+            if (!forwarded.empty())
+            {
+                operands.erase(0, forwarded.size());
+            }
+
+            terminator->setSuccessor(split, index);
+        }
     }
 
     void OwnershipInferencePass::countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased)
