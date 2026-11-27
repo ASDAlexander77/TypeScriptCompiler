@@ -1597,7 +1597,8 @@ namespace mlirgen
         }
 
         // `a + b` of two `any`s: a string or a number - or a bigint - known at run time (mlirGenAnyPlusAny)
-        if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::AnyType>(leftExpressionValue.getType())
+        if (opCode == SyntaxKind::PlusToken && leftExpressionValue && rightExpressionValue &&
+            isa<mlir_ts::AnyType>(leftExpressionValue.getType())
             && isa<mlir_ts::AnyType>(rightExpressionValue.getType()))
         {
             auto resultAny = mlirGenAnyPlusAny(location, leftExpressionValue, rightExpressionValue, genContext);
@@ -1630,9 +1631,13 @@ namespace mlirgen
             return isa<mlir_ts::NumberType, mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::CharType,
                        mlir_ts::BigIntType, mlir::IntegerType>(type);
         };
-        auto leftIsAny = isa<mlir_ts::AnyType>(leftExpressionValue.getType());
-        auto rightIsAny = isa<mlir_ts::AnyType>(rightExpressionValue.getType());
-        if (isEquality && leftIsAny != rightIsAny
+        // (asked only of an equality whose sides both have values: a side of `,` may have none while a function
+        // expression in it is discovered - `f ??= (f, (a => a))` - and reading its type crashed the compiler built by
+        // GCC 13 and later, the Ubuntu 24.04 and 26.04 release legs of v0.0-pre-alpha137)
+        auto bothValues = leftExpressionValue && rightExpressionValue;
+        auto leftIsAny = isEquality && bothValues && isa<mlir_ts::AnyType>(leftExpressionValue.getType());
+        auto rightIsAny = isEquality && bothValues && isa<mlir_ts::AnyType>(rightExpressionValue.getType());
+        if (isEquality && bothValues && leftIsAny != rightIsAny
             && isBoxablePrimitive(leftIsAny ? rightExpressionValue.getType() : leftExpressionValue.getType()))
         {
             auto anyValue = leftIsAny ? leftExpressionValue : rightExpressionValue;
