@@ -4064,12 +4064,12 @@ Not yet:
 - Under -mm=own a union of tuples cast to a longer member is read where it is cast or held in a local (`const l =
   <Long>x`), but a function can't return it whole (`return <Long>x`): "a value is merged from several branches". Each
   branch borrows `x` - the member that is the target, or the shorter one filled - and own proves a merge of new values,
-  not a merge of borrows of one value.
+  not a merge of borrows of one value. Fixed in 216.
 - Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
   "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
   string]: number }` alike. The dictionary's `set` is known only to drop strings held anywhere (its drop facts are
   `[-1, string]`), so any string read out of an array is taken for freed by it; facts naming what is under `this` would
-  tell `items` apart.
+  tell `items` apart. Fixed in 216.
 - Still from 214: 128 under own (a capture by value for value types), own `Constructor<T>` of `...args: any[]`; from
   213: 56, 153, 159 under own; 131 (`Object.keys` of `object`, `Object.assign`, `defineProperty`, `create`), 108, 191's
   callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads
@@ -4077,3 +4077,31 @@ Not yet:
 
 Tests `00tslang_issue_215.ts` (all models), `test-{rc,own}-owned-declarations` (the IR of `@owned` and `@lends` calls),
 `tuple_union_cast_fill_error.ts`, `tuple_union_cast_fill_nonstrict.ts` (`--strict-null-checks=false`, all models).
+
+216. The two -mm=own leftovers of 215 (2026-11-27). Fixed:
+- A dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`), and any object made
+  here emptied while an element of an array given is borrowed (`bag.clear()` in a loop over `items`): "'it' borrows an
+  element but is used here after it may be released or overwritten". A call's drop facts said only which places it may
+  overwrite - an element of a string array, anywhere - so a borrow of any string element ended at it. Each place now
+  names the argument whose object owns it (OWN_DROP_FIELD_OWNERS_ATTR_NAME): reached from that parameter through fields
+  of classes only ever given new values, or the parameter itself, carried up through callers' parameters. A borrow is
+  not dropped by a place an argument owns when one of the two is this function's own - every root of the chain, or the
+  argument: a new value, or a local nothing assigns or captures that was given one - and neither is made of the other.
+- Under -mm=own a union of tuples cast to a member could not be returned whole (`return <Long>x`): "a value is merged
+  from several branches". Each branch is a borrow of the union now - the member that is the target, or a tuple made of
+  what the shorter (filled) or longer (narrowed) member holds (OWN_UNION_MEMBER_TUPLE_ATTR_NAME), not own's copy - so
+  the function lends its parameter.
+
+Stays refused, by design (the four `own_drop_owner_*_error.ts`):
+- Two values this function does not own may be one: `fill(bag, items)` of two parameters, a method looping over a
+  parameter while it empties `this` - a caller may give `fill(b, b.names)`. Lifting it needs a rule that the arguments
+  of a call are apart, a design question.
+- The loop reads the very array the call empties (`for (const it of bag.names) bag.clear()`).
+- A field given a value it does not make (`set(a) { this.names = a }`), which may be another's - an immortal `const`
+  global given straight or through a parameter (own allows both): what a call empties may be that global.
+- `c ? a : b` returned, of two parameters: a merge of borrows of two values.
+
+Not yet: a function that makes the object it writes (`count` itself) still says, to its own callers, that it may drop
+any string element - the place's owner is its local, not a parameter.
+
+Tests `00tslang_issue_216.ts` (all models), `own_drop_owner_{two_params,this_param,same_array,global_field}_error.ts`.

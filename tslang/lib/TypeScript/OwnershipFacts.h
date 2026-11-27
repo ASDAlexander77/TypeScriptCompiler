@@ -2906,6 +2906,31 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
         return found;
     }
 
+    // a tuple a union-of-tuples cast makes of the member the union holds (OWN_UNION_MEMBER_TUPLE_ATTR_NAME): what it
+    // reads of the member, all of one parameter, beside values that hold no block (TSLANG 216)
+    if (auto createTupleOp = mlir::dyn_cast_or_null<mlir_ts::CreateTupleOp>(def);
+        createTupleOp && createTupleOp->hasAttr(OWN_UNION_MEMBER_TUPLE_ATTR_NAME))
+    {
+        auto found = -1;
+        for (auto operand : createTupleOp->getOperands())
+        {
+            if (holdsNoBlock(operand))
+            {
+                continue;
+            }
+
+            auto index = borrowedParam(operand, depth + 1);
+            if (index < 0 || (found >= 0 && index != found))
+            {
+                return -1;
+            }
+
+            found = index;
+        }
+
+        return found;
+    }
+
     return -1;
 }
 

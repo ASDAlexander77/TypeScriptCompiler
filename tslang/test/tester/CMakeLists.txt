@@ -2629,6 +2629,21 @@ foreach(issue215_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_215-${issue215_mm} COMMAND test-runner -jit -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_215-${issue215_mm} COMMAND test-runner -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
 endforeach()
+# TSLANG 216: -mm=own drop facts that name the argument owning each place (a dictionary written in a loop over an
+# array), a union of tuples cast to a member returned from a function
+foreach(issue216_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_216-${issue216_mm} COMMAND test-runner -jit -mm=${issue216_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_216.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_216-${issue216_mm} COMMAND test-runner -mm=${issue216_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_216.ts")
+endforeach()
+# ...and what stays refused: an argument and a borrow neither of which this function owns may be one (two parameters,
+# `this` and a parameter), the array a loop reads is the one the call empties, a field given a value it does not make
+foreach(drop_owner_error two_params this_param same_array global_field)
+    add_test(NAME test-compile-own-drop-owner-${drop_owner_error}-error
+             COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_drop_owner_${drop_owner_error}_error.ts")
+    set_tests_properties(test-compile-own-drop-owner-${drop_owner_error}-error PROPERTIES
+                         PASS_REGULAR_EXPRESSION "'it' borrows [^\n]* but is used here after it may be released or overwritten"
+                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")

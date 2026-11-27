@@ -490,9 +490,10 @@ namespace mlirgen
 
         SmallVector<mlir::Value> values;
 
-        // a union's member made a longer member, its missing elements filled (castFromUnion), which mapTupleToFields
-        // takes
-        auto filling = fillAbsentTupleElements;
+        // a union's member made the target (castFromUnion), its missing elements filled when it is shorter
+        // (mapTupleToFields takes that)
+        auto unionMember = castingUnionMember;
+        castingUnionMember = false;
         auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
         if (mlir::failed(result))
         {
@@ -512,7 +513,7 @@ namespace mlirgen
         // that only now takes its type, `[{ a: "x", c: "" }, { a: "y", c: 0 }]` re-made as the common record: its fields
         // are its own, given on as they were. A named `const` built in its slot is read with OWNED_RESULT_NAMED: a
         // variable, whose fields are borrowed)
-        // (not of a union's member made a longer member either: it stays a borrow of the union - what it reads of the
+        // (not of a union's member made the target either: it stays a borrow of the union - what it reads of the
         // member and constants -, as the member that already is the target is, which the same `?:` of the cast gives:
         // one branch owned and the other borrowed is a merge -mm=own cannot settle)
         auto sourceLoad = value.getDefiningOp<mlir_ts::LoadOp>();
@@ -521,7 +522,7 @@ namespace mlirgen
                              (sourceSlot && !sourceSlot->hasAttr(OWNED_LOCAL_ATTR_NAME) && sourceSlot.getInitializer() &&
                               sourceSlot.getInitializer().getDefiningOp<mlir_ts::ConstantOp>() &&
                               !sourceLoad->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME));
-        if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && !filling && canMakeOwnedTemporaryLocal(genContext))
+        if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && !unionMember && canMakeOwnedTemporaryLocal(genContext))
         {
             // a string read out of the source is copied; every other field that holds a block has to be a new value or
             // constant data, or the local would release what the source still holds: the tuple stays a borrow then
@@ -556,7 +557,13 @@ namespace mlirgen
             }
         }
 
-        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+        auto tuple = builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values);
+        if (unionMember)
+        {
+            tuple->setAttr(OWN_UNION_MEMBER_TUPLE_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return V(tuple);
     }
 
     ValueOrLogicalResult MLIRGenImpl::NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
@@ -6057,8 +6064,10 @@ namespace mlirgen
                             auto memberTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(members[index]));
                             auto shorter = targetTuple && memberTuple && memberTuple.size() < targetTuple.size();
                             fillAbsentTupleElements = shorter;
+                            castingUnionMember = targetTuple && memberTuple;
                             auto result = cast(location, type, memberValue, genContext);
                             fillAbsentTupleElements = false;
+                            castingUnionMember = false;
                             return result;
                         };
 
