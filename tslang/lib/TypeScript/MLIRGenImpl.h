@@ -2935,6 +2935,19 @@ class MLIRGenImpl
             variableDeclarationInfo.setInitial(castedValue);
         }
 
+        // `let x: any;` is undefined, as in TypeScript: it is `let x: any = undefined;` (user ruling 11-27). The slot
+        // was never written outside -mm=rc, and a read took whatever was on the stack - `x === null` dereferenced it at
+        // --opt_level=0; -mm=rc gave it a null `any` (below), which `===` reads as undefined and typeof, print and
+        // the casts dereference. As an initializer it is owned like any other (localTakesOwnership), hoisted where
+        // others are, and a generator's field gets it on every turn. Not a catch clause's variable, which the landing
+        // pad writes, and not a global: its slot is zero, a null `any` (still open: typeof of one dereferences it).
+        if (!variableDeclarationInfo.initial && isa<mlir_ts::AnyType>(type) && !variableDeclarationInfo.isConst &&
+            !variableDeclarationInfo.isGlobal && !genContext.declaringCatchVariable)
+        {
+            CAST_A(castedValue, location, type, getUndefined(location), genContext);
+            variableDeclarationInfo.setInitial(castedValue);
+        }
+
         // -mm=rc: `let failure: any;` of a heap type starts empty, so that it owns what it is given like any other
         // local (takeOwnershipOfLocal). With no initializer it borrowed: `failure = e` in a catch clause took no
         // reference, the clause gave the caught value back, and `throw failure` after it threw freed memory.
@@ -3964,8 +3977,11 @@ class MLIRGenImpl
                     //type = getUnionType(type, getUndefinedType());
                     // a variable a library declares to its importers (`@dllimport let k: s32;` in its
                     // __decls) is defined in the library, so it has no initializer here (#448)
-                    if (!isa<mlir_ts::OptionalType>(type) && !hasModifier(parent, SyntaxKind::DeclareKeyword) &&
-                        !MLIRHelper::hasDecorator(parent, DLL_IMPORT))
+                    // a local `any` starts undefined (adjustLocalVariableType); a global one is still a null `any`
+                    // (isGlobalVarReceiver: its initializer is being generated), which most reads cannot take
+                    auto localAny = isa<mlir_ts::AnyType>(type) && !genContext.isGlobalVarReceiver;
+                    if (!isa<mlir_ts::OptionalType>(type) && !localAny &&
+                        !hasModifier(parent, SyntaxKind::DeclareKeyword) && !MLIRHelper::hasDecorator(parent, DLL_IMPORT))
                     {
                         emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
                     }

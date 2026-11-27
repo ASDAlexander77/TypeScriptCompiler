@@ -2608,6 +2608,14 @@ foreach(issue213a_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")
 endforeach()
+# TSLANG 213: `let x: any;` with no initializer is undefined in every model (was stack garbage outside rc), with no
+# "'let' does not have initializer" warning
+foreach(letany_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00let_any_starts_undefined-${letany_mm} COMMAND test-runner -jit -mm=${letany_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_any_starts_undefined.ts")
+    tslang_add_test(NAME test-compile-00let_any_starts_undefined-${letany_mm} COMMAND test-runner -mm=${letany_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00let_any_starts_undefined.ts")
+    set_tests_properties(test-jit-00let_any_starts_undefined-${letany_mm} test-compile-00let_any_starts_undefined-${letany_mm}
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "does not have initializer|Stack dump|Assertion failed")
+endforeach()
 # TSLANG 152, -mm=own: a store past the end through a parameter's alias stops with a check, not a write past the block
 add_test(NAME test-jit-own-grow-past-end-check
          COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=own

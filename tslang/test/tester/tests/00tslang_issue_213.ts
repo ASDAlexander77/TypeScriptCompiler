@@ -63,9 +63,8 @@ function main() {
 
     assert(flags == "11 01 00 00 00 00 ");
 
-    // initialized: a `let` with no initializer is not set to undefined outside -mm=rc (the compiler warns), and the
-    // comparison read whatever was on the stack (crashed at --opt_level=0)
-    let u: any = undefined;
+    // no initializer: undefined in every model (00let_any_starts_undefined.ts)
+    let u: any;
     assert(u === undefined);
     assert(!(u === null));
 
