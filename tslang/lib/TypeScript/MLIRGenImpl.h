@@ -20723,6 +20723,8 @@ class MLIRGenImpl
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
 
     mlir::Value absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext);
+    bool tupleLacksField(mlir_ts::TupleType srcTupleType, ArrayRef<mlir_ts::FieldInfo> fields);
+    mlir::Type unionTuplesCommonPrefixMember(mlir_ts::UnionType unionType, mlir::Value index);
 
     // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 

@@ -94,7 +94,54 @@ function sumOf(r: Rec<string, number>) {
     return total;
 }
 
+type Two = [number, string];
+type Three = [number, string, string];
+
+function third(x: Two | Three) {
+    return (<Three>x)[2];
+}
+
+function secondOf(x: Two | Three) {
+    return x[1];
+}
+
+function tuples() {
+    let total = 0;
+    for (let i = 0; i < 3; i++) {
+        const x: Two | Three = [i, "a" + i, "b" + i];
+        const t = <Three>x;
+        assert(t[2] == "b" + i);
+        const u = x as [number, string, string];
+        assert(u[1] == "a" + i);
+        assert(x[1] == "a" + i);
+        assert(x[0] == i);
+        assert(third(x) == "b" + i);
+        assert(secondOf(x) == "a" + i);
+        total += x.length;
+
+        const y: Two | Three = [i, "c" + i];
+        assert(y[1] == "c" + i);
+        assert(secondOf(y) == "c" + i);
+        assert((<Two>y)[1] == "c" + i);
+        total += y.length;
+
+        // a false assertion: the value is no Three
+        let caught = false;
+        try {
+            third(y);
+        } catch (e) {
+            caught = true;
+        }
+
+        assert(caught);
+    }
+
+    assert(total == 15);
+}
+
 function main() {
+    tuples();
+
     const r: Record<string, number> = { a: 1, b: 2 };
     assert(Object.keys(r).length == 2);
     assert(r["a"] == 1);

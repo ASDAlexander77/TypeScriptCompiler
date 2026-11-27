@@ -207,6 +207,25 @@ namespace mlirgen
         return mlir::Value();
     }
 
+    // Whether a tuple lacks a field of `fields` that absentFieldValue can't make: one of another type than an optional,
+    // `undefined` or `any`, which is neither in it by name nor, an element, at its index (`[number, string]` for
+    // `[number, string, string]`). Nothing is generated.
+    bool MLIRGenImpl::tupleLacksField(mlir_ts::TupleType srcTupleType, ArrayRef<mlir_ts::FieldInfo> fields)
+    {
+        for (auto [index, fieldInfo] : enumerate(fields))
+        {
+            auto positional = fieldInfo.id == mlir::Attribute()
+                || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute());
+            auto present = positional ? index < srcTupleType.size() : srcTupleType.getIndex(fieldInfo.id) >= 0;
+            if (!present && !isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::AnyType>(fieldInfo.type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning)
     {
@@ -237,6 +256,12 @@ namespace mlirgen
                         values.push_back(undefVal);
                         continue;
                     }
+
+                    // (it was read past the tuple's end, and failed with nothing said: "failed statement")
+                    emitError(location) << "element " << index << " of '"
+                                        << to_print(mlir_ts::TupleType::get(builder.getContext(), fields))
+                                        << "' is not in tuple '" << to_print(srcTupleType) << "'";
+                    return mlir::failure();
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
@@ -5911,8 +5936,30 @@ namespace mlirgen
                 {
                     auto members = unionType.getTypes();
                     auto box = builder.create<mlir_ts::CastOp>(location, getAnyType(), value);
+                    auto targetTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(type));
                     std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
                         auto asMember = [&]() -> ValueOrLogicalResult {
+                            // a member the target can't be made of (`<[number, string, string]>x` of `[number, string] |
+                            // [number, string, string]`, holding the first): the assertion is false. The value is not a
+                            // target, a run-time error, as a cast from an interface that does not hold the class is. (Its
+                            // cast failed with nothing said: "failed statement".)
+                            auto memberTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(members[index]));
+                            if (targetTuple && memberTuple && tupleLacksField(memberTuple, targetTuple.getFields()))
+                            {
+                                auto message = builder.create<mlir_ts::ConstantOp>(
+                                    location, getStringType(),
+                                    getStringAttr("Can't cast from " + to_print(members[index]) + " to " + to_print(type)));
+                                builder.create<mlir_ts::ThrowOp>(location, message);
+                                if (!mlirGenRttiForType(location, message.getType()))
+                                {
+                                    emitError(location, "Not supported type in throw");
+                                    return mlir::failure();
+                                }
+
+                                // not reached; the branch still needs a value of the target type
+                                return V(builder.create<mlir_ts::DefaultOp>(location, type));
+                            }
+
                             auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, members[index], value);
                             return cast(location, type, memberValue, genContext);
                         };

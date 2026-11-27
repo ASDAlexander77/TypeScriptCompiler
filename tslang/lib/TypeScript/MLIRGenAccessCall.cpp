@@ -1763,6 +1763,60 @@ namespace mlirgen
         return lookup(0);
     }
 
+    // The first member of a union of tuples, all of elements only, when each has the element at the constant index
+    // `index` holds and the same element types up to it: one laid out alike there, whichever member a value holds.
+    // No type otherwise.
+    mlir::Type MLIRGenImpl::unionTuplesCommonPrefixMember(mlir_ts::UnionType unionType, mlir::Value index)
+    {
+        auto constantOp = index.getDefiningOp<mlir_ts::ConstantOp>();
+        if (!constantOp)
+        {
+            return mlir::Type();
+        }
+
+        int64_t position = -1;
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(constantOp.getValue()))
+        {
+            position = intAttr.getValue().getSExtValue();
+        }
+        else if (auto floatAttr = dyn_cast<mlir::FloatAttr>(constantOp.getValue());
+                 floatAttr && floatAttr.getValueAsDouble() == (double)(int64_t)floatAttr.getValueAsDouble())
+        {
+            position = (int64_t)floatAttr.getValueAsDouble();
+        }
+
+        if (position < 0)
+        {
+            return mlir::Type();
+        }
+
+        SmallVector<mlir_ts::TupleType> tuples;
+        for (auto member : unionType.getTypes())
+        {
+            auto tupleType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(member));
+            if (!tupleType || (int64_t)tupleType.size() <= position
+                || llvm::any_of(tupleType.getFields(), [](auto &field) { return !!field.id; }))
+            {
+                return mlir::Type();
+            }
+
+            tuples.push_back(tupleType);
+        }
+
+        for (auto tupleType : ArrayRef<mlir_ts::TupleType>(tuples).drop_front())
+        {
+            for (int64_t i = 0; i <= position; i++)
+            {
+                if (tupleType.getFieldInfo(i).type != tuples.front().getFieldInfo(i).type)
+                {
+                    return mlir::Type();
+                }
+            }
+        }
+
+        return unionType.getTypes().front();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
@@ -1791,6 +1845,14 @@ namespace mlirgen
                 {
                     expression = builder.create<mlir_ts::CastOp>(location, baseType, expression);
                 }
+            }
+            // `x[1]` of a union of tuples (`[number, string] | [number, string, string]`), each holding that element after
+            // the same elements: it is where the first member has it, whichever member the value holds (it was "access
+            // expression is not applicable")
+            else if (auto firstTuple = unionTuplesCommonPrefixMember(unionType, argumentExpression))
+            {
+                expression = builder.create<mlir_ts::GetValueFromUnionOp>(location, firstTuple, expression);
+                arrayType = firstTuple;
             }
         }
 
