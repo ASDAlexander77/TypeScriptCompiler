@@ -1,5 +1,22 @@
 // `let x: any;` with no initializer is undefined, as in TypeScript, in every memory model (user ruling 11-27). Outside
 // -mm=rc its slot was never written: a read took whatever was on the stack, and `x === null` crashed at --opt_level=0.
+// A module-level one was a null `any`, which typeof, print and the casts dereferenced.
+
+let g: any;
+
+function globalStartsUndefined() {
+    assert(g === undefined, "global === undefined");
+    assert(typeof g == "undefined", "global typeof");
+    assert("[" + g + "]" == "[undefined]", "global concat");
+    assert(!g, "global falsy");
+    g = "set";
+    assert(typeof g == "string", "global assigned");
+}
+
+function viaVar(): string {
+    var v: any;
+    return typeof v;
+}
 
 function plain() {
     let u: any;
@@ -58,6 +75,8 @@ function* gen() {
 }
 
 function main() {
+    globalStartsUndefined();
+    assert(viaVar() == "undefined", "a function's var");
     plain();
 
     assert(assignedLater(0) == "none", "never assigned");

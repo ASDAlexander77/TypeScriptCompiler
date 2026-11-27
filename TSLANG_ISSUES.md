@@ -3938,9 +3938,11 @@ Tests `00tslang_issue_212.ts`, `00tslang_issue_212_dictionary.ts` (all models), 
 - 117 (`let f = n.toFixed; f(1)`) stays a compile error (user ruling 2026-11-27): tsc accepts it, but JavaScript throws
   a TypeError at the call (the method loses its `this`), so the error says so where the program is written.
 - `let x: any;` with no initializer is undefined under every memory model (user ruling 2026-11-27), with no "'let'
-  does not have initializer" warning. Outside -mm=rc its slot was never written: a read took whatever was on the
-  stack, and `x === null` dereferenced it, which crashed at --opt_level=0 (the debug-programs CI legs) and was hidden by
-  O3. A local in a loop, a `try` or a generator starts each turn undefined.
+  does not have initializer" warning: it is `let x: any = undefined;`. Outside -mm=rc a local's slot was never
+  written: a read took whatever was on the stack, and `x === null` dereferenced it, which crashed at --opt_level=0 (the
+  debug-programs CI legs) and was hidden by O3. A local in a loop, a `try` or a generator starts each turn undefined.
+  A module-level one (and -mm=rc's local) was a null `any`, which `===` reads as undefined but typeof, print, `+` and
+  the casts dereferenced.
 
 Not yet:
 - Under -mm=rc an async function with a `catch` clause and a `finally` that awaits leaks about 32 bytes a call when a
