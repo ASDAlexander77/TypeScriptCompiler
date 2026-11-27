@@ -1811,8 +1811,11 @@ namespace mlirgen
                         // a reference (`for (let s = "a"; ...)`) is copied as the reference under a collector, as
                         // JavaScript copies it, and under rc with a count of its own (each closure saw the loop's last
                         // string, TSLANG 213); under own a copy would be one more owner (TSLANG 176)
+                        // (not in a generator's next(), whose resume after a yield in the body would skip the copy's
+                        // count: "operand does not dominate this use")
                         auto copied = outerRefType && (mth.isValueType(outerRefType.getElementType())
-                                                       || compileOptions.memoryModel != MemoryModelOwn);
+                                                       || !compileOptions.tracksOwnership()
+                                                       || (compileOptions.isRefCounted() && !loopGenContext.allocateVarsInContextThis));
                         if (!outerRefType || !outer.second || !copied)
                         {
                             continue;
