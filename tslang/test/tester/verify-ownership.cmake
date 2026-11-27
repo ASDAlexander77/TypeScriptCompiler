@@ -63,6 +63,9 @@ set(not_compilable_alone
     class_value_constructor_error.ts
     class_value_union_abstract_error.ts
     own_tuple_as_array_error.ts
+    tuple_union_cast_fill_error.ts
+    # compiled with --strict-null-checks=false (test-compile-tuple-union-cast-fill-nonstrict-*): null fills a string
+    tuple_union_cast_fill_nonstrict.ts
     class_local_capture_error.ts
     class_field_capture_error.ts
     cpp_class_value_error.ts

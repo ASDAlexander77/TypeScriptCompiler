@@ -4012,6 +4012,11 @@ Tests `00tslang_issue_214.ts` (all models).
   literal given to it lost its fields, `Object.keys` gave none and `r["a"]` read nothing (131). It is `{ [key: string]:
   T }`, the dictionary of T a string index signature is, both as the built-in Record (no default library) and as the
   mapped type `{ [P in K]: T }` of K = string (the default library's Record). Without the dictionary class, as before.
+  Such a dictionary as a function's result type has its members generated where it is read (`Object.keys(f())` was
+  "'ObjectDictionary<!ts.number>.keys' does not reference a valid function": the alias is read once, in an early pass);
+  as a constraint (`T extends Record<string, X>`) an object of any fields meets it, as `{}` did; and `keyof` of one is
+  `string`, not the members of the class that holds it (the tsc sweep's 7 tests of these, failing with the change
+  alone, pass).
 - A union of tuples cast to one of them (`<[number, string, string]>x` of `[number, string] | [number, string,
   string]`) failed with nothing said ("failed statement"): each member is tested for and cast, and the shorter one
   could not be made the longer - its cast read past its end. The member the value holds is cast, and each element a

@@ -329,6 +329,14 @@ namespace mlirgen
         }
 
         auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
+        // `T extends Record<string, X>` (a dictionary, TSLANG 215): an object of any fields can be given to one, as
+        // to `{}`, which it was before - not only another dictionary
+        if (extendsResult != ExtendsResult::True && dictionaryClassInfoOf(constraintType, genContext)
+            && isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::InterfaceType, mlir_ts::ClassType, mlir_ts::ObjectType>(type))
+        {
+            extendsResult = ExtendsResult::True;
+        }
+
         if (extendsResult != ExtendsResult::True)
         {
             // special case when we work with generic type(which are not specialized yet)
@@ -2057,6 +2065,13 @@ namespace mlirgen
         if (isa<mlir_ts::StringType>(type))
         {
             return mth.getFieldNames(type);
+        }
+
+        // a dictionary (`{ [key: string]: T }`, `Record<string, T>`, TSLANG 215): its keys are strings, not the members
+        // of the class that holds them (`[K in keyof B]` of `B extends Record<string, unknown>` read `close` and the like)
+        if (dictionaryClassInfoOf(type, genContext))
+        {
+            return getStringType();
         }
 
         if (auto objType = dyn_cast<mlir_ts::ObjectType>(type))

@@ -99,6 +99,21 @@ function sumOf(r: Rec<string, number>) {
 type Two = [number, string];
 type Three = [number, string, string];
 
+// a Record as a function's result type, read in another function (its members generated where it is read), and as a
+// constraint, which an object of any fields meets
+function recordOf(i: number): Record<string, number> {
+    return { a: i, b: i + 1 };
+}
+
+function countOf<T extends Record<string, number>>(t: T) {
+    let n = 0;
+    for (const k in t) {
+        n++;
+    }
+
+    return n;
+}
+
 function third(x: Two | Three) {
     return (<Three>x)[2];
 }
@@ -227,6 +242,10 @@ function main() {
     }
 
     assert(made == "f0s0f1s1f2s2");
+
+    const fromCall = recordOf(4);
+    assert(Object.keys(fromCall).length == 2 && fromCall["b"] == 5);
+    assert(countOf({ x: 1, y: 2, z: 3 }) == 3);
 
     // a Record of known keys stays an object of those fields
     const p: Record<"a" | "b", number> = { a: 5, b: 6 };

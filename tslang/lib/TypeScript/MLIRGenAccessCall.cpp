@@ -4223,12 +4223,21 @@ namespace mlirgen
     mlir::Type MLIRGenImpl::instantiatedDictionaryType(mlir::Location location, mlir::Type type, const GenContext &genContext)
     {
         auto classInfo = dictionaryClassInfoOf(type, genContext);
-        if (!classInfo || classInfo->typeParamsWithArgs.size() != 1)
+        auto genericClassInfo = classInfo ? getGenericClassInfoByFullName(OBJECT_DICTIONARY_CLASS_NAME) : GenericClassInfo::TypePtr();
+        if (!genericClassInfo || genericClassInfo->typeParams.size() != 1)
         {
             return type;
         }
 
-        auto valueType = std::get<1>(classInfo->typeParamsWithArgs.begin()->getValue());
+        // its value type, by the name of the class's type parameter: one instantiated inside a generic alias
+        // (`Record<string, T>`, the mapped type `{ [P in K]: T }`) carries the alias's type arguments as well
+        auto found = classInfo->typeParamsWithArgs.find(genericClassInfo->typeParams.front()->getName());
+        if (found == classInfo->typeParamsWithArgs.end())
+        {
+            return type;
+        }
+
+        auto valueType = std::get<1>(found->getValue());
         auto instantiated = getObjectDictionaryType(location, valueType, genContext);
         return instantiated ? instantiated : type;
     }
@@ -4295,6 +4304,11 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenDictionaryCall(mlir::Location location, mlir::Value dictionary, StringRef method,
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        // a dictionary whose type was found in an earlier pass (`f(): Record<string, T>`: the alias is read once) may
+        // have had its members generated nowhere: instantiated here, as for an entry read ("'ts.Call' op
+        // 'ObjectDictionary<!ts.number>.keys' does not reference a valid function" of `Object.keys(f())`)
+        instantiatedDictionaryType(location, dictionary.getType(), genContext);
+
         auto methodResult = mlirGenPropertyAccessExpression(location, dictionary, method, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(methodResult)
         return mlirGenCall(location, V(methodResult), operands, genContext);
