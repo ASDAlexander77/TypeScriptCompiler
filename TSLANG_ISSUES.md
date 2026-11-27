@@ -3946,10 +3946,13 @@ Tests `00tslang_issue_212.ts`, `00tslang_issue_212_dictionary.ts` (all models), 
 - A null `any` is undefined wherever it comes from: a class field of type `any` with no initializer (zeroed memory)
   crashed on typeof, print, `+` and the casts. Every read of a box (AnyLogic) takes a constant block of zero bytes
   for a null pointer, and its tag is undefined's descriptor. A number read out of an `any` holding undefined is NaN
-  and out of one holding null 0 (`<number>u` threw "Can't cast from any type"; an integer of undefined still does).
+  and out of one holding null 0 (`<number>u` threw "Can't cast from any type"); an integer of either is 0, as
+  JavaScript's integer conversion gives (`undefined | 0`).
   An `any` compared for equality with a number, string, boolean or bigint is compared as an `any`, whichever side it
   is on: `u == 0` threw, `"undefined" == u` and `u == false` were true, and `false == a` did not compile ("'llvm.icmp'
-  op requires all operands to have the same type"). Test `00any_null_is_undefined.ts` (all models).
+  op requires all operands to have the same type"). Loosely, null equals undefined: a value that may be null
+  (`object | null`, `C | null`, `string | null`) is `== undefined` when it is null - it was false whatever it held.
+  Test `00any_null_is_undefined.ts` (all models).
 - `00tslang_issue_205` failed to compile now and then (about 1 run in 100, more with the change above): "Can't
   resolve property 'cb' of type number", "has more parameters than another declaration of the same name". The
   scratch function evaluations run in (tempFuncOp) was erased at the end of the discovery pass and its handle kept;

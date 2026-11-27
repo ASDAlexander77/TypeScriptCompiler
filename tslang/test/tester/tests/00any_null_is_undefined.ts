@@ -40,6 +40,43 @@ function numbers() {
     const c = new C();
     const fromField = <number>c.x;
     assert(fromField != fromField, "a zeroed field is NaN");
+
+    // an integer has no NaN: 0, as `undefined | 0` is
+    const intOfUndefined = <s32>u;
+    assert(intOfUndefined == 0, "integer of undefined");
+    const intOfNull = <s32>z;
+    assert(intOfNull == 0, "integer of null");
+    const five: any = 5;
+    assert(<s32>five == 5, "integer of a number");
+}
+
+class K {
+    v = 1;
+}
+
+function looseUndefined(o: object | null): boolean {
+    return o == undefined;
+}
+
+function strictUndefined(o: object | null): boolean {
+    return o === undefined;
+}
+
+function classLooseUndefined(k: K | null): boolean {
+    return k == undefined;
+}
+
+function stringLooseUndefined(s: string | null): boolean {
+    return s != undefined;
+}
+
+// loosely, null equals undefined: a value that may be null is `== undefined` when it is (it was false whatever it held)
+function nullEqualsUndefined() {
+    assert(looseUndefined(null), "null object == undefined");
+    assert(!looseUndefined({ a: 1 }), "an object != undefined");
+    assert(!strictUndefined(null) && !strictUndefined({ a: 1 }), "strictly, null is not undefined");
+    assert(classLooseUndefined(null) && !classLooseUndefined(new K()), "class or null");
+    assert(!stringLooseUndefined(null) && stringLooseUndefined("s"), "string or null");
 }
 
 // `a == b` and `b == a`, both orders
@@ -79,5 +116,6 @@ function main() {
     fields();
     numbers();
     equality();
+    nullEqualsUndefined();
     print("done.");
 }
