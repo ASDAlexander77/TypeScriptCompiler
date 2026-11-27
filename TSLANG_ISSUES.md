@@ -4016,24 +4016,32 @@ Tests `00tslang_issue_214.ts` (all models).
   string]`) failed with nothing said ("failed statement"): each member is tested for and cast, and the shorter one
   could not be made the longer - its cast read past its end. The member the value holds is cast; one lacking an
   element of the target throws "Can't cast from [number, string] to [number, string, string]" there, as a cast from
-  an interface that does not hold the class throws (TypeScript reads the element as undefined). A tuple cast to one
-  with more elements (not of a union) is a compile error that says so (tsc refuses it too).
+  an interface that does not hold the class throws (TypeScript reads the element as undefined). Only for tuples of
+  elements: a union of object shapes cast to a shape one member lacks a field of stays the compile error it was. A
+  tuple cast to one with more elements (not of a union) is a compile error that says so (tsc refuses it too).
 - `x[1]` of such a union, "access expression is not applicable": an element at a constant index every member has,
   after the same element types, is read where the first member has it.
 - A member of Array of a union of tuples (`x.slice(1)`, `x.join(",")`, `forEach`, `map`) read the value as the first
   member, in every model: a `[0, "c"]` held by `[number, string] | [number, string, string]` joined "0,c,null". It is
-  the array of the member the value holds, of the union of all members' element types.
+  the array of the member the value holds, of the union of all members' element types. So is `[...x]` (it was "can't
+  estimate element of array").
 - Under -mm=own a tuple read from a variable made an array (`t.slice(1)`, `t.forEach(f)` of `t: [number, string]`)
   was refused ("an element ... would have two owners as an element of an array"): its strings are copied for the array,
   as a tuple cast to another copies them (211). Another element owning memory stays refused.
 - A union of object shapes or tuples cast to one of its members boxed the union in an `any` to read its tag, and
-  nothing gave the box back: 48 bytes a cast under rc and -mm=own. The union's own tag is read.
+  nothing gave the box back: about 40 bytes a cast under rc and -mm=own. The union's own tag is read.
 
 Not yet:
 - Under -mm=rc an array made for a call and given as `this` to a method (`([i, s] as (number | string)[]).slice(1)`,
-  `t.slice(1)` of a tuple) is never given back: about 100 bytes a call (before this batch).
-- Under -mm=own `a.join(",")` of a `(number | string)[]` leaks about 120 bytes a call (default library; before this
-  batch).
+  `t.slice(1)` of a tuple, `[...x]` of a union of tuples) is never given back: about 100 bytes a call (before this
+  batch, with the triage compiler of c2a88259d too).
+- Under -mm=own `a.join(",")` of a `(number | string)[]` leaks about 120 bytes a call (default library; the same with
+  the compiler of c2a88259d).
+- A union of tuples: `for (const e of x)` and `x[i]` of a run-time index are "access expression is not applicable",
+  and `x[1] = v` is refused ("can't assign to a field of a value ... that is not held anywhere").
+- Under -mm=own a dictionary written in a generic loop (`out[key(it)] = (out[k] ?? 0) + 1` for `it` of `items: T[]`):
+  "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
+  string]: number }` alike.
 - Still from 214: 128 under own (a capture by value for value types), own `Constructor<T>` of `...args: any[]`; from
   213: 56, 153, 159 under own; 131 (`Object.keys` of `object`, `Object.assign`, `defineProperty`, `create`), 108, 191's
   callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads

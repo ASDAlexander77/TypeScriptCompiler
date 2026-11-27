@@ -16608,7 +16608,27 @@ class MLIRGenImpl
             }
 
             return mlir::success();
-        }                           
+        }
+
+        // `[...x]` of a union of tuples: the array of the member it holds (mlirGenUnionOfTuplesAsArray). Taken as
+        // array-like, its elements were read at a run-time index, which a union of tuples has not got
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            auto arrayValue = mlirGenUnionOfTuplesAsArray(location, itemValue, unionType, genContext);
+            if (arrayValue.failed())
+            {
+                return mlir::failure();
+            }
+
+            if (arrayValue.value)
+            {
+                arrayInfo.isConst = false;
+                values.push_back({V(arrayValue), true, true});
+                accumulateArrayItemType(location, mlir::cast<mlir_ts::ArrayType>(arrayValue.value.getType()).getElementType(),
+                                        arrayInfo);
+                return mlir::success();
+            }
+        }
 
         // ArrayLike, do not put it before Tuple & Const Tuple, otherwise [xxx] will return wrong type
         if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))

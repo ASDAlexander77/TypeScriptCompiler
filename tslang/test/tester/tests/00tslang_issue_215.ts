@@ -123,6 +123,14 @@ function mapped(x: Two | Three) {
     return n;
 }
 
+function spreadLength(x: Two | Three) {
+    return [...x].length;
+}
+
+function lengthOf(x: Two | Three) {
+    return x.length;
+}
+
 function arrays() {
     let total = 0;
     for (let i = 0; i < 3; i++) {
@@ -130,11 +138,13 @@ function arrays() {
         const y: Two | Three = [i, "c" + i];
         total += count(x) + count(y);
         total += mapped(x) + mapped(y);
+        total += spreadLength(x) + spreadLength(y);
+        total += lengthOf(x) + lengthOf(y);
         const t: Two = [i, "d" + i];
         t.forEach((e) => { total++; });
     }
 
-    assert(total == 36);
+    assert(total == 66);
 }
 
 function tuples() {

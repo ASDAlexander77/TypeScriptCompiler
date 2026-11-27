@@ -5937,7 +5937,12 @@ namespace mlirgen
                     auto members = unionType.getTypes();
                     // the union's own tag, as the box of it had (which nothing gave back: 48 bytes a cast, rc and own)
                     auto tag = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), value);
+                    // (a tuple of elements only: a shape lacking a field stays the compile error mapTupleToFields gives)
                     auto targetTuple = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(type));
+                    if (targetTuple && llvm::any_of(targetTuple.getFields(), [](auto &field) { return !!field.id; }))
+                    {
+                        targetTuple = mlir_ts::TupleType();
+                    }
                     std::function<ValueOrLogicalResult(size_t)> castOf = [&](size_t index) -> ValueOrLogicalResult {
                         auto asMember = [&]() -> ValueOrLogicalResult {
                             // a member the target can't be made of (`<[number, string, string]>x` of `[number, string] |
