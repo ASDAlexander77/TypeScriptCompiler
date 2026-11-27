@@ -20935,7 +20935,8 @@ class MLIRGenImpl
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
 
     mlir::Value absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext);
-    bool tupleLacksField(mlir_ts::TupleType srcTupleType, ArrayRef<mlir_ts::FieldInfo> fields);
+    bool hasElementFill(mlir::Type type);
+    mlir::Value elementFillValue(mlir::Location location, mlir::Type type, const GenContext &genContext);
     mlir::Type unionTuplesCommonPrefixMember(mlir_ts::UnionType unionType, mlir::Value index);
 
     // TODO: needs to unified with selectFieldsValues
@@ -21113,6 +21114,9 @@ class MLIRGenImpl
     // the union casts whose helper is being made: the same one met again in it (its `return t` not narrowed, a
     // member that failed) is an error, not a helper that instantiates itself until the stack overflows
     llvm::DenseSet<std::pair<mlir::Type, mlir::Type>> castsFromUnionInProgress;
+    // a member of a union of tuples cast to a longer member (castFromUnion): mapTupleToFields fills each element it
+    // lacks (elementFillValue) instead of refusing it
+    bool fillAbsentTupleElements = false;
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 

@@ -4014,11 +4014,15 @@ Tests `00tslang_issue_214.ts` (all models).
   mapped type `{ [P in K]: T }` of K = string (the default library's Record). Without the dictionary class, as before.
 - A union of tuples cast to one of them (`<[number, string, string]>x` of `[number, string] | [number, string,
   string]`) failed with nothing said ("failed statement"): each member is tested for and cast, and the shorter one
-  could not be made the longer - its cast read past its end. The member the value holds is cast; one lacking an
-  element of the target throws "Can't cast from [number, string] to [number, string, string]" there, as a cast from
-  an interface that does not hold the class throws (TypeScript reads the element as undefined). Only for tuples of
-  elements: a union of object shapes cast to a shape one member lacks a field of stays the compile error it was. A
-  tuple cast to one with more elements (not of a union) is a compile error that says so (tsc refuses it too).
+  could not be made the longer - its cast read past its end. The member the value holds is cast, and each element a
+  shorter member lacks is filled (USER RULING 2026-11-27; TypeScript reads undefined there): "" for a string under
+  strict null checks and null without them, 0 for a number, false for a boolean, undefined where the type admits it
+  (`T | undefined`, `T?`, `any`), and null for a class, an interface or an array without strict null checks. One whose
+  type has nothing to fill it with - an object literal's, which is a value, or a class's, an interface's or an array's
+  under strict null checks - makes the cast a compile error ("can't cast '[number]' to '[number, number[]]': it has no
+  element 1 of 'number[]', and nothing fills it under strict null checks"). Only for tuples of elements: a union of
+  object shapes cast to a shape one member lacks a field of stays the compile error it was. A tuple cast to one with
+  more elements (not of a union) is a compile error that says so (tsc refuses it too).
 - `x[1]` of such a union, "access expression is not applicable": an element at a constant index every member has,
   after the same element types, is read where the first member has it.
 - A member of Array of a union of tuples (`x.slice(1)`, `x.join(",")`, `forEach`, `map`) read the value as the first
@@ -4052,6 +4056,10 @@ Tests `00tslang_issue_214.ts` (all models).
   `get` lends. Each of those probes is flat under own, with the default library built by this compiler.
 
 Not yet:
+- Under -mm=own a union of tuples cast to a longer member is read where it is cast or held in a local (`const l =
+  <Long>x`), but a function can't return it whole (`return <Long>x`): "a value is merged from several branches". Each
+  branch borrows `x` - the member that is the target, or the shorter one filled - and own proves a merge of new values,
+  not a merge of borrows of one value.
 - Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
   "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
   string]: number }` alike. The dictionary's `set` is known only to drop strings held anywhere (its drop facts are
@@ -4062,4 +4070,5 @@ Not yet:
   callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads
   of a declared function (136) and of a `declare class` constructor (140).
 
-Tests `00tslang_issue_215.ts` (all models), `test-{rc,own}-owned-declarations` (the IR of `@owned` and `@lends` calls).
+Tests `00tslang_issue_215.ts` (all models), `test-{rc,own}-owned-declarations` (the IR of `@owned` and `@lends` calls),
+`tuple_union_cast_fill_error.ts`, `tuple_union_cast_fill_nonstrict.ts` (`--strict-null-checks=false`, all models).

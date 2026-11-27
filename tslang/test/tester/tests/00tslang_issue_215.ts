@@ -1,8 +1,8 @@
 // TSLANG 215: `Record<string, T>` is `{ [key: string]: T }`, a dictionary of T (it was an object with no fields: the
 // literal given to it lost its fields, and Object.keys gave none), both as the built-in Record and as a mapped type
-// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them, indexed (at a constant or a run-time
-// index), iterated, and read as an array (`slice`, `forEach`, `[...x]`: of the member it holds; under -mm=own its
-// strings copied).
+// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them (a shorter member's missing elements filled:
+// USER RULING 2026-11-27), indexed (at a constant or a run-time index), iterated, and read as an array (`slice`,
+// `forEach`, `[...x]`: of the member it holds; under -mm=own its strings copied).
 // The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name.
 @dictionary
 class ObjectDictionary<T = any> {
@@ -185,19 +185,23 @@ function tuples() {
         assert((<Two>y)[1] == "c" + i);
         total += y.length;
 
-        // a false assertion: the value is no Three
-        let caught = false;
-        try {
-            third(y);
-        } catch (e) {
-            caught = true;
-        }
+        // the value is no Three: the element it lacks is filled - "" for a string under strict null checks
+        assert(third(y) == "");
 
-        assert(caught);
+        // ...0 for a number, false for a boolean, undefined where the type admits it (cast where it is read: under
+        // -mm=own the cast is a merge of the members' branches, which a function can't return whole yet)
+        const z: Two | Long = [i, "c" + i];
+        const l = <Long>z;
+        assert(l[0] == i && l[1] == "c" + i && l[2] == 0 && l[3] == false && l[4] == "" && l[5] === undefined);
+        const w: Two | Long = [i, "e" + i, 7, true, "f" + i, 9];
+        const m = <Long>w;
+        assert(m[2] == 7 && m[3] && m[4] == "f" + i && m[5] == 9);
     }
 
     assert(total == 15);
 }
+
+type Long = [number, string, number, boolean, string, number | undefined];
 
 function main() {
     tuples();

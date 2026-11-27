@@ -2411,6 +2411,20 @@ add_test(NAME test-compile-own-tuple-as-array-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_tuple_as_array_error.ts")
 set_tests_properties(test-compile-own-tuple-as-array-error PROPERTIES PASS_REGULAR_EXPRESSION "an element of '\\[number, number\\[\\]\\]' would have two owners as an element of an array"
                                                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A union of tuples cast to a longer member fills what the shorter one lacks (TSLANG 215, USER RULING 2026-11-27); an
+# array under strict null checks has nothing to fill it with, a compile error. Without them it, a string and a class are
+# null: run there by tslang itself, as test-runner has no switch for strict null checks
+add_test(NAME test-compile-tuple-union-cast-fill-error
+         COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_union_cast_fill_error.ts")
+set_tests_properties(test-compile-tuple-union-cast-fill-error PROPERTIES PASS_REGULAR_EXPRESSION "can't cast '\\[number, string\\]' to '\\[number, string, number\\[\\]\\]': it has no element 2 of 'number\\[\\]', and nothing fills it under strict null checks"
+                                                                       FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+foreach(fill_mm gc rc none own)
+    add_test(NAME test-compile-tuple-union-cast-fill-nonstrict-${fill_mm}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib --strict-null-checks=false -mm=${fill_mm}
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/tuple_union_cast_fill_nonstrict.ts")
+    set_tests_properties(test-compile-tuple-union-cast-fill-nonstrict-${fill_mm} PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Null"
+                                                                                       FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
 # Mixins (a generic function given a class) under every memory model
 foreach(mixin_mm gc rc none own)
     tslang_add_test(NAME test-jit-00-mixins-${mixin_mm} COMMAND test-runner -jit -mm=${mixin_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixins.ts")
