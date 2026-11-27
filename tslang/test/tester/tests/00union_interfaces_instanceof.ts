@@ -1,7 +1,7 @@
 // `v instanceof A` of a union of interfaces asks the interface the union holds (it said false), the class it
 // narrows to is the object that interface holds (it read the interface's vtable as the object), and `<IB>v` is
-// the interface it holds (it crashed the compiler). Not under -mm=own: an interface narrowed to a class is
-// refused there ("kept here") for a plain interface too.
+// the interface it holds (it crashed the compiler). Under -mm=own the class it narrows to is a borrow, as the
+// interface is (it was taken for a reference of its own: "kept here", TSLANG 164).
 interface IA { a: number; }
 interface IB { b: string; }
 class A implements IA { a: number = 1; }

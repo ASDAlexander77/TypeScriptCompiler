@@ -3847,3 +3847,63 @@ Not yet:
   constructor (140).
 
 Tests `00tslang_issue_211.ts` (all models), `own_grow_past_end_check.ts` (-mm=own).
+
+212. Leftovers of 211's triage (2026-11-27). Fixed:
+- 132: a generic class given for a constructor type (`fruitFactory1(Banana)` of `new (...args: any[]) => TFruit`,
+  `class Banana<T extends string>`): "Can't find class Banana". Its type arguments come from the constructor type's
+  parameters, as `new Banana(...)`'s come from its arguments (171), and a rest among them gives its element type to each
+  constructor parameter the others do not reach, the constructor's own rest included: `any` makes T `any` (TypeScript's
+  `Banana<any>`), `...args: "foo"[]` makes it a string. The tsc test contextualSignatureInstantiation4 compiles.
+- 164: under -mm=own an interface narrowed to a class by `instanceof` (`if (v instanceof A) return v.a` of `v: IA` or
+  `IA | IB`): "'v' is a parameter, kept here". The narrowed value is the object the interface holds, a borrow as the
+  interface is; the cast also had a way for what is not an A (a new A of the interface's fields), never taken there,
+  which made the result a reference of its own. Not for a generic class, which `instanceof` answers for every G<T>.
+  00union_interfaces_instanceof.ts runs under -mm=own too.
+- `v instanceof G` of a generic class narrowed to the generic itself, no type a value has: an interface `v` crashed the
+  compiler, a union "Can't resolve property". It narrows a union to its members that are a G<T> (or derive from one),
+  else not at all.
+- 152: under -mm=own a record's strings spread into a dictionary (`const d: { [k: string]: string } = { ...rec }`) or
+  given to `Object.assign(d, rec)`: "a value that borrows a field cannot be stored". Each string read out of the record
+  is copied (strings are values). A literal given to Object.assign goes into a local of its own (ownedLiteralArgument),
+  which gives back what it holds: left in a slot nothing owned, it leaked once its strings were copied.
+- 144: under -mm=own a `const` a function before it reads, holding a closure or an object (`const f = () => g(); const g
+  = () => 10;`): "'g' is captured by a closure, but -mm=own cannot tell who owns its value here". Made one of the
+  function's variables (declared with no value, TSLANG 172/174), it is marked an owned local before anything captures
+  it, and its declaration gives it the value it owns. One whose value is a borrow (`const q = p`, `const g = this.c`)
+  stays refused, as before ("kept here", "borrows 'this.c'").
+- 191: an array of a union said to be an array of members of it (`x.slice(1) as readonly string[]` of `[number,
+  string] | [number, string, string]`, tsc sliceResultCast): "cast from array type ... is not supported" with no
+  location, at lowering. It is a new array, each element read as the member it is said to be (castArrayElementwise).
+- 139: a class given to an interface of a construct signature only (`interface PtCtor { new (x: number): Pt }`,
+  `make(P)`; `const c: Constructor<A> = A`): "the class 'P' itself can't be given as interface" (TSLANG 204's clear
+  error for an internal one). It is made over an object of one field, `new`, a function calling the class's
+  constructor and returning its object as the signature's result. An interface with other members as well is still
+  refused (class_itself_interface_error.ts). Not under -mm=own, which refuses a construct signature's result, through a
+  type literal (`{ new (x: number): Pt }`) as well: "a value takes a second reference".
+- A leak under -mm=rc of the result of every call through a function value (a callback, an object literal's method,
+  an interface method an object literal's function field backs), in every program linking the default library since
+  DefaultLib #108: its `Temporal.Now` functions lacked `@owned`, the only heap results there the compiler could not
+  classify, and one is enough to turn off the rule that such a call hands its result over (DefaultLib #122). A call of
+  a function an object literal holds (`o.make(i)`, the literal a constant of the functions' names) names its callee
+  now, so its result is classified whatever else the program links, under -mm=own too (it leaked there).
+
+Not yet:
+- Under -mm=own an interface method an object literal's function field backs (`const m: Mk = { make: (x) => new
+  P(x) }; m.make(i)`) leaks its result: the thunk calling the field cannot know whose result it is, and -mm=own never
+  takes a call through a value for one handing its result over.
+- Under -mm=rc `new c(i)` of a type literal's construct signature (`c: { new (x: number): Pt }`) given a class crashes
+  at run time (before this batch too).
+- Under -mm=own a tuple literal holding a new string given to a union of tuples (`const x: [number, string] | [number,
+  string, string] = [i, "a" + i, "b"]`): "a value that borrows a field cannot be stored"; `x.slice(1)` of such a
+  parameter: "an element ... would have two owners".
+- Under -mm=own `make(L)` of `class L<T> { constructor(...items: T[]) }` for `new (...args: number[]) => X`: "'items'
+  is a parameter, kept here" (gc runs it); and a `let` captured by a closure and assigned after (`let g = () => 10;
+  const f = () => g(); g = () => 11;`): "takes a second reference".
+- The `any` dictionary of a spread record (`const d: { [k: string]: any } = { ...rec }`) leaks under -mm=own (before
+  this batch too).
+- Still from the triage: 117, 131 (Object.keys of `object`, Object.defineProperty, Object.create), 128, 56, 140 `await`
+  in `finally`, 108, 191's callable interfaces naming each other, recursive conditional types, `Symbol` as a value, own
+  153 and 159; design questions without a ruling: overloads of a declared function (136) and class constructor (140).
+
+Tests `00tslang_issue_212.ts`, `00tslang_issue_212_dictionary.ts` (all models), `00tslang_issue_212_ctor_interface.ts`
+(gc, rc, none); `00union_interfaces_instanceof.ts` under -mm=own; `class_itself_interface_error.ts` changed.

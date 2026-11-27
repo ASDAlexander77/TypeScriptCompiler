@@ -589,9 +589,22 @@ namespace mlirgen
                 {
                     if (auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue()))
                     {
+                        // `new (a: string, ...args: any[]) => T`: the rest's element type, given for each parameter
+                        // after `a`
+                        auto inputs = tempConstructType.getInputs();
+                        mlir::Type restArgumentType;
+                        if (tempConstructType.isVarArg() && !inputs.empty())
+                        {
+                            if (auto restArrayType = dyn_cast<mlir_ts::ArrayType>(inputs.back()))
+                            {
+                                restArgumentType = restArrayType.getElementType();
+                                inputs = inputs.drop_back();
+                            }
+                        }
+
                         NodeArray<Expression> noArguments;
                         if (auto specClassType = inferClassTypeFromConstructorArguments(
-                                location, genericClassInfo, noArguments, genContext, tempConstructType.getInputs()))
+                                location, genericClassInfo, noArguments, genContext, inputs, restArgumentType))
                         {
                             instanceType = specClassType;
                         }
@@ -2126,10 +2139,12 @@ namespace mlirgen
                                                                           GenericClassInfo::TypePtr genericClassInfo,
                                                                           NodeArray<Expression> arguments,
                                                                           const GenContext &genContext,
-                                                                          ArrayRef<mlir::Type> knownArgumentTypes)
+                                                                          ArrayRef<mlir::Type> knownArgumentTypes,
+                                                                          mlir::Type restArgumentType)
     {
         // the arguments' count: of the call, or of the types given for them (a constructor type's parameters,
-        // `make(Box, 4)` of `make<T>(c: new (n: number) => T, n)`)
+        // `make(Box, 4)` of `make<T>(c: new (n: number) => T, n)`); with a rest among those (`new (a: string,
+        // ...args: any[]) => T`), its element type is given for each parameter after the others, so this many at least
         auto argumentCount = arguments.empty() ? knownArgumentTypes.size() : arguments.size();
         SmallVector<ConstructorDeclaration> constructorDeclarations;
         for (auto member : genericClassInfo->classDeclaration->members)
@@ -2147,7 +2162,7 @@ namespace mlirgen
             return mlir_ts::ClassType();
         }
 
-        if (argumentCount == 0
+        if (argumentCount == 0 && !restArgumentType
             && (!constructorDeclarations.empty() || !genericClassInfo->classDeclaration->heritageClauses.empty()))
         {
             return mlir_ts::ClassType();
@@ -2246,13 +2261,35 @@ namespace mlirgen
                 }
             }
 
-            if (!hasSpread && (argumentCount < required || (!hasRest && argumentCount > parameters.size())))
+            // a constructor type's rest (`new (...args: any[]) => T` given `Banana<T>` of `(a: string, property: T)`):
+            // its element type is the argument for each parameter the others do not reach - `any` makes T `any`, as
+            // TypeScript infers it (`Banana<any>`), `...args: "foo"[]` makes it a string (TSLANG 132)
+            SmallVector<mlir::Type> constructorArgumentTypes(argumentTypes.begin(), argumentTypes.end());
+            auto constructorArgumentCount = argumentCount;
+            if (restArgumentType)
+            {
+                auto fixedParameters = hasRest ? parameters.size() - 1 : parameters.size();
+                while (constructorArgumentTypes.size() < fixedParameters)
+                {
+                    constructorArgumentTypes.push_back(restArgumentType);
+                }
+
+                // ...and for its own rest (`constructor(...items: T[])` of `new (...args: number[]) => L<T>`: T is number)
+                if (hasRest)
+                {
+                    constructorArgumentTypes.push_back(restArgumentType);
+                }
+
+                constructorArgumentCount = std::max<size_t>(argumentCount, constructorArgumentTypes.size());
+            }
+
+            if (!hasSpread && (constructorArgumentCount < required || (!hasRest && constructorArgumentCount > parameters.size())))
             {
                 return {};
             }
 
             StringMap<mlir::Type> inferredTypes;
-            for (auto [index, argumentType] : enumerate(argumentTypes))
+            for (auto [index, argumentType] : enumerate(constructorArgumentTypes))
             {
                 if (index >= parameters.size() && !hasRest)
                 {
