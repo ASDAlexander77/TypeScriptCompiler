@@ -2651,6 +2651,12 @@ foreach(issue217_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_217-${issue217_mm} COMMAND test-runner -jit -mm=${issue217_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_217.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_217-${issue217_mm} COMMAND test-runner -mm=${issue217_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_217.ts")
 endforeach()
+# TSLANG 218: a generic function's rest `any[]` packed twice (`new c(...a)` threw), own's calls through a function
+# value kept their string results, an integer `number` written by the quick path
+foreach(issue218_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_218-${issue218_mm} COMMAND test-runner -jit -mm=${issue218_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_218.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_218-${issue218_mm} COMMAND test-runner -mm=${issue218_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_218.ts")
+endforeach()
 # ...and what stays refused under own
 add_test(NAME test-compile-own-let-borrow-dropped-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_let_borrow_dropped_error.ts")
