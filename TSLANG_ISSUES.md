@@ -4047,7 +4047,9 @@ Tests `00tslang_issue_214.ts` (all models).
   the caller's (USER DECISION 2026-11-27, reversing 2026-11-18's rc only: what rc reads, own reads the same way, the two
   models being alike). It does now, except where a declaration says it lends its result (`@lends`, or a result type
   `this`: `JsonValue.get`, `ArrayBuffer.__bytes`), which own goes by - under rc that result is the caller's all the same.
-  Each of those probes is flat under own.
+  Own's inference takes such a result for the caller's own too (OWN_FRESH_RESULT): a new value, not a part of what the
+  call was given - else `value.get("k").asString()` read the string's release, after `value`'s, as a use of the borrow
+  `get` lends. Each of those probes is flat under own, with the default library built by this compiler.
 
 Not yet:
 - Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
