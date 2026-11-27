@@ -1870,6 +1870,7 @@ namespace mlirgen
                 && (!genContext.funcOp || genContext.rootFunctionConst && genContext.funcOp == genContext.rootStatementsFuncOp))
             {
                 itemVarClass.type = VariableType::Let;
+                itemVarClass.exportedConst = true;
             }
 
             // a `var` in a function belongs to the function (MDN `var`): declared before the body, assigned here

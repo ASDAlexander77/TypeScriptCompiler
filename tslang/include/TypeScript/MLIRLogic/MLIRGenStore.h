@@ -118,6 +118,9 @@ struct VariableClass
     StringRef dllName;
     // a module `const` the root's code stores once (WRITTEN_ONCE_GLOBAL_ATTR_NAME)
     bool writtenOnce = false;
+    // an exported module `const`, stored as a `let` (a global other modules read): never assigned, so it keeps the
+    // string literal type it is given (`export const KA = "a"` is `"a"`, as in TypeScript)
+    bool exportedConst = false;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 

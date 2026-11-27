@@ -3667,6 +3667,7 @@ namespace mlirgen
         mlir::SmallVector<mlir::Type> typesForUnion;
         auto allTupleTypesConst = true;
         auto unionTypes = false;
+        auto anyWritten = false;
         for (auto typeItem : intersectionTypeNode->types)
         {
             // an interface of one call signature is that signature's function type (callSignatureOnlyType), but with
@@ -3706,6 +3707,23 @@ namespace mlirgen
             }
 
             types.push_back(type);
+            anyWritten |= typeItem == SyntaxKind::AnyKeyword;
+        }
+
+        // `X & any` is `any` (`never & any` stays `never`), and `X & unknown` is X, as in TypeScript: it was `never` ("'Never'
+        // can't be used as parameter type", TSLANG 205). Only `any` written here: a type parameter standing for `any` while
+        // a call's arguments are inferred (`T & ((arg: string) => any)`) leaves the other members to infer from
+        if (llvm::none_of(types, [](mlir::Type type) { return isa<mlir_ts::NeverType>(type); }))
+        {
+            if (anyWritten)
+            {
+                return getAnyType();
+            }
+
+            if (llvm::any_of(types, [](mlir::Type type) { return !isa<mlir_ts::UnknownType>(type); }))
+            {
+                llvm::erase_if(types, [](mlir::Type type) { return isa<mlir_ts::UnknownType>(type); });
+            }
         }
 
         if (types.size() == 0)

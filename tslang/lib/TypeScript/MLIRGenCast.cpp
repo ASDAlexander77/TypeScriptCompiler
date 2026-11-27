@@ -409,8 +409,60 @@ namespace mlirgen
 
         SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
         fieldsForTuple.append(fields.begin(), fields.end());
+
+        // -mm=own: a string read out of the source's fields (`const p: { n: number; name: string } = u`, where `u`'s
+        // `n` is an s32) is the source's, and the new tuple would hold a borrow of it: "a value that borrows a field
+        // cannot be stored". Strings are values: the new tuple takes a copy of each (TSLANG 211), is built in a slot, as an
+        // own tuple literal of new values is (createTupleInSlot), and goes into a local of its own (ownedTemporaryLocal),
+        // so it can be stored and moved, or only read (`take(u)` of a callee that borrows it). Another field that holds a
+        // block - an object, an array - cannot be copied, and stays a borrow, refused where it is stored.
+        // (not of a literal being made - a constant, a tuple just made (`<Entry>[key, value]`), or one built in its slot
+        // that only now takes its type, `[{ a: "x", c: "" }, { a: "y", c: 0 }]` re-made as the common record: its fields
+        // are its own, given on as they were. A named `const` built in its slot is read with OWNED_RESULT_NAMED: a
+        // variable, whose fields are borrowed)
+        auto sourceLoad = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto sourceSlot = sourceLoad ? sourceLoad.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto literalSource = value.getDefiningOp<mlir_ts::ConstantOp>() || value.getDefiningOp<mlir_ts::CreateTupleOp>() ||
+                             (sourceSlot && !sourceSlot->hasAttr(OWNED_LOCAL_ATTR_NAME) && sourceSlot.getInitializer() &&
+                              sourceSlot.getInitializer().getDefiningOp<mlir_ts::ConstantOp>() &&
+                              !sourceLoad->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME));
+        if (compileOptions.memoryModel == MemoryModelOwn && !literalSource && canMakeOwnedTemporaryLocal(genContext))
+        {
+            // a string read out of the source is copied; every other field that holds a block has to be a new value or
+            // constant data, or the local would release what the source still holds: the tuple stays a borrow then
+            auto isStringRead = [](mlir::Value value) {
+                return isa<mlir_ts::StringType>(value.getType())
+                    && isa_and_nonnull<mlir_ts::LoadOp, mlir_ts::ExtractPropertyOp>(value.getDefiningOp());
+            };
+            auto ownable = llvm::all_of(values, [&](mlir::Value value) {
+                return isStringRead(value) || !mth.ownsHeapMemory(location, value.getType())
+                    || own_facts::isConstantData(value)
+                    || (value.getDefiningOp() && own_facts::isFresh(value) && !own_facts::isLiteral(value.getDefiningOp())
+                        && !mth.isAnyFunctionType(value.getType()));
+            });
+
+            auto copied = false;
+            for (auto &value : values)
+            {
+                if (ownable && isStringRead(value))
+                {
+                    auto copy = builder.create<mlir_ts::StringCopyOp>(location, value.getType(), value);
+                    copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                    value = copy;
+                    copied = true;
+                }
+            }
+
+            if (copied)
+            {
+                auto built = createTupleInSlot(location, fieldsForTuple, values, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(built)
+                return ownedTemporaryLocal(location, V(built), genContext);
+            }
+        }
+
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
-    }    
+    }
 
     ValueOrLogicalResult MLIRGenImpl::NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
         ArrayRef<mlir_ts::FieldInfo> fields, ArrayRef<mlir::Value> values, const GenContext &genContext)
@@ -5485,8 +5537,8 @@ namespace mlirgen
             }
         }
 
-        // (not under -mm=own: a value merged from the branches is a second reference it can't classify yet, and the
-        // plain read is refused with it)
+        // (not under -mm=own: each layout is a cast of the `any` of its own, and -mm=own takes a named `any` cast to a
+        // tuple more than once for a second reference of its box - `const c = <T>a; const d = <T>a` is refused as well)
         if (numberFields.empty() || numberFields.size() > 3 || compileOptions.memoryModel == MemoryModelOwn)
         {
             return castAnyToTuple(location, type, value, genContext);
