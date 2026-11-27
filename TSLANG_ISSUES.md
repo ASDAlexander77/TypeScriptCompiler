@@ -3758,8 +3758,7 @@ Tests `00tslang_issue_207.ts` (all models) and `00tslang_issue_207_any.ts` (gc, 
 
 Not yet:
 - Under -mm=own, a value moved in a `try` body that other statements of the body can throw before
-  (`try { f(); const t = ["b" + i, i]; k.keepOne(t); g(); }`): "moved here on some paths only". The unwind leg reached
-  before the local is given its value is not known to find it empty. One statement per `try`, or a loop in it, works.
+  (`try { f(); const t = ["b" + i, i]; k.keepOne(t); g(); }`): "moved here on some paths only". Fixed in 210.
 - Under -mm=own, a callee that keeps a parameter and throws before keeping it leaked the parameter: fixed in 209.
 
 Tests `00tslang_issue_208.ts` (all models).
@@ -3779,3 +3778,14 @@ and for a call that throws (`check(c.n);`, `checkC(c);`). Fixed:
 Each probe now stays at about 5 MB.
 
 Tests `00tslang_issue_209.ts` (all models).
+
+210. Under -mm=own, a value moved into a keeping call in a `try` body with statements that may throw before and after
+it (`try { mayFail(i); const t = ["b" + i, i]; k.keepOne(t); mayFail(i + 1); }`, and a literal given straight to the
+call): "moved here on some paths only". The `try`'s cleanup releases the local, and is reached from before the move
+and after it. The local's slot is made in front of the `try` and starts as null, so the ways before its store find
+nothing; the slot is now emptied right before the keeping call, the value already read (clearsOnUnwind), so the ways
+past the call find nothing either. A call that keeps its argument has taken it whether it returns or throws (its own
+unwind gives it back, 209); the empty slot was refused for a call taker before. 3M turns throwing before, between and
+after the moves stay at about 6 MB.
+
+Tests `00tslang_issue_210.ts` (all models).
