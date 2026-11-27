@@ -510,8 +510,10 @@
 // it returns a reference its caller owns (§9.24), as an imported `export`ed function does. An
 // unmarked declaration may be C, or TypeScript that hands back a pointer into a buffer
 // (`convertNumber`): nothing can be said of its result, and its callers keep retaining. Said on a
-// function with a body it is ignored - a body is read, not trusted. Only rc reads it: -mm=own goes by
-// its declared facts (`@lends`, `@record`). A unit attribute on the FuncOp.
+// function with a body it is ignored - a body is read, not trusted. rc and own read it alike (own: its
+// result is the caller's to own, as a call of a function here that returns a new value is), except
+// where a declaration says it lends its result (`@lends`, or a result type `this`): that is own's to
+// go by. A unit attribute on the FuncOp.
 // An array literal with a spread of run-time length (`[...xs]`, and the rest argument `f(...xs)` packs)
 // is filled through a slot of its own, and what MLIRGen hands on is a read of that slot: this unit
 // attribute on the `ts.Load` says it is the new array, born uncounted as a `ts.CreateArray` is. Under rc

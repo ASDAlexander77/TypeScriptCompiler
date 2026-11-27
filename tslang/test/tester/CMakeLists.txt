@@ -6962,15 +6962,19 @@ add_test(NAME test-rc-conditional-named-const-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
-# `@owned` on a declared function, class or namespace: its result is the caller's under rc, so a module
-# whose only body-less functions say it still consumes the results of calls through function values
-# (closed world). The default library's lib.d.ts says it; without it every program with the library
-# leaked each such result. No run can see the leak, so the IR is read.
-add_test(NAME test-rc-owned-declarations
-         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
-                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
-                 -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
+# `@owned` on a declared function, class or namespace: its result is the caller's under rc and own, so a
+# call of one gives back what it is not given to keep, and under rc a module whose only body-less
+# functions say it still consumes the results of calls through function values (closed world). Under
+# own a `@lends` declaration's result stays a borrow. The default library's lib.d.ts says it; without it
+# every program with the library leaked each such result (under own, even one held in a local). No run
+# can see the leak, so the IR is read.
+foreach(mm rc own)
+    add_test(NAME test-${mm}-owned-declarations
+             COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang> -DMM=${mm}
+                     "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/owned-declarations/owned_declarations.ts"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/owned-declarations.cmake")
+endforeach()
 # A spread of run-time length given to a rest parameter, `cat(...parts)`, packs a new array: under rc
 # the call holds it and gives it back after, as for `cat(a, b)` - the IR is read, as no run shows the
 # leak (Array.join's `"".concat(...parts)` lost one per call). It runs in every model.

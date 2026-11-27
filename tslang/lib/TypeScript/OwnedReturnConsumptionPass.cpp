@@ -98,7 +98,8 @@ class OwnedReturnConsumptionPass
             }
 
             auto name = funcOp.getName();
-            auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted());
+            auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted(),
+                                                   compileOptions.memoryModel == MemoryModelOwn);
             if (classified)
             {
                 returnsOwned.insert(name);
@@ -201,8 +202,9 @@ class OwnedReturnConsumptionPass
 
         // The same for the functions a class given to a construct signature is called through (`new c(i)` of `c: { new
         // (x: number): Pt }`): MLIRGen makes every one (generateSynthMethodToCallNewCtor) - an object literal can't
-        // have a construct signature - and each returns the object it makes. Under -mm=own, where library
-        // declarations are never classified, the call's result was a borrow, and returning it "a second reference".
+        // have a construct signature - and each returns the object it makes. Under -mm=own, where a library
+        // declaration that lends its result is never classified, the call's result was a borrow, and returning it
+        // "a second reference".
         auto everyNewCtorReturnsOwned = true;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             if (funcOp.getName().contains(NEW_CTOR_METHOD_NAME) && !returnsOwned.contains(funcOp.getName()))
@@ -5148,16 +5150,21 @@ class OwnedReturnConsumptionPass
     // and moving it into the object is what lets this say yes without asking which model the
     // other module was built under - a question a static link cannot answer, because the import
     // is resolved by re-parsing source before any artifact of it exists.
-    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
+    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted, bool own)
     {
-        // ...or, under rc, a declaration that says it is one: `@owned`
+        // ...or, under rc and own, a declaration that says it is one: `@owned`
         // (DECLARED_OWNED_RESULT_ATTR_NAME), which the default library's lib.d.ts says of what lib.ts
         // defines. Without it every library declaration was unclassified, so closed world never held
         // in a program that has the library - every call through a function value, and every direct
-        // library call, kept its result's +1 for good. -mm=own goes by its own declared facts instead
-        // (`@lends`: `JsonValue.get` lends what it returns, which counted as fresh here was released
-        // under the borrow), and gc and none have no count to give back.
-        auto declaredOwned = refCounted && funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME);
+        // library call, kept its result's +1 for good; under own, where lib.ts is compiled under own
+        // too, every library result was a borrow no one gave back, held in a local or not
+        // (`s.toUpperCase()`, `JSON.parse(t)`). A declaration that says it lends its result
+        // (`@lends`, or a result type `this`: `JsonValue.get`, `ArrayBuffer.__bytes`) is one own
+        // must not give back - it says more than `@owned` of the class it is in. Under rc it is the
+        // caller's all the same: rc's body retains what it lends for its caller. gc and none have no
+        // count to give back.
+        auto declaredOwned = funcOp->hasAttr(DECLARED_OWNED_RESULT_ATTR_NAME) &&
+                             (refCounted || (own && !funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME)));
         if (!funcOp->hasAttr("export") && !declaredOwned)
         {
             return false;
@@ -5176,11 +5183,11 @@ class OwnedReturnConsumptionPass
 
     // body, a return whose retain is not in the same block, a return with no retain at all. A
     // false "no" costs a leak; a false "yes" frees a value the callee never retained.
-    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
+    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted, bool own)
     {
         if (funcOp.isExternal() || funcOp.getBody().empty())
         {
-            return importedFunctionReturnsOwned(mth, funcOp, refCounted);
+            return importedFunctionReturnsOwned(mth, funcOp, refCounted, own);
         }
 
         // A generator's `next` - the function the yields are in - hands its caller a `{ value,

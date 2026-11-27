@@ -4041,12 +4041,15 @@ Tests `00tslang_issue_214.ts` (all models).
   was never given back: about 100 bytes a call (with the compiler of c2a88259d too). It is given back as a literal
   given to a call is (ownNewArrayArguments), with copies of the text pushed into it; one holding an object read from
   elsewhere stays as it was.
+- Under -mm=own no result of a default-library function was ever given back, held in a local or not
+  (`s.toUpperCase()` 16 bytes a call, `s.split("b")` 107, `(1.5).toFixed(2)` 64, `JSON.parse(t)` about 800; with the
+  compiler of c2a88259d too; rc freed them all): own did not read `@owned`, the declaration's word that its result is
+  the caller's (USER DECISION 2026-11-27, reversing 2026-11-18's rc only: what rc reads, own reads the same way, the two
+  models being alike). It does now, except where a declaration says it lends its result (`@lends`, or a result type
+  `this`: `JsonValue.get`, `ArrayBuffer.__bytes`), which own goes by - under rc that result is the caller's all the same.
+  Each of those probes is flat under own.
 
 Not yet:
-- Under -mm=own the result of a default-library string function used as a temporary (`"".concat(s, "e").length`,
-  `s.toUpperCase().length`) is never given back: about 32 bytes a call (with the compiler of c2a88259d too). The
-  library declares `__String` `@owned`, which rc trusts and own does not (USER DECISION 2026-11-18: JsonValue.get
-  lends); trusting it under own for string results is a decision to make.
 - Under -mm=own a dictionary written in a loop over an array it is not (`for (const it of items) out[it] = 1`):
   "'it' borrows an element but is used here after it may be released", of `Record<string, number>` and of `{ [k:
   string]: number }` alike. The dictionary's `set` is known only to drop strings held anywhere (its drop facts are
@@ -4057,4 +4060,4 @@ Not yet:
   callable interfaces, recursive conditional types, `Symbol` as a value; design questions without a ruling: overloads
   of a declared function (136) and of a `declare class` constructor (140).
 
-Tests `00tslang_issue_215.ts` (all models).
+Tests `00tslang_issue_215.ts` (all models), `test-{rc,own}-owned-declarations` (the IR of `@owned` and `@lends` calls).

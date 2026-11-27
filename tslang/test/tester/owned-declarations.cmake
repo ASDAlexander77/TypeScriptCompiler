@@ -1,15 +1,22 @@
 # `@owned` on a declaration (owned-declarations/owned_declarations.ts): the function it covers is
 # marked ts.declared_owned_result - said on the function, on its `declare class` (methods and `..new`)
-# or on its `declare namespace` - and, since nothing else in the file returns a heap value it did not
-# retain, the call through a parameter in `viaValue` has its result consumed (__owned_result, not
-# MLIRGen's __owned_result_named).
+# or on its `declare namespace` - and the result of a call of it, read and dropped (`direct`), is given
+# back (__owned_result). Under rc, since nothing else in the file returns a heap value it did not
+# retain, the call through a parameter in `viaValue` has its result consumed as well (__owned_result,
+# not MLIRGen's __owned_result_named) - and so is `lent`'s, a `@lends` method's, which rc's body
+# retains for its caller. Under own a `@lends` method's result is a borrow: `lent`'s call is not
+# marked, and with it among the declarations closed world does not hold.
 # The same file with every `@owned` taken out is the other side: a declaration may be C, or hand back a
-# pointer into a buffer, so nothing is marked and the indirect call keeps retaining - closed world
-# does not hold. Read after OwnedReturnConsumptionPass (--emit=mlir), under rc.
+# pointer into a buffer, so nothing is marked and the calls keep retaining - closed world does not
+# hold. Read after OwnedReturnConsumptionPass (--emit=mlir), under rc and under own (MM).
 cmake_minimum_required(VERSION 3.17.3)
 
+if(NOT MM)
+    set(MM rc)
+endif()
+
 function(compile file outVar)
-    execute_process(COMMAND "${TSLANG}" --emit=mlir --no-default-lib -mm=rc "${file}"
+    execute_process(COMMAND "${TSLANG}" --emit=mlir --no-default-lib -mm=${MM} "${file}"
                     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)
     # the IR is printed to stderr
     string(APPEND out "${err}")
@@ -44,14 +51,27 @@ foreach(function ${declared})
         message(FATAL_ERROR "`${function}` is not marked ts.declared_owned_result:\n${text}")
     endif()
 endforeach()
+# the result of a call given back: `"ts.CallIndirect"(...) {__owned_result...}`, not `__owned_result_named` alone
+set(consumed "\"ts[.]CallIndirect\"[^\n]*[{ ]__owned_result[,}]")
+func_text("${marked}" direct text)
+if(NOT text MATCHES "${consumed}")
+    message(FATAL_ERROR "the result of the call of `lib_text` in `direct` is not given back (${MM}):\n${text}")
+endif()
 func_text("${marked}" viaValue text)
-if(NOT text MATCHES "\"ts[.]CallIndirect\"[^\n]*__owned_result[,}]")
+if(MM STREQUAL "rc" AND NOT text MATCHES "${consumed}")
     message(FATAL_ERROR "the call through a function value in `viaValue` is not consumed:\n${text}")
+endif()
+func_text("${marked}" lent text)
+if(MM STREQUAL "rc" AND NOT text MATCHES "${consumed}")
+    message(FATAL_ERROR "under rc the result of `label` in `lent` is the caller's:\n${text}")
+endif()
+if(MM STREQUAL "own" AND text MATCHES "${consumed}")
+    message(FATAL_ERROR "under own `label` lends its result (`@lends`): `lent` must not give it back:\n${text}")
 endif()
 
 file(READ "${FILE}" source)
 string(REPLACE "@owned" "" source "${source}")
-set(unmarkedFile "${WORK_DIR}/owned_declarations_unmarked.ts")
+set(unmarkedFile "${WORK_DIR}/owned_declarations_unmarked_${MM}.ts")
 file(WRITE "${unmarkedFile}" "${source}")
 compile("${unmarkedFile}" unmarked)
 foreach(function ${declared})
@@ -60,7 +80,9 @@ foreach(function ${declared})
         message(FATAL_ERROR "`${function}` says nothing, yet is marked ts.declared_owned_result:\n${text}")
     endif()
 endforeach()
-func_text("${unmarked}" viaValue text)
-if(text MATCHES "\"ts[.]CallIndirect\"[^\n]*__owned_result[,}]")
-    message(FATAL_ERROR "with unmarked declarations the call in `viaValue` must keep retaining:\n${text}")
-endif()
+foreach(function viaValue direct)
+    func_text("${unmarked}" ${function} text)
+    if(text MATCHES "${consumed}")
+        message(FATAL_ERROR "with unmarked declarations the call in `${function}` must keep retaining (${MM}):\n${text}")
+    endif()
+endforeach()
