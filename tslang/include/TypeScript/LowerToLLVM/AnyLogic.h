@@ -50,6 +50,37 @@ class AnyLogic
         return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, ptrTy, llvmStorageType}, false);
     }
 
+    // A null `any` is undefined. Zeroed memory typed `any` - a class field with no initializer, a global, an
+    // array's new element - and the `undefined` the comparisons pass (UndefLogicHelper) are a null pointer, not a
+    // box: typeof, print, `+` and the casts read its tag from address 8 and crashed. Every read goes through the box
+    // this gives instead: a constant block of zero bytes for a null pointer (size 0, no data; getTypeOfAny answers
+    // undefined's descriptor for its tag). A select, not a branch: these helpers are called in the middle of other
+    // patterns.
+    mlir::Value isNullAny(mlir::Value in)
+    {
+        return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, in, rewriter.create<LLVM::ZeroOp>(loc, ptrTy));
+    }
+
+    mlir::Value boxOf(mlir::Value in)
+    {
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        auto name = ".null_any_box";
+        auto global = ch.lookupGlobal(parentModule, name);
+        if (!global)
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+            // the size word, the tag and 16 bytes of data: the widest read UnboxAny makes without a size check
+            constexpr auto bytes = 32;
+            global = ch.createGlobal(loc, th.getArrayType(th.getI8Type(), bytes), true, LLVM::Linkage::Internal, name,
+                                     rewriter.getStringAttr(std::string(bytes, '\0')));
+            global.setAlignment(8);
+        }
+
+        mlir::Value nullBox = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        return rewriter.create<LLVM::SelectOp>(loc, isNullAny(in), nullBox, in);
+    }
+
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
     {
         // get typeof value
@@ -95,7 +126,8 @@ class AnyLogic
         auto llvmStorageType = resLLVMType;
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+        // a null `any` (undefined) reads as zero bytes
+        auto inDataWithSizeTypedValue = boxOf(in);
 
         auto zero = clh.createI32ConstantOf(ANY_SIZE);
         //auto one = clh.createI32ConstantOf(ANY_TYPE);
@@ -174,7 +206,7 @@ class AnyLogic
         auto llvmStorageType = th.getI8Type();
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+        auto inDataWithSizeTypedValue = boxOf(in);
 
         auto zero = clh.createI32ConstantOf(ANY_SIZE);
         auto one = clh.createI32ConstantOf(ANY_TYPE);
@@ -183,7 +215,13 @@ class AnyLogic
         // set actual value
         auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
                                                      ValueRange{zero, one});
-        return rewriter.create<LLVM::LoadOp>(loc, ptrTy, ptrValue);
+        mlir::Value tag = rewriter.create<LLVM::LoadOp>(loc, ptrTy, ptrValue);
+
+        // a null `any` is undefined (boxOf)
+        TypeOfOpHelper toh(rewriter);
+        auto undefinedTag = rewriter.create<mlir_ts::DialectCastOp>(
+            loc, ptrTy, toh.typeDescriptorValue(loc, mlir_ts::UndefinedType::get(rewriter.getContext())));
+        return rewriter.create<LLVM::SelectOp>(loc, isNullAny(in), undefinedTag, tag);
     }
 
     mlir::Value getDataSizeOfAny(mlir::Value in)
@@ -194,7 +232,8 @@ class AnyLogic
         auto llvmStorageType = th.getI8Type();
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+        // a null `any` (undefined) holds 0 bytes
+        auto inDataWithSizeTypedValue = boxOf(in);
 
         auto zero = clh.createI32ConstantOf(ANY_SIZE);
         //auto one = clh.createI32ConstantOf(ANY_TYPE);
@@ -206,7 +245,8 @@ class AnyLogic
         return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, ptrValue);
     }    
 
-    mlir::Value getDataPtrOfAny(mlir::Value in)
+    // `raw`: the address in this very box, null or not - the data's offset is the address in a box at 0
+    mlir::Value getDataPtrOfAny(mlir::Value in, bool raw = false)
     {
         // TODO: add type id to track data type
         // TODO: add data size check
@@ -214,7 +254,8 @@ class AnyLogic
         auto llvmStorageType = th.getI8Type();
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+        // a null `any` (undefined) has no data: the zero bytes of boxOf's block
+        mlir::Value inDataWithSizeTypedValue = raw ? (mlir::Value)rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in) : boxOf(in);
 
         auto zero = clh.createI32ConstantOf(ANY_SIZE);
         //auto one = clh.createI32ConstantOf(ANY_TYPE);

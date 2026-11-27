@@ -20606,6 +20606,14 @@ class MLIRGenImpl
             forgetModule(tempModule.getOperation());
             tempModule.erase();
 
+            // Not left pointing at the erased ops: a function op made next (the dummy one a function's captures
+            // are discovered in) may be given the same address, and `genContext.funcOp != tempFuncOp` then took it
+            // for the scratch function - what it read of the function around it was not captured, and the function
+            // was made without its captures ("has more parameters than another declaration of the same name",
+            // "Can't resolve property 'cb' of type number"), now and then, as the heap gave out addresses
+            // (00tslang_issue_205). prepareTempModule makes them again.
+            tempFuncOp = mlir_ts::FuncOp();
+            tempModule = mlir::ModuleOp();
             tempEntryBlock = nullptr;
         }
     }

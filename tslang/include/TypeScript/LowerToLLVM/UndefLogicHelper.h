@@ -35,6 +35,17 @@ class UndefLogicHelper
     {
     }
 
+    // null itself, or a union with null among its members
+    static bool mayHoldNull(mlir::Type type)
+    {
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); });
+        }
+
+        return isa<mlir_ts::NullType>(type);
+    }
+
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
     mlir::Value logicalOp(Operation *binOp, SyntaxKind opCmpCode)
     {
@@ -183,6 +194,15 @@ class UndefLogicHelper
                         // other unhandled type below.
                         return whenOneValueIsUndef(rewriter, loc);
                     }
+                }
+                else if ((opCmpCode == SyntaxKind::EqualsEqualsToken || opCmpCode == SyntaxKind::ExclamationEqualsToken)
+                         && mayHoldNull(t2))
+                {
+                    // loosely, undefined equals null: a value that may be null (`object | null`, `C | null`) is
+                    // `== undefined` when it is null, as `== null` asks - it was false whatever it held
+                    auto nullValue = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, t2, nullValue, nullValue.getType(),
+                                                                       rewriter, typeConverter, compileOptions);
                 }
                 else
                 {

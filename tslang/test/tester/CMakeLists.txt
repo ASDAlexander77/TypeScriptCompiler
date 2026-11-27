@@ -2622,6 +2622,12 @@ foreach(letany_mm gc rc none own)
     set_tests_properties(test-jit-00let_any_starts_undefined-${letany_mm} test-compile-00let_any_starts_undefined-${letany_mm}
                          PROPERTIES FAIL_REGULAR_EXPRESSION "does not have initializer|Stack dump|Assertion failed")
 endforeach()
+# a null `any` (a zeroed class field) reads as undefined; a number of undefined is NaN, of null 0; an `any` holding
+# undefined or null equals no primitive
+foreach(anynull_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00any_null_is_undefined-${anynull_mm} COMMAND test-runner -jit -mm=${anynull_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_null_is_undefined.ts")
+    tslang_add_test(NAME test-compile-00any_null_is_undefined-${anynull_mm} COMMAND test-runner -mm=${anynull_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_null_is_undefined.ts")
+endforeach()
 # TSLANG 152, -mm=own: a store past the end through a parameter's alias stops with a check, not a write past the block
 add_test(NAME test-jit-own-grow-past-end-check
          COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=own
