@@ -953,6 +953,16 @@ namespace mlirgen
                 resultType = fieldFuncType.getResult(0);
                 ownerName += isa<mlir_ts::AnyType>(resultType) ? ".any" : ".unknown";
             }
+            else if (fieldFuncType && fieldFuncType.getNumResults() == 1
+                && fieldFuncType.getResult(0) != classInfo->classType)
+            {
+                // a construct signature returning another type (`c: { new (x: number): Pt }`, Pt an interface): the
+                // field holds a function returning that type, so the made object is cast to it here; returned as the
+                // class, its caller read the class reference as the interface (TSLANG 213)
+                resultType = fieldFuncType.getResult(0);
+                ownerName += ".";
+                ownerName += to_print(resultType);
+            }
 
             auto funcWithReturnClass = getFunctionType(
                 classConstrMethodInfo->funcType.getInputs().slice(1) /*to remove this*/, 
