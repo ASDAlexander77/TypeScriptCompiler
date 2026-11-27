@@ -89,6 +89,10 @@ class OwnedReturnConsumptionPass
         // Is there any function here at all that hands back a heap value without retaining it?
         // See callThroughValueReturnsOwned.
         auto anyUnclassifiedOwningReturn = false;
+        // -mm=own: which of those are declarations that say they lend their result (`@lends`, a result type `this`) -
+        // a convention, not the absence of one: see unclassifiedReachedByValue - and is there any other?
+        llvm::DenseSet<mlir::StringRef> unclassifiedOwning;
+        auto anyUnclassifiedNotLending = false;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             // a method of an interface's null vtable throws, and returns nothing to anyone
             // (mlirGenNullInterfaceVTable)
@@ -112,7 +116,17 @@ class OwnedReturnConsumptionPass
                     if (mth.ownsHeapMemory(funcOp.getLoc(), resultType))
                     {
                         anyUnclassifiedOwningReturn = true;
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! unclassified owning return: " << name << "\n";);                    }
+                        if ((funcOp.isExternal() || funcOp.getBody().empty()) && funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME))
+                        {
+                            unclassifiedOwning.insert(name);
+                        }
+                        else
+                        {
+                            anyUnclassifiedNotLending = true;
+                        }
+
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! unclassified owning return: " << name << "\n";);
+                    }
                 }
             }
 
@@ -176,6 +190,10 @@ class OwnedReturnConsumptionPass
                 }
             });
         }
+
+        // -mm=own: is a value made of any of the declarations that lend their result - one a call through a
+        // value could reach? See closedWorld below.
+        auto unclassifiedValueTaken = own && unclassifiedReachedByValue(module, unclassifiedOwning);
 
         // `new C()` is marked where it is built, so there can be discarded temporaries to give
         // back even when no function here is classified as returning owned - and conditionals and
@@ -256,7 +274,21 @@ class OwnedReturnConsumptionPass
             // unless it is an `export`ed import or says `@owned`, as the default library's
             // declarations do (importedFunctionReturnsOwned): otherwise every program with the
             // library had it off.
-            auto closedWorld = !anyUnclassifiedOwningReturn;
+            //
+            // -mm=own reads it per function (TSLANG 218): the library's declarations that lend their result
+            // (`JsonValue.get`, `ArrayBuffer.__bytes`) are unclassified, rightly, and they turned it off in every
+            // program - every call through a function value returning a heap value kept a result nobody gave
+            // back (`fs[0]()` of `fs: (() => string)[]`). A call through a value reaches only a function some
+            // value was made of; one this module only ever calls by name is out of its reach - and a call that
+            // names one is never read as handing a reference over. Any other unclassified function (a foreign
+            // declaration, one with no `@owned`) still turns it off: a value of it can come from a module that has
+            // no convention at all (owned-declarations.cmake).
+            auto closedWorld =
+                own ? !anyUnclassifiedNotLending && !unclassifiedValueTaken : !anyUnclassifiedOwningReturn;
+            if (own && closedWorld && !calleeReturnsOwned && callNamesUnclassified(callOp, unclassifiedOwning, methodsByMemberName))
+            {
+                return;
+            }
 
             if (!calleeReturnsOwned && !closedWorld &&
                 !virtualCallReturnsOwned(callOp, returnsOwned, methodsByMemberName) &&
@@ -4711,6 +4743,143 @@ class OwnedReturnConsumptionPass
 
         auto *symbol = name.empty() ? nullptr : mlir::SymbolTable::lookupSymbolIn(module, name);
         return symbol && symbol->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+    }
+
+    // Is this use of a function's reference the callee of a call - and so not a value anything else could call
+    // through? (the bound method `j.get` of `j.get(k)`, and what is read out of it on the way)
+    static bool isCalleeUse(mlir::OpOperand &use)
+    {
+        auto *user = use.getOwner();
+        if (mlir::isa<mlir_ts::CallIndirectOp>(user))
+        {
+            return use.getOperandNumber() == 0;
+        }
+
+        if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(user))
+        {
+            return !invokeOp.getCallee() && use.getOperandNumber() == 0;
+        }
+
+        if (mlir::isa<mlir_ts::GetThisOp>(user))
+        {
+            return true;
+        }
+
+        if (auto getMethodOp = mlir::dyn_cast<mlir_ts::GetMethodOp>(user))
+        {
+            return llvm::all_of(getMethodOp->getResult(0).getUses(), [](mlir::OpOperand &next) { return isCalleeUse(next); });
+        }
+
+        return false;
+    }
+
+    // -mm=own: is a value made anywhere in this module of one of `names` - declarations that say they lend the heap
+    // value they hand back? A call through a value can reach only such a one (TSLANG 218): `const g =
+    // j.get; g("a")` lends what `j` holds, and giving it back would free it under `j`. A reference that is anything
+    // but a call's callee - stored, cast, captured, put in a vtable - counts.
+    static bool unclassifiedReachedByValue(mlir::ModuleOp module, const llvm::DenseSet<mlir::StringRef> &names)
+    {
+        if (names.empty())
+        {
+            return false;
+        }
+
+        auto walked = module.walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::FuncOp, mlir_ts::CallOp>(op))
+            {
+                return mlir::WalkResult::advance();
+            }
+
+            if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(op); invokeOp && invokeOp.getCallee())
+            {
+                return mlir::WalkResult::advance();
+            }
+
+            for (auto attr : op->getAttrs())
+            {
+                auto ref = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(attr.getValue());
+                if (!ref || !names.contains(ref.getValue()))
+                {
+                    continue;
+                }
+
+                if (op->getNumResults() == 0)
+                {
+                    return mlir::WalkResult::interrupt();
+                }
+
+                for (auto result : op->getResults())
+                {
+                    for (auto &use : result.getUses())
+                    {
+                        if (!isCalleeUse(use))
+                        {
+                            return mlir::WalkResult::interrupt();
+                        }
+                    }
+                }
+            }
+
+            return mlir::WalkResult::advance();
+        });
+
+        return walked.wasInterrupted();
+    }
+
+    // -mm=own: does this call name one of `names` (see unclassifiedReachedByValue) - directly, as a method, or as a
+    // virtual method one of whose candidates is one?
+    static bool callNamesUnclassified(mlir_ts::CallIndirectOp callOp, const llvm::DenseSet<mlir::StringRef> &names,
+                                      const llvm::StringMap<llvm::SmallVector<std::pair<mlir::StringRef, mlir::Type>>> &methodsByMemberName)
+    {
+        if (names.empty() || callOp.getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto callee = callOp.getOperand(0);
+        if (auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>())
+        {
+            callee = getMethodOp.getBoundFunc();
+        }
+
+        auto *definingOp = callee.getDefiningOp();
+        if (!definingOp)
+        {
+            return false;
+        }
+
+        mlir::StringRef name;
+        if (auto symbolRefOp = mlir::dyn_cast<mlir_ts::SymbolRefOp>(definingOp))
+        {
+            name = symbolRefOp.getIdentifier();
+        }
+        else if (auto thisSymbolRefOp = mlir::dyn_cast<mlir_ts::ThisSymbolRefOp>(definingOp))
+        {
+            name = thisSymbolRefOp.getIdentifier();
+        }
+        else if (auto thisVirtualSymbolRefOp = mlir::dyn_cast<mlir_ts::ThisVirtualSymbolRefOp>(definingOp))
+        {
+            name = thisVirtualSymbolRefOp.getIdentifier();
+            auto dot = name.rfind('.');
+            if (dot != mlir::StringRef::npos)
+            {
+                auto it = methodsByMemberName.find(name.substr(dot + 1));
+                if (it != methodsByMemberName.end() &&
+                    llvm::any_of(it->second, [&](const auto &method) { return names.contains(method.first); }))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (auto createBoundFunctionOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(definingOp))
+        {
+            if (auto symbolRefOp = createBoundFunctionOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                name = symbolRefOp.getIdentifier();
+            }
+        }
+
+        return !name.empty() && names.contains(name);
     }
 
     static mlir::StringRef calleeNameOf(mlir_ts::CallIndirectOp callOp, const own_facts::FieldFunctions *fieldFunctions)

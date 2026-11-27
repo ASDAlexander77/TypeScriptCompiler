@@ -199,7 +199,28 @@ class ConvertLogic
         rewriter.setInsertionPointToEnd(zeroBlock);
         print("0", {});
 
+        // an integer below 2^53 is its own shortest digits (its neighbours are whole numbers too), written plainly
+        // as JS does up to 1e21: one `%lld`, not the search below - which took up to 17 rounds of formatting and
+        // reading back, 5 us a conversion (`"a" + k` of a `k: number` ran 20 times slower than of an s32, TSLANG 218)
+        auto *maybeIntegerBlock = newBlock();
+        auto *integerBlock = newBlock();
+        auto *notIntegerBlock = newBlock();
         rewriter.setInsertionPointToEnd(searchBlock);
+        auto twoTo53 = clh.createF64ConstantOf(9007199254740992.0);
+        rewriter.create<LLVM::CondBrOp>(noLoc, fcmp(LLVM::FCmpPredicate::olt, magnitude, twoTo53), maybeIntegerBlock,
+                                        notIntegerBlock);
+
+        rewriter.setInsertionPointToEnd(maybeIntegerBlock);
+        auto i64Ty = rewriter.getI64Type();
+        mlir::Value whole = rewriter.create<LLVM::FPToSIOp>(noLoc, i64Ty, value);
+        mlir::Value wholeBack = rewriter.create<LLVM::SIToFPOp>(noLoc, f64Ty, whole);
+        rewriter.create<LLVM::CondBrOp>(noLoc, fcmp(LLVM::FCmpPredicate::oeq, wholeBack, value), integerBlock,
+                                        notIntegerBlock);
+
+        rewriter.setInsertionPointToEnd(integerBlock);
+        print("%lld", {whole});
+
+        rewriter.setInsertionPointToEnd(notIntegerBlock);
         mlir::Value sign = rewriter.create<LLVM::SelectOp>(noLoc, isNegative, text("-"), text(""));
         rewriter.create<LLVM::BrOp>(noLoc, ValueRange{i32Const(0)}, loopBlock);
 

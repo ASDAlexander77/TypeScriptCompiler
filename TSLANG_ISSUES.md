@@ -4159,3 +4159,29 @@ Not yet:
 
 Tests `00tslang_issue_217.ts` (all models), `own_let_borrow_dropped_error.ts`, `own_for_let_assigned_after_closure_error.ts`,
 `own_yield_star_this_undecorated_error.ts`.
+
+218. 217's "not yet" and a slow conversion (2026-11-27). Fixed:
+- A rest parameter of a generic function whose element type names no type parameter (`g<T>(x: T, ...a: any[])`) was
+  packed twice in every model: the arguments were made an array of their own type (`si32[]`) before the function was
+  specialized, the specialized call found no `any[]` and packed that array again, as the rest's one element.
+  `g(1, 3, 4)` saw `a.length` 1, and `make(P, 3.5)` of `make<T>(c: new (...args: any[]) => T, ...a: any[])`, which
+  calls `new c(...a)`, threw "Can't cast from any type". The arguments take the rest's element type now.
+- Under -mm=own a call through a function value returning a heap value (`fs[0]()` of `fs: (() => string)[]`, `f()` of
+  `const f = mk(k)`) never gave its result back: the default library's declarations that lend their result
+  (`JsonValue.get`, `ArrayBuffer.__bytes`) are rightly not taken for ones that hand it over, and one such function
+  anywhere turned off "every function here returns a reference" for every program with the library. This was 217's
+  "closure capturing a string leaks the string": the closure's result leaked, not the captured string (4M calls,
+  97 MB against rc's 33; flat now). Only a function some value is made of can be reached through a value: under own
+  a lending function the module only ever calls by name keeps that rule on, and a call that names one never takes
+  its result for one handed over. `const g = j.get; g("a")` still turns it off.
+- A `number` that is a whole number below 2^53 is written by one `%lld` instead of the search for its shortest digits
+  (up to 17 rounds of `%.*e` and `strtod`, about 5 us a conversion): `"a" + k` of a `k: number`, 4M times, took 22 s
+  in every model, 0.7 s now. 217's "a function returning a closure is slow" was this.
+
+- Under -mm=own `new c(a[0])` of `a: any[]` and `c: new (...args: any[]) => T` was refused ("a value that borrows
+  'a[]' is used here after it may be released"): the class value's allocator, called between the argument's read and
+  the constructor, was taken for a call that may free anything. Its `.new` slot holds the `C..new` the compiler makes
+  for every class, which only allocates; it is said to free nothing. The constructor still may: a borrow used after
+  it (`const e = a[0]; new c(a); print(e)` of a constructor that empties `a`) stays an error.
+
+Tests `00tslang_issue_218.ts` (all models), `own_class_value_ctor_drops_error.ts`.

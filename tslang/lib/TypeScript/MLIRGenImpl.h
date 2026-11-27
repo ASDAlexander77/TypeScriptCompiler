@@ -15122,8 +15122,12 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! varargs - receiver type: " << receiverType << "\n";);
             // TODO: isGenericType is applied as hack here, find out the issue
             // I think it should be operandsProcessingInfo.noReceiverTypesForGenericCall in setReceiver
-            arrayInfo.setReceiver(receiverType, 
-                operandsProcessingInfo.noReceiverTypesForGenericCall || mth.isGenericType(genContext.receiverType));
+            // (a rest whose element type names no type parameter - `...a: any[]` of `g<T>(x: T, ...a: any[])` - takes it
+            // in a generic call too: packed as the arguments' own `si32[]`, the specialized call found no `any[]` and
+            // packed that array again, as the one element of the rest - `g(1, 3, 4)` saw one argument, TSLANG 218)
+            arrayInfo.setReceiver(receiverType,
+                (operandsProcessingInfo.noReceiverTypesForGenericCall && mth.isGenericType(receiverType)) ||
+                    mth.isGenericType(genContext.receiverType));
         }
 
         for (auto it = arguments.begin() + processedArgs; it != arguments.end(); ++it)
