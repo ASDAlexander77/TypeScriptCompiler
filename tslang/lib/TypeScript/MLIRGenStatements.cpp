@@ -1809,9 +1809,13 @@ namespace mlirgen
                         auto outer = symbolTable.lookup(name);
                         auto outerRefType = outer.first ? dyn_cast<mlir_ts::RefType>(outer.first.getType()) : mlir_ts::RefType();
                         // a reference (`for (let s = "a"; ...)`) is copied as the reference under a collector, as
-                        // JavaScript copies it; under rc and own a copy would be one more owner (TSLANG 176)
+                        // JavaScript copies it, and under rc with a count of its own (each closure saw the loop's last
+                        // string, TSLANG 213); under own a copy would be one more owner (TSLANG 176)
+                        // (not in a generator's next(), whose resume after a yield in the body would skip the copy's
+                        // count: "operand does not dominate this use")
                         auto copied = outerRefType && (mth.isValueType(outerRefType.getElementType())
-                                                       || !compileOptions.tracksOwnership());
+                                                       || !compileOptions.tracksOwnership()
+                                                       || (compileOptions.isRefCounted() && !loopGenContext.allocateVarsInContextThis));
                         if (!outerRefType || !outer.second || !copied)
                         {
                             continue;
@@ -1824,6 +1828,15 @@ namespace mlirgen
                         auto inner = builder.create<mlir_ts::VariableOp>(
                             location, mlir_ts::RefType::get(elementType), current, builder.getBoolAttr(false),
                             builder.getIndexAttr(0));
+                        // under rc the copy of a reference is an owned local, as a `let` is (takeOwnershipOfLocal):
+                        // a count of its own, given back where the body ends (loopBodyCells), and an assignment in
+                        // the body gives back the value it replaces
+                        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, elementType))
+                        {
+                            inner->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+                            builder.create<mlir_ts::RetainSlotOp>(location, inner);
+                        }
+
                         declare(location, varDecl, inner, loopGenContext);
                         perIterationCells.push_back(inner);
                         copyBack.push_back({inner, outer.first});
@@ -2990,11 +3003,12 @@ namespace mlirgen
             functionsThrowingObjects.try_emplace(mlir_ts::FuncOp(genContext.funcOp).getName(), to_print(thrownType));
         }
 
-        if (throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinallyOf(genContext))
+        if (auto *yieldingFinally = yieldingFinallyOf(genContext);
+            throwsObject && !genContext.throwCaughtBeforeYieldingFinally && yieldingFinally)
         {
             emitError(location) << "-mm=own: an object of type '" << to_print(thrownType)
-                                << "' thrown through a finally block that yields is not supported: catch it inside "
-                                   "the try statement, or throw a string";
+                                << "' thrown through a finally block that " << (yieldingFinally->inGenerator ? "yields" : "awaits")
+                                << " is not supported: catch it inside the try statement, or throw a string";
             return mlir::failure();
         }
 
@@ -3032,18 +3046,43 @@ namespace mlirgen
             return nullptr;
         }
 
-        if (auto funcOp = mlir::dyn_cast_or_null<mlir_ts::FuncOp>(block->getParentOp()))
+        // up the regions by hand: one that is being built (an `await`'s async.execute, its body generated in the op's
+        // builder) is attached to nothing yet, where getParentOfType crashed (TSLANG 213)
+        for (auto *region = block->getParent(); region;)
         {
-            return funcOp;
+            auto *parentOp = region->getParentOp();
+            if (!parentOp)
+            {
+                return nullptr;
+            }
+
+            if (auto funcOp = mlir::dyn_cast<mlir_ts::FuncOp>(parentOp))
+            {
+                return funcOp;
+            }
+
+            region = parentOp->getParentRegion();
         }
 
-        return block->getParent()->getParentOfType<mlir_ts::FuncOp>();
+        return nullptr;
     }
 
     YieldingFinally *MLIRGenImpl::yieldingFinallyOf(const GenContext &genContext)
     {
         auto *yieldingFinally = genContext.yieldingFinally;
-        return yieldingFinally && yieldingFinally->funcOp == currentFunctionOp() ? yieldingFinally : nullptr;
+        if (!yieldingFinally)
+        {
+            return nullptr;
+        }
+
+        // (in an op being built, the function generated is the context's)
+        auto *funcOp = currentFunctionOp();
+        if (!funcOp)
+        {
+            funcOp = genContext.funcOp;
+        }
+
+        return yieldingFinally->funcOp == funcOp ? yieldingFinally : nullptr;
     }
 
     // `try { ...; yield ...; } finally { ...; yield ...; }` in a generator. The finally is not the try's finally
@@ -3093,6 +3132,36 @@ namespace mlirgen
 
         auto excName = base + "_e";
         auto caughtName = base + "_x";
+
+        // not a generator's next(), whose variables are fields of the generator (`this.<slot>`): a `finally` that
+        // awaits. A `return`'s value goes into a local declared here, in front of the try; one around this try that
+        // has one already holds it for both (a `return` goes on through its finally too)
+        yieldingFinally.inGenerator = genContext.allocateVarsInContextThis;
+        if (!yieldingFinally.inGenerator)
+        {
+            if (auto *outer = yieldingFinallyOf(genContext); outer && !outer->valueSlot.empty())
+            {
+                yieldingFinally.valueSlot = outer->valueSlot;
+            }
+            else if (auto returnVar = symbolTable.lookup(RETURN_VARIABLE_NAME).first)
+            {
+                if (auto refType = dyn_cast<mlir_ts::RefType>(returnVar.getType()))
+                {
+                    yieldingFinally.valueSlot = base + "_v";
+                    auto valueType = refType.getElementType();
+                    auto declaredType = registerVariable(
+                        loc(tryStatementAST), yieldingFinally.valueSlot, false, VariableType::Let,
+                        [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                            return {valueType, mlir::Value(), TypeProvided::Yes};
+                        },
+                        genContext);
+                    if (!declaredType)
+                    {
+                        return mlir::failure();
+                    }
+                }
+            }
+        }
 
         EXIT_IF_FAILED(mlirGen(declare(yieldingFinally.mode, number(0)), genContext));
         // (a number in it, not `<any>undefined`, as the generator's own `.thrown`)
@@ -3156,8 +3225,12 @@ namespace mlirgen
                 }
 
                 Expression value = undefined;
+                if (!exit.slot.empty() && !yieldingFinally.inGenerator)
+                {
+                    value = ident(exit.slot);
+                }
                 // (while the generator's variables are being found, the slot is not one of its fields yet)
-                if (!exit.slot.empty() && !genContext.passResult)
+                else if (!exit.slot.empty() && !genContext.passResult)
                 {
                     value = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), ident(exit.slot));
                 }
@@ -3205,7 +3278,22 @@ namespace mlirgen
             // T that owns nothing)
             auto isReturnOfResume = returnStatementAST->expression == SyntaxKind::PropertyAccessExpression &&
                 MLIRHelper::getName(returnStatementAST->expression.as<PropertyAccessExpression>()->name) == GENERATOR_THROWN_NAME;
-            if (compileOptions.memoryModel == MemoryModelOwn && !isReturnOfResume)
+            // (a `finally` that awaits keeps it in a local of the function, which owns it as any local does)
+            if (!yieldingFinally.inGenerator)
+            {
+                if (!yieldingFinally.valueSlot.empty())
+                {
+                    exit.slot = yieldingFinally.valueSlot;
+                    statements.push_back(placed(nf.createExpressionStatement(nf.createBinaryExpression(
+                        nf.createIdentifier(stows(exit.slot)), nf.createToken(SyntaxKind::EqualsToken), returnStatementAST->expression))));
+                }
+                else
+                {
+                    // a function returning nothing (`return f();` of a `void` f): the call, then nothing to return
+                    statements.push_back(placed(nf.createExpressionStatement(returnStatementAST->expression)));
+                }
+            }
+            else if (compileOptions.memoryModel == MemoryModelOwn && !isReturnOfResume)
             {
                 auto valueType = evaluate(returnStatementAST->expression, genContext);
                 if (valueType && mth.ownsHeapMemory(loc(returnStatementAST), valueType))
@@ -3218,11 +3306,14 @@ namespace mlirgen
                 }
             }
 
-            exit.slot = yieldingFinally.slotPrefix + std::to_string(yieldingFinally.exits.size());
-            NodeArray<VariableDeclaration> declarations;
-            declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(stows(exit.slot)), undefined, undefined,
-                                                                returnStatementAST->expression));
-            statements.push_back(placed(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Let))));
+            if (yieldingFinally.inGenerator)
+            {
+                exit.slot = yieldingFinally.slotPrefix + std::to_string(yieldingFinally.exits.size());
+                NodeArray<VariableDeclaration> declarations;
+                declarations.push_back(nf.createVariableDeclaration(nf.createIdentifier(stows(exit.slot)), undefined, undefined,
+                                                                    returnStatementAST->expression));
+                statements.push_back(placed(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(declarations, NodeFlags::Let))));
+            }
         }
 
         statements.push_back(placed(nf.createExpressionStatement(nf.createBinaryExpression(
@@ -3300,24 +3391,18 @@ namespace mlirgen
 
         auto location = loc(tryStatementAST);
 
-        // An `await` in a `finally` (of an async function): the finally runs from the try's cleanup, which an
-        // async function can't be suspended in yet - the lowering failed on the try ("failed to legalize operation
-        // 'ts.Try' that was explicitly marked illegal"). Said at the `await`; one in the `try` or a `catch` works.
+        // An `await` in a `finally`: the finally ran from the try's cleanup, copied for each way out of the try (one
+        // copy in the exception handler), where an await can't be - the lowering failed on the try ("failed to
+        // legalize operation 'ts.Try' that was explicitly marked illegal"). It is code of its own after the try, as a
+        // finally that yields is (mlirGenTryWithYieldingFinally), where an await is as in any other code (TSLANG 213).
         if (tryStatementAST->finallyBlock)
         {
-            Node awaitNode = undefined;
-            ts::FilterVisitorSkipFuncsAST<Node> awaitVisitor(SyntaxKind::AwaitExpression, [&](Node node) {
-                if (!awaitNode)
-                {
-                    awaitNode = node;
-                }
-            });
+            auto awaits = false;
+            ts::FilterVisitorSkipFuncsAST<Node> awaitVisitor(SyntaxKind::AwaitExpression, [&](Node) { awaits = true; });
             awaitVisitor.visit(tryStatementAST->finallyBlock);
-            if (awaitNode)
+            if (awaits)
             {
-                emitError(loc(awaitNode)) << "an 'await' in a 'finally' block is not supported yet: await after the "
-                                             "'try' statement, or in a 'catch' block";
-                return mlir::failure();
+                return mlirGenTryWithYieldingFinally(tryStatementAST, genContext);
             }
         }
 

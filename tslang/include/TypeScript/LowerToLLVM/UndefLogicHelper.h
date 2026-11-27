@@ -121,7 +121,13 @@ class UndefLogicHelper
                 // than answered here: `u == undefined` of an `any` holding undefined was false
                 if (isa<mlir_ts::InterfaceType>(t2) || isa<mlir_ts::ClassType>(t2) || isa<mlir_ts::AnyType>(t2))
                 {
-                    auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
+                    // `undefined` as an `any` is a null pointer, which AnyCompareOp takes for undefined: a cast boxed
+                    // it on the heap for every comparison (`v === undefined` of `v: any`), a box nothing gave back
+                    // under -mm=rc and -mm=own (TSLANG 213)
+                    mlir::Value casted = isa<mlir_ts::AnyType>(t2)
+                        ? (mlir::Value)rewriter.create<mlir_ts::DialectCastOp>(
+                              loc, t2, rewriter.create<LLVM::ZeroOp>(loc, LLVM::LLVMPointerType::get(rewriter.getContext())))
+                        : (mlir::Value)rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
                                                                        rewriter, typeConverter, compileOptions);
                 }

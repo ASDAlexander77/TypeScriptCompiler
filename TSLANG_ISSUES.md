@@ -3909,3 +3909,52 @@ Not yet:
 
 Tests `00tslang_issue_212.ts`, `00tslang_issue_212_dictionary.ts` (all models), `00tslang_issue_212_ctor_interface.ts`
 (gc, rc, none); `00union_interfaces_instanceof.ts` under -mm=own; `class_itself_interface_error.ts` changed.
+
+213. Leftovers of 212 (2026-11-27). Fixed:
+- A class given to a type literal's construct signature of another result type (`make(P)` for `c: { new (x: number):
+  Pt }`, Pt an interface): `new c(i)` printed garbage under every memory model, or crashed. The function made for the
+  class returned the class, and the field holding it promised the interface: the caller read a class reference as an
+  interface. It returns the signature's result type now, the object cast to it. Under -mm=own `new c(i)` was "a value
+  takes a second reference" (here and through an interface of a construct signature, 139): every function such a field
+  holds is one the compiler makes, which returns the object it makes, so the call hands its result over. An object's
+  vtable holds a method as a reference to its function (`ts.Cast` of the symbol), which the owned-result pass did not
+  read as that function: the slot was unknown, and a call through it (an interface method an object literal's function
+  backs, `m.make(i)` of `const m: Mk = { make: (x) => new P(x) }`) never gave its result back under -mm=own (212).
+- `v === undefined` (and `==`, `!==`, `!=`) of a `v: any` boxed `undefined` on the heap for every comparison, a box
+  nothing gave back under -mm=rc and -mm=own (32 bytes a comparison; a dictionary of `any` compares each value it is
+  given, so `d["a"] = i` leaked one each store - the "any dictionary of a spread record" leak of 212). `undefined` is a
+  null `any` to the comparison, which takes one for undefined.
+- 140: an `await` in a `finally` block ("not supported yet"). The finally is code of its own after the try, as a
+  finally that yields is (mlirGenTryWithYieldingFinally): run once on every way out of the try, its end, a `return`, a
+  `break` or `continue`, a throw (caught into an `any` and thrown again after it). A `return`'s value is kept in a local
+  of the function declared in front of the try (a generator keeps it in a field); in a function returning nothing,
+  `return f()` calls f. Async functions, arrows and methods, with or without a declared result type, nested finally
+  blocks, loops. Under -mm=own an object thrown through such a finally is refused, as through one that yields; the
+  error says "awaits". Building it, the lookup of the function an `await`'s body is in walked into the async.execute op
+  being built, attached to nothing yet, and crashed under -mm=own.
+- Under -mm=rc a `for (let s ...)` of a string (or another reference) that a closure captures shared one variable: each
+  closure saw the loop's last string (TSLANG 176 copied value types only). The iteration's copy takes a count of its
+  own, as a `let` does, and one the body assigns gives its value back to the loop's variable.
+- 117 (`let f = n.toFixed; f(1)`) stays a compile error (user ruling 2026-11-27): tsc accepts it, but JavaScript throws
+  a TypeError at the call (the method loses its `this`), so the error says so where the program is written.
+- `let x: any;` with no initializer is undefined under every memory model (user ruling 2026-11-27), with no "'let'
+  does not have initializer" warning. Outside -mm=rc its slot was never written: a read took whatever was on the
+  stack, and `x === null` dereferenced it, which crashed at --opt_level=0 (the debug-programs CI legs) and was hidden by
+  O3. A local in a loop, a `try` or a generator starts each turn undefined.
+
+Not yet:
+- Under -mm=rc an async function with a `catch` clause and a `finally` that awaits leaks about 32 bytes a call when a
+  string is returned or thrown through it; a plain async function returning `name + (await v())` leaks too (before
+  this batch), and more under -mm=own.
+- Under -mm=own a `break` out of a `catch` clause leaks the caught value (before this batch).
+- Under -mm=own a construct signature's function cannot give the constructor a parameter it keeps (`R(r: string)`:
+  "this function does not own it"), and `Constructor<T>` of `new (...args: any[]) => T` is "a value takes a second
+  reference".
+- Still from the triage and 212: own 56, 128 (a captured `for` variable the body assigns, a string one), 153, 159; own
+  `make(L)` of a rest constructor, a `let` captured and assigned after, a tuple literal with a new string given to a
+  union of tuples; 131 (Object.keys of `object`, Object.defineProperty, Object.create, Record<string, X>), 108, 191's
+  callable interfaces naming each other, recursive conditional types, `Symbol` as a value; design questions without a
+  ruling: overloads of a declared function (136) and class constructor (140).
+
+Tests `00tslang_issue_213.ts`, `00tslang_issue_213_await_finally.ts`, `00let_any_starts_undefined.ts` (all models),
+`00tslang_issue_213_loop.ts` (gc, rc, none); diagnostic-location `await_in_finally.ts` removed (it compiles now).

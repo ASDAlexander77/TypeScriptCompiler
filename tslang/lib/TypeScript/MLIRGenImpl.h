@@ -329,7 +329,8 @@ class MLIRGenImpl
     // -mm=own: function -> the functions it calls outside a catch clause of its own
     llvm::StringMap<llvm::StringSet<>> uncaughtCalls;
     // -mm=own: the calls made in a try whose finally yields, checked again once the module is generated
-    SmallVector<std::pair<std::string, mlir::Location>> pendingOwnYieldingFinallyCalls;
+    // (and whether the finally awaits rather than yields)
+    SmallVector<std::tuple<std::string, mlir::Location, bool>> pendingOwnYieldingFinallyCalls;
 
     // -mm=own: the type of the object a function throws out of itself, or one it calls does; empty if none
     std::string ownThrownObjectType(StringRef function)
@@ -436,11 +437,11 @@ class MLIRGenImpl
         return overriders;
     }
 
-    std::string ownThrownThroughYieldingFinallyMessage(StringRef function, StringRef thrownType)
+    std::string ownThrownThroughYieldingFinallyMessage(StringRef function, StringRef thrownType, bool awaits = false)
     {
         return (llvm::Twine("-mm=own: '") + function + "' throws an object of type '" + thrownType +
-                "', and thrown through a finally block that yields it is not supported: catch it inside the try "
-                "statement, or throw a string")
+                "', and thrown through a finally block that " + (awaits ? "awaits" : "yields") +
+                " it is not supported: catch it inside the try statement, or throw a string")
             .str();
     }
 
@@ -449,12 +450,12 @@ class MLIRGenImpl
     {
         int failures = 0;
         llvm::DenseSet<mlir::Location> reported;
-        for (auto &[function, location] : pendingOwnYieldingFinallyCalls)
+        for (auto &[function, location, awaits] : pendingOwnYieldingFinallyCalls)
         {
             auto thrownType = ownThrownObjectType(function);
             if (!thrownType.empty() && reported.insert(location).second)
             {
-                emitError(location) << ownThrownThroughYieldingFinallyMessage(function, thrownType);
+                emitError(location) << ownThrownThroughYieldingFinallyMessage(function, thrownType, awaits);
                 failures++;
             }
         }
@@ -1186,6 +1187,13 @@ class MLIRGenImpl
     {
         auto elementType = mlir::cast<mlir_ts::RefType>(inner.getType()).getElementType();
         auto value = builder.create<mlir_ts::LoadOp>(location, elementType, inner);
+        // under rc a reference (a string) has a count of the loop's variable's own, the copy's going with the copy
+        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, elementType))
+        {
+            builder.create<mlir_ts::RetainOp>(location, value);
+            builder.create<mlir_ts::ReleaseSlotOp>(location, outer);
+        }
+
         builder.create<mlir_ts::StoreOp>(location, value, outer);
     }
 
@@ -2927,6 +2935,19 @@ class MLIRGenImpl
             variableDeclarationInfo.setInitial(castedValue);
         }
 
+        // `let x: any;` is undefined, as in TypeScript: it is `let x: any = undefined;` (user ruling 11-27). The slot
+        // was never written outside -mm=rc, and a read took whatever was on the stack - `x === null` dereferenced it at
+        // --opt_level=0; -mm=rc gave it a null `any` (below), which `===` reads as undefined and typeof, print and
+        // the casts dereference. As an initializer it is owned like any other (localTakesOwnership), hoisted where
+        // others are, and a generator's field gets it on every turn. Not a catch clause's variable, which the landing
+        // pad writes, and not a global: its slot is zero, a null `any` (still open: typeof of one dereferences it).
+        if (!variableDeclarationInfo.initial && isa<mlir_ts::AnyType>(type) && !variableDeclarationInfo.isConst &&
+            !variableDeclarationInfo.isGlobal && !genContext.declaringCatchVariable)
+        {
+            CAST_A(castedValue, location, type, getUndefined(location), genContext);
+            variableDeclarationInfo.setInitial(castedValue);
+        }
+
         // -mm=rc: `let failure: any;` of a heap type starts empty, so that it owns what it is given like any other
         // local (takeOwnershipOfLocal). With no initializer it borrowed: `failure = e` in a catch clause took no
         // reference, the clause gave the caught value back, and `throw failure` after it threw freed memory.
@@ -3956,8 +3977,11 @@ class MLIRGenImpl
                     //type = getUnionType(type, getUndefinedType());
                     // a variable a library declares to its importers (`@dllimport let k: s32;` in its
                     // __decls) is defined in the library, so it has no initializer here (#448)
-                    if (!isa<mlir_ts::OptionalType>(type) && !hasModifier(parent, SyntaxKind::DeclareKeyword) &&
-                        !MLIRHelper::hasDecorator(parent, DLL_IMPORT))
+                    // a local `any` starts undefined (adjustLocalVariableType); a global one is still a null `any`
+                    // (isGlobalVarReceiver: its initializer is being generated), which most reads cannot take
+                    auto localAny = isa<mlir_ts::AnyType>(type) && !genContext.isGlobalVarReceiver;
+                    if (!isa<mlir_ts::OptionalType>(type) && !localAny &&
+                        !hasModifier(parent, SyntaxKind::DeclareKeyword) && !MLIRHelper::hasDecorator(parent, DLL_IMPORT))
                     {
                         emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
                     }

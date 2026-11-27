@@ -147,7 +147,15 @@ class OwnedReturnConsumptionPass
                     return;
                 }
 
-                if (auto symbolRefOp = insertOp.getValue().getDefiningOp<mlir_ts::SymbolRefOp>())
+                // an object's vtable holds a method as a reference to its function (`ts.Cast` of the symbol to
+                // `!ts.ref<!ts.func<...>>`, mlirGenObjectVirtualTableDefinitionForInterface): the same function
+                auto value = insertOp.getValue();
+                if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                }
+
+                if (auto symbolRefOp = value.getDefiningOp<mlir_ts::SymbolRefOp>())
                 {
                     slots[position[0]] = symbolRefOp.getIdentifier();
                 }
@@ -191,6 +199,18 @@ class OwnedReturnConsumptionPass
             }
         });
 
+        // The same for the functions a class given to a construct signature is called through (`new c(i)` of `c: { new
+        // (x: number): Pt }`): MLIRGen makes every one (generateSynthMethodToCallNewCtor) - an object literal can't
+        // have a construct signature - and each returns the object it makes. Under -mm=own, where library
+        // declarations are never classified, the call's result was a borrow, and returning it "a second reference".
+        auto everyNewCtorReturnsOwned = true;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            if (funcOp.getName().contains(NEW_CTOR_METHOD_NAME) && !returnsOwned.contains(funcOp.getName()))
+            {
+                everyNewCtorReturnsOwned = false;
+            }
+        });
+
         llvm::SmallVector<mlir::Operation *> toErase;
         module.walk([&](mlir_ts::CallIndirectOp callOp) {
             if (callOp.getNumResults() != 1)
@@ -209,7 +229,10 @@ class OwnedReturnConsumptionPass
                                       (anyDeclaredRecord && calleeDeclaresRecord(module, callOp)) ||
                                       // the call of an adapter in `__any_invoke`: one of this module's, or
                                       // another's made by the same code
-                                      (callOp->hasAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME) && everyAnyCallAdapterReturnsOwned);
+                                      (callOp->hasAttr(ANY_CALL_ADAPTER_CALL_ATTR_NAME) && everyAnyCallAdapterReturnsOwned) ||
+                                      // a construct signature's function, made for a class here or in another module
+                                      // by the same code
+                                      (everyNewCtorReturnsOwned && isNewCtorFieldCall(callOp));
 
             // A call through a plain value - a callback handed to `reduce`, a function-typed
             // field - names nothing at all, and neither vtables nor member names help. What does
@@ -4648,6 +4671,54 @@ class OwnedReturnConsumptionPass
         // Asking about every method that could be in the slot answers it instead -
         // virtualCallReturnsOwned.
         return {};
+    }
+
+    // Does the call go through a construct signature's field (`new c(i)` of `c: { new (x: number): Pt }`, the field
+    // `.new_ctor` of the tuple `c` is)?
+    static bool isNewCtorFieldCall(mlir_ts::CallIndirectOp callOp)
+    {
+        if (callOp.getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto callee = callOp.getOperand(0);
+        mlir::Type objectType;
+        int64_t position = -1;
+        if (auto loadOp = callee.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                objectType = propertyRefOp.getObjectRef().getType();
+                position = propertyRefOp.getPosition();
+            }
+        }
+        else if (auto extractOp = callee.getDefiningOp<mlir_ts::ExtractPropertyOp>();
+                 extractOp && extractOp.getPosition().size() == 1)
+        {
+            objectType = extractOp.getObject().getType();
+            position = extractOp.getPosition().front();
+        }
+
+        if (auto refType = mlir::dyn_cast_or_null<mlir_ts::RefType>(objectType))
+        {
+            objectType = refType.getElementType();
+        }
+
+        // the interface's thunk over the field (`PCtor` of `{ new (x: number): P }`) reads it through the object
+        if (auto objectRefType = mlir::dyn_cast_or_null<mlir_ts::ObjectType>(objectType))
+        {
+            objectType = objectRefType.getStorageType();
+        }
+
+        auto tupleType = mlir::dyn_cast_or_null<mlir_ts::TupleType>(objectType);
+        if (!tupleType || position < 0 || static_cast<size_t>(position) >= tupleType.getFields().size())
+        {
+            return false;
+        }
+
+        auto name = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[position].id);
+        return name && name.getValue() == NEW_CTOR_METHOD_NAME;
     }
 
     // A virtual call has no single callee, but it does have a set of possible ones, and the
