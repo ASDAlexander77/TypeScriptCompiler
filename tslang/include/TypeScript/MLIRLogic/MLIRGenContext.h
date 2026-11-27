@@ -117,6 +117,9 @@ struct YieldingFinally
     std::string label;
     std::string mode;
     std::string slotPrefix;
+    // not a generator (a `finally` that awaits, TSLANG 213): a `return`'s value is kept in this local of the function,
+    // declared in front of the `try` (a variable declared in it would not be seen after it), and returned from there
+    std::string valueSlot;
     mlir::Operation *funcOp = nullptr;
     llvm::SmallVector<YieldingFinallyExit> exits;
 };

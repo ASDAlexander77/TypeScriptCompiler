@@ -1186,6 +1186,13 @@ class MLIRGenImpl
     {
         auto elementType = mlir::cast<mlir_ts::RefType>(inner.getType()).getElementType();
         auto value = builder.create<mlir_ts::LoadOp>(location, elementType, inner);
+        // under rc a reference (a string) has a count of the loop's variable's own, the copy's going with the copy
+        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, elementType))
+        {
+            builder.create<mlir_ts::RetainOp>(location, value);
+            builder.create<mlir_ts::ReleaseSlotOp>(location, outer);
+        }
+
         builder.create<mlir_ts::StoreOp>(location, value, outer);
     }
 
