@@ -21117,6 +21117,10 @@ class MLIRGenImpl
     // a member of a union of tuples cast to a longer member (castFromUnion): mapTupleToFields fills each element it
     // lacks (elementFillValue) instead of refusing it
     bool fillAbsentTupleElements = false;
+    // ...and any member of it cast to the target (castFromUnion): castTupleToTuple makes the tuple a view of the
+    // member (OWN_UNION_MEMBER_TUPLE_ATTR_NAME), what it reads of the member and constants, not -mm=own's copy -
+    // each branch of the cast is a borrow of the union, which a function may return (TSLANG 216)
+    bool castingUnionMember = false;
 
     ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
 

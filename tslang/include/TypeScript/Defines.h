@@ -521,6 +521,10 @@
 // `g([a, b])`; unmarked, `"".concat(...parts)` - Array.join - leaked the array and a count of every
 // element on each call.
 #define SPREAD_ARRAY_LITERAL_ATTR_NAME "__spread_array_literal"
+// A `ts.CreateTuple` a union of tuples cast to a member makes of the member the union holds (MLIRGen castFromUnion,
+// TSLANG 216): what it reads of that member, and values that hold no block - a borrow of the union, as the member that
+// already is the target is, not a new tuple. -mm=own's borrowedParam sees through it.
+#define OWN_UNION_MEMBER_TUPLE_ATTR_NAME "__union_member_tuple"
 #define OWNED_DECORATOR "owned"
 #define DECLARED_OWNED_RESULT_ATTR_NAME "ts.declared_owned_result"
 // A method whose result type is `this`: it returns the object it is called on, on every path, not

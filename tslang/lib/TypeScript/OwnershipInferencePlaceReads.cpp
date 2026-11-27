@@ -981,6 +981,50 @@ namespace own_inference
         });
     }
 
+    bool OwnershipInferencePass::argumentOwnsApart(mlir::Operation *call, int32_t index, const Chain &chain)
+    {
+        auto args = callArgs(call);
+        if (index < 0 || static_cast<size_t>(index) >= args.size() || chain.anyPlace)
+        {
+            return false;
+        }
+
+        auto argument = args[index];
+        auto argumentRoot = rootOf(argument);
+        // the argument made here: a new value given straight, or a read of a local nothing assigns or captures that
+        // was declared with one (`const out: Record<string, number> = {}`)
+        mlir::Value argumentSource = argumentRoot;
+        auto madeHere = isFresh(argumentRoot);
+        if (auto loadOp = argumentRoot.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (varOp && !varOp.getCaptured().value_or(false) && !isCellVariable(varOp.getResult()) &&
+                isUnassignedSlot(varOp.getResult()) && varOp.getInitializer() && isFresh(rootOf(varOp.getInitializer())))
+            {
+                madeHere = true;
+                argumentSource = varOp.getResult();
+            }
+        }
+
+        if (!madeHere && !chain.owned())
+        {
+            return false;
+        }
+
+        // ...and neither made of the other: the argument is no record or view of a root, nor a root read out of it
+        for (auto source : rootSources(chain))
+        {
+            auto &fromSource = derivedFrom(source);
+            if (fromSource.contains(argument) || fromSource.contains(argumentRoot) || fromSource.contains(argumentSource) ||
+                derivedFrom(argumentSource).contains(source))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     bool OwnershipInferencePass::readsStableFieldsOfHeldRoot(mlir::Operation *read, const Chain &chain)
     {
         auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read);
@@ -1266,7 +1310,18 @@ namespace own_inference
                     auto value = borrowed ? borrowed : (read ? read->getResult(0) : mlir::Value());
                     auto notString = value && mlir::isa<mlir_ts::ArrayType, mlir_ts::ClassType, mlir_ts::TupleType,
                                                         mlir_ts::ObjectType, mlir_ts::InterfaceType>(value.getType());
+                    auto owners = callDropFieldOwners(drop);
+                    auto index = 0u;
                     mayDrop = llvm::any_of(*places, [&](auto &place) {
+                        // a place an argument owns, of an object apart from the chain (TSLANG 216)
+                        auto owner = index < owners.size() ? owners[index] : -1;
+                        index++;
+                        if (owner >= 0 && overwritesChain(place.first, place.second, chain) &&
+                            argumentOwnsApart(drop, owner, chain))
+                        {
+                            return false;
+                        }
+
                         if (place.first == OWN_CAPTURED_STRING_POSITION)
                         {
                             return !notString;

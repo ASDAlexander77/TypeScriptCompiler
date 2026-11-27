@@ -1039,6 +1039,11 @@ class OwnershipInferencePass
     // moved into the place, spec 29), and `read` may then be null.
     // Does an overwrite of a place at this position, with this slot type, drop the chain?
     bool overwritesChain(int64_t position, mlir::Type slotType, const Chain &chain);
+    // Is what argument `index` of `call` owns (OWN_DROP_FIELD_OWNERS_ATTR_NAME: its callees overwrite places only under
+    // it) apart from the chain? Two values this function does not own may be one (`fill(b, b.names)`), so one of them
+    // has to be its own - every root of the chain, or the argument: a new value, or a local nothing assigns or captures
+    // that was given one - and neither is made of the other (TSLANG 216).
+    bool argumentOwnsApart(mlir::Operation *call, int32_t index, const Chain &chain);
     bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed = {});
 
     // Is `read` a stable field (isStableField) of a stable field ... of a parameter nothing assigns, `this`, or
