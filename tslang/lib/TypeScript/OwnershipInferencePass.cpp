@@ -208,6 +208,7 @@ namespace own_inference
         dryRunDiagnostics.clear();
         dryRunCapture.clear();
         countedErrors.clear();
+        letsUsedAfterCalls.clear();
         reportSubject = {};
         armedSubject = {};
         failureSignalled = false;
@@ -282,6 +283,9 @@ namespace own_inference
             // makeStringCopies erases only retains, which the dry run sets no attribute on.
             if (!passed)
             {
+                // a `let` used after a call that may free what it borrows: a reference of its own (USER RULING 11-27)
+                countLetsUsedAfterCalls(toErase);
+
                 // the values the reports name, counted where they can be (the copies leave their
                 // retains alone)
                 if (countsFallback)
@@ -325,6 +329,8 @@ namespace own_inference
 
         if (!countsFallback)
         {
+            // what plain own counts itself: the `let`s countLetsUsedAfterCalls gave a count
+            markCountedRetains();
             return;
         }
 
@@ -2039,6 +2045,250 @@ namespace own_inference
         }
 
         return {};
+    }
+
+    // A `let` given a read of a place and used after a call that may free what it reads (`const e = a[0]; new Q(a);
+    // print(e)` of a constructor that empties `a`, letsUsedAfterCalls) holds a reference of its own (USER RULING 11-27,
+    // TSLANG 218): a string or an `any` is copied into it, as copyForRetain copies one; anything else keeps rc's ops,
+    // its block counted (countedValues, as --own-fallback=count counts), so the call's release leaves it to the `let`'s.
+    // Where neither can be made, the dry run's error stands. Only a `let` declared with the read and given nothing else.
+    void OwnershipInferencePass::countLetsUsedAfterCalls(llvm::SetVector<mlir::Operation *> &erased)
+    {
+        for (auto *candidate : letsUsedAfterCalls)
+        {
+            // a `const` folded into the read (`const e = a[0]`): no rc op of its own to keep. The read is given a
+            // count right after it and that count back after its last use, all in the read's block; anything else
+            // (a use in another block, a return before the last use, a value that can't be counted) stays an error
+            if (!mlir::isa<mlir_ts::VariableOp>(candidate))
+            {
+                countFoldedConstRead(candidate);
+                continue;
+            }
+
+            auto varOp = mlir::cast<mlir_ts::VariableOp>(candidate);
+            auto slot = varOp.getResult();
+            auto type = mlir::cast<mlir_ts::RefType>(varOp.getType()).getElementType();
+            if (!varOp.getInitializer() || varOp.getCaptured().value_or(false) || isCellVariable(slot) || isHandle(slot) ||
+                countedValues.contains(slot))
+            {
+                continue;
+            }
+
+            // rc's retain of the declaration, and no other store into the slot
+            mlir_ts::RetainSlotOp retain;
+            auto assigned = false;
+            for (auto *user : slot.getUsers())
+            {
+                if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(user); retainSlotOp && !retain)
+                {
+                    retain = retainSlotOp;
+                }
+
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == slot)
+                {
+                    assigned = true;
+                }
+            }
+
+            if (!retain || assigned)
+            {
+                continue;
+            }
+
+            if (isCopyableValueAt(varOp, type))
+            {
+                auto wasErased = erased.contains(retain.getOperation());
+                erased.remove(retain.getOperation());
+                if (!copyForRetain(retain) && wasErased)
+                {
+                    erased.insert(retain.getOperation());
+                }
+
+                continue;
+            }
+
+            llvm::SetVector<mlir::Value> group;
+            if (!countedGroup(slot, group))
+            {
+                continue;
+            }
+
+            countedValues.insert(group.begin(), group.end());
+        }
+    }
+
+    // countLetsUsedAfterCalls' `const` folded into its read: a string or an `any` is copied right after the read and
+    // that copy used in its place, given back after the last use; a class instance or an array is given a count of
+    // its own there (OWN_COUNTED_ATTR_NAME, markCountedRetains) and the count back after the last use. Only where
+    // every use is in the read's block and no return leaves between the read and the last use.
+    void OwnershipInferencePass::countFoldedConstRead(mlir::Operation *read)
+    {
+        auto value = read->getResult(0);
+        auto type = value.getType();
+        auto copied = isCopyableValueAt(read, type);
+        if (!copied && !mlir::isa<mlir_ts::ClassType, mlir_ts::ArrayType>(type))
+        {
+            return;
+        }
+
+        if (countedValues.contains(countedUnitOf(value)))
+        {
+            return;
+        }
+
+        // the last use, as the op of one block of the read's region it is in; values derived from the read count as
+        // its uses. That block is the read's, or one every path from the read's block reaches and none returns from
+        // to it (`new c(a)` of a class value calls the constructor in a branch of its own): the count is given back
+        // once on every path.
+        auto *region = read->getParentRegion();
+        mlir::Block *useBlock = nullptr;
+        mlir::Operation *last = nullptr;
+        auto oneBlock = true;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
+            auto *ancestor = region->findAncestorOpInRegion(*user);
+            if (!ancestor || (useBlock && ancestor->getBlock() != useBlock))
+            {
+                oneBlock = false;
+                return;
+            }
+
+            useBlock = ancestor->getBlock();
+            if (!last || last->isBeforeInBlock(ancestor))
+            {
+                last = ancestor;
+            }
+        });
+
+        if (!oneBlock || !last || last == read || last->hasTrait<mlir::OpTrait::IsTerminator>())
+        {
+            return;
+        }
+
+        // A return between the read and the last use gives the reference back too, right before it; a break, a
+        // continue or a throw there (which may leave the read's scope or not) keeps the error. Between them: the
+        // rest of the read's block, each block a path from it passes before it reaches the use's block (each of
+        // which returns or goes on, never back to the read's), and the use's block up to the last use.
+        auto leaves = false;
+        llvm::SmallVector<mlir::Operation *> returns;
+        auto scan = [&](mlir::Operation *from, mlir::Operation *to) {
+            for (auto *op = from; op && op != to; op = op->getNextNode())
+            {
+                op->walk([&](mlir::Operation *nested) {
+                    if (mlir::isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::ReturnInternalOp>(nested))
+                    {
+                        returns.push_back(nested);
+                    }
+                    else if (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp, mlir_ts::ThrowOp>(nested))
+                    {
+                        leaves = true;
+                    }
+                });
+            }
+        };
+
+        auto *block = read->getBlock();
+        if (useBlock == block)
+        {
+            scan(read->getNextNode(), last);
+        }
+        else
+        {
+            // the use's block runs once a path: none from it leads back to it or to the read's
+            llvm::SmallVector<mlir::Block *> pending(useBlock->getSuccessors().begin(), useBlock->getSuccessors().end());
+            llvm::SmallPtrSet<mlir::Block *, 8> seen;
+            while (!pending.empty())
+            {
+                auto *next = pending.pop_back_val();
+                if (next == block || next == useBlock)
+                {
+                    return;
+                }
+
+                if (seen.insert(next).second)
+                {
+                    pending.append(next->getSuccessors().begin(), next->getSuccessors().end());
+                }
+            }
+
+            // (the blocks after the use's: a path that joins them without passing the use - an early `return`
+            // branching to the function's one exit block - gives the reference back at the end of the block it
+            // joins from, which must lead there only)
+            auto &afterUse = seen;
+            scan(read->getNextNode(), nullptr);
+            llvm::SmallPtrSet<mlir::Block *, 8> visited;
+            llvm::SmallVector<mlir::Block *> toVisit{block};
+            while (!toVisit.empty())
+            {
+                auto *current = toVisit.pop_back_val();
+                if (current != block)
+                {
+                    auto returnsHere = returns.size();
+                    scan(&current->front(), nullptr);
+                    // a block that neither goes on nor returns (an unreachable end): the reference would stay
+                    if (current->getSuccessors().empty() && returns.size() == returnsHere)
+                    {
+                        return;
+                    }
+                }
+
+                auto successors = current->getSuccessors();
+                auto joining = llvm::count_if(successors, [&](mlir::Block *next) { return afterUse.contains(next); });
+                if (joining > 0)
+                {
+                    if (joining != static_cast<long>(successors.size()) || current == block)
+                    {
+                        return;
+                    }
+
+                    returns.push_back(current->getTerminator());
+                    continue;
+                }
+
+                for (auto *next : successors)
+                {
+                    if (next == block)
+                    {
+                        return;
+                    }
+
+                    if (next != useBlock && visited.insert(next).second)
+                    {
+                        toVisit.push_back(next);
+                    }
+                }
+            }
+
+            scan(&useBlock->front(), last);
+        }
+
+        if (leaves)
+        {
+            return;
+        }
+
+        mlir::OpBuilder builder(read->getContext());
+        builder.setInsertionPointAfter(read);
+        mlir::Value held = value;
+        if (copied)
+        {
+            auto copy = builder.create<mlir_ts::StringCopyOp>(read->getLoc(), type, value);
+            value.replaceAllUsesExcept(copy, copy);
+            held = copy;
+        }
+        else
+        {
+            builder.create<mlir_ts::RetainOp>(read->getLoc(), value);
+            countedValues.insert(countedUnitOf(value));
+        }
+
+        for (auto *exit : returns)
+        {
+            builder.setInsertionPoint(exit);
+            builder.create<mlir_ts::ReleaseOp>(exit->getLoc(), held);
+        }
+
+        builder.setInsertionPointAfter(last);
+        builder.create<mlir_ts::ReleaseOp>(last->getLoc(), held);
     }
 
     void OwnershipInferencePass::countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased)
