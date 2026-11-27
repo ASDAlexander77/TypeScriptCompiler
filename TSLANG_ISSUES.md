@@ -3517,7 +3517,8 @@ Tests `00tslang_issue_193.ts` (all models), `00never_array_union.ts`, `00unknown
 - A function returning a union and then a value of one of its members: "failed statement" alone.
   Not yet: such a function returning a union and then a value of no member (`{ valid: true }` after a `U` of shapes with
   `msg`); reading a field some member has not (`v.msg` of `{ valid } | { valid; msg }`, an error in TypeScript) reads
-  the value as the first member that has it. (Both settled in 211: the first works, the second is TypeScript's error.)
+  the value as the first member that has it. (Both settled in 211: the first works; the second reads the member the
+  value holds.)
 
 Tests `00tslang_issue_194.ts` (all models).
 
@@ -3797,25 +3798,22 @@ in the triage report). Fixed:
   for a union told apart by `kind`): "can't be stored". An exported `const` is stored as a `let` (user ruling 09-13),
   and its type was widened to `string` with it; never assigned, it keeps its string literal type, as in TypeScript.
 - 194: `v.msg` of `{ valid } | { valid; msg }` read the value as the first member that has `msg`, whichever member it
-  was. It is TypeScript's error now ("property 'msg' does not exist on '{valid:boolean}', a member of ..."), and
-  `"msg" in v`, which tells the members apart, works for a union of object shapes (it was "only a union of interfaces
-  is"), narrowing as for interfaces. A function returning a union and then a value of no member works already.
-- 205: `{ x: string } & any` is `any` (`never & any` stays `never`, `X & unknown` is X), and `{ x: string } & T` of a
-  generic function, read before T is given, waits for T (it was "no intersection", `never`). The tsc test that looped
-  with the first attempt (`conditionalTypeDoesntSpinForever.ts`) stops at once on an unrelated error.
+  was - past the end of a smaller one. It is read from the member the value holds, and is the type's empty value for
+  one that has not the field (TypeScript has `undefined`, and makes the read an error; tslang reads it where it is
+  narrowed in ways it does not follow yet - `switch (true)` clauses, a truthy discriminant - which tsc-clean tests do, so
+  making it an error failed three of them). `"msg" in v`, which tells the members apart, works for a union of object
+  shapes (it was "only a union of interfaces is"), narrowing as for interfaces. A function returning a union and then
+  a value of no member works already.
+- 205: `{ x: string } & any` is `any` (`never & any` stays `never`, `X & unknown` is X). The tsc test that looped with
+  the first attempt (`conditionalTypeDoesntSpinForever.ts`) stops at once on an unrelated error.
 - Under -mm=own, a variable holding a string converted to another object type (`const u = { n: 1, name: "x" + i };
   const p: { n: number; name: string } = u`, `n` an s32): "a value that borrows a field cannot be stored". The new
   object takes a copy of each string read out of the source (strings are values), is built in a slot as an own literal
   of new values is, and goes into a local of its own, so it can be stored, kept, or only read. Only when every other
   field holding a block is new or constant: one with an object, a nested object or an optional string read out of the
   source stays a borrow, refused where it is stored as before. 2M conversions stay at about 6 MB.
-- 131: `Record<string, number>` (a mapped type over `string` keys) was a record of no fields, with only a warning, and
-  a literal given to it lost its own: it is a dictionary of the type, as `{ [key: string]: number }` is.
 - 137: under -mm=own, `for (const o of [new A(), new B()])`: "an object literal that holds a value it owns is moved
   only into a local". The literal goes into a local of its own, as `const items = [...]; for (const o of items)`.
-- 140: overloads in a declared class (`declare class DC { m(x: number): number; m(x: string): string; }`):
-  "redefinition of symbol" (constructor overloads, made one function each, are not affected). A declared method is one external symbol, as a declared function is: a clear
-  error now, with the same advice (one declaration with optional or union parameters).
 - 152, -mm=own: an element stored past the end through a local over a parameter's array (`let src = order; src[n] = v`)
   or through a handle's payload (`s.value[i] = v`) did not grow the array (deliberately, as -mm=own refuses the growth
   there) and was written past the end of its block: a corrupted heap, crashing later. It is a RangeError now (an assert
@@ -3827,9 +3825,15 @@ Not yet:
 - Under -mm=own, `<{ code: number }>a` of an `any` holding `{ code: 7 }` (an s32 field) still throws. Each layout is a
   cast of the `any` of its own, and -mm=own takes a named `any` cast to a tuple more than once for a second reference
   of its box: `const c = <T>a; const d = <T>a` is refused as well, before this.
-- T of a generic function is not inferred from an intersection parameter (`xOf(withY)` for `v: { x: string } & T`):
-  it is `any`, and the parameter `any` (`v.x` read at run time; refused under -mm=own). `xOf<{ y: number }>(withY)`
-  works.
+- `{ x: string } & T` of a generic function is `never` ("'Never' can't be used as parameter type"), even given T.
+  Leaving it to be resolved once T is given made inference fail elsewhere (`SetupImageRefs<K> & {...}`, tsc
+  objectRestBindingContextualInference and others: "can't instantiate function"), so it was taken out again.
+- 131 `Record<string, number>` is a record of no fields (a warning), and a literal given to it loses its own. Made a
+  dictionary, as `{ [key: string]: number }` is, the tsc tests using `T extends Record<string, X>` as a constraint
+  failed (an object literal does not meet a dictionary), so it was taken out again: it needs the constraint check to
+  take a literal for a dictionary.
+- 140 overloads in a declared class: "redefinition of symbol named 'DC.constructor'" for constructors; an error for
+  every declared method overload failed tsc-clean tests whose method overloads compiled, so it was taken out.
 - Still failing from the triage, not taken here: 132 a generic class given for a constructor type (`fruitFactory1(Banana)`
   of `Banana<T extends string>`: "Can't find class Banana", T to be instantiated from its constraint); 152 a record
   spread into a dictionary under -mm=own; 117 a primitive's method as a value (`let f = n.toFixed`); 131 `Object.keys`
@@ -3839,8 +3843,7 @@ Not yet:
   tsc tests genericFunctionsAndConditionalInference and contextualParamTypeVsNestedReturnTypeInference1; and under
   -mm=own 56 (a loop shape), 128 (a `for` body assigning its `let`), 144 (a closure capturing a later const holding a
   closure), 164 (an interface narrowed to a class), 153 (an object sent by `next()`), 159 (`yield* this.range()`).
-  Design questions without a ruling: overloads of a declared function (136) and of a declared class's method (140,
-  an error now).
+  Design questions without a ruling: overloads of a declared function (136) and of a declared class's
+  constructor (140).
 
-Tests `00tslang_issue_211.ts` (all models), `union_field_missing_error.ts`, `declared_class_overload_error.ts`,
-`own_grow_past_end_check.ts` (-mm=own).
+Tests `00tslang_issue_211.ts` (all models), `own_grow_past_end_check.ts` (-mm=own).

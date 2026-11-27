@@ -2486,21 +2486,6 @@ namespace mlirgen
             return getMappedType(type, nameType, constrainType);
         }
 
-        // `Record<string, T>`, `{ [P in string]: T }`: every string a key, a dictionary of T as `{ [key: string]: T }` is
-        // (getTypeLiteral). It was a record of no fields - only a warning - and a literal given to it lost its own (TSLANG 131)
-        if (!hasNameType && isa<mlir_ts::StringType>(constrainType))
-        {
-            GenContext stringKeyGenContext(genContext);
-            stringKeyGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, constrainType)});
-            if (auto valueType = getType(mappedTypeNode->type, stringKeyGenContext))
-            {
-                if (auto dictionaryType = getObjectDictionaryType(loc(mappedTypeNode), valueType, genContext))
-                {
-                    return dictionaryType;
-                }
-            }
-        }
-
         // the key type param is visible only while resolving this mapped type; use a local
         // context copy so the caller's typeParamsWithArgs (incl. a pre-existing entry with
         // the same name) is never touched
@@ -3682,6 +3667,7 @@ namespace mlirgen
         mlir::SmallVector<mlir::Type> typesForUnion;
         auto allTupleTypesConst = true;
         auto unionTypes = false;
+        auto anyWritten = false;
         for (auto typeItem : intersectionTypeNode->types)
         {
             // an interface of one call signature is that signature's function type (callSignatureOnlyType), but with
@@ -3721,13 +3707,15 @@ namespace mlirgen
             }
 
             types.push_back(type);
+            anyWritten |= typeItem == SyntaxKind::AnyKeyword;
         }
 
         // `X & any` is `any` (`never & any` stays `never`), and `X & unknown` is X, as in TypeScript: it was `never` ("'Never'
-        // can't be used as parameter type", TSLANG 205)
+        // can't be used as parameter type", TSLANG 205). Only `any` written here: a type parameter standing for `any` while
+        // a call's arguments are inferred (`T & ((arg: string) => any)`) leaves the other members to infer from
         if (llvm::none_of(types, [](mlir::Type type) { return isa<mlir_ts::NeverType>(type); }))
         {
-            if (llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::AnyType>(type); }))
+            if (anyWritten)
             {
                 return getAnyType();
             }
@@ -3798,13 +3786,6 @@ namespace mlirgen
             newInterfaceInfo->assignCanonicalVirtualIndexes();
 
             return newInterfaceInfo->interfaceType;
-        }
-
-        // a type parameter not given yet (`v: { x: string } & T` of a generic function, read before a call gives T): the
-        // intersection is resolved once T is; merged with the shape's fields it was "no intersection", `never` (TSLANG 205)
-        if (llvm::any_of(types, [&](mlir::Type type) { return mth.isGenericType(type); }))
-        {
-            return mth.getIntersectionType(types);
         }
 
         if (baseTupleType)

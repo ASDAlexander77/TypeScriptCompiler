@@ -1,4 +1,4 @@
-// TSLANG 211, every model: leftovers of 193, 194, 205 and old "still open" notes (131, 137, own conversions).
+// TSLANG 211, every model: leftovers of 193, 194, 205 and old "still open" notes (137, own conversions).
 
 // 193: a discriminant read from an exported module `const` (stored as a `let`, user ruling) kept its string literal
 // type only as a string, and a literal told apart by it matched no member ("can't be stored")
@@ -10,7 +10,8 @@ function run(o: KindA | KindB) {
     return o.kind == "a" ? o.method("xyz") : o.method(5);
 }
 
-// 194: `"msg" in v` of a union of object shapes (it was "only a union of interfaces is")
+// 194: `"msg" in v` of a union of object shapes (it was "only a union of interfaces is"), and `v.msg` read from the
+// member the value holds (it was read as the first member that has it, past the end of a smaller one)
 type Validated = { valid: boolean } | { valid: boolean; msg: string };
 
 function makeValidated(b: boolean): Validated {
@@ -29,15 +30,11 @@ function msgOf(v: Validated) {
     return "none";
 }
 
-// 205: `X & any` is `any`; `{ x: string } & T` of a generic function was `never`
+// 205: `X & any` is `any` (it was `never`)
 type WithAny = { x: string } & any;
 
 function passAny(w: WithAny) {
     return w;
-}
-
-function xOf<T>(v: { x: string } & T) {
-    return v.x;
 }
 
 // own: a variable holding a string converted to another object type (`n` an s32 for a number), stored, read by a
@@ -80,11 +77,11 @@ function main() {
     assert(run({ kind: KA, method(a) { return a.length; } }) == 3, "exported const discriminant");
 
     assert(msgOf(makeValidated(false)) == "m1" && msgOf(makeValidated(true)) == "none", "in of shapes");
+    const withMsg: Validated = makeValidated(false);
+    assert(withMsg.valid == false, "a field every member has");
 
     const anyValue: any = { x: "s" };
     passAny(anyValue);
-    const withY: { x: string; y: number } = { x: "t", y: 1 };
-    assert(xOf<{ y: number }>(withY) == "t", "generic intersection");
 
     const k = new Keeper();
     let total: number = 0;
@@ -98,11 +95,6 @@ function main() {
     }
 
     assert(total == 15 && k.all.length == 3 && k.all[2].name == "x2" && converted(4).name == "m4", "conversion");
-
-    // 131: Record<string, T> is a dictionary (it was a record of no fields)
-    const r: Record<string, number> = { a: 1, b: 2 };
-    r["c"] = 3;
-    assert(r["a"] == 1 && r["c"] == 3, "record");
 
     // 137: for...of straight over a literal of objects (under -mm=own "moved only into a local")
     let s: number = 0;

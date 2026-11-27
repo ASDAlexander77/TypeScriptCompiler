@@ -114,9 +114,6 @@ set(not_compilable_alone
     class_reads_block_local_error.ts
     class_static_block_local_error.ts
     type_not_value_error.ts
-    # errors by design (TSLANG 211 error tests)
-    union_field_missing_error.ts
-    declared_class_overload_error.ts
     # errors by design (TSLANG 204 error tests)
     too_few_type_args_error.ts
     destructuring_no_initializer_error.ts

@@ -5803,45 +5803,6 @@ genContext);
             return mlir::success();
         }
 
-        // ...but a declared class's method binds one external symbol, as a declared function does (MLIRGenFunctions):
-        // declared again with another signature it was "redefinition of symbol named 'DC.constructor'" (TSLANG 140)
-        if (!funcLikeDeclaration->body && isAmbientMember && !newClassPtr->isCppVTable
-            && (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor))
-        {
-            auto sameMember = [&](ClassElement other) {
-                if (other == SyntaxKind::Constructor || classMember == SyntaxKind::Constructor)
-                {
-                    return other == classMember;
-                }
-
-                return other == SyntaxKind::MethodDeclaration
-                    && MLIRHelper::getName(other.as<MethodDeclaration>()->name) == MLIRHelper::getName(funcLikeDeclaration->name)
-                    && hasModifier(other, SyntaxKind::StaticKeyword) == hasModifier(classMember, SyntaxKind::StaticKeyword);
-            };
-
-            if (auto classLike = classMember->parent.as<ClassLikeDeclaration>())
-            {
-                for (auto other : classLike->members)
-                {
-                    if (other == classMember)
-                    {
-                        break;
-                    }
-
-                    if (sameMember(other))
-                    {
-                        auto name = classMember == SyntaxKind::Constructor ? std::string("constructor")
-                                                                           : MLIRHelper::getName(funcLikeDeclaration->name);
-                        emitError(location)
-                            << "'" << name << "' of the declared class is declared again with another signature: a declared "
-                            << "method is one external symbol, so it can't have overloads. Declare it once, with optional or "
-                            << "union parameters";
-                        return mlir::failure();
-                    }
-                }
-            }
-        }
-
         if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
             funcLikeDeclaration, 
@@ -7035,28 +6996,26 @@ genContext);
         std::stable_sort(members.begin(), members.end(),
                          [&](mlir::Type a, mlir::Type b) { return depthOf(a) > depthOf(b); });
 
-        // a field some shapes have and another has not (`v.msg` of `{ valid } | { valid; msg }`): TypeScript's error
-        // ("Property 'msg' does not exist on type"). It was read as the first member that has it, whichever the value
-        // was (TSLANG 194)
+        // a field some shapes have and another has not (`v.msg` of `{ valid } | { valid; msg }`, read where the value is
+        // narrowed to one that has it in ways not followed here - `switch (true)` clauses, a truthy discriminant): read
+        // from the members that have it, and the type's empty value for one that has not (TypeScript has `undefined`).
+        // It was read as the first member that has it, whichever the value was: past the end of a smaller one (TSLANG 194)
         auto hasField = [&](mlir::Type member) {
             auto tuple = dyn_cast<mlir_ts::TupleType>(member);
             return !tuple || tuple.getIndex(nameAttr) >= 0;
         };
-        auto lacking = llvm::find_if(members, [&](mlir::Type member) { return !hasField(member); });
-        if (lacking != members.end()
-            && llvm::any_of(members, [&](mlir::Type member) { return isa<mlir_ts::TupleType>(member) && hasField(member); }))
-        {
-            emitError(location) << "property '" << name << "' does not exist on '" << to_print(*lacking)
-                                << "', a member of '" << to_print(unionType)
-                                << "': tell the members apart first (a field that names the member, or `\"" << name
-                                << "\" in` the value)";
-            return mlir::failure();
-        }
+        auto someLack = llvm::any_of(members, [&](mlir::Type member) { return !hasField(member); })
+            && llvm::any_of(members, [&](mlir::Type member) { return isa<mlir_ts::TupleType>(member) && hasField(member); });
 
         // the field's type in each member: a field every member has, not a method
         SmallVector<mlir::Type> fieldTypes;
         for (auto member : members)
         {
+            if (someLack && !hasField(member))
+            {
+                continue;
+            }
+
             auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, member, unionValue);
             auto fieldType = evaluateProperty(location, memberValue, name.str(), genContext);
             // (nor an array method of a tuple, `x.slice(1)` of `[number, string] | [number, string, string]`: an
@@ -7087,6 +7046,11 @@ genContext);
         };
 
         auto readOfMember = [&](mlir::Type member) -> ValueOrLogicalResult {
+            if (someLack && !hasField(member))
+            {
+                return V(builder.create<mlir_ts::DefaultOp>(location, resultType));
+            }
+
             auto memberValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, member, unionValue);
             auto value = mlirGenPropertyAccessExpression(location, memberValue, name, false, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(value)
