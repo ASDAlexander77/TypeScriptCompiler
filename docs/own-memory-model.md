@@ -772,7 +772,10 @@ generator. On anything else it is an error.
 
 A generator borrows its parameters without saying so, `this` among them: an extension
 generator such as `function* keys<T>(this: T[])`, called `a.keys()`, may not outlive `a`. A function
-that returns one says `@borrows("this")`, as `[Symbol.iterator]` of an array does.
+that returns one says `@borrows("this")`, as `[Symbol.iterator]` of an array does. A generator
+method of a class the module keeps to itself borrows its `this` without saying so too (so
+`yield* this.range()` in another of its generator methods works, and `return new R().range()` is
+an error); one of an exported class, or one an override shares a slot with, says `@borrows("this")`.
 
 ```typescript
 @final

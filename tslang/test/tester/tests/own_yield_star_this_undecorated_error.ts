@@ -1,12 +1,13 @@
-// -mm=own: a generator method keeps its `this` unless it says it borrows it, so `yield* this.range()` would give the
-// object to a second owner (TSLANG 217, 159: with `@borrows("this")` on both methods it compiles). An error that says so.
+// -mm=own: a generator method of an exported class keeps its `this` unless it says it borrows it (another module's
+// callers know only what it says), so `yield* this.range()` would give the object to a second owner (TSLANG 217, 159:
+// with `@borrows("this")` on both methods, or in a class the module keeps to itself, it compiles). An error that says so.
 type IterateResult<T> = { value: T, done: boolean };
 interface Generator<T = unknown, TReturn = any, TNext = any> {
     next: (value?: TNext) => IterateResult<T>;
     return?: (value: T) => IterateResult<T>;
 }
 
-class R {
+export class R {
     n: number = 3;
     *range(): Generator<number> {
         for (let i = 0; i < this.n; i++) yield i;

@@ -2665,7 +2665,13 @@ set_tests_properties(test-compile-own-for-let-assigned-after-closure-error PROPE
 add_test(NAME test-compile-own-yield-star-this-undecorated-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_yield_star_this_undecorated_error.ts")
 set_tests_properties(test-compile-own-yield-star-this-undecorated-error PROPERTIES
-                     PASS_REGULAR_EXPRESSION "@borrows\\(\"this\"\\) on both methods"
+                     PASS_REGULAR_EXPRESSION "borrows its 'this' only when it says '@borrows\\(\"this\"\\)'"
+                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# a generator method that borrows its `this` by default (user ruling 2026-11-27) returned past the object it is made on
+add_test(NAME test-compile-own-generator-method-temporary-error
+         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_generator_method_temporary_error.ts")
+set_tests_properties(test-compile-own-generator-method-temporary-error PROPERTIES
+                     PASS_REGULAR_EXPRESSION "borrows its generator's arguments cannot be stored, returned or captured"
                      FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)

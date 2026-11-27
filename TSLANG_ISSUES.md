@@ -4121,12 +4121,16 @@ Tests `00tslang_issue_216.ts` (all models), `own_drop_owner_{two_params,this_par
   assigned after a closure is made stays refused (own's capture rule, user ruling 2026-11-13). A string loop variable
   (`for (let s = "a"; ...; s = s + "a") fs.push(() => s)`) the body does not assign: the iteration's is a copy of the
   text, its own, which each closure takes.
-- 159: `yield* this.range()` in a generator method whose methods say `@borrows("this")`: "a value that borrows its
-  generator's arguments cannot be stored". The delegate is bounded by what the generator's state borrows (its `this`),
-  and may be kept in a field of that state: the state does not outlive what it borrows, so neither does the field.
-  Likewise `yield* up(xs)` of a parameter. Without `@borrows` a generator method keeps its `this` (the generator owns
-  the object), so `this.range()` would give it a second owner: still an error, which now says to declare both methods
-  `@borrows("this")`.
+- 159: `yield* this.range()` in a generator method: "a value that borrows a field cannot be stored". A generator
+  method kept its `this` unless it said `@borrows("this")` (the generator owned the object, so `r.range()` moved `r`
+  and `this.range()` gave it a second owner). User ruling 2026-11-27: a generator method of a class the module keeps
+  to itself borrows its `this` and arguments without saying so, as a generator function does (the spec's "`this` among
+  them"); what it is found to borrow is what it declares, so a call through the vtable has the bound too. Not one in
+  an override family of several methods, nor an exported class's (its callers know only what it says: it still needs
+  `@borrows("this")`, and the error says so). So `return new R().range()` is an error now: the generator may not
+  outlive the temporary. The delegate is bounded by what the generator's state borrows, and may be kept in a field of
+  that state: the state does not outlive what it borrows, so neither does the field. Likewise `yield* up(xs)` of a
+  parameter.
 - `Constructor<T>` (`interface Constructor<T> { new (...args: any[]): T }`) given a class: "a value takes a second
   reference". The function made for the class was read back out of the object `{ .new_ctor: f }` it was put in, a
   value known at run time only, and boxed with an adapter the object then held; it is that function, named, and gets
@@ -4146,8 +4150,6 @@ Tests `00tslang_issue_216.ts` (all models), `own_drop_owner_{two_params,this_par
 
 Stays as it was:
 - 153 (`next(obj)` of a generator kept its value: the error asks for `Shared<Box>`), by design.
-- Making an undecorated generator method borrow its `this`, as the own spec says a generator borrows its arguments:
-  it would turn `return new R().range()` into an error. A design question.
 
 Not yet:
 - Under -mm=own a closure that captures a string and escapes (returned, `fs.push(() => s)`) leaks the string when it

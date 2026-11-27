@@ -148,6 +148,20 @@ class Range {
     }
 }
 
+// ...and one that says nothing: a generator method of a class this module keeps to itself borrows its `this` (user
+// ruling 2026-11-27), so the object is still its caller's after `r.range()`
+class Plainrange {
+    n: number = 3;
+    *range(): Generator<number> {
+        for (let i = 0; i < this.n; i++) yield i;
+    }
+
+    *all(): Generator<number> {
+        yield 100;
+        yield* this.range();
+    }
+}
+
 function* up(xs: number[]): Generator<number> {
     for (const x of xs) yield x;
 }
@@ -223,6 +237,12 @@ function main() {
     it.next();
     it.next();
     it.return(0);
+
+    const pr = new Plainrange();
+    s = 0;
+    for (const v of pr.all()) s += v;
+    for (const v of pr.range()) s += v;
+    assert(s == 106 && pr.n == 3);
 
     s = 0;
     for (const v of around([1, 2, 3])) s += v;

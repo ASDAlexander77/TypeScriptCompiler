@@ -453,6 +453,23 @@ namespace own_inference
             {
                 diag << "' is a parameter, kept here, but -mm=own cannot make the callers of "
                      << quotedFunctionName(f.getName()) << " give it up";
+                // a generator method another module may call keeps its `this` unless it says so (TSLANG 217)
+                auto makesGeneratorState = false;
+                f.walk([&](mlir_ts::NewOp newOp) {
+                    auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(newOp.getType());
+                    auto stateType = valueRefType ? mlir::dyn_cast<mlir_ts::TupleType>(valueRefType.getElementType())
+                                                  : mlir_ts::TupleType();
+                    if (stateType && stateType.size() > 0)
+                    {
+                        auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(stateType.getFieldInfo(0).id);
+                        makesGeneratorState = makesGeneratorState || (id && id.getValue() == GENERATOR_STEP);
+                    }
+                });
+                if ((name == "this value" ? paramName(param) : name) == THIS_NAME && makesGeneratorState)
+                {
+                    diag.attachNote(f.getLoc()) << "a generator method of an exported class borrows its 'this' only when it "
+                                                   "says '@" BORROWS_DECORATOR "(\"this\")'";
+                }
             }
 
             noteLostFacts(diag);
