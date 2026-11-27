@@ -3960,3 +3960,34 @@ Not yet:
 
 Tests `00tslang_issue_213.ts`, `00tslang_issue_213_await_finally.ts`, `00let_any_starts_undefined.ts` (all models),
 `00tslang_issue_213_loop.ts` (gc, rc, none); diagnostic-location `await_in_finally.ts` removed (it compiles now).
+
+214. Leftovers of 213 (2026-11-27). Fixed:
+- Under -mm=own a `break` (or `continue`) out of a catch clause leaked what the clause made for a statement before it
+  (`s = "c" + e; break L;`: the caught string unboxed): a temporary is given back where its block ends, and a jump of
+  the block itself was not taken for a way out of it - the release went after the jump, never run. It goes in front of
+  the jump now, as for a `return` or a `throw`.
+- Under -mm=own a class whose constructor keeps a string given to a construct signature (`R(r: string)` for `{ new (r:
+  string): R }` or an interface of one): "an argument is given to 'R.constructor', which keeps it, but -mm=own cannot
+  move it here". The function made for the class is called through a value, which lends it its arguments; it gives the
+  constructor a copy of each string, held by a local of its own until then. An object kept so stays refused (it can't
+  be copied).
+- Under -mm=own a tuple literal holding a new string given to a union of tuples (`const x: [number, string] | [number,
+  string, string] = [i, "a" + i, "b"]`): "a value that borrows a field cannot be stored". The literal is built as the
+  member of its length (a tuple of new values), not as its own type read out of its slot; a `const` of the union made
+  of a literal's slot has storage of its own, as one of a tuple has, or what the literal holds was never given back.
+- 213's "async leaks" are not leaks: a string an async function returns is made on the runtime's worker thread and
+  given back on the caller's, and memory levels off (about 97 MB at 4M and 8M calls under rc and -mm=own alike).
+
+Not yet:
+- 128 under -mm=own (a captured `for` variable the body assigns): the iteration's copy is written back to the loop's
+  variable after the closure took it, which own refuses ("captured by a closure that escapes, and is still used here",
+  user ruling 2026-11-13). It needs a capture by value for value types.
+- Under -mm=own `Constructor<T>` of `new (...args: any[]) => T`: the function made for the class takes no `any[]`, and
+  the arity adapter around it is refused where it is boxed ("a value takes a second reference").
+- A union of tuples asserted to one of them (`<[number, string, string]>x`) fails with nothing said ("failed
+  statement": the other member is cast to it too), and indexed (`x[1]`) is "not applicable" (before this batch).
+- Under -mm=own `x.slice(1)` of a union of tuples: "an element ... would have two owners".
+- Still from 213: 56, 153, 159 under own; 131, 108, 191's callable interfaces, recursive conditional types, `Symbol`
+  as a value; design questions without a ruling: overloads of a declared function (136) and class constructor (140).
+
+Tests `00tslang_issue_214.ts` (all models).

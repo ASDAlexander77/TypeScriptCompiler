@@ -2618,7 +2618,17 @@ class MLIRGenImpl
             }
 
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
-            needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
+            // a union of tuples given a tuple literal (`const x: [number, string] | [number, string, string] = [i,
+            // "a" + i, "b"]`): the union is made of the literal's slot, as a tuple's own `const` is (readsLiteralSlot
+            // below), and folded nothing gave back what the literal holds (TSLANG 214)
+            auto unionOfLiteralSlot = false;
+            if (auto unionCast = initial ? initial.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+                unionCast && isa<mlir_ts::UnionType>(recordType))
+            {
+                unionOfLiteralSlot = readsLiteralSlot(mth, location, unionCast.getIn()) && mth.ownsHeapMemory(location, type);
+            }
+
+            needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type) || unionOfLiteralSlot
                 || MLIRTypeHelper::isConstTupleHoldingArray(type) || valueReadFromPlace
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
@@ -16749,8 +16759,32 @@ class MLIRGenImpl
         if (genContext.receiverType)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! array/tuple - receiver type: " << genContext.receiverType << "\n";);
+            // a union of tuples (`[number, string] | [number, string, string]`): the literal is built as the one of its
+            // length - a tuple of new values. Built as its own type and then converted, its fields were read out of
+            // its slot, and under -mm=own a new string in it was "a value that borrows a field" (TSLANG 214)
+            auto receiverType = genContext.receiverType;
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(mth.stripOptionalType(receiverType)))
+            {
+                auto anySpread = llvm::any_of(arrayElements, [](Expression item) { return item == SyntaxKind::SpreadElement; });
+                mlir_ts::TupleType ofLength;
+                auto count = 0;
+                for (auto memberType : unionType.getTypes())
+                {
+                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(memberType); tupleType && tupleType.size() == arrayElements.size())
+                    {
+                        ofLength = tupleType;
+                        count++;
+                    }
+                }
+
+                if (!anySpread && count == 1)
+                {
+                    receiverType = ofLength;
+                }
+            }
+
             // TODO: isGenericType is applied as hack here, find out the issue
-            arrayInfo.setReceiver(genContext.receiverType, mth.isGenericType(genContext.receiverType));
+            arrayInfo.setReceiver(receiverType, mth.isGenericType(receiverType));
         }
 
         for (auto &item : arrayElements)
@@ -19207,6 +19241,10 @@ class MLIRGenImpl
                     NodeFactory nf(NodeFactoryFlags::None);
 
                     NodeArray<Expression> argumentsArray;
+                    // the locals holding the copies below, given back (or moved) where the body ends
+                    GenContext copiesGenContext(genContext);
+                    auto copies = std::make_unique<SmallVector<mlir::Value>>();
+                    copiesGenContext.ownedVars = copies.get();
                     //auto skip = 1;
                     auto skip = skipFuncParams;
                     auto index = 0;
@@ -19221,6 +19259,37 @@ class MLIRGenImpl
 
                         std::string paramName("p");
                         paramName += std::to_string(index++);
+
+                        // -mm=own: the function is called through a value, which lends it its arguments, and a
+                        // constructor that keeps one (`constructor(public r: string)`) could not have it ("this
+                        // function does not own it"). A string is a value: the constructor is given a copy, held by a
+                        // local of this function until then (TSLANG 214). An object can't be copied, and stays refused.
+                        if (compileOptions.memoryModel == MemoryModelOwn && isa<mlir_ts::StringType>(paramType))
+                        {
+                            auto paramValue = mlirGen(nf.createIdentifier(stows(paramName)), genContext);
+                            if (mlir::failed(paramValue) || !V(paramValue))
+                            {
+                                return mlir::failure();
+                            }
+
+                            auto copy = builder.create<mlir_ts::StringCopyOp>(location, paramType, V(paramValue));
+                            copy->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                            auto copyName = paramName + ".copy";
+                            auto declaredType = registerVariable(
+                                location, copyName, false, VariableType::Let,
+                                [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                                    return {paramType, copy, TypeProvided::Yes};
+                                },
+                                copiesGenContext);
+                            if (!declaredType)
+                            {
+                                return mlir::failure();
+                            }
+
+                            argumentsArray.push_back(nf.createIdentifier(stows(copyName)));
+                            continue;
+                        }
+
                         argumentsArray.push_back(nf.createIdentifier(stows(paramName)));
                     }
 
@@ -19241,6 +19310,12 @@ class MLIRGenImpl
                         // back.
                         auto returnValue = V(castToRet);
                         mlirGenRetainCaptured(location, mlir::ValueRange{returnValue});
+                        if (!copies->empty() &&
+                            mlir::failed(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &copiesGenContext)))
+                        {
+                            return mlir::failure();
+                        }
+
                         builder.create<mlir_ts::ReturnValOp>(location, returnValue, retVarInfo.first);
                     }
                     else

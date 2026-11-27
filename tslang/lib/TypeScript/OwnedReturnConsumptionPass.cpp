@@ -4536,10 +4536,13 @@ class OwnedReturnConsumptionPass
     // A generator's `yield` ends the call the same way (releaseRangeEnd).
     // (BlockScan::firstExitingOpAfter) - and a `throw`: what follows it in the block never runs, so a temporary of
     // the thrown expression - `throw "x" + i`'s number printed into a string - was never given back
+    // (a `break` or `continue` of the block itself leaves it too, wherever it goes: under -mm=own a temporary of a catch
+    // clause that ends in `break L` - `s = "c" + e; break L;`, the caught value unboxed - was given back at the block's
+    // end, after the jump, and leaked, TSLANG 214; a nested one may be caught below the block, see exitsOf)
     static bool exitsBlock(mlir::Operation *op)
     {
         return mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp,
-                         mlir_ts::ThrowOp>(op);
+                         mlir_ts::ThrowOp, mlir_ts::BreakOp, mlir_ts::ContinueOp>(op);
     }
 
     static bool producesOwnedResult(mlir::Value value)
