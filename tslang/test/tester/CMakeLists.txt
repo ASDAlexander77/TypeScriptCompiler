@@ -2609,6 +2609,11 @@ foreach(issue214_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_214-${issue214_mm} COMMAND test-runner -jit -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_214-${issue214_mm} COMMAND test-runner -mm=${issue214_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_214.ts")
 endforeach()
+# TSLANG 215: Record<string, T> a dictionary, a union of tuples cast to one of them, -mm=own slice of one
+foreach(issue215_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_215-${issue215_mm} COMMAND test-runner -jit -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_215-${issue215_mm} COMMAND test-runner -mm=${issue215_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_215.ts")
+endforeach()
 # TSLANG 213 (140): an `await` in a `finally` block
 foreach(issue213a_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_213_await_finally-${issue213a_mm} COMMAND test-runner -jit -mm=${issue213a_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_213_await_finally.ts")

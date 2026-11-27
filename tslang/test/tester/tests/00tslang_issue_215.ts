@@ -1,0 +1,124 @@
+// TSLANG 215: `Record<string, T>` is `{ [key: string]: T }`, a dictionary of T (it was an object with no fields: the
+// literal given to it lost its fields, and Object.keys gave none), both as the built-in Record and as a mapped type
+// `{ [P in K]: T }` of K = string; a union of tuples cast to one of them; under -mm=own `slice` of one.
+// The tests compile without the default library: its ObjectDictionary, as the compiler finds it by name.
+@dictionary
+class ObjectDictionary<T = any> {
+    private _keys: string[] = [];
+    private _values: T[] = [];
+
+    get size() {
+        return this._keys.length;
+    }
+
+    private find(key: string): int {
+        for (let i = 0; i < this._keys.length; i++) {
+            if (this._keys[i] == key) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    get(key: string): T | undefined {
+        const i = this.find(key);
+        if (i < 0) {
+            return undefined;
+        }
+
+        return this._values[i];
+    }
+
+    set(key: string, value: T | undefined) {
+        if (value === undefined) {
+            this.delete(key);
+            return;
+        }
+
+        const i = this.find(key);
+        if (i < 0) {
+            this._keys.push("" + key);
+            this._values.push(value);
+            return;
+        }
+
+        this._values[i] = value;
+    }
+
+    [key: string]: T | undefined;
+
+    has(key: string): boolean {
+        return this.find(key) >= 0;
+    }
+
+    delete(key: string): boolean {
+        const i = this.find(key);
+        if (i < 0) {
+            return false;
+        }
+
+        this._keys.splice(i, 1);
+        this._values.splice(i, 1);
+        return true;
+    }
+
+    keys(): string[] {
+        const r: string[] = [];
+        for (let i = 0; i < this._keys.length; i++) {
+            r.push("" + this._keys[i]);
+        }
+
+        return r;
+    }
+}
+
+function objectDictionaryAssign<T>(target: ObjectDictionary<T>, source: ObjectDictionary<T>) {
+    for (const k in source) {
+        target[k] = source[k];
+    }
+}
+
+type Rec<K extends string, T> = { [P in K]: T };
+
+function keysOf(r: Record<string, number>) {
+    return Object.keys(r).length;
+}
+
+function sumOf(r: Rec<string, number>) {
+    let total: number = 0;
+    for (const k in r) {
+        total += r[k] ?? 0;
+    }
+
+    return total;
+}
+
+function main() {
+    const r: Record<string, number> = { a: 1, b: 2 };
+    assert(Object.keys(r).length == 2);
+    assert(r["a"] == 1);
+    const k = "b";
+    assert(r[k] == 2);
+    assert(r["c"] === undefined);
+    r["c"] = 3;
+    assert(keysOf(r) == 3);
+
+    const m: Rec<string, number> = { x: 10, y: 20 };
+    assert(sumOf(m) == 30);
+
+    let made = "";
+    for (let i = 0; i < 3; i++) {
+        const s: Record<string, string> = { first: "f" + i };
+        s["second"] = "s" + i;
+        made += s["first"] + s["second"];
+    }
+
+    assert(made == "f0s0f1s1f2s2");
+
+    // a Record of known keys stays an object of those fields
+    const p: Record<"a" | "b", number> = { a: 5, b: 6 };
+    assert(p.a + p.b == 11);
+
+    print("done.");
+}

@@ -21076,7 +21076,7 @@ class MLIRGenImpl
 
     mlir::Type ExtractTypes(mlir::Location location, mlir::Type type, mlir::Type extract);
 
-    mlir::Type RecordType(mlir::Type keys, mlir::Type valueType);
+    mlir::Type RecordType(mlir::Location location, mlir::Type keys, mlir::Type valueType, const GenContext &genContext);
 
     mlir::Type PickTypes(mlir::Type type, mlir::Type keys);
 

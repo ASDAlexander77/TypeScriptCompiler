@@ -1490,7 +1490,7 @@ namespace mlirgen
             case EmbeddedType::Omit:
                 return OmitTypes(firstType, secondType);
             case EmbeddedType::Record:
-                return RecordType(firstType, secondType);
+                return RecordType(location, firstType, secondType, genContext);
             default:
                 return mlir::Type();
         }
@@ -1622,7 +1622,8 @@ namespace mlirgen
         return resultType;
     }
 
-    mlir::Type MLIRGenImpl::RecordType(mlir::Type keys, mlir::Type valueType)
+    mlir::Type MLIRGenImpl::RecordType(mlir::Location location, mlir::Type keys, mlir::Type valueType,
+                                       const GenContext &genContext)
     {
         // keys or values that could not be made (their error is reported where they were made)
         if (!keys || !valueType)
@@ -1631,7 +1632,16 @@ namespace mlirgen
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Record: " << valueType << ", keys: " << keys << "\n";);
-        
+
+        // `Record<string, T>` is `{ [key: string]: T }`: a dictionary of T (see getTupleType of a type literal)
+        if (isa<mlir_ts::StringType>(keys))
+        {
+            if (auto dictionaryType = getObjectDictionaryType(location, valueType, genContext))
+            {
+                return dictionaryType;
+            }
+        }
+
         SmallVector<mlir_ts::FieldInfo> fields;
 
         auto addTypeProcessKey = [&](mlir::Type keyType)
@@ -1654,12 +1664,9 @@ namespace mlirgen
         {
             addTypeProcessKey(litType);
         }
-        // else: keys isn't a literal or a union of literals (e.g. the general `string`/`number`
-        // type, as in `Record<string, V>`) - this builtin fallback can't enumerate an unbounded
-        // key set into fields. In practice this is dead: Record<K, T> is declared as a mapped
-        // type in lib.generics.ts and resolveGenericType resolves it before this fallback is
-        // ever reached (see docs/not-implemented-audit.md); kept as a no-op rather than a crash
-        // for the same reason PickTypes's analogous pickTypesProcessKey already no-ops here.
+        // else: keys isn't a literal or a union of literals (`number`, or `string` without the default library's
+        // dictionary class) - this builtin can't enumerate an unbounded key set into fields. With the default
+        // library, Record<K, T> is the mapped type of lib.generics.ts, made by getMappedType, not here.
 
         return getTupleType(fields);
     }
@@ -2467,6 +2474,22 @@ namespace mlirgen
         if (!constrainType)
         {
             return mlir::Type();
+        }
+
+        // `{ [K in string]: T }` (`Record<string, T>`) is `{ [key: string]: T }`: a dictionary of T, its keys known
+        // at run time (see getTupleType of a type literal). Without the default library's dictionary class, no
+        // fields, as before.
+        if (isa<mlir_ts::StringType>(constrainType) && !hasNameType)
+        {
+            GenContext stringKeyGenContext(genContext);
+            stringKeyGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, constrainType)});
+            if (auto valueType = getType(mappedTypeNode->type, stringKeyGenContext))
+            {
+                if (auto dictionaryType = getObjectDictionaryType(loc(mappedTypeNode), valueType, genContext))
+                {
+                    return dictionaryType;
+                }
+            }
         }
 
         if (auto keyOfType = dyn_cast<mlir_ts::KeyOfType>(constrainType))
