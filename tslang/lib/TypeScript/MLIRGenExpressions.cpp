@@ -2248,10 +2248,37 @@ namespace mlirgen
             // of all of them, as the type TypeScript gives it is
             if (arguments.front() == SyntaxKind::ObjectLiteralExpression)
             {
+                // a literal's own properties are put in as they are: spread, under -mm=own a new string in it was never
+                // given back (`{ ...{ s: "q" + i } }` leaks so). One naming a key put in before is spread, which writes
+                // over it
                 NodeArray<ObjectLiteralElementLike> properties;
+                llvm::StringSet<> names;
                 for (auto argument : arguments)
                 {
-                    properties.push_back(nf.createSpreadAssignment(argument));
+                    auto plain = argument == SyntaxKind::ObjectLiteralExpression;
+                    if (plain)
+                    {
+                        for (auto property : argument.as<ObjectLiteralExpression>()->properties)
+                        {
+                            plain = plain
+                                    && (property == SyntaxKind::PropertyAssignment
+                                        || property == SyntaxKind::ShorthandPropertyAssignment)
+                                    && property.as<PropertyAssignment>()->name == SyntaxKind::Identifier
+                                    && !names.contains(MLIRHelper::getName(property.as<PropertyAssignment>()->name));
+                        }
+                    }
+
+                    if (!plain)
+                    {
+                        properties.push_back(nf.createSpreadAssignment(argument));
+                        continue;
+                    }
+
+                    for (auto property : argument.as<ObjectLiteralExpression>()->properties)
+                    {
+                        names.insert(MLIRHelper::getName(property.as<PropertyAssignment>()->name));
+                        properties.push_back(property);
+                    }
                 }
 
                 auto literal = nf.createObjectLiteralExpression(properties, false);
