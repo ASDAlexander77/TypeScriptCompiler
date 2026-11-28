@@ -113,10 +113,15 @@ function main() {
 ```
 
 A value chosen from the borrow (`const f = c ? first : other`) is a use of it, and so is anything
-read or called through it: a field, a method, an interface view of it.
+read or called through it: a field, a method, an interface view of it, and the uses of what is
+read out of it (`const n = first.next`).
 
-A conditional that mixes the borrow with a new value (`c ? first : new Item(1)`) is still an error,
-as it is with no call in between.
+It is still an error when:
+- a conditional mixes the borrow with a new value (`c ? first : new Item(1)`), as it is with no
+  call in between;
+- a `const` borrow is handed to another holder: stored into a `let`, pushed, captured or kept by a
+  call;
+- a `let` is declared with no value and given the borrow later (`let x: Item; ... x = first`).
 
 A parameter a function keeps can go into an object literal it returns (`return { key, prev }`): the
 literal owns it, as it owns a new object, and reading the parameter after that is an error. A

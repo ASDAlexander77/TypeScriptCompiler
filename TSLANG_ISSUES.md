@@ -4235,7 +4235,8 @@ place may be freed now takes a reference of its own in these cases too:
 Fixed along the way: the count of a `const` went back after the field's address but before the load through it.
 That covered `e.v`, a method call on `e` and an interface view of it, so they read freed memory; the tests passed
 only because the freed block still held the value. A use is now followed through what the op derives from the
-value: a place in it, its method, its `this`.
+value: a place in it, its method, its `this`. So is a block read out of a place in it (`const c = e.child`,
+`e.name`, `e.items`): before, `c.v` after a churn read freed memory in 219's call case too.
 
 A `const` folded into its read is counted only where every use borrows it. A use that gives the value to another
 holder makes it an error again: a store, a push, a capture, a call's kept argument. The holder's later uses are not

@@ -5,7 +5,8 @@
 // - a value chosen from it (`k % 2 == 0 ? e : o`) is what is used after;
 // - a loop's `continue` or `break` comes between (branches by then, as 219 placed them).
 // And the reference given back after a field read through it (`e.v`), a method call on it, an interface view of
-// it: before, the count of a `const` went back between the field's address and its load.
+// it, and the uses of what is read out of it (`const c = e.child`): before, the count of a `const` went back between
+// the field's address and its load.
 
 class B {
     v = 0;
@@ -26,6 +27,30 @@ class C {
 
 interface HasV {
     v: number;
+}
+
+class N {
+    v = 0;
+    constructor(v: number) {
+        this.v = v;
+    }
+}
+
+class D {
+    v = 0;
+    child: N;
+    name: string;
+    items: N[] = [];
+    constructor(v: number) {
+        this.v = v;
+        this.child = new N(v);
+        this.name = "x" + v;
+        this.items.push(new N(v));
+    }
+}
+
+function emptyD(a: D[]) {
+    while (a.length > 0) a.pop();
 }
 
 function empty(a: B[]) {
@@ -122,6 +147,30 @@ function chosen(k: number) {
     return f.v == (k % 2 == 0 ? k : 7);
 }
 
+// chosen through a block's argument: the other arm is a read too
+function chosenRead(k: number) {
+    const a = [new B(k), new B(k + 1)];
+    const b = [new B(99)];
+    const e = a[0];
+    empty(a);
+    churn(k);
+    const f = k % 2 == 0 ? e : b[0];
+    churn(k);
+    return f.v == (k % 2 == 0 ? k : 99);
+}
+
+// what is read out of it: an object, a string, an array under it
+function interior(k: number) {
+    const a = [new D(k), new D(k + 1)];
+    const e = a[0];
+    emptyD(a);
+    const c = e.child;
+    const s = e.name;
+    const it = e.items;
+    churn(k);
+    return c.v == k && s == "x" + k && it[0].v == k;
+}
+
 // a loop's continue and break in between
 function looped(k: number) {
     let ok = true;
@@ -158,6 +207,8 @@ function main() {
         if (!reassigned(k)) bad++;
         if (!reassignedString(k)) bad++;
         if (!chosen(k)) bad++;
+        if (!chosenRead(k)) bad++;
+        if (!interior(k)) bad++;
         if (!looped(k)) bad++;
         if (!method(k)) bad++;
     }

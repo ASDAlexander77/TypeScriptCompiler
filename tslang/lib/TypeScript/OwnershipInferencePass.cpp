@@ -2267,6 +2267,14 @@ namespace own_inference
                     last = ancestor;
                 }
 
+                // a block read out of a place in it (`const c = e.child`, `e.name`, `e.items`): under it, freed with
+                // it, so its uses hold it too - and it is kept by no other holder, as it is
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                    loadOp && derived.contains(used) && ownsHeap(loadOp.getResult()))
+                {
+                    chosen.insert(loadOp.getResult());
+                }
+
                 // a place in it, a method of it, its `this`: what is read or called through that uses it too
                 // (`e.v` is a PropertyRef, then the Load through it)
                 if (derivesFrom(user))
