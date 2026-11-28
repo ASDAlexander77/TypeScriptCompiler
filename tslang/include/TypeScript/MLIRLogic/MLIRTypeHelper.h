@@ -4294,6 +4294,17 @@ class MLIRTypeHelper
             normalizedTypes.insert(type);
         }
 
+        // a literal beside its own base type is that type: `0 | 1 | s32` is `s32` (a function returning
+        // `c ? 1 : 0` on one path and an `s32` on another was refused as a `=> s32`)
+        for (auto type : llvm::to_vector(normalizedTypes))
+        {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
+                literalType && normalizedTypes.count(literalType.getElementType()))
+            {
+                normalizedTypes.erase(type);
+            }
+        }
+
         if (normalizedTypes.size() == 0)
         {
             return isUndefined ? mlir::Type(mlir_ts::UndefinedType::get(context)) : mlir::Type(mlir_ts::NeverType::get(context));
