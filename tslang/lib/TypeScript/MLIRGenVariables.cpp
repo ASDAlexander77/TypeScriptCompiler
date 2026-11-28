@@ -1750,6 +1750,121 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // An object literal of constants only (`{ a: 1, b: "x", c: { d: true } }`): what a `const` folds into a constant
+    bool MLIRGenImpl::isConstantObjectLiteral(Node node)
+    {
+        if (node != SyntaxKind::ObjectLiteralExpression)
+        {
+            return false;
+        }
+
+        for (auto property : node.as<ObjectLiteralExpression>()->properties)
+        {
+            if (property != SyntaxKind::PropertyAssignment)
+            {
+                return false;
+            }
+
+            Node value = property.as<PropertyAssignment>()->initializer;
+            if (value == SyntaxKind::PrefixUnaryExpression
+                && value.as<PrefixUnaryExpression>()->_operator == SyntaxKind::MinusToken)
+            {
+                value = value.as<PrefixUnaryExpression>()->operand;
+            }
+
+            if (!(value == SyntaxKind::NumericLiteral || value == SyntaxKind::StringLiteral
+                  || value == SyntaxKind::NoSubstitutionTemplateLiteral || value == SyntaxKind::TrueKeyword
+                  || value == SyntaxKind::FalseKeyword || value == SyntaxKind::NullKeyword
+                  || isConstantObjectLiteral(value)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Whether `scope`, the function (or the file) declaring `name`, writes a field or an element of it - `name.f = v`,
+    // `name[k] op= v`, `name.n++`, `delete name.f` - and never assigns `name` itself
+    bool MLIRGenImpl::constLiteralFieldsWritten(Node scope, StringRef name)
+    {
+        // code at the top of the module: the file
+        if (!scope)
+        {
+            scope = sourceFile;
+        }
+
+        if (!scope)
+        {
+            return false;
+        }
+
+        auto isName = [&](Node node) {
+            return node == SyntaxKind::Identifier && MLIRHelper::getName(node.as<Identifier>()) == name;
+        };
+
+        // `name.f`, `name[k]`, `(name).f`
+        auto throughName = [&](Node node) {
+            while (node == SyntaxKind::ParenthesizedExpression)
+            {
+                node = node.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (node == SyntaxKind::PropertyAccessExpression)
+            {
+                return isName(node.as<PropertyAccessExpression>()->expression);
+            }
+
+            if (node == SyntaxKind::ElementAccessExpression)
+            {
+                return isName(node.as<ElementAccessExpression>()->expression);
+            }
+
+            return false;
+        };
+
+        auto fieldWritten = false;
+        auto nameAssigned = false;
+        FilterVisitorAST<Node> assignments(SyntaxKind::BinaryExpression, [&](auto node) {
+            auto binary = node.template as<BinaryExpression>();
+            SyntaxKind op = binary->operatorToken;
+            if (!isAssignmentOperator(op) && op != SyntaxKind::BarBarEqualsToken
+                && op != SyntaxKind::AmpersandAmpersandEqualsToken && op != SyntaxKind::QuestionQuestionEqualsToken)
+            {
+                return;
+            }
+
+            fieldWritten |= throughName(binary->left);
+            nameAssigned |= isName(binary->left);
+        });
+        FilterVisitorAST<Node> prefixes(SyntaxKind::PrefixUnaryExpression, [&](auto node) {
+            fieldWritten |= throughName(node.template as<PrefixUnaryExpression>()->operand);
+        });
+        FilterVisitorAST<Node> postfixes(SyntaxKind::PostfixUnaryExpression, [&](auto node) {
+            fieldWritten |= throughName(node.template as<PostfixUnaryExpression>()->operand);
+        });
+        FilterVisitorAST<Node> deletes(SyntaxKind::DeleteExpression, [&](auto node) {
+            fieldWritten |= throughName(node.template as<DeleteExpression>()->expression);
+        });
+        // `Object.assign(name, ...)` writes its fields too (mlirGenObjectAssignFields)
+        FilterVisitorAST<Node> calls(SyntaxKind::CallExpression, [&](auto node) {
+            auto call = node.template as<CallExpression>();
+            if (call->expression == SyntaxKind::PropertyAccessExpression && call->arguments.size() > 0)
+            {
+                auto access = call->expression.template as<PropertyAccessExpression>();
+                fieldWritten |= isName(call->arguments.front()) && access->expression == SyntaxKind::Identifier
+                                && MLIRHelper::getName(access->expression.template as<Identifier>()) == "Object"
+                                && MLIRHelper::getName(access->name) == "assign";
+            }
+        });
+        calls.visit(scope);
+        assignments.visit(scope);
+        prefixes.visit(scope);
+        postfixes.visit(scope);
+        deletes.visit(scope);
+        return fieldWritten && !nameAssigned;
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
@@ -1871,6 +1986,16 @@ namespace mlirgen
             {
                 itemVarClass.type = VariableType::Let;
                 itemVarClass.exportedConst = true;
+            }
+
+            // `const t = { a: 1, b: 2 }; t.b = 3`: a literal of constants is folded into a constant, which has no
+            // field to write ("can't assign to a field of a value ... that is not held anywhere"). One whose fields
+            // the function writes is stored, as a `let` is (a `const` named again by `t = ...` stays one, for its error)
+            if (itemVarClass.type == VariableType::Const && !isUsing && !itemVarClass.isExport && genContext.funcOp
+                && !item->type && isConstantObjectLiteral(item->initializer) && item->name == SyntaxKind::Identifier
+                && constLiteralFieldsWritten(Node(genContext.functionBody), MLIRHelper::getName(item->name.as<Identifier>())))
+            {
+                itemVarClass.type = VariableType::Let;
             }
 
             // a `var` in a function belongs to the function (MDN `var`): declared before the body, assigned here
@@ -3171,6 +3296,77 @@ namespace mlirgen
         }
 
         return type;
+    }
+
+    // A generic alias that is a conditional type may name itself in a branch (`Flat<T> = T extends (infer U)[] ?
+    // Flat<U> : T`): each level is given another argument and the check picks a branch, so it ends
+    // (`Flat<number[][]>` is `Flat<number[]>`, then `number`). The depth getConditionalType counts still stops
+    // one that does not.
+    // Whether every mention of the alias `name` in its conditional type is a branch of it, or of a conditional in
+    // a branch (`T extends (infer U)[] ? Flat<U> : T`): each level is then one type, not one inside a tuple, an
+    // object or a mapped type of the level before, which make many more
+    bool MLIRGenImpl::namesItselfInTailOnly(StringRef name, TypeNode typeNode)
+    {
+        auto names = [&](Node node) {
+            return node == SyntaxKind::TypeReference && node.as<TypeReferenceNode>()->typeName == SyntaxKind::Identifier
+                   && MLIRHelper::getName(node.as<TypeReferenceNode>()->typeName.as<Identifier>()) == name;
+        };
+
+        auto mentions = 0;
+        FilterVisitorAST<Node> mentionVisitor(SyntaxKind::TypeReference, [&](auto node) {
+            mentions += names(node) ? 1 : 0;
+        });
+        mentionVisitor.visit(typeNode);
+
+        auto tailMentions = 0;
+        std::function<void(Node)> tail = [&](Node node) {
+            while (node == SyntaxKind::ParenthesizedType)
+            {
+                node = node.as<ParenthesizedTypeNode>()->type;
+            }
+
+            if (names(node))
+            {
+                // its type arguments may not name it
+                auto inArguments = 0;
+                FilterVisitorAST<Node> argumentVisitor(SyntaxKind::TypeReference, [&](auto argument) {
+                    inArguments += names(argument) ? 1 : 0;
+                });
+                for (auto argument : node.as<TypeReferenceNode>()->typeArguments)
+                {
+                    argumentVisitor.visit(argument);
+                }
+
+                tailMentions += inArguments == 0 ? 1 : 0;
+            }
+            else if (node == SyntaxKind::ConditionalType)
+            {
+                tail(node.as<ConditionalTypeNode>()->trueType);
+                tail(node.as<ConditionalTypeNode>()->falseType);
+            }
+        };
+        tail(typeNode);
+
+        // (one that does not name itself is not this: it may name itself through another alias)
+        return mentions > 0 && mentions == tailMentions;
+    }
+
+    mlir::Type MLIRGenImpl::expandGenericTypeAlias(mlir::Location location, StringRef name, TypeNode typeNode,
+                                                   bool concreteArguments, const GenContext &genericTypeGenContext)
+    {
+        // (only given types: one given a type parameter is not decided by its check, and named itself without end;
+        // and a few levels deep: past them it is the error, as any alias naming itself is)
+        if (typeNode == SyntaxKind::ConditionalType && concreteArguments && namesItselfInTailOnly(name, typeNode))
+        {
+            auto &depth = conditionalTypeAliasDepth[getFullNamespaceName(name)];
+            if (depth < MaxConditionalTypeAliasDepth)
+            {
+                MLIRValueGuard<int> depthGuard(depth, depth + 1);
+                return getType(typeNode, genericTypeGenContext);
+            }
+        }
+
+        return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
     }
 
     mlir::Type MLIRGenImpl::resolveTypeByNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)

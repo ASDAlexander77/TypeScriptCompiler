@@ -1858,6 +1858,122 @@ namespace mlirgen
     //   and is `d`.
     // - `Object.fromEntries(pairs)` of an array of [key, value] pairs is a dictionary of them
     //   (objectDictionaryFromEntries).
+    // `Object.assign(t, { b: 3 }, u)` into a value whose fields are fixed when it is made: each field a source has is
+    // written into t's field of that name (`t.b = 3`, `t.x = u.x`, ...), and the call is t. Only where t has every field
+    // each source gives - TypeScript's `T & U` is then T - and t and each source are read with no side effect, or a
+    // source is a literal of plain fields; anything else is the error below (none here)
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenObjectAssignFields(mlir::Location location,
+                                                                               NodeArray<Expression> arguments,
+                                                                               mlir::Type targetType,
+                                                                               const GenContext &genContext)
+    {
+        std::function<bool(Expression)> readsOnly = [&](Expression expression) {
+            if (expression == SyntaxKind::Identifier || expression == SyntaxKind::ThisKeyword)
+            {
+                return true;
+            }
+
+            if (expression == SyntaxKind::PropertyAccessExpression)
+            {
+                auto access = expression.as<PropertyAccessExpression>();
+                return !access->questionDotToken && readsOnly(access->expression);
+            }
+
+            return false;
+        };
+
+        auto target = arguments.front();
+        llvm::SmallVector<mlir_ts::FieldInfo> targetFields;
+        if (!readsOnly(target) || mlir::failed(mth.getFields(targetType, targetFields)))
+        {
+            return std::nullopt;
+        }
+
+        auto targetHas = [&](StringRef name) {
+            return llvm::any_of(targetFields, [&](mlir_ts::FieldInfo &field) {
+                auto id = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                return id && id.getValue() == name;
+            });
+        };
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        // (field name, the value written to it)
+        SmallVector<std::pair<std::string, Expression>> writes;
+        for (auto source : llvm::drop_begin(arguments))
+        {
+            if (source == SyntaxKind::ObjectLiteralExpression)
+            {
+                for (auto property : source.as<ObjectLiteralExpression>()->properties)
+                {
+                    if (property != SyntaxKind::PropertyAssignment && property != SyntaxKind::ShorthandPropertyAssignment)
+                    {
+                        return std::nullopt;
+                    }
+
+                    auto propertyName = property.as<PropertyAssignment>()->name;
+                    if (propertyName != SyntaxKind::Identifier)
+                    {
+                        return std::nullopt;
+                    }
+
+                    auto name = MLIRHelper::getName(propertyName);
+                    if (!targetHas(name))
+                    {
+                        return std::nullopt;
+                    }
+
+                    auto value = property == SyntaxKind::ShorthandPropertyAssignment
+                                     ? propertyName.as<Expression>()
+                                     : property.as<PropertyAssignment>()->initializer;
+                    writes.push_back({name, value});
+                }
+
+                continue;
+            }
+
+            auto sourceType = evaluate(source, genContext);
+            llvm::SmallVector<mlir_ts::FieldInfo> sourceFields;
+            if (!readsOnly(source) || !sourceType || mlir::failed(mth.getFields(sourceType, sourceFields)))
+            {
+                return std::nullopt;
+            }
+
+            for (auto &field : sourceFields)
+            {
+                auto id = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                // (a class's own, `.vtable`, ...: not a property)
+                if (id && id.getValue().starts_with("."))
+                {
+                    continue;
+                }
+
+                if (!id || !targetHas(id.getValue()))
+                {
+                    return std::nullopt;
+                }
+
+                writes.push_back({id.getValue().str(),
+                                  nf.createPropertyAccessExpression(source, nf.createIdentifier(stows(id.getValue().str())))});
+            }
+        }
+
+        for (auto &[name, value] : writes)
+        {
+            auto assignment = nf.createBinaryExpression(
+                nf.createPropertyAccessExpression(target, nf.createIdentifier(stows(name))),
+                nf.createToken(SyntaxKind::EqualsToken), value);
+            assignment->pos = value->pos;
+            assignment->_end = value->_end;
+            auto result = mlirGen(assignment.as<Expression>(), genContext);
+            if (mlir::failed(result))
+            {
+                return ValueOrLogicalResult(mlir::failure());
+            }
+        }
+
+        return mlirGen(target, genContext);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGenObjectBuiltin(mlir::Location location, StringRef method,
                                                            NodeArray<Expression> arguments, const GenContext &genContext)
     {
@@ -1874,6 +1990,159 @@ namespace mlirgen
 
             return function;
         };
+
+        // a function made here from source once a module (`name` begins with "." for the "__" of `source`, as the
+        // scanner puts it)
+        auto helperFunction = [&](StringRef name, StringRef source) -> mlir::Value {
+            auto function = resolveIdentifier(location, name, genContext);
+            if (!function)
+            {
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(stows(source.str()))))
+                {
+                    return mlir::Value();
+                }
+
+                function = resolveIdentifier(location, name, genContext);
+            }
+
+            return function;
+        };
+
+        // `Object.is(a, b)`: `===`, but NaN is NaN and 0 is not -0
+        if (method == "is")
+        {
+            auto leftType = evaluate(arguments[0], genContext);
+            auto rightType = evaluate(arguments[1], genContext);
+            auto isNumber = [&](mlir::Type type) {
+                return type && isa<mlir_ts::NumberType>(mth.stripLiteralType(type));
+            };
+            if (!isNumber(leftType) || !isNumber(rightType))
+            {
+                auto equals = nf.createBinaryExpression(arguments[0], nf.createToken(SyntaxKind::EqualsEqualsEqualsToken),
+                                                        arguments[1]);
+                equals->pos = arguments[0]->pos;
+                equals->_end = arguments[1]->_end;
+                return mlirGen(equals.as<Expression>(), genContext);
+            }
+
+            auto is = helperFunction(".object_is_number",
+                                     "function __object_is_number<T>(a: T, b: T): boolean {\n"
+                                     "return a === b ? (a !== 0 || 1 / a === 1 / b) : (a !== a && b !== b);\n}\n");
+            if (!is)
+            {
+                return mlir::failure();
+            }
+
+            auto leftResult = mlirGen(arguments[0], genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(leftResult)
+            auto rightResult = mlirGen(arguments[1], genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(rightResult)
+            SmallVector<mlir::Value, 4> operands{V(leftResult), V(rightResult)};
+            return mlirGenCallExpression(location, is, {}, operands, genContext);
+        }
+
+        // `Object.create(null)`: an object of no keys, which takes any - a dictionary of `any`. A prototype given is
+        // the error: an object here has no prototype to read missing keys from
+        if (method == "create")
+        {
+            if (arguments.size() != 1 || arguments[0] != SyntaxKind::NullKeyword)
+            {
+                emitError(location) << "'Object.create' of a prototype is not supported: an object has no prototype here "
+                                       "to read the keys it has not got from. Make the object, a class instance or a "
+                                       "literal, or give it null for a dictionary of 'any'";
+                return mlir::failure();
+            }
+
+            auto create = helperFunction(".object_create_null",
+                                         "function __object_create_null<T>(): { [key: string]: T } { return {}; }\n");
+            if (!create)
+            {
+                return mlir::failure();
+            }
+
+            NodeArray<TypeNode> typeArguments;
+            typeArguments.push_back(nf.createToken<TypeNode>(SyntaxKind::AnyKeyword));
+            SmallVector<mlir::Value, 4> operands;
+            return mlirGenCallExpression(location, create, typeArguments, operands, genContext);
+        }
+
+        // `Object.defineProperty(o, k, { value: v })`: `o[k] = v`, for a dictionary or an `any`; the descriptor's
+        // `writable`, `enumerable` and `configurable` are not kept (nothing here is read-only, hidden or fixed by
+        // them). A getter or a setter is the error
+        if (method == "defineProperty")
+        {
+            Expression valueExpression;
+            auto descriptor = arguments[2];
+            while (descriptor == SyntaxKind::TypeAssertionExpression || descriptor == SyntaxKind::AsExpression
+                   || descriptor == SyntaxKind::ParenthesizedExpression)
+            {
+                descriptor = descriptor == SyntaxKind::TypeAssertionExpression
+                                 ? descriptor.as<TypeAssertion>()->expression
+                                 : descriptor == SyntaxKind::AsExpression
+                                       ? descriptor.as<AsExpression>()->expression
+                                       : descriptor.as<ParenthesizedExpression>()->expression;
+            }
+
+            auto plain = descriptor == SyntaxKind::ObjectLiteralExpression;
+            if (plain)
+            {
+                for (auto property : descriptor.as<ObjectLiteralExpression>()->properties)
+                {
+                    auto name = property == SyntaxKind::PropertyAssignment
+                                    ? MLIRHelper::getName(property.as<PropertyAssignment>()->name)
+                                    : std::string();
+                    if (name == "value")
+                    {
+                        valueExpression = property.as<PropertyAssignment>()->initializer;
+                    }
+                    else if (name != "writable" && name != "enumerable" && name != "configurable")
+                    {
+                        plain = false;
+                    }
+                }
+            }
+
+            // the object is read twice, for `o[k] = v` and for the result: a variable, or a field of one
+            std::function<bool(Expression)> readsOnly = [&](Expression expression) {
+                if (expression == SyntaxKind::Identifier || expression == SyntaxKind::ThisKeyword)
+                {
+                    return true;
+                }
+
+                return expression == SyntaxKind::PropertyAccessExpression
+                       && !expression.as<PropertyAccessExpression>()->questionDotToken
+                       && readsOnly(expression.as<PropertyAccessExpression>()->expression);
+            };
+
+            auto objectType = evaluate(arguments[0], genContext);
+            if (!readsOnly(arguments[0]))
+            {
+                emitError(location) << "'Object.defineProperty' of what an expression gives is not supported: give it a "
+                                       "variable or a field holding the object";
+                return mlir::failure();
+            }
+
+            if (!plain || !valueExpression || !objectType
+                || !(dictionaryClassInfoOf(objectType, genContext) || isa<mlir_ts::AnyType>(objectType)))
+            {
+                emitError(location) << "'Object.defineProperty' is supported for a dictionary or an 'any' given a "
+                                       "literal descriptor of a 'value' (and 'writable', 'enumerable', 'configurable', "
+                                       "which are not kept); a getter, a setter, or another object is not";
+                return mlir::failure();
+            }
+
+            auto elementAccess = nf.createElementAccessExpression(arguments[0], arguments[1]);
+            elementAccess->pos = arguments[0]->pos;
+            elementAccess->_end = arguments[1]->_end;
+            auto assignment = nf.createBinaryExpression(elementAccess, nf.createToken(SyntaxKind::EqualsToken), valueExpression);
+            assignment->pos = valueExpression->pos;
+            assignment->_end = valueExpression->_end;
+            auto assigned = mlirGen(assignment.as<Expression>(), genContext);
+            EXIT_IF_FAILED(assigned)
+            return mlirGen(arguments[0], genContext);
+        }
 
         if (method == "hasOwn")
         {
@@ -1975,6 +2244,32 @@ namespace mlirgen
 
         if (method == "assign")
         {
+            // `Object.assign({}, a, { b: 1 })`, into a literal: the literal `{ ...{}, ...a, ...{ b: 1 } }`, of the fields
+            // of all of them, as the type TypeScript gives it is
+            if (arguments.front() == SyntaxKind::ObjectLiteralExpression)
+            {
+                NodeArray<ObjectLiteralElementLike> properties;
+                for (auto argument : arguments)
+                {
+                    properties.push_back(nf.createSpreadAssignment(argument));
+                }
+
+                auto literal = nf.createObjectLiteralExpression(properties, false);
+                literal->pos = arguments.front()->pos;
+                literal->_end = arguments.back()->_end;
+                return mlirGen(literal.as<Expression>(), genContext);
+            }
+
+            auto targetType = evaluate(arguments.front(), genContext);
+            if (targetType && !dictionaryClassInfoOf(targetType, genContext))
+            {
+                auto assigned = mlirGenObjectAssignFields(location, arguments, targetType, genContext);
+                if (assigned.has_value())
+                {
+                    return assigned.value();
+                }
+            }
+
             auto targetResult = mlirGen(arguments.front(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(targetResult)
             auto target = V(targetResult);
@@ -2393,6 +2688,18 @@ namespace mlirgen
                 }
             }
 
+            // `s.toString()` of a symbol: a member of a symbol value was read as the well-known symbol of that name
+            if (MLIRHelper::getName(access->name) == "toString" && callExpression->arguments.size() == 0)
+            {
+                auto objectType = evaluate(access->expression.as<Expression>(), genContext);
+                if (objectType && isa<mlir_ts::SymbolType>(mth.stripLiteralType(objectType)))
+                {
+                    auto symbolValue = mlirGen(access->expression.as<Expression>(), genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(symbolValue)
+                    return mlirGenSymbolMember(location, V(symbolValue), "toString", genContext);
+                }
+            }
+
             // `Object.keys(o)`, `Object.freeze(o)`, ... unless the program declares its own `Object` value
             if (access->expression == SyntaxKind::Identifier
                 && MLIRHelper::getName(access->expression.as<Identifier>()) == "Object")
@@ -2403,7 +2710,9 @@ namespace mlirgen
                       || method == "freeze" || method == "seal" || method == "preventExtensions" || method == "isExtensible"
                       || method == "isSealed" || method == "isFrozen" || method == "fromEntries")
                      && count == 1)
-                    || (method == "hasOwn" && count == 2) || (method == "assign" && count >= 1))
+                    || (method == "hasOwn" && count == 2) || (method == "assign" && count >= 1)
+                    || (method == "is" && count == 2) || (method == "create" && count >= 1)
+                    || (method == "defineProperty" && count == 3))
                 {
                     auto savedErrorMessagesCount = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
                     auto declared = resolveIdentifier(location, "Object", genContext);
@@ -3039,6 +3348,57 @@ namespace mlirgen
 
         auto name = builder.getStringAttr("Symbol(" + description + ")@" + where);
         return V(builder.create<mlir_ts::ConstantOp>(location, mlir_ts::LiteralType::get(name, getSymbolType()), name));
+    }
+
+    // `s.toString()` of a symbol: its text, `Symbol(d)`, as `String(s)` gives it. `s.description`: `d`, what it was
+    // made with (`Symbol.iterator` for the well-known one). A symbol with no description has the empty one, not
+    // `undefined`: the property is a string
+    ValueOrLogicalResult MLIRGenImpl::mlirGenSymbolMember(mlir::Location location, mlir::Value symbolValue,
+                                                          StringRef member, const GenContext &genContext)
+    {
+        // a symbol known here: its name is in its literal type, or in the constant it is read from
+        mlir::StringAttr name;
+        for (auto read = symbolValue; read && !name;)
+        {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(read.getType()))
+            {
+                name = dyn_cast<mlir::StringAttr>(literalType.getValue());
+            }
+            else if (auto constantOp = read.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                name = dyn_cast<mlir::StringAttr>(constantOp.getValue());
+            }
+
+            auto castOp = read.getDefiningOp<mlir_ts::CastOp>();
+            read = castOp ? castOp.getIn() : mlir::Value();
+        }
+
+        {
+            if (name)
+            {
+                auto text = MLIRHelper::symbolText(name.getValue());
+                if (member == "description")
+                {
+                    // `Symbol(` ... `)`
+                    text = text.size() >= 8 ? text.substr(7, text.size() - 8) : std::string();
+                }
+
+                return mlirGenStringValue(location, text, true);
+            }
+        }
+
+        CAST_A(text, location, getStringType(), symbolValue, genContext);
+        if (member != "description")
+        {
+            return V(text);
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        NodeArray<Expression> sliceArguments;
+        sliceArguments.push_back(nf.createNumericLiteral(S("7")));
+        sliceArguments.push_back(
+            nf.createPrefixUnaryExpression(SyntaxKind::MinusToken, nf.createNumericLiteral(S("1"))));
+        return mlirGenCallThisMethod(location, text, "slice", undefined, sliceArguments, genContext);
     }
 
     // `Shared.count(s)` (own spec 23.1): the number of handles under rc and own, -1 under gc and none.

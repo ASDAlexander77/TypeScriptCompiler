@@ -438,7 +438,16 @@ namespace mlirgen
 
                     return mlir::Value();                    
                 })
-                .Case<mlir_ts::SymbolType>([&](auto symbolType) { return cl.Symbol(symbolType); })
+                .Case<mlir_ts::SymbolType>([&](auto symbolType) -> mlir::Value {
+                    // `s.description` of a symbol value
+                    if (name == "description")
+                    {
+                        auto description = mlirGenSymbolMember(location, objectValue, name, genContext);
+                        return description ? V(description) : mlir::Value();
+                    }
+
+                    return cl.Symbol(symbolType);
+                })
                 .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
                     auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
                     assert(namespaceInfo);

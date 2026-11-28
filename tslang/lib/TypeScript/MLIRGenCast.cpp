@@ -7737,6 +7737,18 @@ namespace mlirgen
         {
             CAST(key, location, getStringType(), key, genContext);
         }
+        // `p[sym]` of `const sym = Symbol("k")`: the key is the name a `[sym]` field is laid out by, not the symbol's
+        // text (`Symbol(k)`), which read `undefined`
+        else if (isa<mlir_ts::SymbolType>(keyType))
+        {
+            if (auto constantOp = key.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                if (auto name = dyn_cast<mlir::StringAttr>(constantOp.getValue()))
+                {
+                    key = V(mlirGenStringValue(location, name.getValue(), true));
+                }
+            }
+        }
 
         CAST_A(keyValue, location, getAnyType(), key, genContext);
 

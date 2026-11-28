@@ -534,6 +534,23 @@ namespace mlirgen
             return;
         }
 
+        // `{ x: string } & T` given `{ x: "a", y: 1 }`: T is the argument's type, as TypeScript infers it; the other
+        // members are what the argument has too
+        // (the intersection getIntersectionType keeps of fields and a type parameter; T of `T & ((arg: string) => any)`
+        // is not inferred from the function given, which has types to be inferred from T itself)
+        if (auto templateIntersectionType = dyn_cast<mlir_ts::IntersectionType>(templateType);
+            templateIntersectionType
+            && llvm::any_of(templateIntersectionType.getTypes(),
+                            [](mlir::Type member) { return isa<mlir_ts::TupleType, mlir_ts::ConstTupleType>(member); }))
+        {
+            for (auto memberType : templateIntersectionType.getTypes())
+            {
+                inferType(location, memberType, concreteType, results, genContext);
+            }
+
+            return;
+        }
+
         // class -> class
         if (tryInferClass(location, templateType, concreteType, results, genContext))
         {
