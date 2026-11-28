@@ -1,5 +1,6 @@
 # What's new
 
+- Recursive conditional types (`type Flat<T> = T extends (infer U)[] ? Flat<U> : T`); `{ x: string } & T` in a generic function (it was `never`); `s.toString()` and `s.description` of a symbol; `Object.assign` into a literal or into a value that has the fields, `Object.is`, `Object.create(null)`, `Object.defineProperty` of a value; `const t = { a: 1 }; t.a = 2` (a `const` literal's fields could not be written)
 - Module syntax: `export { a, b as c }`, `export { a as default }`, `export ... from "./m"`, `export * from`, `export * as ns from`, `export = X` and `import x = require("./m")` work (they were errors); a `-mm=own` generator object's `next()` called by hand no longer leaks what it yielded; a module `const` beside top-level code can be read across a call of a function value another such const holds
 - -mm=own: a generator can yield objects it got from another iterator (`yield*`, for-of, `next()` by hand)
 - -mm=own: a generator's `next()` called by hand gives back what it yielded (a generator of strings leaked each value); a function read at run time can be given as another function type (an object literal's field for `(...args: A) => T`, a callback with fewer parameters), a closure or one that would escape its caller is refused

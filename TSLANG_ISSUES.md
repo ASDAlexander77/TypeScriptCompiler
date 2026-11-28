@@ -4250,3 +4250,50 @@ Still an error:
 `own_let_borrow_dropped_error.ts` lost the suffix and runs in every model.
 
 Test `00tslang_issue_221.ts` (all models).
+
+222. Language gaps (2026-11-28). Fixed, in every model:
+- **Recursive conditional types.** A conditional type alias that names itself in its branches (`type Flat<T> = T
+  extends (infer U)[] ? Flat<U> : T`) was "circularly references itself", the rule for an alias that would contain
+  itself. Given types, such an alias is now expanded again at each level, up to 8 levels deep: the check picks a
+  branch, so it ends. Only when every mention is a branch of the conditional (or of one in a branch), not inside a
+  tuple, an object or a mapped type, and only given types, not type parameters; anything else keeps the old error.
+  Also: each level's `infer U` is its own (the inner level found the outer level's `U` bound, so `Flat<number[][]>`
+  was `number[]`), and `number extends { v: infer U }` is false (a field the type has not got matched the `infer` and
+  said true, so `Unbox<number>` failed with "can't find type by name: U", before this too).
+- **`{ x: string } & T` of a generic function** was `never` ("'Never' can't be used as parameter type"): the fields
+  known so far and T are kept, and a call infers T from its argument (`getX({ x: "b", y: 2 })`); given T, the
+  intersection is made again. `Props<T> & {}` of an alias that is an intersection with its T, and T given `any` (a
+  generic arrow made with `any`), keep the known fields.
+- **Symbols:** `s.toString()` (`Symbol(k)`) and `s.description` (`k`; `Symbol.iterator` for the well-known one). A
+  member of a symbol value was read as the well-known symbol of that name. `p[sym]` of an `any` holding `{ [sym]: 6 }`
+  read `undefined`: the key was the symbol's text, not the name the field is laid out by.
+- **`Object.assign`** into a literal (`Object.assign({}, a, { b: 1 })`) is the literal `{ ...a, b: 1 }`; into a
+  value whose fields are fixed (a variable, a field, a class instance) it writes each field a source has, when the
+  value has them all - `T & U` is then T - and the target and each source are read with no side effect, or a source
+  is a literal of plain fields. Otherwise it is the error it was.
+- **`Object.is`** (NaN is NaN, 0 is not -0, of numbers; `===` of others), **`Object.create(null)`** (a dictionary of
+  `any`; a prototype given is an error: an object here has no prototype to read missing keys from) and
+  **`Object.defineProperty(o, k, { value: v })`** of a dictionary or an `any` (`o[k] = v`; `writable`, `enumerable`
+  and `configurable` are not kept; a getter or setter, or `o` an expression, is an error). They were "'Object' is a
+  type here, not a value".
+- **`const t = { a: 1, b: 2 }; t.b = 3`** was "can't assign to a field of a value ... that is not held anywhere": a
+  `const` literal of constants is folded into a constant. One the function writes the fields of (`t.b = v`, `t[k]
+  op= v`, `t.n++`, `delete t.f`, `Object.assign(t, ...)`) is stored, as a `let` is.
+
+Found on the way: under -mm=own a spread of a literal holding a new string (`{ ...{ s: "q" + i } }`) never gives the
+string back (before this too, 4M rounds 129 MB against 33). `Object.assign` puts a literal source's properties in as
+they are, so it does not leak.
+
+Not yet:
+- `Object.keys` of a value of type `object` (its keys are not known), `Object.create` of a prototype,
+  `Object.groupBy`, `Object.setPrototypeOf`, `Object.getOwnPropertySymbols`, `Object.getOwnPropertyDescriptors`.
+- `Object.is` of `any` or union operands is `===` (NaN is not NaN there); `Object.is(0, -0)` of integer literals is
+  true (both are the `s32` 0).
+- `Symbol().description` is `""`, not `undefined`.
+- Callable interfaces naming each other (`interface A { (x: number): B }`, `interface B { (s: string): A }`): a
+  function type can't contain itself, and a closure given to one is "invalid cast".
+- `class X extends k` of a `let k = Base` stays the clear error it is (its class is known at run time only).
+- The -mm=own spread leak above.
+
+Tests `00tslang_issue_222.ts` (all models), `00tslang_issue_222_any_symbol_key.ts` (gc, rc, none); default library
+`object_define_property_symbol_description.ts`, `object_create_null.ts`.
