@@ -17,7 +17,9 @@ set(ENV{TSLANG_LIB_PATH} "")
 
 set(borrow_ended "borrows '[^']*' (but )?is used here after it may be released or overwritten")
 
-# compile(<dir> <what> <expect> <command...>) - <expect> is "ok" or a regex the output must match
+# compile(<dir> <what> <expect> <command...>) - <expect> is "ok", "uncounted" (as "ok", the IR it prints holding no count), "counted" (it compiles, and the IR it prints keeps a
+# count of its own for a borrow a call may end: USER RULING 11-27, such a local takes a reference of its own - where
+# the list says the call drops nothing, there is no count), or a regex the output must match
 function(compile dir what expect)
     execute_process(COMMAND ${ARGN}
         WORKING_DIRECTORY "${dir}"
@@ -30,6 +32,14 @@ function(compile dir what expect)
     if(expect STREQUAL "ok")
         if(NOT status EQUAL 0 OR "${out}${err}" MATCHES "error:")
             message(FATAL_ERROR "${what}: exit ${status}\n${out}\n${err}")
+        endif()
+    elseif(expect STREQUAL "uncounted")
+        if(NOT status EQUAL 0 OR "${out}${err}" MATCHES "error:|__own_counted")
+            message(FATAL_ERROR "${what}: expected no count, exit ${status}\n${out}\n${err}")
+        endif()
+    elseif(expect STREQUAL "counted")
+        if(NOT status EQUAL 0 OR "${out}${err}" MATCHES "error:" OR NOT "${out}${err}" MATCHES "__own_counted")
+            message(FATAL_ERROR "${what}: expected a counted borrow, exit ${status}\n${out}\n${err}")
         endif()
     elseif(status EQUAL 0 OR NOT "${out}${err}" MATCHES "${expect}")
         message(FATAL_ERROR "${what}: expected '${expect}', exit ${status}\n${out}\n${err}")
@@ -62,11 +72,12 @@ compile("${WORK_DIR}/rc" "import_own_no_drops against the rc library" "${borrow_
     "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_no_drops.ts" -o import.obj)
 
 # `new H()` of an own library's class is a fresh object this module owns; of an rc library's, whose
-# blocks carry a count their module holds, it is not, and a borrow under it ends at any unknown call
-compile("${WORK_DIR}/own" "import_own_class against the own library" ok
-    "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts" -o import.obj)
+# blocks carry a count their module holds, it is not, and a borrow under it ends at any unknown call: the local
+# holding it takes a count of its own there (USER RULING 11-27), which against the own library it needs not
+compile("${WORK_DIR}/own" "import_own_class against the own library" uncounted
+    "${TSLANG}" --emit=mlir-affine -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts")
 
-compile("${WORK_DIR}/rc" "import_own_class against the rc library" "${borrow_ended}"
-    "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts" -o import.obj)
+compile("${WORK_DIR}/rc" "import_own_class against the rc library" counted
+    "${TSLANG}" --emit=mlir-affine -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts")
 
 message(STATUS "an own library's __own_no_drops reaches its importer, and only what it lists; its classes can be built")

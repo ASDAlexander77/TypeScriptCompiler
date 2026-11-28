@@ -300,6 +300,9 @@ class OwnershipInferencePass
     // After a failed dry run: the values its leftover retains and lent reads belong to, which its
     // reports name, counted (the repair, runOnFunction).
     void countRefusedValues(const llvm::SetVector<mlir::Operation *> &erased);
+    // The repair of letsUsedAfterCalls, under plain own and the flag alike
+    void countLetsUsedAfterCalls(llvm::SetVector<mlir::Operation *> &erased);
+    void countFoldedConstRead(mlir::Operation *read);
     // A call that keeps a counted value's argument takes one owner of it: a retain of its own before
     // the call (rc's callee retains for what it keeps; own's erases that).
     void retainKeptCountedArguments();
@@ -402,6 +405,10 @@ class OwnershipInferencePass
     // gets a copy instead, released after it (spec 22), read -> call; or stored into a place, which
     // owns the copy (spec 50), read -> store
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
+    // A `let` given a read of a place, used after a call that may free what it reads (the dry run's): the `let` takes a
+    // reference of its own - a copy of a string or an `any`, else a count of the object (USER RULING 11-27, TSLANG
+    // 218): countLetsUsedAfterCalls
+    llvm::SetVector<mlir::Operation *> letsUsedAfterCalls;
     // `arith.select`s that two fresh values moved into (selectRetainOf): the real run releases the one
     // not selected right after each
     llvm::SmallSetVector<mlir::Operation *, 2> selectMoves;

@@ -91,6 +91,29 @@ A `let` that is only given other locals' values, or fields', and is assigned aga
 list from a local head is that case (`let node = head; while (node) { ...; node = node.next; }`).
 Giving the head up, or cutting the list, while the walk still reads it is an error.
 
+A local that borrows out of a container and is still used after a call that may free what it borrows
+takes a reference of its own instead of being an error. A string or an `any` is copied into it.
+Anything else, a closure included, gets one extra owner, counted the way
+[`--own-fallback=count`](#counted-fallback---own-fallbackcount) counts. The local gives that
+reference back after its last use on each path: before an early `return` or a `throw`, on a
+`continue` or `break` past it, and before a loop reads it again. No warning is printed.
+
+```typescript
+class Item { constructor(public v: number) {} }
+class Taker { constructor(items: Item[]) { items.pop(); } }
+
+function main() {
+    const items = [new Item(7)];
+    const first = items[0];     // a borrow of the element
+    new Taker(items);           // the constructor frees it from the array...
+    print(first.v);             // ...and `first` still holds it: 7
+}
+```
+
+It is still an error when the value is freed by this function itself (`items.pop()`,
+`items[0] = other` before the use), when the local is assigned again, when the value is passed on
+to a block argument, or across a structured loop's `break` or `continue`.
+
 A parameter a function keeps can go into an object literal it returns (`return { key, prev }`): the
 literal owns it, as it owns a new object, and reading the parameter after that is an error. A
 parameter given a default by `??=` or `||=` can be copied into a `let` (`let a = <number[]>results`),

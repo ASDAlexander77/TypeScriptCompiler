@@ -255,7 +255,9 @@ namespace own_signature
                 auto stored = false;
                 for (auto *addressUser : addressOfOp->getUsers())
                 {
-                    if (mlir::isa<mlir_ts::LoadOp>(addressUser))
+                    // (and what --di says of it for the debugger, which reads nothing: `for (const it of G)` names
+                    // the array it walks - with it, `G` was not immortal in a debug build, and `b.set(G)` refused)
+                    if (mlir::isa<mlir_ts::LoadOp, mlir_ts::DebugVariableOp>(addressUser))
                     {
                         continue;
                     }
