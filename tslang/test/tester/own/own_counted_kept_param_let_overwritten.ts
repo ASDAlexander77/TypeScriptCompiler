@@ -1,3 +1,6 @@
+// Accepted under -mm=own since TSLANG 221 (USER RULING 11-27, as 219): a local borrowing a place, used after the
+// place may be freed - by this function itself, or with the local assigned again - takes a reference of its own
+// (a copy of a string or an `any`, else a count). It was an error; below is what it was refused for.
 // -mm=own rejects: `p` moves into the `let r` (spec 33: a parameter read into an owning local that
 // is given another value is kept), and `inner`, read out of `p` before the move, is bounded by `r`
 // from then on; `r = new N(...)` frees `p` and `p.v`, and `inner` is read after it.

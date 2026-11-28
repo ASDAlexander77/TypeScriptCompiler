@@ -92,7 +92,9 @@ list from a local head is that case (`let node = head; while (node) { ...; node 
 Giving the head up, or cutting the list, while the walk still reads it is an error.
 
 A local that borrows out of a container and is still used after a call that may free what it borrows
-takes a reference of its own instead of being an error. A string or an `any` is copied into it.
+takes a reference of its own instead of being an error. The same holds when this function frees it
+itself (`items.pop()`, `items[0] = other` before the use), and for a local assigned again: it is
+counted together with every value it is given. A string or an `any` is copied into it.
 Anything else, a closure included, gets one extra owner, counted the way
 [`--own-fallback=count`](#counted-fallback---own-fallbackcount) counts. The local gives that
 reference back after its last use on each path: before an early `return` or a `throw`, on a
@@ -110,9 +112,11 @@ function main() {
 }
 ```
 
-It is still an error when the value is freed by this function itself (`items.pop()`,
-`items[0] = other` before the use), when the local is assigned again, when the value is passed on
-to a block argument, or across a structured loop's `break` or `continue`.
+A value chosen from the borrow (`const f = c ? first : other`) is a use of it, and so is anything
+read or called through it: a field, a method, an interface view of it.
+
+A conditional that mixes the borrow with a new value (`c ? first : new Item(1)`) is still an error,
+as it is with no call in between.
 
 A parameter a function keeps can go into an object literal it returns (`return { key, prev }`): the
 literal owns it, as it owns a new object, and reading the parameter after that is an error. A

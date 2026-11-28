@@ -1797,12 +1797,12 @@ namespace own_inference
                     }
 
                     // A `let` given the read, used through it after a call that may free what it reads (`const e =
-                    // a[0]; new Q(a); print(e)` of a constructor that empties `a`): the `let` takes a reference of
-                    // its own, a copy or a count (USER RULING 11-27, TSLANG 218). Asked only where the dry run
-                    // fails, so what plain own accepts is decided as before; still an error when that repair
-                    // can't be made.
+                    // a[0]; new Q(a); print(e)` of a constructor that empties `a`), or after this function frees it
+                    // itself (`a.pop()`, `a[0] = x`): the `let` takes a reference of its own, a copy or a count
+                    // (USER RULING 11-27, TSLANG 218/221). Asked only where the dry run fails, so what plain own
+                    // accepts is decided as before; still an error when that repair can't be made.
                     // (a `const` the read is folded into, which names the read itself: the read is the candidate)
-                    if (dryRun && use.op != drop && isCall(drop) && !mlir::isa<mlir_ts::WeakRefDerefOp>(read))
+                    if (dryRun && use.op != drop && !mlir::isa<mlir_ts::WeakRefDerefOp>(read))
                     {
                         if (assignedLet)
                         {
