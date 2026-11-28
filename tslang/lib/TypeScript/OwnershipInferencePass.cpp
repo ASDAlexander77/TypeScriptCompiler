@@ -209,6 +209,7 @@ namespace own_inference
         dryRunCapture.clear();
         countedErrors.clear();
         letsUsedAfterCalls.clear();
+        adapterCaptures.clear();
         reportSubject = {};
         armedSubject = {};
         failureSignalled = false;
@@ -285,6 +286,13 @@ namespace own_inference
             {
                 // a `let` used after a call that may free what it borrows: a reference of its own (USER RULING 11-27)
                 countLetsUsedAfterCalls(toErase);
+
+                // a closure an adapter this compiler made captures: rc's retain before the capture kept, counted, the
+                // box's extra owner of it (TSLANG 220)
+                for (auto *read : adapterCaptures)
+                {
+                    countedValues.insert(countedUnitOf(read->getResult(0)));
+                }
 
                 // the values the reports name, counted where they can be (the copies leave their
                 // retains alone)

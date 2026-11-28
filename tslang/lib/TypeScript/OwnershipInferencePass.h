@@ -407,8 +407,13 @@ class OwnershipInferencePass
     llvm::SmallVector<std::pair<mlir::Operation *, mlir::Operation *>> callCopies;
     // A `let` given a read of a place, used after a call that may free what it reads (the dry run's): the `let` takes a
     // reference of its own - a copy of a string or an `any`, else a count of the object (USER RULING 11-27, TSLANG
-    // 218): countLetsUsedAfterCalls
+    // 219): countLetsUsedAfterCalls
     llvm::SetVector<mlir::Operation *> letsUsedAfterCalls;
+    // A closure read out of a place and captured by an adapter this compiler made (the dry run's): counted, the
+    // adapter's box holding an extra owner of it (TSLANG 220, capturedByAdapter)
+    llvm::SetVector<mlir::Operation *> adapterCaptures;
+    // Is `kept`, which keeps `value`, the capture of an adapter's box (`.value_adapter.`), `value` a closure?
+    bool capturedByAdapter(mlir::Operation *kept, mlir::Value value);
     // `arith.select`s that two fresh values moved into (selectRetainOf): the real run releases the one
     // not selected right after each
     llvm::SmallSetVector<mlir::Operation *, 2> selectMoves;

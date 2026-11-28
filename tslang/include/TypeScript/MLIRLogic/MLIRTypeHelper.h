@@ -2182,8 +2182,11 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
-        // a bound function or method type has its `this` among the inputs to drop
-        if ((!isLeftTypeFunc && leftInputs.empty()) || (!isRightTypeFunc && rightInputs.empty()))
+        // a bound function or method type has its `this` first among its inputs, to drop; a hybrid has none (`[() => k,
+        // () => m]` of two closures is two `hybrid_func<, s32>`: they failed to merge, and the literal was a tuple)
+        auto isLeftBound = isa<mlir_ts::BoundFunctionType>(leftTypeUnwrapped);
+        auto isRightBound = isa<mlir_ts::BoundFunctionType>(rightTypeUnwrapped);
+        if ((isLeftBound && leftInputs.empty()) || (isRightBound && rightInputs.empty()))
         {
             return mlir::Type();
         }
@@ -2191,14 +2194,36 @@ class MLIRTypeHelper
         auto hybridFuncIsNeeded = false;
         if (!isLeftTypeFunc)
         {
-            leftInputs = leftInputs.drop_back();
+            leftInputs = isLeftBound ? leftInputs.drop_front() : leftInputs;
             hybridFuncIsNeeded = true;
         }
 
         if (!isRightTypeFunc)
         {
-            rightInputs = rightInputs.drop_back();
+            rightInputs = isRightBound ? rightInputs.drop_front() : rightInputs;
             hybridFuncIsNeeded = true;
+        }
+
+        // ...and an integer result beside a number one (`[() => s.length, () => k + 0.5]`) is a number: the integer's
+        // function is adapted to it where it is stored (resultWidensTo)
+        llvm::SmallVector<mlir::Type> widenedResults;
+        if (leftResults.size() == 1 && rightResults.size() == 1 && leftResults.front() != rightResults.front())
+        {
+            // (an `index` too: `s.length`)
+            auto isInteger = [](mlir::Type type) { return isa<mlir::IntegerType, mlir::IndexType>(type); };
+            auto left = leftResults.front();
+            auto right = rightResults.front();
+            if ((isInteger(left) && isa<mlir_ts::NumberType>(right)) || (isa<mlir_ts::NumberType>(left) && isInteger(right)) ||
+                (isInteger(left) && isInteger(right)))
+            {
+                widenedResults.push_back(mlir_ts::NumberType::get(context));
+                if (TestFunctionTypesMatch(leftInputs, rightInputs, widenedResults, widenedResults, leftIsVarArg, rightIsVarArg).result
+                    == MatchResultType::Match)
+                {
+                    found = true;
+                    return mlir_ts::HybridFunctionType::get(context, leftInputs, widenedResults, leftIsVarArg, isCVarArg);
+                }
+            }
         }
 
         auto equalFuncs = TestFunctionTypesMatch(leftInputs, rightInputs, leftResults, rightResults, leftIsVarArg, rightIsVarArg).result == MatchResultType::Match;

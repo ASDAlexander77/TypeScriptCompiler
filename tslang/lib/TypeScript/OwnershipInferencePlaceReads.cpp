@@ -1381,6 +1381,41 @@ namespace own_inference
                owner->getParentOp()->getName().getStringRef() == "func.func";
     }
 
+    bool OwnershipInferencePass::capturedByAdapter(mlir::Operation *kept, mlir::Value value)
+    {
+        if (!mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(value.getType()))
+        {
+            return false;
+        }
+
+        // the box: `ts.Capture` of the value, or by now a capture box local its field is stored into
+        mlir::Value box;
+        if (auto captureOp = mlir::dyn_cast<mlir_ts::CaptureOp>(kept))
+        {
+            box = captureOp.getResult();
+        }
+        else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(kept))
+        {
+            auto fieldRef = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto boxVar = fieldRef ? fieldRef.getObjectRef().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (boxVar && boxVar->hasAttr(CAPTURE_BOX_ATTR_NAME) && rootOf(storeOp.getValue()) == rootOf(value))
+            {
+                box = boxVar.getResult();
+            }
+        }
+
+        if (!box)
+        {
+            return false;
+        }
+
+        return llvm::any_of(box.getUsers(), [](mlir::Operation *user) {
+            auto bindOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(user);
+            auto funcRef = bindOp ? bindOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+            return funcRef && funcRef.getIdentifier().starts_with(".value_adapter.");
+        });
+    }
+
     bool OwnershipInferencePass::storesCopyOf(mlir::Operation *store, mlir::Value value)
     {
         auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(store);
@@ -1649,6 +1684,14 @@ namespace own_inference
         }
         else if (kept || letKept)
         {
+            // a closure an adapter this compiler made captures (the `.value_adapter.` of each element of `(() =>
+            // s32)[]` given as `(() => number)[]`, castArrayElementwise): the adapter's box owns what it captures, so
+            // rc's retain before the capture is kept, as an extra owner the box's release takes away (TSLANG 220)
+            if (dryRun && kept && capturedByAdapter(kept, result))
+            {
+                adapterCaptures.insert(read);
+            }
+
             // a string given to a call that keeps it: the call takes a copy (spec 22)
             if (dryRun && kept && isCall(kept) && copiesInto(kept, result))
             {
