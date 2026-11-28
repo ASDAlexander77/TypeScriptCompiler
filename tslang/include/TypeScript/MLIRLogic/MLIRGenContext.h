@@ -269,6 +269,8 @@ struct GenContext
     // (`functionVarScope`), with the function's context (`functionVarContext`) and its storage after
     // the function's prologue (`functionVarAnchor`, the last prologue op, or null for the block's start).
     llvm::StringSet<> *functionVars = nullptr;
+    // the body of the function being made (constLiteralFieldsWritten)
+    Node functionBody;
     // the positions of the `var` declarations written directly in the body (not in a block of it)
     llvm::DenseSet<int> *functionTopLevelVars = nullptr;
     void *functionVarScope = nullptr;

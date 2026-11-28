@@ -715,7 +715,8 @@ namespace mlirgen
                 return mlir::Type();
             }
 
-            return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
+            return expandGenericTypeAlias(location, name, typeNode, hasAnyNamedGenericType != IsGeneric::True,
+                                          genericTypeGenContext);
         }  
 
         return mlir::Type();      
@@ -763,7 +764,8 @@ namespace mlirgen
                 return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
             }
 
-            return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
+            return expandGenericTypeAlias(location, name, typeNode, hasAnyNamedGenericType != IsGeneric::True,
+                                          genericTypeGenContext);
         }
 
         // A field of a @value type naming a generic whose instantiation fails - a type argument that is a
@@ -1970,6 +1972,23 @@ namespace mlirgen
         condTypeGenContext.inferTypes = &condTypeGenContext.typeParamsWithArgs;
 
         auto checkType = getType(conditionalTypeNode->checkType, condTypeGenContext);
+
+        // an `infer U` declares a U of this conditional's own: one reached again through an alias that recurses
+        // (`Flat<T> = T extends (infer U)[] ? Flat<U> : T`) found the outer level's U bound (number[] of
+        // number[][]) and tested `number[] extends number[][]`, so Flat<number[][]> was number[]
+        // It is made unbound again, not left out: a type literal holding it (`{ v: infer U }`) is made once, and the
+        // test fills U in
+        FilterVisitorAST<Node> inferVisitor(SyntaxKind::InferType, [&](auto node) {
+            auto inferTypeNode = node.template as<InferTypeNode>();
+            auto inferName = MLIRHelper::getName(inferTypeNode->typeParameter->name);
+            auto found = condTypeGenContext.typeParamsWithArgs.find(inferName);
+            if (found != condTypeGenContext.typeParamsWithArgs.end())
+            {
+                found->getValue().second = getNamedGenericType(inferName);
+            }
+        });
+        inferVisitor.visit(conditionalTypeNode->extendsType);
+
         auto extendsType = getType(conditionalTypeNode->extendsType, condTypeGenContext);
         if (!checkType || !extendsType)
         {
@@ -3719,6 +3738,29 @@ namespace mlirgen
                 return mlir::Type();
             }
 
+            // `{ x } & T` made already (`Props<T> & {}`, Props an intersection with its T): its members, so the fields
+            // and T are put together again
+            if (auto intersectionType = dyn_cast<mlir_ts::IntersectionType>(type);
+                intersectionType && llvm::any_of(intersectionType.getTypes(),
+                                                 [](mlir::Type member) { return isa<mlir_ts::NamedGenericType>(member); }))
+            {
+                for (auto member : intersectionType.getTypes())
+                {
+                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(member))
+                    {
+                        allTupleTypesConst = false;
+                        if (!baseTupleType)
+                        {
+                            baseTupleType = tupleType;
+                        }
+                    }
+
+                    types.push_back(member);
+                }
+
+                continue;
+            }
+
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
                 allTupleTypesConst = false;
@@ -3831,6 +3873,7 @@ namespace mlirgen
             auto anyTypesInBaseTupleType = baseTupleType.getFields().size() > 0;
 
             SmallVector<::mlir::typescript::FieldInfo> typesForNewTuple;
+            mlir::SmallVector<mlir::Type> genericMembers;
             for (auto type : types)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! processing ... & {...} :" << type << "\n";);
@@ -3888,11 +3931,25 @@ namespace mlirgen
                         }
                     }                    
                 }
+                else if (isa<mlir_ts::NamedGenericType>(type))
+                {
+                    // `{ x: string } & T` of a generic function not given its T yet: the fields known so far and T,
+                    // which a call infers from its argument (inferType). It was `never` ("'Never' can't be used as
+                    // parameter type"); given T, the intersection is made again
+                    genericMembers.push_back(type);
+                    continue;
+                }
+                else if (isa<mlir_ts::AnyType>(type) && anyTypesInBaseTupleType)
+                {
+                    // ...and that T given `any` (a generic arrow made with `any` for its type parameters): no field
+                    // more. `X & any` written is `any` (above)
+                    continue;
+                }
                 else
                 {
                     if (!anyTypesInBaseTupleType)
                     {
-                        unionTypes = true; 
+                        unionTypes = true;
                         typesForUnion.push_back(type);
                     }
                     else
@@ -3910,9 +3967,15 @@ namespace mlirgen
                 return resUnion;                
             }
 
-            auto resultType = allTupleTypesConst 
+            auto resultType = allTupleTypesConst
                 ? (mlir::Type)getConstTupleType(typesForNewTuple)
                 : (mlir::Type)getTupleType(typesForNewTuple);
+
+            if (!genericMembers.empty())
+            {
+                genericMembers.insert(genericMembers.begin(), resultType);
+                return mth.getIntersectionType(genericMembers);
+            }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! &=: " << resultType << "\n";);
 

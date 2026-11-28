@@ -3549,6 +3549,13 @@ class MLIRTypeHelper
                 auto fieldType = item.id
                     ? getFieldTypeByFieldName(srcType, item.id)
                     : (hasSrcFields && (size_t)index < srcFields.size() ? srcFields[index].type : mlir::Type());
+                // a field the type has not got (`number extends { v: infer U }`) is not matched by an `infer`: it took
+                // nothing for its type and said true (`{ v: any }` still is: an alias may name itself through it)
+                if (!fieldType && isa<mlir_ts::InferType>(item.type))
+                {
+                    return false;
+                }
+
                 auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
                 if (fieldExtResult == ExtendsResult::Never)
                 {
@@ -3572,6 +3579,13 @@ class MLIRTypeHelper
                 auto fieldType = item.id
                     ? getFieldTypeByFieldName(srcType, item.id)
                     : (hasSrcFields && (size_t)index < srcFields.size() ? srcFields[index].type : mlir::Type());
+                // a field the type has not got (`number extends { v: infer U }`) is not matched by an `infer`: it took
+                // nothing for its type and said true (`{ v: any }` still is: an alias may name itself through it)
+                if (!fieldType && isa<mlir_ts::InferType>(item.type))
+                {
+                    return false;
+                }
+
                 auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
                 if (fieldExtResult == ExtendsResult::Never)
                 {

@@ -9039,6 +9039,12 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    std::optional<ValueOrLogicalResult> mlirGenObjectAssignFields(mlir::Location location, NodeArray<Expression> arguments,
+                                                                  mlir::Type targetType, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenSymbolMember(mlir::Location location, mlir::Value symbolValue, StringRef member,
+                                             const GenContext &genContext);
+
     ValueOrLogicalResult mlirGenCallThisMethod(mlir::Location location, mlir::Value thisValue, StringRef methodName,
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
                                                const GenContext &genContext);
@@ -18464,6 +18470,15 @@ class MLIRGenImpl
 
     mlir::Type expandTypeAlias(mlir::Location location, StringRef name, llvm::function_ref<mlir::Type()> expand);
 
+    bool constLiteralFieldsWritten(Node scope, StringRef name);
+
+    bool isConstantObjectLiteral(Node node);
+
+    bool namesItselfInTailOnly(StringRef name, TypeNode typeNode);
+
+    mlir::Type expandGenericTypeAlias(mlir::Location location, StringRef name, TypeNode typeNode,
+                                      bool concreteArguments, const GenContext &genericTypeGenContext);
+
     mlir::Type resolveTypeByNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext);
 
     mlir::Type resolveTypeByName(mlir::Location location, StringRef name, const GenContext &genContext);
@@ -23823,6 +23838,10 @@ class MLIRGenImpl
     // Type aliases whose declaration is being turned into a type, by full name: one that meets
     // itself on the way is circular (resolveTypeByNameInNamespace).
     llvm::StringSet<> typeAliasesInProgress;
+
+    // how deep a conditional type alias is inside itself (expandGenericTypeAlias)
+    llvm::StringMap<int> conditionalTypeAliasDepth;
+    static constexpr int MaxConditionalTypeAliasDepth = 8;
     // Aliases reported circular, by name: that one error says it, and "can't find type" for each
     // mention after it would only repeat it.
     llvm::StringSet<> circularTypeAliases;

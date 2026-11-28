@@ -2656,6 +2656,16 @@ foreach(issue221_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_221-${issue221_mm} COMMAND test-runner -jit -mm=${issue221_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_221.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_221-${issue221_mm} COMMAND test-runner -mm=${issue221_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_221.ts")
 endforeach()
+# TSLANG 222: recursive conditional types, `{ x } & T` of a generic, symbol toString/description, Object.assign/is,
+# a const literal whose fields are written; and a symbol key of an `any` (not -mm=own: it refuses `x[k]` of `any`)
+foreach(issue222_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_222-${issue222_mm} COMMAND test-runner -jit -mm=${issue222_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_222.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_222-${issue222_mm} COMMAND test-runner -mm=${issue222_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_222.ts")
+endforeach()
+foreach(issue222_any_mm gc rc none)
+    tslang_add_test(NAME test-jit-00tslang_issue_222_any_symbol_key-${issue222_any_mm} COMMAND test-runner -jit -mm=${issue222_any_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_222_any_symbol_key.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_222_any_symbol_key-${issue222_any_mm} COMMAND test-runner -mm=${issue222_any_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_222_any_symbol_key.ts")
+endforeach()
 # ...and what was refused for it, accepted since TSLANG 219 (USER RULING 11-27): an argument and a borrow neither of
 # which this function owns (two parameters, `this` and a parameter), the array a loop reads emptied by the call, a
 # field given a value it does not make - the borrowing local takes a reference of its own

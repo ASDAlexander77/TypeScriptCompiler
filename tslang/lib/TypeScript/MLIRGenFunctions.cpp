@@ -3225,6 +3225,7 @@ namespace mlirgen
             }
 
             funcGenContext.functionVars = &functionVars;
+            funcGenContext.functionBody = functionLikeDeclarationBaseAST->body;
             funcGenContext.functionTopLevelVars = &functionTopLevelVars;
             funcGenContext.functionVarScope = symbolTable.getCurScope();
             funcGenContext.functionVarContext = &funcGenContext;
