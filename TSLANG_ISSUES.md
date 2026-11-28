@@ -4205,7 +4205,19 @@ constructor, a call through a class value or a function value. The ruling: the l
   have their new first error. The `own_drop_owner_*_error` and `own_class_value_ctor_drops_error` tests lost the
   suffix and run in every model. `own-facts-objects` and `own-shared-no-drops` check the count instead of the error.
 
-Not yet: an array literal of closures passed to a `(() => number)[]` parameter fails in every model ("invalid cast
-from (p0: Reference<{k:number}>) => number[] to () => number[]"); giving the literal that type works.
+An array literal of closures passed to a `(() => number)[]` parameter failed in every model: fixed by 220.
 
 Test `00own_borrow_used_after_call.ts` (all models).
+
+220. An array literal of closures given as `(() => number)[]` (2026-11-27). `count([() => k + 1])` failed in every
+model ("invalid cast from (p0: Reference<{k:41}>) => s32[] to () => number[]").
+- An element is a closure over its own capture box, and its type named the box. The literal's element type is now
+  the closure's type without the box (a hybrid function). Two closures over different boxes merge to that one type;
+  before, the literal became a tuple.
+- An element returning an integer (`() => k + 1` of a literal `k`, `() => s.length`) can now be given as one
+  returning a number, as a single function can. The array is copied and each element adapted. Functions whose
+  results are an integer and a number merge to a number result.
+- Under -mm=own the adapter's capture box holds an extra owner of the closure it calls, so the copy outlives the
+  original emptied.
+
+Test `00tslang_issue_220.ts` (all models).

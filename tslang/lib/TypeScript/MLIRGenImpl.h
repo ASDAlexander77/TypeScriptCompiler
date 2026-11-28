@@ -16466,6 +16466,16 @@ class MLIRGenImpl
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
 
+        // A closure is an element as the function it is called as (`() => number`), not as the closure over its own
+        // capture box: `[() => k + 1]` was an array of `bound_func<ref<{k: 41}>, s32>`, which no `(() => number)[]`
+        // could be given ("invalid cast ... is not base of type"), and two closures over different boxes merged into
+        // the first one's type
+        if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(wideType); boundFuncType && !arrayInfo.recevierContext.receiverElementType)
+        {
+            wideType = mlir_ts::HybridFunctionType::get(builder.getContext(), boundFuncType.getInputs().drop_front(),
+                                                        boundFuncType.getResults(), boundFuncType.isVarArg());
+        }
+
         elementType = elementType ? elementType : wideType;
 
         // a literal kept `as const` stays only while every element is that literal: with another element, both

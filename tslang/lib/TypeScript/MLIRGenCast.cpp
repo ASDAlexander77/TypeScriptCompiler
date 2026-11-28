@@ -2842,6 +2842,9 @@ namespace mlirgen
     // assigned - nested arrays in turn. The new array is a copy, so later changes to one of them are not
     // seen through the other. An array literal met at a union or a `const` binding gets here with s32
     // elements (see castConstArrayToArray), and so does a variable holding one.
+    static bool adaptableSignature(mlir::ArrayRef<mlir::Type> srcInputs, mlir::TypeRange srcResults,
+                                   mlir::ArrayRef<mlir::Type> destInputs, mlir::TypeRange destResults, bool &dropResult);
+
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castArrayElementwise(mlir::Location location, mlir_ts::ArrayType arrayType, mlir::Value value, mlir_ts::ArrayType srcArrayType, const GenContext &genContext)
     {
         auto isNumeric = [](mlir::Type type) {
@@ -2921,8 +2924,38 @@ namespace mlirgen
             });
         };
 
+        // ...and an array of functions given as an array of a signature a function of theirs is adapted to (`[() => k +
+        // 1]` - an `(() => s32)[]`, the literal an integer - given as `(() => number)[]`): each element is cast as a
+        // function is, its adapter widening the result (adaptableSignature)
+        auto adaptsFunctions = [&]() {
+            auto signatureOf = [](mlir::Type type, mlir::ArrayRef<mlir::Type> &inputs, mlir::TypeRange &results) {
+                if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+                {
+                    inputs = funcType.getInputs();
+                    results = funcType.getResults();
+                    return true;
+                }
+
+                if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(type))
+                {
+                    inputs = hybridFuncType.getInputs();
+                    results = hybridFuncType.getResults();
+                    return true;
+                }
+
+                return false;
+            };
+
+            mlir::ArrayRef<mlir::Type> srcInputs, destInputs;
+            mlir::TypeRange srcResults, destResults;
+            auto dropResult = false;
+            return signatureOf(srcElementType, srcInputs, srcResults) && signatureOf(elementType, destInputs, destResults)
+                && adaptableSignature(srcInputs, srcResults, destInputs, destResults, dropResult);
+        };
+
         if (srcElementType == elementType
-            || !((isNumericSource(srcElementType) && isNumericTarget(elementType)) || boxesElements() || narrowsElements()))
+            || !((isNumericSource(srcElementType) && isNumericTarget(elementType)) || boxesElements() || narrowsElements()
+                 || adaptsFunctions()))
         {
             return std::nullopt;
         }
@@ -4123,7 +4156,8 @@ namespace mlirgen
         }
 
         // an integer (`() => 0` returns an s32) is a number to whoever reads it as one (`(v: any) => number`)
-        if (isa<mlir::IntegerType>(from) && isa<mlir_ts::NumberType>(to))
+        // (an `index` as well: `() => s.length`)
+        if (isa<mlir::IntegerType, mlir::IndexType>(from) && isa<mlir_ts::NumberType>(to))
         {
             return true;
         }

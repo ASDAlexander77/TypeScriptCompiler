@@ -2641,6 +2641,12 @@ foreach(borrow_after_call_mm gc rc none own)
     tslang_add_test(NAME test-jit-00own_borrow_used_after_call-${borrow_after_call_mm} COMMAND test-runner -jit -mm=${borrow_after_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_borrow_used_after_call.ts")
     tslang_add_test(NAME test-compile-00own_borrow_used_after_call-${borrow_after_call_mm} COMMAND test-runner -mm=${borrow_after_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00own_borrow_used_after_call.ts")
 endforeach()
+# TSLANG 220: an array literal of closures given as `(() => number)[]` - closure elements as function values, merged
+# across capture boxes and integer/number results, copied with adapters where a result widens
+foreach(issue220_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_220-${issue220_mm} COMMAND test-runner -jit -mm=${issue220_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_220.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_220-${issue220_mm} COMMAND test-runner -mm=${issue220_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_220.ts")
+endforeach()
 # ...and what was refused for it, accepted since TSLANG 219 (USER RULING 11-27): an argument and a borrow neither of
 # which this function owns (two parameters, `this` and a parameter), the array a loop reads emptied by the call, a
 # field given a value it does not make - the borrowing local takes a reference of its own
