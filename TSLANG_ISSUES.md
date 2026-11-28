@@ -4198,8 +4198,8 @@ constructor, a call through a class value or a function value. The ruling: the l
   it again. An edge that needs it gets a block of its own.
 - It is decided only where own's analysis fails, so a program own accepted compiles as before. A `let` keeps rc's
   retain and release, counted. A `const` folded into its read is given them.
-- Still an error: a value freed by this function itself (`a.pop()`, `a[0] = x`), a local assigned again, a value
-  passed on as a block's argument, and a structured loop's `break` or `continue` in between.
+- Still an error then: a value freed by this function itself (`a.pop()`, `a[0] = x`), a local assigned again, a
+  value passed on as a block's argument, and a structured loop's `break` or `continue` in between. All lifted by 221.
 - 32 `own_err_*` cases now compile and print what rc prints. They were renamed `own_counted_*` and run
   (`own_counted_cases`). Six that call declared functions are compiled only. Two still refuse another shape and
   have their new first error. The `own_drop_owner_*_error` and `own_class_value_ctor_drops_error` tests lost the
@@ -4221,3 +4221,32 @@ model ("invalid cast from (p0: Reference<{k:41}>) => s32[] to () => number[]").
   original emptied.
 
 Test `00tslang_issue_220.ts` (all models).
+
+221. The rest of 219's refusals (2026-11-28, under the 11-27 USER RULING). Under -mm=own, a borrow used after its
+place may be freed now takes a reference of its own in these cases too:
+- **This function frees it itself**: `const e = a[1]; a.pop(); e.v`, and `a[0] = x`. The ruling no longer asks for
+  the free to be a call.
+- **A `let` assigned again** (`let e = a[0]; ...; e = b[0]`) is counted with every value it is given, a string's too.
+- **A value chosen from the borrow** (`const f = c ? e : o`, an `arith.select`), or passed on to a block's argument
+  where the read's block dominates the block, is a use of it.
+- **A loop's `break` or `continue`** is already a branch when own runs (the affine lowering makes it one). The edges
+  219 placed handle it.
+
+Fixed along the way: the count of a `const` went back after the field's address but before the load through it.
+That covered `e.v`, a method call on `e` and an interface view of it, so they read freed memory; the tests passed
+only because the freed block still held the value. A use is now followed through what the op derives from the
+value: a place in it, its method, its `this`. So is a block read out of a place in it (`const c = e.child`,
+`e.name`, `e.items`): before, `c.v` after a churn read freed memory in 219's call case too.
+
+A `const` folded into its read is counted only where every use borrows it. A use that gives the value to another
+holder makes it an error again: a store, a push, a capture, a call's kept argument. The holder's later uses are not
+followed, and a folded `const` has no rc op to give it a count of its own.
+
+Still an error:
+- a conditional mixing the borrow with a new value (`c ? e : new B(1)`), as it is with no call in between;
+- a `let` declared with no value (`let x: C; ... x = t`), which has no rc retain to count (`own_err_alias_read_stale`).
+
+29 `own_err_*` cases now compile and print what rc prints: renamed `own_counted_*` and run (`own_counted_cases`).
+`own_let_borrow_dropped_error.ts` lost the suffix and runs in every model.
+
+Test `00tslang_issue_221.ts` (all models).

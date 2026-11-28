@@ -2647,6 +2647,13 @@ foreach(issue220_mm gc rc none own)
     tslang_add_test(NAME test-jit-00tslang_issue_220-${issue220_mm} COMMAND test-runner -jit -mm=${issue220_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_220.ts")
     tslang_add_test(NAME test-compile-00tslang_issue_220-${issue220_mm} COMMAND test-runner -mm=${issue220_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_220.ts")
 endforeach()
+# TSLANG 221: -mm=own, a borrow used after this function frees its place (`a.pop()`, `a[0] = x`), a `let` assigned
+# again, a value chosen from the borrow, a loop's continue/break in between - each takes a reference of its own; and
+# its count given back after a field read, a method call, an interface view through it
+foreach(issue221_mm gc rc none own)
+    tslang_add_test(NAME test-jit-00tslang_issue_221-${issue221_mm} COMMAND test-runner -jit -mm=${issue221_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_221.ts")
+    tslang_add_test(NAME test-compile-00tslang_issue_221-${issue221_mm} COMMAND test-runner -mm=${issue221_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_221.ts")
+endforeach()
 # ...and what was refused for it, accepted since TSLANG 219 (USER RULING 11-27): an argument and a borrow neither of
 # which this function owns (two parameters, `this` and a parameter), the array a loop reads emptied by the call, a
 # field given a value it does not make - the borrowing local takes a reference of its own
@@ -2670,11 +2677,11 @@ foreach(issue218_mm gc rc none own)
     tslang_add_test(NAME test-compile-00tslang_issue_218-${issue218_mm} COMMAND test-runner -mm=${issue218_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00tslang_issue_218.ts")
 endforeach()
 # ...and what stays refused under own
-add_test(NAME test-compile-own-let-borrow-dropped-error
-         COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_let_borrow_dropped_error.ts")
-set_tests_properties(test-compile-own-let-borrow-dropped-error PROPERTIES
-                     PASS_REGULAR_EXPRESSION "'cur' borrows 'this.a' but is used here after it may be released or overwritten"
-                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# (a `let` borrowing a field, assigned again, read after the field is replaced: accepted since TSLANG 221)
+foreach(let_borrow_mm gc rc none own)
+    tslang_add_test(NAME test-jit-own-let-borrow-dropped-${let_borrow_mm} COMMAND test-runner -jit -mm=${let_borrow_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_let_borrow_dropped.ts")
+    tslang_add_test(NAME test-compile-own-let-borrow-dropped-${let_borrow_mm} COMMAND test-runner -mm=${let_borrow_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/own_let_borrow_dropped.ts")
+endforeach()
 add_test(NAME test-compile-own-for-let-assigned-after-closure-error
          COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/own_for_let_assigned_after_closure_error.ts")
 set_tests_properties(test-compile-own-for-let-assigned-after-closure-error PROPERTIES
@@ -7490,7 +7497,6 @@ set(own_error_cases
     "own_err_closure_copy_moved|:13:11: error: '[^']*' borrows '[^']*', which it captures, but runs here after '[^']*' is released"
     "own_err_closure_param_assigned|:9:5: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
     "own_err_closure_assigns_param|:8:15: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
-    "own_err_cell_assigned_in_frame|:16:11: error: 'y' borrows 'a[.]c' but is used here after it may be released or overwritten"
     "own_err_unknown_producer|:5:11: error: '[^']*' takes a second reference"
     "own_err_field_function_reassigned|:7:17: error: a value that borrows a field is used here after it may be released or overwritten"
     "own_err_generator_outlives_arg|:12:11: error: 'it' is used here after the value it borrows is released or overwritten"
@@ -7504,19 +7510,10 @@ set(own_error_cases
     "own_err_push_loop|:6:33: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_field_loop|:10:9: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_union_moved|:10:11: error: a value that borrows 'h[.]c' is used here after it may be released or overwritten"
-    "own_err_field_read_overwritten|:28:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_element_read_overwritten|:22:11: error: 'e' borrows 'arr..' but is used here after it may be released or overwritten"
-    "own_err_element_read_popped|:26:11: error: 'e' borrows 'arr..' but is used here after it may be released or overwritten"
-    "own_err_element_read_loop_pop|:25:15: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
-    "own_err_field_read_owner_assigned|:27:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_field_read_owner_moved|:33:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_global_read_assigned|:29:11: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
     "own_err_merge_read_overwritten|:28:5: error: a value that borrows 'n[.]c' is used here after it may be released or overwritten"
     "own_err_alias_read_popped|:28:9: error: a value that borrows an element is used here after it may be released or overwritten"
     "own_err_alias_read_stale|:31:19: error: 't' borrows 'h[.]c' but is used here after it may be released or overwritten"
-    "own_err_merge_root_assigned|:36:12: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_container_read_stored|:27:5: error: a value that borrows 'h[.]c' cannot be stored, returned or captured"
-    "own_err_field_let_overwritten|:28:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_field_let_assigned|:12:5: error: 'a' borrows 'h[.]a' and cannot be assigned. -mm=own cannot prove that yet"
     "own_err_call_given_borrow|:21:5: error: a value that borrows 'g[.]c' is used here after it may be released or overwritten"
     "own_err_call_this_borrow|:19:5: error: a value that borrows 'g[.]c' is used here after it may be released or overwritten"
@@ -7536,8 +7533,6 @@ set(own_error_cases
     "own_err_callback_escapes|cannot make the callers of 'pick' give it up"
     "own_err_callback_disagrees|a function passed in its place disagrees"
     "own_err_callback_promoted_used|:25:26: error: '[^']*' is used here after its value was moved"
-    "own_err_kept_param_let_overwritten|:30:12: error: 'inner' borrows 'p[.]v' but is used here after it may be released or overwritten"
-    "own_err_kept_param_field_overwritten|:34:12: error: 'inner' borrows 'p[.]v' but is used here after it may be released or overwritten"
     "own_err_kept_and_borrowed_arg|:41:14: error: '[^']*' is used here after its value was moved"
     "own_err_kept_and_borrowed_arg_slot|:44:14: error: '[^']*' is used here after its value was moved"
     "own_err_kept_and_borrowed_arg_field|:41:14: error: '[^']*' is used here after its value was moved"
@@ -7555,7 +7550,6 @@ set(own_error_cases
     "own_err_param_assigned|:12:21: error: '[^']*' is used here after its value was moved"
     "own_err_param_assigned_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'pick' give it up"
     "own_err_delete_param|:7:5: error: 'delete' of a value this function does not own"
-    "own_err_delete_borrowed|:12:11: error: 'f' borrows 'h[.]child' but is used here after it may be released or overwritten"
     "own_err_local_owns_nothing|:8:5: error: '[^']*' owns nothing under -mm=own [(]it is declared without a value, or in a catch or finally clause[)], so it cannot be given a new value here"
     "own_err_merged_result|:7:5: error: a value is merged from several branches [(]`[?]:`, `&&`, `[|][|]`, `[?][?]`, a loop[)]. -mm=own cannot prove which one owns it yet"
     "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
@@ -7565,7 +7559,6 @@ set(own_error_cases
     "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_immortal_borrowed_init|:9:5: error: '[^']*' borrows 'K[.]list\\[\\]' and cannot be stored, returned or captured"
-    "own_err_immortal_field_overwritten|:15:11: error: '[^']*' borrows 'K[.]n[.]c' but is used here after it may be released or overwritten"
     "own_err_immortal_region_borrow|borrows the global 'c' and cannot be stored, returned or captured"
     "own_err_immortal_region_call|:10:11: error: the initializer of global 'c' holds the result of 'id', which borrows its argument"
     "own_err_global_loop_store_static|:18:5: error: '[^']*' borrows the global 'K[.]w' and cannot be stored, returned or captured"
@@ -7644,11 +7637,7 @@ set(own_error_cases
     "own_err_generator_method_this|'this' is a parameter, kept here, but -mm=own cannot make the callers of 'S[.]chars' give it up"
     "own_err_generator_method_reassigned|:17:5: error: a value is used here after the value it borrows is released or overwritten"
     "own_err_callback_method_overridden|:12:53: error: a value that borrows 'this[.]items' is used here after it may be released or overwritten"
-    "own_err_shared_borrow_write|:12:11: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
-    "own_err_shared_borrow_push|:17:11: error: 'first' borrows 'a[.]value[.]items..' but is used here after it may be released or overwritten"
     "own_err_shared_moved_in|:10:11: error: '[^']*' is used here after its value was moved"
-    "own_err_shared_borrow_other_type|:29:16: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
-    "own_err_shared_borrow_reassigned|:11:11: error: 'n' borrows 'a[.]value' but is used here after it may be released or overwritten"
     "own_err_shared_union_owned|a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported"
     "own_err_shared_place_arg|:29:5: error: a value that borrows 'p[.]child' is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|:32:5: error: a value that borrows 'p[.]child' is used here after it may be released or overwritten"
@@ -7665,8 +7654,6 @@ set(own_error_cases
     "own_err_value_refs_copy|:32:11: error: 'a' borrows 'recs..' and cannot be stored, returned or captured"
     "own_err_shared_place_tuple|:31:39: error: a value that borrows 'p[.]child' cannot be stored, returned or captured"
     "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
-    "own_err_iface_field_overwritten|:23:11: error: 'd' borrows 'r[.]dir' but is used here after it may be released or overwritten"
-    "own_err_iface_field_view_overwritten|:26:11: error: 'c' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten"
     "own_err_read_after_move_overwritten|:10:11: error: a value that borrows 'h[.]c' is used here after it may be released or overwritten"
     "own_err_read_after_move_view|:12:11: error: a value that borrows 'h[.]c' is used here after it may be released or overwritten"
@@ -7674,7 +7661,6 @@ set(own_error_cases
     "own_err_read_after_move_loop|:25:14: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_after_loop|:14:11: error: '[^']*' is used here after its value was moved"
     "own_err_read_after_move_global|:42:15: error: a value that borrows 'this[.]f' is used here after it may be released or overwritten"
-    "own_err_field_let_global_overwritten|:42:11: error: 'x' borrows 'h[.]c' but is used here after it may be released or overwritten"
     "own_err_conditional_move_read|:20:11: error: '[^']*' is used here after its value was moved"
     "own_err_conditional_move_outer|:19:13: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_ternary_loop_stored|:12:25: error: '[^']*' is moved inside a loop but was made outside it"
@@ -7721,7 +7707,6 @@ set(own_error_cases
     "own_err_generator_keeps_bounded|:14:17: error: a value that borrows its generator's arguments cannot be stored, returned or captured"
     "own_err_generator_keeps_bounded_outlives|:20:11: error: a value is used here after the value it borrows is released or overwritten"
     "own_err_generator_this_param_returned|:11:26: error: a value that borrows its generator's arguments cannot be stored, returned or captured"
-    "own_err_swap_borrow_used_after|:11:11: error: 'first' borrows 'a..' but is used here after it may be released or overwritten"
     "own_err_callback_forwarded_drops|:15:17: error: a value that borrows 'a..' is used here after it may be released or overwritten"
     "own_err_capture_two_closures|:14:37: error: 'thing' is used here after its value was moved"
     "own_err_capture_in_loop|:15:44: error: 'thing' is moved inside a loop but was made outside it"
@@ -7759,8 +7744,6 @@ set(own_error_cases
     "own_err_fill_other_field|:20:11: error: '[^']*' borrows the result of 'Dev.getQ' but is used here after it may be released or overwritten"
     "own_err_fill_after_fill_call|:19:20: error: '[^']*' borrows the result of 'Dev.fill' but is used here after it may be released or overwritten"
     "own_err_field_moved_call_between|:12:9: error: a value that borrows 'this[.]level' cannot be stored, returned or captured"
-    "own_err_list_walk_dropped|:16:17: error: 'c' borrows 'this[.]head' but is used here after it may be released or overwritten"
-    "own_err_list_walk_call_drops|:16:17: error: 'c' borrows 'this[.]head' but is used here after it may be released or overwritten"
     "own_err_list_lookahead_cut|:17:20: error: 'k' borrows 'c[.]next' but is used here after it may be released or overwritten"
     "own_err_list_walk_up|:21:24: error: 'm' borrows 'c[.]next' but is used here after it may be released or overwritten"
     "own_err_list_pop_used_after|:14:16: error: 'h' borrows 'this[.]head' but is used here after it may be released or overwritten"
@@ -7817,7 +7800,6 @@ set(own_error_cases
     "own_err_list_refill_from_param|:13:9: error: a value that borrows 'n[.]next' cannot be stored, returned or captured"
     "own_err_list_unlink_walk|:16:9: error: 'n' borrows 'n[.]next' but is used here after it may be released or overwritten"
     "own_err_list_cut_through_alias|:13:15: error: 'c' borrows 'l[.]head' and cannot be stored, returned or captured"
-    "own_err_list_cut_in_step|:16:21: error: 'c' borrows 'c[.]next' but is used here after it may be released or overwritten"
     "own_err_list_push_ctor_throws|:11:35: error: a value that borrows 'this[.]head' cannot be stored, returned or captured"
     "own_err_tree_field_given_twice|:13:11: error: a value that borrows 't[.]l' cannot be stored, returned or captured"
     "own_err_list_push_through_this|:11:23: error: a value that borrows 'this[.]h' cannot be stored, returned or captured"
@@ -7829,13 +7811,11 @@ set(own_error_cases
     "own_err_kept_by_constructor_reset|:16:11: error: a value that borrows 'app[.]s' is used here after it may be released or overwritten"
     "own_err_merge_moved_twice|:19:9: error: a value that borrows 'this[.]a' cannot be stored, returned or captured"
     "own_err_borrowing_array_field_reset|:13:16: error: a value that borrows 'this[.]a' is used here after it may be released or overwritten"
-    "own_err_let_borrows_reassigned_overwritten|:17:16: error: 'l' borrows 'this[.]b' but is used here after it may be released or overwritten"
     "own_err_parameter_let_stored|:10:5: error: a value takes a second reference. -mm=own cannot prove a move or a borrow here yet"
     "own_err_merged_locals_overwritten|:11:16: error: '[^']*' borrows '[^']*' but is used here after '[^']*' is released or overwritten"
     "own_err_merged_locals_moved|:12:5: error: '[^']*' is moved here while '[^']*' borrows it"
     "own_err_element_field_moved_replaced|:11:12: error: a value that borrows 'frames..' is used here after it may be released or overwritten"
     "own_err_overridable_reached|:34:13: note: 'Prop.tick' calls 'setNodeTransform', which calls 'World.setTransform'"
-    "own_err_immortal_array_element_overwritten|:15:12: error: '[^']*' borrows 'G\\[\\]' but is used here after it may be released or overwritten"
     "own_err_borrowed_array_pushed_returned|:14:5: error: 'a' borrows 'h[.]arr' and cannot be stored, returned or captured"
     "own_err_local_stored_element_reset|:22:12: error: a value that borrows 'h[.]items..' is used here after it may be released or overwritten"
     "own_err_pushed_object_field_popped|:24:16: error: a value that borrows 'h[.]frames..' is used here after it may be released or overwritten"
@@ -7861,8 +7841,6 @@ set(own_error_cases
     "own_err_param_copy_then_global|:19:10: error: a value that borrows 'HG.n' cannot be stored, returned or captured"
     "own_err_param_element_then_borrow|:19:11: error: 'c' is used here after its value was moved"
     "own_err_field_taken_through_copy|:27:5: error: a value that borrows 'copy[.]v' cannot be stored, returned or captured"
-    "own_err_readonly_reassigned|:11:11: error: 'i' borrows 'o.inner' but is used here after it may be released or overwritten"
-    "own_err_literal_temp_object_kept|:21:11: error: 'o' borrows an element but is used here after it may be released or overwritten"
     "own_err_literal_temp_merge_stored|:30:18: error: 'e' borrows 'x.c' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
@@ -7913,6 +7891,35 @@ set(own_counted_cases
     "own_counted_readonly_captured|^1 0"
     "own_counted_readonly_global|^1"
     "own_counted_readonly_redeclared|^4"
+    "own_counted_cell_assigned_in_frame|^1 2"
+    "own_counted_field_read_overwritten|^0"
+    "own_counted_element_read_overwritten|^1"
+    "own_counted_element_read_popped|^1"
+    "own_counted_element_read_loop_pop|^1"
+    "own_counted_field_read_owner_assigned|^0"
+    "own_counted_field_read_owner_moved|^0"
+    "own_counted_global_read_assigned|^0"
+    "own_counted_merge_root_assigned|^69"
+    "own_counted_field_let_overwritten|^0"
+    "own_counted_kept_param_let_overwritten|^501500"
+    "own_counted_kept_param_field_overwritten|^501500"
+    "own_counted_delete_borrowed|^1"
+    "own_counted_immortal_field_overwritten|^1"
+    "own_counted_shared_borrow_write|^0"
+    "own_counted_shared_borrow_push|^0"
+    "own_counted_shared_borrow_other_type|^0 1 2 100"
+    "own_counted_shared_borrow_reassigned|^0"
+    "own_counted_iface_field_overwritten|^1"
+    "own_counted_iface_field_view_overwritten|^0"
+    "own_counted_field_let_global_overwritten|^5"
+    "own_counted_swap_borrow_used_after|^1"
+    "own_counted_list_walk_dropped|^1"
+    "own_counted_list_walk_call_drops|^1"
+    "own_counted_list_cut_in_step|^2"
+    "own_counted_let_borrows_reassigned_overwritten|^3"
+    "own_counted_immortal_array_element_overwritten|^1"
+    "own_counted_readonly_reassigned|^1 0"
+    "own_counted_literal_temp_object_kept|^1"
 )
 foreach(own_counted_case ${own_counted_cases})
     string(FIND "${own_counted_case}" "|" own_counted_sep)

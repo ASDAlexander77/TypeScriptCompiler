@@ -5,6 +5,7 @@
 #include "TypeScript/TypeScriptPassContext.h"
 
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Dominance.h"
 
 #include <optional>
 #include <thread>
@@ -2059,7 +2060,8 @@ namespace own_inference
     // print(e)` of a constructor that empties `a`, letsUsedAfterCalls) holds a reference of its own (USER RULING 11-27,
     // TSLANG 218): a string or an `any` is copied into it, as copyForRetain copies one; anything else keeps rc's ops,
     // its block counted (countedValues, as --own-fallback=count counts), so the call's release leaves it to the `let`'s.
-    // Where neither can be made, the dry run's error stands. Only a `let` declared with the read and given nothing else.
+    // Where neither can be made, the dry run's error stands. A `let` assigned again is counted with every value it is
+    // given (countedGroup), a string's too. So is a free by this function itself (`a.pop()`, `a[0] = x`).
     void OwnershipInferencePass::countLetsUsedAfterCalls(llvm::SetVector<mlir::Operation *> &erased)
     {
         for (auto *candidate : letsUsedAfterCalls)
@@ -2098,12 +2100,13 @@ namespace own_inference
                 }
             }
 
-            if (!retain || assigned)
+            if (!retain)
             {
                 continue;
             }
 
-            if (isCopyableValueAt(varOp, type))
+            // (a `let` assigned again keeps rc's ops for each value it is given, counted with them: countedGroup)
+            if (!assigned && isCopyableValueAt(varOp, type))
             {
                 auto wasErased = erased.contains(retain.getOperation());
                 erased.remove(retain.getOperation());
@@ -2125,10 +2128,23 @@ namespace own_inference
         }
     }
 
+    // An op whose result reaches into its operand's block: a place in it, a method or `this` of it, a view of it. A
+    // use of the result is a use of the block.
+    static bool derivesFrom(mlir::Operation *op)
+    {
+        return mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::PointerOffsetRefOp, mlir_ts::ThisSymbolRefOp,
+                         mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::ExtractInterfaceThisOp,
+                         mlir_ts::ExtractInterfaceVTableOp, mlir_ts::VTableOffsetRefOp, mlir_ts::CreateBoundFunctionOp,
+                         mlir_ts::ArrayViewOp, mlir_ts::SharedValueRefOp>(op) ||
+               llvm::any_of(op->getResultTypes(), [](mlir::Type type) { return mlir::isa<mlir_ts::RefType, mlir_ts::BoundRefType>(type); });
+    }
+
     // countLetsUsedAfterCalls' `const` folded into its read: a string or an `any` is copied right after the read and
     // that copy used in its place, given back after the last use; a class instance or an array is given a count of
     // its own there (OWN_COUNTED_ATTR_NAME, markCountedRetains) and the count back where it is last used on each path
-    // (below). Not where a use passes it to a block's argument, or a structured loop's break or continue is in between.
+    // (below). A value chosen from it (`c ? e : o`: an `arith.select`, or a block's argument where the read's block
+    // dominates the block) is a use of it. (A loop's `break` and `continue` are branches by now: the affine lowering
+    // made them.)
     void OwnershipInferencePass::countFoldedConstRead(mlir::Operation *read)
     {
         auto value = read->getResult(0);
@@ -2156,21 +2172,121 @@ namespace own_inference
         auto *block = read->getBlock();
         llvm::DenseMap<mlir::Block *, mlir::Operation *> lastUseIn;
         auto usable = true;
-        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
-            auto *ancestor = region->findAncestorOpInRegion(*user);
-            // (a use outside the region, or a branch passing it on to a block's argument: not followed)
-            if (!ancestor || ancestor->hasTrait<mlir::OpTrait::IsTerminator>())
-            {
-                usable = false;
-                return;
-            }
+        mlir::DominanceInfo dominance(getFunction());
+        // the value and what is chosen from it: a select's result, a block's argument it is passed on to
+        llvm::SetVector<mlir::Value> chosen;
+        llvm::DenseSet<mlir::Value> derived;
+        chosen.insert(value);
+        for (size_t index = 0; index < chosen.size() && usable; ++index)
+        {
+            forEachUse(chosen[index], [&](mlir::Operation *user, mlir::Value used) {
+                auto *ancestor = region->findAncestorOpInRegion(*user);
+                if (!ancestor)
+                {
+                    usable = false;
+                    return;
+                }
 
-            auto &last = lastUseIn[ancestor->getBlock()];
-            if (!last || last->isBeforeInBlock(ancestor))
-            {
-                last = ancestor;
-            }
-        });
+                // an interface or a class view of it: the same block, used through the view
+                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                    castOp && mlir::isa<mlir_ts::InterfaceType, mlir_ts::ClassType>(castOp.getType()))
+                {
+                    chosen.insert(castOp.getResult());
+                    return;
+                }
+
+                // Only a use that borrows it: given to another holder (`x = t` of a `let x` read in the next round,
+                // a push, a capture, a call's kept argument), its uses there are not read here, so the count can't
+                // be given back after them, and a folded `const` has no rc op to give that holder its own
+                auto kept = isCall(user) && llvm::any_of(ownedParams(user), [&](int32_t position) {
+                    auto args = callArgs(user);
+                    return static_cast<size_t>(position) < args.size() && args[position] == used;
+                });
+                // (what is derived from it - a field's place, a method - is read, written or called through freely;
+                // only the derived value itself given to a holder is the block kept)
+                auto borrows = (isCall(user) && !kept) || isBorrow(user, used) || derivesFrom(user) ||
+                               mlir::isa<mlir::arith::SelectOp>(user) || user->hasTrait<mlir::OpTrait::IsTerminator>();
+                if (derived.contains(used))
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    borrows = !(storeOp && storeOp.getValue() == used) && !mlir::isa<mlir_ts::VariableOp>(user);
+                }
+
+                if (!borrows)
+                {
+                    usable = false;
+                    return;
+                }
+
+                if (auto selectOp = mlir::dyn_cast<mlir::arith::SelectOp>(user); selectOp && selectOp.getCondition() != used)
+                {
+                    chosen.insert(selectOp.getResult());
+                    return;
+                }
+
+                // a branch passing it on: its block's argument, used where the read's block dominates (each path
+                // into it then holds the reference), is live into that block
+                if (user->hasTrait<mlir::OpTrait::IsTerminator>())
+                {
+                    auto branch = mlir::dyn_cast<mlir::BranchOpInterface>(user);
+                    if (!branch || user != ancestor)
+                    {
+                        usable = false;
+                        return;
+                    }
+
+                    for (unsigned next = 0; next < user->getNumSuccessors(); ++next)
+                    {
+                        auto forwarded = branch.getSuccessorOperands(next).getForwardedOperands();
+                        for (auto [position, operand] : llvm::enumerate(forwarded))
+                        {
+                            if (operand != used)
+                            {
+                                continue;
+                            }
+
+                            auto *successor = user->getSuccessor(next);
+                            auto argIndex = branch.getSuccessorOperands(next).getProducedOperandCount() + position;
+                            if (successor == block || !dominance.dominates(block, successor) ||
+                                argIndex >= successor->getNumArguments())
+                            {
+                                usable = false;
+                                return;
+                            }
+
+                            chosen.insert(successor->getArgument(argIndex));
+                        }
+                    }
+
+                    return;
+                }
+
+                auto &last = lastUseIn[ancestor->getBlock()];
+                if (!last || last->isBeforeInBlock(ancestor))
+                {
+                    last = ancestor;
+                }
+
+                // a block read out of a place in it (`const c = e.child`, `e.name`, `e.items`): under it, freed with
+                // it, so its uses hold it too - and it is kept by no other holder, as it is
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                    loadOp && derived.contains(used) && ownsHeap(loadOp.getResult()))
+                {
+                    chosen.insert(loadOp.getResult());
+                }
+
+                // a place in it, a method of it, its `this`: what is read or called through that uses it too
+                // (`e.v` is a PropertyRef, then the Load through it)
+                if (derivesFrom(user))
+                {
+                    for (auto result : user->getResults())
+                    {
+                        chosen.insert(result);
+                        derived.insert(result);
+                    }
+                }
+            });
+        }
 
         if (!usable || lastUseIn.empty())
         {
@@ -2252,7 +2368,9 @@ namespace own_inference
                     }
                     else if (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested))
                     {
-                        // (a structured loop's: whether it leaves the scope is not read here)
+                        // (none is left: the affine lowering, which runs first, makes a loop's break and continue
+                        // branches, which the edges below follow. One here would be a structured loop's, whose way out
+                        // is not read: refused, in case)
                         leaves = true;
                     }
                 });
